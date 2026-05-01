@@ -187,10 +187,30 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - GM browser loaded as `Demo GM - owner` and showed `VA`, `VI`, `BL`, and `FO`.
     - Live API check returned GM token names `Valen Ash,Visible Guard,Blocked Guard,Fog Scout`, player token names `Valen Ash,Visible Guard,Fog Scout`, `PlayerSeesBlocked: 0`, and `PlayerBlockedPatchStatus: 404`.
 
+### Token Movement Ownership Slice
+
+- Commit: `d42bc71 feat: restrict player token movement`
+- Evidence:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `14 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test verifies:
+    - Player can still move owned `tok_valen`.
+    - Player can read a visible unowned token but receives `403` when attempting to move it.
+    - Player still receives `404` for a token not visible through fog/vision.
+  - Manual API evidence on local dev server:
+    - API: `http://127.0.0.1:4427`
+    - Fresh SQLite state file: `storage/manual-token-ownership-20260501.sqlite`
+    - Created visible unowned token `tok_momek6b27ngow8fy` named `Visible Stranger`.
+    - Player token read returned names `Valen Ash,Visible Stranger` and `PlayerSeesVisibleStranger: 1`.
+    - Player move of `Visible Stranger` returned `403`.
+    - Player move of owned `tok_valen` returned `200` with `PlayerOwnedTokenX: 420` and `PlayerOwnedTokenY: 380`.
+    - GM move of `Visible Stranger` returned `200` with `GmMovedTokenX: 520` and `GmMovedTokenY: 360`.
+
 ## Known Remaining Gaps
 
 - Auth is still a development `x-user-id` session header, not production authentication.
-- Browser role switching and GM/player token movement now have MVP coverage; broader multi-user workflows still need final clean-checkout audit coverage.
+- Browser role switching and ownership-scoped GM/player token movement now have MVP coverage; broader multi-user workflows still need final clean-checkout audit coverage.
 - Uploaded maps now have a local binary storage path, but they are not yet backed by S3 or MinIO object storage.
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
