@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -39,6 +39,8 @@ interface AdminAuditLogQuery {
 }
 
 type PluginReviewPolicyMode = "allow_unreviewed" | "require_approved";
+
+const MAX_FOG_HISTORY_ENTRIES = 100;
 
 interface AdminPluginReviewInfo {
   review: PluginReview;
@@ -1106,6 +1108,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       active: Boolean(request.body.active),
       sortOrder: request.body.sortOrder ?? store.state.scenes.length + 1,
       fog: request.body.fog ?? [],
+      fogHistory: [],
       walls: request.body.walls ?? [],
       lights: request.body.lights ?? [],
       metadata: request.body.metadata ?? {}
@@ -1357,18 +1360,99 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }>("/api/v1/scenes/:sceneId/fog", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
-    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.reveal");
-    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const fogRegion = normalizeFogRegion(request.body, scene);
     if (!fogRegion) return badRequest(reply, "Invalid fog region");
-    scene.fog.push({ id: createId("fog"), ...fogRegion });
+    const region: FogRegion = { id: createId("fog"), ...fogRegion };
+    scene.fog.push(region);
+    appendFogHistoryEntry(scene, {
+      sceneId: scene.id,
+      action: "create",
+      fogId: region.id,
+      actorUserId: userId,
+      region
+    });
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.fog.create",
+      targetType: "fog",
+      targetId: region.id,
+      after: { sceneId: scene.id, region }
+    });
     scene.updatedAt = nowIso();
     store.save();
     broadcast(
       createEvent({
         campaignId: scene.campaignId,
         type: "scene.updated",
+        actorUserId: userId,
+        targetId: scene.id,
+        payload: scene
+      })
+    );
+    return scene;
+  });
+
+  app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId/fog/history", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.reveal");
+    if (allowed !== true) return allowed;
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    return scene.fogHistory ?? [];
+  });
+
+  app.post<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId/fog/undo", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const target = latestUndoableFogHistoryEntry(scene);
+    if (!target) return badRequest(reply, "No fog history to undo");
+
+    let before: FogRegion | undefined;
+    let after: FogRegion | undefined;
+    if (target.action === "create") {
+      const index = scene.fog.findIndex((region) => region.id === target.fogId);
+      if (index < 0) return badRequest(reply, "Fog history entry is no longer undoable");
+      before = cloneFogRegion(scene.fog[index]!);
+      scene.fog.splice(index, 1);
+    } else if (target.region) {
+      if (scene.fog.some((region) => region.id === target.fogId)) return badRequest(reply, "Fog history entry is no longer undoable");
+      after = cloneFogRegion(target.region);
+      scene.fog.push(after);
+    } else {
+      return badRequest(reply, "Fog history entry is missing its region snapshot");
+    }
+
+    const undoEntry = appendFogHistoryEntry(scene, {
+      sceneId: scene.id,
+      action: "undo",
+      fogId: target.fogId,
+      actorUserId: userId,
+      region: before ?? after,
+      targetHistoryId: target.id
+    });
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.fog.undo",
+      targetType: "fog",
+      targetId: target.fogId,
+      before,
+      after: { sceneId: scene.id, restored: after, targetHistoryId: target.id, undoHistoryId: undoEntry.id }
+    });
+    scene.updatedAt = nowIso();
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        actorUserId: userId,
         targetId: scene.id,
         payload: scene
       })
@@ -1379,18 +1463,34 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.delete<{ Params: { sceneId: string; fogId: string } }>("/api/v1/scenes/:sceneId/fog/:fogId", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
-    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.reveal");
-    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const index = scene.fog.findIndex((region) => region.id === request.params.fogId);
     if (index < 0) return notFound(reply, "Fog region not found");
-    scene.fog.splice(index, 1);
+    const deleted = scene.fog.splice(index, 1)[0]!;
+    appendFogHistoryEntry(scene, {
+      sceneId: scene.id,
+      action: "delete",
+      fogId: deleted.id,
+      actorUserId: userId,
+      region: deleted
+    });
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.fog.delete",
+      targetType: "fog",
+      targetId: deleted.id,
+      before: { sceneId: scene.id, region: deleted }
+    });
     scene.updatedAt = nowIso();
     store.save();
     broadcast(
       createEvent({
         campaignId: scene.campaignId,
         type: "scene.updated",
+        actorUserId: userId,
         targetId: scene.id,
         payload: scene
       })
@@ -3430,6 +3530,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           active: false,
           sortOrder: context.state.scenes.filter((item) => item.campaignId === context.campaignId).length,
           fog: [],
+          fogHistory: [],
           walls: [],
           lights: [],
           metadata: { source: "ai_tool" }
@@ -3942,6 +4043,39 @@ function rollVisibilityFromRecord(record: Record<string, unknown>, key: string, 
 function stringArrayFromRecord(record: Record<string, unknown>, key: string): string[] {
   const value = record[key];
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function appendFogHistoryEntry(scene: Scene, input: Omit<FogHistoryEntry, "id" | "createdAt" | "updatedAt">): FogHistoryEntry {
+  scene.fogHistory ??= [];
+  const entry = createTimestamped("fogh", {
+    ...input,
+    region: input.region ? cloneFogRegion(input.region) : undefined
+  }) satisfies FogHistoryEntry;
+  scene.fogHistory.push(entry);
+  if (scene.fogHistory.length > MAX_FOG_HISTORY_ENTRIES) {
+    scene.fogHistory.splice(0, scene.fogHistory.length - MAX_FOG_HISTORY_ENTRIES);
+  }
+  return entry;
+}
+
+function latestUndoableFogHistoryEntry(scene: Scene): FogHistoryEntry | undefined {
+  const history = scene.fogHistory ?? [];
+  const undoneHistoryIds = new Set(history.map((entry) => (entry.action === "undo" ? entry.targetHistoryId : undefined)).filter((id): id is string => Boolean(id)));
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index]!;
+    if ((entry.action !== "create" && entry.action !== "delete") || undoneHistoryIds.has(entry.id)) continue;
+    const fogExists = scene.fog.some((region) => region.id === entry.fogId);
+    if (entry.action === "create" && fogExists) return entry;
+    if (entry.action === "delete" && entry.region && !fogExists) return entry;
+  }
+  return undefined;
+}
+
+function cloneFogRegion(region: FogRegion): FogRegion {
+  return {
+    ...region,
+    points: region.points?.map((point) => ({ ...point }))
+  };
 }
 
 function normalizeFogRegion(body: { x?: number; y?: number; radius?: number; hidden?: boolean; shape?: FogShape; mode?: FogMode; points?: VisionPoint[] }, scene: Scene): Omit<FogRegion, "id"> | undefined {

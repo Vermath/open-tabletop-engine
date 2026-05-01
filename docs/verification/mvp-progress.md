@@ -851,6 +851,40 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/dynamic-fog-player.png`.
   - Browser console had no errors or warnings after reload; it only showed the React DevTools info message and an autocomplete advisory.
 
+### Fog History And Undo Slice
+
+- Implementation:
+  - Added a scene-local `fogHistory` log that records fog create, delete, and undo entries with the acting user, fog id, region snapshot, and target history id for undo entries.
+  - Added GM-only `GET /api/v1/scenes/{sceneId}/fog/history` and `POST /api/v1/scenes/{sceneId}/fog/undo` routes using the existing `token.reveal` permission boundary.
+  - Made fog creation and deletion append history entries and audit rows; undo reverses the latest still-applicable create or delete entry, restores deleted region snapshots, removes created regions, appends an undo history entry, and emits a scene update.
+  - Capped scene fog history at 100 entries so repeated brush operations cannot grow scene payloads without bound.
+  - Added a GM toolbar button titled `Undo fog change` that calls the undo endpoint and refreshes the tabletop state.
+  - Documented the history and undo routes in the REST contract docs and exported route helpers from `@open-tabletop/api-contracts`.
+  - Fixed the AI core package's ESM re-export so the built API server can start through `node apps/api/dist/server.js`.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `60 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - `pnpm build` passed across `14 successful` build tasks.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API tests verify player denial for fog history and undo, GM history after fog create/delete operations, undo restoring a deleted hide region, undo removing a created hide region, and undo audit log creation.
+- Manual API evidence:
+  - API: `http://127.0.0.1:55160`
+  - SQLite file: `apps/api/storage/manual-fog-undo-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `PORT=55160`, `HOST=127.0.0.1`, `OTTE_SQLITE_PATH=apps/api/storage/manual-fog-undo-20260501.sqlite`, and `OTTE_ADMIN_USER_IDS=usr_demo_gm`.
+  - The server was the built API entrypoint `node apps/api/dist/server.js`; health returned `{ "ok": true, "version": "0.1.0", "service": "open-tabletop-api" }`.
+  - GM and player bearer logins returned `ots_` token prefixes.
+  - Scene `scn_vault_entry` was reset to `0` fog regions and `0` fog history entries before the run.
+  - GM created polygon reveal `fog_monfibrokfs1c4ri` and hide brush `fog_monfibry3rqpsc4u`; history returned actions `create,create`.
+  - Player history request returned `403`, confirming player denial on the history surface.
+  - GM deleted hide brush `fog_monfibry3rqpsc4u`; the returned scene no longer included that region and the history tail was `delete`.
+  - First undo restored the deleted hide brush; second undo removed the restored created hide brush.
+  - Final history actions were `create,create,delete,undo,undo`.
+  - Admin audit export for `scene.fog.undo` returned `2` rows, both targeting `fog_monfibry3rqpsc4u`.
+  - After shutdown, no listener remained on port `55160`.
+
 ### Packaged Plugin Runtime Slice
 
 - Implementation:
@@ -1514,7 +1548,7 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, built-in upload security scanning, and external AV/trust scanner webhooks before storage writes. Higher-assurance hosting may still need provider-specific compliance artifacts and operational certifications outside the app.
-- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
+- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, fog region deletion, and fog undo/history now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing and multi-scene fog presets.
 - Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, campaign-scoped JSON storage APIs, command-returned storage mutations, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, server-admin marketplace review surfaces, optional approval-required review policy, storage/review audit logs, and browser/API acceptance evidence. Remaining plugin ecosystem work is external marketplace operations beyond the self-hosted review and registry workflow.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

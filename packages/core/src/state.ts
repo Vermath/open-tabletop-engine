@@ -92,6 +92,7 @@ export function seedState(): EngineState {
     active: true,
     sortOrder: 1,
     fog: [{ id: "fog_center", x: 540, y: 360, radius: 190, hidden: false }],
+    fogHistory: [],
     walls: [
       {
         id: "wall_north",

@@ -1,5 +1,5 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Encounter, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
-import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MessageSquare, Pentagon, Plus, RefreshCw, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles } from "lucide-react";
+import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MessageSquare, Pentagon, Plus, RefreshCw, RotateCcw, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
@@ -274,6 +274,13 @@ export function App() {
       ]
     });
     setStatus("Fog polygon revealed");
+    await refresh();
+  }
+
+  async function undoFog() {
+    if (!selectedScene) return;
+    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog/undo`, {});
+    setStatus("Fog change undone");
     await refresh();
   }
 
@@ -757,7 +764,7 @@ export function App() {
 
         <div className="table-grid">
           <section className="table-area">
-            <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onAddWall={addWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canUpdateScene={hasPermission("scene.update")} />
+            <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onUndoFog={undoFog} onAddWall={addWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canUpdateScene={hasPermission("scene.update")} />
             {selectedScene ? <SceneCanvas scene={selectedScene} backgroundAsset={selectedMapAsset} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} onSelect={setSelectedTokenId} onMoved={refresh} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
@@ -924,7 +931,7 @@ function tokenCenter(token: Token): { x: number; y: number } {
   return { x: token.x + token.width / 2, y: token.y + token.height / 2 };
 }
 
-function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onHideFog(): void; onRevealFogPolygon(): void; onAddWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; canUpdateScene: boolean }) {
+function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onHideFog(): void; onRevealFogPolygon(): void; onUndoFog(): void; onAddWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; canUpdateScene: boolean }) {
   return (
     <div className="toolbar">
       <button className="tool active" title="Select">
@@ -944,6 +951,9 @@ function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onReveal
       </button>
       <button className="tool" title="Reveal polygon fog" onClick={props.onRevealFogPolygon} disabled={!props.canRevealFog}>
         <Pentagon size={17} />
+      </button>
+      <button className="tool" title="Undo fog change" onClick={props.onUndoFog} disabled={!props.canRevealFog}>
+        <RotateCcw size={17} />
       </button>
       <button className="tool" title="Add wall" onClick={props.onAddWall} disabled={!props.canUpdateScene}>
         <BrickWall size={17} />

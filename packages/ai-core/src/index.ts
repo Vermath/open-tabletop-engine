@@ -1,5 +1,5 @@
 import type { AiUsageMetrics, EngineState, PermissionName, ProposalChange, Visibility } from "@open-tabletop/core";
-export { OpenAiResponsesProvider, type OpenAiResponsesProviderOptions } from "./openai-responses-provider";
+export { OpenAiResponsesProvider, type OpenAiResponsesProviderOptions } from "./openai-responses-provider.js";
 
 export interface AiMessage {
   role: "system" | "user" | "assistant" | "tool";

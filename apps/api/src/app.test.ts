@@ -1625,6 +1625,7 @@ describe("api", () => {
     const store = new MemoryStateStore();
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
     scene.fog = [];
+    scene.fogHistory = [];
     const valen = store.state.tokens.find((item) => item.id === "tok_valen")!;
     valen.visionRadius = 120;
     const app = await buildApp({ store });
@@ -1672,6 +1673,33 @@ describe("api", () => {
     });
     expect(hidden.statusCode).toBe(200);
     expect(hidden.json().fog.at(-1)).toEqual(expect.objectContaining({ shape: "circle", mode: "hide", radius: 70 }));
+    const hiddenFogId = hidden.json().fog.at(-1).id as string;
+
+    const blockedPlayerHistory = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/fog/history",
+      headers: playerHeaders
+    });
+    expect(blockedPlayerHistory.statusCode).toBe(403);
+
+    const blockedPlayerUndo = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/fog/undo",
+      headers: playerHeaders,
+      payload: {}
+    });
+    expect(blockedPlayerUndo.statusCode).toBe(403);
+
+    const historyAfterCreate = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/fog/history",
+      headers: authHeaders
+    });
+    expect(historyAfterCreate.statusCode).toBe(200);
+    expect(historyAfterCreate.json().map((entry: { action: string; fogId: string }) => [entry.action, entry.fogId])).toEqual([
+      ["create", revealed.json().fog.at(-1).id],
+      ["create", hiddenFogId]
+    ]);
 
     const polygonScout = await app.inject({
       method: "POST",
@@ -1709,11 +1737,39 @@ describe("api", () => {
 
     const deletedFog = await app.inject({
       method: "DELETE",
-      url: `/api/v1/scenes/scn_vault_entry/fog/${hidden.json().fog.at(-1).id}`,
+      url: `/api/v1/scenes/scn_vault_entry/fog/${hiddenFogId}`,
       headers: authHeaders
     });
     expect(deletedFog.statusCode).toBe(200);
     expect(deletedFog.json().fog.some((region: { mode?: string }) => region.mode === "hide")).toBe(false);
+
+    const historyAfterDelete = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/fog/history",
+      headers: authHeaders
+    });
+    expect(historyAfterDelete.statusCode).toBe(200);
+    expect(historyAfterDelete.json().at(-1)).toEqual(expect.objectContaining({ action: "delete", fogId: hiddenFogId }));
+
+    const undoDelete = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/fog/undo",
+      headers: authHeaders,
+      payload: {}
+    });
+    expect(undoDelete.statusCode).toBe(200);
+    expect(undoDelete.json().fog.some((region: { id: string; mode?: string }) => region.id === hiddenFogId && region.mode === "hide")).toBe(true);
+    expect(undoDelete.json().fogHistory.at(-1)).toEqual(expect.objectContaining({ action: "undo", fogId: hiddenFogId, targetHistoryId: historyAfterDelete.json().at(-1).id }));
+
+    const undoCreate = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/fog/undo",
+      headers: authHeaders,
+      payload: {}
+    });
+    expect(undoCreate.statusCode).toBe(200);
+    expect(undoCreate.json().fog.some((region: { id: string }) => region.id === hiddenFogId)).toBe(false);
+    expect(store.state.auditLogs.some((entry) => entry.action === "scene.fog.undo" && entry.targetId === hiddenFogId)).toBe(true);
 
     await app.close();
   });

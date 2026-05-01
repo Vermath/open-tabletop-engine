@@ -166,6 +166,7 @@ export interface Scene extends Timestamps {
   active: boolean;
   sortOrder: number;
   fog: FogRegion[];
+  fogHistory?: FogHistoryEntry[];
   walls: Wall[];
   lights: LightSource[];
   metadata: Record<string, unknown>;
@@ -184,6 +185,18 @@ export interface FogRegion {
 
 export type FogShape = "circle" | "polygon";
 export type FogMode = "reveal" | "hide";
+
+export interface FogHistoryEntry extends Timestamps {
+  id: ID;
+  sceneId: ID;
+  action: FogHistoryAction;
+  fogId: ID;
+  actorUserId: ID;
+  region?: FogRegion;
+  targetHistoryId?: ID;
+}
+
+export type FogHistoryAction = "create" | "delete" | "undo";
 
 export type WallKind = "wall" | "terrain";
 
