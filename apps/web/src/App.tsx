@@ -19,7 +19,7 @@ import {
   WandSparkles
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiGet, apiPatch, apiPost, loadSnapshot, sessionUserId, type Snapshot } from "./api.js";
+import { apiGet, apiPatch, apiPost, loadSnapshot, sessionUserId, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -34,7 +34,9 @@ export function App() {
     encounters: [],
     combats: [],
     proposals: [],
-    memory: []
+    memory: [],
+    plugins: [],
+    systems: []
   });
   const [campaignId, setCampaignId] = useState("camp_demo");
   const [sceneId, setSceneId] = useState("scn_vault_entry");
@@ -180,6 +182,30 @@ export function App() {
     await refresh();
   }
 
+  async function installPlugin(plugin: PluginRuntimeInfo) {
+    await apiPost(`/api/v1/campaigns/${campaignId}/plugins/${plugin.id}/install`, {});
+    setStatus(`${plugin.name} installed`);
+    await refresh();
+  }
+
+  async function runPluginCommand(plugin: PluginRuntimeInfo, command: string) {
+    await apiPost(`/api/v1/campaigns/${campaignId}/plugins/${plugin.id}/chat-command`, {
+      command,
+      args: "from the browser tabletop"
+    });
+    setStatus(`${plugin.name} command ran`);
+    await refresh();
+  }
+
+  async function rollSystemCheck() {
+    if (!selectedActor) return;
+    await apiPost(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
+      rollId: "ability-charisma"
+    });
+    setStatus("System roll posted");
+    await refresh();
+  }
+
   async function exportCampaign() {
     const archive = await apiGet<object>(`/api/v1/campaigns/${campaignId}/export`);
     const blob = new Blob([JSON.stringify(archive, null, 2)], { type: "application/json" });
@@ -288,7 +314,16 @@ export function App() {
                 approveAndApply={approveAndApply}
               />
             )}
-            {tab === "plugins" && <SdkPanel />}
+            {tab === "plugins" && (
+              <SdkPanel
+                plugins={snapshot.plugins}
+                systems={snapshot.systems}
+                actor={selectedActor}
+                onInstallPlugin={installPlugin}
+                onRunCommand={runPluginCommand}
+                onSystemRoll={rollSystemCheck}
+              />
+            )}
           </aside>
         </div>
 
@@ -546,19 +581,47 @@ function AiPanel(props: {
   );
 }
 
-function SdkPanel() {
+function SdkPanel(props: {
+  plugins: PluginRuntimeInfo[];
+  systems: SystemRuntimeInfo[];
+  actor?: Actor;
+  onInstallPlugin(plugin: PluginRuntimeInfo): void;
+  onRunCommand(plugin: PluginRuntimeInfo, command: string): void;
+  onSystemRoll(): void;
+}) {
+  const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   return (
     <div className="panel-stack">
-      <div className="section-title">SDK Surface</div>
+      <div className="section-title">Runtime SDK</div>
+      {props.plugins.map((plugin) => (
+        <article className="proposal" key={plugin.id}>
+          <span>{plugin.installed ? "installed plugin" : "available plugin"}</span>
+          <h3>{plugin.name}</h3>
+          <p>{plugin.permissions.join(", ")}</p>
+          {!plugin.installed ? (
+            <button className="ghost-button" onClick={() => props.onInstallPlugin(plugin)}>
+              <Plus size={15} /> Install
+            </button>
+          ) : (
+            plugin.chatCommands?.map((command) => (
+              <button className="ghost-button" key={command.command} onClick={() => props.onRunCommand(plugin, command.command)}>
+                <WandSparkles size={15} /> {command.command}
+              </button>
+            ))
+          )}
+        </article>
+      ))}
       <div className="metric-row">
-        <span>System</span>
-        <strong>generic-fantasy</strong>
+        <span>Active System</span>
+        <strong>{activeSystem?.name ?? "No system"}</strong>
       </div>
       <div className="metric-row">
-        <span>Plugin</span>
-        <strong>example-macro-plugin</strong>
+        <span>Sheet Actor</span>
+        <strong>{props.actor?.name ?? "No actor"}</strong>
       </div>
-      <p className="copy">Plugin and system manifests are served by the API and validated through SDK packages.</p>
+      <button className="primary-button wide" onClick={props.onSystemRoll} disabled={!props.actor}>
+        <ChevronRight size={16} /> Charisma Check
+      </button>
     </div>
   );
 }

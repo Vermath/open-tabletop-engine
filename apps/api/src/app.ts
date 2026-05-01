@@ -17,16 +17,19 @@ import {
   type CampaignArchive,
   type ChatMessage,
   type Combat,
+  type DiceRoll,
   type Encounter,
   type EngineState,
   type JournalEntry,
   type MapAsset,
+  type PermissionGrant,
   type PermissionName,
   type Proposal,
   type Scene,
   type Token
 } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
+import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { installedPlugins, installedSystems } from "./registries.js";
 import { RealtimeHub } from "./realtime.js";
@@ -724,6 +727,101 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     return installedPlugins;
   });
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/plugins", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    return installedPlugins.map((plugin) => {
+      const grant = findPluginGrant(store, request.params.campaignId, plugin.id);
+      return {
+        ...plugin,
+        installed: Boolean(grant),
+        grantedPermissions: grant?.permissions ?? [],
+        missingPermissions: plugin.permissions.filter((permission) => !grant?.permissions.includes(permission))
+      };
+    });
+  });
+
+  app.post<{ Params: { campaignId: string; pluginId: string } }>("/api/v1/campaigns/:campaignId/plugins/:pluginId/install", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "plugin.install");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const plugin = installedPlugins.find((item) => item.id === request.params.pluginId);
+    if (!plugin) return notFound(reply, "Plugin not found");
+    const existing = findPluginGrant(store, request.params.campaignId, plugin.id);
+    const grant =
+      existing ??
+      (createTimestamped("grant", {
+        subjectType: "plugin" as const,
+        subjectId: plugin.id,
+        campaignId: request.params.campaignId,
+        permissions: plugin.permissions
+      }) satisfies PermissionGrant);
+    grant.permissions = plugin.permissions;
+    grant.updatedAt = nowIso();
+    if (!existing) store.state.permissionGrants.push(grant);
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: request.params.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "plugin.install",
+        targetType: "plugin",
+        targetId: plugin.id,
+        after: { permissions: plugin.permissions }
+      })
+    );
+    store.save();
+    return { plugin, grant };
+  });
+
+  app.post<{ Params: { campaignId: string; pluginId: string }; Body: { command: string; args?: string } }>(
+    "/api/v1/campaigns/:campaignId/plugins/:pluginId/chat-command",
+    async (request, reply) => {
+      const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "chat.write");
+      if (allowed !== true) return allowed;
+      const userId = requireUser(store, reply, request.headers);
+      if (typeof userId !== "string") return userId;
+      const plugin = installedPlugins.find((item) => item.id === request.params.pluginId);
+      if (!plugin) return notFound(reply, "Plugin not found");
+      const command = request.body.command.startsWith("/") ? request.body.command : `/${request.body.command}`;
+      if (!plugin.chatCommands?.some((item) => item.command === command)) return notFound(reply, "Plugin command not found");
+      if (!pluginCan(store, request.params.campaignId, plugin.id, "chat.write")) {
+        return forbidden(reply, `Plugin ${plugin.id} lacks chat.write in this campaign`);
+      }
+      const canReadTokens = pluginCan(store, request.params.campaignId, plugin.id, "token.read");
+      const sceneIds = campaignSceneIds(store, request.params.campaignId);
+      const tokenNames = canReadTokens ? store.state.tokens.filter((token) => sceneIds.includes(token.sceneId)).map((token) => token.name) : [];
+      const message = createTimestamped("msg", {
+        campaignId: request.params.campaignId,
+        userId: plugin.id,
+        type: "plugin" as const,
+        body:
+          command === "/spark"
+            ? `Spark macro: ${request.body.args?.trim() || "arcane sparks flare across the scene"}${tokenNames.length ? ` near ${tokenNames.join(", ")}` : ""}.`
+            : `${plugin.name} ran ${command}.`,
+        visibility: "public" as const,
+        recipientUserIds: []
+      }) satisfies ChatMessage;
+      store.state.chat.push(message);
+      store.state.auditLogs.push(
+        createTimestamped("audit", {
+          campaignId: request.params.campaignId,
+          actorUserId: userId,
+          actorType: "plugin" as const,
+          action: "plugin.chatCommand",
+          targetType: "chat",
+          targetId: message.id,
+          after: { pluginId: plugin.id, command }
+        })
+      );
+      store.save();
+      hub.broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
+      return { pluginId: plugin.id, command, chat: message };
+    }
+  );
+
   app.post<{ Body: (typeof installedPlugins)[number] & { campaignId?: string } }>("/api/v1/plugins/install", async (request, reply) => {
     const campaignId = request.body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(request.headers))?.campaignId;
     if (!campaignId) return forbidden(reply, "Plugin installation requires a campaign context");
@@ -738,6 +836,102 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     return installedSystems;
   });
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/systems", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    return installedSystems.map((system) => ({ ...system, active: campaign.defaultSystemId === system.id }));
+  });
+
+  app.post<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/install", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    if (!system) return notFound(reply, "System not found");
+    campaign.defaultSystemId = system.id;
+    campaign.updatedAt = nowIso();
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: campaign.id,
+        actorUserId: userId,
+        actorType: "system" as const,
+        action: "system.install",
+        targetType: "system",
+        targetId: system.id
+      })
+    );
+    store.save();
+    return { system, campaign };
+  });
+
+  app.get<{ Params: { campaignId: string; systemId: string; actorId: string } }>(
+    "/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/sheet",
+    async (request, reply) => {
+      const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
+      if (allowed !== true) return allowed;
+      const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+      if (!actor) return notFound(reply, "System actor not found");
+      return {
+        actorId: actor.id,
+        systemId: request.params.systemId,
+        summary: summarizeActor(actor),
+        data: actor.data,
+        quickRolls: genericFantasyQuickRolls(actor)
+      };
+    }
+  );
+
+  app.post<{ Params: { campaignId: string; systemId: string; actorId: string }; Body: { rollId?: string; ability?: string; visibility?: "public" | "gm_only" | "whisper" } }>(
+    "/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/roll",
+    async (request, reply) => {
+      const canReadActor = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
+      if (canReadActor !== true) return canReadActor;
+      const canRoll = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "dice.roll");
+      if (canRoll !== true) return canRoll;
+      const userId = requireUser(store, reply, request.headers);
+      if (typeof userId !== "string") return userId;
+      const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+      if (!actor) return notFound(reply, "System actor not found");
+      const quickRolls = genericFantasyQuickRolls(actor);
+      const rollDefinition =
+        quickRolls.find((item) => item.id === request.body.rollId) ??
+        quickRolls.find((item) => item.id === `ability-${request.body.ability}`) ??
+        quickRolls[0];
+      if (!rollDefinition) return notFound(reply, "No system roll is available for this actor");
+      const rolled = rollFormula(rollDefinition.formula);
+      const roll = createTimestamped("roll", {
+        campaignId: request.params.campaignId,
+        userId,
+        formula: rollDefinition.formula,
+        label: rollDefinition.label,
+        visibility: request.body.visibility ?? "public",
+        terms: rolled.terms,
+        total: rolled.total
+      }) satisfies DiceRoll;
+      const message = createTimestamped("msg", {
+        campaignId: request.params.campaignId,
+        userId,
+        type: "roll" as const,
+        body: `${actor.name} ${rollDefinition.label}: ${rollDefinition.formula} = ${roll.total}`,
+        visibility: roll.visibility,
+        recipientUserIds: [],
+        rollId: roll.id
+      }) satisfies ChatMessage;
+      store.state.rolls.push(roll);
+      store.state.chat.push(message);
+      store.save();
+      hub.broadcast(createEvent({ campaignId: roll.campaignId, type: "dice.roll.created", actorUserId: userId, targetId: roll.id, payload: roll }));
+      hub.broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
+      return { roll, chat: message, quickRoll: rollDefinition };
+    }
+  );
+
   app.post<{ Body: (typeof installedSystems)[number] & { campaignId?: string } }>("/api/v1/systems/install", async (request, reply) => {
     const campaignId = request.body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(request.headers))?.campaignId;
     if (!campaignId) return forbidden(reply, "System installation requires a campaign context");
@@ -837,6 +1031,28 @@ function campaignIdForScene(store: StateStore, sceneId: string): string | undefi
 function campaignIdForToken(store: StateStore, tokenId: string): string | undefined {
   const token = store.state.tokens.find((item) => item.id === tokenId);
   return token ? campaignIdForScene(store, token.sceneId) : undefined;
+}
+
+function campaignSceneIds(store: StateStore, campaignId: string): string[] {
+  return store.state.scenes.filter((scene) => scene.campaignId === campaignId).map((scene) => scene.id);
+}
+
+function findPluginGrant(store: StateStore, campaignId: string, pluginId: string): PermissionGrant | undefined {
+  return store.state.permissionGrants.find(
+    (grant) =>
+      grant.subjectType === "plugin" &&
+      grant.subjectId === pluginId &&
+      grant.campaignId === campaignId &&
+      (!grant.expiresAt || Date.parse(grant.expiresAt) > Date.now())
+  );
+}
+
+function pluginCan(store: StateStore, campaignId: string, pluginId: string, permission: PermissionName): boolean {
+  return findPluginGrant(store, campaignId, pluginId)?.permissions.includes(permission) ?? false;
+}
+
+function findSystemActor(store: StateStore, campaignId: string, systemId: string, actorId: string): Actor | undefined {
+  return store.state.actors.find((actor) => actor.id === actorId && actor.campaignId === campaignId && actor.systemId === systemId);
 }
 
 function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyof EngineState, number> {

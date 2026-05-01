@@ -38,6 +38,12 @@ export interface DiceFormulaRegistration {
   formula: string;
 }
 
+export interface QuickRoll {
+  id: string;
+  label: string;
+  formula: string;
+}
+
 export interface SystemRegistry {
   manifests: SystemManifest[];
   actorSheets: ActorSheetRegistration[];
@@ -77,4 +83,28 @@ export function summarizeActor(actor: Actor): string {
 
 export function summarizeItem(item: Item): string {
   return `${item.name} [${item.type}]`;
+}
+
+export function abilityModifier(score: number): number {
+  return Math.floor((score - 10) / 2);
+}
+
+export function genericFantasyAbilityCheck(actor: Actor, ability: string): QuickRoll {
+  const attributes = actor.data.attributes as Record<string, number> | undefined;
+  const score = attributes?.[ability] ?? 10;
+  const modifier = abilityModifier(score);
+  const formattedModifier = modifier >= 0 ? `+${modifier}` : String(modifier);
+  const label = `${ability.charAt(0).toUpperCase()}${ability.slice(1)} Check`;
+  return {
+    id: `ability-${ability}`,
+    label,
+    formula: `1d20${formattedModifier}`
+  };
+}
+
+export function genericFantasyQuickRolls(actor: Actor): QuickRoll[] {
+  const attributes = actor.data.attributes as Record<string, number> | undefined;
+  return Object.keys(attributes ?? { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 }).map((ability) =>
+    genericFantasyAbilityCheck(actor, ability)
+  );
 }

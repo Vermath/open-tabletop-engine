@@ -123,6 +123,91 @@ describe("api", () => {
     await app.close();
   });
 
+  it("runs plugin and system runtime flows with permission boundaries", async () => {
+    const store = new MemoryStateStore();
+    store.state.users.push({
+      id: "usr_observer",
+      displayName: "Observer",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    store.state.members.push({
+      id: "mem_observer",
+      campaignId: "camp_demo",
+      userId: "usr_observer",
+      role: "observer",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    const app = await buildApp({ store });
+
+    const observerInstall = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install",
+      headers: { "x-user-id": "usr_observer" }
+    });
+    expect(observerInstall.statusCode).toBe(403);
+
+    const pluginInstall = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install",
+      headers: authHeaders
+    });
+    expect(pluginInstall.statusCode).toBe(200);
+    expect(pluginInstall.json().grant.permissions).toEqual(["chat.write", "token.read"]);
+
+    const grant = store.state.permissionGrants.find((item) => item.subjectType === "plugin" && item.subjectId === "example-macro-plugin");
+    expect(grant).toBeTruthy();
+    grant!.permissions = ["token.read"];
+    const blockedCommand = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/chat-command",
+      headers: authHeaders,
+      payload: { command: "/spark" }
+    });
+    expect(blockedCommand.statusCode).toBe(403);
+
+    grant!.permissions = ["chat.write", "token.read"];
+    const command = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/chat-command",
+      headers: authHeaders,
+      payload: { command: "/spark", args: "test flare" }
+    });
+    expect(command.statusCode).toBe(200);
+    expect(command.json().chat.type).toBe("plugin");
+    expect(command.json().chat.body).toContain("Valen Ash");
+
+    const sheet = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/sheet",
+      headers: authHeaders
+    });
+    expect(sheet.statusCode).toBe(200);
+    expect(sheet.json().summary).toContain("Valen Ash");
+    expect(sheet.json().quickRolls).toContainEqual({ id: "ability-charisma", label: "Charisma Check", formula: "1d20+2" });
+
+    const observerRoll = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll",
+      headers: { "x-user-id": "usr_observer" },
+      payload: { rollId: "ability-charisma" }
+    });
+    expect(observerRoll.statusCode).toBe(403);
+
+    const systemRoll = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll",
+      headers: authHeaders,
+      payload: { rollId: "ability-charisma" }
+    });
+    expect(systemRoll.statusCode).toBe(200);
+    expect(systemRoll.json().quickRoll.formula).toBe("1d20+2");
+    expect(store.state.chat.some((message) => message.body.includes("Charisma Check"))).toBe(true);
+
+    await app.close();
+  });
+
   it("persists campaign state across sqlite-backed store restarts", async () => {
     const directory = mkdtempSync(join(tmpdir(), "otte-api-"));
     const dbPath = join(directory, "state.sqlite");

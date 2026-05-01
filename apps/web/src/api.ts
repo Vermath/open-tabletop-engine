@@ -55,17 +55,37 @@ export interface Snapshot {
   combats: Combat[];
   proposals: Proposal[];
   memory: AiMemoryFact[];
+  plugins: PluginRuntimeInfo[];
+  systems: SystemRuntimeInfo[];
+}
+
+export interface PluginRuntimeInfo {
+  id: string;
+  name: string;
+  version: string;
+  permissions: string[];
+  installed: boolean;
+  grantedPermissions: string[];
+  missingPermissions: string[];
+  chatCommands?: Array<{ command: string; description: string }>;
+}
+
+export interface SystemRuntimeInfo {
+  id: string;
+  name: string;
+  version: string;
+  active: boolean;
 }
 
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
   const campaigns = await apiGet<Campaign[]>("/api/v1/campaigns");
   const selectedCampaignId = campaignId ?? campaigns[0]?.id;
   if (!selectedCampaignId) {
-    return { campaigns, scenes: [], tokens: [], actors: [], journals: [], chat: [], encounters: [], combats: [], proposals: [], memory: [] };
+    return { campaigns, scenes: [], tokens: [], actors: [], journals: [], chat: [], encounters: [], combats: [], proposals: [], memory: [], plugins: [], systems: [] };
   }
   const scenes = await apiGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
   const selectedSceneId = sceneId ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
-  const [tokens, actors, journals, chat, encounters, combats, proposals, memory] = await Promise.all([
+  const [tokens, actors, journals, chat, encounters, combats, proposals, memory, plugins, systems] = await Promise.all([
     selectedSceneId ? apiGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
     apiGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
     apiGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`),
@@ -73,7 +93,9 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     apiGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
     apiGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
     apiGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
-    apiGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`)
+    apiGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`),
+    apiGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
+    apiGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)
   ]);
-  return { campaigns, scenes, tokens, actors, journals, chat, encounters, combats, proposals, memory };
+  return { campaigns, scenes, tokens, actors, journals, chat, encounters, combats, proposals, memory, plugins, systems };
 }

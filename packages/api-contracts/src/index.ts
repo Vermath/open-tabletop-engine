@@ -26,7 +26,14 @@ export const routes = {
   aiSessionRecap: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/session-recap`,
   aiEncounterDesign: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/encounter-design`,
   systems: "/api/v1/systems",
+  campaignSystems: (campaignId: string) => `/api/v1/campaigns/${campaignId}/systems`,
+  campaignSystem: (campaignId: string, systemId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}`,
+  systemActorSheet: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/sheet`,
+  systemActorRoll: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/roll`,
   plugins: "/api/v1/plugins",
+  campaignPlugins: (campaignId: string) => `/api/v1/campaigns/${campaignId}/plugins`,
+  campaignPlugin: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${campaignId}/plugins/${pluginId}`,
+  pluginChatCommand: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${campaignId}/plugins/${pluginId}/chat-command`,
   exportCampaign: (campaignId: string) => `/api/v1/campaigns/${campaignId}/export`,
   importCampaign: "/api/v1/import/campaign"
 } as const;
@@ -56,8 +63,15 @@ const endpointSpecs = [
   ["GET", routes.chat],
   ["GET", routes.plugins],
   ["POST", "/api/v1/plugins/install"],
+  ["GET", "/api/v1/campaigns/{campaignId}/plugins"],
+  ["POST", "/api/v1/campaigns/{campaignId}/plugins/{pluginId}/install"],
+  ["POST", "/api/v1/campaigns/{campaignId}/plugins/{pluginId}/chat-command"],
   ["GET", routes.systems],
-  ["POST", "/api/v1/systems/install"]
+  ["POST", "/api/v1/systems/install"],
+  ["GET", "/api/v1/campaigns/{campaignId}/systems"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/install"],
+  ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]
 ] as const;
 
 export const openApiSpec = {

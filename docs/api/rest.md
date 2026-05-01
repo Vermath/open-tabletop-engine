@@ -33,9 +33,20 @@ Authenticated endpoints require an `x-user-id` session header. The seeded local 
 - `GET|POST /api/v1/campaigns/{campaignId}/ai/memory`
 - `POST /api/v1/ai/memory/{factId}/approve`
 - `GET|POST /api/v1/plugins`
+- `GET /api/v1/campaigns/{campaignId}/plugins`
+- `POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/install`
+- `POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/chat-command`
 - `GET|POST /api/v1/systems`
+- `GET /api/v1/campaigns/{campaignId}/systems`
+- `POST /api/v1/campaigns/{campaignId}/systems/{systemId}/install`
+- `GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet`
+- `POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll`
 - `GET /api/v1/campaigns/{campaignId}/export`
 - `POST /api/v1/import/campaign`
+
+Plugin runtime endpoints are campaign-scoped. Installing a plugin creates a `permissionGrants` record for `subjectType: "plugin"`; command execution checks the human caller's permission and the plugin grant before the plugin can post chat or read token context.
+
+System runtime endpoints are campaign-scoped. The generic fantasy runtime can summarize an actor sheet and produce quick-roll dice formulas from actor data, posting the resulting roll into chat.
 
 `POST /api/v1/import/campaign` accepts either a raw `.ottx` archive or:
 
