@@ -425,11 +425,42 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Worker job `job_worker_memory_smoke` of type `ai.memory.extract` succeeded and returned provider `codex-app-server`, memory text `Extracted memory: Worker smoke memory: the sapphire lens opens the vault.`, and event `message.completed`.
   - Worker job `job_worker_export_smoke` of type `campaign.export` succeeded and returned archive format `ottx`, `campaignCount: 1`, `tokenCount: 1`, and `memoryCount: 1`.
 
+### Password Accounts And Campaign Invites Slice
+
+- Implementation:
+  - Added password-backed user registration and email/password login while preserving seeded passwordless users and `x-user-id` local compatibility.
+  - Added campaign invite records with hashed one-time `oti_` tokens, email restrictions, expiration, accepted/revoked status, and role assignment for `gm`, `assistant_gm`, `player`, and `observer`.
+  - Added invite create/list/revoke/accept REST endpoints and browser sidebar controls for GM invite creation plus invite acceptance into a campaign.
+  - Campaign archives omit active invite tokens and user password hashes.
+- Automated evidence:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/core test` passed with `2 passed`.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `20 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4436`
+  - SQLite file: `storage/manual-auth-invite-20260501.sqlite`
+  - Password registration returned an `ots_` owner session and did not return `passwordHash`.
+  - Created campaign `camp_momya2lyogjbhwn2` and an invite whose token started with `oti_`; the invite response and list response did not return `tokenHash`.
+  - Invite list showed status `pending`; accepting the invite created user `usr_momya2nnetjt81gi`, returned status `accepted`, and gave the joiner access only to `camp_momya2lyogjbhwn2`.
+  - The accepted member role was `player`; permissions included `token.move` and did not include `scene.update`.
+  - Bad email/password login returned `401`; good email/password login returned an `ots_` token.
+  - Reusing the accepted invite returned `409`.
+  - Revoking a second invite returned status `revoked`; accepting the revoked token returned `403`.
+- Manual browser evidence:
+  - Web: `http://127.0.0.1:5186`
+  - Playwright snapshot verified the GM sidebar showed the `Invites` form, created an invite for `browser.joiner@example.test`, showed status `Invite created`, and displayed a one-time `oti_` token.
+  - Accepting the token through the browser Join form switched the session selector to `Browser Joiner - player`, showed status `Synced`, and disabled GM-only scene, map, token, combat, fog, wall, and light controls.
+  - Screenshot saved at `output/playwright/auth-invite-joiner.png`.
+  - Browser console had only the existing missing `favicon.ico` error plus React/devtools and autocomplete advisory messages.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
-- Auth now has MVP bearer sessions for seeded users across REST, realtime, and asset blob access, but still lacks password login, OAuth, invites, account management, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
+- Auth now has bearer sessions, password registration/login, and campaign invites, but still lacks OAuth/SSO, password reset/email delivery, account administration, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
 - Uploaded maps now support local and S3/MinIO-backed storage, including archive export/import through the active provider. Production storage work still needs lifecycle policies, migration tooling, and CDN/presigned delivery.
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.

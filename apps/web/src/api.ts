@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, Campaign, CampaignMember, ChatMessage, Combat, Encounter, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserSession } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, Campaign, CampaignMember, ChatMessage, Combat, Encounter, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserRole, UserSession } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -19,6 +19,12 @@ export function getSessionToken(): string {
   return localStorage.getItem(sessionTokenKey) ?? "";
 }
 
+export function storeSession(login: SessionLoginInfo): void {
+  localStorage.setItem("otte:userId", login.user.id);
+  localStorage.setItem(sessionTokenKey, login.token);
+  localStorage.setItem(sessionTokenUserKey, login.user.id);
+}
+
 export async function loginSession(userId = getSessionUserId()): Promise<SessionLoginInfo> {
   const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
@@ -27,9 +33,32 @@ export async function loginSession(userId = getSessionUserId()): Promise<Session
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
-  localStorage.setItem(sessionTokenKey, login.token);
-  localStorage.setItem(sessionTokenUserKey, userId);
+  storeSession(login);
   return login;
+}
+
+export async function registerSession(input: { email: string; displayName: string; password: string }): Promise<SessionLoginInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const login = (await response.json()) as SessionLoginInfo;
+  storeSession(login);
+  return login;
+}
+
+export async function acceptInviteSession(input: { token: string; email: string; displayName: string; password: string }): Promise<InviteAcceptInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/invites/accept`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const accepted = (await response.json()) as InviteAcceptInfo;
+  storeSession(accepted);
+  return accepted;
 }
 
 async function ensureSessionToken(): Promise<string> {
@@ -102,6 +131,33 @@ export interface PublicSession extends Pick<UserSession, "id" | "userId" | "expi
 export interface SessionLoginInfo extends SessionInfo {
   token: string;
   session: PublicSession;
+}
+
+export interface CampaignInviteInfo {
+  id: string;
+  campaignId: string;
+  email?: string;
+  role: UserRole;
+  invitedByUserId: string;
+  acceptedByUserId?: string;
+  acceptedAt?: string;
+  expiresAt: string;
+  revokedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "pending" | "accepted" | "expired" | "revoked";
+}
+
+export interface InviteCreateInfo {
+  invite: CampaignInviteInfo;
+  token: string;
+  acceptUrl: string;
+}
+
+export interface InviteAcceptInfo extends SessionLoginInfo {
+  invite: CampaignInviteInfo;
+  membership: CampaignMemberInfo;
+  campaign: Campaign;
 }
 
 export interface CampaignMemberInfo extends CampaignMember {

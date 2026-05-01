@@ -1,7 +1,7 @@
-import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token } from "@open-tabletop/core";
-import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eye, FileText, Hand, Lightbulb, MessageSquare, Plus, ScrollText, Send, Shield, Swords, Upload, Users, WandSparkles } from "lucide-react";
+import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole } from "@open-tabletop/core";
+import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eye, FileText, Hand, Lightbulb, MessageSquare, Plus, ScrollText, Send, Shield, Swords, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, getSessionToken, getSessionUserId, loadSnapshot, loginSession, setSessionUserId, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, getSessionToken, getSessionUserId, loadSnapshot, loginSession, setSessionUserId, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -32,6 +32,13 @@ export function App() {
   const [diceFormula, setDiceFormula] = useState("1d20+5");
   const [chatBody, setChatBody] = useState("");
   const [aiPrompt, setAiPrompt] = useState("Draft a balanced vault guardian encounter for this party.");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<UserRole>("player");
+  const [inviteToken, setInviteToken] = useState("");
+  const [joinToken, setJoinToken] = useState("");
+  const [joinEmail, setJoinEmail] = useState("");
+  const [joinName, setJoinName] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const selectedScene = snapshot.scenes.find((scene) => scene.id === sceneId);
@@ -77,6 +84,33 @@ export function App() {
     setCurrentUserId(userId);
     setStatus("Switching session");
     await refresh(campaignId, sceneId);
+  }
+
+  async function createInvite() {
+    const result = await apiPost<InviteCreateInfo>(`/api/v1/campaigns/${campaignId}/invites`, {
+      email: inviteEmail.trim() || undefined,
+      role: inviteRole
+    });
+    setInviteToken(result.token);
+    setStatus("Invite created");
+  }
+
+  async function acceptInvite() {
+    const result = await acceptInviteSession({
+      token: joinToken.trim(),
+      email: joinEmail.trim(),
+      displayName: joinName.trim(),
+      password: joinPassword
+    });
+    setCurrentUserId(result.user.id);
+    setSessionToken(result.token);
+    setCampaignId(result.campaign.id);
+    setJoinToken("");
+    setJoinEmail("");
+    setJoinName("");
+    setJoinPassword("");
+    setStatus("Invite accepted");
+    await refresh(result.campaign.id);
   }
 
   async function createScene() {
@@ -314,6 +348,44 @@ export function App() {
             )}
           </select>
         </label>
+        {hasPermission("campaign.update") && (
+          <form
+            className="account-box"
+            onSubmit={(event) => {
+              event.preventDefault();
+              createInvite().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+            }}
+          >
+            <div className="section-title">Invites</div>
+            <input aria-label="Invite email" value={inviteEmail} placeholder="player@example.com" onChange={(event) => setInviteEmail(event.target.value)} />
+            <select aria-label="Invite role" value={inviteRole} onChange={(event) => setInviteRole(event.target.value as UserRole)}>
+              <option value="player">Player</option>
+              <option value="observer">Observer</option>
+              <option value="assistant_gm">Assistant GM</option>
+              <option value="gm">GM</option>
+            </select>
+            <button className="ghost-button wide" type="submit">
+              <UserPlus size={16} /> Invite
+            </button>
+            {inviteToken && <input aria-label="Invite token" readOnly value={inviteToken} onFocus={(event) => event.currentTarget.select()} />}
+          </form>
+        )}
+        <form
+          className="account-box"
+          onSubmit={(event) => {
+            event.preventDefault();
+            acceptInvite().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+          }}
+        >
+          <div className="section-title">Join</div>
+          <input aria-label="Invite token" value={joinToken} placeholder="oti_..." onChange={(event) => setJoinToken(event.target.value)} />
+          <input aria-label="Join email" value={joinEmail} placeholder="player@example.com" onChange={(event) => setJoinEmail(event.target.value)} />
+          <input aria-label="Display name" value={joinName} placeholder="Display name" onChange={(event) => setJoinName(event.target.value)} />
+          <input aria-label="Password" type="password" value={joinPassword} placeholder="Password" onChange={(event) => setJoinPassword(event.target.value)} />
+          <button className="ghost-button wide" type="submit" disabled={!joinToken.trim() || !joinEmail.trim() || !joinPassword}>
+            <ChevronRight size={16} /> Join
+          </button>
+        </form>
         <button className="ghost-button" onClick={createScene} disabled={!hasPermission("scene.create")}>
           <Plus size={16} /> Scene
         </button>

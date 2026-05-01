@@ -157,6 +157,26 @@ input:disabled {
   background: #1b1812;
 }
 
+.account-box {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1b1812;
+}
+
+.account-box input,
+.account-box select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--paper);
+  background: #15130f;
+}
+
 .status {
   margin-top: auto;
   padding-top: 16px;

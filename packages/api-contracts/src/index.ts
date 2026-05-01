@@ -3,10 +3,14 @@ export const apiVersion = "v1";
 export const routes = {
   health: "/api/v1/health",
   session: "/api/v1/auth/session",
+  register: "/api/v1/auth/register",
   login: "/api/v1/auth/login",
   logout: "/api/v1/auth/logout",
   campaigns: "/api/v1/campaigns",
   campaign: (campaignId: string) => `/api/v1/campaigns/${campaignId}`,
+  campaignInvites: (campaignId: string) => `/api/v1/campaigns/${campaignId}/invites`,
+  acceptInvite: "/api/v1/invites/accept",
+  revokeInvite: (inviteId: string) => `/api/v1/invites/${inviteId}/revoke`,
   scenes: (campaignId: string) => `/api/v1/campaigns/${campaignId}/scenes`,
   assets: (campaignId: string) => `/api/v1/campaigns/${campaignId}/assets`,
   uploadAsset: (campaignId: string) => `/api/v1/campaigns/${campaignId}/assets/upload`,
@@ -45,6 +49,7 @@ export const routes = {
 
 const endpointSpecs = [
   ["GET", routes.health],
+  ["POST", routes.register],
   ["POST", routes.login],
   ["POST", routes.logout],
   ["GET", routes.session],
@@ -53,6 +58,10 @@ const endpointSpecs = [
   ["GET", "/api/v1/campaigns/{campaignId}"],
   ["PATCH", "/api/v1/campaigns/{campaignId}"],
   ["DELETE", "/api/v1/campaigns/{campaignId}"],
+  ["GET", "/api/v1/campaigns/{campaignId}/invites"],
+  ["POST", "/api/v1/campaigns/{campaignId}/invites"],
+  ["POST", routes.acceptInvite],
+  ["POST", "/api/v1/invites/{inviteId}/revoke"],
   ["GET", "/api/v1/campaigns/{campaignId}/scenes"],
   ["POST", "/api/v1/campaigns/{campaignId}/scenes"],
   ["GET", "/api/v1/campaigns/{campaignId}/assets"],

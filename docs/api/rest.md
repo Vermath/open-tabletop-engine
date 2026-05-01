@@ -2,9 +2,10 @@
 
 The API is served from `apps/api` and exposes:
 
-Authenticated endpoints require a bearer session token. Create one with `POST /api/v1/auth/login`, then send `Authorization: Bearer <token>` on REST requests. The seeded local users are `usr_demo_gm` and `usr_demo_player`. The legacy `x-user-id` header remains available for local test compatibility, but the browser client and documented flows use bearer sessions. Asset blob and realtime URLs accept `sessionToken=<token>` for contexts that cannot set an `Authorization` header.
+Authenticated endpoints require a bearer session token. Create one with `POST /api/v1/auth/login` or `POST /api/v1/auth/register`, then send `Authorization: Bearer <token>` on REST requests. Password-backed users authenticate by email and password. The seeded local users are `usr_demo_gm` and `usr_demo_player`; they remain passwordless for local test compatibility. The legacy `x-user-id` header remains available for local test compatibility, but the browser client and documented flows use bearer sessions. Asset blob and realtime URLs accept `sessionToken=<token>` for contexts that cannot set an `Authorization` header.
 
 - `GET /api/v1/health`
+- `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/session`
@@ -12,6 +13,9 @@ Authenticated endpoints require a bearer session token. Create one with `POST /a
 - `GET|POST /api/v1/campaigns`
 - `GET|PATCH|DELETE /api/v1/campaigns/{campaignId}`
 - `GET /api/v1/campaigns/{campaignId}/members`
+- `GET|POST /api/v1/campaigns/{campaignId}/invites`
+- `POST /api/v1/invites/accept`
+- `POST /api/v1/invites/{inviteId}/revoke`
 - `GET|POST /api/v1/campaigns/{campaignId}/scenes`
 - `GET|POST /api/v1/campaigns/{campaignId}/assets`
 - `POST /api/v1/campaigns/{campaignId}/assets/upload`
@@ -68,6 +72,32 @@ curl -X POST \
   --data '{"userId":"usr_demo_gm"}' \
   "http://localhost:4000/api/v1/auth/login"
 ```
+
+Register a password user:
+
+```bash
+curl -X POST \
+  -H "content-type: application/json" \
+  --data '{"email":"player@example.com","displayName":"New Player","password":"replace-this-password"}' \
+  "http://localhost:4000/api/v1/auth/register"
+```
+
+Invite a player and accept the invite:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"email":"player@example.com","role":"player","expiresInDays":14}' \
+  "http://localhost:4000/api/v1/campaigns/camp_demo/invites"
+
+curl -X POST \
+  -H "content-type: application/json" \
+  --data '{"token":"oti_...","email":"player@example.com","displayName":"New Player","password":"replace-this-password"}' \
+  "http://localhost:4000/api/v1/invites/accept"
+```
+
+Invite tokens are returned only once at creation and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. Campaign exports omit active invite tokens and password hashes.
 
 Map upload accepts raw image bytes with an authenticated bearer token:
 

@@ -5,6 +5,7 @@ export function emptyState(): EngineState {
   return {
     users: [],
     sessions: [],
+    invites: [],
     campaigns: [],
     members: [],
     worlds: [],
@@ -171,8 +172,9 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
   const memberUserIds = new Set(state.members.filter((item) => item.campaignId === campaignId).map((item) => item.userId));
   const campaignData: EngineState = {
     ...emptyState(),
-    users: state.users.filter((item) => memberUserIds.has(item.id)),
+    users: state.users.filter((item) => memberUserIds.has(item.id)).map(({ passwordHash: _passwordHash, ...user }) => user),
     sessions: [],
+    invites: [],
     campaigns: state.campaigns.filter((item) => item.id === campaignId),
     members: state.members.filter((item) => item.campaignId === campaignId),
     worlds: state.worlds.filter((item) => item.campaignId === campaignId),

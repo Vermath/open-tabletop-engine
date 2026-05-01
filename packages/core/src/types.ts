@@ -15,6 +15,7 @@ export interface User extends Timestamps {
   id: ID;
   displayName: string;
   email?: string;
+  passwordHash?: string;
 }
 
 export interface UserSession extends Timestamps {
@@ -39,6 +40,19 @@ export interface CampaignMember extends Timestamps {
   campaignId: ID;
   userId: ID;
   role: UserRole;
+}
+
+export interface CampaignInvite extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  tokenHash: string;
+  email?: string;
+  role: UserRole;
+  invitedByUserId: ID;
+  acceptedByUserId?: ID;
+  acceptedAt?: string;
+  expiresAt: string;
+  revokedAt?: string;
 }
 
 export interface World extends Timestamps {
@@ -383,6 +397,7 @@ export interface CampaignArchiveFile {
 export interface EngineState {
   users: User[];
   sessions: UserSession[];
+  invites: CampaignInvite[];
   campaigns: Campaign[];
   members: CampaignMember[];
   worlds: World[];

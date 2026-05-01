@@ -1,11 +1,11 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { basename, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserSession } from "@open-tabletop/core";
+import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -50,17 +50,40 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.get("/api/v1/openapi.json", async () => openApiSpec);
 
-  app.post<{ Body: { userId?: string; email?: string } }>("/api/v1/auth/login", async (request, reply) => {
+  app.post<{ Body: { userId?: string; email?: string; password?: string } }>("/api/v1/auth/login", async (request, reply) => {
     pruneExpiredSessions(store);
-    const user = store.state.users.find((item) => item.id === request.body.userId || (request.body.email && item.email === request.body.email));
+    const user = findLoginUser(store, request.body);
     if (!user) return unauthorized(reply, "Unknown login identity");
+    if (user.passwordHash && !verifyPassword(request.body.password ?? "", user.passwordHash)) return unauthorized(reply, "Invalid login credentials");
     const { token, session } = createUserSession(store, user.id);
     store.save();
     return {
       token,
       session: publicSession(session),
-      user,
+      user: publicUser(user),
       memberships: store.state.members.filter((member) => member.userId === user.id)
+    };
+  });
+
+  app.post<{ Body: { email?: string; displayName?: string; password?: string } }>("/api/v1/auth/register", async (request, reply) => {
+    const email = normalizeEmail(request.body.email);
+    if (!email) return badRequest(reply, "A valid email is required");
+    if (!isUsablePassword(request.body.password)) return badRequest(reply, "Password must be at least 8 characters");
+    if (store.state.users.some((user) => normalizeEmail(user.email) === email)) return conflict(reply, "Email is already registered");
+    const displayName = normalizeDisplayName(request.body.displayName) ?? email.split("@")[0] ?? "Player";
+    const user = createTimestamped("usr", {
+      displayName,
+      email,
+      passwordHash: hashPassword(request.body.password)
+    }) satisfies User;
+    store.state.users.push(user);
+    const { token, session } = createUserSession(store, user.id);
+    store.save();
+    return {
+      token,
+      session: publicSession(session),
+      user: publicUser(user),
+      memberships: []
     };
   });
 
@@ -76,8 +99,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     const session = sessionFromRequest(store, undefined, request.headers);
+    const user = store.state.users.find((item) => item.id === userId);
+    if (!user) return unauthorized(reply, "Unknown user session");
     return {
-      user: store.state.users.find((user) => user.id === userId) ?? store.state.users[0],
+      user: publicUser(user),
       session: session ? publicSession(session) : undefined,
       memberships: store.state.members.filter((member) => member.userId === userId)
     };
@@ -149,6 +174,105 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
     return store.state.members.filter((member) => member.campaignId === request.params.campaignId).map((member) => memberSessionInfo(store, member));
+  });
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/invites", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    return store.state.invites.filter((invite) => invite.campaignId === request.params.campaignId).map(publicInvite);
+  });
+
+  app.post<{ Params: { campaignId: string }; Body: { email?: string; role?: UserRole; expiresInDays?: number } }>("/api/v1/campaigns/:campaignId/invites", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    const role = request.body.role ?? "player";
+    if (!isInvitableRole(role)) return badRequest(reply, "Invite role must be gm, assistant_gm, player, or observer");
+    const email = request.body.email === undefined ? undefined : normalizeEmail(request.body.email);
+    if (request.body.email !== undefined && !email) return badRequest(reply, "Invite email is invalid");
+    const expiresInDays = inviteExpirationDays(request.body.expiresInDays);
+    const token = `oti_${randomBytes(32).toString("base64url")}`;
+    const invite = createTimestamped("inv", {
+      campaignId: campaign.id,
+      tokenHash: hashSessionToken(token),
+      email,
+      role,
+      invitedByUserId: currentUserId(store, request.headers)!,
+      expiresAt: new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000).toISOString()
+    }) satisfies CampaignInvite;
+    store.state.invites.push(invite);
+    store.save();
+    return {
+      invite: publicInvite(invite),
+      token,
+      acceptUrl: `/join?invite=${encodeURIComponent(token)}`
+    };
+  });
+
+  app.post<{ Params: { inviteId: string } }>("/api/v1/invites/:inviteId/revoke", async (request, reply) => {
+    const invite = store.state.invites.find((item) => item.id === request.params.inviteId);
+    if (!invite) return notFound(reply, "Invite not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, invite.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    if (!invite.acceptedAt) {
+      invite.revokedAt = nowIso();
+      invite.updatedAt = invite.revokedAt;
+      store.save();
+    }
+    return publicInvite(invite);
+  });
+
+  app.post<{ Body: { token?: string; userId?: string; email?: string; displayName?: string; password?: string } }>("/api/v1/invites/accept", async (request, reply) => {
+    const token = request.body.token?.trim();
+    if (!token) return badRequest(reply, "Invite token is required");
+    const invite = store.state.invites.find((item) => item.tokenHash === hashSessionToken(token));
+    if (!invite) return unauthorized(reply, "Invite token is invalid");
+    if (invite.revokedAt) return forbidden(reply, "Invite has been revoked");
+    if (invite.acceptedAt) return conflict(reply, "Invite has already been accepted");
+    if (Date.parse(invite.expiresAt) <= Date.now()) return forbidden(reply, "Invite has expired");
+    const campaign = store.state.campaigns.find((item) => item.id === invite.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    if (invite.email && request.body.email !== undefined && normalizeEmail(request.body.email) !== invite.email) return forbidden(reply, "Invite is restricted to a different email");
+
+    const user = resolveInviteUser(store, request.headers, request.body, reply);
+    if (!("id" in user)) return user;
+    if (invite.email && normalizeEmail(user.email) !== invite.email) return forbidden(reply, "Invite is restricted to a different email");
+
+    let member = store.state.members.find((item) => item.campaignId === invite.campaignId && item.userId === user.id);
+    if (!member) {
+      member = createTimestamped("mem", {
+        campaignId: invite.campaignId,
+        userId: user.id,
+        role: invite.role
+      }) satisfies CampaignMember;
+      store.state.members.push(member);
+    } else if (member.role !== "owner") {
+      member.role = invite.role;
+      member.updatedAt = nowIso();
+    }
+    invite.acceptedAt = nowIso();
+    invite.acceptedByUserId = user.id;
+    invite.updatedAt = invite.acceptedAt;
+    const { token: sessionToken, session } = createUserSession(store, user.id);
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: invite.campaignId,
+        type: "campaign.member.joined",
+        actorUserId: user.id,
+        targetId: user.id,
+        payload: member
+      })
+    );
+    return {
+      token: sessionToken,
+      session: publicSession(session),
+      user: publicUser(user),
+      invite: publicInvite(invite),
+      membership: memberSessionInfo(store, member),
+      campaign
+    };
   });
 
   app.patch<{ Params: { campaignId: string }; Body: Partial<Campaign> }>("/api/v1/campaigns/:campaignId", async (request, reply) => {
@@ -1758,6 +1882,86 @@ function memberSessionInfo(
   };
 }
 
+function findLoginUser(store: StateStore, input: { userId?: string; email?: string }): User | undefined {
+  const email = normalizeEmail(input.email);
+  return store.state.users.find((user) => user.id === input.userId || (email !== undefined && normalizeEmail(user.email) === email));
+}
+
+function resolveInviteUser(store: StateStore, headers: Record<string, string | string[] | undefined>, input: { userId?: string; email?: string; displayName?: string; password?: string }, reply: FastifyReply): User | FastifyReply {
+  const session = sessionFromRequest(store, undefined, headers);
+  if (session) {
+    const sessionUser = store.state.users.find((user) => user.id === session.userId);
+    return sessionUser ?? unauthorized(reply, "Unknown user session");
+  }
+
+  const existingUser = findLoginUser(store, input);
+  if (existingUser) {
+    if (existingUser.passwordHash && !verifyPassword(input.password ?? "", existingUser.passwordHash)) return unauthorized(reply, "Invalid login credentials");
+    return existingUser;
+  }
+  if (input.userId) return unauthorized(reply, "Unknown login identity");
+
+  const email = normalizeEmail(input.email);
+  if (!email) return badRequest(reply, "A valid email is required");
+  if (!isUsablePassword(input.password)) return badRequest(reply, "Password must be at least 8 characters");
+  const displayName = normalizeDisplayName(input.displayName) ?? email.split("@")[0] ?? "Player";
+  const user = createTimestamped("usr", {
+    displayName,
+    email,
+    passwordHash: hashPassword(input.password)
+  }) satisfies User;
+  store.state.users.push(user);
+  return user;
+}
+
+function publicUser(user: User): Omit<User, "passwordHash"> {
+  const { passwordHash: _passwordHash, ...safeUser } = user;
+  return safeUser;
+}
+
+type PublicInviteStatus = "pending" | "accepted" | "expired" | "revoked";
+
+function publicInvite(invite: CampaignInvite): Omit<CampaignInvite, "tokenHash"> & { status: PublicInviteStatus } {
+  const { tokenHash: _tokenHash, ...safeInvite } = invite;
+  return {
+    ...safeInvite,
+    status: inviteStatus(invite)
+  };
+}
+
+function inviteStatus(invite: CampaignInvite): PublicInviteStatus {
+  if (invite.revokedAt) return "revoked";
+  if (invite.acceptedAt) return "accepted";
+  if (Date.parse(invite.expiresAt) <= Date.now()) return "expired";
+  return "pending";
+}
+
+const invitableRoles = new Set<UserRole>(["gm", "assistant_gm", "player", "observer"]);
+
+function isInvitableRole(value: unknown): value is UserRole {
+  return invitableRoles.has(value as UserRole);
+}
+
+function inviteExpirationDays(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 14;
+  return Math.min(30, Math.max(1, Math.trunc(value)));
+}
+
+function normalizeEmail(value: string | undefined): string | undefined {
+  const email = value?.trim().toLowerCase();
+  if (!email || !email.includes("@") || email.length > 254) return undefined;
+  return email;
+}
+
+function normalizeDisplayName(value: string | undefined): string | undefined {
+  const displayName = value?.trim();
+  return displayName && displayName.length <= 80 ? displayName : undefined;
+}
+
+function isUsablePassword(value: string | undefined): value is string {
+  return typeof value === "string" && value.length >= 8;
+}
+
 function canReadChatMessage(store: StateStore, userId: string, message: ChatMessage): boolean {
   if (message.visibility === "public") return true;
   if (message.visibility === "whisper") {
@@ -1818,6 +2022,19 @@ function sessionTokenFromRequest(requestUrl: string | undefined, headers: Record
   if (cookieToken) return decodeURIComponent(cookieToken);
   const url = new URL(requestUrl ?? "/api/v1/realtime", "http://localhost");
   return url.searchParams.get("sessionToken") ?? undefined;
+}
+
+function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("base64url");
+  return `scrypt:${salt}:${scryptSync(password, salt, 32).toString("base64url")}`;
+}
+
+function verifyPassword(password: string, storedHash: string): boolean {
+  const [algorithm, salt, expected] = storedHash.split(":");
+  if (algorithm !== "scrypt" || !salt || !expected) return false;
+  const expectedBytes = Buffer.from(expected, "base64url");
+  const actualBytes = scryptSync(password, salt, expectedBytes.length);
+  return expectedBytes.length === actualBytes.length && timingSafeEqual(expectedBytes, actualBytes);
 }
 
 function hashSessionToken(token: string): string {
@@ -1991,6 +2208,7 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
   return {
     users: upsertRecords(state.users, archive.data.users),
     sessions: 0,
+    invites: 0,
     campaigns: upsertRecords(state.campaigns, archive.data.campaigns),
     members: upsertRecords(state.members, archive.data.members),
     worlds: upsertRecords(state.worlds, archive.data.worlds),
@@ -2043,10 +2261,18 @@ function notFound(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(404).send({ error: "not_found", message });
 }
 
+function badRequest(reply: FastifyReply, message: string): FastifyReply {
+  return reply.code(400).send({ error: "bad_request", message });
+}
+
 function unauthorized(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(401).send({ error: "unauthorized", message });
 }
 
 function forbidden(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(403).send({ error: "forbidden", message });
+}
+
+function conflict(reply: FastifyReply, message: string): FastifyReply {
+  return reply.code(409).send({ error: "conflict", message });
 }

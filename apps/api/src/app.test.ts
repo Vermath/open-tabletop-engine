@@ -191,6 +191,186 @@ describe("api", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("registers password users and requires valid credentials", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const registered = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/register",
+      payload: {
+        email: "New.User@Example.Test",
+        displayName: "New User",
+        password: "correct horse"
+      }
+    });
+    expect(registered.statusCode).toBe(200);
+    expect(registered.json().token).toMatch(/^ots_/);
+    expect(registered.json().user).toMatchObject({
+      displayName: "New User",
+      email: "new.user@example.test"
+    });
+    expect(registered.json().user).not.toHaveProperty("passwordHash");
+    expect(store.state.users.find((user) => user.email === "new.user@example.test")?.passwordHash).toMatch(/^scrypt:/);
+
+    const badLogin = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: {
+        email: "new.user@example.test",
+        password: "wrong password"
+      }
+    });
+    expect(badLogin.statusCode).toBe(401);
+
+    const goodLogin = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: {
+        email: "NEW.USER@example.test",
+        password: "correct horse"
+      }
+    });
+    expect(goodLogin.statusCode).toBe(200);
+    expect(goodLogin.json().user.email).toBe("new.user@example.test");
+    expect(goodLogin.json().user).not.toHaveProperty("passwordHash");
+
+    const duplicate = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/register",
+      payload: {
+        email: "new.user@example.test",
+        displayName: "Duplicate",
+        password: "correct horse"
+      }
+    });
+    expect(duplicate.statusCode).toBe(409);
+
+    await app.close();
+  });
+
+  it("supports campaign invites for new password users", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const blockedInvite = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/invites",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { email: "blocked@example.test", role: "player" }
+    });
+    expect(blockedInvite.statusCode).toBe(403);
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/invites",
+      headers: authHeaders,
+      payload: {
+        email: "Invited.Player@Example.Test",
+        role: "player",
+        expiresInDays: 3
+      }
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.json().token).toMatch(/^oti_/);
+    expect(created.json().invite).toMatchObject({
+      campaignId: "camp_demo",
+      email: "invited.player@example.test",
+      role: "player",
+      status: "pending"
+    });
+    expect(created.json().invite).not.toHaveProperty("tokenHash");
+
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/invites",
+      headers: authHeaders
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()[0]).toEqual(expect.objectContaining({ email: "invited.player@example.test", status: "pending" }));
+    expect(listed.json()[0]).not.toHaveProperty("tokenHash");
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/api/v1/invites/accept",
+      payload: {
+        token: created.json().token,
+        email: "invited.player@example.test",
+        displayName: "Invited Player",
+        password: "join table"
+      }
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json().token).toMatch(/^ots_/);
+    expect(accepted.json().user).toMatchObject({ displayName: "Invited Player", email: "invited.player@example.test" });
+    expect(accepted.json().user).not.toHaveProperty("passwordHash");
+    expect(accepted.json().invite.status).toBe("accepted");
+    expect(accepted.json().membership).toMatchObject({
+      campaignId: "camp_demo",
+      role: "player",
+      user: { email: "invited.player@example.test" }
+    });
+    expect(accepted.json().membership.permissions).toContain("token.move");
+    expect(accepted.json().membership.permissions).not.toContain("scene.update");
+    expect(store.state.users.find((user) => user.email === "invited.player@example.test")?.passwordHash).toMatch(/^scrypt:/);
+
+    const reused = await app.inject({
+      method: "POST",
+      url: "/api/v1/invites/accept",
+      payload: {
+        token: created.json().token,
+        email: "another@example.test",
+        displayName: "Another",
+        password: "join table"
+      }
+    });
+    expect(reused.statusCode).toBe(409);
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: {
+        email: "invited.player@example.test",
+        password: "join table"
+      }
+    });
+    expect(login.statusCode).toBe(200);
+    const campaigns = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns",
+      headers: { authorization: `Bearer ${login.json().token}` }
+    });
+    expect(campaigns.statusCode).toBe(200);
+    expect(campaigns.json().map((campaign: { id: string }) => campaign.id)).toEqual(["camp_demo"]);
+
+    const revocable = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/invites",
+      headers: authHeaders,
+      payload: { email: "revoked@example.test", role: "observer" }
+    });
+    const revoked = await app.inject({
+      method: "POST",
+      url: `/api/v1/invites/${revocable.json().invite.id}/revoke`,
+      headers: authHeaders
+    });
+    expect(revoked.statusCode).toBe(200);
+    expect(revoked.json().status).toBe("revoked");
+    const acceptRevoked = await app.inject({
+      method: "POST",
+      url: "/api/v1/invites/accept",
+      payload: {
+        token: revocable.json().token,
+        email: "revoked@example.test",
+        displayName: "Revoked",
+        password: "join table"
+      }
+    });
+    expect(acceptRevoked.statusCode).toBe(403);
+
+    await app.close();
+  });
+
   it("filters hidden tokens from player reads and mutations", async () => {
     const store = new MemoryStateStore();
     store.state.tokens.push({

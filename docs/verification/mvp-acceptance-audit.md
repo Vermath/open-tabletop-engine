@@ -125,7 +125,7 @@ Open the browser client at the configured web URL, for example `http://127.0.0.1
 | Requirement | Evidence |
 | --- | --- |
 | Durable storage, migrations, and restart-safe campaign state | `c7c3fb7 feat: add durable sqlite store and session permissions`; API restart persistence test; manual API persistence evidence in `docs/verification/mvp-progress.md`. |
-| Auth/session handling and REST/realtime/blob permissions | `3ce9a8d feat: add durable bearer sessions`; browser/API bearer evidence; API tests for login, logout, restart-safe token lookup, no-token `401`, and session-token blob/realtime access. |
+| Auth/session handling, password accounts, campaign invites, and REST/realtime/blob permissions | `3ce9a8d feat: add durable bearer sessions` plus the password accounts and campaign invites slice in `docs/verification/mvp-progress.md`; browser/API bearer evidence; API tests for login, logout, restart-safe token lookup, no-token `401`, password registration/login, invite create/list/accept/revoke, and session-token blob/realtime access. |
 | Campaigns, scenes, maps/assets, tokens, dice, chat, actors, sheets, journals, combat, fog/walls/lights | Verified milestone evidence for uploaded maps, GM/player session switching, hidden-token filtering, fog/vision filtering, token movement ownership, fog/wall/light authoring, dice/chat/API tests, actor sheet UI, journal visibility tests, combat UI/API, and clean-checkout role/ownership acceptance in `docs/verification/mvp-progress.md`. |
 | Realtime movement across two browser sessions | `3a3e81a feat: add plugin and system runtimes` and `3db3da6 feat: add demo player session switching` manual browser evidence verify second-client realtime token movement; the clean role audit above confirms a player-owned drag in one browser updates the GM browser in a fresh checkout. |
 | Export/import round-trips campaign data and uploaded assets | `6d9e56c feat: round trip campaign archives`, `7b73c10 feat: archive uploaded asset files`, and `a08b7ce feat: back assets with s3 storage`; tests and manual source/target API evidence verify scenes, tokens, actors, journals, encounters, permissions, assets, local uploaded blob restoration, and S3/MinIO uploaded blob restoration. |
@@ -139,7 +139,7 @@ Open the browser client at the configured web URL, for example `http://127.0.0.1
 
 These are intentionally not counted as blockers for the current PRD MVP acceptance:
 
-- Password login, OAuth, invites, account administration, and production session administration.
+- OAuth/SSO, password reset/email delivery, account administration, and production session administration.
 - Asset storage lifecycle policies, migration tooling, CDN delivery, and presigned URL flows beyond the verified local and S3/MinIO storage backends.
 - Advanced polygon line-of-sight, dynamic fog tools, colored lighting, terrain walls, and production-grade vision rendering.
 - Sandboxed third-party plugin module loading; the MVP verifies a permissioned sample plugin runtime path.
