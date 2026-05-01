@@ -469,7 +469,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const token = store.state.tokens.find((item) => item.id === request.params.tokenId);
     if (!token) return notFound(reply, "Token not found");
     const userId = currentUserId(request.headers)!;
-    if (token.hidden && !canReadHiddenTokens(store, userId, campaignId)) return notFound(reply, "Token not found");
+    if (!isTokenVisibleToUser(store, userId, campaignId, token)) return notFound(reply, "Token not found");
     const scene = store.state.scenes.find((item) => item.id === token.sceneId);
     Object.assign(token, request.body, { updatedAt: nowIso() });
     store.save();
@@ -495,7 +495,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const index = store.state.tokens.findIndex((item) => item.id === request.params.tokenId);
     if (index < 0) return notFound(reply, "Token not found");
     const userId = currentUserId(request.headers)!;
-    if (store.state.tokens[index]!.hidden && !canReadHiddenTokens(store, userId, campaignId)) return notFound(reply, "Token not found");
+    if (!isTokenVisibleToUser(store, userId, campaignId, store.state.tokens[index]!)) return notFound(reply, "Token not found");
     const deleted = store.state.tokens.splice(index, 1)[0]!;
     store.save();
     const scene = store.state.scenes.find((item) => item.id === deleted.sceneId);
@@ -1396,19 +1396,61 @@ function permissionsForUser(store: StateStore, userId: string, campaignId: strin
 
 function visibleTokensForUser(store: StateStore, userId: string, campaignId: string, tokens: Token[]): Token[] {
   if (canReadHiddenTokens(store, userId, campaignId)) return tokens;
-  return tokens.filter((token) => !token.hidden);
+  return tokens.filter((token) => isTokenVisibleToUser(store, userId, campaignId, token, tokens));
 }
 
 function canReadHiddenTokens(store: StateStore, userId: string, campaignId: string): boolean {
   return canCampaign(store, userId, campaignId, "token.update") || canCampaign(store, userId, campaignId, "scene.update");
 }
 
+function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: string, token: Token, sceneTokens?: Token[]): boolean {
+  if (canReadHiddenTokens(store, userId, campaignId)) return true;
+  if (token.hidden) return false;
+  if (isTokenOwnedByUser(store, userId, token)) return true;
+  const scene = store.state.scenes.find((item) => item.id === token.sceneId);
+  if (!scene) return false;
+  const activeFog = scene.fog.filter((region) => !region.hidden);
+  if (activeFog.length === 0) return true;
+  const center = tokenCenter(token);
+  if (activeFog.some((region) => distance(center, region) <= region.radius)) return true;
+  const tokens = sceneTokens ?? store.state.tokens.filter((item) => item.sceneId === scene.id);
+  const ownedVisionTokens = tokens.filter((item) => item.visionEnabled && item.visionRadius > 0 && isTokenOwnedByUser(store, userId, item));
+  return ownedVisionTokens.some((ownedToken) => {
+    const origin = tokenCenter(ownedToken);
+    return distance(origin, center) <= ownedToken.visionRadius && !scene.walls.some((wall) => wall.blocksVision && segmentsIntersect(origin, center, { x: wall.x1, y: wall.y1 }, { x: wall.x2, y: wall.y2 }));
+  });
+}
+
+function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): boolean {
+  return Boolean(token.actorId && store.state.actors.some((actor) => actor.id === token.actorId && actor.ownerUserId === userId));
+}
+
+function tokenCenter(token: Token): { x: number; y: number } {
+  return { x: token.x + token.width / 2, y: token.y + token.height / 2 };
+}
+
+function distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function segmentsIntersect(a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }, d: { x: number; y: number }): boolean {
+  const abC = orientation(a, b, c);
+  const abD = orientation(a, b, d);
+  const cdA = orientation(c, d, a);
+  const cdB = orientation(c, d, b);
+  return abC * abD <= 0 && cdA * cdB <= 0;
+}
+
+function orientation(a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }): number {
+  return Math.sign((b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y));
+}
+
 function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined): EngineEvent | undefined {
   if (!userId || !event.type.startsWith("token.")) return event;
   const token = event.payload as Partial<Token> | undefined;
-  if (!token?.hidden || !token.sceneId) return event;
+  if (!token?.sceneId) return event;
   const campaignId = campaignIdForScene(store, token.sceneId) ?? event.campaignId;
-  if (canReadHiddenTokens(store, userId, campaignId)) return event;
+  if (isTokenVisibleToUser(store, userId, campaignId, token as Token)) return event;
   return {
     ...event,
     type: "scene.updated",

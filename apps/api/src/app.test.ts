@@ -174,6 +174,99 @@ describe("api", () => {
     await app.close();
   });
 
+  it("filters player token visibility by fog, owned vision, and walls", async () => {
+    const store = new MemoryStateStore();
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.fog = [{ id: "fog_southeast", x: 900, y: 700, radius: 120, hidden: false }];
+    scene.walls = [{ id: "wall_screen", x1: 200, y1: 300, x2: 600, y2: 300, blocksVision: true }];
+    const valen = store.state.tokens.find((item) => item.id === "tok_valen")!;
+    valen.visionRadius = 220;
+    store.state.tokens.push(
+      {
+        id: "tok_visible_guard",
+        sceneId: "scn_vault_entry",
+        name: "Visible Guard",
+        x: 450,
+        y: 350,
+        width: 50,
+        height: 50,
+        rotation: 0,
+        hidden: false,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition: "hostile",
+        metadata: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      },
+      {
+        id: "tok_blocked_guard",
+        sceneId: "scn_vault_entry",
+        name: "Blocked Guard",
+        x: 300,
+        y: 200,
+        width: 50,
+        height: 50,
+        rotation: 0,
+        hidden: false,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition: "hostile",
+        metadata: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      },
+      {
+        id: "tok_fog_scout",
+        sceneId: "scn_vault_entry",
+        name: "Fog Scout",
+        x: 880,
+        y: 680,
+        width: 50,
+        height: 50,
+        rotation: 0,
+        hidden: false,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition: "neutral",
+        metadata: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      }
+    );
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    const playerTokens = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: playerHeaders
+    });
+    expect(playerTokens.statusCode).toBe(200);
+    expect(playerTokens.json().map((token: { id: string }) => token.id)).toEqual(["tok_valen", "tok_visible_guard", "tok_fog_scout"]);
+
+    const gmTokens = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: authHeaders
+    });
+    expect(gmTokens.statusCode).toBe(200);
+    expect(gmTokens.json().map((token: { id: string }) => token.id)).toContain("tok_blocked_guard");
+
+    const blockedMove = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_blocked_guard",
+      headers: playerHeaders,
+      payload: { x: 360, y: 220 }
+    });
+    expect(blockedMove.statusCode).toBe(404);
+
+    await app.close();
+  });
+
   it("covers auth, assets, fog, encounter design, and session memory", async () => {
     const app = await buildApp({ store: new MemoryStateStore() });
 
