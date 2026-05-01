@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -59,6 +60,37 @@ function restoreEnv(snapshot: Record<string, string | undefined>): void {
       process.env[key] = value;
     }
   }
+}
+
+const testBase32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function testTotpCode(secret: string, nowMs = Date.now()): string {
+  const counter = Math.floor(nowMs / 30_000);
+  const counterBytes = Buffer.alloc(8);
+  counterBytes.writeUInt32BE(Math.floor(counter / 0x100000000), 0);
+  counterBytes.writeUInt32BE(counter % 0x100000000, 4);
+  const digest = createHmac("sha1", testBase32Decode(secret)).update(counterBytes).digest();
+  const offset = digest[digest.length - 1]! & 0x0f;
+  const binary = ((digest[offset]! & 0x7f) << 24) | ((digest[offset + 1]! & 0xff) << 16) | ((digest[offset + 2]! & 0xff) << 8) | (digest[offset + 3]! & 0xff);
+  return String(binary % 1_000_000).padStart(6, "0");
+}
+
+function testBase32Decode(input: string): Buffer {
+  const bytes: number[] = [];
+  let value = 0;
+  let bits = 0;
+  for (const char of input.toUpperCase().replace(/[=\s-]/g, "")) {
+    const index = testBase32Alphabet.indexOf(char);
+    if (index < 0) throw new Error(`Invalid test base32 character: ${char}`);
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+      value &= (1 << bits) - 1;
+    }
+  }
+  return Buffer.from(bytes);
 }
 
 describe("api", () => {
@@ -434,6 +466,132 @@ describe("api", () => {
         }
       });
       expect(relogin.statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("enrolls TOTP MFA and requires a code or recovery code at login", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    try {
+      const registered = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          email: "mfa.owner@example.test",
+          displayName: "MFA Owner",
+          password: "original password"
+        }
+      });
+      expect(registered.statusCode).toBe(200);
+      const headers = { authorization: `Bearer ${registered.json().token}` };
+
+      const initialStatus = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/mfa",
+        headers
+      });
+      expect(initialStatus.statusCode).toBe(200);
+      expect(initialStatus.json()).toMatchObject({ totpEnabled: false, totpPending: false, recoveryCodeCount: 0 });
+
+      const rejectedEnroll = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/mfa/totp/enroll",
+        headers,
+        payload: { currentPassword: "wrong password" }
+      });
+      expect(rejectedEnroll.statusCode).toBe(401);
+
+      const enrolled = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/mfa/totp/enroll",
+        headers,
+        payload: { currentPassword: "original password" }
+      });
+      expect(enrolled.statusCode).toBe(200);
+      expect(enrolled.json().secret).toMatch(/^[A-Z2-7]+$/);
+      expect(enrolled.json().otpauthUrl).toContain("otpauth://totp/");
+      expect(enrolled.json().mfa).toMatchObject({ totpEnabled: false, totpPending: true });
+
+      const secret = enrolled.json().secret as string;
+      const badConfirm = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/mfa/totp/confirm",
+        headers,
+        payload: { code: "abcdef" }
+      });
+      expect(badConfirm.statusCode).toBe(401);
+
+      const confirmed = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/mfa/totp/confirm",
+        headers,
+        payload: { code: testTotpCode(secret) }
+      });
+      expect(confirmed.statusCode).toBe(200);
+      expect(confirmed.json().recoveryCodes).toHaveLength(8);
+      expect(confirmed.json().user).not.toHaveProperty("passwordHash");
+      expect(confirmed.json().user.mfa).toMatchObject({ totpEnabled: true, totpPending: false, recoveryCodeCount: 8 });
+      expect(JSON.stringify(confirmed.json().user)).not.toContain(secret);
+      expect(store.state.users.find((user) => user.email === "mfa.owner@example.test")?.mfa?.recoveryCodeHashes?.[0]).toMatch(/^sha256:/);
+
+      const missingMfa = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "mfa.owner@example.test", password: "original password" }
+      });
+      expect(missingMfa.statusCode).toBe(401);
+      expect(missingMfa.json()).toMatchObject({ error: "mfa_required", mfaRequired: true });
+
+      const wrongMfa = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "mfa.owner@example.test", password: "original password", mfaCode: "abcdef" }
+      });
+      expect(wrongMfa.statusCode).toBe(401);
+
+      const mfaLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "mfa.owner@example.test", password: "original password", mfaCode: testTotpCode(secret) }
+      });
+      expect(mfaLogin.statusCode).toBe(200);
+      expect(mfaLogin.json().token).toMatch(/^ots_/);
+      expect(mfaLogin.json().user.mfa).toMatchObject({ totpEnabled: true });
+
+      const recoveryCode = confirmed.json().recoveryCodes[0] as string;
+      const recoveryLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "mfa.owner@example.test", password: "original password", recoveryCode }
+      });
+      expect(recoveryLogin.statusCode).toBe(200);
+      expect(recoveryLogin.json().user.mfa.recoveryCodeCount).toBe(7);
+
+      const reusedRecovery = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "mfa.owner@example.test", password: "original password", recoveryCode }
+      });
+      expect(reusedRecovery.statusCode).toBe(401);
+
+      const disabled = await app.inject({
+        method: "DELETE",
+        url: "/api/v1/auth/mfa/totp",
+        headers: { authorization: `Bearer ${mfaLogin.json().token}` },
+        payload: { currentPassword: "original password", mfaCode: testTotpCode(secret) }
+      });
+      expect(disabled.statusCode).toBe(200);
+      expect(disabled.json().mfa).toMatchObject({ totpEnabled: false, totpPending: false, recoveryCodeCount: 0 });
+      expect(store.state.users.find((user) => user.email === "mfa.owner@example.test")?.mfa).toBeUndefined();
+
+      const postDisableLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "mfa.owner@example.test", password: "original password" }
+      });
+      expect(postDisableLogin.statusCode).toBe(200);
     } finally {
       await app.close();
     }

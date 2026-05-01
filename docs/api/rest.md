@@ -146,6 +146,27 @@ curl -X DELETE \
   "http://localhost:4000/api/v1/auth/sessions/sess_..."
 ```
 
+Local password users can enroll TOTP MFA. Enrollment returns the `secret` and `otpauthUrl` once; confirmation enables MFA and returns one-time recovery codes. Later password logins for that account must include either `mfaCode` or `recoveryCode`.
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"currentPassword":"replace-this-password"}' \
+  "http://localhost:4000/api/v1/auth/mfa/totp/enroll"
+
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"code":"123456"}' \
+  "http://localhost:4000/api/v1/auth/mfa/totp/confirm"
+
+curl -X POST \
+  -H "content-type: application/json" \
+  --data '{"email":"player@example.com","password":"replace-this-password","mfaCode":"123456"}' \
+  "http://localhost:4000/api/v1/auth/login"
+```
+
 Server administrators are the user ids listed in `OTTE_ADMIN_USER_IDS`. Admin endpoints can list/update users, require password resets, disable accounts, revoke sessions, inspect the email outbox, and export redacted audit logs for account/session operations:
 
 ```bash
@@ -189,7 +210,7 @@ curl -X POST \
   "http://localhost:4000/api/v1/invites/accept"
 ```
 
-Invite and password-reset tokens are returned only once and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. Admin audit exports accept `campaignId`, `actorUserId`, `actorType`, `action`, `targetType`, `targetId`, `since`, `until`, `limit`, and `format=json|ndjson` query filters. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, password reset records, email outbox records, and user password hashes.
+Invite and password-reset tokens are returned only once and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. TOTP MFA secrets and recovery-code hashes are redacted from public/admin user responses and campaign archives. Admin audit exports accept `campaignId`, `actorUserId`, `actorType`, `action`, `targetType`, `targetId`, `since`, `until`, `limit`, and `format=json|ndjson` query filters. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, password reset records, email outbox records, user password hashes, and MFA secrets.
 
 Password reset and admin environment variables:
 

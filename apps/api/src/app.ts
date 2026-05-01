@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -70,7 +70,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.get("/api/v1/openapi.json", async () => openApiSpec);
 
-  app.post<{ Body: { userId?: string; email?: string; password?: string } }>("/api/v1/auth/login", async (request, reply) => {
+  app.post<{ Body: { userId?: string; email?: string; password?: string; mfaCode?: string; recoveryCode?: string } }>("/api/v1/auth/login", async (request, reply) => {
     const body = request.body ?? {};
     pruneExpiredSessions(store);
     const user = findLoginUser(store, body);
@@ -78,6 +78,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (isDisabledUser(user)) return forbidden(reply, "User account is disabled");
     if (user.passwordResetRequired) return forbidden(reply, "Password reset required");
     if (user.passwordHash && !verifyPassword(body.password ?? "", user.passwordHash)) return unauthorized(reply, "Invalid login credentials");
+    const mfaResult = verifyLoginMfa(user, body.mfaCode, body.recoveryCode);
+    if (mfaResult === "required") return reply.code(401).send({ error: "mfa_required", message: "MFA code required", mfaRequired: true, userId: user.id });
+    if (mfaResult === "invalid") return unauthorized(reply, "Invalid MFA code");
     const { token, session } = createUserSession(store, user.id);
     store.save();
     return {
@@ -157,6 +160,84 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       session: publicSession(nextSession),
       user: publicUser(user),
       memberships: store.state.members.filter((member) => member.userId === user.id)
+    };
+  });
+
+  app.get("/api/v1/auth/mfa", async (request, reply) => {
+    const sessionUser = requireSessionUser(store, reply, request.headers);
+    if ("send" in sessionUser) return sessionUser;
+    return publicMfaInfo(sessionUser.user.mfa);
+  });
+
+  app.post<{ Body: { currentPassword?: string } }>("/api/v1/auth/mfa/totp/enroll", async (request, reply) => {
+    const body = request.body ?? {};
+    const sessionUser = requireSessionUser(store, reply, request.headers);
+    if ("send" in sessionUser) return sessionUser;
+    const { user } = sessionUser;
+    if (isTotpEnabled(user.mfa)) return conflict(reply, "TOTP MFA is already enabled");
+    if (user.passwordHash && !verifyPassword(body.currentPassword ?? "", user.passwordHash)) return unauthorized(reply, "Invalid current password");
+    const secret = generateTotpSecret();
+    const now = nowIso();
+    user.mfa = {
+      ...(user.mfa ?? {}),
+      totpSecret: secret,
+      totpPendingAt: now,
+      totpEnabledAt: undefined,
+      recoveryCodeHashes: [],
+      recoveryCodesUpdatedAt: undefined
+    };
+    user.updatedAt = now;
+    store.save();
+    return {
+      secret,
+      otpauthUrl: totpUri(user, secret),
+      mfa: publicMfaInfo(user.mfa)
+    };
+  });
+
+  app.post<{ Body: { code?: string } }>("/api/v1/auth/mfa/totp/confirm", async (request, reply) => {
+    const body = request.body ?? {};
+    const sessionUser = requireSessionUser(store, reply, request.headers);
+    if ("send" in sessionUser) return sessionUser;
+    const { session, user } = sessionUser;
+    if (!user.mfa?.totpSecret || !user.mfa.totpPendingAt) return badRequest(reply, "No pending TOTP enrollment");
+    if (!verifyTotpCode(user.mfa.totpSecret, body.code)) return unauthorized(reply, "Invalid MFA code");
+    const recoveryCodes = generateRecoveryCodes();
+    const now = nowIso();
+    user.mfa = {
+      ...user.mfa,
+      totpPendingAt: undefined,
+      totpEnabledAt: now,
+      recoveryCodeHashes: recoveryCodes.map(hashSessionToken),
+      recoveryCodesUpdatedAt: now,
+      lastVerifiedAt: now
+    };
+    user.updatedAt = now;
+    store.state.sessions = store.state.sessions.filter((item) => item.userId !== user.id || item.id === session.id);
+    store.save();
+    return {
+      recoveryCodes,
+      mfa: publicMfaInfo(user.mfa),
+      user: publicUser(user)
+    };
+  });
+
+  app.delete<{ Body: { currentPassword?: string; mfaCode?: string; recoveryCode?: string } }>("/api/v1/auth/mfa/totp", async (request, reply) => {
+    const body = request.body ?? {};
+    const sessionUser = requireSessionUser(store, reply, request.headers);
+    if ("send" in sessionUser) return sessionUser;
+    const { session, user } = sessionUser;
+    if (!isTotpEnabled(user.mfa)) return badRequest(reply, "TOTP MFA is not enabled");
+    if (user.passwordHash && !verifyPassword(body.currentPassword ?? "", user.passwordHash)) return unauthorized(reply, "Invalid current password");
+    const mfaResult = verifyLoginMfa(user, body.mfaCode, body.recoveryCode);
+    if (mfaResult !== "ok") return unauthorized(reply, "Invalid MFA code");
+    user.mfa = undefined;
+    user.updatedAt = nowIso();
+    store.state.sessions = store.state.sessions.filter((item) => item.userId !== user.id || item.id === session.id);
+    store.save();
+    return {
+      mfa: publicMfaInfo(user.mfa),
+      user: publicUser(user)
     };
   });
 
@@ -3076,6 +3157,144 @@ function setUserPassword(user: User, password: string, passwordResetRequired: bo
   user.updatedAt = now;
 }
 
+type MfaVerificationResult = "ok" | "required" | "invalid";
+
+function verifyLoginMfa(user: User, mfaCode: string | undefined, recoveryCode: string | undefined): MfaVerificationResult {
+  if (!isTotpEnabled(user.mfa)) return "ok";
+  if (verifyTotpCode(user.mfa.totpSecret, mfaCode)) {
+    markMfaVerified(user);
+    return "ok";
+  }
+  if (consumeRecoveryCode(user, recoveryCode)) {
+    markMfaVerified(user);
+    return "ok";
+  }
+  return mfaCode || recoveryCode ? "invalid" : "required";
+}
+
+function markMfaVerified(user: User): void {
+  if (!user.mfa) return;
+  const now = nowIso();
+  user.mfa.lastVerifiedAt = now;
+  user.updatedAt = now;
+}
+
+function isTotpEnabled(mfa: UserMfaSettings | undefined): mfa is UserMfaSettings & { totpSecret: string; totpEnabledAt: string } {
+  return Boolean(mfa?.totpSecret && mfa.totpEnabledAt);
+}
+
+function publicMfaInfo(mfa: UserMfaSettings | undefined): PublicMfaInfo {
+  return {
+    totpEnabled: isTotpEnabled(mfa),
+    totpPending: Boolean(mfa?.totpSecret && mfa.totpPendingAt && !mfa.totpEnabledAt),
+    recoveryCodeCount: mfa?.recoveryCodeHashes?.length ?? 0,
+    enabledAt: mfa?.totpEnabledAt,
+    lastVerifiedAt: mfa?.lastVerifiedAt
+  };
+}
+
+function generateTotpSecret(): string {
+  return base32Encode(randomBytes(20));
+}
+
+function totpUri(user: User, secret: string): string {
+  const issuer = "OpenTabletop";
+  const label = encodeURIComponent(`${issuer}:${user.email ?? user.displayName}`);
+  const params = new URLSearchParams({
+    secret,
+    issuer,
+    algorithm: "SHA1",
+    digits: "6",
+    period: "30"
+  });
+  return `otpauth://totp/${label}?${params.toString()}`;
+}
+
+function verifyTotpCode(secret: string | undefined, code: string | undefined, nowMs = Date.now()): boolean {
+  const normalizedCode = code?.trim();
+  if (!secret || !normalizedCode || !/^\d{6}$/.test(normalizedCode)) return false;
+  const counter = Math.floor(nowMs / 30_000);
+  for (let offset = -1; offset <= 1; offset += 1) {
+    if (totpCode(secret, counter + offset) === normalizedCode) return true;
+  }
+  return false;
+}
+
+function totpCode(secret: string, counter: number): string {
+  const counterBytes = Buffer.alloc(8);
+  counterBytes.writeUInt32BE(Math.floor(counter / 0x100000000), 0);
+  counterBytes.writeUInt32BE(counter % 0x100000000, 4);
+  const digest = createHmac("sha1", base32Decode(secret)).update(counterBytes).digest();
+  const offset = digest[digest.length - 1]! & 0x0f;
+  const binary = ((digest[offset]! & 0x7f) << 24) | ((digest[offset + 1]! & 0xff) << 16) | ((digest[offset + 2]! & 0xff) << 8) | (digest[offset + 3]! & 0xff);
+  return String(binary % 1_000_000).padStart(6, "0");
+}
+
+function generateRecoveryCodes(): string[] {
+  return Array.from({ length: 8 }, () => `otr-${randomBytes(4).toString("hex")}-${randomBytes(4).toString("hex")}`);
+}
+
+function consumeRecoveryCode(user: User, recoveryCode: string | undefined): boolean {
+  const code = normalizeRecoveryCode(recoveryCode);
+  const hashes = user.mfa?.recoveryCodeHashes;
+  if (!code || !hashes?.length) return false;
+  const codeHash = hashSessionToken(code);
+  const index = hashes.findIndex((hash: string) => safeStringEqual(hash, codeHash));
+  if (index < 0) return false;
+  hashes.splice(index, 1);
+  user.mfa!.recoveryCodesUpdatedAt = nowIso();
+  return true;
+}
+
+function normalizeRecoveryCode(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized || undefined;
+}
+
+function safeStringEqual(left: string, right: string): boolean {
+  const leftBytes = Buffer.from(left);
+  const rightBytes = Buffer.from(right);
+  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
+}
+
+const base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function base32Encode(input: Buffer): string {
+  let output = "";
+  let value = 0;
+  let bits = 0;
+  for (const byte of input) {
+    value = (value << 8) | byte;
+    bits += 8;
+    while (bits >= 5) {
+      output += base32Alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+      value &= (1 << bits) - 1;
+    }
+  }
+  if (bits > 0) output += base32Alphabet[(value << (5 - bits)) & 31];
+  return output;
+}
+
+function base32Decode(input: string): Buffer {
+  const clean = input.toUpperCase().replace(/[=\s-]/g, "");
+  const bytes: number[] = [];
+  let value = 0;
+  let bits = 0;
+  for (const char of clean) {
+    const index = base32Alphabet.indexOf(char);
+    if (index < 0) throw new Error("Invalid base32 character");
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+      value &= (1 << bits) - 1;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
 function setUserDisabled(store: StateStore, user: User, disabled: boolean, adminUserId: string, reason: string | undefined): void {
   const now = nowIso();
   if (disabled) {
@@ -3151,7 +3370,7 @@ function publicEmailOutboxMessage(message: EmailOutboxMessage): EmailOutboxMessa
   return message;
 }
 
-function adminUserInfo(store: StateStore, user: User): Omit<User, "passwordHash"> & { disabled: boolean; membershipCount: number; identityCount: number; sessionCount: number } {
+function adminUserInfo(store: StateStore, user: User): PublicUser & { disabled: boolean; membershipCount: number; identityCount: number; sessionCount: number } {
   return {
     ...publicUser(user),
     disabled: isDisabledUser(user),
@@ -3274,9 +3493,20 @@ function compactRecord<T extends Record<string, unknown>>(record: T): { [K in ke
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined)) as { [K in keyof T]?: Exclude<T[K], undefined> };
 }
 
-function publicUser(user: User): Omit<User, "passwordHash"> {
-  const { passwordHash: _passwordHash, ...safeUser } = user;
-  return safeUser;
+interface PublicMfaInfo {
+  totpEnabled: boolean;
+  totpPending: boolean;
+  recoveryCodeCount: number;
+  enabledAt?: string;
+  lastVerifiedAt?: string;
+}
+
+type PublicUser = Omit<User, "passwordHash" | "mfa"> & { mfa?: PublicMfaInfo };
+
+function publicUser(user: User): PublicUser {
+  const { passwordHash: _passwordHash, mfa, ...safeUser } = user;
+  const safeMfa = mfa ? publicMfaInfo(mfa) : undefined;
+  return safeMfa ? { ...safeUser, mfa: safeMfa } : safeUser;
 }
 
 type PublicInviteStatus = "pending" | "accepted" | "expired" | "revoked";
@@ -3437,6 +3667,15 @@ function requireUser(store: StateStore, reply: FastifyReply, headers: Record<str
   if (!user) return unauthorized(reply, "Unknown user session");
   if (isDisabledUser(user)) return forbidden(reply, "User account is disabled");
   return userId;
+}
+
+function requireSessionUser(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>): { session: UserSession; user: User } | FastifyReply {
+  const session = sessionFromRequest(store, undefined, headers);
+  if (!session) return unauthorized(reply, "Missing session token");
+  const user = store.state.users.find((item) => item.id === session.userId);
+  if (!user) return unauthorized(reply, "Unknown user session");
+  if (isDisabledUser(user)) return forbidden(reply, "User account is disabled");
+  return { session, user };
 }
 
 function requireServerAdmin(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>): string | FastifyReply {

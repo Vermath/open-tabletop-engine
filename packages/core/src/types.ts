@@ -16,11 +16,21 @@ export interface User extends Timestamps {
   displayName: string;
   email?: string;
   passwordHash?: string;
+  mfa?: UserMfaSettings;
   disabledAt?: string;
   disabledByUserId?: ID;
   disabledReason?: string;
   passwordUpdatedAt?: string;
   passwordResetRequired?: boolean;
+}
+
+export interface UserMfaSettings {
+  totpSecret?: string;
+  totpPendingAt?: string;
+  totpEnabledAt?: string;
+  recoveryCodeHashes?: string[];
+  recoveryCodesUpdatedAt?: string;
+  lastVerifiedAt?: string;
 }
 
 export interface UserSession extends Timestamps {

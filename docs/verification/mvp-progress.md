@@ -570,6 +570,32 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/reset-password-ui.png`.
   - Browser console had no errors or warnings after the password-field autocomplete fix.
 
+### Production Auth MFA Slice
+
+- Implementation:
+  - Added local TOTP MFA enrollment, confirmation, status, and disable endpoints under `/api/v1/auth/mfa`.
+  - Password login now returns `mfa_required` for MFA-enabled users until a valid `mfaCode` or one-time `recoveryCode` is supplied.
+  - TOTP enrollment returns an `otpauth://` URL and secret once; confirmation returns one-time recovery codes and stores only hashed recovery codes.
+  - Public/admin user responses and campaign archives redact TOTP secrets and recovery-code hashes.
+  - API contracts and REST/self-hosting docs include the MFA endpoints and deployment behavior.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `35 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API tests cover enrollment password checks, pending TOTP confirmation, public user redaction, missing-MFA login rejection, invalid-code rejection, valid TOTP login, recovery-code login, rejected recovery-code reuse, disable flow, and post-disable password login.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4451`
+  - SQLite file: `apps/api/storage/manual-mfa-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, and `OTTE_SQLITE_PATH=storage/manual-mfa-20260501.sqlite`.
+  - Registered `manual.mfa2@example.test`, then `GET /api/v1/auth/mfa` returned `totpEnabled: false`, `totpPending: false`, and `recoveryCodeCount: 0`.
+  - TOTP enrollment returned `200`, a 32-character secret, and an `otpauth://totp/` URL.
+  - TOTP confirmation returned `200`, `totpEnabled: true`, `totpPending: false`, and 8 one-time recovery codes.
+  - Password login without MFA returned `401` with error `mfa_required`; login with invalid `mfaCode` returned `401`.
+  - Login with a current TOTP code returned `200` with an `ots_` token.
+  - Login with a recovery code returned `200` and reduced `recoveryCodeCount` to 7; reusing the same recovery code returned `401`.
+  - Admin user listing for the MFA user did not include `totpSecret`, `recoveryCodeHashes`, or the enrollment secret.
+
 ### Production Asset Delivery Slice
 
 - Implementation:
@@ -825,7 +851,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
-- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, account administration, production session administration, server-admin audit export, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs MFA and SCIM/organization sync.
+- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs SCIM/organization sync.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
