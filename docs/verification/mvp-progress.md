@@ -712,6 +712,41 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/rules-compendium-gm.png`.
   - Browser console had no app runtime errors; it showed the existing missing `favicon.ico` 404, React DevTools info message, and an autocomplete advisory.
 
+### AI Tool Depth And Observability Slice
+
+- Implementation:
+  - Added typed AI tool schemas so hosted providers receive structured parameters instead of permissive untyped function definitions.
+  - Expanded permission-filtered AI context with visible actors, scenes, and encounters in addition to journals, memory, and GM-only secrets.
+  - Added AI thread tools for `draft_encounter`, `create_memory`, `roll_dice`, and `read_compendium`, keeping the existing `create_proposal` tool.
+  - Added per-tool permission enforcement and tool execution error capture so failed or forbidden provider tool requests return structured outputs instead of aborting the thread.
+  - Added `GET /api/v1/campaigns/{campaignId}/ai/tool-calls` for GM-facing tool-call observability.
+  - Updated the Codex loopback provider to exercise the expanded tool surface for manual and local smoke tests.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/ai-core typecheck` passed.
+  - `pnpm --filter @open-tabletop/ai-core build` passed.
+  - `pnpm --filter @open-tabletop/ai-core test` passed with `3 passed`.
+  - `pnpm --filter @open-tabletop/codex-app-server-provider typecheck` passed.
+  - `pnpm --filter @open-tabletop/codex-app-server-provider build` passed.
+  - `pnpm --filter @open-tabletop/codex-app-server-provider test` passed with no test files.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `32 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - OpenAI provider tests verify typed tool schemas are sent to the Responses API.
+  - API tests verify GM tool execution for compendium read, memory creation, encounter drafting, dice rolling, unknown-tool handling, persisted tool-call observability, player denial for GM observability, and player denial for `ai.proposeChanges` tools while allowing permission-safe compendium and dice tools.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4446`
+  - SQLite file: `storage/manual-ai-depth-20260501.sqlite`
+  - Environment: `OTTE_AI_PROVIDER=codex-loopback`
+  - GM AI thread returned provider `codex-app-server`.
+  - GM event sequence included `tool.started`, `tool.completed`, `proposal.created`, and `message.completed`.
+  - GM completed tool names were `draft_encounter,create_memory,roll_dice,read_compendium`.
+  - Tool-call observability returned unique names `draft_encounter,create_memory,roll_dice,read_compendium`.
+  - Created memory text was `Loopback memory: the obsidian key hums near the vault door.`
+  - Draft encounter tool created proposal `prop_mon3ux6mnhjfapsj`.
+  - Dice tool posted chat `Loopback Perception: 1d20+4 = 6`.
+  - Player AI thread returned missing-permission outputs `draft_encounter:ai.proposeChanges,create_memory:ai.proposeChanges`.
+  - Player `GET /api/v1/campaigns/camp_demo/ai/tool-calls` returned `403`.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
@@ -721,4 +756,4 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
-- AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, OpenAI Responses adapter requests and function-call mapping, provider-backed memory extraction, approval/application, and deterministic recap memory. Hosted-model prompt quality and broader tool coverage remain basic.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/memory/dice/compendium tools, tool-call observability, provider-backed memory extraction, approval/application, and deterministic recap memory. Remaining AI product work is hosted-model quality evaluation, production prompt iteration, broader campaign-edit tools, safety eval suites, cost/latency metrics, and operational dashboards.

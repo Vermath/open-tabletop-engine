@@ -1,4 +1,4 @@
-import type { AiProvider, AiProviderEvent, AiProviderRequest, AiToolDefinition, PermissionFilteredContext } from "./index";
+import type { AiProvider, AiProviderEvent, AiProviderRequest, AiToolDefinition, AiToolParameterSchema, PermissionFilteredContext } from "./index";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
@@ -27,11 +27,7 @@ interface OpenAiToolDefinition {
   type: "function";
   name: string;
   description: string;
-  parameters: {
-    type: "object";
-    properties: Record<string, never>;
-    additionalProperties: true;
-  };
+  parameters: AiToolParameterSchema;
 }
 
 export class OpenAiResponsesProvider implements AiProvider {
@@ -99,13 +95,25 @@ export class OpenAiResponsesProvider implements AiProvider {
 function instructionsFromContext(context: PermissionFilteredContext): string {
   const memory = context.memory.map((item) => `- [${item.visibility}] ${item.text}`).join("\n") || "- No stored memory visible to this user.";
   const gmSecrets = context.gmSecrets.map((secret) => `- ${secret}`).join("\n") || "- No GM-only secrets are visible to this user.";
+  const actors = context.actors?.map((actor) => `- ${actor.summary} (${actor.type})`).join("\n") || "- No actors are visible to this caller.";
+  const scenes = context.scenes?.map((scene) => `- ${scene.name}${scene.active ? " (active)" : ""}`).join("\n") || "- No scenes are visible to this caller.";
+  const encounters = context.encounters?.map((encounter) => `- ${encounter.name}: ${encounter.summary}${encounter.difficulty ? ` [${encounter.difficulty}]` : ""}`).join("\n") || "- No encounters are visible to this caller.";
   return [
     "You are OpenTabletop Engine's in-game tabletop assistant.",
     "Answer using only the permission-filtered campaign context below.",
+    "Never reveal, infer, or invent GM-only information that is not present in the visible context.",
+    "Prefer concrete tabletop artifacts: proposed journal notes, encounter drafts, memory facts, compendium lookups, and dice rolls.",
     "When changing campaign state, call an available function tool instead of claiming a change was already applied.",
+    "If a tool returns a permission error, explain that the action needs GM approval or a different role.",
     "",
     `Campaign: ${context.campaignId}`,
     `Public context: ${context.publicSummary || "No public context was available."}`,
+    "Visible actors:",
+    actors,
+    "Visible scenes:",
+    scenes,
+    "Visible encounters:",
+    encounters,
     "Visible memory:",
     memory,
     "GM-only context visible to this caller:",
@@ -118,7 +126,7 @@ function toOpenAiToolDefinition(tool: AiToolDefinition): OpenAiToolDefinition {
     type: "function",
     name: tool.name,
     description: `${tool.description} Required OpenTabletop permissions: ${tool.requiredPermissions.join(", ") || "none"}.`,
-    parameters: {
+    parameters: tool.parameters ?? {
       type: "object",
       properties: {},
       additionalProperties: true

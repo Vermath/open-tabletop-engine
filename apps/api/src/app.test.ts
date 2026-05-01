@@ -1797,6 +1797,95 @@ describe("api", () => {
     await playerApp.close();
   });
 
+  it("executes expanded ai tools with permission and observability boundaries", async () => {
+    class ExpandedToolProvider implements AiProvider {
+      id = "expanded-tool-ai";
+      label = "Expanded Tool AI";
+      requests: AiProviderRequest[] = [];
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.requests.push(input);
+        yield { type: "tool.started", toolName: "read_compendium", input: { systemId: "generic-fantasy" } };
+        yield { type: "tool.started", toolName: "create_memory", input: { text: "The moon key opens the observatory.", visibility: "gm_only" } };
+        yield { type: "tool.started", toolName: "draft_encounter", input: { name: "Mirror Knight", summary: "A reflective guardian blocks the vault.", difficulty: "hard" } };
+        yield { type: "tool.started", toolName: "roll_dice", input: { formula: "1d20+5", label: "AI Perception" } };
+        yield { type: "tool.started", toolName: "unknown_tool", input: {} };
+        yield { type: "message.completed", content: "Expanded tools requested" };
+      }
+    }
+
+    const gmProvider = new ExpandedToolProvider();
+    const gmStore = new MemoryStateStore();
+    const gmApp = await buildApp({ store: gmStore, aiProvider: gmProvider });
+    const gmThread = await gmApp.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Read the compendium, remember a key, draft an encounter, and roll dice." }
+    });
+    expect(gmThread.statusCode).toBe(200);
+    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "create_memory", "roll_dice", "read_compendium"]);
+    expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_encounter")?.parameters?.required).toEqual(["name", "summary"]);
+    expect(gmProvider.requests[0]!.context.actors?.map((actor) => actor.name)).toContain("Valen Ash");
+    expect(gmProvider.requests[0]!.context.scenes?.map((scene) => scene.name)).toContain("Vault Entry");
+    expect(gmThread.json().events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool.completed", toolName: "read_compendium", output: expect.objectContaining({ entries: expect.arrayContaining([expect.objectContaining({ id: "healing-word" })]) }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "create_memory", output: expect.objectContaining({ memoryId: expect.any(String), visibility: "gm_only" }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "draft_encounter", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "roll_dice", output: expect.objectContaining({ rollId: expect.any(String), formula: "1d20+5", label: "AI Perception" }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "unknown_tool", output: { error: "unknown_tool", toolName: "unknown_tool" } })
+      ])
+    );
+    expect(gmStore.state.aiMemory.some((fact) => fact.text === "The moon key opens the observatory.")).toBe(true);
+    const encounterProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Encounter: Mirror Knight");
+    expect(encounterProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "encounter", action: "create" }));
+    expect(gmStore.state.rolls).toHaveLength(1);
+    expect(gmStore.state.chat.some((message) => message.body.includes("AI Perception: 1d20+5"))).toBe(true);
+
+    const observedToolCalls = await gmApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/ai/tool-calls",
+      headers: authHeaders
+    });
+    expect(observedToolCalls.statusCode).toBe(200);
+    expect(observedToolCalls.json().map((call: { toolName: string }) => call.toolName)).toEqual(
+      expect.arrayContaining(["read_compendium", "create_memory", "draft_encounter", "roll_dice", "unknown_tool"])
+    );
+
+    const blockedToolCalls = await gmApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/ai/tool-calls",
+      headers: { "x-user-id": "usr_demo_player" }
+    });
+    expect(blockedToolCalls.statusCode).toBe(403);
+    await gmApp.close();
+
+    const playerProvider = new ExpandedToolProvider();
+    const playerStore = new MemoryStateStore();
+    const playerApp = await buildApp({ store: playerStore, aiProvider: playerProvider });
+    const playerThread = await playerApp.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { prompt: "Try expanded tools as a player." }
+    });
+    expect(playerThread.statusCode).toBe(200);
+    const playerCompleted = playerThread.json().events.filter((event: { type: string }) => event.type === "tool.completed");
+    expect(playerCompleted).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ toolName: "create_memory", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "draft_encounter", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "read_compendium", output: expect.objectContaining({ systemId: "generic-fantasy" }) }),
+        expect.objectContaining({ toolName: "roll_dice", output: expect.objectContaining({ formula: "1d20+5" }) })
+      ])
+    );
+    expect(playerStore.state.aiMemory.some((fact) => fact.text === "The moon key opens the observatory.")).toBe(false);
+    expect(playerStore.state.proposals.some((proposal) => proposal.title === "Encounter: Mirror Knight")).toBe(false);
+    expect(playerStore.state.rolls).toHaveLength(1);
+    await playerApp.close();
+  });
+
   it("approves and applies ai proposals and memory with permission boundaries", async () => {
     const now = "2026-05-01T00:00:00.000Z";
     const store = new MemoryStateStore();

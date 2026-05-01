@@ -10,7 +10,25 @@ export interface AiToolDefinition<TInput = unknown, TOutput = unknown> {
   name: string;
   description: string;
   requiredPermissions: PermissionName[];
+  parameters?: AiToolParameterSchema;
   execute(input: TInput, context: AiToolContext): Promise<TOutput>;
+}
+
+export interface AiToolParameterSchema {
+  type: "object";
+  properties: Record<string, AiToolJsonSchema>;
+  required?: string[];
+  additionalProperties?: boolean;
+}
+
+export interface AiToolJsonSchema {
+  type?: string | string[];
+  description?: string;
+  enum?: string[];
+  items?: AiToolJsonSchema;
+  properties?: Record<string, AiToolJsonSchema>;
+  required?: string[];
+  additionalProperties?: boolean;
 }
 
 export interface AiToolContext {
@@ -19,6 +37,8 @@ export interface AiToolContext {
   permissions: PermissionName[];
   state: EngineState;
   createProposal(input: { title: string; summary: string; changes: ProposalChange[] }): Promise<string>;
+  createMemory(input: { text: string; visibility: Visibility; sourceIds: string[] }): Promise<string>;
+  rollDice(input: { formula: string; label?: string; visibility: "public" | "gm_only" | "whisper" }): Promise<{ rollId: string; formula: string; label?: string; total: number; visibility: string }>;
 }
 
 export interface AiProvider {
@@ -46,6 +66,9 @@ export interface PermissionFilteredContext {
   publicSummary: string;
   gmSecrets: string[];
   memory: Array<{ text: string; visibility: Visibility; sourceIds: string[] }>;
+  actors?: Array<{ id: string; name: string; type: string; summary: string }>;
+  scenes?: Array<{ id: string; name: string; active: boolean }>;
+  encounters?: Array<{ id: string; name: string; summary: string; difficulty?: string }>;
 }
 
 export function buildPermissionFilteredContext(input: {
@@ -55,6 +78,9 @@ export function buildPermissionFilteredContext(input: {
 }): PermissionFilteredContext {
   const campaign = input.state.campaigns.find((item) => item.id === input.campaignId);
   const canReadSecrets = input.permissions.includes("journal.readSecret") || input.permissions.includes("ai.readGmMemory");
+  const canReadActors = input.permissions.includes("actor.read");
+  const canReadScenes = input.permissions.includes("scene.read");
+  const canReadCampaign = input.permissions.includes("campaign.read");
   const journals = input.state.journals.filter((item) => item.campaignId === input.campaignId);
   const visibleJournals = journals.filter((item) => item.visibility === "public" || canReadSecrets);
   const memory = input.state.aiMemory
@@ -66,7 +92,28 @@ export function buildPermissionFilteredContext(input: {
     campaignId: input.campaignId,
     publicSummary: `${campaign?.name ?? "Unknown campaign"}: ${visibleJournals.map((item) => item.title).join(", ")}`,
     gmSecrets: canReadSecrets ? journals.filter((item) => item.visibility === "gm_only").map((item) => item.body) : [],
-    memory
+    memory,
+    actors: canReadActors
+      ? input.state.actors
+          .filter((item) => item.campaignId === input.campaignId)
+          .map((item) => {
+            const hp = item.data.hp as { current?: number; max?: number } | undefined;
+            return {
+              id: item.id,
+              name: item.name,
+              type: item.type,
+              summary: hp ? `${item.name} (${hp.current ?? "?"}/${hp.max ?? "?"} HP)` : item.name
+            };
+          })
+      : [],
+    scenes: canReadScenes
+      ? input.state.scenes.filter((item) => item.campaignId === input.campaignId).map((item) => ({ id: item.id, name: item.name, active: item.active }))
+      : [],
+    encounters: canReadCampaign
+      ? input.state.encounters
+          .filter((item) => item.campaignId === input.campaignId)
+          .map((item) => ({ id: item.id, name: item.name, summary: item.summary, difficulty: item.difficulty }))
+      : []
   };
 }
 

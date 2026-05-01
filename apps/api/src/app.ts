@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -1486,6 +1486,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return store.state.aiMemory.filter((item) => item.campaignId === request.params.campaignId).filter((item) => item.visibility === "public" || canReadGm);
   });
 
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/ai/tool-calls", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
+    if (allowed !== true) return allowed;
+    const threadIds = new Set(store.state.aiThreads.filter((thread) => thread.campaignId === request.params.campaignId).map((thread) => thread.id));
+    return store.state.aiToolCalls.filter((call) => threadIds.has(call.threadId));
+  });
+
   app.post<{
     Params: { campaignId: string };
     Body: Partial<AiMemoryFact> & { text: string };
@@ -2103,6 +2110,16 @@ function createAiThreadTools(): AiToolDefinition[] {
       name: "create_proposal",
       description: "Create a pending OpenTabletop proposal for GM approval.",
       requiredPermissions: ["ai.proposeChanges"],
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short GM-facing proposal title." },
+          summary: { type: "string", description: "Concise proposal summary." },
+          changes: { type: "array", description: "OpenTabletop proposal changes that will require GM approval.", items: { type: "object", additionalProperties: true } }
+        },
+        required: ["title", "summary"],
+        additionalProperties: false
+      },
       async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput> {
         const request = isRecord(input) ? input : {};
         const title = stringFromRecord(request, "title") ?? "AI Tool Proposal";
@@ -2115,6 +2132,107 @@ function createAiThreadTools(): AiToolDefinition[] {
           changeCount: changes.length
         };
       }
+    },
+    {
+      name: "draft_encounter",
+      description: "Draft a pending encounter proposal for GM approval.",
+      requiredPermissions: ["ai.proposeChanges"],
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Encounter name." },
+          summary: { type: "string", description: "What happens in the encounter." },
+          difficulty: { type: "string", description: "Estimated encounter difficulty.", enum: ["easy", "medium", "hard", "deadly"] }
+        },
+        required: ["name", "summary"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput> {
+        const request = isRecord(input) ? input : {};
+        const name = stringFromRecord(request, "name") ?? "AI Draft Encounter";
+        const summary = stringFromRecord(request, "summary") ?? "AI drafted encounter.";
+        const difficulty = enumStringFromRecord(request, "difficulty", ["easy", "medium", "hard", "deadly"]);
+        const encounter = createTimestamped("enc", {
+          campaignId: context.campaignId,
+          name,
+          summary,
+          tokenIds: [],
+          difficulty
+        }) satisfies Encounter;
+        const proposalId = await context.createProposal({
+          title: `Encounter: ${name}`,
+          summary,
+          changes: [{ entity: "encounter", action: "create", data: encounter }]
+        });
+        return {
+          proposalId,
+          title: `Encounter: ${name}`,
+          changeCount: 1
+        };
+      }
+    },
+    {
+      name: "create_memory",
+      description: "Queue a campaign memory fact for later GM review.",
+      requiredPermissions: ["ai.proposeChanges"],
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "Durable campaign fact to remember." },
+          visibility: { type: "string", description: "Who can read the memory after approval.", enum: ["public", "gm_only"] },
+          sourceIds: { type: "array", description: "Optional source ids that support this fact.", items: { type: "string" } }
+        },
+        required: ["text"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<MemoryToolOutput> {
+        const request = isRecord(input) ? input : {};
+        const text = stringFromRecord(request, "text") ?? "AI queued campaign memory.";
+        const visibility = visibilityFromRecord(request, "visibility", "gm_only");
+        const sourceIds = stringArrayFromRecord(request, "sourceIds");
+        const memoryId = await context.createMemory({ text, visibility, sourceIds });
+        return { memoryId, visibility };
+      }
+    },
+    {
+      name: "roll_dice",
+      description: "Roll dice through the campaign dice engine and add the result to chat.",
+      requiredPermissions: ["dice.roll"],
+      parameters: {
+        type: "object",
+        properties: {
+          formula: { type: "string", description: "Dice formula such as 1d20+5." },
+          label: { type: "string", description: "Optional roll label." },
+          visibility: { type: "string", description: "Chat visibility for the roll.", enum: ["public", "gm_only", "whisper"] }
+        },
+        required: ["formula"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext) {
+        const request = isRecord(input) ? input : {};
+        const formula = stringFromRecord(request, "formula") ?? "1d20";
+        const label = stringFromRecord(request, "label");
+        const visibility = rollVisibilityFromRecord(request, "visibility", "public");
+        return context.rollDice({ formula, label, visibility });
+      }
+    },
+    {
+      name: "read_compendium",
+      description: "Read a permission-safe rules compendium summary for a supported system.",
+      requiredPermissions: ["actor.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          systemId: { type: "string", description: "Rules system id. Currently supports generic-fantasy." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown): Promise<CompendiumToolOutput> {
+        const request = isRecord(input) ? input : {};
+        const systemId = stringFromRecord(request, "systemId") ?? "generic-fantasy";
+        const entries = compendiumEntriesForSystem(systemId).map((entry) => ({ id: entry.id, type: entry.type, name: entry.name, summary: entry.summary }));
+        return { systemId, entries };
+      }
     }
   ];
 }
@@ -2123,6 +2241,16 @@ interface ProposalToolOutput {
   proposalId: string;
   title: string;
   changeCount: number;
+}
+
+interface MemoryToolOutput {
+  memoryId: string;
+  visibility: Visibility;
+}
+
+interface CompendiumToolOutput {
+  systemId: string;
+  entries: Array<{ id: string; type: string; name: string; summary: string }>;
 }
 
 function createAiToolContext(store: StateStore, campaignId: string, userId: string, permissions: PermissionName[]): AiToolContext {
@@ -2147,6 +2275,40 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       }) satisfies Proposal;
       store.state.proposals.push(proposal);
       return proposal.id;
+    },
+    createMemory: async ({ text, visibility, sourceIds }) => {
+      const memory = createTimestamped("mem", {
+        campaignId,
+        text: text.slice(0, 500),
+        visibility,
+        sourceIds
+      }) satisfies AiMemoryFact;
+      store.state.aiMemory.push(memory);
+      return memory.id;
+    },
+    rollDice: async ({ formula, label, visibility }) => {
+      const rolled = rollFormula(formula);
+      const roll = createTimestamped("roll", {
+        campaignId,
+        userId,
+        formula,
+        label,
+        visibility,
+        terms: rolled.terms,
+        total: rolled.total
+      }) satisfies DiceRoll;
+      store.state.rolls.push(roll);
+      const message = createTimestamped("msg", {
+        campaignId,
+        userId,
+        type: "roll" as const,
+        body: `${label ? `${label}: ` : ""}${formula} = ${roll.total}`,
+        visibility,
+        recipientUserIds: [],
+        rollId: roll.id
+      }) satisfies ChatMessage;
+      store.state.chat.push(message);
+      return { rollId: roll.id, formula: roll.formula, label: roll.label, total: roll.total, visibility: roll.visibility };
     }
   };
 }
@@ -2213,7 +2375,14 @@ async function executeAiTool(tools: AiToolDefinition[], toolName: string, input:
     };
   }
 
-  return tool.execute(input, context);
+  try {
+    return await tool.execute(input, context);
+  } catch (error) {
+    return {
+      error: "tool_failed",
+      message: error instanceof Error ? error.message.slice(0, 300) : "Tool execution failed"
+    };
+  }
 }
 
 function isProposalToolOutput(value: unknown): value is ProposalToolOutput {
@@ -2234,6 +2403,26 @@ function isProposalChange(value: unknown): value is ProposalChange {
 function stringFromRecord(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function enumStringFromRecord<T extends string>(record: Record<string, unknown>, key: string, allowed: readonly T[]): T | undefined {
+  const value = record[key];
+  return typeof value === "string" && allowed.includes(value as T) ? (value as T) : undefined;
+}
+
+function visibilityFromRecord(record: Record<string, unknown>, key: string, fallback: Visibility): Visibility {
+  const value = record[key];
+  return value === "public" || value === "gm_only" ? value : fallback;
+}
+
+function rollVisibilityFromRecord(record: Record<string, unknown>, key: string, fallback: "public" | "gm_only" | "whisper"): "public" | "gm_only" | "whisper" {
+  const value = record[key];
+  return value === "public" || value === "gm_only" || value === "whisper" ? value : fallback;
+}
+
+function stringArrayFromRecord(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }
 
 function normalizeFogRegion(body: { x?: number; y?: number; radius?: number; hidden?: boolean; shape?: FogShape; mode?: FogMode; points?: VisionPoint[] }, scene: Scene): Omit<FogRegion, "id"> | undefined {

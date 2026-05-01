@@ -27,7 +27,8 @@ export class CodexAppServerProvider implements AiProvider {
       tools: input.tools.map((tool) => ({
         name: tool.name,
         description: tool.description,
-        requiredPermissions: tool.requiredPermissions
+        requiredPermissions: tool.requiredPermissions,
+        parameters: tool.parameters
       })),
       context: input.context
     });
@@ -70,6 +71,46 @@ export class LoopbackCodexTransport implements JsonRpcTransport {
           }
         });
       }
+      if (shouldRequestEncounterTool(params)) {
+        events.push({
+          type: "tool.started",
+          toolName: "draft_encounter",
+          input: {
+            name: "Loopback Vault Sentinel",
+            summary: "A test encounter drafted through the AI tool path.",
+            difficulty: "medium"
+          }
+        });
+      }
+      if (shouldRequestMemoryTool(params)) {
+        events.push({
+          type: "tool.started",
+          toolName: "create_memory",
+          input: {
+            text: "Loopback memory: the obsidian key hums near the vault door.",
+            visibility: "gm_only"
+          }
+        });
+      }
+      if (shouldRequestRollTool(params)) {
+        events.push({
+          type: "tool.started",
+          toolName: "roll_dice",
+          input: {
+            formula: "1d20+4",
+            label: "Loopback Perception"
+          }
+        });
+      }
+      if (shouldRequestCompendiumTool(params)) {
+        events.push({
+          type: "tool.started",
+          toolName: "read_compendium",
+          input: {
+            systemId: "generic-fantasy"
+          }
+        });
+      }
       events.push({
         type: "message.completed",
         content: memoryExtractionContent(params) ?? `Codex loopback handled ${method} with ${JSON.stringify(params).slice(0, 160)}`
@@ -88,11 +129,30 @@ export class LoopbackCodexTransport implements JsonRpcTransport {
 }
 
 function shouldRequestProposalTool(params: unknown): boolean {
-  if (!isRecord(params)) return false;
-  const hasProposalTool = Array.isArray(params.tools) && params.tools.some((tool) => isRecord(tool) && tool.name === "create_proposal");
-  if (!hasProposalTool) return false;
+  if (!hasTool(params, "create_proposal")) return false;
   const prompt = promptFromParams(params);
   return /\bproposal\b|\bpropose\b|\bprep\b/i.test(prompt);
+}
+
+function shouldRequestEncounterTool(params: unknown): boolean {
+  return hasTool(params, "draft_encounter") && /\bencounter\b/i.test(promptFromParams(params));
+}
+
+function shouldRequestMemoryTool(params: unknown): boolean {
+  return hasTool(params, "create_memory") && /\bmemory\b/i.test(promptFromParams(params));
+}
+
+function shouldRequestRollTool(params: unknown): boolean {
+  return hasTool(params, "roll_dice") && /\broll\b|\bdice\b/i.test(promptFromParams(params));
+}
+
+function shouldRequestCompendiumTool(params: unknown): boolean {
+  return hasTool(params, "read_compendium") && /\bcompendium\b|\bspell\b|\bcondition\b|\bitem\b/i.test(promptFromParams(params));
+}
+
+function hasTool(params: unknown, toolName: string): boolean {
+  if (!isRecord(params)) return false;
+  return Array.isArray(params.tools) && params.tools.some((tool) => isRecord(tool) && tool.name === toolName);
 }
 
 function memoryExtractionContent(params: unknown): string | undefined {

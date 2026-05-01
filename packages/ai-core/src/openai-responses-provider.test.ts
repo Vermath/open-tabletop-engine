@@ -16,6 +16,15 @@ const baseRequest: AiProviderRequest = {
       name: "create_proposal",
       description: "Create a pending OpenTabletop proposal for GM approval.",
       requiredPermissions: ["ai.proposeChanges"],
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Proposal title." },
+          changes: { type: "array", items: { type: "object", additionalProperties: true } }
+        },
+        required: ["title"],
+        additionalProperties: false
+      },
       async execute() {
         return { proposalId: "prop_test" };
       }
@@ -74,7 +83,15 @@ describe("OpenAiResponsesProvider", () => {
       expect.objectContaining({
         type: "function",
         name: "create_proposal",
-        parameters: { type: "object", properties: {}, additionalProperties: true }
+        parameters: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Proposal title." },
+            changes: { type: "array", items: { type: "object", additionalProperties: true } }
+          },
+          required: ["title"],
+          additionalProperties: false
+        }
       })
     ]);
     expect(events).toEqual([
