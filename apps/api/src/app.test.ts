@@ -3458,9 +3458,10 @@ registerCommand("/state", (input) => {
   });
 
   it("can select the OpenAI Responses ai provider from configuration", async () => {
-    const previousProvider = process.env.OTTE_AI_PROVIDER;
-    const previousOpenAiKey = process.env.OPENAI_API_KEY;
+    const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OPENAI_API_KEY", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_ADMIN_USER_IDS"]);
     process.env.OTTE_AI_PROVIDER = "openai-responses";
+    process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "1234";
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
     delete process.env.OPENAI_API_KEY;
     let app: Awaited<ReturnType<typeof buildApp>> | undefined;
 
@@ -3477,18 +3478,22 @@ registerCommand("/state", (input) => {
       expect(thread.json().thread.provider).toBe("openai-responses");
       expect(thread.json().assistantMessage).toContain("Set OPENAI_API_KEY");
       expect(thread.json().events).toContainEqual(expect.objectContaining({ type: "message.completed" }));
+
+      const operations = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/ai/operations",
+        headers: authHeaders
+      });
+      expect(operations.statusCode).toBe(200);
+      expect(operations.json().runtime.openai).toEqual(
+        expect.objectContaining({
+          apiKeyConfigured: false,
+          timeoutMs: 1234
+        })
+      );
     } finally {
       await app?.close();
-      if (previousProvider === undefined) {
-        delete process.env.OTTE_AI_PROVIDER;
-      } else {
-        process.env.OTTE_AI_PROVIDER = previousProvider;
-      }
-      if (previousOpenAiKey === undefined) {
-        delete process.env.OPENAI_API_KEY;
-      } else {
-        process.env.OPENAI_API_KEY = previousOpenAiKey;
-      }
+      restoreEnv(previousEnv);
     }
   });
 

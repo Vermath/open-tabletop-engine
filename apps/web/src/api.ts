@@ -389,6 +389,7 @@ export interface AdminAiOperations {
       apiKeyConfigured: boolean;
       model: string;
       baseUrl: string;
+      timeoutMs: number;
       organizationConfigured: boolean;
       projectConfigured: boolean;
     };

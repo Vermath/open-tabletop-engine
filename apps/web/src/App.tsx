@@ -1508,6 +1508,7 @@ function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]; curre
               <div className="admin-meta">
                 {aiOperations.runtime.codex && <span>{aiOperations.runtime.codex.transport} Codex transport</span>}
                 {aiOperations.runtime.openai && <span>{aiOperations.runtime.openai.apiKeyConfigured ? "OpenAI key configured" : "OpenAI key missing"}</span>}
+                {aiOperations.runtime.openai && <span>{aiOperations.runtime.openai.timeoutMs > 0 ? `timeout ${aiOperations.runtime.openai.timeoutMs}ms` : "timeout disabled"}</span>}
                 <span>{aiOperations.runtime.costRatesConfigured.inputTokens && aiOperations.runtime.costRatesConfigured.outputTokens ? "cost rates configured" : "cost rates not configured"}</span>
               </div>
             </div>

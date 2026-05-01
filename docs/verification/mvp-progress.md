@@ -1635,6 +1635,35 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/admin-ai-operations.png`.
   - Browser console showed no application runtime errors; the only console error was the missing `favicon.ico` 404.
 
+### AI Provider Timeout Hardening Slice
+
+- Implementation:
+  - Added a default 30 second timeout around OpenAI Responses provider HTTP requests so a hung upstream cannot leave an AI thread running indefinitely.
+  - Added `OTTE_AI_PROVIDER_TIMEOUT_MS` to configure the timeout, clamped from `0` to `300000` milliseconds; `0` disables it for local debugging.
+  - Wired the timeout through the API and AI gateway provider configuration.
+  - Added the timeout to server-admin AI Operations runtime data and the browser Admin AI Operations summary.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/ai-core test -- --run` passed with `4 passed`, including a hung-upstream abort test.
+  - `pnpm --filter @open-tabletop/ai-core typecheck` passed.
+  - `pnpm --filter @open-tabletop/ai-core build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts` passed with `55 passed`, including OpenAI provider configuration/admin-runtime coverage.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - `pnpm --filter @open-tabletop/ai-gateway typecheck` passed.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - `git diff --check` passed.
+- Manual API evidence:
+  - Fake OpenAI-compatible endpoint: `http://127.0.0.1:4722/v1/responses`.
+  - The fake endpoint accepted the `/v1/responses` request and intentionally never responded.
+  - API smoke used the built API modules from `apps/api/dist` with `MemoryStateStore`.
+  - Runtime env included `OTTE_AI_PROVIDER=openai-responses`, `OPENAI_API_KEY=sk-timeout-smoke`, `OPENAI_BASE_URL=http://127.0.0.1:4722/v1`, `OPENAI_MODEL=gpt-timeout-smoke`, `OTTE_AI_PROVIDER_TIMEOUT_MS=50`, `OTTE_AI_PROVIDER_RETRY_ATTEMPTS=0`, and `OTTE_ADMIN_USER_IDS=usr_demo_gm`.
+  - Bearer login returned `200`.
+  - `POST /api/v1/campaigns/camp_demo/ai/threads` returned `502` in `61ms` with `error: "ai_provider_failed"` and message `OpenAI Responses API request timed out after 50ms`.
+  - The failed thread persisted with provider `openai-responses`, status `failed`, provider error `OpenAI Responses API request timed out after 50ms`, retry attempts `0`, and event count `0`.
+  - `GET /api/v1/admin/ai/operations` returned `200` and reported OpenAI runtime `timeoutMs: 50`.
+  - After shutdown, no listener remained on port `4722`.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
@@ -1644,4 +1673,4 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, smoothed freehand reveal/hide brushes, fog region deletion, fog undo/history, and multi-scene fog presets now have verified controls and permission filtering. No fog-specific item remains in the current acceptance checklist.
 - Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, campaign-scoped JSON storage APIs, command-returned storage mutations, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, server-admin marketplace review surfaces, optional approval-required review policy, storage/review audit logs, and browser/API acceptance evidence. Remaining plugin ecosystem work is external marketplace operations beyond the self-hosted review and registry workflow.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.
-- AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, provider request timeouts, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

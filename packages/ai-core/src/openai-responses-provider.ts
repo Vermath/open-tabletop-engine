@@ -3,6 +3,7 @@ import type { AiProvider, AiProviderEvent, AiProviderRequest, AiToolDefinition, 
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-5-mini";
+const DEFAULT_OPENAI_TIMEOUT_MS = 30_000;
 
 export interface OpenAiResponsesProviderOptions {
   apiKey?: string;
@@ -12,6 +13,7 @@ export interface OpenAiResponsesProviderOptions {
   project?: string;
   maxOutputTokens?: number;
   temperature?: number;
+  timeoutMs?: number;
   fetch?: typeof fetch;
 }
 
@@ -37,11 +39,13 @@ export class OpenAiResponsesProvider implements AiProvider {
 
   private readonly baseUrl: string;
   private readonly model: string;
+  private readonly timeoutMs: number | undefined;
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly options: OpenAiResponsesProviderOptions = {}) {
     this.baseUrl = options.baseUrl ?? DEFAULT_OPENAI_BASE_URL;
     this.model = options.model ?? DEFAULT_OPENAI_MODEL;
+    this.timeoutMs = normalizedTimeoutMs(options.timeoutMs);
     this.fetchImpl = options.fetch ?? fetch;
   }
 
@@ -54,11 +58,21 @@ export class OpenAiResponsesProvider implements AiProvider {
       return;
     }
 
-    const response = await this.fetchImpl(openAiResponsesEndpoint(this.baseUrl), {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify(this.requestBody(input))
-    });
+    const timeout = requestTimeout(this.timeoutMs);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(openAiResponsesEndpoint(this.baseUrl), {
+        method: "POST",
+        headers: this.headers(),
+        body: JSON.stringify(this.requestBody(input)),
+        signal: timeout.signal
+      });
+    } catch (error) {
+      if (timeout.signal?.aborted) throw new Error(`OpenAI Responses API request timed out after ${this.timeoutMs}ms`);
+      throw error;
+    } finally {
+      timeout.cleanup();
+    }
 
     if (!response.ok) {
       throw new Error(`OpenAI Responses API request failed with ${response.status}: ${(await response.text()).slice(0, 500)}`);
@@ -198,6 +212,24 @@ function parseFunctionArguments(value: unknown): unknown {
 function openAiResponsesEndpoint(baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, "");
   return trimmed.endsWith("/responses") ? trimmed : `${trimmed}/responses`;
+}
+
+function normalizedTimeoutMs(value: number | undefined): number | undefined {
+  if (value === undefined) return DEFAULT_OPENAI_TIMEOUT_MS;
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  return Math.floor(value);
+}
+
+function requestTimeout(timeoutMs: number | undefined): { signal?: AbortSignal; cleanup(): void } {
+  if (timeoutMs === undefined) return { cleanup() {} };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timer);
+    }
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

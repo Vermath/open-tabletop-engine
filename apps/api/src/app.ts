@@ -3228,10 +3228,17 @@ function createConfiguredAiProvider(): AiProvider {
       baseUrl: process.env.OPENAI_BASE_URL,
       model: process.env.OPENAI_MODEL,
       organization: process.env.OPENAI_ORGANIZATION ?? process.env.OPENAI_ORG_ID,
-      project: process.env.OPENAI_PROJECT ?? process.env.OPENAI_PROJECT_ID
+      project: process.env.OPENAI_PROJECT ?? process.env.OPENAI_PROJECT_ID,
+      timeoutMs: aiProviderTimeoutMs()
     });
   }
   return new EchoAiProvider();
+}
+
+function aiProviderTimeoutMs(): number {
+  const parsed = envNumber("OTTE_AI_PROVIDER_TIMEOUT_MS");
+  if (parsed === undefined) return 30_000;
+  return Math.max(0, Math.min(300_000, Math.floor(parsed)));
 }
 
 function aiProviderRetryAttempts(): number {
@@ -3397,6 +3404,7 @@ function aiProviderRuntimeConfig(aiProvider: AiProvider) {
           apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
           model: process.env.OPENAI_MODEL?.trim() || "gpt-5-mini",
           baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
+          timeoutMs: aiProviderTimeoutMs(),
           organizationConfigured: Boolean((process.env.OPENAI_ORGANIZATION ?? process.env.OPENAI_ORG_ID)?.trim()),
           projectConfigured: Boolean((process.env.OPENAI_PROJECT ?? process.env.OPENAI_PROJECT_ID)?.trim())
         }

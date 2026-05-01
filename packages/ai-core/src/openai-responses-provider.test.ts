@@ -130,4 +130,31 @@ describe("OpenAiResponsesProvider", () => {
       }
     }).rejects.toThrow("OpenAI Responses API request failed with 401: bad credentials");
   });
+
+  it("aborts hung upstream requests after the configured timeout", async () => {
+    const provider = new OpenAiResponsesProvider({
+      apiKey: "sk-test",
+      timeoutMs: 10,
+      fetch: async (_url, init) => {
+        await new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true }
+          );
+        });
+        return new Response("{}");
+      }
+    });
+
+    await expect(async () => {
+      for await (const _event of provider.stream(baseRequest)) {
+        // consume stream
+      }
+    }).rejects.toThrow("OpenAI Responses API request timed out after 10ms");
+  });
 });
