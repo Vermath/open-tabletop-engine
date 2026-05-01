@@ -1,11 +1,11 @@
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { basename, resolve } from "node:path";
+import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AssetSecurityFinding, type AssetSecurityScan, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -40,6 +40,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     done(null, body);
   });
   app.addContentTypeParser("application/octet-stream", { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
+    done(null, body);
+  });
+  app.addContentTypeParser(/^(text\/html|application\/xhtml\+xml|application\/javascript|text\/javascript|application\/x-javascript|application\/x-msdownload|application\/x-msdos-program|application\/x-sh|application\/x-bat|application\/java-archive)$/i, { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
     done(null, body);
   });
 
@@ -601,10 +604,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         error: "asset_too_large",
         message: `Asset exceeds ${maxAssetBytes} bytes`
       });
-    const quotaExceeded = assetQuotaExceeded(store, request.params.campaignId, body.length);
-    if (quotaExceeded) return reply.code(413).send(quotaExceeded);
     const mimeType = normalizeAssetMimeType(request.headers["content-type"]);
     const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
+    const scan = scanUploadedAsset(body, mimeType, sourceName);
+    if (scan.blocked) return assetSecurityBlocked(reply, scan);
+    const quotaExceeded = assetQuotaExceeded(store, request.params.campaignId, body.length);
+    if (quotaExceeded) return reply.code(413).send(quotaExceeded);
     const checksum = checksumForBuffer(body);
     const scene = shouldSetBackground ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId) : undefined;
     if (shouldSetBackground && !scene) return notFound(reply, "Scene not found");
@@ -615,7 +620,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       mimeType,
       sizeBytes: body.length,
       checksum,
-      lifecycle: defaultAssetLifecycle()
+      lifecycle: defaultAssetLifecycle(),
+      security: scan.security
     });
     asset.storage = await assetStorage.put(asset, body);
     asset.url = `/api/v1/assets/${asset.id}/blob`;
@@ -3367,6 +3373,97 @@ function displayNameFromHeader(value: string | string[] | undefined): string | u
   if (!raw) return undefined;
   const decoded = safeDecodeURIComponent(raw);
   return basename(decoded).trim() || undefined;
+}
+
+const assetSecurityScanner = "builtin-asset-scanner";
+const eicarSignature = "EICAR-STANDARD-ANTIVIRUS-TEST-FILE";
+const disallowedAssetMimeTypes = new Set([
+  "text/html",
+  "application/xhtml+xml",
+  "application/javascript",
+  "text/javascript",
+  "application/x-javascript",
+  "application/x-msdownload",
+  "application/x-msdos-program",
+  "application/x-sh",
+  "application/x-bat",
+  "application/java-archive"
+]);
+const disallowedAssetExtensions = new Set([".html", ".htm", ".js", ".mjs", ".exe", ".dll", ".bat", ".cmd", ".ps1", ".sh", ".com", ".scr", ".jar"]);
+
+interface AssetSecurityScanResult {
+  scanner: string;
+  findings: AssetSecurityFinding[];
+  blocked: boolean;
+  security?: AssetSecurityScan;
+}
+
+function scanUploadedAsset(body: Buffer, mimeType: string, sourceName: string): AssetSecurityScanResult {
+  const findings: AssetSecurityFinding[] = [];
+  const extension = extname(sourceName).toLowerCase();
+  const text = body.toString("utf8");
+  const lowerText = text.toLowerCase();
+
+  if (text.includes(eicarSignature)) {
+    findings.push({
+      code: "malware_signature",
+      severity: "high",
+      message: "Upload matched the EICAR malware test signature"
+    });
+  }
+
+  if (disallowedAssetMimeTypes.has(mimeType) || disallowedAssetExtensions.has(extension) || looksLikeExecutableMarkup(lowerText)) {
+    findings.push({
+      code: "disallowed_asset_type",
+      severity: "high",
+      message: "Executable, script, or HTML uploads are not allowed as map assets"
+    });
+  }
+
+  if (isSvgUpload(mimeType, extension, lowerText) && hasActiveSvgContent(lowerText)) {
+    findings.push({
+      code: "active_svg_content",
+      severity: "high",
+      message: "SVG uploads cannot contain scripts, event handlers, javascript URLs, or foreignObject content"
+    });
+  }
+
+  if (findings.length > 0) {
+    return { scanner: assetSecurityScanner, findings, blocked: true };
+  }
+
+  return {
+    scanner: assetSecurityScanner,
+    findings: [],
+    blocked: false,
+    security: {
+      status: "clean",
+      scanner: assetSecurityScanner,
+      scannedAt: nowIso(),
+      findings: []
+    }
+  };
+}
+
+function assetSecurityBlocked(reply: FastifyReply, result: AssetSecurityScanResult): FastifyReply {
+  return reply.code(422).send({
+    error: "asset_security_blocked",
+    message: "Asset upload failed security scan",
+    scanner: result.scanner,
+    findings: result.findings
+  });
+}
+
+function isSvgUpload(mimeType: string, extension: string, lowerText: string): boolean {
+  return mimeType === "image/svg+xml" || extension === ".svg" || lowerText.includes("<svg");
+}
+
+function hasActiveSvgContent(lowerText: string): boolean {
+  return lowerText.includes("<script") || /\son[a-z]+\s*=/.test(lowerText) || lowerText.includes("javascript:") || lowerText.includes("<foreignobject");
+}
+
+function looksLikeExecutableMarkup(lowerText: string): boolean {
+  return /^\s*<!doctype\s+html\b/.test(lowerText) || /^\s*<html\b/.test(lowerText) || /^\s*<script\b/.test(lowerText);
 }
 
 interface AssetOperationOptions {

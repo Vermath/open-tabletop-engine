@@ -199,6 +199,7 @@ export interface MapAsset extends Timestamps {
   checksum?: string;
   storage?: AssetStorageRef;
   lifecycle?: AssetLifecycle;
+  security?: AssetSecurityScan;
 }
 
 export interface AssetStorageRef {
@@ -215,6 +216,19 @@ export interface AssetLifecycle {
   reason?: string;
   storageDeletedAt?: string;
   cleanupReason?: string;
+}
+
+export interface AssetSecurityScan {
+  status: "clean";
+  scanner: string;
+  scannedAt: string;
+  findings: AssetSecurityFinding[];
+}
+
+export interface AssetSecurityFinding {
+  code: string;
+  severity: "low" | "medium" | "high";
+  message: string;
 }
 
 export interface Token extends Timestamps {

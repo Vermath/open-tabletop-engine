@@ -2005,6 +2005,11 @@ describe("api", () => {
     expect(uploaded.json().asset.name).toBe("Vault Upload.png");
     expect(uploaded.json().asset.sizeBytes).toBe(bytes.length);
     expect(uploaded.json().asset.checksum).toMatch(/^sha256:/);
+    expect(uploaded.json().asset.security).toMatchObject({
+      status: "clean",
+      scanner: "builtin-asset-scanner",
+      findings: []
+    });
     expect(uploaded.json().asset.storage).toMatchObject({
       provider: "local",
       key: expect.stringMatching(/^camp_demo\/asset_.+\.png$/)
@@ -2027,6 +2032,84 @@ describe("api", () => {
     expect(blob.statusCode).toBe(200);
     expect(blob.headers["content-type"]).toContain("image/png");
     expect(blob.body).toBe("fake-image-bytes");
+
+    await app.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("scans uploaded map assets before writing asset records or bytes", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "otte-asset-scan-"));
+    const store = new MemoryStateStore();
+    const app = await buildApp({
+      store,
+      uploadDir: directory
+    });
+    const cleanSvg = Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"><text>passive</text></svg>");
+
+    const clean = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/assets/upload",
+      headers: {
+        ...authHeaders,
+        "content-type": "image/svg+xml",
+        "x-asset-name": encodeURIComponent("Passive.svg")
+      },
+      payload: cleanSvg
+    });
+    expect(clean.statusCode).toBe(200);
+    const asset = clean.json().asset as MapAsset;
+    expect(asset.security).toMatchObject({
+      status: "clean",
+      scanner: "builtin-asset-scanner",
+      findings: []
+    });
+    expect(asset.security?.scannedAt).toBeTruthy();
+    expect(existsSync(join(directory, "camp_demo", `${asset.id}.svg`))).toBe(true);
+
+    const activeSvg = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/assets/upload",
+      headers: {
+        ...authHeaders,
+        "content-type": "image/svg+xml",
+        "x-asset-name": encodeURIComponent("Active.svg")
+      },
+      payload: Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\" onload=\"alert(1)\"><script>alert(1)</script></svg>")
+    });
+    expect(activeSvg.statusCode).toBe(422);
+    expect(activeSvg.json()).toMatchObject({
+      error: "asset_security_blocked",
+      scanner: "builtin-asset-scanner"
+    });
+    expect(activeSvg.json().findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "active_svg_content", severity: "high" })]));
+
+    const eicar = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/assets/upload",
+      headers: {
+        ...authHeaders,
+        "content-type": "image/png",
+        "x-asset-name": encodeURIComponent("Eicar.png")
+      },
+      payload: Buffer.from("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
+    });
+    expect(eicar.statusCode).toBe(422);
+    expect(eicar.json().findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "malware_signature", severity: "high" })]));
+
+    const html = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/assets/upload",
+      headers: {
+        ...authHeaders,
+        "content-type": "text/html",
+        "x-asset-name": encodeURIComponent("exploit.html")
+      },
+      payload: Buffer.from("<!doctype html><script>alert(1)</script>")
+    });
+    expect(html.statusCode).toBe(422);
+    expect(html.json().findings).toEqual(expect.arrayContaining([expect.objectContaining({ code: "disallowed_asset_type", severity: "high" })]));
+
+    expect(store.state.assets).toHaveLength(1);
 
     await app.close();
     rmSync(directory, { recursive: true, force: true });

@@ -231,7 +231,7 @@ curl -X POST \
   "http://localhost:4000/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true"
 ```
 
-Uploaded assets are checksummed as `sha256`, recorded as `MapAsset` rows with a `storage.provider` of `local` or `s3`, and served through `GET /api/v1/assets/{assetId}/blob?sessionToken=<token>`. Local development stores bytes under `OTTE_UPLOAD_DIR`; Docker Compose stores them in the configured MinIO/S3 bucket by default. `OTTE_ASSET_QUOTA_BYTES` enforces a per-campaign byte quota for active or archived assets.
+Uploaded assets are scanned by `builtin-asset-scanner` before storage writes. EICAR test signatures, active SVG content, executable/script uploads, and HTML uploads return `422 asset_security_blocked` with scanner findings and do not create an asset record. Clean uploads store scan metadata on `MapAsset.security`, are checksummed as `sha256`, recorded as `MapAsset` rows with a `storage.provider` of `local` or `s3`, and served through `GET /api/v1/assets/{assetId}/blob?sessionToken=<token>`. Local development stores bytes under `OTTE_UPLOAD_DIR`; Docker Compose stores them in the configured MinIO/S3 bucket by default. `OTTE_ASSET_QUOTA_BYTES` enforces a per-campaign byte quota for active or archived assets.
 
 For CDN or browser contexts that should not carry a bearer token, request a signed delivery URL. The signed URL targets the same blob route, expires automatically, and uses `OTTE_ASSET_CDN_BASE_URL` when configured:
 

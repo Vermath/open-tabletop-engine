@@ -587,6 +587,33 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - A repeated cleanup call skipped the asset with `storage_already_deleted`.
   - SQLite inspection showed lifecycle `status: deleted`, `storageDeletedAt: 2026-05-01T14:57:12.316Z`, `updatedByUserId: usr_demo_gm`, and `cleanupReason: deleted_asset`.
 
+### Asset Security Scanning Slice
+
+- Implementation:
+  - Added a built-in upload scanner that runs after size validation and before quota checks, asset record creation, or local/S3 storage writes.
+  - Clean uploaded assets now persist `MapAsset.security` metadata with scanner name, scan timestamp, clean status, and findings.
+  - Blocked uploads return `422 asset_security_blocked` with scanner findings and do not create asset records or stored object bytes.
+  - The scanner blocks EICAR test signatures, active SVG content such as scripts/event handlers/javascript URLs/`foreignObject`, executable/script/HTML MIME types, disallowed executable/script extensions, and HTML/script bodies disguised as generic uploads.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/core typecheck` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `33 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API tests verify clean SVG scan metadata and storage, active SVG rejection, EICAR signature rejection, HTML upload rejection, and no asset records for blocked uploads.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4447`
+  - SQLite file: `apps/api/storage/manual-asset-security-20260501.sqlite`
+  - Upload directory: `apps/api/storage/manual-asset-security-uploads-20260501`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, `OTTE_SQLITE_PATH=storage/manual-asset-security-20260501.sqlite`, and `OTTE_UPLOAD_DIR=storage/manual-asset-security-uploads-20260501`.
+  - GM bearer login returned `200` with an `ots_` token.
+  - Clean passive SVG upload created `asset_mon462zexy80nc6u` with `security.status: clean`, scanner `builtin-asset-scanner`, and zero findings.
+  - Stored object existed at `apps/api/storage/manual-asset-security-uploads-20260501/camp_demo/asset_mon462zexy80nc6u.svg`.
+  - Active SVG upload returned `422` with finding code `active_svg_content`.
+  - EICAR test upload returned `422` with finding code `malware_signature`.
+  - HTML upload returned `422` with finding code `disallowed_asset_type`.
+  - Final campaign asset count remained `1`, confirming blocked uploads did not create asset records.
+
 ### Advanced Vision Rendering Slice
 
 - Implementation:
@@ -752,7 +779,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, account administration, production session administration, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs first-class reset UI, MFA, SCIM/organization sync, and audit export.
-- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, and cleanup jobs for deleted or expired object bytes. Production storage work still needs CDN edge configuration, malware/content scanning, and deployment scheduling for recurring cleanup jobs.
+- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
