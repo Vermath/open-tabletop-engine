@@ -301,6 +301,45 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
+  app.post<{ Params: { sceneId: string }; Body: { x1: number; y1: number; x2: number; y2: number; blocksVision?: boolean } }>("/api/v1/scenes/:sceneId/walls", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    scene.walls.push({
+      id: createId("wall"),
+      x1: request.body.x1,
+      y1: request.body.y1,
+      x2: request.body.x2,
+      y2: request.body.y2,
+      blocksVision: request.body.blocksVision ?? true
+    });
+    scene.updatedAt = nowIso();
+    store.save();
+    hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
+    return scene;
+  });
+
+  app.post<{ Params: { sceneId: string }; Body: { x: number; y: number; radius?: number; color?: string } }>("/api/v1/scenes/:sceneId/lights", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    scene.lights.push({
+      id: createId("light"),
+      x: request.body.x,
+      y: request.body.y,
+      radius: request.body.radius ?? 180,
+      color: request.body.color ?? "#facc15"
+    });
+    scene.updatedAt = nowIso();
+    store.save();
+    hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
+    return scene;
+  });
+
   app.delete<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");

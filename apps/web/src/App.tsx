@@ -2,12 +2,14 @@ import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, 
 import {
   Bot,
   Boxes,
+  BrickWall,
   Check,
   ChevronRight,
   Download,
   Eye,
   FileText,
   Hand,
+  Lightbulb,
   MessageSquare,
   Plus,
   ScrollText,
@@ -131,6 +133,31 @@ export function App() {
       hidden: false
     });
     setStatus("Fog updated");
+    await refresh();
+  }
+
+  async function addWall() {
+    if (!selectedScene) return;
+    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/walls`, {
+      x1: Math.round(selectedScene.width * 0.25),
+      y1: Math.round(selectedScene.height * 0.28),
+      x2: Math.round(selectedScene.width * 0.75),
+      y2: Math.round(selectedScene.height * 0.28),
+      blocksVision: true
+    });
+    setStatus("Wall added");
+    await refresh();
+  }
+
+  async function addLight() {
+    if (!selectedScene) return;
+    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/lights`, {
+      x: selectedToken ? selectedToken.x + selectedToken.width / 2 : selectedScene.width / 2,
+      y: selectedToken ? selectedToken.y + selectedToken.height / 2 : selectedScene.height / 2,
+      radius: 210,
+      color: "#facc15"
+    });
+    setStatus("Light added");
     await refresh();
   }
 
@@ -326,7 +353,7 @@ export function App() {
 
         <div className="table-grid">
           <section className="table-area">
-              <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} />
+              <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onAddWall={addWall} onAddLight={addLight} />
             {selectedScene ? (
               <SceneCanvas
                 scene={selectedScene}
@@ -482,7 +509,7 @@ function SceneCanvas(props: {
   );
 }
 
-function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void }) {
+function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onAddWall(): void; onAddLight(): void }) {
   return (
     <div className="toolbar">
       <button className="tool active" title="Select">
@@ -496,6 +523,12 @@ function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onReveal
       </button>
       <button className="tool" title="Reveal fog" onClick={props.onRevealFog}>
         <Eye size={17} />
+      </button>
+      <button className="tool" title="Add wall" onClick={props.onAddWall}>
+        <BrickWall size={17} />
+      </button>
+      <button className="tool" title="Add light" onClick={props.onAddLight}>
+        <Lightbulb size={17} />
       </button>
     </div>
   );

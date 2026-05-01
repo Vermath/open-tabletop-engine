@@ -15,6 +15,8 @@ Authenticated endpoints require an `x-user-id` session header. The seeded local 
 - `GET /api/v1/assets/{assetId}/blob`
 - `GET|PATCH|DELETE /api/v1/scenes/{sceneId}`
 - `POST /api/v1/scenes/{sceneId}/fog`
+- `POST /api/v1/scenes/{sceneId}/walls`
+- `POST /api/v1/scenes/{sceneId}/lights`
 - `GET|POST /api/v1/scenes/{sceneId}/tokens`
 - `PATCH|DELETE /api/v1/tokens/{tokenId}`
 - `GET|POST /api/v1/campaigns/{campaignId}/actors`
@@ -66,6 +68,8 @@ curl -X POST \
 ```
 
 Uploaded assets are stored under `OTTE_UPLOAD_DIR`, checksummed as `sha256`, recorded as `MapAsset` rows, and served through `GET /api/v1/assets/{assetId}/blob?userId=usr_demo_gm`.
+
+Scene layer authoring is split into focused endpoints. Fog reveal uses `token.reveal`; wall and light creation use `scene.update` and return the updated scene for realtime rebroadcast.
 
 `POST /api/v1/import/campaign` accepts either a raw `.ottx` archive or:
 

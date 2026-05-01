@@ -124,6 +124,57 @@ describe("api", () => {
     await app.close();
   });
 
+  it("authors walls and lights with scene update permission", async () => {
+    const store = new MemoryStateStore();
+    store.state.users.push({
+      id: "usr_observer",
+      displayName: "Observer",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    store.state.members.push({
+      id: "mem_observer",
+      campaignId: "camp_demo",
+      userId: "usr_observer",
+      role: "observer",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    const app = await buildApp({ store });
+
+    const blockedWall = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/walls",
+      headers: { "x-user-id": "usr_observer" },
+      payload: { x1: 100, y1: 100, x2: 500, y2: 100 }
+    });
+    expect(blockedWall.statusCode).toBe(403);
+
+    const wall = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/walls",
+      headers: authHeaders,
+      payload: { x1: 220, y1: 160, x2: 840, y2: 160 }
+    });
+    expect(wall.statusCode).toBe(200);
+    expect(wall.json().walls.at(-1)).toEqual(expect.objectContaining({ x1: 220, y1: 160, x2: 840, y2: 160, blocksVision: true }));
+
+    const light = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/lights",
+      headers: authHeaders,
+      payload: { x: 360, y: 340, radius: 240, color: "#facc15" }
+    });
+    expect(light.statusCode).toBe(200);
+    expect(light.json().lights.at(-1)).toEqual(expect.objectContaining({ x: 360, y: 340, radius: 240, color: "#facc15" }));
+
+    const scene = await app.inject({ method: "GET", url: "/api/v1/scenes/scn_vault_entry", headers: authHeaders });
+    expect(scene.json().walls).toHaveLength(2);
+    expect(scene.json().lights).toHaveLength(2);
+
+    await app.close();
+  });
+
   it("runs plugin and system runtime flows with permission boundaries", async () => {
     const store = new MemoryStateStore();
     store.state.users.push({
