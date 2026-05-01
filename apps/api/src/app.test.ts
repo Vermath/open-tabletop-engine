@@ -2941,6 +2941,118 @@ describe("api", () => {
     }
   });
 
+  it("spends system action resources with actor update permission", async () => {
+    const store = new MemoryStateStore();
+    store.state.users.push(
+      createTimestamped("usr", {
+        id: "usr_observer",
+        displayName: "Observer"
+      })
+    );
+    store.state.members.push(
+      createTimestamped("mem", {
+        campaignId: "camp_demo",
+        userId: "usr_observer",
+        role: "observer" as const
+      })
+    );
+    const app = await buildApp({ store });
+
+    try {
+      const fantasy = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "generic-fantasy",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: "Slot Mender",
+          data: {
+            class: "Mender",
+            level: 2,
+            attributes: { strength: 8, dexterity: 12, constitution: 13, intelligence: 13, wisdom: 16, charisma: 14 },
+            hp: { current: 12, max: 12 },
+            spellSlots: { level1: { current: 1, max: 2, recovery: "long" } },
+            conditions: []
+          }
+        }
+      });
+      expect(fantasy.statusCode).toBe(200);
+      const fantasyActorId = fantasy.json().id;
+
+      const cureWounds = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${fantasyActorId}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "cure-wounds" }
+      });
+      expect(cureWounds.statusCode).toBe(200);
+      const spellRollId = `spell-${cureWounds.json().item.id}-healing`;
+
+      const observerSpend = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${fantasyActorId}/roll`,
+        headers: { "x-user-id": "usr_observer" },
+        payload: { rollId: spellRollId, consumeResources: true }
+      });
+      expect(observerSpend.statusCode).toBe(403);
+
+      const spellUse = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${fantasyActorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: spellRollId, consumeResources: true }
+      });
+      expect(spellUse.statusCode).toBe(200);
+      expect(spellUse.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }]);
+      expect(spellUse.json().actor.data.spellSlots).toEqual({ level1: { current: 0, max: 2, recovery: "long" } });
+      expect(store.state.actors.find((actor) => actor.id === fantasyActorId)?.data.spellSlots).toEqual({ level1: { current: 0, max: 2, recovery: "long" } });
+
+      const depletedSpell = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${fantasyActorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: spellRollId, consumeResources: true }
+      });
+      expect(depletedSpell.statusCode).toBe(409);
+      expect(depletedSpell.json().message).toBe("Insufficient level 1 spell slot");
+
+      const tech = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/stellar-frontiers/characters",
+        headers: authHeaders,
+        payload: { templateId: "ship-tech", name: "Charge Tech", ownerUserId: "usr_demo_player" }
+      });
+      expect(tech.statusCode).toBe(200);
+      const techActorId = tech.json().actor.id;
+      const medPatch = tech.json().items.find((item: { name: string }) => item.name === "Med Patch");
+      const medPatchRollId = `gear-${medPatch.id}-healing`;
+
+      const medPatchUse = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${techActorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: medPatchRollId, consumeResources: true }
+      });
+      expect(medPatchUse.statusCode).toBe(200);
+      expect(medPatchUse.json().usage.consumed).toEqual([{ type: "itemQuantity", key: medPatch.id, label: "Med Patch", amount: 1, remaining: 0 }]);
+      expect(medPatchUse.json().sheet.inventory.find((item: { id: string }) => item.id === medPatch.id).data.quantity).toBe(0);
+      expect(store.state.items.find((item) => item.id === medPatch.id)?.data.quantity).toBe(0);
+
+      const depletedMedPatch = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${techActorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: medPatchRollId, consumeResources: true }
+      });
+      expect(depletedMedPatch.statusCode).toBe(409);
+      expect(depletedMedPatch.json().message).toBe("Med Patch has no remaining uses");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("imports system characters from normalized character data", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });

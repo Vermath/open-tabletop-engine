@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -72,6 +72,32 @@ describe("generic fantasy rules", () => {
         { id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+2" }
       ])
     );
+  });
+
+  it("spends spell slots for leveled fantasy spell actions", () => {
+    const spell: Item = {
+      id: "itm_cure_wounds",
+      campaignId: "camp_demo",
+      systemId: "generic-fantasy",
+      actorId: actor.id,
+      type: "spell",
+      name: "Cure Wounds",
+      data: { level: 1, healingFormula: "1d8+@attributes.wisdom", compendiumId: "cure-wounds" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const caster: Actor = {
+      ...actor,
+      data: {
+        ...actor.data,
+        spellSlots: { level1: { current: 1, max: 2, recovery: "long" } }
+      }
+    };
+
+    const used = useGenericFantasyAction(caster, [spell], `spell-${spell.id}-healing`);
+    expect(used.consumed).toEqual([{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }]);
+    expect(used.data.spellSlots).toEqual({ level1: { current: 0, max: 2, recovery: "long" } });
+    expect(() => useGenericFantasyAction({ ...caster, data: used.data }, [spell], `spell-${spell.id}-healing`)).toThrow("Insufficient level 1 spell slot");
   });
 
   it("provides guided character templates and level advancement", () => {
@@ -255,6 +281,40 @@ describe("stellar frontiers rules", () => {
     );
   });
 
+  it("spends sci-fi strain and consumable gear charges", () => {
+    const overclock: Item = {
+      id: "itm_overclock",
+      campaignId: "camp_demo",
+      systemId: "stellar-frontiers",
+      actorId: pilot.id,
+      type: "talent",
+      name: "Overclock",
+      data: { strainCost: 1, bonusFormula: "1d6", aptitude: "tech", compendiumId: "overclock" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const medPatch: Item = {
+      id: "itm_med_patch",
+      campaignId: "camp_demo",
+      systemId: "stellar-frontiers",
+      actorId: pilot.id,
+      type: "gear",
+      name: "Med Patch",
+      data: { category: "consumable", healingFormula: "1d6+2", quantity: 1, compendiumId: "med-patch" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+
+    const strained = useStellarFrontiersAction(pilot, [overclock], `talent-${overclock.id}-boost`);
+    expect(strained.consumed).toEqual([{ type: "strain", key: "strain", label: "Strain", amount: 1, remaining: 2 }]);
+    expect(strained.data.strain).toEqual({ current: 2, max: 6 });
+
+    const patched = useStellarFrontiersAction(pilot, [medPatch], `gear-${medPatch.id}-healing`);
+    expect(patched.consumed).toEqual([{ type: "itemQuantity", key: "itm_med_patch", label: "Med Patch", amount: 1, remaining: 0 }]);
+    expect(patched.items).toEqual([expect.objectContaining({ id: "itm_med_patch", data: expect.objectContaining({ quantity: 0 }) })]);
+    expect(() => useStellarFrontiersAction(pilot, patched.items, `gear-${medPatch.id}-healing`)).toThrow("Med Patch has no remaining uses");
+  });
+
   it("provides guided sci-fi templates and rank advancement", () => {
     const shipTech = stellarFrontiersCharacterTemplate("ship-tech");
     expect(shipTech).toEqual(expect.objectContaining({ name: "Ship Tech", actorType: "character" }));
@@ -419,6 +479,32 @@ describe("mystic noir rules", () => {
         { id: "ritual-itm_warding_rite-ward", label: "Warding Rite Ward", formula: "1d6+2" }
       ])
     );
+  });
+
+  it("spends investigation resources for clue and ritual actions", () => {
+    const notebook: Item = {
+      id: "itm_notebook",
+      campaignId: "camp_demo",
+      systemId: "mystic-noir",
+      actorId: investigator.id,
+      type: "clue",
+      name: "Case Notebook",
+      data: { bonusFormula: "1d4", skill: "investigation", resourceCost: { resource: "lead", amount: 1 }, compendiumId: "case-notebook" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const resourcefulInvestigator: Actor = {
+      ...investigator,
+      data: {
+        ...investigator.data,
+        resources: { lead: { current: 1, max: 2, recovery: "long" } }
+      }
+    };
+
+    const used = useMysticNoirAction(resourcefulInvestigator, [notebook], `clue-${notebook.id}-insight`);
+    expect(used.consumed).toEqual([{ type: "resource", key: "lead", label: "Lead", amount: 1, remaining: 0 }]);
+    expect(used.data.resources).toEqual({ lead: { current: 0, max: 2, recovery: "long" } });
+    expect(() => useMysticNoirAction({ ...resourcefulInvestigator, data: used.data }, [notebook], `clue-${notebook.id}-insight`)).toThrow("Insufficient lead");
   });
 
   it("provides guided investigation templates and case advancement", () => {

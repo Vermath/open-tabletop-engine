@@ -483,6 +483,17 @@ export function App() {
     await refresh();
   }
 
+  async function useActorAction(rollId: string) {
+    if (!selectedActor) return;
+    const used = await apiPost<{ usage?: { consumed?: Array<{ label: string; remaining: number }> } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
+      rollId,
+      consumeResources: true
+    });
+    const spent = used.usage?.consumed?.map((item) => `${item.label} ${item.remaining}`).join(", ");
+    setStatus(spent ? `${selectedActor.name} used action: ${spent}` : `${selectedActor.name} action posted`);
+    await refresh();
+  }
+
   async function createCharacterFromTemplate(template: CharacterTemplateInfo) {
     const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${template.systemId}/characters`, {
       templateId: template.id,
@@ -824,7 +835,7 @@ export function App() {
               <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="SDK" onClick={() => setTab("plugins")} />
               {snapshot.session?.serverAdmin && <TabButton active={tab === "admin"} icon={<UserCog size={15} />} label="Admin" onClick={() => setTab("admin")} />}
             </div>
-            {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} items={selectedActorItems} updateActorHp={updateActorHp} canUpdateActor={canUpdateSelectedActor} />}
+            {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} items={selectedActorItems} updateActorHp={updateActorHp} useActorAction={useActorAction} canUpdateActor={canUpdateSelectedActor} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
@@ -1185,7 +1196,7 @@ function systemImportPayload(systemId: string, ownerUserId: string): Record<stri
   };
 }
 
-function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; updateActorHp(actor: Actor, current: number): void; canUpdateActor: boolean }) {
+function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; updateActorHp(actor: Actor, current: number): void; useActorAction(rollId: string): void; canUpdateActor: boolean; canUseAction: boolean }) {
   if (!props.actor) return <div className="panel-empty">No actor selected.</div>;
   const hp = props.actor.data.hp as { current?: number; max?: number } | undefined;
   const conditions = actorConditionLabels(props.actor);
@@ -1196,6 +1207,7 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
   const rituals = props.items.filter((item) => item.type === "ritual");
   const resources = actorResourceLabels(props.actor);
   const actionLabels = actorActionLabels(props.actor, props.items);
+  const firstAction = actorActionOptions(props.actor, props.items)[0];
   return (
     <div className="panel-stack">
       <div className="section-title">Selected Actor</div>
@@ -1225,31 +1237,31 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
       {inventory.length > 0 && (
         <div className="metric-row">
           <span>Inventory</span>
-          <strong>{inventory.map((item) => item.name).join(", ")}</strong>
+          <strong>{inventory.map((item) => itemDisplayLabel(item)).join(", ")}</strong>
         </div>
       )}
       {spells.length > 0 && (
         <div className="metric-row">
           <span>Spells</span>
-          <strong>{spells.map((item) => item.name).join(", ")}</strong>
+          <strong>{spells.map((item) => itemDisplayLabel(item)).join(", ")}</strong>
         </div>
       )}
       {talents.length > 0 && (
         <div className="metric-row">
           <span>Talents</span>
-          <strong>{talents.map((item) => item.name).join(", ")}</strong>
+          <strong>{talents.map((item) => itemDisplayLabel(item)).join(", ")}</strong>
         </div>
       )}
       {clues.length > 0 && (
         <div className="metric-row">
           <span>Clues</span>
-          <strong>{clues.map((item) => item.name).join(", ")}</strong>
+          <strong>{clues.map((item) => itemDisplayLabel(item)).join(", ")}</strong>
         </div>
       )}
       {rituals.length > 0 && (
         <div className="metric-row">
           <span>Rituals</span>
-          <strong>{rituals.map((item) => item.name).join(", ")}</strong>
+          <strong>{rituals.map((item) => itemDisplayLabel(item)).join(", ")}</strong>
         </div>
       )}
       {actionLabels.length > 0 && (
@@ -1257,6 +1269,11 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
           <span>Actions</span>
           <strong>{actionLabels.join(", ")}</strong>
         </div>
+      )}
+      {firstAction && (
+        <button className="ghost-button wide" onClick={() => props.useActorAction(firstAction.rollId)} disabled={!props.canUseAction}>
+          <WandSparkles size={16} /> Use {firstAction.label}
+        </button>
       )}
       <div className="sheet-row">
         <label htmlFor="actor-hp">Current HP</label>
@@ -1300,55 +1317,69 @@ function actorResourceLabels(actor: Actor): string[] {
   });
 }
 
-function actorActionLabels(actor: Actor, items: Item[]): string[] {
-  if (actor.systemId === "stellar-frontiers") return stellarFrontiersActionLabels(actor, items);
-  if (actor.systemId === "mystic-noir") return mysticNoirActionLabels(actor, items);
-  return genericFantasyActionLabels(actor, items);
+function itemDisplayLabel(item: Item): string {
+  const quantity = numericValue(recordValue(item.data).quantity, NaN);
+  return Number.isFinite(quantity) ? `${item.name} x${quantity}` : item.name;
 }
 
-function genericFantasyActionLabels(actor: Actor, items: Item[]): string[] {
+function actorActionLabels(actor: Actor, items: Item[]): string[] {
+  return actorActionOptions(actor, items).map((option) => option.description);
+}
+
+type ActorActionOption = { rollId: string; label: string; description: string };
+
+function actorActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
+  if (actor.systemId === "stellar-frontiers") return stellarFrontiersActionOptions(actor, items);
+  if (actor.systemId === "mystic-noir") return mysticNoirActionOptions(actor, items);
+  return genericFantasyActionOptions(actor, items);
+}
+
+function genericFantasyActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
   return items.filter((item) => item.actorId === actor.id).flatMap((item) => {
     const data = recordValue(item.data);
-    const labels: string[] = [];
+    const options: ActorActionOption[] = [];
+    const prefix = item.type === "spell" ? "spell" : "item";
     const ability = stringValue(data.ability);
     const damage = stringValue(data.damage);
-    if (damage && ability) labels.push(`${item.name} Damage: ${appendActionFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability))}`);
+    if (damage && ability) options.push({ rollId: `${prefix}-${item.id}-damage`, label: `${item.name} Damage`, description: `${item.name} Damage: ${appendActionFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability))}` });
     const versatileDamage = stringValue(data.versatileDamage);
-    if (versatileDamage && ability) labels.push(`${item.name} Versatile: ${appendActionFormulaBonus(versatileDamage, genericFantasyAttributeModifier(actor, ability))}`);
+    if (versatileDamage && ability) options.push({ rollId: `${prefix}-${item.id}-versatile-damage`, label: `${item.name} Versatile`, description: `${item.name} Versatile: ${appendActionFormulaBonus(versatileDamage, genericFantasyAttributeModifier(actor, ability))}` });
     const healingFormula = stringValue(data.healingFormula);
-    if (healingFormula) labels.push(`${item.name} Healing: ${resolveGenericFantasyActionFormula(healingFormula, actor)}`);
+    if (healingFormula) options.push({ rollId: `${prefix}-${item.id}-healing`, label: `${item.name} Healing`, description: `${item.name} Healing: ${resolveGenericFantasyActionFormula(healingFormula, actor)}` });
     const effectFormula = stringValue(data.effectFormula);
     const effectAbility = stringValue(data.saveDcAbility);
-    if (effectFormula) labels.push(`${item.name} Effect: ${effectAbility ? appendActionFormulaBonus(effectFormula, genericFantasyAttributeModifier(actor, effectAbility)) : effectFormula}`);
-    return labels;
+    if (effectFormula) options.push({ rollId: `${prefix}-${item.id}-effect`, label: `${item.name} Effect`, description: `${item.name} Effect: ${effectAbility ? appendActionFormulaBonus(effectFormula, genericFantasyAttributeModifier(actor, effectAbility)) : effectFormula}` });
+    return options;
   });
 }
 
-function stellarFrontiersActionLabels(actor: Actor, items: Item[]): string[] {
+function stellarFrontiersActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
   return items.filter((item) => item.actorId === actor.id).flatMap((item) => {
     const data = recordValue(item.data);
-    const labels: string[] = [];
+    const options: ActorActionOption[] = [];
+    const prefix = item.type === "talent" ? "talent" : "gear";
     const aptitude = stringValue(data.aptitude);
     const damage = stringValue(data.damage);
-    if (damage) labels.push(`${item.name} Damage: ${aptitude ? appendActionFormulaBonus(damage, stellarFrontiersAptitudeModifier(actor, aptitude)) : damage}`);
+    if (damage) options.push({ rollId: `${prefix}-${item.id}-damage`, label: `${item.name} Damage`, description: `${item.name} Damage: ${aptitude ? appendActionFormulaBonus(damage, stellarFrontiersAptitudeModifier(actor, aptitude)) : damage}` });
     const healingFormula = stringValue(data.healingFormula);
-    if (healingFormula) labels.push(`${item.name} Healing: ${healingFormula}`);
+    if (healingFormula) options.push({ rollId: `${prefix}-${item.id}-healing`, label: `${item.name} Healing`, description: `${item.name} Healing: ${healingFormula}` });
     const bonusFormula = stringValue(data.bonusFormula);
-    if (bonusFormula) labels.push(`${item.name} Boost: ${aptitude ? appendActionFormulaBonus(bonusFormula, stellarFrontiersAptitudeModifier(actor, aptitude)) : bonusFormula}`);
-    return labels;
+    if (bonusFormula) options.push({ rollId: `${prefix}-${item.id}-boost`, label: `${item.name} Boost`, description: `${item.name} Boost: ${aptitude ? appendActionFormulaBonus(bonusFormula, stellarFrontiersAptitudeModifier(actor, aptitude)) : bonusFormula}` });
+    return options;
   });
 }
 
-function mysticNoirActionLabels(actor: Actor, items: Item[]): string[] {
+function mysticNoirActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
   return items.filter((item) => item.actorId === actor.id).flatMap((item) => {
     const data = recordValue(item.data);
-    const labels: string[] = [];
+    const options: ActorActionOption[] = [];
+    const prefix = item.type === "ritual" ? "ritual" : "clue";
     const skill = stringValue(data.skill);
     const bonusFormula = stringValue(data.bonusFormula);
-    if (bonusFormula) labels.push(`${item.name} Insight: ${skill ? appendActionFormulaBonus(bonusFormula, mysticNoirSkillModifier(actor, skill)) : bonusFormula}`);
+    if (bonusFormula) options.push({ rollId: `${prefix}-${item.id}-insight`, label: `${item.name} Insight`, description: `${item.name} Insight: ${skill ? appendActionFormulaBonus(bonusFormula, mysticNoirSkillModifier(actor, skill)) : bonusFormula}` });
     const protectionFormula = stringValue(data.protectionFormula);
-    if (protectionFormula) labels.push(`${item.name} Ward: ${skill ? appendActionFormulaBonus(protectionFormula, mysticNoirSkillModifier(actor, skill)) : protectionFormula}`);
-    return labels;
+    if (protectionFormula) options.push({ rollId: `${prefix}-${item.id}-ward`, label: `${item.name} Ward`, description: `${item.name} Ward: ${skill ? appendActionFormulaBonus(protectionFormula, mysticNoirSkillModifier(actor, skill)) : protectionFormula}` });
+    return options;
   });
 }
 

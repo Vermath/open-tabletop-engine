@@ -95,6 +95,25 @@ export interface SystemRestResult {
   data: Record<string, unknown>;
 }
 
+export type SystemActionConsumptionType = "spellSlot" | "resource" | "strain" | "itemQuantity";
+
+export interface SystemActionConsumption {
+  type: SystemActionConsumptionType;
+  key: string;
+  label: string;
+  amount: number;
+  remaining: number;
+}
+
+export interface SystemActionUseResult {
+  systemId: string;
+  actorId: string;
+  rollId: string;
+  consumed: SystemActionConsumption[];
+  data: Record<string, unknown>;
+  items: Item[];
+}
+
 export interface EncounterThreat {
   id: string;
   systemId: string;
@@ -589,6 +608,21 @@ export function genericFantasySheet(actor: Actor, items: Item[] = []): GenericFa
   };
 }
 
+export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId: string): SystemActionUseResult {
+  const item = actionItemForRoll(actor, items, rollId, ["spell", "item"]);
+  const consumed: SystemActionConsumption[] = [];
+  let data = { ...actor.data };
+  if (item?.type === "spell" && rollId.startsWith(`spell-${item.id}-`)) {
+    const level = Math.floor(numericValue(recordValue(item.data).level, 0));
+    if (level > 0) {
+      const result = consumeResourcePool(data.spellSlots, `level${level}`, 1, `Level ${level} Spell Slot`, "spellSlot");
+      data = { ...data, spellSlots: result.pools };
+      consumed.push(result.consumed);
+    }
+  }
+  return { systemId: "generic-fantasy", actorId: actor.id, rollId, consumed, data, items: [] };
+}
+
 export function genericFantasyActorConditions(actor: Actor): AppliedCondition[] {
   const rawConditions = normalizeConditionRecords(actor.data.conditions);
   return rawConditions.map((condition) => {
@@ -684,7 +718,7 @@ export function stellarFrontiersCompendium(): StellarFrontiersCompendiumEntry[] 
       type: "gear",
       name: "Med Patch",
       summary: "Single-use field treatment that restores minor harm.",
-      data: { category: "consumable", healingFormula: "1d6+2" }
+      data: { category: "consumable", healingFormula: "1d6+2", quantity: 1 }
     },
     {
       id: "overclock",
@@ -904,6 +938,32 @@ export function stellarFrontiersSheet(actor: Actor, items: Item[] = []): Stellar
   };
 }
 
+export function useStellarFrontiersAction(actor: Actor, items: Item[] = [], rollId: string): SystemActionUseResult {
+  const item = actionItemForRoll(actor, items, rollId, ["gear", "talent"]);
+  const consumed: SystemActionConsumption[] = [];
+  let data = { ...actor.data };
+  const updatedItems: Item[] = [];
+  if (item) {
+    const itemData = recordValue(item.data);
+    const strainCost = Math.floor(numericValue(itemData.strainCost, 0));
+    if (strainCost > 0) {
+      const strain = normalizePool(data.strain, 5);
+      if (strain.current < strainCost) throw new Error(`Insufficient strain for ${item.name}`);
+      const remaining = strain.current - strainCost;
+      data = { ...data, strain: { ...strain, current: remaining } };
+      consumed.push({ type: "strain", key: "strain", label: "Strain", amount: strainCost, remaining });
+    }
+    if (stringValue(itemData.category) === "consumable") {
+      const quantity = Math.floor(numericValue(itemData.quantity, 1));
+      if (quantity < 1) throw new Error(`${item.name} has no remaining uses`);
+      const remaining = quantity - 1;
+      updatedItems.push({ ...item, data: { ...itemData, quantity: remaining } });
+      consumed.push({ type: "itemQuantity", key: item.id, label: item.name, amount: 1, remaining });
+    }
+  }
+  return { systemId: "stellar-frontiers", actorId: actor.id, rollId, consumed, data, items: updatedItems };
+}
+
 export function stellarFrontiersActorConditions(actor: Actor): AppliedCondition[] {
   const rawConditions = normalizeConditionRecords(actor.data.conditions);
   return rawConditions.map((condition) => {
@@ -984,14 +1044,14 @@ export function mysticNoirCompendium(): MysticNoirCompendiumEntry[] {
       type: "clue",
       name: "Case Notebook",
       summary: "Organized leads that sharpen an investigation roll.",
-      data: { category: "casework", bonusFormula: "1d4", skill: "investigation", tags: ["notes", "lead"] }
+      data: { category: "casework", bonusFormula: "1d4", skill: "investigation", resourceCost: { resource: "lead", amount: 1 }, tags: ["notes", "lead"] }
     },
     {
       id: "warding-rite",
       type: "ritual",
       name: "Warding Rite",
       summary: "A protective ritual that reinforces resolve under pressure.",
-      data: { category: "protection", protectionFormula: "1d6", skill: "resolve", tags: ["ward", "ritual"] }
+      data: { category: "protection", protectionFormula: "1d6", skill: "resolve", resourceCost: { resource: "ward", amount: 1 }, tags: ["ward", "ritual"] }
     },
     {
       id: "focused",
@@ -1205,6 +1265,23 @@ export function mysticNoirSheet(actor: Actor, items: Item[] = []): MysticNoirShe
   };
 }
 
+export function useMysticNoirAction(actor: Actor, items: Item[] = [], rollId: string): SystemActionUseResult {
+  const item = actionItemForRoll(actor, items, rollId, ["clue", "ritual"]);
+  const consumed: SystemActionConsumption[] = [];
+  let data = { ...actor.data };
+  if (item) {
+    const cost = recordValue(recordValue(item.data).resourceCost);
+    const resource = stringValue(cost.resource);
+    const amount = Math.floor(numericValue(cost.amount, 0));
+    if (resource && amount > 0) {
+      const result = consumeResourcePool(data.resources, resource, amount, titleCaseWords(resource), "resource");
+      data = { ...data, resources: result.pools };
+      consumed.push(result.consumed);
+    }
+  }
+  return { systemId: "mystic-noir", actorId: actor.id, rollId, consumed, data, items: [] };
+}
+
 export function mysticNoirActorConditions(actor: Actor): AppliedCondition[] {
   const rawConditions = normalizeConditionRecords(actor.data.conditions);
   return rawConditions.map((condition) => {
@@ -1343,6 +1420,29 @@ function recoverResourcePools(value: unknown, restType: SystemRestType): { value
   return { value: pools, recovered };
 }
 
+function consumeResourcePool(
+  value: unknown,
+  key: string,
+  amount: number,
+  label: string,
+  type: SystemActionConsumptionType
+): { pools: Record<string, Record<string, unknown> & { current: number; max: number }>; consumed: SystemActionConsumption } {
+  const pools = normalizeResourcePools(value);
+  const pool = pools[key];
+  if (!pool || pool.current < amount) throw new Error(`Insufficient ${label.toLowerCase()}`);
+  pool.current -= amount;
+  return {
+    pools,
+    consumed: {
+      type,
+      key,
+      label,
+      amount,
+      remaining: pool.current
+    }
+  };
+}
+
 function defaultGenericFantasyResources(className: string): Record<string, Record<string, unknown>> {
   if (className === "Mender") return { fieldPrayer: { current: 1, max: 1, recovery: "long" } };
   if (className === "Guardian") return { secondWind: { current: 1, max: 1, recovery: "short" } };
@@ -1384,6 +1484,16 @@ function conditionClearsOnRest(entry: RulesCompendiumEntry, restType: SystemRest
   const data = recordValue(entry.data);
   if (restType === "long") return booleanValue(data.longRestClears) || booleanValue(data.shortRestClears);
   return booleanValue(data.shortRestClears);
+}
+
+function actionItemForRoll(actor: Actor, items: Item[], rollId: string, prefixes: string[]): Item | undefined {
+  return items
+    .filter((item) => itemBelongsToActor(actor, item))
+    .find((item) => prefixes.some((prefix) => rollId.startsWith(`${prefix}-${item.id}-`)));
+}
+
+function titleCaseWords(value: string): string {
+  return value.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function normalizeImportConditions(value: unknown, lookup: (entryId: string) => RulesCompendiumEntry | undefined, warnings: string[]): string[] {

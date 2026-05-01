@@ -7,7 +7,7 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemActionUseResult, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -3119,6 +3119,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       rollId?: string;
       ability?: string;
       visibility?: "public" | "gm_only" | "whisper";
+      consumeResources?: boolean;
     };
   }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/roll", async (request, reply) => {
     const canReadActor = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
@@ -3129,13 +3130,35 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
     if (!actor) return notFound(reply, "System actor not found");
-    const quickRolls = systemQuickRolls(actor, actorItems(store, actor));
+    const items = actorItems(store, actor);
+    const quickRolls = systemQuickRolls(actor, items);
     const rollDefinition =
       quickRolls.find((item) => item.id === request.body.rollId) ??
       quickRolls.find((item) => item.id === `ability-${request.body.ability}`) ??
       quickRolls.find((item) => item.id === `aptitude-${request.body.ability}`) ??
       quickRolls[0];
     if (!rollDefinition) return notFound(reply, "No system roll is available for this actor");
+    let usage: SystemActionUseResult | undefined;
+    if (request.body.consumeResources) {
+      if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+      try {
+        usage = useSystemAction(actor, items, rollDefinition.id);
+      } catch (error) {
+        return conflict(reply, error instanceof Error ? error.message : "System action resources are unavailable");
+      }
+      if (usage.consumed.length > 0 || usage.items.length > 0) {
+        const updatedAt = nowIso();
+        actor.data = usage.data;
+        actor.updatedAt = updatedAt;
+        for (const updatedItem of usage.items) {
+          const storedItem = store.state.items.find((item) => item.id === updatedItem.id && item.campaignId === actor.campaignId);
+          if (storedItem) {
+            storedItem.data = updatedItem.data;
+            storedItem.updatedAt = updatedAt;
+          }
+        }
+      }
+    }
     const rolled = rollFormula(rollDefinition.formula);
     const roll = createTimestamped("roll", {
       campaignId: request.params.campaignId,
@@ -3158,6 +3181,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.rolls.push(roll);
     store.state.chat.push(message);
     store.save();
+    if (usage && (usage.consumed.length > 0 || usage.items.length > 0)) broadcastActorUpdated(broadcast, actor);
     broadcast(
       createEvent({
         campaignId: roll.campaignId,
@@ -3176,7 +3200,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: message
       })
     );
-    return { roll, chat: message, quickRoll: rollDefinition };
+    return { roll, chat: message, quickRoll: rollDefinition, usage, actor, sheet: systemSheet(actor, actorItems(store, actor)) };
   });
 
   app.post<{
@@ -6249,6 +6273,12 @@ function systemQuickRolls(actor: Actor, items: Item[] = []) {
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersQuickRolls(actor, items);
   if (actor.systemId === "mystic-noir") return mysticNoirQuickRolls(actor, items);
   return genericFantasyQuickRolls(actor, items);
+}
+
+function useSystemAction(actor: Actor, items: Item[], rollId: string): SystemActionUseResult {
+  if (actor.systemId === "stellar-frontiers") return useStellarFrontiersAction(actor, items, rollId);
+  if (actor.systemId === "mystic-noir") return useMysticNoirAction(actor, items, rollId);
+  return useGenericFantasyAction(actor, items, rollId);
 }
 
 function applySystemCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {
