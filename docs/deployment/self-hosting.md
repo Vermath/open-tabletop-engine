@@ -31,6 +31,8 @@ Services:
 
 The API persists campaign state to SQLite at `storage/opentabletop.sqlite` by default. Local non-Docker API runs store uploaded map assets under `OTTE_UPLOAD_DIR` unless `OTTE_ASSET_STORAGE=s3` is configured. Docker Compose defaults uploaded assets to MinIO with bucket `opentabletop-assets`, endpoint `http://minio:9000`, and path-style S3 access. The SQLite file lives in the `api-storage` volume; the `api-uploads` volume remains available for local-storage fallback. AI threads use `OTTE_AI_PROVIDER=local-echo` unless configured otherwise. `OTTE_AI_PROVIDER=codex-loopback` is available as a deterministic local Codex App Server adapter smoke test. `OTTE_AI_PROVIDER=openai-responses` enables the OpenAI Responses API adapter and requires `OPENAI_API_KEY`; optional provider settings are `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_ORGANIZATION`, and `OPENAI_PROJECT`.
 
+OIDC SSO is optional. Set `OTTE_OIDC_ISSUER`, `OTTE_OIDC_CLIENT_ID`, optional `OTTE_OIDC_CLIENT_SECRET`, and an externally reachable `OTTE_OIDC_REDIRECT_URI` ending in `/api/v1/auth/oidc/callback`. Set `OTTE_WEB_ORIGIN` or `OTTE_OIDC_ALLOWED_RETURN_ORIGINS` to the browser origin that should receive the callback token.
+
 The worker app can process a single JSON job from stdin against a running API:
 
 ```bash

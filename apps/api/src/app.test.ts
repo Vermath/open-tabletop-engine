@@ -1,4 +1,6 @@
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
@@ -27,6 +29,30 @@ class MemoryAssetStorage implements AssetStorage {
     const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
     const body = this.objects.get(key);
     return body ? Buffer.from(body) : undefined;
+  }
+}
+
+function sendJson(response: ServerResponse, body: unknown): void {
+  response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+}
+
+async function readRequestBody(request: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function snapshotEnv(keys: string[]): Record<string, string | undefined> {
+  return Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+}
+
+function restoreEnv(snapshot: Record<string, string | undefined>): void {
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
   }
 }
 
@@ -369,6 +395,142 @@ describe("api", () => {
     expect(acceptRevoked.statusCode).toBe(403);
 
     await app.close();
+  });
+
+  it("starts and completes OIDC SSO with PKCE and user linking", async () => {
+    let tokenRequestBody: URLSearchParams | undefined;
+    let tokenRequestAuthorization: string | undefined;
+    let userInfoAuthorization: string | undefined;
+    let issuer = "";
+    const provider = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+      if (request.url === "/.well-known/openid-configuration") {
+        sendJson(response, {
+          issuer,
+          authorization_endpoint: `${issuer}/authorize`,
+          token_endpoint: `${issuer}/token`,
+          userinfo_endpoint: `${issuer}/userinfo`
+        });
+        return;
+      }
+      if (request.url === "/token" && request.method === "POST") {
+        tokenRequestAuthorization = request.headers.authorization;
+        tokenRequestBody = new URLSearchParams(await readRequestBody(request));
+        sendJson(response, {
+          access_token: "provider-access-token",
+          token_type: "Bearer"
+        });
+        return;
+      }
+      if (request.url === "/userinfo") {
+        userInfoAuthorization = request.headers.authorization;
+        sendJson(response, {
+          sub: "subject-123",
+          email: "Sso.User@Example.Test",
+          name: "SSO User"
+        });
+        return;
+      }
+      response.writeHead(404).end();
+    });
+    await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve));
+    const address = provider.address() as AddressInfo;
+    issuer = `http://127.0.0.1:${address.port}`;
+
+    const previousEnv = snapshotEnv([
+      "OTTE_OIDC_ISSUER",
+      "OTTE_OIDC_CLIENT_ID",
+      "OTTE_OIDC_CLIENT_SECRET",
+      "OTTE_OIDC_REDIRECT_URI",
+      "OTTE_OIDC_SCOPE",
+      "OTTE_OIDC_DISPLAY_NAME",
+      "OTTE_OIDC_TOKEN_AUTH",
+      "OTTE_PUBLIC_URL",
+      "OTTE_OIDC_ALLOW_INSECURE",
+      "OTTE_WEB_ORIGIN",
+      "OTTE_OIDC_ALLOWED_RETURN_ORIGINS"
+    ]);
+    process.env.OTTE_OIDC_ISSUER = issuer;
+    process.env.OTTE_OIDC_CLIENT_ID = "otte-client";
+    process.env.OTTE_OIDC_CLIENT_SECRET = "otte-secret";
+    process.env.OTTE_OIDC_REDIRECT_URI = "http://127.0.0.1:4000/api/v1/auth/oidc/callback";
+    process.env.OTTE_OIDC_DISPLAY_NAME = "Test SSO";
+    process.env.OTTE_OIDC_ALLOW_INSECURE = "true";
+    process.env.OTTE_OIDC_ALLOWED_RETURN_ORIGINS = "http://127.0.0.1:5186";
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    try {
+      const config = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/oidc/config"
+      });
+      expect(config.statusCode).toBe(200);
+      expect(config.json()).toEqual(expect.objectContaining({ enabled: true, issuer, clientId: "otte-client", displayName: "Test SSO" }));
+
+      const started = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/oidc/start",
+        payload: { returnTo: "http://127.0.0.1:5186/" }
+      });
+      expect(started.statusCode).toBe(200);
+      const authorizationUrl = new URL(started.json().authorizationUrl);
+      expect(authorizationUrl.origin).toBe(issuer);
+      expect(authorizationUrl.pathname).toBe("/authorize");
+      expect(authorizationUrl.searchParams.get("client_id")).toBe("otte-client");
+      expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
+      expect(authorizationUrl.searchParams.get("state")).toMatch(/^oss_/);
+      expect(store.state.oauthStates).toHaveLength(1);
+
+      const callback = await app.inject({
+        method: "GET",
+        url: `/api/v1/auth/oidc/callback?code=valid-code&state=${encodeURIComponent(authorizationUrl.searchParams.get("state")!)}`
+      });
+      expect(callback.statusCode).toBe(302);
+      const location = callback.headers.location as string;
+      expect(location).toContain("http://127.0.0.1:5186/#");
+      const fragment = new URLSearchParams(new URL(location).hash.slice(1));
+      expect(fragment.get("ssoToken")).toMatch(/^ots_/);
+      expect(fragment.get("ssoUserId")).toMatch(/^usr_/);
+      expect(store.state.oauthStates).toHaveLength(0);
+      expect(store.state.identities).toEqual([
+        expect.objectContaining({
+          provider: "oidc",
+          issuer,
+          subject: "subject-123",
+          email: "sso.user@example.test"
+        })
+      ]);
+      expect(store.state.users.find((user) => user.id === fragment.get("ssoUserId"))).toEqual(
+        expect.objectContaining({
+          displayName: "SSO User",
+          email: "sso.user@example.test"
+        })
+      );
+      expect(tokenRequestAuthorization).toBe(`Basic ${Buffer.from("otte-client:otte-secret").toString("base64")}`);
+      expect(tokenRequestBody?.get("grant_type")).toBe("authorization_code");
+      expect(tokenRequestBody?.get("code")).toBe("valid-code");
+      expect(tokenRequestBody?.get("code_verifier")).toBeTruthy();
+      expect(userInfoAuthorization).toBe("Bearer provider-access-token");
+
+      const session = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/session",
+        headers: { authorization: `Bearer ${fragment.get("ssoToken")}` }
+      });
+      expect(session.statusCode).toBe(200);
+      expect(session.json().user).toEqual(expect.objectContaining({ email: "sso.user@example.test" }));
+      expect(session.json().user).not.toHaveProperty("passwordHash");
+
+      const reusedState = await app.inject({
+        method: "GET",
+        url: `/api/v1/auth/oidc/callback?code=valid-code&state=${encodeURIComponent(authorizationUrl.searchParams.get("state")!)}`
+      });
+      expect(reusedState.statusCode).toBe(401);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+      await new Promise<void>((resolve) => provider.close(() => resolve()));
+    }
   });
 
   it("filters hidden tokens from player reads and mutations", async () => {

@@ -1,7 +1,7 @@
 import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole } from "@open-tabletop/core";
 import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eye, FileText, Hand, Lightbulb, MessageSquare, Plus, ScrollText, Send, Shield, Swords, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, getSessionToken, getSessionUserId, loadSnapshot, loginSession, setSessionUserId, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, consumeSsoRedirect, getSessionToken, getSessionUserId, loadOidcConfig, loadSnapshot, loginSession, setSessionUserId, startOidcLogin, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -39,6 +39,7 @@ export function App() {
   const [joinEmail, setJoinEmail] = useState("");
   const [joinName, setJoinName] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
+  const [ssoEnabled, setSsoEnabled] = useState(false);
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const selectedScene = snapshot.scenes.find((scene) => scene.id === sceneId);
@@ -62,6 +63,14 @@ export function App() {
   }
 
   useEffect(() => {
+    const ssoUserId = consumeSsoRedirect();
+    if (ssoUserId) {
+      setCurrentUserId(ssoUserId);
+      setSessionToken(getSessionToken());
+    }
+    loadOidcConfig()
+      .then((config) => setSsoEnabled(config.enabled))
+      .catch(() => setSsoEnabled(false));
     refresh().catch((error) => setStatus(`API offline: ${error instanceof Error ? error.message : String(error)}`));
   }, []);
 
@@ -84,6 +93,11 @@ export function App() {
     setCurrentUserId(userId);
     setStatus("Switching session");
     await refresh(campaignId, sceneId);
+  }
+
+  async function startSso() {
+    const login = await startOidcLogin();
+    window.location.href = login.authorizationUrl;
   }
 
   async function createInvite() {
@@ -348,6 +362,11 @@ export function App() {
             )}
           </select>
         </label>
+        {ssoEnabled && (
+          <button className="ghost-button" onClick={() => startSso().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+            <Shield size={16} /> SSO
+          </button>
+        )}
         {hasPermission("campaign.update") && (
           <form
             className="account-box"

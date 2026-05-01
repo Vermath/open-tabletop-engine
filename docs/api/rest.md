@@ -4,11 +4,16 @@ The API is served from `apps/api` and exposes:
 
 Authenticated endpoints require a bearer session token. Create one with `POST /api/v1/auth/login` or `POST /api/v1/auth/register`, then send `Authorization: Bearer <token>` on REST requests. Password-backed users authenticate by email and password. The seeded local users are `usr_demo_gm` and `usr_demo_player`; they remain passwordless for local test compatibility. The legacy `x-user-id` header remains available for local test compatibility, but the browser client and documented flows use bearer sessions. Asset blob and realtime URLs accept `sessionToken=<token>` for contexts that cannot set an `Authorization` header.
 
+OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. The API discovers the provider metadata, starts an authorization-code flow with PKCE/state/nonce, exchanges the callback code, reads the OIDC userinfo endpoint, links an existing user by normalized email when possible, and issues the same opaque `ots_` bearer session token used by password login. Production return origins should be set with `OTTE_WEB_ORIGIN` or `OTTE_OIDC_ALLOWED_RETURN_ORIGINS`; localhost return origins are allowed for development.
+
 - `GET /api/v1/health`
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/session`
+- `GET /api/v1/auth/oidc/config`
+- `GET|POST /api/v1/auth/oidc/start`
+- `GET /api/v1/auth/oidc/callback`
 - `GET /api/v1/openapi.json`
 - `GET|POST /api/v1/campaigns`
 - `GET|PATCH|DELETE /api/v1/campaigns/{campaignId}`
@@ -97,7 +102,32 @@ curl -X POST \
   "http://localhost:4000/api/v1/invites/accept"
 ```
 
-Invite tokens are returned only once at creation and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. Campaign exports omit active invite tokens and password hashes.
+Invite tokens are returned only once at creation and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, and user password hashes.
+
+Start an OIDC SSO login:
+
+```bash
+curl -X POST \
+  -H "content-type: application/json" \
+  --data '{"returnTo":"http://localhost:5173/"}' \
+  "http://localhost:4000/api/v1/auth/oidc/start"
+```
+
+The response contains an `authorizationUrl` for the browser redirect. `GET /api/v1/auth/oidc/start?returnTo=...` performs the redirect directly. The provider callback lands on `GET /api/v1/auth/oidc/callback`; when the original login included a `returnTo`, the API redirects back with `#ssoToken=<ots_token>&ssoUserId=<user_id>`, and the web client stores that bearer session.
+
+OIDC environment variables:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `OTTE_OIDC_ISSUER` | yes | HTTPS issuer URL. Localhost HTTP is allowed for development; other HTTP issuers require `OTTE_OIDC_ALLOW_INSECURE=true`. |
+| `OTTE_OIDC_CLIENT_ID` | yes | OAuth/OIDC client id. |
+| `OTTE_OIDC_CLIENT_SECRET` | no | Client secret for confidential clients. |
+| `OTTE_OIDC_REDIRECT_URI` | no | Callback URL. Defaults to the request base URL plus `/api/v1/auth/oidc/callback`. |
+| `OTTE_OIDC_SCOPE` | no | Defaults to `openid email profile`. |
+| `OTTE_OIDC_DISPLAY_NAME` | no | Human label returned by the config endpoint and shown in clients. |
+| `OTTE_OIDC_TOKEN_AUTH` | no | `client_secret_basic`, `client_secret_post`, or `none`; defaults to `client_secret_basic` when a secret is present, otherwise `none`. |
+| `OTTE_WEB_ORIGIN` | no | Primary allowed browser return origin. |
+| `OTTE_OIDC_ALLOWED_RETURN_ORIGINS` | no | Comma-separated extra allowed return origins. |
 
 Map upload accepts raw image bytes with an authenticated bearer token:
 

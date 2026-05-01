@@ -25,6 +25,19 @@ export function storeSession(login: SessionLoginInfo): void {
   localStorage.setItem(sessionTokenUserKey, login.user.id);
 }
 
+export function consumeSsoRedirect(): string | undefined {
+  const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+  const params = new URLSearchParams(hash);
+  const token = params.get("ssoToken");
+  const userId = params.get("ssoUserId");
+  if (!token || !userId) return undefined;
+  localStorage.setItem("otte:userId", userId);
+  localStorage.setItem(sessionTokenKey, token);
+  localStorage.setItem(sessionTokenUserKey, userId);
+  window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  return userId;
+}
+
 export async function loginSession(userId = getSessionUserId()): Promise<SessionLoginInfo> {
   const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
@@ -59,6 +72,22 @@ export async function acceptInviteSession(input: { token: string; email: string;
   const accepted = (await response.json()) as InviteAcceptInfo;
   storeSession(accepted);
   return accepted;
+}
+
+export async function startOidcLogin(returnTo = window.location.origin + window.location.pathname): Promise<OidcStartInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/oidc/start`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ returnTo })
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<OidcStartInfo>;
+}
+
+export async function loadOidcConfig(): Promise<OidcConfigInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/oidc/config`);
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<OidcConfigInfo>;
 }
 
 async function ensureSessionToken(): Promise<string> {
@@ -159,6 +188,29 @@ export interface InviteAcceptInfo extends SessionLoginInfo {
   membership: CampaignMemberInfo;
   campaign: Campaign;
 }
+
+export interface OidcStartInfo {
+  authorizationUrl: string;
+  expiresAt: string;
+  provider: {
+    issuer: string;
+    clientId: string;
+    scope: string;
+    displayName: string;
+    redirectUri: string;
+  };
+}
+
+export type OidcConfigInfo =
+  | { enabled: false }
+  | {
+      enabled: true;
+      issuer: string;
+      clientId: string;
+      scope: string;
+      displayName: string;
+      redirectUri: string;
+    };
 
 export interface CampaignMemberInfo extends CampaignMember {
   user: Pick<User, "id" | "displayName" | "email">;

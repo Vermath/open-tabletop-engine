@@ -456,11 +456,46 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/auth-invite-joiner.png`.
   - Browser console had only the existing missing `favicon.ico` error plus React/devtools and autocomplete advisory messages.
 
+### OIDC SSO Slice
+
+- Implementation:
+  - Added provider-neutral OIDC authorization-code SSO with discovery, PKCE, state, nonce, one-time callback state, and bearer session issuance.
+  - Added durable `identities` records for provider/issuer/subject links and short-lived `oauthStates` records for login handshakes.
+  - SSO users link to an existing account by normalized email when possible; otherwise the callback creates a passwordless account from OIDC userinfo.
+  - Added `GET /api/v1/auth/oidc/config`, `GET|POST /api/v1/auth/oidc/start`, and `GET /api/v1/auth/oidc/callback`.
+  - Added browser SSO startup plus callback hash consumption for `#ssoToken=<ots_token>&ssoUserId=<user_id>`.
+  - Campaign archives omit operational identity, OAuth state, invite, and session records.
+- Automated evidence:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api-contracts build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `21 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test verifies OIDC config/start/callback, PKCE `S256`, Basic token endpoint auth, bearer userinfo auth, identity persistence, email-based user linking/creation, returned `ots_` session authentication, OAuth state cleanup, and rejected state reuse.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4437`
+  - Web: `http://127.0.0.1:5187`
+  - Local OIDC provider: `http://127.0.0.1:4712`
+  - SQLite file: `storage/manual-oidc-sso-20260501.sqlite`
+  - Provider `/authorize` received `client_id=manual-client`, `code_challenge_method=S256`, and an `oss_` state.
+  - Provider `/token` received HTTP Basic client auth and an authorization-code body including `code=manual-code`, the configured callback URL, `client_id=manual-client`, and a PKCE `code_verifier`.
+  - Provider `/userinfo` received `Bearer manual-access-token` and returned subject `manual-sso-gm`, email `gm@example.test`, and display name `Manual SSO GM`.
+  - The API linked the identity to existing seeded user `usr_demo_gm` by email and stored identity `provider: oidc`, issuer `http://127.0.0.1:4712`, subject `manual-sso-gm`, email `gm@example.test`.
+  - Browser localStorage held an `ots_` session token and `otte:sessionTokenUser=usr_demo_gm`; bearer `GET /api/v1/auth/session` returned user `usr_demo_gm` with owner membership in `camp_demo`.
+  - SQLite inspection showed one stored OIDC identity, hashed session tokens, and no remaining `oauthStates`.
+- Manual browser evidence:
+  - Playwright verified `GET /api/v1/auth/oidc/config` returned `200` and the sidebar exposed the `SSO` button only with OIDC configured.
+  - Playwright clicked the sidebar `SSO` button, completed the fake provider redirect, returned to `http://127.0.0.1:5187/`, and the app showed the linked GM session with status `Synced`.
+  - After callback, campaign data reloaded through bearer-authenticated API requests, including `/api/v1/auth/oidc/config`, `/api/v1/auth/session`, `/api/v1/campaigns`, scene, members, assets, tokens, actors, journal, chat, encounters, combats, proposals, AI memory, plugins, and systems.
+  - Screenshot saved at `output/playwright/oidc-sso-gm.png`.
+  - Browser console had no errors; it showed the React devtools message, an autocomplete advisory, and one expected transient websocket warning from switching sessions during the login redirect.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
-- Auth now has bearer sessions, password registration/login, and campaign invites, but still lacks OAuth/SSO, password reset/email delivery, account administration, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
+- Auth now has bearer sessions, password registration/login, campaign invites, and OIDC SSO, but still lacks password reset/email delivery, account administration, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
 - Uploaded maps now support local and S3/MinIO-backed storage, including archive export/import through the active provider. Production storage work still needs lifecycle policies, migration tooling, and CDN/presigned delivery.
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.

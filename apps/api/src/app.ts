@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession } from "@open-tabletop/core";
+import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type OAuthLoginState, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -85,6 +85,61 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       user: publicUser(user),
       memberships: []
     };
+  });
+
+  app.get("/api/v1/auth/oidc/config", async (request) => {
+    const config = oidcProviderConfig(request.headers);
+    if (!config) return { enabled: false };
+    return {
+      enabled: true,
+      issuer: config.issuer,
+      clientId: config.clientId,
+      scope: config.scope,
+      displayName: config.displayName,
+      redirectUri: config.redirectUri
+    };
+  });
+
+  app.post<{ Body: { returnTo?: string } }>("/api/v1/auth/oidc/start", async (request, reply) => {
+    const config = oidcProviderConfig(request.headers);
+    if (!config) return badRequest(reply, "OIDC is not configured");
+    try {
+      return await createOidcAuthorization(store, config, request.body.returnTo);
+    } catch (error) {
+      return badRequest(reply, errorMessage(error));
+    }
+  });
+
+  app.get<{ Querystring: { returnTo?: string } }>("/api/v1/auth/oidc/start", async (request, reply) => {
+    const config = oidcProviderConfig(request.headers);
+    if (!config) return badRequest(reply, "OIDC is not configured");
+    try {
+      const authorization = await createOidcAuthorization(store, config, request.query.returnTo);
+      return reply.redirect(authorization.authorizationUrl);
+    } catch (error) {
+      return badRequest(reply, errorMessage(error));
+    }
+  });
+
+  app.get<{ Querystring: { code?: string; state?: string; error?: string; error_description?: string } }>("/api/v1/auth/oidc/callback", async (request, reply) => {
+    if (request.query.error) return unauthorized(reply, request.query.error_description ?? request.query.error);
+    if (!request.query.code || !request.query.state) return badRequest(reply, "OIDC callback requires code and state");
+    const config = oidcProviderConfig(request.headers);
+    if (!config) return badRequest(reply, "OIDC is not configured");
+    try {
+      const login = await completeOidcCallback(store, config, request.query.code, request.query.state);
+      store.save();
+      if (login.returnTo) return reply.redirect(ssoRedirectUrl(login.returnTo, login.token, login.user.id));
+      return {
+        token: login.token,
+        session: publicSession(login.session),
+        user: publicUser(login.user),
+        memberships: store.state.members.filter((member) => member.userId === login.user.id),
+        identity: publicIdentity(login.identity)
+      };
+    } catch (error) {
+      return unauthorized(reply, `OIDC callback failed: ${errorMessage(error)}`);
+    }
   });
 
   app.post("/api/v1/auth/logout", async (request, reply) => {
@@ -1882,6 +1937,294 @@ function memberSessionInfo(
   };
 }
 
+interface OidcProviderConfig {
+  issuer: string;
+  clientId: string;
+  clientSecret?: string;
+  redirectUri: string;
+  scope: string;
+  displayName: string;
+  tokenAuth: "client_secret_basic" | "client_secret_post" | "none";
+}
+
+interface OidcDiscoveryDocument {
+  issuer: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  userinfo_endpoint?: string;
+}
+
+interface OidcTokenResponse {
+  access_token?: string;
+  token_type?: string;
+  id_token?: string;
+  expires_in?: number;
+}
+
+interface OidcClaims {
+  sub?: unknown;
+  email?: unknown;
+  name?: unknown;
+  preferred_username?: unknown;
+}
+
+function oidcProviderConfig(headers: Record<string, string | string[] | undefined>): OidcProviderConfig | undefined {
+  const issuer = process.env.OTTE_OIDC_ISSUER?.replace(/\/+$/, "");
+  const clientId = process.env.OTTE_OIDC_CLIENT_ID;
+  if (!issuer || !clientId) return undefined;
+  if (!isAllowedIssuerUrl(issuer)) throw new Error("OTTE_OIDC_ISSUER must use HTTPS unless it is localhost or OTTE_OIDC_ALLOW_INSECURE=true");
+  return {
+    issuer,
+    clientId,
+    clientSecret: process.env.OTTE_OIDC_CLIENT_SECRET,
+    redirectUri: process.env.OTTE_OIDC_REDIRECT_URI ?? `${requestBaseUrl(headers)}/api/v1/auth/oidc/callback`,
+    scope: process.env.OTTE_OIDC_SCOPE ?? "openid email profile",
+    displayName: process.env.OTTE_OIDC_DISPLAY_NAME ?? "Single Sign-On",
+    tokenAuth: oidcTokenAuthMethod(process.env.OTTE_OIDC_TOKEN_AUTH, process.env.OTTE_OIDC_CLIENT_SECRET)
+  };
+}
+
+async function createOidcAuthorization(store: StateStore, config: OidcProviderConfig, requestedReturnTo: string | undefined): Promise<{ authorizationUrl: string; expiresAt: string; provider: Pick<OidcProviderConfig, "issuer" | "clientId" | "scope" | "displayName" | "redirectUri"> }> {
+  const discovery = await discoverOidc(config);
+  const stateToken = `oss_${randomBytes(32).toString("base64url")}`;
+  const nonce = randomBytes(32).toString("base64url");
+  const codeVerifier = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const oauthState = createTimestamped("oauth", {
+    provider: "oidc" as const,
+    issuer: config.issuer,
+    stateHash: hashSessionToken(stateToken),
+    codeVerifier,
+    nonceHash: hashSessionToken(nonce),
+    redirectUri: config.redirectUri,
+    returnTo: sanitizeReturnTo(requestedReturnTo),
+    expiresAt
+  }) satisfies OAuthLoginState;
+  store.state.oauthStates.push(oauthState);
+  pruneExpiredOAuthStates(store);
+  store.save();
+
+  const url = new URL(discovery.authorization_endpoint);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("client_id", config.clientId);
+  url.searchParams.set("redirect_uri", config.redirectUri);
+  url.searchParams.set("scope", config.scope);
+  url.searchParams.set("state", stateToken);
+  url.searchParams.set("nonce", nonce);
+  url.searchParams.set("code_challenge", base64Url(createHash("sha256").update(codeVerifier).digest()));
+  url.searchParams.set("code_challenge_method", "S256");
+
+  return {
+    authorizationUrl: url.toString(),
+    expiresAt,
+    provider: {
+      issuer: config.issuer,
+      clientId: config.clientId,
+      scope: config.scope,
+      displayName: config.displayName,
+      redirectUri: config.redirectUri
+    }
+  };
+}
+
+async function completeOidcCallback(
+  store: StateStore,
+  config: OidcProviderConfig,
+  code: string,
+  stateToken: string
+): Promise<{ token: string; session: UserSession; user: User; identity: AuthIdentity; returnTo?: string }> {
+  pruneExpiredOAuthStates(store);
+  const stateHash = hashSessionToken(stateToken);
+  const stateIndex = store.state.oauthStates.findIndex((state) => state.provider === "oidc" && state.issuer === config.issuer && state.stateHash === stateHash && Date.parse(state.expiresAt) > Date.now());
+  if (stateIndex < 0) throw new Error("Unknown or expired OIDC state");
+  const oauthState = store.state.oauthStates.splice(stateIndex, 1)[0]!;
+  store.save();
+  const discovery = await discoverOidc(config);
+  const token = await exchangeOidcCode(config, discovery, oauthState, code);
+  const claims = await fetchOidcUserInfo(discovery, token);
+  const { user, identity } = upsertOidcUser(store, config, claims);
+  const session = createUserSession(store, user.id);
+  return {
+    token: session.token,
+    session: session.session,
+    user,
+    identity,
+    returnTo: oauthState.returnTo
+  };
+}
+
+async function discoverOidc(config: OidcProviderConfig): Promise<OidcDiscoveryDocument> {
+  const discoveryUrl = `${config.issuer}/.well-known/openid-configuration`;
+  const document = await fetchJson<Partial<OidcDiscoveryDocument>>(discoveryUrl);
+  if (document.issuer !== config.issuer) throw new Error("OIDC discovery issuer mismatch");
+  if (!document.authorization_endpoint || !document.token_endpoint) throw new Error("OIDC discovery document is missing required endpoints");
+  if (!document.userinfo_endpoint) throw new Error("OIDC discovery document is missing userinfo_endpoint");
+  return {
+    issuer: document.issuer,
+    authorization_endpoint: document.authorization_endpoint,
+    token_endpoint: document.token_endpoint,
+    userinfo_endpoint: document.userinfo_endpoint
+  };
+}
+
+async function exchangeOidcCode(config: OidcProviderConfig, discovery: OidcDiscoveryDocument, oauthState: OAuthLoginState, code: string): Promise<OidcTokenResponse> {
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: oauthState.redirectUri,
+    client_id: config.clientId,
+    code_verifier: oauthState.codeVerifier
+  });
+  const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded" };
+  if (config.clientSecret && config.tokenAuth === "client_secret_basic") {
+    headers.authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64")}`;
+  } else if (config.clientSecret && config.tokenAuth === "client_secret_post") {
+    body.set("client_secret", config.clientSecret);
+  }
+
+  const response = await fetch(discovery.token_endpoint, {
+    method: "POST",
+    headers,
+    body
+  });
+  if (!response.ok) throw new Error(`Token endpoint returned ${response.status}`);
+  const token = (await response.json()) as OidcTokenResponse;
+  if (!token.access_token) throw new Error("Token endpoint did not return an access token");
+  return token;
+}
+
+async function fetchOidcUserInfo(discovery: OidcDiscoveryDocument, token: OidcTokenResponse): Promise<{ subject: string; email?: string; displayName: string }> {
+  const response = await fetch(discovery.userinfo_endpoint!, {
+    headers: { authorization: `Bearer ${token.access_token}` }
+  });
+  if (!response.ok) throw new Error(`UserInfo endpoint returned ${response.status}`);
+  const claims = (await response.json()) as OidcClaims;
+  if (typeof claims.sub !== "string" || claims.sub.length === 0) throw new Error("UserInfo response is missing sub");
+  const email = typeof claims.email === "string" ? normalizeEmail(claims.email) : undefined;
+  const name = typeof claims.name === "string" ? normalizeDisplayName(claims.name) : undefined;
+  const preferredUsername = typeof claims.preferred_username === "string" ? normalizeDisplayName(claims.preferred_username) : undefined;
+  return {
+    subject: claims.sub,
+    email,
+    displayName: name ?? preferredUsername ?? email?.split("@")[0] ?? claims.sub
+  };
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, { headers: { accept: "application/json" } });
+  if (!response.ok) throw new Error(`${url} returned ${response.status}`);
+  return (await response.json()) as T;
+}
+
+function upsertOidcUser(store: StateStore, config: OidcProviderConfig, claims: { subject: string; email?: string; displayName: string }): { user: User; identity: AuthIdentity } {
+  const existingIdentity = store.state.identities.find((identity) => identity.provider === "oidc" && identity.issuer === config.issuer && identity.subject === claims.subject);
+  if (existingIdentity) {
+    const user = store.state.users.find((item) => item.id === existingIdentity.userId);
+    if (!user) throw new Error("OIDC identity points to a missing user");
+    if (claims.email && user.email !== claims.email) {
+      user.email = claims.email;
+      user.updatedAt = nowIso();
+    }
+    existingIdentity.email = claims.email;
+    existingIdentity.updatedAt = nowIso();
+    return { user, identity: existingIdentity };
+  }
+
+  let user = claims.email ? store.state.users.find((item) => normalizeEmail(item.email) === claims.email) : undefined;
+  if (!user) {
+    user = createTimestamped("usr", {
+      displayName: claims.displayName,
+      email: claims.email
+    }) satisfies User;
+    store.state.users.push(user);
+  }
+  const identity = createTimestamped("ident", {
+    userId: user.id,
+    provider: "oidc" as const,
+    issuer: config.issuer,
+    subject: claims.subject,
+    email: claims.email
+  }) satisfies AuthIdentity;
+  store.state.identities.push(identity);
+  return { user, identity };
+}
+
+function publicIdentity(identity: AuthIdentity): Omit<AuthIdentity, "createdAt" | "updatedAt"> {
+  return {
+    id: identity.id,
+    userId: identity.userId,
+    provider: identity.provider,
+    issuer: identity.issuer,
+    subject: identity.subject,
+    email: identity.email
+  };
+}
+
+function pruneExpiredOAuthStates(store: StateStore): void {
+  const now = Date.now();
+  store.state.oauthStates = store.state.oauthStates.filter((state) => Date.parse(state.expiresAt) > now);
+}
+
+function oidcTokenAuthMethod(value: string | undefined, clientSecret: string | undefined): OidcProviderConfig["tokenAuth"] {
+  if (value === "client_secret_post" || value === "none") return value;
+  if (value === "client_secret_basic") return value;
+  return clientSecret ? "client_secret_basic" : "none";
+}
+
+function requestBaseUrl(headers: Record<string, string | string[] | undefined>): string {
+  const configured = process.env.OTTE_PUBLIC_URL?.replace(/\/+$/, "");
+  if (configured) return configured;
+  const proto = headerValue(headers["x-forwarded-proto"]) ?? "http";
+  const host = headerValue(headers["x-forwarded-host"]) ?? headerValue(headers.host) ?? "localhost:4000";
+  return `${proto}://${host}`;
+}
+
+function sanitizeReturnTo(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    const allowedOrigins = new Set(
+      [
+        process.env.OTTE_WEB_ORIGIN,
+        ...(process.env.OTTE_OIDC_ALLOWED_RETURN_ORIGINS?.split(",") ?? [])
+      ]
+        .map((origin) => origin?.trim().replace(/\/+$/, ""))
+        .filter((origin): origin is string => Boolean(origin))
+    );
+    if (isLocalhostUrl(url) || allowedOrigins.has(url.origin)) return url.toString();
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function ssoRedirectUrl(returnTo: string, token: string, userId: string): string {
+  const url = new URL(returnTo);
+  url.hash = new URLSearchParams({
+    ssoToken: token,
+    ssoUserId: userId
+  }).toString();
+  return url.toString();
+}
+
+function isAllowedIssuerUrl(value: string): boolean {
+  if (process.env.OTTE_OIDC_ALLOW_INSECURE === "true") return true;
+  const url = new URL(value);
+  return url.protocol === "https:" || isLocalhostUrl(url);
+}
+
+function isLocalhostUrl(url: URL): boolean {
+  return url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+}
+
+function base64Url(input: Buffer): string {
+  return input.toString("base64url");
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function findLoginUser(store: StateStore, input: { userId?: string; email?: string }): User | undefined {
   const email = normalizeEmail(input.email);
   return store.state.users.find((user) => user.id === input.userId || (email !== undefined && normalizeEmail(user.email) === email));
@@ -2208,6 +2551,8 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
   return {
     users: upsertRecords(state.users, archive.data.users),
     sessions: 0,
+    identities: 0,
+    oauthStates: 0,
     invites: 0,
     campaigns: upsertRecords(state.campaigns, archive.data.campaigns),
     members: upsertRecords(state.members, archive.data.members),

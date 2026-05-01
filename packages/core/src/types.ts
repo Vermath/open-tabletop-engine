@@ -26,6 +26,27 @@ export interface UserSession extends Timestamps {
   lastSeenAt: string;
 }
 
+export interface AuthIdentity extends Timestamps {
+  id: ID;
+  userId: ID;
+  provider: "oidc";
+  issuer: string;
+  subject: string;
+  email?: string;
+}
+
+export interface OAuthLoginState extends Timestamps {
+  id: ID;
+  provider: "oidc";
+  issuer: string;
+  stateHash: string;
+  codeVerifier: string;
+  nonceHash: string;
+  redirectUri: string;
+  returnTo?: string;
+  expiresAt: string;
+}
+
 export interface Campaign extends Timestamps {
   id: ID;
   ownerUserId: ID;
@@ -397,6 +418,8 @@ export interface CampaignArchiveFile {
 export interface EngineState {
   users: User[];
   sessions: UserSession[];
+  identities: AuthIdentity[];
+  oauthStates: OAuthLoginState[];
   invites: CampaignInvite[];
   campaigns: Campaign[];
   members: CampaignMember[];
