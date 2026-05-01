@@ -712,6 +712,30 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Blob fetch for the deleted asset returned `410`.
   - Asset lifecycle after the scheduled run included `storageDeletedAt: 2026-05-01T20:14:42.906Z`, `updatedByUserId: usr_demo_gm`, and `cleanupReason: deleted_asset`.
 
+### Asset CDN Edge Configuration Slice
+
+- Implementation:
+  - Added `apps/asset-edge`, a Cloudflare Worker package for signed asset blob delivery.
+  - The worker validates the API-compatible HMAC payload `${assetId}:${expiresAt}:${disposition}` before origin fetch, rejects expired or tampered URLs, strips `Authorization` and `Cookie` from origin requests, preserves range/conditional request headers, and caps edge cache TTL by both `expiresAt` and `ASSET_EDGE_MAX_TTL_SECONDS`.
+  - Added `apps/asset-edge/wrangler.jsonc` with deployable Worker settings for origin URL, optional route prefix, and edge TTL ceiling.
+  - Added deployment docs in `docs/deployment/asset-edge.md` and linked the Worker from self-hosting and REST docs.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/asset-edge test` passed with `5 passed`.
+  - `pnpm --filter @open-tabletop/asset-edge typecheck` passed.
+  - `pnpm --filter @open-tabletop/asset-edge exec wrangler --version` returned `4.87.0`.
+  - Asset edge tests verify API-compatible signatures, route-prefix stripping, origin proxy URL construction, credential stripping, range forwarding, bounded cache headers, tampered signature rejection without origin fetch, expired signature rejection, non-blob route rejection, and non-success origin `no-store`.
+- Manual API and edge evidence:
+  - API: `http://127.0.0.1:4472`
+  - SQLite file: `apps/api/storage/manual-asset-edge-20260501.sqlite`
+  - Upload directory: `apps/api/storage/manual-asset-edge-uploads-20260501`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ASSET_STORAGE=local`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, `OTTE_ASSET_CDN_BASE_URL=https://assets.example.test/otte`, `OTTE_ASSET_URL_SIGNING_SECRET=manual-edge-secret`, and `OTTE_ASSET_URL_TTL_SECONDS=300`.
+  - GM bearer login returned `200`.
+  - Asset upload created `asset_monczy50mcm1qfq5` with local object `camp_demo/asset_monczy50mcm1qfq5.png`.
+  - Signed delivery URL generation returned `delivery: cdn` and URL `https://assets.example.test/otte/api/v1/assets/asset_monczy50mcm1qfq5/blob?...`.
+  - Local invocation of `handleAssetEdgeRequest` with `ASSET_ORIGIN_URL=http://127.0.0.1:4472`, `ASSET_EDGE_ROUTE_PREFIX=/otte`, and the shared signing secret returned `200`, body `manual-edge-asset`, `x-otte-asset-edge: validated`, and `cache-control: public, max-age=239`.
+  - The edge origin request targeted `http://127.0.0.1:4472/api/v1/assets/asset_monczy50mcm1qfq5/blob?...` without the `/otte` prefix and did not forward `Authorization` or `Cookie`.
+  - A tampered signature returned `401 invalid_asset_signature` before origin fetch.
+
 ### Asset Security Scanning Slice
 
 - Implementation:
@@ -1363,7 +1387,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
-- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration and third-party AV/trust integrations for higher-assurance hosting.
+- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.
