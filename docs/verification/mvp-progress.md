@@ -163,12 +163,36 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - Live API check returned GM token IDs `tok_valen,tok_momeaw2udn5j7m6i`, player token IDs `tok_valen`, `PlayerHiddenTokenCount: 0`, and `PlayerPatchStatus: 404`.
     - GM patch of the hidden token returned `200` with `GmHiddenTokenX: 760`, `GmHiddenTokenY: 300`, and `GmHiddenTokenHidden: true`.
 
+### Fog Vision Visibility Slice
+
+- Commit: `0ef6736 feat: filter player token vision`
+- Evidence:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `14 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test verifies:
+    - Player token reads include the owned `tok_valen`.
+    - Player token reads include an unowned token visible through owned token vision.
+    - Player token reads include an unowned token inside a revealed fog region.
+    - Player token reads exclude an unowned token blocked by a vision-blocking wall.
+    - GM token reads still include the wall-blocked token.
+    - Player attempts to patch the wall-blocked token return `404`.
+  - Manual browser/API evidence on local dev servers:
+    - API: `http://127.0.0.1:4426`
+    - Web: `http://localhost:5179`
+    - Fresh SQLite state file: `storage/manual-fog-vision-20260501.sqlite`
+    - Configured `scn_vault_entry` with one revealed fog circle, one `blocksVision` wall, and Valen Ash vision radius `220`.
+    - Created `Visible Guard`, `Blocked Guard`, and `Fog Scout` tokens while player and GM browsers were connected.
+    - Player browser loaded as `Demo Player - player` and showed scene markers `VA`, `VI`, and `FO`; it did not show the wall-blocked `BL` marker.
+    - GM browser loaded as `Demo GM - owner` and showed `VA`, `VI`, `BL`, and `FO`.
+    - Live API check returned GM token names `Valen Ash,Visible Guard,Blocked Guard,Fog Scout`, player token names `Valen Ash,Visible Guard,Fog Scout`, `PlayerSeesBlocked: 0`, and `PlayerBlockedPatchStatus: 404`.
+
 ## Known Remaining Gaps
 
 - Auth is still a development `x-user-id` session header, not production authentication.
 - Browser role switching and GM/player token movement now have MVP coverage; broader multi-user workflows still need final clean-checkout audit coverage.
 - Uploaded maps now have a local binary storage path, but they are not yet backed by S3 or MinIO object storage.
-- Fog, wall, light authoring, and hidden-token visibility now have MVP controls and permission filtering, but advanced line-of-sight enforcement and fog-of-war visibility remain basic.
+- Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
 - AI flows still need richer provider-backed tool proposal creation and memory extraction beyond the deterministic MVP flows.
