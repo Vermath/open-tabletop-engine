@@ -74,6 +74,28 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - Player AI thread returned provider `codex-app-server` and persisted chat visibility `public`.
     - Player chat feed showed the player's own AI message and did not show the GM-only AI message.
 
+### AI Approval Queue Slice
+
+- Commit: `df807e8 feat: verify ai approval queue`
+- Evidence:
+  - `pnpm --filter @open-tabletop/api test` passed with `10 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test verifies:
+    - Player cannot apply an AI proposal.
+    - Applying a pending proposal as GM returns `409` instead of mutating state.
+    - GM can approve and apply an encounter proposal, creating an `AI Draft Encounter`.
+    - Player cannot approve queued AI memory.
+    - GM can approve queued AI memory and the approved fact is returned from the memory endpoint.
+  - Manual browser evidence on local dev servers:
+    - API: `http://127.0.0.1:4422`
+    - Web: `http://localhost:5175`
+    - `Draft Encounter` created a pending `Encounter Designer Draft` proposal.
+    - `Approve and apply` changed that proposal to `applied`.
+    - `Recap Session` created a pending memory card and a pending `Session Recap` proposal.
+    - `Approve memory` changed the memory card to `approved memory`.
+    - `Approve and apply` changed the `Session Recap` proposal to `applied`.
+    - Live API check returned applied proposal titles `Encounter Designer Draft` and `Session Recap`, encounter name `AI Draft Encounter`, approved memory count `1`, and session recap journal count `1`.
+
 ## Known Remaining Gaps
 
 - Auth is still a development `x-user-id` session header, not production authentication.
@@ -82,5 +104,5 @@ This document tracks verified MVP progress without treating the whole PRD as com
 - Fog, walls, and lights exist in scene state, but wall/light authoring tools are still basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
-- AI flows still need approval queue UX, end-to-end proposal application coverage, and broader browser coverage beyond the provider thread path.
+- AI flows still need richer provider-backed tool proposal creation and memory extraction beyond the deterministic MVP flows.
 - Full MVP completion still requires a clean-checkout runbook and a final prompt-to-artifact audit covering every PRD requirement.
