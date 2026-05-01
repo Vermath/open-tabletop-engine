@@ -231,8 +231,20 @@ button {
   box-shadow: 0 22px 70px rgba(0, 0, 0, 0.36);
 }
 
+.scene-map {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  pointer-events: none;
+}
+
 .grid-lines {
   position: absolute;
+  z-index: 1;
   inset: 0;
   background-image:
     linear-gradient(rgba(239, 228, 205, 0.13) 1px, transparent 1px),
@@ -241,6 +253,7 @@ button {
 
 .light-source {
   position: absolute;
+  z-index: 1;
   border-radius: 50%;
   transform: translate(-50%, -50%);
   aspect-ratio: 1;
@@ -250,6 +263,7 @@ button {
 
 .wall-layer {
   position: absolute;
+  z-index: 1;
   inset: 0;
   width: 100%;
   height: 100%;
@@ -293,6 +307,7 @@ button {
 
 .fog-band {
   position: absolute;
+  z-index: 3;
   right: 14px;
   bottom: 12px;
   max-width: 280px;

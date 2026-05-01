@@ -35,10 +35,12 @@ services:
       PORT: 4000
       HOST: 0.0.0.0
       OTTE_SQLITE_PATH: /app/storage/opentabletop.sqlite
+      OTTE_UPLOAD_DIR: /app/uploads
     ports:
       - "4000:4000"
     volumes:
       - api-storage:/app/storage
+      - api-uploads:/app/uploads
     depends_on:
       - postgres
       - redis
@@ -59,3 +61,4 @@ volumes:
   postgres-data:
   minio-data:
   api-storage:
+  api-uploads:

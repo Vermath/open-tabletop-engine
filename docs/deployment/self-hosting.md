@@ -16,7 +16,7 @@ Services:
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 
-The API persists campaign state to SQLite at `storage/opentabletop.sqlite` by default. In Docker Compose this file lives in the `api-storage` volume. The API still starts PostgreSQL, Redis, and MinIO because those services are part of the target architecture and remain available for later storage, queue, and object-store work.
+The API persists campaign state to SQLite at `storage/opentabletop.sqlite` by default. Uploaded map assets are stored under `uploads` by default. In Docker Compose these paths live in the `api-storage` and `api-uploads` volumes. The API still starts PostgreSQL, Redis, and MinIO because those services are part of the target architecture and remain available for later storage, queue, and object-store work.
 
 For local development without Docker:
 
@@ -32,3 +32,14 @@ curl -H "x-user-id: usr_demo_gm" http://localhost:4000/api/v1/campaigns
 ```
 
 Campaign archives are JSON `.ottx` files. The import endpoint upserts every archive collection, including users, members, scenes, assets, tokens, actors, journals, encounters, combats, AI memory, audit logs, and permission grants.
+
+Raw image uploads can be assigned directly to a scene background:
+
+```bash
+curl -X POST \
+  -H "x-user-id: usr_demo_gm" \
+  -H "content-type: image/png" \
+  -H "x-asset-name: vault.png" \
+  --data-binary @vault.png \
+  "http://localhost:4000/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true"
+```

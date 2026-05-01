@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { emptyState, type EngineState } from "@open-tabletop/core";
@@ -206,6 +206,38 @@ describe("api", () => {
     expect(store.state.chat.some((message) => message.body.includes("Charisma Check"))).toBe(true);
 
     await app.close();
+  });
+
+  it("uploads a map asset, assigns it to a scene, and serves the stored bytes", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "otte-assets-"));
+    const app = await buildApp({ store: new MemoryStateStore(), uploadDir: directory });
+    const bytes = Buffer.from("fake-image-bytes");
+
+    const uploaded = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true",
+      headers: { ...authHeaders, "content-type": "image/png", "x-asset-name": encodeURIComponent("Vault Upload.png") },
+      payload: bytes
+    });
+    expect(uploaded.statusCode).toBe(200);
+    expect(uploaded.json().asset.name).toBe("Vault Upload.png");
+    expect(uploaded.json().asset.sizeBytes).toBe(bytes.length);
+    expect(uploaded.json().asset.checksum).toMatch(/^sha256:/);
+    expect(uploaded.json().scene.backgroundAssetId).toBe(uploaded.json().asset.id);
+
+    const assetId = uploaded.json().asset.id as string;
+    expect(existsSync(join(directory, "camp_demo", `${assetId}.png`))).toBe(true);
+
+    const unauthenticatedBlob = await app.inject({ method: "GET", url: `/api/v1/assets/${assetId}/blob` });
+    expect(unauthenticatedBlob.statusCode).toBe(401);
+
+    const blob = await app.inject({ method: "GET", url: `/api/v1/assets/${assetId}/blob?userId=usr_demo_gm` });
+    expect(blob.statusCode).toBe(200);
+    expect(blob.headers["content-type"]).toContain("image/png");
+    expect(blob.body).toBe("fake-image-bytes");
+
+    await app.close();
+    rmSync(directory, { recursive: true, force: true });
   });
 
   it("persists campaign state across sqlite-backed store restarts", async () => {

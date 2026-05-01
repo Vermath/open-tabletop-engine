@@ -6,12 +6,13 @@ import type {
   Combat,
   Encounter,
   JournalEntry,
+  MapAsset,
   Proposal,
   Scene,
   Token
 } from "@open-tabletop/core";
 
-const baseUrl = import.meta.env.VITE_API_URL ?? "";
+export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 export const sessionUserId = localStorage.getItem("otte:userId") ?? "usr_demo_gm";
 
 const sessionHeaders = {
@@ -47,6 +48,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
 export interface Snapshot {
   campaigns: Campaign[];
   scenes: Scene[];
+  assets: MapAsset[];
   tokens: Token[];
   actors: Actor[];
   journals: JournalEntry[];
@@ -77,15 +79,39 @@ export interface SystemRuntimeInfo {
   active: boolean;
 }
 
+export function assetBlobUrl(asset: MapAsset): string {
+  if (/^(https?:|data:|blob:)/.test(asset.url)) return asset.url;
+  const separator = asset.url.includes("?") ? "&" : "?";
+  return `${baseUrl}${asset.url}${separator}userId=${encodeURIComponent(sessionUserId)}`;
+}
+
+export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean }): Promise<{ asset: MapAsset; scene?: Scene }> {
+  const params = new URLSearchParams();
+  if (input.sceneId) params.set("sceneId", input.sceneId);
+  if (input.setAsBackground) params.set("setAsBackground", "true");
+  const response = await fetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/assets/upload?${params.toString()}`, {
+    method: "POST",
+    headers: {
+      "content-type": input.file.type || "application/octet-stream",
+      "x-asset-name": encodeURIComponent(input.file.name),
+      ...sessionHeaders
+    },
+    body: input.file
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<{ asset: MapAsset; scene?: Scene }>;
+}
+
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
   const campaigns = await apiGet<Campaign[]>("/api/v1/campaigns");
   const selectedCampaignId = campaignId ?? campaigns[0]?.id;
   if (!selectedCampaignId) {
-    return { campaigns, scenes: [], tokens: [], actors: [], journals: [], chat: [], encounters: [], combats: [], proposals: [], memory: [], plugins: [], systems: [] };
+    return { campaigns, scenes: [], assets: [], tokens: [], actors: [], journals: [], chat: [], encounters: [], combats: [], proposals: [], memory: [], plugins: [], systems: [] };
   }
   const scenes = await apiGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
   const selectedSceneId = sceneId ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
-  const [tokens, actors, journals, chat, encounters, combats, proposals, memory, plugins, systems] = await Promise.all([
+  const [assets, tokens, actors, journals, chat, encounters, combats, proposals, memory, plugins, systems] = await Promise.all([
+    apiGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
     selectedSceneId ? apiGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
     apiGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
     apiGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`),
@@ -97,5 +123,5 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     apiGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
     apiGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)
   ]);
-  return { campaigns, scenes, tokens, actors, journals, chat, encounters, combats, proposals, memory, plugins, systems };
+  return { campaigns, scenes, assets, tokens, actors, journals, chat, encounters, combats, proposals, memory, plugins, systems };
 }

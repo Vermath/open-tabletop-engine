@@ -11,6 +11,8 @@ Authenticated endpoints require an `x-user-id` session header. The seeded local 
 - `GET|PATCH|DELETE /api/v1/campaigns/{campaignId}`
 - `GET|POST /api/v1/campaigns/{campaignId}/scenes`
 - `GET|POST /api/v1/campaigns/{campaignId}/assets`
+- `POST /api/v1/campaigns/{campaignId}/assets/upload`
+- `GET /api/v1/assets/{assetId}/blob`
 - `GET|PATCH|DELETE /api/v1/scenes/{sceneId}`
 - `POST /api/v1/scenes/{sceneId}/fog`
 - `GET|POST /api/v1/scenes/{sceneId}/tokens`
@@ -47,6 +49,19 @@ Authenticated endpoints require an `x-user-id` session header. The seeded local 
 Plugin runtime endpoints are campaign-scoped. Installing a plugin creates a `permissionGrants` record for `subjectType: "plugin"`; command execution checks the human caller's permission and the plugin grant before the plugin can post chat or read token context.
 
 System runtime endpoints are campaign-scoped. The generic fantasy runtime can summarize an actor sheet and produce quick-roll dice formulas from actor data, posting the resulting roll into chat.
+
+Map upload accepts raw image bytes with the authenticated `x-user-id` header:
+
+```bash
+curl -X POST \
+  -H "x-user-id: usr_demo_gm" \
+  -H "content-type: image/png" \
+  -H "x-asset-name: vault.png" \
+  --data-binary @vault.png \
+  "http://localhost:4000/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true"
+```
+
+Uploaded assets are stored under `OTTE_UPLOAD_DIR`, checksummed as `sha256`, recorded as `MapAsset` rows, and served through `GET /api/v1/assets/{assetId}/blob?userId=usr_demo_gm`.
 
 `POST /api/v1/import/campaign` accepts either a raw `.ottx` archive or:
 

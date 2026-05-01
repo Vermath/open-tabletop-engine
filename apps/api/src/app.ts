@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { createReadStream, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { basename, extname, resolve, sep } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { EchoAiProvider, buildPermissionFilteredContext } from "@open-tabletop/ai-core";
@@ -37,13 +40,24 @@ import { FileStateStore, type StateStore } from "./store.js";
 
 export interface BuildAppOptions {
   store?: StateStore;
+  uploadDir?: string;
+  maxAssetBytes?: number;
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const store = options.store ?? new FileStateStore();
+  const uploadDir = resolve(options.uploadDir ?? process.env.OTTE_UPLOAD_DIR ?? "uploads");
+  const maxAssetBytes = options.maxAssetBytes ?? 25 * 1024 * 1024;
   const hub = new RealtimeHub();
   const aiProvider = new EchoAiProvider();
   const app = Fastify({ logger: true });
+
+  app.addContentTypeParser(/^image\/(png|jpeg|webp|gif|svg\+xml)$/i, { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
+    done(null, body);
+  });
+  app.addContentTypeParser("application/octet-stream", { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
+    done(null, body);
+  });
 
   await app.register(cors, { origin: true });
   await app.register(websocket);
@@ -184,6 +198,65 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.assets.push(asset);
     store.save();
     return asset;
+  });
+
+  app.post<{ Params: { campaignId: string }; Querystring: { sceneId?: string; setAsBackground?: string }; Body: Buffer }>(
+    "/api/v1/campaigns/:campaignId/assets/upload",
+    async (request, reply) => {
+      const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
+      if (allowed !== true) return allowed;
+      const shouldSetBackground = request.query.sceneId && truthyQuery(request.query.setAsBackground);
+      if (shouldSetBackground) {
+        const sceneUpdateAllowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.update");
+        if (sceneUpdateAllowed !== true) return sceneUpdateAllowed;
+      }
+      const body = Buffer.isBuffer(request.body) ? request.body : Buffer.from([]);
+      if (body.length === 0) return reply.code(400).send({ error: "empty_upload", message: "Asset upload body is empty" });
+      if (body.length > maxAssetBytes) return reply.code(413).send({ error: "asset_too_large", message: `Asset exceeds ${maxAssetBytes} bytes` });
+      const mimeType = normalizeAssetMimeType(request.headers["content-type"]);
+      const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
+      const checksum = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+      const scene = shouldSetBackground
+        ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId)
+        : undefined;
+      if (shouldSetBackground && !scene) return notFound(reply, "Scene not found");
+      const asset = createTimestamped("asset", {
+        campaignId: request.params.campaignId,
+        name: sourceName,
+        url: "",
+        mimeType,
+        sizeBytes: body.length,
+        checksum
+      }) satisfies MapAsset;
+      const filePath = localAssetPath(uploadDir, request.params.campaignId, asset);
+      mkdirSync(resolve(uploadDir, request.params.campaignId), { recursive: true });
+      writeFileSync(filePath, body);
+      asset.url = `/api/v1/assets/${asset.id}/blob`;
+      store.state.assets.push(asset);
+
+      if (scene) {
+        scene.backgroundAssetId = asset.id;
+        scene.updatedAt = nowIso();
+      }
+
+      store.save();
+      if (scene) hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
+      return { asset, scene };
+    }
+  );
+
+  app.get<{ Params: { assetId: string }; Querystring: { userId?: string } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
+    const asset = store.state.assets.find((item) => item.id === request.params.assetId);
+    if (!asset) return notFound(reply, "Asset not found");
+    const userId = userIdFromRequest(request.url, request.headers);
+    if (!userId) return unauthorized(reply, "Missing asset session");
+    if (!canCampaign(store, userId, asset.campaignId, "scene.read")) return forbidden(reply, "Missing permission: scene.read");
+    const filePath = localAssetPath(uploadDir, asset.campaignId, asset);
+    if (!existsSync(filePath)) return notFound(reply, "Asset file not found");
+    return reply
+      .header("content-type", asset.mimeType)
+      .header("cache-control", "private, max-age=60")
+      .send(createReadStream(filePath));
   });
 
   app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId", async (request, reply) => {
@@ -1053,6 +1126,64 @@ function pluginCan(store: StateStore, campaignId: string, pluginId: string, perm
 
 function findSystemActor(store: StateStore, campaignId: string, systemId: string, actorId: string): Actor | undefined {
   return store.state.actors.find((actor) => actor.id === actorId && actor.campaignId === campaignId && actor.systemId === systemId);
+}
+
+function truthyQuery(value: string | undefined): boolean {
+  return value === "1" || value === "true" || value === "yes";
+}
+
+function normalizeAssetMimeType(value: string | string[] | undefined): string {
+  const contentType = Array.isArray(value) ? value[0] : value;
+  const mimeType = contentType?.split(";")[0]?.trim().toLowerCase();
+  return mimeType && mimeType.length > 0 ? mimeType : "application/octet-stream";
+}
+
+function displayNameFromHeader(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return undefined;
+  const decoded = safeDecodeURIComponent(raw);
+  return basename(decoded).trim() || undefined;
+}
+
+function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function extensionForMimeType(mimeType: string): string {
+  switch (mimeType) {
+    case "image/png":
+      return ".png";
+    case "image/jpeg":
+      return ".jpg";
+    case "image/webp":
+      return ".webp";
+    case "image/gif":
+      return ".gif";
+    case "image/svg+xml":
+      return ".svg";
+    default:
+      return ".bin";
+  }
+}
+
+function localAssetPath(uploadDir: string, campaignId: string, asset: MapAsset): string {
+  const root = resolve(uploadDir);
+  const campaignDir = resolve(root, campaignId);
+  const extension = extname(asset.url) || extensionForMimeType(asset.mimeType);
+  const filePath = resolve(campaignDir, `${asset.id}${extension}`);
+  if (!isWithinPath(root, campaignDir) || !isWithinPath(campaignDir, filePath)) {
+    throw new Error("Invalid upload path");
+  }
+  return filePath;
+}
+
+function isWithinPath(parent: string, child: string): boolean {
+  const normalizedParent = parent.endsWith(sep) ? parent : `${parent}${sep}`;
+  return child === parent || child.startsWith(normalizedParent);
 }
 
 function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyof EngineState, number> {

@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, Proposal, Scene, Token } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, Proposal, Scene, Token } from "@open-tabletop/core";
 import {
   Bot,
   Boxes,
@@ -19,7 +19,18 @@ import {
   WandSparkles
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiGet, apiPatch, apiPost, loadSnapshot, sessionUserId, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import {
+  apiGet,
+  apiPatch,
+  apiPost,
+  apiUploadAsset,
+  assetBlobUrl,
+  loadSnapshot,
+  sessionUserId,
+  type PluginRuntimeInfo,
+  type Snapshot,
+  type SystemRuntimeInfo
+} from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -27,6 +38,7 @@ export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
     campaigns: [],
     scenes: [],
+    assets: [],
     tokens: [],
     actors: [],
     journals: [],
@@ -49,6 +61,7 @@ export function App() {
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const selectedScene = snapshot.scenes.find((scene) => scene.id === sceneId);
+  const selectedMapAsset = snapshot.assets.find((asset) => asset.id === selectedScene?.backgroundAssetId);
   const selectedToken = snapshot.tokens.find((token) => token.id === selectedTokenId);
   const selectedActor = snapshot.actors.find((actor) => actor.id === selectedToken?.actorId) ?? snapshot.actors[0];
   const activeCombat = snapshot.combats.find((combat) => combat.active);
@@ -100,6 +113,13 @@ export function App() {
     });
     setSelectedTokenId(token.id);
     await refresh();
+  }
+
+  async function uploadMap(file: File) {
+    if (!selectedScene) return;
+    await apiUploadAsset({ campaignId, sceneId: selectedScene.id, file, setAsBackground: true });
+    setStatus("Map uploaded");
+    await refresh(campaignId, selectedScene.id);
   }
 
   async function revealFog() {
@@ -248,6 +268,9 @@ export function App() {
         <button className="ghost-button" onClick={() => document.getElementById("import-file")?.click()}>
           <Upload size={16} /> Import
         </button>
+        <button className="ghost-button" onClick={() => document.getElementById("map-upload-file")?.click()}>
+          <Upload size={16} /> Map
+        </button>
         <input
           id="import-file"
           type="file"
@@ -258,6 +281,18 @@ export function App() {
             if (!file) return;
             await apiPost("/api/v1/import/campaign", JSON.parse(await file.text()));
             await refresh();
+          }}
+        />
+        <input
+          id="map-upload-file"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+          hidden
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            await uploadMap(file);
+            event.target.value = "";
           }}
         />
         <div className="status">{status}</div>
@@ -286,7 +321,14 @@ export function App() {
           <section className="table-area">
               <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} />
             {selectedScene ? (
-              <SceneCanvas scene={selectedScene} tokens={snapshot.tokens} selectedTokenId={selectedTokenId} onSelect={setSelectedTokenId} onMoved={refresh} />
+              <SceneCanvas
+                scene={selectedScene}
+                backgroundAsset={selectedMapAsset}
+                tokens={snapshot.tokens}
+                selectedTokenId={selectedTokenId}
+                onSelect={setSelectedTokenId}
+                onMoved={refresh}
+              />
             ) : (
               <div className="empty-state">Create a scene to open the tabletop.</div>
             )}
@@ -358,6 +400,7 @@ export function App() {
 
 function SceneCanvas(props: {
   scene: Scene;
+  backgroundAsset?: MapAsset;
   tokens: Token[];
   selectedTokenId: string;
   onSelect(id: string): void;
@@ -388,6 +431,7 @@ function SceneCanvas(props: {
       }}
       onPointerUp={() => setDragging(null)}
     >
+      {props.backgroundAsset && <img className="scene-map" src={assetBlobUrl(props.backgroundAsset)} alt="" draggable={false} />}
       <div className="grid-lines" style={{ backgroundSize: `${(props.scene.gridSize / props.scene.width) * 100}% ${(props.scene.gridSize / props.scene.height) * 100}%` }} />
       {props.scene.lights.map((light) => (
         <div
