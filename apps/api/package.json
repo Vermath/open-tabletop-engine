@@ -1,0 +1,32 @@
+{
+  "name": "@open-tabletop/api",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.2",
+    "@fastify/websocket": "^11.0.1",
+    "@open-tabletop/ai-core": "workspace:*",
+    "@open-tabletop/api-contracts": "workspace:*",
+    "@open-tabletop/core": "workspace:*",
+    "@open-tabletop/dice-engine": "workspace:*",
+    "@open-tabletop/plugin-sdk": "workspace:*",
+    "@open-tabletop/system-sdk": "workspace:*",
+    "fastify": "^5.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
