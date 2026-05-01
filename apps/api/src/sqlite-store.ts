@@ -28,6 +28,7 @@ const stateCollections = [
   "oauthStates",
   "passwordResetTokens",
   "emailOutbox",
+  "scimGroups",
   "invites",
   "campaigns",
   "members",

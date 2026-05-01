@@ -847,11 +847,40 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Player AI thread returned missing-permission outputs `draft_encounter:ai.proposeChanges,create_memory:ai.proposeChanges`.
   - Player `GET /api/v1/campaigns/camp_demo/ai/tool-calls` returned `403`.
 
+### SCIM Organization Sync Slice
+
+- Implementation:
+  - Added bearer-token-protected SCIM v2 routes under `/api/v1/scim/v2`.
+  - Added ServiceProviderConfig, Users list/create/get/replace/patch/deactivate, and Groups list/create/get/replace/patch/delete.
+  - Added persistent `scimGroups` state for SQLite and file-backed stores.
+  - Added SCIM profile metadata on users while redacting that metadata from public/admin user responses and campaign archives.
+  - SCIM-created users are marked `passwordResetRequired` by default so provisioning does not create passwordless local accounts.
+  - SCIM active=false and delete revoke that user's active sessions and mark the account disabled.
+  - Added system audit logs for SCIM user and group mutations.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api-contracts typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `36 passed`.
+  - API tests verify SCIM bearer enforcement, ServiceProviderConfig, user creation, password-reset-required login blocking, filtered user lookup, active=false deprovisioning, group creation, duplicate group rejection, group membership patching, SQLite SCIM group persistence, and system audit entries.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4452`
+  - SQLite file: `storage/manual-scim-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_SQLITE_PATH=storage/manual-scim-20260501.sqlite`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, and `OTTE_SCIM_BEARER_TOKEN=manual-scim-secret`.
+  - Unauthenticated `GET /api/v1/scim/v2/Users` returned `401`.
+  - Authorized `GET /api/v1/scim/v2/ServiceProviderConfig` returned `200` with `patch.supported: true`.
+  - `POST /api/v1/scim/v2/Users` created `usr_mon5mco646brezqi` with `userName: manual.scim@example.test`, normalized email `manual.scim@example.test`, and `active: true`.
+  - Passwordless login for `manual.scim@example.test` returned `403 forbidden`, confirming the provisioned user requires a password reset before local password auth.
+  - Filtered user lookup with `userName eq "manual.scim@example.test"` returned `totalResults: 1`.
+  - `PATCH /api/v1/scim/v2/Users/usr_mon5mco646brezqi` with `active=false` returned `active: false`.
+  - `POST /api/v1/scim/v2/Groups` created `scimg_mon5mcotk08gz5ef` with one member, and `PATCH /api/v1/scim/v2/Groups/scimg_mon5mcotk08gz5ef` replaced members with an empty list.
+  - Admin audit export for `action=scim.user.create` returned `count: 1`, `firstAction: scim.user.create`, and `firstActorType: system`.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
-- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs SCIM/organization sync.
+- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification, group-to-campaign role mapping, and an organization-admin UI.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.

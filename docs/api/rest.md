@@ -27,6 +27,11 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `DELETE /api/v1/admin/sessions/{sessionId}`
 - `GET /api/v1/admin/email-outbox`
 - `GET /api/v1/admin/audit-logs`
+- `GET /api/v1/scim/v2/ServiceProviderConfig`
+- `GET|POST /api/v1/scim/v2/Users`
+- `GET|PUT|PATCH|DELETE /api/v1/scim/v2/Users/{userId}`
+- `GET|POST /api/v1/scim/v2/Groups`
+- `GET|PUT|PATCH|DELETE /api/v1/scim/v2/Groups/{groupId}`
 - `GET /api/v1/admin/assets/storage`
 - `POST /api/v1/admin/assets/migrate`
 - `POST /api/v1/admin/assets/cleanup`
@@ -167,6 +172,31 @@ curl -X POST \
   "http://localhost:4000/api/v1/auth/login"
 ```
 
+SCIM v2 provisioning is enabled when `OTTE_SCIM_BEARER_TOKEN` is set. SCIM endpoints require `Authorization: Bearer <token>` and support ServiceProviderConfig, user list/create/get/replace/patch/deactivate, and group list/create/get/replace/patch/delete. SCIM-created users are marked `passwordResetRequired` by default so provisioning an email identity never creates a passwordless login path.
+
+```bash
+curl -H "Authorization: Bearer $OTTE_SCIM_BEARER_TOKEN" \
+  "http://localhost:4000/api/v1/scim/v2/ServiceProviderConfig"
+
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_SCIM_BEARER_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"userName":"player@example.com","name":{"formatted":"Provisioned Player"},"emails":[{"value":"player@example.com","primary":true}],"active":true}' \
+  "http://localhost:4000/api/v1/scim/v2/Users"
+
+curl -X PATCH \
+  -H "Authorization: Bearer $OTTE_SCIM_BEARER_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"Operations":[{"op":"replace","path":"active","value":false}]}' \
+  "http://localhost:4000/api/v1/scim/v2/Users/usr_..."
+
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_SCIM_BEARER_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"displayName":"Campaign Staff","members":[{"value":"usr_..."}]}' \
+  "http://localhost:4000/api/v1/scim/v2/Groups"
+```
+
 Server administrators are the user ids listed in `OTTE_ADMIN_USER_IDS`. Admin endpoints can list/update users, require password resets, disable accounts, revoke sessions, inspect the email outbox, and export redacted audit logs for account/session operations:
 
 ```bash
@@ -210,13 +240,14 @@ curl -X POST \
   "http://localhost:4000/api/v1/invites/accept"
 ```
 
-Invite and password-reset tokens are returned only once and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. TOTP MFA secrets and recovery-code hashes are redacted from public/admin user responses and campaign archives. Admin audit exports accept `campaignId`, `actorUserId`, `actorType`, `action`, `targetType`, `targetId`, `since`, `until`, `limit`, and `format=json|ndjson` query filters. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, password reset records, email outbox records, user password hashes, and MFA secrets.
+Invite and password-reset tokens are returned only once and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. TOTP MFA secrets, recovery-code hashes, and SCIM profiles are redacted from public/admin user responses and campaign archives. Admin audit exports accept `campaignId`, `actorUserId`, `actorType`, `action`, `targetType`, `targetId`, `since`, `until`, `limit`, and `format=json|ndjson` query filters. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, password reset records, email outbox records, SCIM groups, user password hashes, MFA secrets, and SCIM profiles.
 
 Password reset and admin environment variables:
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `OTTE_ADMIN_USER_IDS` | no | Comma-separated user ids allowed to call `/api/v1/admin/*`. |
+| `OTTE_SCIM_BEARER_TOKEN` | no | Enables `/api/v1/scim/v2/*` provisioning when set; callers must send it as a bearer token. |
 | `OTTE_PASSWORD_RESET_URL` | no | Browser reset form URL, usually `https://your-web-origin/reset-password`. The API appends `token=<opr_token>`. Falls back to `${OTTE_WEB_ORIGIN}/reset-password` when set. |
 | `OTTE_PASSWORD_RESET_TTL_MINUTES` | no | Reset token lifetime, clamped from 5 minutes to 24 hours. Defaults to 60 minutes. |
 | `OTTE_EMAIL_WEBHOOK_URL` | no | HTTP endpoint that receives queued email payloads as JSON. Without it, messages stay pending in the outbox. |

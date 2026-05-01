@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimGroup, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -36,6 +36,31 @@ interface AdminAuditLogQuery {
   until?: string;
   limit?: string;
   format?: string;
+}
+
+interface ScimListQuery {
+  filter?: string;
+  startIndex?: string;
+  count?: string;
+}
+
+interface ScimUserInput {
+  userName?: string;
+  externalId?: string;
+  displayName?: string;
+  active?: boolean;
+  name?: { formatted?: string; givenName?: string; familyName?: string };
+  emails?: Array<{ value?: string; primary?: boolean; type?: string }>;
+}
+
+interface ScimGroupInput {
+  displayName?: string;
+  externalId?: string;
+  members?: Array<{ value?: string }>;
+}
+
+interface ScimPatchInput {
+  Operations?: Array<{ op?: string; path?: string; value?: unknown }>;
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -423,6 +448,225 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       filters: options.filters,
       auditLogs
     };
+  });
+
+  app.get("/api/v1/scim/v2/ServiceProviderConfig", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    return {
+      schemas: ["urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"],
+      patch: { supported: true },
+      bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 },
+      filter: { supported: true, maxResults: 200 },
+      changePassword: { supported: false },
+      sort: { supported: false },
+      etag: { supported: false },
+      authenticationSchemes: [{ type: "oauthbearertoken", name: "Bearer token", primary: true }]
+    };
+  });
+
+  app.get<{ Querystring: ScimListQuery }>("/api/v1/scim/v2/Users", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    return scimListResponse(filterScimUsers(store.state.users, request.query), request.query, (user) => scimUserResource(user, request.headers));
+  });
+
+  app.post<{ Body: ScimUserInput }>("/api/v1/scim/v2/Users", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    const normalized = normalizeScimUserInput(request.body ?? {});
+    if ("error" in normalized) return scimError(reply, 400, normalized.error);
+    if (findScimUser(store, normalized.userName, normalized.email)) return scimError(reply, 409, "SCIM user already exists");
+    const now = nowIso();
+    const user = createTimestamped("usr", {
+      displayName: normalized.displayName,
+      email: normalized.email,
+      passwordResetRequired: true,
+      scim: {
+        userName: normalized.userName,
+        externalId: normalized.externalId,
+        syncedAt: now
+      }
+    }) satisfies User;
+    if (normalized.active === false) setScimUserActive(store, user, false);
+    store.state.users.push(user);
+    appendSystemAuditLog(store, {
+      action: "scim.user.create",
+      targetType: "user",
+      targetId: user.id,
+      after: publicUser(user)
+    });
+    store.save();
+    reply.code(201).header("location", scimLocation(request.headers, `/api/v1/scim/v2/Users/${user.id}`));
+    return scimUserResource(user, request.headers);
+  });
+
+  app.get<{ Params: { userId: string } }>("/api/v1/scim/v2/Users/:userId", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    const user = store.state.users.find((item) => item.id === request.params.userId);
+    if (!user) return scimError(reply, 404, "SCIM user not found");
+    return scimUserResource(user, request.headers);
+  });
+
+  app.put<{ Params: { userId: string }; Body: ScimUserInput }>("/api/v1/scim/v2/Users/:userId", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    const user = store.state.users.find((item) => item.id === request.params.userId);
+    if (!user) return scimError(reply, 404, "SCIM user not found");
+    const before = publicUser(user);
+    const normalized = normalizeScimUserInput(request.body ?? {}, user);
+    if ("error" in normalized) return scimError(reply, 400, normalized.error);
+    const duplicate = findScimUser(store, normalized.userName, normalized.email, user.id);
+    if (duplicate) return scimError(reply, 409, "SCIM user already exists");
+    applyScimUserInput(store, user, normalized);
+    appendSystemAuditLog(store, {
+      action: "scim.user.replace",
+      targetType: "user",
+      targetId: user.id,
+      before,
+      after: publicUser(user)
+    });
+    store.save();
+    return scimUserResource(user, request.headers);
+  });
+
+  app.patch<{ Params: { userId: string }; Body: ScimPatchInput }>("/api/v1/scim/v2/Users/:userId", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    const user = store.state.users.find((item) => item.id === request.params.userId);
+    if (!user) return scimError(reply, 404, "SCIM user not found");
+    const before = publicUser(user);
+    const patched = applyScimPatchToUser(store, user, request.body);
+    if ("error" in patched) return scimError(reply, 400, patched.error);
+    appendSystemAuditLog(store, {
+      action: "scim.user.patch",
+      targetType: "user",
+      targetId: user.id,
+      before,
+      after: publicUser(user)
+    });
+    store.save();
+    return scimUserResource(user, request.headers);
+  });
+
+  app.delete<{ Params: { userId: string } }>("/api/v1/scim/v2/Users/:userId", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    const user = store.state.users.find((item) => item.id === request.params.userId);
+    if (!user) return scimError(reply, 404, "SCIM user not found");
+    const before = publicUser(user);
+    setScimUserActive(store, user, false);
+    appendSystemAuditLog(store, {
+      action: "scim.user.deactivate",
+      targetType: "user",
+      targetId: user.id,
+      before,
+      after: publicUser(user)
+    });
+    store.save();
+    return reply.code(204).send();
+  });
+
+  app.get<{ Querystring: ScimListQuery }>("/api/v1/scim/v2/Groups", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    return scimListResponse(filterScimGroups(store.state.scimGroups, request.query), request.query, (group) => scimGroupResource(group, request.headers));
+  });
+
+  app.post<{ Body: ScimGroupInput }>("/api/v1/scim/v2/Groups", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    const normalized = normalizeScimGroupInput(store, request.body ?? {});
+    if ("error" in normalized) return scimError(reply, 400, normalized.error);
+    if (findScimGroup(store, normalized.displayName, normalized.externalId)) {
+      return scimError(reply, 409, "SCIM group already exists");
+    }
+    const group = createTimestamped("scimg", {
+      displayName: normalized.displayName,
+      externalId: normalized.externalId,
+      memberUserIds: normalized.memberUserIds
+    }) satisfies ScimGroup;
+    store.state.scimGroups.push(group);
+    appendSystemAuditLog(store, {
+      action: "scim.group.create",
+      targetType: "scim_group",
+      targetId: group.id,
+      after: scimGroupResource(group, request.headers)
+    });
+    store.save();
+    reply.code(201).header("location", scimLocation(request.headers, `/api/v1/scim/v2/Groups/${group.id}`));
+    return scimGroupResource(group, request.headers);
+  });
+
+  app.get<{ Params: { groupId: string } }>("/api/v1/scim/v2/Groups/:groupId", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    const group = store.state.scimGroups.find((item) => item.id === request.params.groupId);
+    if (!group) return scimError(reply, 404, "SCIM group not found");
+    return scimGroupResource(group, request.headers);
+  });
+
+  app.put<{ Params: { groupId: string }; Body: ScimGroupInput }>("/api/v1/scim/v2/Groups/:groupId", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    const group = store.state.scimGroups.find((item) => item.id === request.params.groupId);
+    if (!group) return scimError(reply, 404, "SCIM group not found");
+    const before = scimGroupResource(group, request.headers);
+    const normalized = normalizeScimGroupInput(store, request.body ?? {});
+    if ("error" in normalized) return scimError(reply, 400, normalized.error);
+    if (findScimGroup(store, normalized.displayName, normalized.externalId, group.id)) return scimError(reply, 409, "SCIM group already exists");
+    group.displayName = normalized.displayName;
+    group.externalId = normalized.externalId;
+    group.memberUserIds = normalized.memberUserIds;
+    group.updatedAt = nowIso();
+    appendSystemAuditLog(store, {
+      action: "scim.group.replace",
+      targetType: "scim_group",
+      targetId: group.id,
+      before,
+      after: scimGroupResource(group, request.headers)
+    });
+    store.save();
+    return scimGroupResource(group, request.headers);
+  });
+
+  app.patch<{ Params: { groupId: string }; Body: ScimPatchInput }>("/api/v1/scim/v2/Groups/:groupId", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    const group = store.state.scimGroups.find((item) => item.id === request.params.groupId);
+    if (!group) return scimError(reply, 404, "SCIM group not found");
+    const before = scimGroupResource(group, request.headers);
+    const patched = applyScimPatchToGroup(store, group, request.body);
+    if ("error" in patched) return scimError(reply, 400, patched.error);
+    if (findScimGroup(store, group.displayName, group.externalId, group.id)) return scimError(reply, 409, "SCIM group already exists");
+    appendSystemAuditLog(store, {
+      action: "scim.group.patch",
+      targetType: "scim_group",
+      targetId: group.id,
+      before,
+      after: scimGroupResource(group, request.headers)
+    });
+    store.save();
+    return scimGroupResource(group, request.headers);
+  });
+
+  app.delete<{ Params: { groupId: string } }>("/api/v1/scim/v2/Groups/:groupId", async (request, reply) => {
+    const authorized = requireScimBearer(reply, request.headers);
+    if (authorized !== true) return authorized;
+    const group = store.state.scimGroups.find((item) => item.id === request.params.groupId);
+    if (!group) return scimError(reply, 404, "SCIM group not found");
+    const before = store.state.scimGroups.length;
+    store.state.scimGroups = store.state.scimGroups.filter((group) => group.id !== request.params.groupId);
+    if (store.state.scimGroups.length === before) return scimError(reply, 404, "SCIM group not found");
+    appendSystemAuditLog(store, {
+      action: "scim.group.delete",
+      targetType: "scim_group",
+      targetId: group.id,
+      before: scimGroupResource(group, request.headers)
+    });
+    store.save();
+    return reply.code(204).send();
   });
 
   app.get("/api/v1/auth/oidc/config", async (request) => {
@@ -3467,6 +3711,319 @@ function filterAuditLogs(auditLogs: AuditLog[], options: AdminAuditLogOptions): 
     .slice(0, options.limit);
 }
 
+interface NormalizedScimUser {
+  userName: string;
+  email?: string;
+  displayName: string;
+  externalId?: string;
+  active: boolean;
+}
+
+interface NormalizedScimGroup {
+  displayName: string;
+  externalId?: string;
+  memberUserIds: string[];
+}
+
+function requireScimBearer(reply: FastifyReply, headers: Record<string, string | string[] | undefined>): true | FastifyReply {
+  const expected = process.env.OTTE_SCIM_BEARER_TOKEN?.trim();
+  if (!expected) return notFound(reply, "SCIM is not configured");
+  const authorization = headerValue(headers.authorization);
+  const token = authorization?.toLowerCase().startsWith("bearer ") ? authorization.slice("bearer ".length).trim() : undefined;
+  if (!token || !safeStringEqual(token, expected)) return unauthorized(reply, "SCIM bearer token required");
+  return true;
+}
+
+function scimLocation(headers: Record<string, string | string[] | undefined>, path: string): string {
+  const host = headerValue(headers["x-forwarded-host"]) ?? headerValue(headers.host) ?? "localhost";
+  const protocol = headerValue(headers["x-forwarded-proto"]) ?? (host.startsWith("localhost") || host.startsWith("127.0.0.1") ? "http" : "https");
+  return `${protocol}://${host}${path}`;
+}
+
+function scimListResponse<T>(items: T[], query: ScimListQuery, mapItem: (item: T) => unknown): unknown {
+  const startIndex = Math.max(1, Number.parseInt(query.startIndex ?? "1", 10) || 1);
+  const count = Math.max(0, Math.min(200, Number.parseInt(query.count ?? "100", 10) || 100));
+  const resources = items.slice(startIndex - 1, startIndex - 1 + count).map(mapItem);
+  return {
+    schemas: ["urn:ietf:params:scim:api:messages:2.0:ListResponse"],
+    totalResults: items.length,
+    startIndex,
+    itemsPerPage: resources.length,
+    Resources: resources
+  };
+}
+
+function filterScimUsers(users: User[], query: ScimListQuery): User[] {
+  const filter = parseScimEqFilter(query.filter);
+  if (!filter) return users;
+  return users.filter((user) => {
+    const value = filter.value.toLowerCase();
+    if (filter.path === "username" || filter.path === "userName".toLowerCase()) return (user.scim?.userName ?? user.email ?? "").toLowerCase() === value;
+    if (filter.path === "externalid") return (user.scim?.externalId ?? "").toLowerCase() === value;
+    if (filter.path === "email" || filter.path === "emails.value") return (user.email ?? "").toLowerCase() === value;
+    return false;
+  });
+}
+
+function filterScimGroups(groups: ScimGroup[], query: ScimListQuery): ScimGroup[] {
+  const filter = parseScimEqFilter(query.filter);
+  if (!filter) return groups;
+  return groups.filter((group) => {
+    const value = filter.value.toLowerCase();
+    if (filter.path === "displayname") return group.displayName.toLowerCase() === value;
+    if (filter.path === "externalid") return (group.externalId ?? "").toLowerCase() === value;
+    return false;
+  });
+}
+
+function parseScimEqFilter(filter: string | undefined): { path: string; value: string } | undefined {
+  const match = filter?.trim().match(/^([\w.]+)\s+eq\s+"([^"]+)"$/i);
+  if (!match) return undefined;
+  return { path: match[1]!.toLowerCase(), value: match[2]! };
+}
+
+function scimUserResource(user: User, headers: Record<string, string | string[] | undefined>): unknown {
+  const userName = user.scim?.userName ?? user.email ?? user.id;
+  return {
+    schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
+    id: user.id,
+    externalId: user.scim?.externalId,
+    userName,
+    displayName: user.displayName,
+    name: { formatted: user.displayName },
+    active: !isDisabledUser(user),
+    emails: user.email ? [{ value: user.email, primary: true, type: "work" }] : [],
+    meta: {
+      resourceType: "User",
+      created: user.createdAt,
+      lastModified: user.updatedAt,
+      location: scimLocation(headers, `/api/v1/scim/v2/Users/${user.id}`)
+    }
+  };
+}
+
+function scimGroupResource(group: ScimGroup, headers: Record<string, string | string[] | undefined>): unknown {
+  return {
+    schemas: ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+    id: group.id,
+    externalId: group.externalId,
+    displayName: group.displayName,
+    members: group.memberUserIds.map((userId) => ({ value: userId, $ref: scimLocation(headers, `/api/v1/scim/v2/Users/${userId}`) })),
+    meta: {
+      resourceType: "Group",
+      created: group.createdAt,
+      lastModified: group.updatedAt,
+      location: scimLocation(headers, `/api/v1/scim/v2/Groups/${group.id}`)
+    }
+  };
+}
+
+function normalizeScimUserInput(input: ScimUserInput, existing?: User): NormalizedScimUser | { error: string } {
+  const inputEmail = scimEmail(input);
+  const userName = normalizeScimText(input.userName) ?? existing?.scim?.userName ?? inputEmail ?? existing?.email;
+  if (!userName) return { error: "SCIM userName is required" };
+  const email = inputEmail ?? normalizeEmail(userName) ?? existing?.email;
+  const displayName = normalizeDisplayName(input.displayName) ?? normalizeDisplayName(input.name?.formatted) ?? existing?.displayName ?? email ?? userName;
+  const externalId = normalizeScimText(input.externalId) ?? existing?.scim?.externalId;
+  return {
+    userName,
+    email,
+    displayName,
+    externalId,
+    active: input.active ?? (existing ? !isDisabledUser(existing) : true)
+  };
+}
+
+function scimEmail(input: ScimUserInput): string | undefined {
+  const primary = input.emails?.find((email) => email.primary)?.value ?? input.emails?.[0]?.value;
+  return normalizeEmail(primary);
+}
+
+function normalizeScimText(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
+function findScimUser(store: StateStore, userName: string | undefined, email: string | undefined, exceptUserId?: string): User | undefined {
+  const normalizedUserName = userName?.toLowerCase();
+  const normalizedEmail = normalizeEmail(email);
+  return store.state.users.find((user) => {
+    if (exceptUserId && user.id === exceptUserId) return false;
+    if (normalizedUserName && (user.scim?.userName ?? user.email ?? "").toLowerCase() === normalizedUserName) return true;
+    return Boolean(normalizedEmail && normalizeEmail(user.email) === normalizedEmail);
+  });
+}
+
+function findScimGroup(store: StateStore, displayName: string | undefined, externalId: string | undefined, exceptGroupId?: string): ScimGroup | undefined {
+  const normalizedDisplayName = displayName?.toLowerCase();
+  return store.state.scimGroups.find((group) => {
+    if (exceptGroupId && group.id === exceptGroupId) return false;
+    if (normalizedDisplayName && group.displayName.toLowerCase() === normalizedDisplayName) return true;
+    return Boolean(externalId && group.externalId === externalId);
+  });
+}
+
+function applyScimUserInput(store: StateStore, user: User, input: NormalizedScimUser): void {
+  const now = nowIso();
+  user.displayName = input.displayName;
+  user.email = input.email;
+  user.scim = {
+    userName: input.userName,
+    externalId: input.externalId,
+    syncedAt: now
+  };
+  setScimUserActive(store, user, input.active);
+  user.updatedAt = nowIso();
+}
+
+function setScimUserActive(store: StateStore, user: User, active: boolean): void {
+  const now = nowIso();
+  if (active) {
+    user.disabledAt = undefined;
+    user.disabledByUserId = undefined;
+    user.disabledReason = undefined;
+  } else {
+    user.disabledAt = user.disabledAt ?? now;
+    user.disabledByUserId = undefined;
+    user.disabledReason = "SCIM inactive";
+    store.state.sessions = store.state.sessions.filter((session) => session.userId !== user.id);
+  }
+  user.updatedAt = now;
+}
+
+function applyScimPatchToUser(store: StateStore, user: User, body: ScimPatchInput | undefined): { ok: true } | { error: string } {
+  const operations = body?.Operations;
+  if (!Array.isArray(operations)) return { error: "SCIM patch Operations are required" };
+  for (const operation of operations) {
+    const op = operation.op?.toLowerCase();
+    if (op !== "replace" && op !== "add") return { error: "Only SCIM add and replace operations are supported" };
+    const path = operation.path?.toLowerCase();
+    if (!path && typeof operation.value === "object" && operation.value !== null) {
+      const normalized = normalizeScimUserInput(operation.value as ScimUserInput, user);
+      if ("error" in normalized) return normalized;
+      const duplicate = findScimUser(store, normalized.userName, normalized.email, user.id);
+      if (duplicate) return { error: "SCIM user already exists" };
+      applyScimUserInput(store, user, normalized);
+      continue;
+    }
+    const result = applyScimUserPath(store, user, path, operation.value);
+    if ("error" in result) return result;
+  }
+  user.scim = {
+    ...(user.scim ?? {}),
+    userName: user.scim?.userName ?? user.email ?? user.id,
+    syncedAt: nowIso()
+  };
+  user.updatedAt = nowIso();
+  return { ok: true };
+}
+
+function applyScimUserPath(store: StateStore, user: User, path: string | undefined, value: unknown): { ok: true } | { error: string } {
+  if (path === "active") {
+    setScimUserActive(store, user, Boolean(value));
+    return { ok: true };
+  }
+  if (path === "displayname") {
+    const displayName = normalizeDisplayName(String(value ?? ""));
+    if (!displayName) return { error: "SCIM displayName is required" };
+    user.displayName = displayName;
+    return { ok: true };
+  }
+  if (path === "username") {
+    const userName = normalizeScimText(String(value ?? ""));
+    if (!userName) return { error: "SCIM userName is required" };
+    if (findScimUser(store, userName, undefined, user.id)) return { error: "SCIM user already exists" };
+    user.scim = { ...(user.scim ?? {}), userName };
+    const email = normalizeEmail(userName);
+    if (email) user.email = email;
+    return { ok: true };
+  }
+  if (path === "externalid") {
+    user.scim = { ...(user.scim ?? {}), externalId: normalizeScimText(String(value ?? "")) };
+    return { ok: true };
+  }
+  if (path === "emails" || path === "emails.value") {
+    const email = Array.isArray(value) ? scimEmail({ emails: value as ScimUserInput["emails"] }) : normalizeEmail(String(value ?? ""));
+    if (!email) return { error: "SCIM email is invalid" };
+    if (findScimUser(store, undefined, email, user.id)) return { error: "SCIM user already exists" };
+    user.email = email;
+    return { ok: true };
+  }
+  return { error: `Unsupported SCIM user patch path: ${path ?? "root"}` };
+}
+
+function normalizeScimGroupInput(store: StateStore, input: ScimGroupInput, existing?: ScimGroup): NormalizedScimGroup | { error: string } {
+  const displayName = normalizeDisplayName(input.displayName) ?? existing?.displayName;
+  if (!displayName) return { error: "SCIM group displayName is required" };
+  const memberUserIds = (input.members ?? existing?.memberUserIds.map((value) => ({ value })) ?? []).map((member) => member.value).filter((value): value is string => Boolean(value));
+  const missingUserId = memberUserIds.find((userId) => !store.state.users.some((user) => user.id === userId));
+  if (missingUserId) return { error: `SCIM group member not found: ${missingUserId}` };
+  return {
+    displayName,
+    externalId: normalizeScimText(input.externalId) ?? existing?.externalId,
+    memberUserIds: Array.from(new Set(memberUserIds))
+  };
+}
+
+function applyScimPatchToGroup(store: StateStore, group: ScimGroup, body: ScimPatchInput | undefined): { ok: true } | { error: string } {
+  const operations = body?.Operations;
+  if (!Array.isArray(operations)) return { error: "SCIM patch Operations are required" };
+  for (const operation of operations) {
+    const op = operation.op?.toLowerCase();
+    if (op !== "replace" && op !== "add" && op !== "remove") return { error: "Only SCIM add, replace, and remove operations are supported" };
+    const path = operation.path?.toLowerCase();
+    if (op === "remove" && path?.startsWith("members")) {
+      const userId = scimPatchMemberValue(path, operation.value);
+      group.memberUserIds = userId ? group.memberUserIds.filter((item) => item !== userId) : [];
+      continue;
+    }
+    if (path === "displayname") {
+      const displayName = normalizeDisplayName(String(operation.value ?? ""));
+      if (!displayName) return { error: "SCIM group displayName is required" };
+      group.displayName = displayName;
+    } else if (path === "externalid") {
+      group.externalId = normalizeScimText(String(operation.value ?? ""));
+    } else if (path === "members") {
+      const normalized = normalizeScimGroupInput(store, { displayName: group.displayName, externalId: group.externalId, members: operation.value as ScimGroupInput["members"] }, group);
+      if ("error" in normalized) return normalized;
+      group.memberUserIds = operation.op?.toLowerCase() === "add" ? Array.from(new Set([...group.memberUserIds, ...normalized.memberUserIds])) : normalized.memberUserIds;
+    } else {
+      return { error: `Unsupported SCIM group patch path: ${path ?? "root"}` };
+    }
+  }
+  group.updatedAt = nowIso();
+  return { ok: true };
+}
+
+function scimPatchMemberValue(path: string | undefined, value: unknown): string | undefined {
+  const pathMatch = path?.match(/members\[value eq "([^"]+)"\]/i)?.[1];
+  if (pathMatch) return pathMatch;
+  if (typeof value === "object" && value !== null && "value" in value) return String((value as { value?: unknown }).value ?? "");
+  return typeof value === "string" ? value : undefined;
+}
+
+function appendSystemAuditLog(store: StateStore, input: Omit<ServerAuditLogInput, "campaignId"> & { campaignId?: string }): AuditLog {
+  const log = createTimestamped("audit", {
+    campaignId: input.campaignId,
+    actorType: "system" as const,
+    action: input.action,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    before: input.before,
+    after: input.after
+  }) satisfies AuditLog;
+  store.state.auditLogs.push(log);
+  return log;
+}
+
+function scimError(reply: FastifyReply, status: number, detail: string): FastifyReply {
+  return reply.code(status).send({
+    schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
+    status: String(status),
+    detail
+  });
+}
+
 function normalizeAuditLogLimit(value: string | undefined): number | undefined {
   if (value === undefined || value.trim() === "") return 1000;
   const limit = Number(value);
@@ -3501,10 +4058,10 @@ interface PublicMfaInfo {
   lastVerifiedAt?: string;
 }
 
-type PublicUser = Omit<User, "passwordHash" | "mfa"> & { mfa?: PublicMfaInfo };
+type PublicUser = Omit<User, "passwordHash" | "mfa" | "scim"> & { mfa?: PublicMfaInfo };
 
 function publicUser(user: User): PublicUser {
-  const { passwordHash: _passwordHash, mfa, ...safeUser } = user;
+  const { passwordHash: _passwordHash, mfa, scim: _scim, ...safeUser } = user;
   const safeMfa = mfa ? publicMfaInfo(mfa) : undefined;
   return safeMfa ? { ...safeUser, mfa: safeMfa } : safeUser;
 }
@@ -4415,6 +4972,7 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     oauthStates: 0,
     passwordResetTokens: 0,
     emailOutbox: 0,
+    scimGroups: 0,
     invites: 0,
     campaigns: upsertRecords(state.campaigns, archive.data.campaigns),
     members: upsertRecords(state.members, archive.data.members),

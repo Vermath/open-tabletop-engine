@@ -9,6 +9,7 @@ export function emptyState(): EngineState {
     oauthStates: [],
     passwordResetTokens: [],
     emailOutbox: [],
+    scimGroups: [],
     invites: [],
     campaigns: [],
     members: [],
@@ -178,7 +179,7 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
   const memberUserIds = new Set(state.members.filter((item) => item.campaignId === campaignId).map((item) => item.userId));
   const campaignData: EngineState = {
     ...emptyState(),
-    users: state.users.filter((item) => memberUserIds.has(item.id)).map(({ passwordHash: _passwordHash, mfa: _mfa, ...user }) => user),
+    users: state.users.filter((item) => memberUserIds.has(item.id)).map(({ passwordHash: _passwordHash, mfa: _mfa, scim: _scim, ...user }) => user),
     sessions: [],
     identities: [],
     oauthStates: [],

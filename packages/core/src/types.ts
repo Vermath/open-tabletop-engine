@@ -17,6 +17,7 @@ export interface User extends Timestamps {
   email?: string;
   passwordHash?: string;
   mfa?: UserMfaSettings;
+  scim?: UserScimProfile;
   disabledAt?: string;
   disabledByUserId?: ID;
   disabledReason?: string;
@@ -31,6 +32,19 @@ export interface UserMfaSettings {
   recoveryCodeHashes?: string[];
   recoveryCodesUpdatedAt?: string;
   lastVerifiedAt?: string;
+}
+
+export interface UserScimProfile {
+  userName?: string;
+  externalId?: string;
+  syncedAt?: string;
+}
+
+export interface ScimGroup extends Timestamps {
+  id: ID;
+  displayName: string;
+  externalId?: string;
+  memberUserIds: ID[];
 }
 
 export interface UserSession extends Timestamps {
@@ -521,6 +535,7 @@ export interface EngineState {
   oauthStates: OAuthLoginState[];
   passwordResetTokens: PasswordResetToken[];
   emailOutbox: EmailOutboxMessage[];
+  scimGroups: ScimGroup[];
   invites: CampaignInvite[];
   campaigns: Campaign[];
   members: CampaignMember[];

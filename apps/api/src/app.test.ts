@@ -597,6 +597,139 @@ describe("api", () => {
     }
   });
 
+  it("provisions users and groups through token-protected SCIM", async () => {
+    const previousEnv = snapshotEnv(["OTTE_SCIM_BEARER_TOKEN"]);
+    process.env.OTTE_SCIM_BEARER_TOKEN = "scim-secret";
+    const directory = mkdtempSync(join(tmpdir(), "otte-scim-"));
+    const dbPath = join(directory, "state.sqlite");
+    const store = new SqliteStateStore(dbPath);
+    const app = await buildApp({ store });
+    const scimHeaders = { authorization: "Bearer scim-secret" };
+    try {
+      const unauthorizedUsers = await app.inject({
+        method: "GET",
+        url: "/api/v1/scim/v2/Users"
+      });
+      expect(unauthorizedUsers.statusCode).toBe(401);
+
+      const serviceProviderConfig = await app.inject({
+        method: "GET",
+        url: "/api/v1/scim/v2/ServiceProviderConfig",
+        headers: scimHeaders
+      });
+      expect(serviceProviderConfig.statusCode).toBe(200);
+      expect(serviceProviderConfig.json()).toMatchObject({
+        patch: { supported: true },
+        filter: { supported: true }
+      });
+
+      const createdUser = await app.inject({
+        method: "POST",
+        url: "/api/v1/scim/v2/Users",
+        headers: scimHeaders,
+        payload: {
+          userName: "scim.user@example.test",
+          externalId: "idp-user-123",
+          name: { formatted: "SCIM User" },
+          emails: [{ value: "SCIM.User@Example.Test", primary: true }],
+          active: true
+        }
+      });
+      expect(createdUser.statusCode).toBe(201);
+      expect(createdUser.json()).toMatchObject({
+        schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
+        userName: "scim.user@example.test",
+        displayName: "SCIM User",
+        active: true,
+        emails: [{ value: "scim.user@example.test", primary: true, type: "work" }]
+      });
+      expect(JSON.stringify(createdUser.json())).not.toContain("passwordHash");
+      const userId = createdUser.json().id as string;
+      const storedUser = store.state.users.find((user) => user.id === userId);
+      expect(storedUser).toMatchObject({
+        email: "scim.user@example.test",
+        passwordResetRequired: true,
+        scim: { userName: "scim.user@example.test", externalId: "idp-user-123" }
+      });
+
+      const passwordlessLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "scim.user@example.test" }
+      });
+      expect(passwordlessLogin.statusCode).toBe(403);
+
+      const filteredUsers = await app.inject({
+        method: "GET",
+        url: "/api/v1/scim/v2/Users?filter=userName%20eq%20%22scim.user%40example.test%22",
+        headers: scimHeaders
+      });
+      expect(filteredUsers.statusCode).toBe(200);
+      expect(filteredUsers.json()).toMatchObject({ totalResults: 1, itemsPerPage: 1 });
+
+      const deactivatedUser = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Users/${userId}`,
+        headers: scimHeaders,
+        payload: { Operations: [{ op: "replace", path: "active", value: false }] }
+      });
+      expect(deactivatedUser.statusCode).toBe(200);
+      expect(deactivatedUser.json()).toMatchObject({ id: userId, active: false });
+      expect(store.state.users.find((user) => user.id === userId)?.disabledReason).toBe("SCIM inactive");
+
+      const createdGroup = await app.inject({
+        method: "POST",
+        url: "/api/v1/scim/v2/Groups",
+        headers: scimHeaders,
+        payload: {
+          displayName: "Playtesters",
+          externalId: "idp-group-123",
+          members: [{ value: userId }]
+        }
+      });
+      expect(createdGroup.statusCode).toBe(201);
+      expect(createdGroup.json()).toMatchObject({
+        schemas: ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+        displayName: "Playtesters",
+        members: [{ value: userId }]
+      });
+      const groupId = createdGroup.json().id as string;
+
+      const duplicateGroup = await app.inject({
+        method: "POST",
+        url: "/api/v1/scim/v2/Groups",
+        headers: scimHeaders,
+        payload: { displayName: "Playtesters" }
+      });
+      expect(duplicateGroup.statusCode).toBe(409);
+
+      const patchedGroup = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Groups/${groupId}`,
+        headers: scimHeaders,
+        payload: { Operations: [{ op: "replace", path: "members", value: [] }] }
+      });
+      expect(patchedGroup.statusCode).toBe(200);
+      expect(patchedGroup.json().members).toEqual([]);
+
+      const restoredStore = new SqliteStateStore(dbPath);
+      expect(restoredStore.state.scimGroups.find((group) => group.id === groupId)).toMatchObject({
+        displayName: "Playtesters",
+        externalId: "idp-group-123",
+        memberUserIds: []
+      });
+      restoredStore.close();
+
+      expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["scim.user.create", "scim.user.patch", "scim.group.create", "scim.group.patch"]));
+      expect(store.state.auditLogs.filter((log) => log.action.startsWith("scim.")).every((log) => log.actorType === "system")).toBe(true);
+    } finally {
+      await app.close();
+      store.close();
+      restoreEnv(previousEnv);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("lets server admins manage users and sessions", async () => {
     const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
