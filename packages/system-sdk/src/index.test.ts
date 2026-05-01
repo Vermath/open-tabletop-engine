@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyGenericFantasyCondition, applyStellarFrontiersCondition, genericFantasyActorConditions, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersCompendiumEntry, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -65,6 +65,20 @@ describe("generic fantasy rules", () => {
     const sheet = genericFantasySheet(actor, items);
     expect(sheet.inventory.map((item) => item.name)).toEqual(["Longsword"]);
     expect(sheet.spells.map((item) => item.name)).toEqual(["Healing Word"]);
+  });
+
+  it("provides guided character templates and level advancement", () => {
+    const guardian = genericFantasyCharacterTemplate("guardian");
+    expect(guardian).toEqual(expect.objectContaining({ name: "Guardian", actorType: "character" }));
+    expect(guardian?.items).toEqual([{ entryId: "longsword" }]);
+
+    const builtActor = { ...actor, data: guardian!.data };
+    expect(genericFantasyAdvancementOptions(builtActor)).toContainEqual(expect.objectContaining({ id: "level-up", nextValue: 2 }));
+    const advancedData = applyGenericFantasyAdvancement(builtActor, "level-up");
+    expect(advancedData.level).toBe(2);
+    expect(advancedData.hp).toEqual({ current: 17, max: 17 });
+    expect((advancedData.attributes as Record<string, number>).strength).toBe(17);
+    expect(advancedData.features).toEqual(expect.arrayContaining(["Guardian Level 2"]));
   });
 });
 
@@ -132,5 +146,19 @@ describe("stellar frontiers rules", () => {
     expect(sheet.summary).toContain("Nova Quill");
     expect(sheet.inventory.map((item) => item.name)).toEqual(["Laser Carbine"]);
     expect(sheet.talents.map((item) => item.name)).toEqual(["Overclock"]);
+  });
+
+  it("provides guided sci-fi templates and rank advancement", () => {
+    const shipTech = stellarFrontiersCharacterTemplate("ship-tech");
+    expect(shipTech).toEqual(expect.objectContaining({ name: "Ship Tech", actorType: "character" }));
+    expect(shipTech?.items.map((item) => item.entryId)).toEqual(["med-patch", "overclock"]);
+
+    const builtPilot = { ...pilot, data: shipTech!.data };
+    expect(stellarFrontiersAdvancementOptions(builtPilot)).toContainEqual(expect.objectContaining({ id: "rank-up", nextValue: 2 }));
+    const advancedData = applyStellarFrontiersAdvancement(builtPilot, "rank-up");
+    expect(advancedData.rank).toBe(2);
+    expect(advancedData.strain).toEqual({ current: 4, max: 7 });
+    expect((advancedData.aptitudes as Record<string, number>).tech).toBe(4);
+    expect(advancedData.milestones).toEqual(expect.arrayContaining(["Rank 2 Field Promotion"]));
   });
 });

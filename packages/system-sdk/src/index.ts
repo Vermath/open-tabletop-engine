@@ -44,6 +44,29 @@ export interface QuickRoll {
   formula: string;
 }
 
+export interface CharacterTemplateItem {
+  entryId: string;
+  quantity?: number;
+}
+
+export interface CharacterTemplate {
+  id: string;
+  systemId: string;
+  name: string;
+  summary: string;
+  actorType: string;
+  data: Record<string, unknown>;
+  items: CharacterTemplateItem[];
+}
+
+export interface AdvancementOption {
+  id: string;
+  systemId: string;
+  name: string;
+  summary: string;
+  nextValue: number;
+}
+
 export type GenericFantasyCompendiumType = "item" | "spell" | "condition";
 export type StellarFrontiersCompendiumType = "gear" | "talent" | "condition";
 export type RulesCompendiumType = GenericFantasyCompendiumType | StellarFrontiersCompendiumType;
@@ -198,6 +221,85 @@ export function genericFantasyCompendiumEntry(entryId: string): GenericFantasyCo
   return genericFantasyCompendium().find((entry) => entry.id === entryId);
 }
 
+export function genericFantasyCharacterTemplates(): CharacterTemplate[] {
+  return [
+    {
+      id: "guardian",
+      systemId: "generic-fantasy",
+      name: "Guardian",
+      summary: "Front-line defender with strong melee fundamentals.",
+      actorType: "character",
+      data: {
+        level: 1,
+        class: "Guardian",
+        hp: { current: 12, max: 12 },
+        attributes: { strength: 16, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 10, charisma: 12 },
+        conditions: [],
+        features: ["Shield Wall"]
+      },
+      items: [{ entryId: "longsword" }]
+    },
+    {
+      id: "mender",
+      systemId: "generic-fantasy",
+      name: "Mender",
+      summary: "Support caster with healing magic and social utility.",
+      actorType: "character",
+      data: {
+        level: 1,
+        class: "Mender",
+        hp: { current: 9, max: 9 },
+        attributes: { strength: 8, dexterity: 12, constitution: 12, intelligence: 13, wisdom: 15, charisma: 14 },
+        conditions: [],
+        features: ["Field Prayer"]
+      },
+      items: [{ entryId: "healing-word" }]
+    }
+  ];
+}
+
+export function genericFantasyCharacterTemplate(templateId: string): CharacterTemplate | undefined {
+  return genericFantasyCharacterTemplates().find((template) => template.id === templateId);
+}
+
+export function genericFantasyAdvancementOptions(actor: Actor): AdvancementOption[] {
+  const level = numericValue(actor.data.level, 1);
+  if (level >= 20) return [];
+  return [
+    {
+      id: "level-up",
+      systemId: "generic-fantasy",
+      name: `Level ${level + 1}`,
+      summary: "Increase level, hit point maximum, proficiency, and the character's primary ability.",
+      nextValue: level + 1
+    }
+  ];
+}
+
+export function applyGenericFantasyAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
+  const option = genericFantasyAdvancementOptions(actor).find((item) => item.id === optionId);
+  if (!option) throw new Error(`Unknown advancement: ${optionId}`);
+  const hp = actor.data.hp as { current?: number; max?: number } | undefined;
+  const attributes = { ...((actor.data.attributes as Record<string, number> | undefined) ?? {}) };
+  const className = typeof actor.data.class === "string" ? actor.data.class : "";
+  const primaryAbility = className === "Mender" ? "wisdom" : "strength";
+  attributes[primaryAbility] = numericValue(attributes[primaryAbility], 10) + 1;
+  const features = normalizeStringArray(actor.data.features);
+  const featureName = `${className || "Character"} Level ${option.nextValue}`;
+  if (!features.includes(featureName)) features.push(featureName);
+  return {
+    ...actor.data,
+    level: option.nextValue,
+    hp: {
+      current: numericValue(hp?.current, numericValue(hp?.max, 10)) + 5,
+      max: numericValue(hp?.max, 10) + 5
+    },
+    attributes,
+    proficiencyBonus: Math.max(2, 2 + Math.floor((option.nextValue - 1) / 4)),
+    features
+  };
+}
+
 export function genericFantasySheet(actor: Actor, items: Item[] = []): GenericFantasySheet {
   return {
     actorId: actor.id,
@@ -307,6 +409,84 @@ export function stellarFrontiersCompendiumEntry(entryId: string): StellarFrontie
   return stellarFrontiersCompendium().find((entry) => entry.id === entryId);
 }
 
+export function stellarFrontiersCharacterTemplates(): CharacterTemplate[] {
+  return [
+    {
+      id: "freighter-pilot",
+      systemId: "stellar-frontiers",
+      name: "Freighter Pilot",
+      summary: "Fast ship handler with practical tech instincts.",
+      actorType: "character",
+      data: {
+        rank: 1,
+        background: "Freighter Pilot",
+        aptitudes: { combat: 1, tech: 2, pilot: 3, science: 1, charm: 1 },
+        strain: { current: 2, max: 5 },
+        conditions: [],
+        milestones: ["Dockside Veteran"]
+      },
+      items: [{ entryId: "laser-carbine" }]
+    },
+    {
+      id: "ship-tech",
+      systemId: "stellar-frontiers",
+      name: "Ship Tech",
+      summary: "Engineer with overclocked repairs and field hardware.",
+      actorType: "character",
+      data: {
+        rank: 1,
+        background: "Ship Tech",
+        aptitudes: { combat: 1, tech: 3, pilot: 1, science: 2, charm: 0 },
+        strain: { current: 3, max: 6 },
+        conditions: [],
+        milestones: ["Patch Cable Genius"]
+      },
+      items: [{ entryId: "med-patch" }, { entryId: "overclock" }]
+    }
+  ];
+}
+
+export function stellarFrontiersCharacterTemplate(templateId: string): CharacterTemplate | undefined {
+  return stellarFrontiersCharacterTemplates().find((template) => template.id === templateId);
+}
+
+export function stellarFrontiersAdvancementOptions(actor: Actor): AdvancementOption[] {
+  const rank = numericValue(actor.data.rank, 1);
+  if (rank >= 10) return [];
+  return [
+    {
+      id: "rank-up",
+      systemId: "stellar-frontiers",
+      name: `Rank ${rank + 1}`,
+      summary: "Increase rank, strain capacity, and a core aptitude.",
+      nextValue: rank + 1
+    }
+  ];
+}
+
+export function applyStellarFrontiersAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
+  const option = stellarFrontiersAdvancementOptions(actor).find((item) => item.id === optionId);
+  if (!option) throw new Error(`Unknown advancement: ${optionId}`);
+  const aptitudes = { ...((actor.data.aptitudes as Record<string, number> | undefined) ?? {}) };
+  const background = typeof actor.data.background === "string" ? actor.data.background : "";
+  const primaryAptitude = background === "Freighter Pilot" ? "pilot" : "tech";
+  aptitudes[primaryAptitude] = numericValue(aptitudes[primaryAptitude], 0) + 1;
+  const strain = actor.data.strain as { current?: number; max?: number } | undefined;
+  const milestones = normalizeStringArray(actor.data.milestones);
+  const milestone = `Rank ${option.nextValue} Field Promotion`;
+  if (!milestones.includes(milestone)) milestones.push(milestone);
+  return {
+    ...actor.data,
+    rank: option.nextValue,
+    aptitudes,
+    strain: {
+      current: numericValue(strain?.current, numericValue(strain?.max, 5)) + 1,
+      max: numericValue(strain?.max, 5) + 1
+    },
+    milestones
+  };
+}
+
 export function stellarFrontiersSheet(actor: Actor, items: Item[] = []): StellarFrontiersSheet {
   const strain = actor.data.strain as { current?: number; max?: number } | undefined;
   return {
@@ -358,4 +538,12 @@ function normalizeConditionRecords(value: unknown): Array<{ id: string; appliedA
       return undefined;
     })
     .filter((item): item is { id: string; appliedAt?: string } => Boolean(item));
+}
+
+function numericValue(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }

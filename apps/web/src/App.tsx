@@ -1,7 +1,7 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MessageSquare, Pentagon, Plus, RefreshCw, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type CharacterTemplateInfo, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -36,7 +36,8 @@ export function App() {
     aiThreads: [],
     aiToolCalls: [],
     plugins: [],
-    systems: []
+    systems: [],
+    characterTemplates: []
   });
   const [currentUserId, setCurrentUserId] = useState(getSessionUserId());
   const [sessionToken, setSessionToken] = useState(getSessionToken());
@@ -69,7 +70,8 @@ export function App() {
   const selectedScene = snapshot.scenes.find((scene) => scene.id === sceneId);
   const selectedMapAsset = snapshot.assets.find((asset) => asset.id === selectedScene?.backgroundAssetId);
   const selectedToken = snapshot.tokens.find((token) => token.id === selectedTokenId);
-  const selectedActor = snapshot.actors.find((actor) => actor.id === selectedToken?.actorId) ?? snapshot.actors[0];
+  const activeSystemId = snapshot.systems.find((system) => system.active)?.id ?? selectedCampaign?.defaultSystemId;
+  const selectedActor = snapshot.actors.find((actor) => actor.id === selectedToken?.actorId) ?? snapshot.actors.find((actor) => actor.systemId === activeSystemId) ?? snapshot.actors[0];
   const selectedActorItems = snapshot.items.filter((item) => item.actorId === selectedActor?.id);
   const activeCombat = snapshot.combats.find((combat) => combat.active);
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
@@ -421,6 +423,26 @@ export function App() {
     await refresh();
   }
 
+  async function createCharacterFromTemplate(template: CharacterTemplateInfo) {
+    const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${template.systemId}/characters`, {
+      templateId: template.id,
+      name: template.name,
+      ownerUserId: currentUserId
+    });
+    setStatus(`${created.actor.name} created`);
+    await refresh();
+  }
+
+  async function advanceSelectedActor() {
+    if (!selectedActor) return;
+    const optionId = selectedActor.systemId === "stellar-frontiers" ? "rank-up" : "level-up";
+    const advanced = await apiPost<{ advancement: { name: string } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advance`, {
+      optionId
+    });
+    setStatus(`${selectedActor.name} advanced to ${advanced.advancement.name}`);
+    await refresh();
+  }
+
   async function disableAdminUser(user: AdminUserInfo) {
     await apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, {
       disabled: true,
@@ -690,7 +712,7 @@ export function App() {
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
-            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} actor={selectedActor} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canRollSystem={hasPermission("dice.roll")} />}
+            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onAdvanceActor={advanceSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
             {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} />}
           </aside>
         </div>
@@ -1331,9 +1353,10 @@ function formatDateTime(value?: string): string {
   return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; actor?: Actor; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canRollSystem: boolean }) {
+function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onAdvanceActor(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canAdvanceActor: boolean; canRollSystem: boolean }) {
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   const rollLabel = props.actor?.systemId === "stellar-frontiers" ? "Tech Check" : "Charisma Check";
+  const advancementLabel = props.actor?.systemId === "stellar-frontiers" ? "Advance Rank" : "Level Up";
   return (
     <div className="panel-stack">
       <div className="section-title">Runtime SDK</div>
@@ -1372,10 +1395,23 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
           )}
         </article>
       ))}
+      {props.characterTemplates.map((template) => (
+        <article className="proposal" key={template.id}>
+          <span>character template</span>
+          <h3>{template.name}</h3>
+          <p>{template.summary}</p>
+          <button className="ghost-button" onClick={() => props.onCreateCharacter(template)} disabled={!props.canCreateActor}>
+            <Plus size={15} /> Create
+          </button>
+        </article>
+      ))}
       <div className="metric-row">
         <span>Sheet Actor</span>
         <strong>{props.actor?.name ?? "No actor"}</strong>
       </div>
+      <button className="ghost-button wide" onClick={props.onAdvanceActor} disabled={!props.actor || !props.canAdvanceActor}>
+        <RefreshCw size={16} /> {advancementLabel}
+      </button>
       <button className="primary-button wide" onClick={props.onSystemRoll} disabled={!props.actor || !props.canRollSystem}>
         <ChevronRight size={16} /> {rollLabel}
       </button>

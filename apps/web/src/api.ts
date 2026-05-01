@@ -183,6 +183,7 @@ export interface Snapshot {
   aiToolCalls: AiToolCall[];
   plugins: PluginRuntimeInfo[];
   systems: SystemRuntimeInfo[];
+  characterTemplates: CharacterTemplateInfo[];
 }
 
 export interface SessionInfo {
@@ -301,6 +302,15 @@ export interface SystemRuntimeInfo {
   name: string;
   version: string;
   active: boolean;
+}
+
+export interface CharacterTemplateInfo {
+  id: string;
+  systemId: string;
+  name: string;
+  summary: string;
+  actorType: string;
+  items: Array<{ entryId: string; quantity?: number }>;
 }
 
 export interface AiUsageRollup {
@@ -457,7 +467,8 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       aiThreads: [],
       aiToolCalls: [],
       plugins: [],
-      systems: []
+      systems: [],
+      characterTemplates: []
     };
   }
   const scenes = await apiGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
@@ -483,6 +494,8 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     apiGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
     apiGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)
   ]);
+  const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
+  const characterTemplates = activeSystemId ? await apiGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
   return {
     session,
     campaigns,
@@ -503,6 +516,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     aiUsage,
     aiToolCalls,
     plugins,
-    systems
+    systems,
+    characterTemplates
   };
 }

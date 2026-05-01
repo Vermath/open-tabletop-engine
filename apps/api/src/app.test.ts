@@ -2235,6 +2235,102 @@ describe("api", () => {
     }
   });
 
+  it("builds and advances characters from system templates", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const templates = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/character-templates",
+        headers: authHeaders
+      });
+      expect(templates.statusCode).toBe(200);
+      expect(templates.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "guardian", name: "Guardian" }),
+          expect.objectContaining({ id: "mender", name: "Mender" })
+        ])
+      );
+
+      const playerCreate = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { templateId: "guardian", name: "Player Built Guardian" }
+      });
+      expect(playerCreate.statusCode).toBe(403);
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters",
+        headers: authHeaders,
+        payload: { templateId: "guardian", name: "Edda Shield", ownerUserId: "usr_demo_player" }
+      });
+      expect(created.statusCode).toBe(200);
+      expect(created.json().actor).toEqual(
+        expect.objectContaining({
+          systemId: "generic-fantasy",
+          ownerUserId: "usr_demo_player",
+          name: "Edda Shield"
+        })
+      );
+      expect(created.json().items).toEqual([expect.objectContaining({ type: "item", name: "Longsword" })]);
+      expect(created.json().sheet.inventory).toEqual([expect.objectContaining({ name: "Longsword" })]);
+      const actorId = created.json().actor.id;
+
+      const advancement = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${actorId}/advancement`,
+        headers: authHeaders
+      });
+      expect(advancement.statusCode).toBe(200);
+      expect(advancement.json().options).toContainEqual(expect.objectContaining({ id: "level-up", nextValue: 2 }));
+
+      const advanced = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${actorId}/advance`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { optionId: "level-up" }
+      });
+      expect(advanced.statusCode).toBe(200);
+      expect(advanced.json().actor.data.level).toBe(2);
+      expect(advanced.json().actor.data.hp).toEqual({ current: 17, max: 17 });
+      expect(advanced.json().actor.data.features).toEqual(expect.arrayContaining(["Guardian Level 2"]));
+
+      const stellarTemplates = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/stellar-frontiers/character-templates",
+        headers: authHeaders
+      });
+      expect(stellarTemplates.statusCode).toBe(200);
+      expect(stellarTemplates.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "ship-tech", name: "Ship Tech" })]));
+
+      const tech = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/stellar-frontiers/characters",
+        headers: authHeaders,
+        payload: { templateId: "ship-tech", name: "Patch Mira", ownerUserId: "usr_demo_player" }
+      });
+      expect(tech.statusCode).toBe(200);
+      expect(tech.json().items.map((item: { name: string }) => item.name)).toEqual(["Med Patch", "Overclock"]);
+      expect(tech.json().sheet.talents).toEqual([expect.objectContaining({ name: "Overclock" })]);
+
+      const promoted = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${tech.json().actor.id}/advance`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { optionId: "rank-up" }
+      });
+      expect(promoted.statusCode).toBe(200);
+      expect(promoted.json().actor.data.rank).toBe(2);
+      expect(promoted.json().actor.data.strain).toEqual({ current: 4, max: 7 });
+      expect(promoted.json().actor.data.milestones).toEqual(expect.arrayContaining(["Rank 2 Field Promotion"]));
+    } finally {
+      await app.close();
+    }
+  });
+
   it("installs, upgrades, and rolls back versioned plugin packages", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-api-"));
     try {

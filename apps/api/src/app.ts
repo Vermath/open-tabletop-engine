@@ -7,7 +7,7 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { applyGenericFantasyCondition, applyStellarFrontiersCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor } from "@open-tabletop/system-sdk";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterTemplate } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -2451,6 +2451,48 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { system, campaign };
   });
 
+  app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/character-templates", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
+    if (allowed !== true) return allowed;
+    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    if (!system) return notFound(reply, "System not found");
+    return characterTemplatesForSystem(system.id);
+  });
+
+  app.post<{
+    Params: { campaignId: string; systemId: string };
+    Body: { templateId?: string; name?: string; ownerUserId?: string };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/characters", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.create");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const template = characterTemplatesForSystem(request.params.systemId).find((item) => item.id === request.body.templateId);
+    if (!template) return notFound(reply, "Character template not found");
+    const actor = createTimestamped("act", {
+      campaignId: request.params.campaignId,
+      systemId: template.systemId,
+      ownerUserId: request.body.ownerUserId ?? userId,
+      type: template.actorType,
+      name: request.body.name?.trim() || template.name,
+      data: cloneRecord(template.data),
+      permissions: {}
+    }) satisfies Actor;
+    const items = createTemplateItems(request.params.campaignId, actor, template);
+    store.state.actors.push(actor);
+    store.state.items.push(...items);
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: actor.campaignId,
+        type: "actor.created",
+        targetId: actor.id,
+        payload: actor
+      })
+    );
+    return { template, actor, items, sheet: systemSheet(actor, items) };
+  });
+
   app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/compendium", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
@@ -2522,6 +2564,35 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     broadcastActorUpdated(broadcast, actor);
     return { actor, sheet: systemSheet(actor, actorItems(store, actor)) };
+  });
+
+  app.get<{
+    Params: { campaignId: string; systemId: string; actorId: string };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/advancement", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
+    if (allowed !== true) return allowed;
+    const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+    if (!actor) return notFound(reply, "System actor not found");
+    return { actorId: actor.id, options: advancementOptionsForActor(actor) };
+  });
+
+  app.post<{
+    Params: { campaignId: string; systemId: string; actorId: string };
+    Body: { optionId?: string };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/advance", async (request, reply) => {
+    const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+    if (!actor) return notFound(reply, "System actor not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+    const options = advancementOptionsForActor(actor);
+    const option = options.find((item) => item.id === (request.body.optionId ?? options[0]?.id));
+    if (!option) return badRequest(reply, "No advancement option is available for this actor");
+    actor.data = applySystemAdvancement(actor, option.id);
+    actor.updatedAt = nowIso();
+    store.save();
+    broadcastActorUpdated(broadcast, actor);
+    return { advancement: option, actor, sheet: systemSheet(actor, actorItems(store, actor)) };
   });
 
   app.get<{
@@ -5238,6 +5309,29 @@ function compendiumEntryForSystem(systemId: string, entryId: string) {
   return undefined;
 }
 
+function characterTemplatesForSystem(systemId: string): CharacterTemplate[] {
+  if (systemId === "generic-fantasy") return genericFantasyCharacterTemplates();
+  if (systemId === "stellar-frontiers") return stellarFrontiersCharacterTemplates();
+  return [];
+}
+
+function createTemplateItems(campaignId: string, actor: Actor, template: CharacterTemplate): Item[] {
+  return template.items.flatMap((templateItem) => {
+    const entry = compendiumEntryForSystem(template.systemId, templateItem.entryId);
+    if (!entry || entry.type === "condition") return [];
+    return [
+      createTimestamped("itm", {
+        campaignId,
+        systemId: template.systemId,
+        actorId: actor.id,
+        type: entry.type,
+        name: entry.name,
+        data: { ...cloneRecord(entry.data), compendiumId: entry.id, quantity: templateItem.quantity ?? 1 }
+      }) satisfies Item
+    ];
+  });
+}
+
 function systemSheet(actor: Actor, items: Item[]) {
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersSheet(actor, items);
   return genericFantasySheet(actor, items);
@@ -5256,6 +5350,20 @@ function applySystemCondition(actor: Actor, conditionId: string, appliedAt?: str
 function removeSystemCondition(actor: Actor, conditionId: string): Record<string, unknown> {
   if (actor.systemId === "stellar-frontiers") return removeStellarFrontiersCondition(actor, conditionId);
   return removeGenericFantasyCondition(actor, conditionId);
+}
+
+function advancementOptionsForActor(actor: Actor) {
+  if (actor.systemId === "stellar-frontiers") return stellarFrontiersAdvancementOptions(actor);
+  return genericFantasyAdvancementOptions(actor);
+}
+
+function applySystemAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
+  if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersAdvancement(actor, optionId);
+  return applyGenericFantasyAdvancement(actor, optionId);
+}
+
+function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }
 
 function actorItems(store: StateStore, actor: Actor): Item[] {

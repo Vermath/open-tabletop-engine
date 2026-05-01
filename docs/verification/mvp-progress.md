@@ -932,6 +932,42 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/stellar-frontiers-system.png`.
   - Browser page errors were empty; console output only showed Vite connection/debug lines and the React DevTools info message.
 
+### Rules Character Builder And Advancement Slice
+
+- Implementation:
+  - Added system-owned character templates for Generic Fantasy (`Guardian`, `Mender`) and Stellar Frontiers (`Freighter Pilot`, `Ship Tech`).
+  - Added guided advancement helpers for Generic Fantasy level progression and Stellar Frontiers rank progression.
+  - Added campaign-scoped API routes to list system templates, create actors from templates with starting compendium items, list advancement options, and apply advancement to owned or GM-editable actors.
+  - Added browser SDK-panel controls for creating active-system characters and advancing the selected actor.
+  - Updated API contracts and REST/System SDK docs for the character builder and advancement routes.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk test` passed with `6 passed`.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `50 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/api-contracts typecheck` passed.
+  - System SDK tests verify template lookup, starting item ids, Generic Fantasy level advancement, and Stellar Frontiers rank advancement.
+  - API tests verify template listing, player create denial, GM template-based character creation, starting item creation, owned-player advancement, and Stellar Frontiers template/advancement behavior.
+- Manual API and browser evidence:
+  - API: `http://127.0.0.1:4467`
+  - Web: `http://127.0.0.1:5193`
+  - SQLite file: `apps/api/storage/manual-character-builder-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, and `OTTE_SQLITE_PATH=apps/api/storage/manual-character-builder-20260501.sqlite`.
+  - GM and player bearer logins each returned an `ots_` token prefix.
+  - Generic Fantasy template listing returned ids `guardian,mender`.
+  - Player direct character creation returned `403`, confirming `actor.create` is still required.
+  - GM-created `Manual Guardian` from the Guardian template for owner `usr_demo_player`; starting items included `Longsword`.
+  - Guardian advancement options returned `level-up:2`; the owning player applied advancement, producing level `2`, HP `17/17`, and features `Shield Wall,Guardian Level 2`.
+  - Installing Stellar Frontiers changed the campaign default system to `stellar-frontiers`.
+  - Stellar Frontiers template listing returned ids `freighter-pilot,ship-tech`.
+  - GM-created `Manual Ship Tech` from the Ship Tech template; starting items included `Med Patch,Overclock`, and the sheet talent list included `Overclock`.
+  - The owning player applied Stellar rank advancement, producing rank `2`, strain `4/7`, and milestones `Patch Cable Genius,Rank 2 Field Promotion`.
+  - Browser SDK panel loaded as `Demo GM - owner`, showed `Stellar Frontiers` active, rendered character template cards for `Freighter Pilot` and `Ship Tech`, and a browser click on `Ship Tech` `Create` posted `POST /systems/stellar-frontiers/characters` with status `200`.
+  - Live API check after the browser click showed one additional `Ship Tech` actor.
+  - Screenshot saved at `output/playwright/rules-character-builder.png`.
+  - Browser page errors were empty; console output only showed Vite connection/debug lines and the React DevTools info message.
+
 ### AI Tool Depth And Observability Slice
 
 - Implementation:
@@ -1209,5 +1245,5 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
-- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, system activation, conditions, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, character builders, leveling/progression, encounter math, importers, and deeper automation across more systems.
+- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, character templates, guided level advancement, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, system activation, conditions, character templates, guided rank advancement, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, encounter math, importers, and deeper automation across more systems.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.
