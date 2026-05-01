@@ -688,6 +688,30 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - A repeated cleanup call skipped the asset with `storage_already_deleted`.
   - SQLite inspection showed lifecycle `status: deleted`, `storageDeletedAt: 2026-05-01T14:57:12.316Z`, `updatedByUserId: usr_demo_gm`, and `cleanupReason: deleted_asset`.
 
+### Asset Cleanup Scheduling Slice
+
+- Implementation:
+  - Added an API-hosted asset cleanup scheduler that can run cleanup on startup and/or a recurring interval from environment configuration.
+  - Added non-overlapping scheduled runs with latest-run status, trigger, counts, failure text, and running state exposed through `GET /api/v1/admin/assets/storage`.
+  - Added scheduler configuration for grace period, dry-run mode, deleted/expired inclusion, optional campaign scope, and lifecycle update user id.
+  - Added Docker Compose and `.env.example` passthrough for the recurring cleanup settings.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `53 passed`.
+  - API tests verify scheduled cleanup status reporting, interval execution, expired-object deletion, lifecycle audit updates, and object removal from the active storage backend.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4471`
+  - SQLite file: `apps/api/storage/manual-asset-scheduled-cleanup-20260501.sqlite`
+  - Upload directory: `apps/api/storage/manual-asset-scheduled-cleanup-uploads-20260501`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ASSET_STORAGE=local`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, `OTTE_ASSET_CLEANUP_INTERVAL_SECONDS=1`, `OTTE_ASSET_CLEANUP_GRACE_DAYS=0`, and `OTTE_ASSET_CLEANUP_USER_ID=usr_demo_gm`.
+  - GM bearer login returned `200`.
+  - Asset upload created `asset_moncq41v8f2fyy4y` with local object `camp_demo/asset_moncq41v8f2fyy4y.png`; the object file existed after upload.
+  - Lifecycle deletion returned `200` with status `deleted` and reason `manual scheduled cleanup`.
+  - Scheduled cleanup status reported `enabled: true`, `intervalSeconds: 1`, latest run `trigger: interval`, `status: succeeded`, `deleted: 1`, `failed: 0`, and `changed: true`.
+  - The local object file no longer existed after the scheduled run.
+  - Blob fetch for the deleted asset returned `410`.
+  - Asset lifecycle after the scheduled run included `storageDeletedAt: 2026-05-01T20:14:42.906Z`, `updatedByUserId: usr_demo_gm`, and `cleanupReason: deleted_asset`.
+
 ### Asset Security Scanning Slice
 
 - Implementation:
@@ -1339,7 +1363,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
-- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
+- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.

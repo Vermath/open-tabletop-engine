@@ -75,6 +75,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const store = options.store ?? new FileStateStore();
   const uploadDir = resolve(options.uploadDir ?? process.env.OTTE_UPLOAD_DIR ?? "uploads");
   const assetStorage = options.assetStorage ?? createAssetStorage({ uploadDir });
+  const assetCleanupScheduler = createAssetCleanupScheduler(store, assetStorage, uploadDir);
   const maxAssetBytes = options.maxAssetBytes ?? 25 * 1024 * 1024;
   const hub = new RealtimeHub();
   const broadcast = (event: EngineEvent) => hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId));
@@ -1218,7 +1219,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get("/api/v1/admin/assets/storage", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    return globalAssetStorageInfo(store);
+    return globalAssetStorageInfo(store, assetCleanupScheduler.status());
   });
 
   app.post<{
@@ -2787,6 +2788,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     };
   });
 
+  assetCleanupScheduler.start();
+  app.addHook("onClose", async () => {
+    assetCleanupScheduler.stop();
+  });
+
   return app;
 }
 
@@ -3037,6 +3043,19 @@ function jsonCharacterLength(value: unknown): number {
 function envNumber(name: string): number | undefined {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function envBoolean(name: string, fallback: boolean): boolean {
+  const value = process.env[name]?.trim().toLowerCase();
+  if (!value) return fallback;
+  if (["1", "true", "yes", "on"].includes(value)) return true;
+  if (["0", "false", "no", "off"].includes(value)) return false;
+  return fallback;
+}
+
+function envText(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  return value ? value : undefined;
 }
 
 function roundCurrency(value: number): number {
@@ -5620,6 +5639,43 @@ interface AssetCleanupOptions extends AssetOperationOptions {
   graceDays?: number;
 }
 
+type AssetCleanupSchedulerTrigger = "startup" | "interval";
+
+interface AssetCleanupSchedulerRun {
+  trigger: AssetCleanupSchedulerTrigger;
+  status: "succeeded" | "failed" | "skipped";
+  startedAt: string;
+  completedAt: string;
+  assetCount?: number;
+  deleted?: number;
+  missingMarked?: number;
+  planned?: number;
+  skipped?: number;
+  failed?: number;
+  changed?: boolean;
+  error?: string;
+}
+
+interface AssetCleanupSchedulerStatus {
+  enabled: boolean;
+  running: boolean;
+  runOnStart: boolean;
+  dryRun: boolean;
+  includeDeleted: boolean;
+  includeExpired: boolean;
+  graceDays: number;
+  updatedByUserId: string;
+  intervalSeconds?: number;
+  campaignId?: string;
+  lastRun?: AssetCleanupSchedulerRun;
+}
+
+interface AssetCleanupScheduler {
+  start(): void;
+  stop(): void;
+  status(): AssetCleanupSchedulerStatus;
+}
+
 interface AssetOperationItem {
   assetId: string;
   name: string;
@@ -5783,6 +5839,128 @@ async function cleanupStoredAssets(store: StateStore, activeStorage: AssetStorag
   };
 }
 
+function createAssetCleanupScheduler(store: StateStore, activeStorage: AssetStorage, uploadDir: string): AssetCleanupScheduler {
+  const intervalSeconds = assetCleanupIntervalSeconds();
+  const runOnStart = envBoolean("OTTE_ASSET_CLEANUP_RUN_ON_START", false);
+  const enabled = runOnStart || intervalSeconds !== undefined;
+  const options = scheduledAssetCleanupOptions();
+  const updatedByUserId = envText("OTTE_ASSET_CLEANUP_USER_ID") ?? "system_asset_cleanup";
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let running = false;
+  let lastRun: AssetCleanupSchedulerRun | undefined;
+
+  const run = async (trigger: AssetCleanupSchedulerTrigger): Promise<void> => {
+    const startedAt = nowIso();
+    if (running) {
+      lastRun = {
+        trigger,
+        status: "skipped",
+        startedAt,
+        completedAt: nowIso(),
+        error: "asset_cleanup_already_running"
+      };
+      return;
+    }
+    running = true;
+    try {
+      const result = await cleanupStoredAssets(store, activeStorage, uploadDir, options, updatedByUserId);
+      if (result.changed) store.save();
+      lastRun = assetCleanupSchedulerSuccess(trigger, startedAt, result);
+    } catch (error) {
+      lastRun = {
+        trigger,
+        status: "failed",
+        startedAt,
+        completedAt: nowIso(),
+        error: errorMessage(error)
+      };
+    } finally {
+      running = false;
+    }
+  };
+
+  return {
+    start(): void {
+      if (!enabled) return;
+      if (runOnStart) void run("startup");
+      if (intervalSeconds === undefined) return;
+      timer = setInterval(() => {
+        void run("interval");
+      }, Math.max(100, Math.round(intervalSeconds * 1000)));
+      unrefTimer(timer);
+    },
+    stop(): void {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = undefined;
+    },
+    status(): AssetCleanupSchedulerStatus {
+      const status: AssetCleanupSchedulerStatus = {
+        enabled,
+        running,
+        runOnStart,
+        dryRun: Boolean(options.dryRun),
+        includeDeleted: options.includeDeleted ?? true,
+        includeExpired: options.includeExpired ?? true,
+        graceDays: assetCleanupGraceDays(options.graceDays),
+        updatedByUserId
+      };
+      if (intervalSeconds !== undefined) status.intervalSeconds = intervalSeconds;
+      if (options.campaignId) status.campaignId = options.campaignId;
+      if (lastRun) status.lastRun = lastRun;
+      return status;
+    }
+  };
+}
+
+function scheduledAssetCleanupOptions(): AssetCleanupOptions {
+  const options: AssetCleanupOptions = {
+    dryRun: envBoolean("OTTE_ASSET_CLEANUP_DRY_RUN", false),
+    includeDeleted: envBoolean("OTTE_ASSET_CLEANUP_INCLUDE_DELETED", true),
+    includeExpired: envBoolean("OTTE_ASSET_CLEANUP_INCLUDE_EXPIRED", true),
+    graceDays: assetCleanupGraceDays(undefined)
+  };
+  const campaignId = envText("OTTE_ASSET_CLEANUP_CAMPAIGN_ID");
+  if (campaignId) options.campaignId = campaignId;
+  return options;
+}
+
+function assetCleanupIntervalSeconds(): number | undefined {
+  const seconds = envNumber("OTTE_ASSET_CLEANUP_INTERVAL_SECONDS");
+  return seconds && seconds > 0 ? seconds : undefined;
+}
+
+function assetCleanupSchedulerSuccess(trigger: AssetCleanupSchedulerTrigger, startedAt: string, result: Record<string, unknown>): AssetCleanupSchedulerRun {
+  const run: AssetCleanupSchedulerRun = {
+    trigger,
+    status: "succeeded",
+    startedAt,
+    completedAt: nowIso()
+  };
+  const assetCount = resultNumber(result.assetCount);
+  const deleted = resultNumber(result.deleted);
+  const missingMarked = resultNumber(result.missingMarked);
+  const planned = resultNumber(result.planned);
+  const skipped = resultNumber(result.skipped);
+  const failed = resultNumber(result.failed);
+  if (assetCount !== undefined) run.assetCount = assetCount;
+  if (deleted !== undefined) run.deleted = deleted;
+  if (missingMarked !== undefined) run.missingMarked = missingMarked;
+  if (planned !== undefined) run.planned = planned;
+  if (skipped !== undefined) run.skipped = skipped;
+  if (failed !== undefined) run.failed = failed;
+  if (typeof result.changed === "boolean") run.changed = result.changed;
+  return run;
+}
+
+function resultNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function unrefTimer(timer: ReturnType<typeof setInterval>): void {
+  if (typeof timer === "object" && "unref" in timer && typeof timer.unref === "function") timer.unref();
+}
+
 function selectAssetOperationTargets(store: StateStore, options: AssetOperationOptions): MapAsset[] {
   const assetIds = new Set((options.assetIds ?? []).filter((value): value is string => typeof value === "string" && value.trim().length > 0));
   return store.state.assets.filter((asset) => {
@@ -5936,7 +6114,7 @@ function campaignAssetStorageInfo(store: StateStore, campaignId: string): Record
   };
 }
 
-function globalAssetStorageInfo(store: StateStore): Record<string, unknown> {
+function globalAssetStorageInfo(store: StateStore, cleanupScheduler?: AssetCleanupSchedulerStatus): Record<string, unknown> {
   const campaignIds = [...new Set(store.state.assets.map((asset) => asset.campaignId))].sort();
   const campaigns = campaignIds.map((campaignId) => campaignAssetStorageInfo(store, campaignId));
   const usedBytes = store.state.assets.filter((asset) => asset.lifecycle?.status !== "deleted").reduce((total, asset) => total + asset.sizeBytes, 0);
@@ -5947,6 +6125,7 @@ function globalAssetStorageInfo(store: StateStore): Record<string, unknown> {
     allBytes: store.state.assets.reduce((total, asset) => total + asset.sizeBytes, 0),
     providerCounts: countBy(store.state.assets, (asset) => asset.storage?.provider ?? "external"),
     lifecycleCounts: countBy(store.state.assets, (asset) => asset.lifecycle?.status ?? "active"),
+    cleanupScheduler,
     campaigns
   };
 }

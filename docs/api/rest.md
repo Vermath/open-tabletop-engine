@@ -341,9 +341,9 @@ curl -X PATCH \
   "http://localhost:4000/api/v1/assets/asset_.../lifecycle"
 ```
 
-Lifecycle status is `active`, `archived`, or `deleted`. Deleted and expired assets return `410` from blob delivery but remain represented in storage stats and archives for operational audit. Server admins can inspect global asset storage with `GET /api/v1/admin/assets/storage`.
+Lifecycle status is `active`, `archived`, or `deleted`. Deleted and expired assets return `410` from blob delivery but remain represented in storage stats and archives for operational audit. Server admins can inspect global asset storage with `GET /api/v1/admin/assets/storage`; the response includes configured cleanup scheduler status and the latest scheduled run summary when recurring cleanup is enabled.
 
-Server admins can also run storage migration and object cleanup operations. Migration reads existing asset bytes, verifies size/checksum, and writes the object through the currently configured asset storage provider. Cleanup physically deletes stored bytes for deleted or expired assets after the configured grace period while preserving the metadata row:
+Server admins can also run storage migration and object cleanup operations. Migration reads existing asset bytes, verifies size/checksum, and writes the object through the currently configured asset storage provider. Cleanup physically deletes stored bytes for deleted or expired assets after the configured grace period while preserving the metadata row. The same cleanup operation can run on API startup and/or a recurring interval through environment configuration:
 
 ```bash
 curl -X POST \
@@ -370,6 +370,13 @@ Asset delivery environment variables:
 | `OTTE_ASSET_URL_TTL_SECONDS` | no | Default signed URL lifetime. Defaults to 300 seconds. |
 | `OTTE_ASSET_URL_MAX_TTL_SECONDS` | no | Maximum caller-requested signed URL lifetime. Defaults to 3600 seconds. |
 | `OTTE_ASSET_CLEANUP_GRACE_DAYS` | no | Default grace period before admin cleanup jobs physically remove deleted or expired asset bytes. Defaults to 0 for API calls and 7 in Docker Compose. |
+| `OTTE_ASSET_CLEANUP_INTERVAL_SECONDS` | no | Enables recurring API-hosted cleanup when set to a positive number. Unset or `0` disables interval cleanup. |
+| `OTTE_ASSET_CLEANUP_RUN_ON_START` | no | Runs one cleanup pass when the API process starts. Defaults to `false`. |
+| `OTTE_ASSET_CLEANUP_DRY_RUN` | no | Makes scheduled cleanup report planned deletions without removing bytes. Defaults to `false`. |
+| `OTTE_ASSET_CLEANUP_INCLUDE_DELETED` | no | Includes deleted assets in scheduled cleanup. Defaults to `true`. |
+| `OTTE_ASSET_CLEANUP_INCLUDE_EXPIRED` | no | Includes expired assets in scheduled cleanup. Defaults to `true`. |
+| `OTTE_ASSET_CLEANUP_CAMPAIGN_ID` | no | Optional campaign scope for scheduled cleanup. |
+| `OTTE_ASSET_CLEANUP_USER_ID` | no | User id recorded on scheduled cleanup lifecycle updates. Defaults to `system_asset_cleanup`. |
 
 Scene layer authoring is split into focused endpoints. Fog reveal uses `token.reveal`; wall and light creation use `scene.update` and return the updated scene for realtime rebroadcast.
 

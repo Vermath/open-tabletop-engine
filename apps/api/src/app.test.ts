@@ -99,6 +99,15 @@ function restoreEnv(snapshot: Record<string, string | undefined>): void {
   }
 }
 
+async function waitForCondition(predicate: () => boolean | Promise<boolean>, timeoutMs = 1000): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out after ${timeoutMs}ms waiting for condition`);
+}
+
 const testBase32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 function testTotpCode(secret: string, nowMs = Date.now()): string {
@@ -4079,6 +4088,100 @@ describe("api", () => {
       expect(expiredCleanup.json().results[0]).toMatchObject({ status: "deleted", reason: "expired_asset" });
       expect(targetStorage.objects.has(assetStorageKey(expiredAsset))).toBe(false);
       expect(expiredAsset.lifecycle).toMatchObject({ status: "active", cleanupReason: "expired_asset" });
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("runs scheduled asset cleanup and reports scheduler status", async () => {
+    const previousEnv = snapshotEnv([
+      "OTTE_ADMIN_USER_IDS",
+      "OTTE_ASSET_CLEANUP_CAMPAIGN_ID",
+      "OTTE_ASSET_CLEANUP_DRY_RUN",
+      "OTTE_ASSET_CLEANUP_GRACE_DAYS",
+      "OTTE_ASSET_CLEANUP_INCLUDE_DELETED",
+      "OTTE_ASSET_CLEANUP_INCLUDE_EXPIRED",
+      "OTTE_ASSET_CLEANUP_INTERVAL_SECONDS",
+      "OTTE_ASSET_CLEANUP_RUN_ON_START",
+      "OTTE_ASSET_CLEANUP_USER_ID"
+    ]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    process.env.OTTE_ASSET_CLEANUP_CAMPAIGN_ID = "camp_scheduler";
+    process.env.OTTE_ASSET_CLEANUP_GRACE_DAYS = "0";
+    process.env.OTTE_ASSET_CLEANUP_INTERVAL_SECONDS = "0.2";
+    process.env.OTTE_ASSET_CLEANUP_USER_ID = "usr_demo_gm";
+    const directory = mkdtempSync(join(tmpdir(), "otte-scheduled-cleanup-"));
+    const store = new MemoryStateStore();
+    const targetStorage = new MemoryAssetStorage("scheduled-assets");
+    const expiredBytes = Buffer.from("scheduled-expired-storage-bytes");
+    const expiredAsset: MapAsset = createTimestamped("asset", {
+      campaignId: "camp_scheduler",
+      name: "Scheduled Expired.png",
+      url: "",
+      mimeType: "image/png",
+      sizeBytes: expiredBytes.length,
+      lifecycle: { status: "active", expiresAt: "2026-01-01T00:00:00.000Z" }
+    });
+    expiredAsset.url = `/api/v1/assets/${expiredAsset.id}/blob`;
+    expiredAsset.storage = await targetStorage.put(expiredAsset, expiredBytes);
+    store.state.assets.push(expiredAsset);
+    const app = await buildApp({
+      store,
+      uploadDir: directory,
+      assetStorage: targetStorage
+    });
+    try {
+      const initialStatus = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/assets/storage",
+        headers: authHeaders
+      });
+      expect(initialStatus.statusCode).toBe(200);
+      expect(initialStatus.json().cleanupScheduler).toMatchObject({
+        enabled: true,
+        intervalSeconds: 0.2,
+        runOnStart: false,
+        dryRun: false,
+        includeDeleted: true,
+        includeExpired: true,
+        graceDays: 0,
+        campaignId: "camp_scheduler",
+        updatedByUserId: "usr_demo_gm"
+      });
+
+      let scheduledRun: Record<string, unknown> | undefined;
+      await waitForCondition(async () => {
+        const status = await app.inject({
+          method: "GET",
+          url: "/api/v1/admin/assets/storage",
+          headers: authHeaders
+        });
+        const lastRun = status.json().cleanupScheduler?.lastRun as Record<string, unknown> | undefined;
+        if (lastRun?.status === "succeeded" && lastRun.deleted === 1 && Boolean(expiredAsset.lifecycle?.storageDeletedAt)) {
+          scheduledRun = lastRun;
+          return true;
+        }
+        return false;
+      }, 2000);
+
+      expect(targetStorage.objects.has(assetStorageKey(expiredAsset))).toBe(false);
+      expect(expiredAsset.lifecycle).toMatchObject({
+        status: "active",
+        updatedByUserId: "usr_demo_gm",
+        cleanupReason: "expired_asset"
+      });
+      expect(scheduledRun).toMatchObject({
+        trigger: "interval",
+        status: "succeeded",
+        assetCount: 1,
+        deleted: 1,
+        missingMarked: 0,
+        planned: 0,
+        failed: 0,
+        changed: true
+      });
     } finally {
       await app.close();
       restoreEnv(previousEnv);
