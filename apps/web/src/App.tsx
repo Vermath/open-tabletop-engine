@@ -1,7 +1,7 @@
 import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token } from "@open-tabletop/core";
 import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eye, FileText, Hand, Lightbulb, MessageSquare, Plus, ScrollText, Send, Shield, Swords, Upload, Users, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, getSessionUserId, loadSnapshot, setSessionUserId, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, getSessionToken, getSessionUserId, loadSnapshot, loginSession, setSessionUserId, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -23,6 +23,7 @@ export function App() {
     systems: []
   });
   const [currentUserId, setCurrentUserId] = useState(getSessionUserId());
+  const [sessionToken, setSessionToken] = useState(getSessionToken());
   const [campaignId, setCampaignId] = useState("camp_demo");
   const [sceneId, setSceneId] = useState("scn_vault_entry");
   const [selectedTokenId, setSelectedTokenId] = useState("tok_valen");
@@ -45,6 +46,7 @@ export function App() {
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId) {
     const next = await loadSnapshot(nextCampaignId, nextSceneId);
     setSnapshot(next);
+    setSessionToken(getSessionToken());
     const campaign = next.campaigns.find((item) => item.id === nextCampaignId) ?? next.campaigns[0];
     const scene = next.scenes.find((item) => item.id === nextSceneId) ?? next.scenes.find((item) => item.active) ?? next.scenes[0];
     if (campaign) setCampaignId(campaign.id);
@@ -57,8 +59,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!campaignId) return;
-    const wsUrl = `${apiBase || window.location.origin}`.replace(/^http/, "ws") + `/api/v1/realtime?campaignId=${campaignId}&userId=${encodeURIComponent(currentUserId)}`;
+    if (!campaignId || !sessionToken) return;
+    const wsUrl = `${apiBase || window.location.origin}`.replace(/^http/, "ws") + `/api/v1/realtime?campaignId=${campaignId}&sessionToken=${encodeURIComponent(sessionToken)}`;
     const socket = new WebSocket(wsUrl);
     socket.onopen = () => setStatus("Realtime connected");
     socket.onmessage = () => {
@@ -66,10 +68,12 @@ export function App() {
     };
     socket.onerror = () => setStatus("Realtime unavailable");
     return () => socket.close();
-  }, [campaignId, sceneId, currentUserId]);
+  }, [campaignId, sceneId, sessionToken]);
 
   async function switchSession(userId: string) {
     setSessionUserId(userId);
+    const login = await loginSession(userId);
+    setSessionToken(login.token);
     setCurrentUserId(userId);
     setStatus("Switching session");
     await refresh(campaignId, sceneId);

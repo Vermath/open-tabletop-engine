@@ -1,6 +1,9 @@
-import type { Actor, AiMemoryFact, Campaign, CampaignMember, ChatMessage, Combat, Encounter, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, Campaign, CampaignMember, ChatMessage, Combat, Encounter, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserSession } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
+
+const sessionTokenKey = "otte:sessionToken";
+const sessionTokenUserKey = "otte:sessionTokenUser";
 
 export function getSessionUserId(): string {
   return localStorage.getItem("otte:userId") ?? "usr_demo_gm";
@@ -8,15 +11,43 @@ export function getSessionUserId(): string {
 
 export function setSessionUserId(userId: string): void {
   localStorage.setItem("otte:userId", userId);
+  localStorage.removeItem(sessionTokenKey);
+  localStorage.removeItem(sessionTokenUserKey);
 }
 
-function sessionHeaders(): Record<string, string> {
-  return { "x-user-id": getSessionUserId() };
+export function getSessionToken(): string {
+  return localStorage.getItem(sessionTokenKey) ?? "";
+}
+
+export async function loginSession(userId = getSessionUserId()): Promise<SessionLoginInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ userId })
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const login = (await response.json()) as SessionLoginInfo;
+  localStorage.setItem(sessionTokenKey, login.token);
+  localStorage.setItem(sessionTokenUserKey, userId);
+  return login;
+}
+
+async function ensureSessionToken(): Promise<string> {
+  const token = localStorage.getItem(sessionTokenKey);
+  const tokenUserId = localStorage.getItem(sessionTokenUserKey);
+  const userId = getSessionUserId();
+  if (token && tokenUserId === userId) return token;
+  const login = await loginSession(userId);
+  return login.token;
+}
+
+async function sessionHeaders(): Promise<Record<string, string>> {
+  return { authorization: `Bearer ${await ensureSessionToken()}` };
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
-    headers: sessionHeaders()
+    headers: await sessionHeaders()
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
@@ -25,7 +56,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...sessionHeaders() },
+    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
     body: JSON.stringify(body)
   });
   if (!response.ok) throw new Error(await response.text());
@@ -35,7 +66,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "PATCH",
-    headers: { "content-type": "application/json", ...sessionHeaders() },
+    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
     body: JSON.stringify(body)
   });
   if (!response.ok) throw new Error(await response.text());
@@ -62,7 +93,15 @@ export interface Snapshot {
 
 export interface SessionInfo {
   user: User;
+  session?: PublicSession;
   memberships: CampaignMember[];
+}
+
+export interface PublicSession extends Pick<UserSession, "id" | "userId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {}
+
+export interface SessionLoginInfo extends SessionInfo {
+  token: string;
+  session: PublicSession;
 }
 
 export interface CampaignMemberInfo extends CampaignMember {
@@ -91,7 +130,7 @@ export interface SystemRuntimeInfo {
 export function assetBlobUrl(asset: MapAsset): string {
   if (/^(https?:|data:|blob:)/.test(asset.url)) return asset.url;
   const separator = asset.url.includes("?") ? "&" : "?";
-  return `${baseUrl}${asset.url}${separator}userId=${encodeURIComponent(getSessionUserId())}`;
+  return `${baseUrl}${asset.url}${separator}sessionToken=${encodeURIComponent(getSessionToken())}`;
 }
 
 export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean }): Promise<{ asset: MapAsset; scene?: Scene }> {
@@ -103,7 +142,7 @@ export async function apiUploadAsset(input: { campaignId: string; sceneId?: stri
     headers: {
       "content-type": input.file.type || "application/octet-stream",
       "x-asset-name": encodeURIComponent(input.file.name),
-      ...sessionHeaders()
+      ...(await sessionHeaders())
     },
     body: input.file
   });
@@ -112,6 +151,7 @@ export async function apiUploadAsset(input: { campaignId: string; sceneId?: stri
 }
 
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
+  await ensureSessionToken();
   const [session, campaigns] = await Promise.all([apiGet<SessionInfo>("/api/v1/auth/session"), apiGet<Campaign[]>("/api/v1/campaigns")]);
   const selectedCampaignId = campaignId ?? campaigns[0]?.id;
   if (!selectedCampaignId) {

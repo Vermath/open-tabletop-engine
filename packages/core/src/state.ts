@@ -4,6 +4,7 @@ import type { Actor, Campaign, CampaignArchive, CampaignMember, EngineState, Jou
 export function emptyState(): EngineState {
   return {
     users: [],
+    sessions: [],
     campaigns: [],
     members: [],
     worlds: [],
@@ -171,6 +172,7 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
   const campaignData: EngineState = {
     ...emptyState(),
     users: state.users.filter((item) => memberUserIds.has(item.id)),
+    sessions: [],
     campaigns: state.campaigns.filter((item) => item.id === campaignId),
     members: state.members.filter((item) => item.campaignId === campaignId),
     worlds: state.worlds.filter((item) => item.campaignId === campaignId),

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createReadStream, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, extname, resolve, sep } from "node:path";
 import cors from "@fastify/cors";
@@ -6,7 +6,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type Scene, type Token, type User } from "@open-tabletop/core";
+import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type Scene, type Token, type User, type UserSession } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -48,11 +48,35 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.get("/api/v1/openapi.json", async () => openApiSpec);
 
+  app.post<{ Body: { userId?: string; email?: string } }>("/api/v1/auth/login", async (request, reply) => {
+    pruneExpiredSessions(store);
+    const user = store.state.users.find((item) => item.id === request.body.userId || (request.body.email && item.email === request.body.email));
+    if (!user) return unauthorized(reply, "Unknown login identity");
+    const { token, session } = createUserSession(store, user.id);
+    store.save();
+    return {
+      token,
+      session: publicSession(session),
+      user,
+      memberships: store.state.members.filter((member) => member.userId === user.id)
+    };
+  });
+
+  app.post("/api/v1/auth/logout", async (request, reply) => {
+    const session = sessionFromRequest(store, undefined, request.headers);
+    if (!session) return unauthorized(reply, "Missing session token");
+    store.state.sessions = store.state.sessions.filter((item) => item.id !== session.id);
+    store.save();
+    return { ok: true };
+  });
+
   app.get("/api/v1/auth/session", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const session = sessionFromRequest(store, undefined, request.headers);
     return {
       user: store.state.users.find((user) => user.id === userId) ?? store.state.users[0],
+      session: session ? publicSession(session) : undefined,
       memberships: store.state.members.filter((member) => member.userId === userId)
     };
   });
@@ -60,7 +84,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get("/api/v1/realtime", { websocket: true }, (socket, request) => {
     const url = new URL(request.url ?? "/api/v1/realtime", "http://localhost");
     const campaignId = url.searchParams.get("campaignId") ?? undefined;
-    const userId = userIdFromRequest(request.url, request.headers);
+    const userId = userIdFromRequest(store, request.url, request.headers);
     if (!userId || (campaignId && !canCampaign(store, userId, campaignId, "campaign.read"))) {
       socket.send(JSON.stringify({ error: "unauthorized" }));
       socket.close();
@@ -265,7 +289,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { assetId: string }; Querystring: { userId?: string } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
     const asset = store.state.assets.find((item) => item.id === request.params.assetId);
     if (!asset) return notFound(reply, "Asset not found");
-    const userId = userIdFromRequest(request.url, request.headers);
+    const userId = userIdFromRequest(store, request.url, request.headers);
     if (!userId) return unauthorized(reply, "Missing asset session");
     if (!canCampaign(store, userId, asset.campaignId, "scene.read")) return forbidden(reply, "Missing permission: scene.read");
     const filePath = localAssetPath(uploadDir, asset.campaignId, asset);
@@ -420,7 +444,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.read");
     if (allowed !== true) return allowed;
-    const userId = currentUserId(request.headers)!;
+    const userId = currentUserId(store, request.headers)!;
     return visibleTokensForUser(store, userId, campaignId, store.state.tokens.filter((item) => item.sceneId === request.params.sceneId));
   });
 
@@ -469,7 +493,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const token = store.state.tokens.find((item) => item.id === request.params.tokenId);
     if (!token) return notFound(reply, "Token not found");
-    const userId = currentUserId(request.headers)!;
+    const userId = currentUserId(store, request.headers)!;
     if (!isTokenVisibleToUser(store, userId, campaignId, token)) return notFound(reply, "Token not found");
     if (moved && !canMoveToken(store, userId, campaignId, token)) return forbidden(reply, "Missing token ownership");
     const scene = store.state.scenes.find((item) => item.id === token.sceneId);
@@ -495,7 +519,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const index = store.state.tokens.findIndex((item) => item.id === request.params.tokenId);
     if (index < 0) return notFound(reply, "Token not found");
-    const userId = currentUserId(request.headers)!;
+    const userId = currentUserId(store, request.headers)!;
     if (!isTokenVisibleToUser(store, userId, campaignId, store.state.tokens[index]!)) return notFound(reply, "Token not found");
     const deleted = store.state.tokens.splice(index, 1)[0]!;
     store.save();
@@ -661,7 +685,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }>("/api/v1/dice/roll", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.body.campaignId, "dice.roll");
     if (allowed !== true) return allowed;
-    const userId = currentUserId(request.headers)!;
+    const userId = currentUserId(store, request.headers)!;
     const rolled = rollFormula(request.body.formula);
     const roll = createTimestamped("roll", {
       campaignId: request.body.campaignId,
@@ -1206,7 +1230,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{
     Body: (typeof installedPlugins)[number] & { campaignId?: string };
   }>("/api/v1/plugins/install", async (request, reply) => {
-    const campaignId = request.body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(request.headers))?.campaignId;
+    const campaignId = request.body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(store, request.headers))?.campaignId;
     if (!campaignId) return forbidden(reply, "Plugin installation requires a campaign context");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "plugin.install");
     if (allowed !== true) return allowed;
@@ -1337,7 +1361,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{
     Body: (typeof installedSystems)[number] & { campaignId?: string };
   }>("/api/v1/systems/install", async (request, reply) => {
-    const campaignId = request.body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(request.headers))?.campaignId;
+    const campaignId = request.body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(store, request.headers))?.campaignId;
     if (!campaignId) return forbidden(reply, "System installation requires a campaign context");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
     if (allowed !== true) return allowed;
@@ -1493,19 +1517,87 @@ function canReadChatMessage(store: StateStore, userId: string, message: ChatMess
   return canCampaign(store, userId, message.campaignId, "chat.moderate") || canCampaign(store, userId, message.campaignId, "journal.readSecret") || canCampaign(store, userId, message.campaignId, "ai.readGmMemory");
 }
 
-function currentUserId(headers: Record<string, string | string[] | undefined>): string | undefined {
+function currentUserId(store: StateStore, headers: Record<string, string | string[] | undefined>): string | undefined {
+  const session = sessionFromRequest(store, undefined, headers);
+  if (session) return session.userId;
   const header = headers["x-user-id"];
   return Array.isArray(header) ? header[0] : header;
 }
 
-function userIdFromRequest(requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): string | undefined {
+function userIdFromRequest(store: StateStore, requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): string | undefined {
+  const session = sessionFromRequest(store, requestUrl, headers);
+  if (session) return session.userId;
   const url = new URL(requestUrl ?? "/api/v1/realtime", "http://localhost");
-  return url.searchParams.get("userId") ?? currentUserId(headers);
+  return url.searchParams.get("userId") ?? currentUserId(store, headers);
+}
+
+function createUserSession(store: StateStore, userId: string): { token: string; session: UserSession } {
+  const token = `ots_${randomBytes(32).toString("base64url")}`;
+  const now = nowIso();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const session = createTimestamped("sess", {
+    userId,
+    tokenHash: hashSessionToken(token),
+    expiresAt,
+    lastSeenAt: now
+  }) satisfies UserSession;
+  store.state.sessions.push(session);
+  return { token, session };
+}
+
+function sessionFromRequest(store: StateStore, requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): UserSession | undefined {
+  const token = sessionTokenFromRequest(requestUrl, headers);
+  if (!token) return undefined;
+  const tokenHash = hashSessionToken(token);
+  const now = Date.now();
+  const session = store.state.sessions.find((item) => item.tokenHash === tokenHash && Date.parse(item.expiresAt) > now);
+  if (session) session.lastSeenAt = nowIso();
+  return session;
+}
+
+function sessionTokenFromRequest(requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): string | undefined {
+  const authorization = headerValue(headers.authorization);
+  if (authorization?.toLowerCase().startsWith("bearer ")) return authorization.slice("bearer ".length).trim();
+  const explicitHeader = headerValue(headers["x-session-token"]);
+  if (explicitHeader) return explicitHeader;
+  const cookie = headerValue(headers.cookie);
+  const cookieToken = cookie
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("otte_session="))
+    ?.slice("otte_session=".length);
+  if (cookieToken) return decodeURIComponent(cookieToken);
+  const url = new URL(requestUrl ?? "/api/v1/realtime", "http://localhost");
+  return url.searchParams.get("sessionToken") ?? undefined;
+}
+
+function hashSessionToken(token: string): string {
+  return `sha256:${createHash("sha256").update(token).digest("hex")}`;
+}
+
+function pruneExpiredSessions(store: StateStore): void {
+  const now = Date.now();
+  store.state.sessions = store.state.sessions.filter((session) => Date.parse(session.expiresAt) > now);
+}
+
+function publicSession(session: UserSession): Pick<UserSession, "id" | "userId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {
+  return {
+    id: session.id,
+    userId: session.userId,
+    expiresAt: session.expiresAt,
+    lastSeenAt: session.lastSeenAt,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt
+  };
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 function requireUser(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>): string | FastifyReply {
-  const userId = currentUserId(headers);
-  if (!userId) return unauthorized(reply, "Missing x-user-id session header");
+  const userId = currentUserId(store, headers);
+  if (!userId) return unauthorized(reply, "Missing session token");
   if (!store.state.users.some((user) => user.id === userId)) return unauthorized(reply, "Unknown user session");
   return userId;
 }
@@ -1623,6 +1715,7 @@ function isWithinPath(parent: string, child: string): boolean {
 function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyof EngineState, number> {
   return {
     users: upsertRecords(state.users, archive.data.users),
+    sessions: 0,
     campaigns: upsertRecords(state.campaigns, archive.data.campaigns),
     members: upsertRecords(state.members, archive.data.members),
     worlds: upsertRecords(state.worlds, archive.data.worlds),

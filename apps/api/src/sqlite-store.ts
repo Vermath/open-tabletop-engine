@@ -23,6 +23,7 @@ const { DatabaseSync } = require("node:sqlite") as {
 
 const stateCollections = [
   "users",
+  "sessions",
   "campaigns",
   "members",
   "worlds",

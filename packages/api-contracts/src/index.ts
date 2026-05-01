@@ -3,6 +3,8 @@ export const apiVersion = "v1";
 export const routes = {
   health: "/api/v1/health",
   session: "/api/v1/auth/session",
+  login: "/api/v1/auth/login",
+  logout: "/api/v1/auth/logout",
   campaigns: "/api/v1/campaigns",
   campaign: (campaignId: string) => `/api/v1/campaigns/${campaignId}`,
   scenes: (campaignId: string) => `/api/v1/campaigns/${campaignId}/scenes`,
@@ -42,6 +44,9 @@ export const routes = {
 
 const endpointSpecs = [
   ["GET", routes.health],
+  ["POST", routes.login],
+  ["POST", routes.logout],
+  ["GET", routes.session],
   ["GET", routes.campaigns],
   ["POST", routes.campaigns],
   ["GET", "/api/v1/campaigns/{campaignId}"],

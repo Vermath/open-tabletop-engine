@@ -115,6 +115,62 @@ describe("api", () => {
     await app.close();
   });
 
+  it("issues durable bearer sessions and supports logout", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "otte-session-"));
+    const dbPath = join(directory, "state.sqlite");
+
+    const firstStore = new SqliteStateStore(dbPath);
+    const firstApp = await buildApp({ store: firstStore });
+    const login = await firstApp.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { userId: "usr_demo_player" }
+    });
+    expect(login.statusCode).toBe(200);
+    expect(login.json().token).toMatch(/^ots_/);
+    expect(login.json().session.userId).toBe("usr_demo_player");
+
+    const token = login.json().token as string;
+    const bearerHeaders = { authorization: `Bearer ${token}` };
+    const campaigns = await firstApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns",
+      headers: bearerHeaders
+    });
+    expect(campaigns.statusCode).toBe(200);
+    expect(campaigns.json().map((campaign: { id: string }) => campaign.id)).toEqual(["camp_demo"]);
+    await firstApp.close();
+    firstStore.close();
+
+    const secondStore = new SqliteStateStore(dbPath);
+    const secondApp = await buildApp({ store: secondStore });
+    const restoredSession = await secondApp.inject({
+      method: "GET",
+      url: "/api/v1/auth/session",
+      headers: bearerHeaders
+    });
+    expect(restoredSession.statusCode).toBe(200);
+    expect(restoredSession.json().user.id).toBe("usr_demo_player");
+
+    const logout = await secondApp.inject({
+      method: "POST",
+      url: "/api/v1/auth/logout",
+      headers: bearerHeaders
+    });
+    expect(logout.statusCode).toBe(200);
+
+    const afterLogout = await secondApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns",
+      headers: bearerHeaders
+    });
+    expect(afterLogout.statusCode).toBe(401);
+
+    await secondApp.close();
+    secondStore.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
   it("filters hidden tokens from player reads and mutations", async () => {
     const store = new MemoryStateStore();
     store.state.tokens.push({
