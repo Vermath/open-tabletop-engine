@@ -34,7 +34,8 @@ export function emptyState(): EngineState {
     auditLogs: [],
     permissionGrants: [],
     pluginStorage: [],
-    pluginReviews: []
+    pluginReviews: [],
+    fogPresets: []
   };
 }
 
@@ -214,7 +215,8 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     auditLogs: state.auditLogs.filter((item) => item.campaignId === campaignId),
     permissionGrants: state.permissionGrants.filter((item) => item.campaignId === campaignId),
     pluginStorage: state.pluginStorage.filter((item) => item.campaignId === campaignId),
-    pluginReviews: []
+    pluginReviews: [],
+    fogPresets: state.fogPresets.filter((item) => item.campaignId === campaignId)
   };
   return {
     format: "ottx",

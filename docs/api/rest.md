@@ -49,11 +49,14 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `GET /api/v1/assets/{assetId}/blob`
 - `POST /api/v1/assets/{assetId}/delivery-url`
 - `PATCH /api/v1/assets/{assetId}/lifecycle`
+- `GET|POST /api/v1/campaigns/{campaignId}/fog-presets`
+- `DELETE /api/v1/campaigns/{campaignId}/fog-presets/{presetId}`
 - `GET|PATCH|DELETE /api/v1/scenes/{sceneId}`
 - `GET /api/v1/scenes/{sceneId}/vision`
 - `POST /api/v1/scenes/{sceneId}/fog`
 - `GET /api/v1/scenes/{sceneId}/fog/history`
 - `POST /api/v1/scenes/{sceneId}/fog/undo`
+- `POST /api/v1/scenes/{sceneId}/fog/apply-preset`
 - `DELETE /api/v1/scenes/{sceneId}/fog/{fogId}`
 - `POST /api/v1/scenes/{sceneId}/walls`
 - `POST /api/v1/scenes/{sceneId}/lights`
@@ -115,7 +118,7 @@ AI thread requests use the configured provider from `OTTE_AI_PROVIDER`. The defa
 
 Proposal approval is a two-step flow: `POST /api/v1/proposals/{proposalId}/approve` marks a pending proposal as approved, and `POST /api/v1/proposals/{proposalId}/apply` mutates campaign state only after approval. Applying a pending proposal returns `409`. `POST /api/v1/ai/memory/{factId}/approve` marks queued AI memory as approved.
 
-Scene vision requests return the same permission-filtered polygons used by token visibility checks. Players receive revealed fog polygons, owned-token vision polygons, hide/erase fog polygons, and wall-clipped colored light polygons when fog is active; GM-capable users receive unmasked lighting polygons with `fogActive: false`. Fog authoring accepts circle regions or `shape: "polygon"` with `points`, plus `mode: "reveal" | "hide"` for reveal and erase brushes. Fog create/delete operations append scene-local history entries, `GET /fog/history` exposes the GM-only history log, and `POST /fog/undo` reverses the latest still-applicable create/delete entry. Wall authoring accepts `kind: "wall" | "terrain"` and optional `blocksMovement`; light authoring accepts `color` and `intensity`.
+Scene vision requests return the same permission-filtered polygons used by token visibility checks. Players receive revealed fog polygons, owned-token vision polygons, hide/erase fog polygons, and wall-clipped colored light polygons when fog is active; GM-capable users receive unmasked lighting polygons with `fogActive: false`. Fog authoring accepts circle regions or `shape: "polygon"` with `points`, plus `mode: "reveal" | "hide"` for reveal and erase brushes. Fog create/delete operations append scene-local history entries, `GET /fog/history` exposes the GM-only history log, and `POST /fog/undo` reverses the latest still-applicable create/delete entry. Campaign fog presets save the current fog regions from a source scene, persist in SQLite/archive state, and can be applied to any same-campaign scene through `POST /fog/apply-preset` with `mode: "append" | "replace"`. Wall authoring accepts `kind: "wall" | "terrain"` and optional `blocksMovement`; light authoring accepts `color` and `intensity`.
 
 Create a session token:
 

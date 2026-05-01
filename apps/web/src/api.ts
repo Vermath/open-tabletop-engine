@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, EmailOutboxMessage, Encounter, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, EmailOutboxMessage, Encounter, FogPreset, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -167,6 +167,7 @@ export interface Snapshot {
   campaigns: Campaign[];
   members: CampaignMemberInfo[];
   scenes: Scene[];
+  fogPresets: FogPreset[];
   assets: MapAsset[];
   tokens: Token[];
   actors: Actor[];
@@ -527,6 +528,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       campaigns,
       members: [],
       scenes: [],
+      fogPresets: [],
       assets: [],
       tokens: [],
       actors: [],
@@ -549,8 +551,9 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   const members = await apiGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`);
   const currentMember = members.find((member) => member.user.id === session.user.id);
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
-  const [assets, tokens, vision, actors, items, journals, chat, encounters, combats, proposals, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
+  const [assets, fogPresets, tokens, vision, actors, items, journals, chat, encounters, combats, proposals, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
     apiGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
+    currentMember?.permissions.includes("token.reveal") ? apiGet<FogPreset[]>(`/api/v1/campaigns/${selectedCampaignId}/fog-presets`) : Promise.resolve([]),
     selectedSceneId ? apiGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
     selectedSceneId ? apiGet<VisionSnapshot>(`/api/v1/scenes/${selectedSceneId}/vision`) : Promise.resolve(undefined),
     apiGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
@@ -574,6 +577,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     campaigns,
     members,
     scenes,
+    fogPresets,
     assets,
     tokens,
     vision,

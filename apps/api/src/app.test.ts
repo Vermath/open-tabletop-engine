@@ -1774,6 +1774,109 @@ describe("api", () => {
     await app.close();
   });
 
+  it("saves and applies multi-scene fog presets", async () => {
+    const store = new MemoryStateStore();
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.fog = [];
+    scene.fogHistory = [];
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    const revealed = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/fog",
+      headers: authHeaders,
+      payload: {
+        shape: "polygon",
+        mode: "reveal",
+        points: [
+          { x: 700, y: 250 },
+          { x: 900, y: 250 },
+          { x: 900, y: 430 },
+          { x: 700, y: 430 }
+        ]
+      }
+    });
+    expect(revealed.statusCode).toBe(200);
+    const hidden = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/fog",
+      headers: authHeaders,
+      payload: { x: 825, y: 335, radius: 70, mode: "hide" }
+    });
+    expect(hidden.statusCode).toBe(200);
+
+    const blockedPlayerPreset = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/fog-presets",
+      headers: playerHeaders,
+      payload: { name: "Player preset", sceneId: "scn_vault_entry" }
+    });
+    expect(blockedPlayerPreset.statusCode).toBe(403);
+
+    const preset = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/fog-presets",
+      headers: authHeaders,
+      payload: { name: "Vault fog", sceneId: "scn_vault_entry" }
+    });
+    expect(preset.statusCode).toBe(200);
+    expect(preset.json()).toEqual(expect.objectContaining({ name: "Vault fog", sourceSceneId: "scn_vault_entry" }));
+    expect(preset.json().regions).toHaveLength(2);
+    expect(preset.json().regions.some((region: { id?: string }) => region.id)).toBe(false);
+
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/fog-presets",
+      headers: authHeaders
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().map((item: { name: string }) => item.name)).toEqual(["Vault fog"]);
+
+    const targetScene = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders,
+      payload: { name: "Mirror Vault", fog: [{ id: "fog_old", x: 100, y: 100, radius: 30, hidden: false }] }
+    });
+    expect(targetScene.statusCode).toBe(200);
+    const targetSceneId = targetScene.json().id as string;
+
+    const applied = await app.inject({
+      method: "POST",
+      url: `/api/v1/scenes/${targetSceneId}/fog/apply-preset`,
+      headers: authHeaders,
+      payload: { presetId: preset.json().id, mode: "replace" }
+    });
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().fog).toHaveLength(2);
+    expect(applied.json().fog.map((region: { mode?: string }) => region.mode).sort()).toEqual(["hide", "reveal"]);
+    expect(applied.json().fog.some((region: { id: string }) => region.id === "fog_old")).toBe(false);
+    expect(applied.json().fog.every((region: { id: string }) => region.id.startsWith("fog_"))).toBe(true);
+    expect(applied.json().fogHistory.map((entry: { action: string }) => entry.action)).toEqual(["delete", "create", "create"]);
+
+    const blockedPlayerApply = await app.inject({
+      method: "POST",
+      url: `/api/v1/scenes/${targetSceneId}/fog/apply-preset`,
+      headers: playerHeaders,
+      payload: { presetId: preset.json().id }
+    });
+    expect(blockedPlayerApply.statusCode).toBe(403);
+
+    const deletedPreset = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/campaigns/camp_demo/fog-presets/${preset.json().id}`,
+      headers: authHeaders
+    });
+    expect(deletedPreset.statusCode).toBe(200);
+    expect(store.state.fogPresets).toHaveLength(0);
+    expect(store.state.auditLogs.some((entry) => entry.action === "scene.fogPreset.create" && entry.targetId === preset.json().id)).toBe(true);
+    expect(store.state.auditLogs.some((entry) => entry.action === "scene.fogPreset.apply" && entry.targetId === preset.json().id)).toBe(true);
+    expect(store.state.auditLogs.some((entry) => entry.action === "scene.fogPreset.delete" && entry.targetId === preset.json().id)).toBe(true);
+
+    await app.close();
+  });
+
   it("covers auth, assets, fog, encounter design, and session memory", async () => {
     const app = await buildApp({ store: new MemoryStateStore() });
 

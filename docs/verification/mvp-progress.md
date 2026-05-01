@@ -885,6 +885,36 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Admin audit export for `scene.fog.undo` returned `2` rows, both targeting `fog_monfibry3rqpsc4u`.
   - After shutdown, no listener remained on port `55160`.
 
+### Fog Multi-Scene Presets Slice
+
+- Implementation:
+  - Added campaign-scoped fog presets that store source-scene fog regions without region ids, including preset name, description, source scene id, timestamps, metadata, and SQLite/archive persistence.
+  - Added GM-only `GET|POST /api/v1/campaigns/{campaignId}/fog-presets`, `DELETE /api/v1/campaigns/{campaignId}/fog-presets/{presetId}`, and `POST /api/v1/scenes/{sceneId}/fog/apply-preset` routes behind the existing `token.reveal` permission boundary.
+  - Applying a preset can append to the target scene or replace existing fog; replace mode records delete history for removed regions, create history for applied regions, emits a scene update, and writes audit rows.
+  - Added fog preset route helpers to `@open-tabletop/api-contracts`, REST documentation, snapshot loading for GM-capable users, and toolbar controls titled `Save fog preset` and `Apply latest fog preset`.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `61 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - `pnpm build` passed across `14 successful` build tasks.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API tests verify player denial for saving/applying presets, GM save/list/delete, replace-mode application to another scene, old fog removal, hide/reveal region recreation with new ids, delete/create/create fog history, and preset create/apply/delete audit rows.
+- Manual API evidence:
+  - API: `http://127.0.0.1:55161`
+  - SQLite file: `apps/api/storage/manual-fog-presets-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `PORT=55161`, `HOST=127.0.0.1`, `OTTE_SQLITE_PATH=apps/api/storage/manual-fog-presets-20260501.sqlite`, and `OTTE_ADMIN_USER_IDS=usr_demo_gm`.
+  - The server was the built API entrypoint `node apps/api/dist/server.js`; health returned `true` and GM login returned `serverAdmin: true`.
+  - GM reset `scn_vault_entry`, created one polygon reveal region and one hide brush region, then saved preset `fogp_mong0ns0j39v9m87` with `presetRegions: 2`.
+  - Player save returned `403`.
+  - GM preset list returned `listedPresets: 1`, and campaign export returned `archiveFogPresets: 1`.
+  - GM created target scene `scn_mong0nt2uzn6uzuc` with an old fog region, applied the preset with `mode: "replace"`, and received applied region modes `hide,reveal` with new fog ids `fog_mong0ntas8sub6dx` and `fog_mong0ntaz5qk9xl4`.
+  - Replace-mode fog history was `delete,create,create`, confirming the old region was removed and the two preset regions were recreated.
+  - Player preset apply returned `403`.
+  - Admin audit export for `scene.fogPreset.apply` returned `scene.fogPreset.apply`.
+  - GM deleted the preset and a final list returned `remainingPresets: 0`.
+  - After shutdown, no listener remained on port `55161`.
+
 ### Packaged Plugin Runtime Slice
 
 - Implementation:
@@ -1548,7 +1578,7 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, built-in upload security scanning, and external AV/trust scanner webhooks before storage writes. Higher-assurance hosting may still need provider-specific compliance artifacts and operational certifications outside the app.
-- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, fog region deletion, and fog undo/history now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing and multi-scene fog presets.
+- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, fog region deletion, fog undo/history, and multi-scene fog presets now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing.
 - Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, campaign-scoped JSON storage APIs, command-returned storage mutations, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, server-admin marketplace review surfaces, optional approval-required review policy, storage/review audit logs, and browser/API acceptance evidence. Remaining plugin ecosystem work is external marketplace operations beyond the self-hosted review and registry workflow.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

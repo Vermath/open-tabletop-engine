@@ -186,6 +186,18 @@ export interface FogRegion {
 export type FogShape = "circle" | "polygon";
 export type FogMode = "reveal" | "hide";
 
+export interface FogPreset extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  name: string;
+  description?: string;
+  sourceSceneId?: ID;
+  regions: FogPresetRegion[];
+  metadata: Record<string, unknown>;
+}
+
+export type FogPresetRegion = Omit<FogRegion, "id">;
+
 export interface FogHistoryEntry extends Timestamps {
   id: ID;
   sceneId: ID;
@@ -643,4 +655,5 @@ export interface EngineState {
   permissionGrants: PermissionGrant[];
   pluginStorage: PluginStorageEntry[];
   pluginReviews: PluginReview[];
+  fogPresets: FogPreset[];
 }

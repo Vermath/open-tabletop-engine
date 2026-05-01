@@ -53,7 +53,8 @@ const stateCollections = [
   "auditLogs",
   "permissionGrants",
   "pluginStorage",
-  "pluginReviews"
+  "pluginReviews",
+  "fogPresets"
 ] as const satisfies ReadonlyArray<keyof EngineState>;
 
 type StateCollection = (typeof stateCollections)[number];
