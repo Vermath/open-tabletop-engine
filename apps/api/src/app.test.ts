@@ -2758,6 +2758,107 @@ describe("api", () => {
     }
   });
 
+  it("gates plugin install and execution through server-admin marketplace review", async () => {
+    const previousEnv = snapshotEnv(["OTTE_PLUGIN_REVIEW_POLICY", "OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_PLUGIN_REVIEW_POLICY = "require_approved";
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-review-"));
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      writeVersionedPluginPackage(pluginRoot, "reviewed-plugin-1", "reviewed-plugin", "1.0.0", "Reviewed macro");
+      const store = new MemoryStateStore();
+      app = await buildApp({ store, pluginRoot });
+
+      const reviews = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/plugins/reviews",
+        headers: authHeaders
+      });
+      expect(reviews.statusCode).toBe(200);
+      expect(reviews.json()).toEqual(
+        expect.objectContaining({
+          policy: { mode: "require_approved" },
+          totals: expect.objectContaining({ pending: 1, approved: 0, rejected: 0, blocked: 1 }),
+          plugins: [
+            expect.objectContaining({
+              plugin: expect.objectContaining({ id: "reviewed-plugin", version: "1.0.0" }),
+              review: expect.objectContaining({ status: "pending", sourceType: "local", packageId: "reviewed-plugin-1" }),
+              installable: false,
+              installBlock: expect.stringContaining("requires marketplace approval")
+            })
+          ]
+        })
+      );
+      const reviewKey = reviews.json().plugins[0].review.reviewKey as string;
+
+      const deniedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/reviewed-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(deniedInstall.statusCode).toBe(403);
+      expect(deniedInstall.json().message).toContain("requires marketplace approval");
+
+      const approved = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/admin/plugins/reviews/${encodeURIComponent(reviewKey)}`,
+        headers: authHeaders,
+        payload: { status: "approved", notes: "Approved in API test" }
+      });
+      expect(approved.statusCode).toBe(200);
+      expect(approved.json()).toEqual(
+        expect.objectContaining({
+          review: expect.objectContaining({ reviewKey, status: "approved", reviewedByUserId: "usr_demo_gm", notes: "Approved in API test" }),
+          installable: true
+        })
+      );
+
+      const install = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/reviewed-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(install.statusCode).toBe(200);
+      expect(install.json().plugin.marketplaceReview.review.status).toBe("approved");
+
+      const command = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/reviewed-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(command.statusCode).toBe(200);
+      expect(command.json().chat.body).toBe("Reviewed macro");
+
+      const rejected = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/admin/plugins/reviews/${encodeURIComponent(reviewKey)}`,
+        headers: authHeaders,
+        payload: { status: "rejected", notes: "Rejected in API test" }
+      });
+      expect(rejected.statusCode).toBe(200);
+      expect(rejected.json().installable).toBe(false);
+      expect(rejected.json().installBlock).toContain("rejected by marketplace review");
+
+      const deniedCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/reviewed-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(deniedCommand.statusCode).toBe(403);
+      expect(deniedCommand.json().message).toContain("rejected by marketplace review");
+      expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["admin.pluginReviews.list", "admin.pluginReview.update", "plugin.install", "plugin.chatCommand"]));
+
+    } finally {
+      await app?.close();
+      restoreEnv(previousEnv);
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("persists plugin campaign storage through configure-gated APIs and command mutations", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-storage-"));
     const packagePath = join(pluginRoot, "stateful-plugin");

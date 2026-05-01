@@ -554,6 +554,24 @@ export interface PluginStorageEntry extends Timestamps {
   updatedById: ID;
 }
 
+export type PluginReviewStatus = "pending" | "approved" | "rejected";
+
+export interface PluginReview extends Timestamps {
+  id: ID;
+  reviewKey: string;
+  pluginId: ID;
+  packageId: ID;
+  version: string;
+  checksum: string;
+  sourceType: "local" | "registry";
+  registryUrl?: string;
+  packageUrl?: string;
+  status: PluginReviewStatus;
+  notes?: string;
+  reviewedByUserId?: ID;
+  reviewedAt?: string;
+}
+
 export interface CampaignArchive {
   format: "ottx";
   version: "0.1.0";
@@ -611,4 +629,5 @@ export interface EngineState {
   auditLogs: AuditLog[];
   permissionGrants: PermissionGrant[];
   pluginStorage: PluginStorageEntry[];
+  pluginReviews: PluginReview[];
 }

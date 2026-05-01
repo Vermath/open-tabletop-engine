@@ -1006,6 +1006,40 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - SQLite inspection of `auditLogs` showed `plugin.storageSet`, two `plugin.storageMutation` entries, and `plugin.storageDelete`.
   - API server on port `55140` was stopped after evidence capture; no listener remained.
 
+### Plugin Marketplace Review Slice
+
+- Implementation:
+  - Added version/checksum-scoped plugin marketplace review records to `EngineState` and SQLite persistence.
+  - Added server-admin review endpoints: `GET /api/v1/admin/plugins/reviews` and `PATCH /api/v1/admin/plugins/reviews/{reviewKey}`.
+  - Added `OTTE_PLUGIN_REVIEW_POLICY=require_approved` so production operators can block plugin install and execution until a package review is approved; rejected package reviews block install and execution even in the default permissive mode.
+  - Exposed marketplace review state in campaign plugin catalog responses.
+  - Added a Plugin Reviews section to the browser Admin tab with policy totals, package source/trust metadata, approval, rejection, and reset actions.
+  - Added `admin.pluginReviews.list` and `admin.pluginReview.update` audit logs.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/api-contracts typecheck` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `60 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API tests verify strict review-policy install denial, server-admin approval, install after approval, command execution after approval, rejection after install, execution denial after rejection, campaign plugin review metadata, and admin review audit logs.
+- Manual API evidence:
+  - API: `http://127.0.0.1:55150`
+  - SQLite file: `apps/api/storage/manual-plugin-review-20260501.sqlite`
+  - Plugin root: `apps/api/storage/manual-plugin-review-plugins-20260501`
+  - Runtime env included `NODE_ENV=production`, `OTTE_PLUGIN_REVIEW_POLICY=require_approved`, `OTTE_SQLITE_PATH=apps/api/storage/manual-plugin-review-20260501.sqlite`, and a bearer-auth server-admin user registered through the API.
+  - `GET /api/v1/admin/plugins/reviews` returned `policy.mode: "require_approved"`, totals `{ "pending": 1, "approved": 0, "rejected": 0, "blocked": 1 }`, and a pending local review for `manual-review-plugin@1.0.0` with source package `manual-review-plugin-1`.
+  - Installing `manual-review-plugin` before approval returned `403` with `requires marketplace approval`.
+  - `PATCH /api/v1/admin/plugins/reviews/{reviewKey}` to `approved` returned `200`, persisted admin notes, set `reviewedByUserId`, and made the package installable.
+  - Installing after approval returned `200` with `installedVersion: "1.0.0"` and `marketplaceReview.review.status: "approved"`.
+  - Running `/review` returned plugin chat body `Manual review macro`.
+  - Patching the same review to `rejected` returned `200`, `installable: false`, and `Plugin manual-review-plugin@1.0.0 was rejected by marketplace review`.
+  - Running `/review` after rejection returned `403` with the rejected-review message, and campaign plugin catalog metadata reflected the rejected review.
+  - SQLite-backed audit rows showed `admin.pluginReviews.list`, two `admin.pluginReview.update` rows, `plugin.install`, and `plugin.chatCommand`.
+  - API server on port `55150` was stopped after evidence capture; no listener remained.
+
 ### Rules Compendium And Conditions Slice
 
 - Implementation:
@@ -1481,6 +1515,6 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, built-in upload security scanning, and external AV/trust scanner webhooks before storage writes. Higher-assurance hosting may still need provider-specific compliance artifacts and operational certifications outside the app.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
-- Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, campaign-scoped JSON storage APIs, command-returned storage mutations, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, storage audit logs, and browser/API acceptance evidence. Remaining plugin-platform work is marketplace review surfaces.
+- Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, campaign-scoped JSON storage APIs, command-returned storage mutations, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, server-admin marketplace review surfaces, optional approval-required review policy, storage/review audit logs, and browser/API acceptance evidence. Remaining plugin ecosystem work is external marketplace operations beyond the self-hosted review and registry workflow.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

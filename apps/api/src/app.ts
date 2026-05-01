@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -36,6 +36,24 @@ interface AdminAuditLogQuery {
   until?: string;
   limit?: string;
   format?: string;
+}
+
+type PluginReviewPolicyMode = "allow_unreviewed" | "require_approved";
+
+interface AdminPluginReviewInfo {
+  review: PluginReview;
+  plugin: {
+    id: string;
+    name: string;
+    version: string;
+    permissions: PermissionName[];
+    chatCommands?: LoadedPlugin["chatCommands"];
+  };
+  source: LoadedPlugin["source"];
+  distribution: LoadedPlugin["distribution"];
+  trust: LoadedPlugin["trust"];
+  installable: boolean;
+  installBlock?: string;
 }
 
 interface ScimListQuery {
@@ -479,6 +497,46 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     store.save();
     return operations;
+  });
+
+  app.get("/api/v1/admin/plugins/reviews", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const reviewSnapshot = adminPluginReviewSnapshot(store, pluginRegistry);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.pluginReviews.list",
+      targetType: "plugin_review",
+      after: { policy: reviewSnapshot.policy.mode, count: reviewSnapshot.plugins.length, totals: reviewSnapshot.totals }
+    });
+    store.save();
+    return reviewSnapshot;
+  });
+
+  app.patch<{
+    Params: { reviewKey: string };
+    Body: { status?: string; notes?: string };
+  }>("/api/v1/admin/plugins/reviews/:reviewKey", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const plugin = pluginRegistry.listPackages().find((item) => pluginReviewKey(item) === request.params.reviewKey);
+    if (!plugin) return notFound(reply, "Plugin review target not found");
+    const status = normalizePluginReviewStatus(request.body?.status);
+    if (!status) return badRequest(reply, "Plugin review status must be pending, approved, or rejected");
+    const notes = normalizePluginReviewNotes(request.body?.notes);
+    if (notes === false) return badRequest(reply, "Plugin review notes must be 500 characters or less");
+    const review = ensurePluginReview(store, plugin);
+    const before = publicPluginReviewInfo(plugin, review);
+    updatePluginReview(review, status, notes, adminUserId);
+    const after = publicPluginReviewInfo(plugin, review);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.pluginReview.update",
+      targetType: "plugin_review",
+      targetId: review.reviewKey,
+      before,
+      after
+    });
+    store.save();
+    return after;
   });
 
   app.get("/api/v1/admin/scim/group-role-mappings", async (request, reply) => {
@@ -2310,6 +2368,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const plugin = pluginRegistry.find(request.params.pluginId, request.body?.version);
     if (!plugin) return notFound(reply, "Plugin not found");
     if (!plugin.trust.installable) return forbidden(reply, pluginTrustErrorMessage(plugin));
+    const reviewBlock = pluginReviewInstallBlock(store, plugin);
+    if (reviewBlock) {
+      store.save();
+      return forbidden(reply, reviewBlock);
+    }
     const permissions = reviewedPluginPermissions(plugin, request.body?.permissions);
     if (!permissions) return badRequest(reply, "Plugin grant permissions must be a subset of the plugin manifest permissions");
     const existing = findPluginGrant(store, request.params.campaignId, plugin.id);
@@ -2437,6 +2500,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const plugin = pluginRegistry.find(request.params.pluginId, pluginVersionFromGrant(pluginGrant));
     if (!plugin) return notFound(reply, "Plugin not found");
     if (!plugin.trust.installable) return forbidden(reply, pluginTrustErrorMessage(plugin));
+    const reviewBlock = pluginReviewInstallBlock(store, plugin);
+    if (reviewBlock) {
+      store.save();
+      return forbidden(reply, reviewBlock);
+    }
     const command = request.body.command.startsWith("/") ? request.body.command : `/${request.body.command}`;
     if (!plugin.chatCommands?.some((item) => item.command === command)) return notFound(reply, "Plugin command not found");
     if (!pluginCan(store, request.params.campaignId, plugin.id, "chat.write")) {
@@ -5598,12 +5666,140 @@ function cloneJsonValue(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value)) as unknown;
 }
 
+function adminPluginReviewSnapshot(store: StateStore, pluginRegistry: PluginRuntimeRegistry) {
+  const plugins = pluginRegistry.listPackages();
+  const reviewedPlugins = plugins.map((plugin) => publicPluginReviewInfo(plugin, ensurePluginReview(store, plugin)));
+  const totals = {
+    pending: reviewedPlugins.filter((item) => item.review.status === "pending").length,
+    approved: reviewedPlugins.filter((item) => item.review.status === "approved").length,
+    rejected: reviewedPlugins.filter((item) => item.review.status === "rejected").length,
+    blocked: reviewedPlugins.filter((item) => !item.installable).length
+  };
+  return {
+    generatedAt: nowIso(),
+    policy: {
+      mode: pluginReviewPolicyMode()
+    },
+    totals,
+    plugins: reviewedPlugins.sort((left, right) => left.plugin.name.localeCompare(right.plugin.name) || right.plugin.version.localeCompare(left.plugin.version))
+  };
+}
+
+function publicPluginReviewInfo(plugin: LoadedPlugin, review: PluginReview): AdminPluginReviewInfo {
+  const installBlock = pluginReviewInstallBlockForReview(plugin, review);
+  return {
+    review: { ...review },
+    plugin: {
+      id: plugin.id,
+      name: plugin.name,
+      version: plugin.version,
+      permissions: [...plugin.permissions],
+      chatCommands: plugin.chatCommands
+    },
+    source: { ...plugin.source },
+    distribution: { availableVersions: [...plugin.distribution.availableVersions], latestVersion: plugin.distribution.latestVersion },
+    trust: { ...plugin.trust, errors: [...plugin.trust.errors], signature: plugin.trust.signature ? { ...plugin.trust.signature } : undefined },
+    installable: !installBlock,
+    ...(installBlock ? { installBlock } : {})
+  };
+}
+
+function ensurePluginReview(store: StateStore, plugin: LoadedPlugin): PluginReview {
+  const reviewKey = pluginReviewKey(plugin);
+  const existing = store.state.pluginReviews.find((review) => review.reviewKey === reviewKey);
+  if (existing) return syncPluginReviewMetadata(existing, plugin);
+  const review = createPluginReview(plugin);
+  store.state.pluginReviews.push(review);
+  return review;
+}
+
+function pluginReviewForDisplay(store: StateStore, plugin: LoadedPlugin): PluginReview {
+  const existing = store.state.pluginReviews.find((review) => review.reviewKey === pluginReviewKey(plugin));
+  return existing ? syncPluginReviewMetadata(existing, plugin) : createPluginReview(plugin);
+}
+
+function syncPluginReviewMetadata(review: PluginReview, plugin: LoadedPlugin): PluginReview {
+  review.pluginId = plugin.id;
+  review.packageId = plugin.source.packageId;
+  review.version = plugin.version;
+  review.checksum = pluginReviewChecksum(plugin);
+  review.sourceType = plugin.source.type;
+  review.registryUrl = plugin.source.registryUrl;
+  review.packageUrl = plugin.source.packageUrl;
+  return review;
+}
+
+function createPluginReview(plugin: LoadedPlugin): PluginReview {
+  return createTimestamped("plugrev", {
+    reviewKey: pluginReviewKey(plugin),
+    pluginId: plugin.id,
+    packageId: plugin.source.packageId,
+    version: plugin.version,
+    checksum: pluginReviewChecksum(plugin),
+    sourceType: plugin.source.type,
+    registryUrl: plugin.source.registryUrl,
+    packageUrl: plugin.source.packageUrl,
+    status: "pending" as const
+  }) satisfies PluginReview;
+}
+
+function updatePluginReview(review: PluginReview, status: PluginReviewStatus, notes: string | undefined, adminUserId: string): void {
+  review.status = status;
+  review.notes = notes;
+  if (status === "pending") {
+    review.reviewedAt = undefined;
+    review.reviewedByUserId = undefined;
+  } else {
+    review.reviewedAt = nowIso();
+    review.reviewedByUserId = adminUserId;
+  }
+  review.updatedAt = nowIso();
+}
+
+function pluginReviewInstallBlock(store: StateStore, plugin: LoadedPlugin): string | undefined {
+  return pluginReviewInstallBlockForReview(plugin, ensurePluginReview(store, plugin));
+}
+
+function pluginReviewInstallBlockForReview(plugin: LoadedPlugin, review: PluginReview): string | undefined {
+  if (review.status === "rejected") {
+    return `Plugin ${plugin.id}@${plugin.version} was rejected by marketplace review`;
+  }
+  if (pluginReviewPolicyMode() === "require_approved" && review.status !== "approved") {
+    return `Plugin ${plugin.id}@${plugin.version} requires marketplace approval before install or execution; current review status is ${review.status}`;
+  }
+  return undefined;
+}
+
+function pluginReviewKey(plugin: LoadedPlugin): string {
+  return createHash("sha256").update([plugin.id, plugin.version, plugin.source.packageId, pluginReviewChecksum(plugin)].join("\n")).digest("hex");
+}
+
+function pluginReviewChecksum(plugin: LoadedPlugin): string {
+  return plugin.source.checksum ?? plugin.source.manifestChecksum;
+}
+
+function pluginReviewPolicyMode(): PluginReviewPolicyMode {
+  return process.env.OTTE_PLUGIN_REVIEW_POLICY === "require_approved" ? "require_approved" : "allow_unreviewed";
+}
+
+function normalizePluginReviewStatus(value: unknown): PluginReviewStatus | undefined {
+  return value === "pending" || value === "approved" || value === "rejected" ? value : undefined;
+}
+
+function normalizePluginReviewNotes(value: unknown): string | undefined | false {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string") return false;
+  const notes = value.trim();
+  if (notes.length > 500) return false;
+  return notes || undefined;
+}
+
 function pluginCampaignInfo(
   store: StateStore,
   pluginRegistry: PluginRuntimeRegistry,
   campaignId: string,
   plugin: LoadedPlugin
-): LoadedPlugin & { installed: boolean; grantedPermissions: PermissionName[]; missingPermissions: PermissionName[]; installedVersion?: string; updateAvailable: boolean; rollbackVersions: string[] } {
+): LoadedPlugin & { installed: boolean; grantedPermissions: PermissionName[]; missingPermissions: PermissionName[]; installedVersion?: string; updateAvailable: boolean; rollbackVersions: string[]; marketplaceReview: AdminPluginReviewInfo } {
   const grant = findPluginGrant(store, campaignId, plugin.id);
   const installedVersion = pluginVersionFromGrant(grant);
   const installedPlugin = installedVersion ? pluginRegistry.find(plugin.id, installedVersion) : undefined;
@@ -5618,7 +5814,8 @@ function pluginCampaignInfo(
     missingPermissions: displayPlugin.permissions.filter((permission) => !grant?.permissions.includes(permission)),
     installedVersion,
     updateAvailable: Boolean(grant && installedVersion && installedVersion !== latestVersion),
-    rollbackVersions: grant ? availableVersions.filter((version) => version !== installedVersion) : []
+    rollbackVersions: grant ? availableVersions.filter((version) => version !== installedVersion) : [],
+    marketplaceReview: publicPluginReviewInfo(displayPlugin, pluginReviewForDisplay(store, displayPlugin))
   };
 }
 
@@ -6743,7 +6940,8 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     aiToolCalls: upsertRecords(state.aiToolCalls, archive.data.aiToolCalls),
     auditLogs: upsertRecords(state.auditLogs, archive.data.auditLogs),
     permissionGrants: upsertRecords(state.permissionGrants, archive.data.permissionGrants),
-    pluginStorage: upsertRecords(state.pluginStorage, archive.data.pluginStorage ?? [])
+    pluginStorage: upsertRecords(state.pluginStorage, archive.data.pluginStorage ?? []),
+    pluginReviews: 0
   };
 }
 

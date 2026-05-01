@@ -175,6 +175,10 @@ export class PluginRuntimeRegistry {
     return [...this.plugins.values()].map((versions) => publicPlugin(latestPluginVersion(versions), versions));
   }
 
+  listPackages(): LoadedPlugin[] {
+    return [...this.plugins.values()].flatMap((versions) => versions.map((plugin) => publicPlugin(plugin, versions)));
+  }
+
   find(pluginId: string, version?: string): LoadedPlugin | undefined {
     const versions = this.plugins.get(pluginId);
     if (!versions?.length) return undefined;

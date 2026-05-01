@@ -255,6 +255,26 @@ export interface CampaignMemberInfo extends CampaignMember {
   permissions: PermissionName[];
 }
 
+export type PluginReviewStatus = "pending" | "approved" | "rejected";
+
+export interface PluginReviewInfo {
+  id: string;
+  reviewKey: string;
+  pluginId: string;
+  packageId: string;
+  version: string;
+  checksum: string;
+  sourceType: "local" | "registry";
+  registryUrl?: string;
+  packageUrl?: string;
+  status: PluginReviewStatus;
+  notes?: string;
+  reviewedByUserId?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PluginRuntimeInfo {
   id: string;
   name: string;
@@ -272,6 +292,10 @@ export interface PluginRuntimeInfo {
     sandbox: string;
     manifestChecksum?: string;
     checksum?: string;
+    registryUrl?: string;
+    packageUrl?: string;
+    packageChecksum?: string;
+    syncedAt?: string;
   };
   trust: {
     status: "trusted" | "unsigned" | "untrusted";
@@ -294,6 +318,7 @@ export interface PluginRuntimeInfo {
     requestedPermissions: string[];
     grantRequired: boolean;
   };
+  marketplaceReview?: AdminPluginReviewInfo;
   chatCommands?: Array<{ command: string; description: string }>;
 }
 
@@ -386,6 +411,36 @@ export interface AdminAiOperations {
   >;
 }
 
+export interface AdminPluginReviewInfo {
+  review: PluginReviewInfo;
+  plugin: {
+    id: string;
+    name: string;
+    version: string;
+    permissions: string[];
+    chatCommands?: Array<{ command: string; description: string }>;
+  };
+  source: NonNullable<PluginRuntimeInfo["source"]>;
+  distribution: PluginRuntimeInfo["distribution"];
+  trust: PluginRuntimeInfo["trust"];
+  installable: boolean;
+  installBlock?: string;
+}
+
+export interface AdminPluginReviewSnapshot {
+  generatedAt: string;
+  policy: {
+    mode: "allow_unreviewed" | "require_approved";
+  };
+  totals: {
+    pending: number;
+    approved: number;
+    rejected: number;
+    blocked: number;
+  };
+  plugins: AdminPluginReviewInfo[];
+}
+
 export interface AdminUserInfo extends Omit<User, "passwordHash" | "mfa"> {
   disabled: boolean;
   membershipCount: number;
@@ -424,17 +479,19 @@ export interface AdminSnapshot {
   emailOutbox: EmailOutboxMessage[];
   audit: AdminAuditLogExport;
   aiOperations: AdminAiOperations;
+  pluginReviews: AdminPluginReviewSnapshot;
 }
 
 export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
-  const [users, sessions, emailOutbox, audit, aiOperations] = await Promise.all([
+  const [users, sessions, emailOutbox, audit, aiOperations, pluginReviews] = await Promise.all([
     apiGet<AdminUserInfo[]>("/api/v1/admin/users"),
     apiGet<AdminSessionInfo[]>("/api/v1/admin/sessions"),
     apiGet<EmailOutboxMessage[]>("/api/v1/admin/email-outbox"),
     apiGet<AdminAuditLogExport>("/api/v1/admin/audit-logs?limit=12"),
-    apiGet<AdminAiOperations>("/api/v1/admin/ai/operations")
+    apiGet<AdminAiOperations>("/api/v1/admin/ai/operations"),
+    apiGet<AdminPluginReviewSnapshot>("/api/v1/admin/plugins/reviews")
   ]);
-  return { users, sessions, emailOutbox, audit, aiOperations };
+  return { users, sessions, emailOutbox, audit, aiOperations, pluginReviews };
 }
 
 export function assetBlobUrl(asset: MapAsset): string {

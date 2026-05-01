@@ -1,7 +1,7 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Encounter, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MessageSquare, Pentagon, Plus, RefreshCw, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -540,6 +540,16 @@ export function App() {
     await refreshAdmin();
   }
 
+  async function updatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus) {
+    await apiPatch<AdminPluginReviewInfo>(`/api/v1/admin/plugins/reviews/${encodeURIComponent(review.review.reviewKey)}`, {
+      status,
+      notes: status === "approved" ? "Approved from admin console" : status === "rejected" ? "Rejected from admin console" : undefined
+    });
+    setAdminStatus(`${review.plugin.name} ${status}`);
+    await refreshAdmin();
+    await refresh();
+  }
+
   async function exportCampaign() {
     const archive = await apiGet<object>(`/api/v1/campaigns/${campaignId}/export`);
     const blob = new Blob([JSON.stringify(archive, null, 2)], {
@@ -765,7 +775,7 @@ export function App() {
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} importedActor={importedActor} encounterPlan={encounterPlan} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onAdvanceActor={advanceSelectedActor} onPlanEncounter={planSystemEncounter} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canPlanEncounter={hasPermission("combat.manage")} canRollSystem={hasPermission("dice.roll")} />}
-            {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} />}
+            {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onUpdatePluginReview={updatePluginReview} />}
           </aside>
         </div>
 
@@ -1159,12 +1169,13 @@ function CombatPanel(props: { combat?: Combat; onStart(): void; canManage: boole
   );
 }
 
-function AdminPanel(props: { admin?: AdminSnapshot; currentUserId: string; status: string; onRefresh(): Promise<void>; onDisableUser(user: AdminUserInfo): Promise<void>; onEnableUser(user: AdminUserInfo): Promise<void>; onRequireReset(user: AdminUserInfo): Promise<void>; onIssueReset(user: AdminUserInfo): Promise<void>; onRevokeUserSessions(user: AdminUserInfo): Promise<void>; onRevokeSession(session: AdminSessionInfo): Promise<void> }) {
+function AdminPanel(props: { admin?: AdminSnapshot; currentUserId: string; status: string; onRefresh(): Promise<void>; onDisableUser(user: AdminUserInfo): Promise<void>; onEnableUser(user: AdminUserInfo): Promise<void>; onRequireReset(user: AdminUserInfo): Promise<void>; onIssueReset(user: AdminUserInfo): Promise<void>; onRevokeUserSessions(user: AdminUserInfo): Promise<void>; onRevokeSession(session: AdminSessionInfo): Promise<void>; onUpdatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus): Promise<void> }) {
   const users = props.admin?.users ?? [];
   const sessions = props.admin?.sessions ?? [];
   const emails = props.admin?.emailOutbox.slice().reverse() ?? [];
   const auditLogs = props.admin?.audit.auditLogs ?? [];
   const aiOperations = props.admin?.aiOperations;
+  const pluginReviews = props.admin?.pluginReviews;
   return (
     <div className="panel-stack admin-panel">
       <div className="panel-heading">
@@ -1265,6 +1276,61 @@ function AdminPanel(props: { admin?: AdminSnapshot; currentUserId: string; statu
                 <strong>{toolCall.status} - {toolCall.campaignName ?? "unknown"}</strong>
               </div>
             ))}
+          </>
+        )}
+      </section>
+
+      <section className="admin-section" aria-label="Plugin marketplace reviews">
+        <div className="operator-heading">
+          <div className="section-title">Plugin Reviews</div>
+          <strong>{pluginReviews ? `${pluginReviews.totals.pending} pending` : "not loaded"}</strong>
+        </div>
+        {!pluginReviews ? (
+          <div className="empty-state compact">No plugin review data loaded.</div>
+        ) : (
+          <>
+            <div className="operator-item admin-item">
+              <div className="operator-row">
+                <span>Policy</span>
+                <strong>{pluginReviews.policy.mode}</strong>
+              </div>
+              <div className="admin-meta">
+                <span>{pluginReviews.totals.approved} approved</span>
+                <span>{pluginReviews.totals.rejected} rejected</span>
+                <span>{pluginReviews.totals.blocked} blocked</span>
+              </div>
+            </div>
+            {pluginReviews.plugins.length === 0 ? (
+              <div className="empty-state compact">No plugin packages found.</div>
+            ) : (
+              pluginReviews.plugins.slice(0, 8).map((review) => (
+                <article className="operator-item admin-item" key={review.review.reviewKey}>
+                  <div className="operator-row">
+                    <span className={`status-pill ${review.review.status === "approved" ? "completed" : review.review.status === "rejected" ? "failed" : "running"}`}>{review.review.status}</span>
+                    <strong>{review.source.type} - {review.trust.status}</strong>
+                  </div>
+                  <h3>{review.plugin.name} v{review.plugin.version}</h3>
+                  <p>{review.source.packageId} - {review.review.checksum.slice(0, 19)}</p>
+                  <div className="admin-meta">
+                    <span>{review.plugin.permissions.length} permissions</span>
+                    <span>{review.distribution.availableVersions.length} versions</span>
+                    <span>{review.installable ? "installable" : "blocked"}</span>
+                  </div>
+                  {review.installBlock && <p>{review.installBlock}</p>}
+                  <div className="admin-actions">
+                    <button className="ghost-button" title="Approve plugin package" onClick={() => props.onUpdatePluginReview(review, "approved").catch(console.error)} disabled={review.review.status === "approved"}>
+                      <Check size={14} /> Approve
+                    </button>
+                    <button className="ghost-button" title="Reject plugin package" onClick={() => props.onUpdatePluginReview(review, "rejected").catch(console.error)} disabled={review.review.status === "rejected"}>
+                      <UserX size={14} /> Reject
+                    </button>
+                    <button className="ghost-button" title="Reset plugin package review" onClick={() => props.onUpdatePluginReview(review, "pending").catch(console.error)} disabled={review.review.status === "pending"}>
+                      <RefreshCw size={14} /> Reset
+                    </button>
+                  </div>
+                </article>
+              ))
+            )}
           </>
         )}
       </section>
