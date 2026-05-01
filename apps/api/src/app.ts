@@ -2250,6 +2250,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const plugin = pluginRegistry.find(request.params.pluginId, request.body?.version);
     if (!plugin) return notFound(reply, "Plugin not found");
+    if (!plugin.trust.installable) return forbidden(reply, pluginTrustErrorMessage(plugin));
     const permissions = reviewedPluginPermissions(plugin, request.body?.permissions);
     if (!permissions) return badRequest(reply, "Plugin grant permissions must be a subset of the plugin manifest permissions");
     const existing = findPluginGrant(store, request.params.campaignId, plugin.id);
@@ -2280,7 +2281,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           packageId: plugin.source.packageId,
           sandbox: plugin.source.sandbox,
           version: plugin.version,
-          checksum: plugin.source.checksum
+          checksum: plugin.source.checksum,
+          trust: plugin.trust
         }
       })
     );
@@ -2307,6 +2309,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const pluginGrant = findPluginGrant(store, request.params.campaignId, request.params.pluginId);
     const plugin = pluginRegistry.find(request.params.pluginId, pluginVersionFromGrant(pluginGrant));
     if (!plugin) return notFound(reply, "Plugin not found");
+    if (!plugin.trust.installable) return forbidden(reply, pluginTrustErrorMessage(plugin));
     const command = request.body.command.startsWith("/") ? request.body.command : `/${request.body.command}`;
     if (!plugin.chatCommands?.some((item) => item.command === command)) return notFound(reply, "Plugin command not found");
     if (!pluginCan(store, request.params.campaignId, plugin.id, "chat.write")) {
@@ -2349,7 +2352,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         action: "plugin.chatCommand",
         targetType: "chat",
         targetId: message.id,
-        after: { pluginId: plugin.id, command, sandbox: plugin.source.sandbox, packageId: plugin.source.packageId, version: plugin.version, checksum: plugin.source.checksum }
+        after: { pluginId: plugin.id, command, sandbox: plugin.source.sandbox, packageId: plugin.source.packageId, version: plugin.version, checksum: plugin.source.checksum, trust: plugin.trust }
       })
     );
     store.save();
@@ -5091,6 +5094,7 @@ function pluginInstallMetadata(plugin: LoadedPlugin): Record<string, unknown> {
     packageId: plugin.source.packageId,
     version: plugin.version,
     checksum: plugin.source.checksum,
+    trust: plugin.trust,
     installedAt: nowIso()
   };
 }
@@ -5099,6 +5103,11 @@ function pluginVersionFromGrant(grant: PermissionGrant | undefined): string | un
   const metadata = grant?.metadata;
   if (!isRecord(metadata)) return undefined;
   return typeof metadata.version === "string" ? metadata.version : undefined;
+}
+
+function pluginTrustErrorMessage(plugin: LoadedPlugin): string {
+  const reason = plugin.trust.errors.length ? plugin.trust.errors.join("; ") : `Plugin trust status is ${plugin.trust.status}`;
+  return `Plugin ${plugin.id} is not installable under the current trust policy: ${reason}`;
 }
 
 function findSystemActor(store: StateStore, campaignId: string, systemId: string, actorId: string): Actor | undefined {

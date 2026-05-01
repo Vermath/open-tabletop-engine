@@ -259,7 +259,21 @@ export interface PluginRuntimeInfo {
     type: string;
     packageId: string;
     sandbox: string;
+    manifestChecksum?: string;
     checksum?: string;
+  };
+  trust: {
+    status: "trusted" | "unsigned" | "untrusted";
+    policy: "allow_unsigned" | "require_trusted";
+    required: boolean;
+    installable: boolean;
+    errors: string[];
+    signature?: {
+      keyId?: string;
+      algorithm?: string;
+      verified: boolean;
+      signaturePath?: string;
+    };
   };
   distribution: {
     availableVersions: string[];

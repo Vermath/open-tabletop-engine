@@ -1,5 +1,5 @@
-import { createHmac } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, createHmac } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import { createTimestamped, emptyState, isPointInsideVisionPolygons, type AssetS
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp } from "./app.js";
+import { loadPluginRegistry, pluginSignatureForPackage } from "./plugin-runtime.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 import { MemoryStateStore } from "./store.js";
 
@@ -59,6 +60,23 @@ function writeVersionedPluginPackage(pluginRoot: string, packageId: string, plug
     })
   );
   writeFileSync(join(packagePath, "server.js"), `registerCommand("/version", () => ({ body: ${JSON.stringify(body)}, visibility: "public" }));`);
+}
+
+function writePluginSignature(pluginRoot: string, packageId: string, keyId: string, secret: string): void {
+  const packagePath = join(pluginRoot, packageId);
+  const manifestPath = join(packagePath, "plugin.manifest.json");
+  const serverPath = join(packagePath, "server.js");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { id: string; version: string };
+  const manifestChecksum = `sha256:${createHash("sha256").update(readFileSync(manifestPath)).digest("hex")}`;
+  const sourceChecksum = `sha256:${createHash("sha256").update(readFileSync(serverPath)).digest("hex")}`;
+  writeFileSync(
+    join(packagePath, "plugin.signature.json"),
+    JSON.stringify({
+      keyId,
+      algorithm: "hmac-sha256",
+      signature: pluginSignatureForPackage(manifest, manifestChecksum, sourceChecksum, secret)
+    })
+  );
 }
 
 async function readRequestBody(request: IncomingMessage): Promise<string> {
@@ -2143,6 +2161,66 @@ describe("api", () => {
 
       await app.close();
     } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("enforces plugin trusted-only install and execution policy", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-api-"));
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      writeVersionedPluginPackage(pluginRoot, "unsigned-plugin", "unsigned-plugin", "1.0.0", "Unsigned macro");
+      writeVersionedPluginPackage(pluginRoot, "signed-plugin", "signed-plugin", "1.0.0", "Signed macro");
+      writePluginSignature(pluginRoot, "signed-plugin", "trusted-local", "shared-secret");
+      const store = new MemoryStateStore();
+      const pluginRegistry = loadPluginRegistry({
+        pluginRoot,
+        trustPolicy: { policy: "require_trusted", keys: { "trusted-local": "shared-secret" } }
+      });
+      app = await buildApp({ store, pluginRegistry });
+
+      const catalog = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins",
+        headers: authHeaders
+      });
+      expect(catalog.statusCode).toBe(200);
+      expect(catalog.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "signed-plugin", trust: expect.objectContaining({ status: "trusted", installable: true }) }),
+          expect.objectContaining({ id: "unsigned-plugin", trust: expect.objectContaining({ status: "unsigned", installable: false }) })
+        ])
+      );
+
+      const unsignedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/unsigned-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(unsignedInstall.statusCode).toBe(403);
+      expect(unsignedInstall.json().message).toContain("current trust policy");
+
+      const signedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/signed-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(signedInstall.statusCode).toBe(200);
+      expect(signedInstall.json().plugin.trust).toEqual(expect.objectContaining({ status: "trusted", installable: true }));
+      expect(signedInstall.json().grant.metadata.trust).toEqual(expect.objectContaining({ status: "trusted", installable: true }));
+
+      const signedCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/signed-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(signedCommand.statusCode).toBe(200);
+      expect(signedCommand.json().chat.body).toBe("Signed macro");
+    } finally {
+      await app?.close();
       rmSync(pluginRoot, { recursive: true, force: true });
     }
   });

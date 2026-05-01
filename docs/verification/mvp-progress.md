@@ -810,6 +810,34 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Rolling back to version `1.0.0` restored grant metadata package `versioned-plugin-1` and `/version` again produced `Manual Version 1 macro`.
   - API server on port `4462` was stopped after evidence capture; no listener remained.
 
+### Plugin Trust Policy Slice
+
+- Implementation:
+  - Added plugin package trust metadata to the runtime catalog: trust policy, status, installability, signature details, and trust errors.
+  - Added `plugin.signature.json` verification for HMAC-SHA256 signatures over plugin id, version, manifest checksum, and server-entrypoint checksum.
+  - Added `OTTE_PLUGIN_TRUST_POLICY=allow_unsigned|require_trusted` and `OTTE_PLUGIN_TRUST_KEYS` support, with Docker Compose and `.env.example` passthrough.
+  - Enforced trusted-only mode on campaign plugin install and plugin command execution, so unsigned or tampered packages remain visible for review but cannot run when production policy requires trust.
+  - Persisted trust metadata into plugin grant metadata and install/chat audit details.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `47 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - Plugin runtime tests verify trusted signed packages, unsigned packages blocked by trusted-only policy, and tampered package signatures marked untrusted.
+  - API tests verify trusted-only catalog metadata, unsigned install denial, signed install success, persisted grant trust metadata, and signed plugin command execution.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4463`
+  - SQLite file: `apps/api/storage/manual-plugin-trust-20260501.sqlite`
+  - Plugin root: `apps/api/storage/manual-plugin-trust-plugins-20260501`
+  - Runtime env included `OTTE_PLUGIN_TRUST_POLICY=require_trusted` and `OTTE_PLUGIN_TRUST_KEYS=trusted-local=shared-secret`.
+  - Catalog returned `signed-plugin` as `trusted`, `installable: true`, key id `trusted-local`, and verified signature `true`.
+  - Catalog returned `unsigned-plugin` as `unsigned`, `installable: false`, with error `Plugin package is unsigned and the current trust policy requires a verified signature`.
+  - Catalog returned `tampered-plugin` as `untrusted`, `installable: false`, key id `trusted-local`, signature verified `false`, and error `Plugin signature does not match package contents`.
+  - Installing `unsigned-plugin` returned `403`; installing `tampered-plugin` returned `403`.
+  - Installing `signed-plugin` returned trust status `trusted`, installable `true`, key id `trusted-local`, and grant metadata trust status `trusted`.
+  - Running `signed-plugin` `/version` produced chat body `Signed trust macro`.
+  - API server on port `4463` was stopped after evidence capture; no listener remained.
+
 ### Rules Compendium And Conditions Slice
 
 - Implementation:
@@ -1093,6 +1121,6 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
-- Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, richer storage APIs, and marketplace review surfaces.
+- Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

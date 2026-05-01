@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { Script, createContext, type Context } from "node:vm";
@@ -10,6 +10,7 @@ export interface LoadedPlugin extends PluginManifest {
     type: "local";
     packageId: string;
     manifestPath: string;
+    manifestChecksum: string;
     clientEntrypoint?: string;
     serverEntrypoint?: string;
     sandbox: "vm" | "manifest-only";
@@ -23,6 +24,29 @@ export interface LoadedPlugin extends PluginManifest {
     requestedPermissions: PermissionName[];
     grantRequired: boolean;
   };
+  trust: PluginTrustInfo;
+}
+
+export type PluginTrustPolicy = "allow_unsigned" | "require_trusted";
+export type PluginTrustStatus = "trusted" | "unsigned" | "untrusted";
+
+export interface PluginTrustInfo {
+  status: PluginTrustStatus;
+  policy: PluginTrustPolicy;
+  required: boolean;
+  installable: boolean;
+  errors: string[];
+  signature?: {
+    keyId?: string;
+    algorithm?: string;
+    verified: boolean;
+    signaturePath?: string;
+  };
+}
+
+export interface PluginTrustPolicyConfig {
+  policy: PluginTrustPolicy;
+  keys?: Record<string, string>;
 }
 
 export interface PluginLoadError {
@@ -62,6 +86,12 @@ interface PluginPackageResult {
   error?: PluginLoadError;
 }
 
+interface PluginSignatureFile {
+  keyId?: string;
+  algorithm?: string;
+  signature?: string;
+}
+
 interface SandboxGlobals {
   registerCommand(command: string, handler: (input: PluginChatCommandInput) => unknown): void;
   __otteCommand?: string;
@@ -82,12 +112,14 @@ export class PluginPackageError extends Error {
 
 export class PluginRuntimeRegistry {
   readonly pluginRoot: string;
+  readonly trustPolicy: PluginTrustPolicyConfig;
   readonly errors: PluginLoadError[] = [];
   private readonly plugins = new Map<string, RuntimePlugin[]>();
   private readonly runtimes = new Map<string, SandboxedPluginRuntime>();
 
-  constructor(pluginRoot = defaultPluginRoot()) {
+  constructor(pluginRoot = defaultPluginRoot(), trustPolicy = pluginTrustPolicyFromEnv()) {
     this.pluginRoot = resolve(pluginRoot);
+    this.trustPolicy = trustPolicy;
   }
 
   loadAll(): void {
@@ -95,7 +127,7 @@ export class PluginRuntimeRegistry {
     for (const entry of readdirSync(this.pluginRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       if (!existsSync(resolve(this.pluginRoot, entry.name, "plugin.manifest.json"))) continue;
-      const result = loadPluginPackage(this.pluginRoot, resolve(this.pluginRoot, entry.name));
+      const result = loadPluginPackage(this.pluginRoot, resolve(this.pluginRoot, entry.name), this.trustPolicy);
       if (result.plugin) this.upsertPlugin(result.plugin);
       if (result.error) this.errors.push(result.error);
     }
@@ -114,7 +146,7 @@ export class PluginRuntimeRegistry {
 
   registerPackage(packagePath: string): LoadedPlugin {
     const resolvedPackagePath = resolvePackageDirectory(this.pluginRoot, packagePath);
-    const result = loadPluginPackage(this.pluginRoot, resolvedPackagePath);
+    const result = loadPluginPackage(this.pluginRoot, resolvedPackagePath, this.trustPolicy);
     if (result.error) {
       throw new PluginPackageError(`Invalid plugin package: ${packagePath}`, result.error.errors);
     }
@@ -157,13 +189,13 @@ export class PluginRuntimeRegistry {
   }
 }
 
-export function loadPluginRegistry(options: { pluginRoot?: string } = {}): PluginRuntimeRegistry {
-  const registry = new PluginRuntimeRegistry(options.pluginRoot);
+export function loadPluginRegistry(options: { pluginRoot?: string; trustPolicy?: PluginTrustPolicyConfig } = {}): PluginRuntimeRegistry {
+  const registry = new PluginRuntimeRegistry(options.pluginRoot, normalizePluginTrustPolicy(options.trustPolicy ?? pluginTrustPolicyFromEnv()));
   registry.loadAll();
   return registry;
 }
 
-function loadPluginPackage(pluginRoot: string, packagePath: string): PluginPackageResult {
+function loadPluginPackage(pluginRoot: string, packagePath: string, trustPolicy: PluginTrustPolicyConfig): PluginPackageResult {
   const errors: string[] = [];
   const resolvedPackagePath = resolve(packagePath);
   const manifestPath = resolve(resolvedPackagePath, "plugin.manifest.json");
@@ -172,8 +204,10 @@ function loadPluginPackage(pluginRoot: string, packagePath: string): PluginPacka
   if (errors.length) return { error: { packagePath: resolvedPackagePath, errors } };
 
   let manifest: PluginManifest;
+  let manifestSource: string;
   try {
-    manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as PluginManifest;
+    manifestSource = readFileSync(manifestPath, "utf8");
+    manifest = JSON.parse(stripBom(manifestSource)) as PluginManifest;
   } catch {
     return { error: { packagePath: resolvedPackagePath, errors: ["plugin.manifest.json must be valid JSON"] } };
   }
@@ -186,16 +220,27 @@ function loadPluginPackage(pluginRoot: string, packagePath: string): PluginPacka
   if (errors.length) return { error: { packagePath: resolvedPackagePath, errors } };
 
   const source = serverEntrypoint ? readFileSync(serverEntrypoint) : undefined;
+  const manifestChecksum = sha256(Buffer.from(manifestSource, "utf8"));
+  const sourceChecksum = source ? sha256(source) : undefined;
+  const trust = evaluatePluginTrust({
+    pluginRoot,
+    packagePath: resolvedPackagePath,
+    manifest,
+    manifestChecksum,
+    sourceChecksum,
+    trustPolicy
+  });
   const plugin: RuntimePlugin = {
     ...manifest,
     source: {
       type: "local",
       packageId: basename(resolvedPackagePath),
       manifestPath: normalizePublicPath(pluginRoot, manifestPath),
+      manifestChecksum,
       clientEntrypoint: clientEntrypoint ? normalizePublicPath(pluginRoot, clientEntrypoint) : undefined,
       serverEntrypoint: serverEntrypoint ? normalizePublicPath(pluginRoot, serverEntrypoint) : undefined,
       sandbox: serverEntrypoint ? "vm" : "manifest-only",
-      checksum: source ? `sha256:${createHash("sha256").update(source).digest("hex")}` : undefined
+      checksum: sourceChecksum
     },
     distribution: {
       availableVersions: [manifest.version],
@@ -205,6 +250,7 @@ function loadPluginPackage(pluginRoot: string, packagePath: string): PluginPacka
       requestedPermissions: [...manifest.permissions],
       grantRequired: manifest.permissions.length > 0
     },
+    trust,
     resolvedManifestPath: manifestPath,
     resolvedPackagePath,
     resolvedServerEntrypoint: serverEntrypoint
@@ -327,8 +373,146 @@ function publicPlugin(plugin: RuntimePlugin, versions: RuntimePlugin[]): LoadedP
     permissionReview: {
       requestedPermissions: [...plugin.permissionReview.requestedPermissions],
       grantRequired: plugin.permissionReview.grantRequired
+    },
+    trust: {
+      ...plugin.trust,
+      errors: [...plugin.trust.errors],
+      signature: plugin.trust.signature ? { ...plugin.trust.signature } : undefined
     }
   };
+}
+
+function evaluatePluginTrust(input: {
+  pluginRoot: string;
+  packagePath: string;
+  manifest: PluginManifest;
+  manifestChecksum: string;
+  sourceChecksum?: string;
+  trustPolicy: PluginTrustPolicyConfig;
+}): PluginTrustInfo {
+  const policy = normalizePluginTrustPolicy(input.trustPolicy);
+  const required = policy.policy === "require_trusted";
+  const signaturePath = resolve(input.packagePath, "plugin.signature.json");
+  if (!existsSync(signaturePath)) {
+    return {
+      status: "unsigned",
+      policy: policy.policy,
+      required,
+      installable: !required,
+      errors: required ? ["Plugin package is unsigned and the current trust policy requires a verified signature"] : []
+    };
+  }
+
+  let signature: PluginSignatureFile;
+  try {
+    signature = JSON.parse(stripBom(readFileSync(signaturePath, "utf8"))) as PluginSignatureFile;
+  } catch {
+    return untrustedPlugin(policy, normalizePublicPath(input.pluginRoot, signaturePath), "plugin.signature.json must be valid JSON");
+  }
+
+  const signatureInfo = {
+    keyId: signature.keyId,
+    algorithm: signature.algorithm,
+    verified: false,
+    signaturePath: normalizePublicPath(input.pluginRoot, signaturePath)
+  };
+  if (signature.algorithm !== "hmac-sha256") return { ...untrustedPlugin(policy, signatureInfo.signaturePath, "Unsupported plugin signature algorithm"), signature: signatureInfo };
+  if (!signature.keyId) return { ...untrustedPlugin(policy, signatureInfo.signaturePath, "Plugin signature keyId is required"), signature: signatureInfo };
+  if (!/^[a-f0-9]{64}$/i.test(signature.signature ?? "")) return { ...untrustedPlugin(policy, signatureInfo.signaturePath, "Plugin signature must be a hex SHA-256 HMAC"), signature: signatureInfo };
+  const secret = policy.keys?.[signature.keyId];
+  if (!secret) return { ...untrustedPlugin(policy, signatureInfo.signaturePath, `Plugin signature key is not trusted: ${signature.keyId}`), signature: signatureInfo };
+
+  const expected = pluginSignatureForPackage(input.manifest, input.manifestChecksum, input.sourceChecksum, secret);
+  if (!safeEqualHex(expected, signature.signature)) return { ...untrustedPlugin(policy, signatureInfo.signaturePath, "Plugin signature does not match package contents"), signature: signatureInfo };
+
+  return {
+    status: "trusted",
+    policy: policy.policy,
+    required,
+    installable: true,
+    errors: [],
+    signature: {
+      ...signatureInfo,
+      verified: true
+    }
+  };
+}
+
+function untrustedPlugin(policy: PluginTrustPolicyConfig, signaturePath: string, error: string): PluginTrustInfo {
+  const normalizedPolicy = normalizePluginTrustPolicy(policy);
+  return {
+    status: "untrusted",
+    policy: normalizedPolicy.policy,
+    required: normalizedPolicy.policy === "require_trusted",
+    installable: normalizedPolicy.policy !== "require_trusted",
+    errors: [error],
+    signature: {
+      verified: false,
+      signaturePath
+    }
+  };
+}
+
+export function pluginSignaturePayload(manifest: Pick<PluginManifest, "id" | "version">, manifestChecksum: string, sourceChecksum?: string): string {
+  return [manifest.id, manifest.version, manifestChecksum, sourceChecksum ?? ""].join("\n");
+}
+
+export function pluginSignatureForPackage(manifest: Pick<PluginManifest, "id" | "version">, manifestChecksum: string, sourceChecksum: string | undefined, secret: string): string {
+  return createHmac("sha256", secret).update(pluginSignaturePayload(manifest, manifestChecksum, sourceChecksum)).digest("hex");
+}
+
+function pluginTrustPolicyFromEnv(): PluginTrustPolicyConfig {
+  return normalizePluginTrustPolicy({
+    policy: process.env.OTTE_PLUGIN_TRUST_POLICY === "require_trusted" ? "require_trusted" : "allow_unsigned",
+    keys: parsePluginTrustKeys(process.env.OTTE_PLUGIN_TRUST_KEYS)
+  });
+}
+
+function normalizePluginTrustPolicy(policy: PluginTrustPolicyConfig): PluginTrustPolicyConfig {
+  return {
+    policy: policy.policy === "require_trusted" ? "require_trusted" : "allow_unsigned",
+    keys: policy.keys ?? {}
+  };
+}
+
+function parsePluginTrustKeys(value: string | undefined): Record<string, string> {
+  if (!value?.trim()) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (isRecord(parsed)) {
+      return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0));
+    }
+  } catch {
+    // Fall through to comma-separated key=secret parsing for simple env files.
+  }
+  return Object.fromEntries(
+    value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const separator = entry.includes("=") ? "=" : ":";
+        const [keyId, ...secretParts] = entry.split(separator);
+        return [keyId?.trim() ?? "", secretParts.join(separator).trim()] as const;
+      })
+      .filter(([keyId, secret]) => keyId && secret)
+  );
+}
+
+function sha256(body: Buffer): string {
+  return `sha256:${createHash("sha256").update(body).digest("hex")}`;
+}
+
+function safeEqualHex(expected: string, actual: string | undefined): boolean {
+  if (!actual || expected.length !== actual.length) return false;
+  const normalizedActual = actual.toLowerCase();
+  let diff = 0;
+  for (let index = 0; index < expected.length; index++) diff |= expected.charCodeAt(index) ^ normalizedActual.charCodeAt(index);
+  return diff === 0;
+}
+
+function stripBom(value: string): string {
+  return value.charCodeAt(0) === 0xfeff ? value.slice(1) : value;
 }
 
 function latestPluginVersion(versions: RuntimePlugin[]): RuntimePlugin {

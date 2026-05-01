@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadPluginRegistry, type PluginChatCommandInput } from "./plugin-runtime.js";
+import { loadPluginRegistry, pluginSignatureForPackage, type PluginChatCommandInput } from "./plugin-runtime.js";
 
 describe("plugin runtime registry", () => {
   it("loads packaged plugins and executes manifest-declared commands in the VM sandbox", () => {
@@ -105,6 +106,73 @@ registerCommand("/probe", () => {
     }
   });
 
+  it("reports plugin trust status and verifies signed packages under trusted-only policy", () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(pluginRoot, "unsigned-plugin", `registerCommand("/probe", () => ({ body: "Unsigned", visibility: "public" }));`);
+      writePluginPackage(pluginRoot, "signed-plugin", `registerCommand("/probe", () => ({ body: "Signed", visibility: "public" }));`);
+      writePluginSignature(pluginRoot, "signed-plugin", "trusted-local", "shared-secret");
+
+      const registry = loadPluginRegistry({
+        pluginRoot,
+        trustPolicy: { policy: "require_trusted", keys: { "trusted-local": "shared-secret" } }
+      });
+
+      expect(registry.errors).toEqual([]);
+      expect(registry.find("signed-plugin")).toEqual(
+        expect.objectContaining({
+          trust: expect.objectContaining({
+            status: "trusted",
+            required: true,
+            installable: true,
+            errors: [],
+            signature: expect.objectContaining({ keyId: "trusted-local", algorithm: "hmac-sha256", verified: true })
+          })
+        })
+      );
+      expect(registry.find("unsigned-plugin")).toEqual(
+        expect.objectContaining({
+          trust: expect.objectContaining({
+            status: "unsigned",
+            required: true,
+            installable: false,
+            errors: ["Plugin package is unsigned and the current trust policy requires a verified signature"]
+          })
+        })
+      );
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("marks tampered plugin signatures as untrusted", () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(pluginRoot, "tampered-plugin", `registerCommand("/probe", () => ({ body: "Tampered", visibility: "public" }));`);
+      writePluginSignature(pluginRoot, "tampered-plugin", "trusted-local", "shared-secret");
+      writeFileSync(resolve(pluginRoot, "tampered-plugin", "server.js"), `registerCommand("/probe", () => ({ body: "Changed after signing", visibility: "public" }));`);
+
+      const registry = loadPluginRegistry({
+        pluginRoot,
+        trustPolicy: { policy: "require_trusted", keys: { "trusted-local": "shared-secret" } }
+      });
+
+      expect(registry.find("tampered-plugin")).toEqual(
+        expect.objectContaining({
+          trust: expect.objectContaining({
+            status: "untrusted",
+            required: true,
+            installable: false,
+            errors: ["Plugin signature does not match package contents"],
+            signature: expect.objectContaining({ keyId: "trusted-local", algorithm: "hmac-sha256", verified: false })
+          })
+        })
+      );
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("rejects server entrypoints that escape the plugin package", () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
     try {
@@ -159,6 +227,27 @@ function writePluginPackage(
     })
   );
   writeFileSync(join(packagePath, "server.js"), serverSource);
+}
+
+function writePluginSignature(pluginRoot: string, packageId: string, keyId: string, secret: string): void {
+  const packagePath = resolve(pluginRoot, packageId);
+  const manifestPath = join(packagePath, "plugin.manifest.json");
+  const serverPath = join(packagePath, "server.js");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { id: string; version: string };
+  const manifestChecksum = sha256(readFileSync(manifestPath));
+  const sourceChecksum = sha256(readFileSync(serverPath));
+  writeFileSync(
+    join(packagePath, "plugin.signature.json"),
+    JSON.stringify({
+      keyId,
+      algorithm: "hmac-sha256",
+      signature: pluginSignatureForPackage(manifest, manifestChecksum, sourceChecksum, secret)
+    })
+  );
+}
+
+function sha256(body: Buffer): string {
+  return `sha256:${createHash("sha256").update(body).digest("hex")}`;
 }
 
 function sandboxInput(): PluginChatCommandInput {
