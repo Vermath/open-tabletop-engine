@@ -41,11 +41,25 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - Clicking `Charisma Check` posted chat similar to: `Valen Ash Charisma Check: 1d20+2 = 21`.
     - A second browser tab observed realtime token movement after a token update broadcast; the observed token bounding box changed from approximately `(417, 593)` to `(646, 668)`.
 
+### Uploaded Map Asset Slice
+
+- Commit: `455b07f feat: add uploaded map assets`
+- Evidence:
+  - `pnpm check` passed.
+  - API test verifies raw image upload, asset metadata, checksum, stored file, scene background assignment, unauthenticated blob `401`, and authenticated blob byte serving.
+  - Manual browser evidence on local dev servers:
+    - Uploaded `storage/manual-map.svg` through the `Map` button.
+    - Upload request returned `200`.
+    - Scene rendered one `.scene-map` image with `naturalWidth: 1200`.
+    - Rendered image source was `http://127.0.0.1:4410/api/v1/assets/asset_momctectfpiqquoo/blob?userId=usr_demo_gm`.
+    - Direct blob request without a session returned `401`.
+    - Direct blob request with `userId=usr_demo_gm` returned `200`, `image/svg+xml`, and contained `Manual Acceptance Map`.
+
 ## Known Remaining Gaps
 
 - Auth is still a development `x-user-id` session header, not production authentication.
 - Browser role switching and a true GM/player two-user tabletop session still need richer manual coverage.
-- Map assets are API records and URLs, not a complete binary upload/object-storage pipeline.
+- Uploaded maps now have a local binary storage path, but they are not yet backed by S3 or MinIO object storage.
 - Fog, walls, and lights exist in scene state, but wall/light authoring tools are still basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
