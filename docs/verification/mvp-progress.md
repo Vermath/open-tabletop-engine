@@ -408,6 +408,23 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - The provider-returned `create_proposal` function call executed through the API permission boundary and created pending proposal `Fake OpenAI Prep`.
   - Proposal change payload targeted journal `Fake OpenAI Prep Note`.
 
+### Worker App Job Runner Slice
+
+- Implementation:
+  - Replaced the worker placeholder with a real HTTP-backed worker runner and CLI entrypoint.
+  - Supported job types: `campaign.export`, `campaign.import`, `ai.memory.extract`, and `ai.session.recap`.
+  - Worker jobs authenticate to the API with `OTTE_SESSION_TOKEN` bearer auth or `OTTE_USER_ID` local compatibility auth.
+  - Worker CLI reads one JSON job from stdin and writes a JSON job result to stdout.
+- Automated evidence:
+  - `pnpm --filter @open-tabletop/worker test` passed with `3 passed`.
+  - `pnpm --filter @open-tabletop/worker typecheck` passed.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4438`
+  - SQLite file: `storage/worker-smoke-20260501.sqlite`
+  - Environment: `OTTE_AI_PROVIDER=codex-loopback`, worker `OTTE_API_URL=http://127.0.0.1:4438`, worker `OTTE_USER_ID=usr_demo_gm`.
+  - Worker job `job_worker_memory_smoke` of type `ai.memory.extract` succeeded and returned provider `codex-app-server`, memory text `Extracted memory: Worker smoke memory: the sapphire lens opens the vault.`, and event `message.completed`.
+  - Worker job `job_worker_export_smoke` of type `campaign.export` succeeded and returned archive format `ottx`, `campaignCount: 1`, `tokenCount: 1`, and `memoryCount: 1`.
+
 ## Known Remaining Gaps
 
 - Auth now has MVP bearer sessions for seeded users across REST, realtime, and asset blob access, but still lacks password login, OAuth, invites, account management, and production session administration. The legacy `x-user-id` path remains for local test compatibility.

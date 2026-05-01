@@ -20,7 +20,7 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, sce
 - `apps/api`: Fastify REST and WebSocket server.
 - `apps/web`: React VTT client.
 - `apps/ai-gateway`: provider-agnostic AI gateway entrypoint.
-- `apps/worker`: background worker placeholder for exports, imports, and AI jobs.
+- `apps/worker`: HTTP-backed worker runner for exports, imports, and AI jobs.
 
 ## Packages
 
