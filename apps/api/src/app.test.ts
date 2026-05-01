@@ -567,6 +567,87 @@ describe("api", () => {
     }
   });
 
+  it("exports server admin audit logs with filters and ndjson", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    try {
+      const adminLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_gm" }
+      });
+      const playerLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_player" }
+      });
+      const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
+      const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
+
+      const blocked = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/audit-logs",
+        headers: playerHeaders
+      });
+      expect(blocked.statusCode).toBe(403);
+
+      const updated = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/admin/users/usr_demo_player",
+        headers: adminHeaders,
+        payload: { displayName: "Audited Player", disabled: true, disabledReason: "audit evidence" }
+      });
+      expect(updated.statusCode).toBe(200);
+
+      const badLimit = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/audit-logs?limit=0",
+        headers: adminHeaders
+      });
+      expect(badLimit.statusCode).toBe(400);
+
+      const jsonExport = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/audit-logs?action=admin.user.update&targetId=usr_demo_player&limit=5",
+        headers: adminHeaders
+      });
+      expect(jsonExport.statusCode).toBe(200);
+      expect(jsonExport.json()).toMatchObject({
+        count: 1,
+        filters: { action: "admin.user.update", targetId: "usr_demo_player" }
+      });
+      const auditEntry = jsonExport.json().auditLogs[0];
+      expect(auditEntry).toMatchObject({
+        actorUserId: "usr_demo_gm",
+        actorType: "user",
+        action: "admin.user.update",
+        targetType: "user",
+        targetId: "usr_demo_player"
+      });
+      expect(auditEntry.before).toMatchObject({ id: "usr_demo_player", disabled: false });
+      expect(auditEntry.after).toMatchObject({ id: "usr_demo_player", disabled: true, disabledReason: "audit evidence" });
+      expect(auditEntry.before).not.toHaveProperty("passwordHash");
+      expect(auditEntry.after).not.toHaveProperty("passwordHash");
+
+      const ndjson = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/audit-logs?format=ndjson&targetType=user&actorUserId=usr_demo_gm",
+        headers: adminHeaders
+      });
+      expect(ndjson.statusCode).toBe(200);
+      expect(ndjson.headers["content-type"]).toContain("application/x-ndjson");
+      expect(ndjson.headers["content-disposition"]).toContain("opentabletop-audit-");
+      const lines = ndjson.body.trim().split("\n").map((line) => JSON.parse(line));
+      expect(lines.some((entry: { action: string; targetId?: string }) => entry.action === "admin.user.update" && entry.targetId === "usr_demo_player")).toBe(true);
+      expect(lines.every((entry: { actorUserId?: string }) => entry.actorUserId === "usr_demo_gm")).toBe(true);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("hard-fences legacy x-user-id auth outside test or explicit compatibility mode", async () => {
     const previousEnv = snapshotEnv(["NODE_ENV", "OTTE_ALLOW_LEGACY_USER_HEADER"]);
     process.env.NODE_ENV = "production";

@@ -26,6 +26,7 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `GET /api/v1/admin/sessions`
 - `DELETE /api/v1/admin/sessions/{sessionId}`
 - `GET /api/v1/admin/email-outbox`
+- `GET /api/v1/admin/audit-logs`
 - `GET /api/v1/admin/assets/storage`
 - `POST /api/v1/admin/assets/migrate`
 - `POST /api/v1/admin/assets/cleanup`
@@ -145,7 +146,7 @@ curl -X DELETE \
   "http://localhost:4000/api/v1/auth/sessions/sess_..."
 ```
 
-Server administrators are the user ids listed in `OTTE_ADMIN_USER_IDS`. Admin endpoints can list/update users, require password resets, disable accounts, revoke sessions, and inspect the email outbox:
+Server administrators are the user ids listed in `OTTE_ADMIN_USER_IDS`. Admin endpoints can list/update users, require password resets, disable accounts, revoke sessions, inspect the email outbox, and export redacted audit logs for account/session operations:
 
 ```bash
 curl -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
@@ -164,6 +165,13 @@ curl -X POST \
 curl -X DELETE \
   -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
   "http://localhost:4000/api/v1/admin/users/usr_demo_player/sessions"
+
+curl -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  "http://localhost:4000/api/v1/admin/audit-logs?action=admin.user.update&format=json"
+
+curl -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  "http://localhost:4000/api/v1/admin/audit-logs?format=ndjson&actorUserId=usr_demo_gm" \
+  -o opentabletop-audit.ndjson
 ```
 
 Invite a player and accept the invite:
@@ -181,7 +189,7 @@ curl -X POST \
   "http://localhost:4000/api/v1/invites/accept"
 ```
 
-Invite and password-reset tokens are returned only once and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, password reset records, email outbox records, and user password hashes.
+Invite and password-reset tokens are returned only once and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. Admin audit exports accept `campaignId`, `actorUserId`, `actorType`, `action`, `targetType`, `targetId`, `since`, `until`, `limit`, and `format=json|ndjson` query filters. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, password reset records, email outbox records, and user password hashes.
 
 Password reset and admin environment variables:
 

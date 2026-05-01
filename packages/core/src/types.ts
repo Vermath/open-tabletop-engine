@@ -421,7 +421,7 @@ export interface AiToolCall extends Timestamps {
 
 export interface AuditLog extends Timestamps {
   id: ID;
-  campaignId: ID;
+  campaignId?: ID;
   actorUserId?: ID;
   actorType: "user" | "ai" | "plugin" | "system";
   action: string;

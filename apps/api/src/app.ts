@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AssetSecurityFinding, type AssetSecurityScan, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -23,6 +23,19 @@ export interface BuildAppOptions {
   aiProvider?: AiProvider;
   pluginRegistry?: PluginRuntimeRegistry;
   pluginRoot?: string;
+}
+
+interface AdminAuditLogQuery {
+  campaignId?: string;
+  actorUserId?: string;
+  actorType?: string;
+  action?: string;
+  targetType?: string;
+  targetId?: string;
+  since?: string;
+  until?: string;
+  limit?: string;
+  format?: string;
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -168,7 +181,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get("/api/v1/admin/users", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    return store.state.users.map((user) => adminUserInfo(store, user));
+    const users = store.state.users.map((user) => adminUserInfo(store, user));
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.users.list",
+      targetType: "user",
+      after: { count: users.length }
+    });
+    store.save();
+    return users;
   });
 
   app.patch<{ Params: { userId: string }; Body: { displayName?: string; email?: string | null; disabled?: boolean; disabledReason?: string; passwordResetRequired?: boolean } }>("/api/v1/admin/users/:userId", async (request, reply) => {
@@ -177,6 +197,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof adminUserId !== "string") return adminUserId;
     const user = store.state.users.find((item) => item.id === request.params.userId);
     if (!user) return notFound(reply, "User not found");
+    const before = adminUserInfo(store, user);
     const displayName = normalizeDisplayName(body.displayName);
     if (displayName) user.displayName = displayName;
     if (body.email !== undefined) {
@@ -191,8 +212,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       setUserDisabled(store, user, body.disabled, adminUserId, body.disabledReason);
     }
     user.updatedAt = nowIso();
+    const after = adminUserInfo(store, user);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.user.update",
+      targetType: "user",
+      targetId: user.id,
+      before,
+      after
+    });
     store.save();
-    return adminUserInfo(store, user);
+    return after;
   });
 
   app.post<{ Params: { userId: string }; Body: { returnTo?: string } }>("/api/v1/admin/users/:userId/password-reset", async (request, reply) => {
@@ -204,6 +233,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (isDisabledUser(user)) return forbidden(reply, "User account is disabled");
     if (!user.email) return badRequest(reply, "User does not have an email address");
     const reset = await issuePasswordReset(store, user, adminUserId, body.returnTo);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.user.passwordReset",
+      targetType: "user",
+      targetId: user.id,
+      after: {
+        resetId: reset.reset.id,
+        emailId: reset.email.id,
+        emailStatus: reset.email.status
+      }
+    });
     store.save();
     return {
       reset: publicPasswordResetToken(reset.reset),
@@ -217,22 +256,35 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!store.state.users.some((user) => user.id === request.params.userId)) return notFound(reply, "User not found");
     const before = store.state.sessions.length;
     store.state.sessions = store.state.sessions.filter((session) => session.userId !== request.params.userId);
+    const revoked = before - store.state.sessions.length;
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.user.sessionsRevoke",
+      targetType: "user",
+      targetId: request.params.userId,
+      after: { revoked }
+    });
     store.save();
-    return { revoked: before - store.state.sessions.length };
+    return { revoked };
   });
 
   app.get("/api/v1/admin/sessions", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
     pruneExpiredSessions(store);
-    store.save();
-    return store.state.sessions.map((session) => {
+    const sessions = store.state.sessions.map((session) => {
       const user = store.state.users.find((item) => item.id === session.userId);
       return {
         ...publicSession(session),
         user: user ? publicUser(user) : { id: session.userId, displayName: "Unknown user" }
       };
     });
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.sessions.list",
+      targetType: "session",
+      after: { count: sessions.length }
+    });
+    store.save();
+    return sessions;
   });
 
   app.delete<{ Params: { sessionId: string } }>("/api/v1/admin/sessions/:sessionId", async (request, reply) => {
@@ -240,7 +292,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof adminUserId !== "string") return adminUserId;
     const session = store.state.sessions.find((item) => item.id === request.params.sessionId);
     if (!session) return notFound(reply, "Session not found");
+    const before = publicSession(session);
     store.state.sessions = store.state.sessions.filter((item) => item.id !== session.id);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.session.revoke",
+      targetType: "session",
+      targetId: session.id,
+      before,
+      after: { revoked: true, userId: session.userId }
+    });
     store.save();
     return { ok: true };
   });
@@ -248,7 +308,40 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get("/api/v1/admin/email-outbox", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    return store.state.emailOutbox.slice(-100).map(publicEmailOutboxMessage);
+    const messages = store.state.emailOutbox.slice(-100).map(publicEmailOutboxMessage);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.emailOutbox.list",
+      targetType: "email_outbox",
+      after: { count: messages.length }
+    });
+    store.save();
+    return messages;
+  });
+
+  app.get<{ Querystring: AdminAuditLogQuery }>("/api/v1/admin/audit-logs", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const options = normalizeAdminAuditLogQuery(request.query);
+    if ("error" in options) return badRequest(reply, options.error);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.auditLogs.export",
+      targetType: "audit_log",
+      after: { filters: options.filters, format: options.format, limit: options.limit }
+    });
+    store.save();
+    const auditLogs = filterAuditLogs(store.state.auditLogs, options);
+    const exportedAt = nowIso();
+    if (options.format === "ndjson") {
+      reply.header("content-type", "application/x-ndjson; charset=utf-8");
+      reply.header("content-disposition", `attachment; filename=\"opentabletop-audit-${exportedAt.replace(/[:.]/g, "-")}.ndjson\"`);
+      return auditLogs.map((entry) => JSON.stringify(entry)).join("\n") + (auditLogs.length > 0 ? "\n" : "");
+    }
+    return {
+      exportedAt,
+      count: auditLogs.length,
+      filters: options.filters,
+      auditLogs
+    };
   });
 
   app.get("/api/v1/auth/oidc/config", async (request) => {
@@ -3066,6 +3159,119 @@ function adminUserInfo(store: StateStore, user: User): Omit<User, "passwordHash"
     identityCount: store.state.identities.filter((identity) => identity.userId === user.id).length,
     sessionCount: store.state.sessions.filter((session) => session.userId === user.id && Date.parse(session.expiresAt) > Date.now()).length
   };
+}
+
+interface AdminAuditLogOptions {
+  filters: {
+    campaignId?: string;
+    actorUserId?: string;
+    actorType?: AuditLog["actorType"];
+    action?: string;
+    targetType?: string;
+    targetId?: string;
+    since?: string;
+    until?: string;
+  };
+  limit: number;
+  format: "json" | "ndjson";
+}
+
+interface ServerAuditLogInput {
+  campaignId?: string;
+  action: string;
+  targetType: string;
+  targetId?: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+function appendServerAuditLog(store: StateStore, adminUserId: string, input: ServerAuditLogInput): AuditLog {
+  const log = createTimestamped("audit", {
+    campaignId: input.campaignId,
+    actorUserId: adminUserId,
+    actorType: "user" as const,
+    action: input.action,
+    targetType: input.targetType,
+    targetId: input.targetId,
+    before: input.before,
+    after: input.after
+  }) satisfies AuditLog;
+  store.state.auditLogs.push(log);
+  return log;
+}
+
+function normalizeAdminAuditLogQuery(query: AdminAuditLogQuery): AdminAuditLogOptions | { error: string } {
+  const format = query.format === undefined || query.format === "" ? "json" : query.format;
+  if (format !== "json" && format !== "ndjson") return { error: "Audit export format must be json or ndjson" };
+  const limit = normalizeAuditLogLimit(query.limit);
+  if (!limit) return { error: "Audit export limit must be an integer from 1 to 10000" };
+  const since = normalizeAuditLogDate(query.since, "since");
+  if ("error" in since) return since;
+  const until = normalizeAuditLogDate(query.until, "until");
+  if ("error" in until) return until;
+  const actorType = normalizeAuditActorType(query.actorType);
+  if (query.actorType && !actorType) return { error: "Audit actorType must be user, ai, plugin, or system" };
+
+  return {
+    format,
+    limit,
+    filters: compactRecord({
+      campaignId: nonEmptyQueryValue(query.campaignId),
+      actorUserId: nonEmptyQueryValue(query.actorUserId),
+      actorType,
+      action: nonEmptyQueryValue(query.action),
+      targetType: nonEmptyQueryValue(query.targetType),
+      targetId: nonEmptyQueryValue(query.targetId),
+      since: since.value,
+      until: until.value
+    })
+  };
+}
+
+function filterAuditLogs(auditLogs: AuditLog[], options: AdminAuditLogOptions): AuditLog[] {
+  const sinceMs = options.filters.since ? Date.parse(options.filters.since) : undefined;
+  const untilMs = options.filters.until ? Date.parse(options.filters.until) : undefined;
+  return auditLogs
+    .filter((entry) => {
+      if (options.filters.campaignId !== undefined && entry.campaignId !== options.filters.campaignId) return false;
+      if (options.filters.actorUserId !== undefined && entry.actorUserId !== options.filters.actorUserId) return false;
+      if (options.filters.actorType !== undefined && entry.actorType !== options.filters.actorType) return false;
+      if (options.filters.action !== undefined && entry.action !== options.filters.action) return false;
+      if (options.filters.targetType !== undefined && entry.targetType !== options.filters.targetType) return false;
+      if (options.filters.targetId !== undefined && entry.targetId !== options.filters.targetId) return false;
+      const createdAtMs = Date.parse(entry.createdAt);
+      if (sinceMs !== undefined && createdAtMs < sinceMs) return false;
+      if (untilMs !== undefined && createdAtMs > untilMs) return false;
+      return true;
+    })
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id))
+    .slice(0, options.limit);
+}
+
+function normalizeAuditLogLimit(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === "") return 1000;
+  const limit = Number(value);
+  return Number.isInteger(limit) && limit > 0 && limit <= 10_000 ? limit : undefined;
+}
+
+function normalizeAuditLogDate(value: string | undefined, name: string): { value?: string } | { error: string } {
+  if (value === undefined || value.trim() === "") return {};
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return { error: `Audit ${name} must be a valid ISO date` };
+  return { value: parsed.toISOString() };
+}
+
+function normalizeAuditActorType(value: string | undefined): AuditLog["actorType"] | undefined {
+  return value === "user" || value === "ai" || value === "plugin" || value === "system" ? value : undefined;
+}
+
+function nonEmptyQueryValue(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function compactRecord<T extends Record<string, unknown>>(record: T): { [K in keyof T]?: Exclude<T[K], undefined> } {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined)) as { [K in keyof T]?: Exclude<T[K], undefined> };
 }
 
 function publicUser(user: User): Omit<User, "passwordHash"> {

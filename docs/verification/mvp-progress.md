@@ -523,6 +523,31 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Admin email outbox returned two delivered webhook messages, one for GM and one for player.
   - SQLite inspection showed reset tokens and session tokens stored as `sha256:` hashes, no raw reset token field on reset records, two email outbox rows, and the GM password stored as a `scrypt:` hash.
 
+### Production Auth Audit Export Slice
+
+- Implementation:
+  - Added redacted server audit records for admin user listing, account updates, admin-triggered password resets, session listing, single-session revocation, all-session revocation, email outbox reads, and audit export requests.
+  - Added `GET /api/v1/admin/audit-logs`, gated by `OTTE_ADMIN_USER_IDS`, with filters for campaign, actor, action, target, ISO date range, and result limit.
+  - Added JSON export metadata and NDJSON attachment export for operational handoff or archival.
+  - Kept account snapshots in audit records on public user/session shapes so password hashes and reset token hashes are not exported.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `34 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API tests verify non-admin denial, invalid limit rejection, filtered JSON export, redacted before/after account snapshots, NDJSON response headers, and actor filtering.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4448`
+  - SQLite file: `apps/api/storage/manual-auth-audit-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, and `OTTE_SQLITE_PATH=storage/manual-auth-audit-20260501.sqlite`.
+  - GM bearer login returned an `ots_` token.
+  - Player bearer `GET /api/v1/admin/audit-logs` returned `403`.
+  - Admin `PATCH /api/v1/admin/users/usr_demo_player` disabled the player with reason `manual audit evidence`.
+  - Filtered JSON export for `action=admin.user.update`, `targetId=usr_demo_player`, and `limit=5` returned `count: 1`, `actorUserId: usr_demo_gm`, `before.disabled: false`, and `after.disabled: true`.
+  - The exported before/after account snapshots did not include `passwordHash`.
+  - NDJSON export for `format=ndjson`, `targetType=user`, and `actorUserId=usr_demo_gm` returned `content-type: application/x-ndjson`, an `opentabletop-audit-...ndjson` attachment filename, one line, and action `admin.user.update`.
+  - Invalid date filter `since=not-a-date` returned `400`.
+
 ### Production Asset Delivery Slice
 
 - Implementation:
@@ -778,7 +803,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
-- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, account administration, production session administration, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs first-class reset UI, MFA, SCIM/organization sync, and audit export.
+- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, account administration, production session administration, server-admin audit export, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs first-class reset UI, MFA, and SCIM/organization sync.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
