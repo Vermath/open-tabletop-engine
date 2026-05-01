@@ -63,6 +63,9 @@ importers:
       '@open-tabletop/api-contracts':
         specifier: workspace:*
         version: link:../../packages/api-contracts
+      '@open-tabletop/codex-app-server-provider':
+        specifier: workspace:*
+        version: link:../../packages/codex-app-server-provider
       '@open-tabletop/core':
         specifier: workspace:*
         version: link:../../packages/core

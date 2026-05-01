@@ -16,7 +16,7 @@ Services:
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 
-The API persists campaign state to SQLite at `storage/opentabletop.sqlite` by default. Uploaded map assets are stored under `uploads` by default. In Docker Compose these paths live in the `api-storage` and `api-uploads` volumes. The API still starts PostgreSQL, Redis, and MinIO because those services are part of the target architecture and remain available for later storage, queue, and object-store work.
+The API persists campaign state to SQLite at `storage/opentabletop.sqlite` by default. Uploaded map assets are stored under `uploads` by default. AI threads use `OTTE_AI_PROVIDER=local-echo` unless configured otherwise; `OTTE_AI_PROVIDER=codex-loopback` is available as a deterministic local Codex App Server adapter smoke test. In Docker Compose these paths live in the `api-storage` and `api-uploads` volumes. The API still starts PostgreSQL, Redis, and MinIO because those services are part of the target architecture and remain available for later storage, queue, and object-store work.
 
 For local development without Docker:
 

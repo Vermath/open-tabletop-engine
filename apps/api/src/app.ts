@@ -3,8 +3,9 @@ import { createReadStream, existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { basename, extname, resolve, sep } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { EchoAiProvider, buildPermissionFilteredContext } from "@open-tabletop/ai-core";
+import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
+import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import {
   applyProposal,
   approveProposal,
@@ -42,6 +43,7 @@ export interface BuildAppOptions {
   store?: StateStore;
   uploadDir?: string;
   maxAssetBytes?: number;
+  aiProvider?: AiProvider;
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -49,7 +51,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const uploadDir = resolve(options.uploadDir ?? process.env.OTTE_UPLOAD_DIR ?? "uploads");
   const maxAssetBytes = options.maxAssetBytes ?? 25 * 1024 * 1024;
   const hub = new RealtimeHub();
-  const aiProvider = new EchoAiProvider();
+  const aiProvider = options.aiProvider ?? createConfiguredAiProvider();
   const app = Fastify({ logger: true });
 
   app.addContentTypeParser(/^image\/(png|jpeg|webp|gif|svg\+xml)$/i, { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
@@ -520,14 +522,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.get<{ Querystring: { campaignId?: string } }>("/api/v1/chat/messages", async (request, reply) => {
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
     if (!request.query.campaignId) {
-      const userId = requireUser(store, reply, request.headers);
-      if (typeof userId !== "string") return userId;
-      return store.state.chat.filter((item) => canCampaign(store, userId, item.campaignId, "chat.read"));
+      return store.state.chat.filter((item) => canCampaign(store, userId, item.campaignId, "chat.read") && canReadChatMessage(store, userId, item));
     }
     const allowed = requireCampaignPermission(store, reply, request.headers, request.query.campaignId, "chat.read");
     if (allowed !== true) return allowed;
-    return store.state.chat.filter((item) => item.campaignId === request.query.campaignId);
+    return store.state.chat.filter((item) => item.campaignId === request.query.campaignId && canReadChatMessage(store, userId, item));
   });
 
   app.post<{ Body: Partial<ChatMessage> & { campaignId: string; body: string } }>("/api/v1/chat/messages", async (request, reply) => {
@@ -654,7 +656,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Params: { campaignId: string }; Body: { prompt: string } }>("/api/v1/campaigns/:campaignId/ai/threads", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.use");
     if (allowed !== true) return allowed;
-    const userId = currentUserId(request.headers)!;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
     const thread = createTimestamped("thr", {
       campaignId: request.params.campaignId,
       userId,
@@ -662,18 +665,45 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       title: request.body.prompt.slice(0, 80) || "AI Thread"
     });
     store.state.aiThreads.push(thread);
+    const permissions = permissionsForUser(store, userId, request.params.campaignId);
     const context = buildPermissionFilteredContext({
       state: store.state,
       campaignId: request.params.campaignId,
-      permissions: ["campaign.read", "journal.readSecret", "ai.use", "ai.readGmMemory", "ai.proposeChanges"]
+      permissions
     });
     let content = "";
+    const events: AiProviderEvent[] = [];
     for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: request.body.prompt }], tools: [], context })) {
+      events.push(event);
       if (event.type === "message.delta") content += event.delta;
+      if (event.type === "message.completed" && !content) content = event.content;
+      if (event.type === "tool.started" || event.type === "tool.completed") {
+        store.state.aiToolCalls.push(
+          createTimestamped("tool", {
+            threadId: thread.id,
+            toolName: event.toolName,
+            input: event.type === "tool.started" ? event.input : undefined,
+            output: event.type === "tool.completed" ? event.output : undefined,
+            status: event.type === "tool.started" ? ("started" as const) : ("completed" as const)
+          })
+        );
+      }
+    }
+    if (content.trim()) {
+      const message = createTimestamped("msg", {
+        campaignId: request.params.campaignId,
+        userId: aiProvider.id,
+        type: "ai" as const,
+        body: content,
+        visibility: permissions.includes("ai.readGmMemory") ? ("gm_only" as const) : ("public" as const),
+        recipientUserIds: []
+      }) satisfies ChatMessage;
+      store.state.chat.push(message);
+      hub.broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
     }
     store.save();
     hub.broadcast(createEvent({ campaignId: thread.campaignId, type: "ai.thread.started", actorUserId: userId, targetId: thread.id, payload: thread }));
-    return { thread, assistantMessage: content };
+    return { thread, assistantMessage: content, events };
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/ai/memory", async (request, reply) => {
@@ -1040,6 +1070,69 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   return app;
+}
+
+const ALL_PERMISSIONS: PermissionName[] = [
+  "campaign.read",
+  "campaign.update",
+  "campaign.delete",
+  "scene.read",
+  "scene.create",
+  "scene.update",
+  "scene.delete",
+  "scene.activate",
+  "token.read",
+  "token.create",
+  "token.update",
+  "token.move",
+  "token.delete",
+  "token.reveal",
+  "actor.read",
+  "actor.create",
+  "actor.update",
+  "actor.delete",
+  "actor.readPrivate",
+  "actor.updateOwned",
+  "journal.read",
+  "journal.readSecret",
+  "journal.create",
+  "journal.update",
+  "journal.delete",
+  "chat.read",
+  "chat.write",
+  "chat.moderate",
+  "combat.manage",
+  "plugin.install",
+  "plugin.configure",
+  "dice.roll",
+  "ai.use",
+  "ai.readPublicMemory",
+  "ai.readGmMemory",
+  "ai.proposeChanges",
+  "ai.applyChanges"
+];
+
+function createConfiguredAiProvider(): AiProvider {
+  if (process.env.OTTE_AI_PROVIDER === "codex-loopback") {
+    return new CodexAppServerProvider({ transport: new LoopbackCodexTransport(), approvalMode: "proposal" });
+  }
+  return new EchoAiProvider();
+}
+
+function permissionsForUser(store: StateStore, userId: string, campaignId: string): PermissionName[] {
+  return ALL_PERMISSIONS.filter((permission) => canCampaign(store, userId, campaignId, permission));
+}
+
+function canReadChatMessage(store: StateStore, userId: string, message: ChatMessage): boolean {
+  if (message.visibility === "public") return true;
+  if (message.visibility === "whisper") {
+    return message.userId === userId || message.recipientUserIds.includes(userId) || canCampaign(store, userId, message.campaignId, "chat.moderate");
+  }
+  return (
+    canCampaign(store, userId, message.campaignId, "chat.moderate") ||
+    canCampaign(store, userId, message.campaignId, "journal.readSecret") ||
+    canCampaign(store, userId, message.campaignId, "ai.readGmMemory")
+  );
 }
 
 function currentUserId(headers: Record<string, string | string[] | undefined>): string | undefined {

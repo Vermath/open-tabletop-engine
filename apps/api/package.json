@@ -18,6 +18,7 @@
     "@fastify/websocket": "^11.0.1",
     "@open-tabletop/ai-core": "workspace:*",
     "@open-tabletop/api-contracts": "workspace:*",
+    "@open-tabletop/codex-app-server-provider": "workspace:*",
     "@open-tabletop/core": "workspace:*",
     "@open-tabletop/dice-engine": "workspace:*",
     "@open-tabletop/plugin-sdk": "workspace:*",

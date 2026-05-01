@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
 import { emptyState, type EngineState } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
@@ -206,6 +207,119 @@ describe("api", () => {
     expect(store.state.chat.some((message) => message.body.includes("Charisma Check"))).toBe(true);
 
     await app.close();
+  });
+
+  it("passes only caller-visible campaign context to ai providers", async () => {
+    class CapturingAiProvider implements AiProvider {
+      id = "test-ai";
+      label = "Test AI";
+      requests: AiProviderRequest[] = [];
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.requests.push(input);
+        yield { type: "message.completed", content: `Captured response ${this.requests.length}` };
+      }
+    }
+
+    const now = "2026-05-01T00:00:00.000Z";
+    const provider = new CapturingAiProvider();
+    const store = new MemoryStateStore();
+    store.state.users.push({
+      id: "usr_player",
+      displayName: "Player",
+      createdAt: now,
+      updatedAt: now
+    });
+    store.state.members.push({
+      id: "mem_player",
+      campaignId: "camp_demo",
+      userId: "usr_player",
+      role: "player",
+      createdAt: now,
+      updatedAt: now
+    });
+    store.state.journals.push({
+      id: "jnl_public",
+      campaignId: "camp_demo",
+      title: "Public Rumor",
+      body: "The brass key is visible to everyone.",
+      visibility: "public",
+      visibleToUserIds: [],
+      visibleToActorIds: [],
+      tags: [],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm",
+      createdAt: now,
+      updatedAt: now
+    });
+    const app = await buildApp({ store, aiProvider: provider });
+
+    const playerThread = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: { "x-user-id": "usr_player" },
+      payload: { prompt: "What do I know?" }
+    });
+    expect(playerThread.statusCode).toBe(200);
+    expect(playerThread.json().thread.provider).toBe("test-ai");
+    expect(provider.requests).toHaveLength(1);
+    const playerContext = provider.requests[0]!.context;
+    expect(playerContext.publicSummary).toContain("Public Rumor");
+    expect(playerContext.publicSummary).not.toContain("Session Hook");
+    expect(playerContext.gmSecrets).toEqual([]);
+    expect(store.state.chat.find((message) => message.body === "Captured response 1")?.visibility).toBe("public");
+
+    const gmThread = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "What is secret?" }
+    });
+    expect(gmThread.statusCode).toBe(200);
+    expect(provider.requests).toHaveLength(2);
+    const gmContext = provider.requests[1]!.context;
+    expect(gmContext.publicSummary).toContain("Session Hook");
+    expect(gmContext.gmSecrets.some((secret) => secret.includes("founder's oath"))).toBe(true);
+    expect(store.state.chat.find((message) => message.body === "Captured response 2")?.visibility).toBe("gm_only");
+
+    const playerChat = await app.inject({
+      method: "GET",
+      url: "/api/v1/chat/messages?campaignId=camp_demo",
+      headers: { "x-user-id": "usr_player" }
+    });
+    expect(playerChat.statusCode).toBe(200);
+    expect(playerChat.json().map((message: { body: string }) => message.body)).toContain("Captured response 1");
+    expect(playerChat.json().map((message: { body: string }) => message.body)).not.toContain("Captured response 2");
+
+    await app.close();
+  });
+
+  it("can select the codex loopback ai provider from configuration", async () => {
+    const previousProvider = process.env.OTTE_AI_PROVIDER;
+    process.env.OTTE_AI_PROVIDER = "codex-loopback";
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+
+    try {
+      app = await buildApp({ store: new MemoryStateStore() });
+      const thread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: { prompt: "Summarize the party state" }
+      });
+
+      expect(thread.statusCode).toBe(200);
+      expect(thread.json().thread.provider).toBe("codex-app-server");
+      expect(thread.json().assistantMessage).toContain("Codex loopback handled turn/start");
+      expect(thread.json().events).toContainEqual(expect.objectContaining({ type: "message.completed" }));
+    } finally {
+      await app?.close();
+      if (previousProvider === undefined) {
+        delete process.env.OTTE_AI_PROVIDER;
+      } else {
+        process.env.OTTE_AI_PROVIDER = previousProvider;
+      }
+    }
   });
 
   it("uploads a map asset, assigns it to a scene, and serves the stored bytes", async () => {

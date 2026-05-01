@@ -50,6 +50,8 @@ Plugin runtime endpoints are campaign-scoped. Installing a plugin creates a `per
 
 System runtime endpoints are campaign-scoped. The generic fantasy runtime can summarize an actor sheet and produce quick-roll dice formulas from actor data, posting the resulting roll into chat.
 
+AI thread requests use the configured provider from `OTTE_AI_PROVIDER`. The default `local-echo` provider is offline and deterministic; `codex-loopback` exercises the Codex App Server provider path against a local loopback transport. Provider requests receive campaign context filtered through the caller's actual permissions, and assistant responses are persisted into chat as `public` for player-visible context or `gm_only` when the caller can read GM AI memory. Chat reads filter `gm_only` and `whisper` messages per viewer.
+
 Map upload accepts raw image bytes with the authenticated `x-user-id` header:
 
 ```bash
