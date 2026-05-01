@@ -136,6 +136,8 @@ export interface FogRegion {
   hidden: boolean;
 }
 
+export type WallKind = "wall" | "terrain";
+
 export interface Wall {
   id: ID;
   x1: number;
@@ -143,6 +145,8 @@ export interface Wall {
   x2: number;
   y2: number;
   blocksVision: boolean;
+  blocksMovement?: boolean;
+  kind?: WallKind;
 }
 
 export interface LightSource {
@@ -151,6 +155,31 @@ export interface LightSource {
   y: number;
   radius: number;
   color: string;
+  intensity?: number;
+}
+
+export interface VisionPoint {
+  x: number;
+  y: number;
+}
+
+export type VisionPolygonSource = "token" | "fog" | "light";
+
+export interface VisionPolygon {
+  id: ID;
+  source: VisionPolygonSource;
+  sourceId: ID;
+  points: VisionPoint[];
+  radius?: number;
+  color?: string;
+  opacity?: number;
+}
+
+export interface VisionSnapshot {
+  sceneId: ID;
+  userId: ID;
+  fogActive: boolean;
+  polygons: VisionPolygon[];
 }
 
 export interface MapAsset extends Timestamps {

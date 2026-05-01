@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approveProposal, applyProposal, hasPermission, seedState } from "./index.js";
+import { approveProposal, applyProposal, computeLightVisionPolygon, computeTokenVisionPolygon, hasPermission, isPointInsideVisionPolygon, seedState, tokenCenter } from "./index.js";
 
 describe("core permissions", () => {
   it("gives owners full campaign authority and keeps observers read-only", () => {
@@ -55,5 +55,35 @@ describe("proposal application", () => {
     expect(() => applyProposal(state, proposal)).toThrow("approved");
     const approved = approveProposal(proposal, "usr_demo_gm");
     expect(applyProposal({ ...state, proposals: [approved] }, approved).journals).toHaveLength(2);
+  });
+});
+
+describe("vision polygons", () => {
+  it("clips token sight at vision-blocking walls", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const token = state.tokens.find((item) => item.id === "tok_valen")!;
+    scene.walls = [{ id: "wall_screen", x1: 200, y1: 300, x2: 600, y2: 300, blocksVision: true }];
+    token.visionRadius = 220;
+
+    const polygon = computeTokenVisionPolygon(scene, token)!;
+
+    expect(polygon.points.length).toBeGreaterThan(32);
+    expect(isPointInsideVisionPolygon(tokenCenter(token), polygon)).toBe(true);
+    expect(isPointInsideVisionPolygon({ x: 325, y: 225 }, polygon)).toBe(false);
+    expect(isPointInsideVisionPolygon({ x: 475, y: 375 }, polygon)).toBe(true);
+  });
+
+  it("clips colored light polygons with the same wall geometry", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.walls = [{ id: "wall_light_screen", x1: 200, y1: 300, x2: 600, y2: 300, blocksVision: true, kind: "terrain", blocksMovement: false }];
+
+    const polygon = computeLightVisionPolygon(scene, { id: "light_blue", x: 325, y: 375, radius: 220, color: "#38bdf8", intensity: 0.42 });
+
+    expect(polygon.color).toBe("#38bdf8");
+    expect(polygon.opacity).toBe(0.42);
+    expect(isPointInsideVisionPolygon({ x: 325, y: 225 }, polygon)).toBe(false);
+    expect(isPointInsideVisionPolygon({ x: 475, y: 375 }, polygon)).toBe(true);
   });
 });

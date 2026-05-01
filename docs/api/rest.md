@@ -44,6 +44,7 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `POST /api/v1/assets/{assetId}/delivery-url`
 - `PATCH /api/v1/assets/{assetId}/lifecycle`
 - `GET|PATCH|DELETE /api/v1/scenes/{sceneId}`
+- `GET /api/v1/scenes/{sceneId}/vision`
 - `POST /api/v1/scenes/{sceneId}/fog`
 - `POST /api/v1/scenes/{sceneId}/walls`
 - `POST /api/v1/scenes/{sceneId}/lights`
@@ -86,6 +87,8 @@ System runtime endpoints are campaign-scoped. The generic fantasy runtime can su
 AI thread requests use the configured provider from `OTTE_AI_PROVIDER`. The default `local-echo` provider is offline and deterministic; `codex-loopback` exercises the Codex App Server provider path against a local loopback transport; `openai-responses` uses the OpenAI Responses API with `OPENAI_API_KEY`, optional `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_ORGANIZATION`, and `OPENAI_PROJECT`. Provider requests receive campaign context filtered through the caller's actual permissions, and assistant responses are persisted into chat as `public` for player-visible context or `gm_only` when the caller can read GM AI memory. Chat reads filter `gm_only` and `whisper` messages per viewer. Providers can request the `create_proposal` tool during an AI thread; the API executes it only when the caller has `ai.proposeChanges`, creates a pending proposal for GM approval, records tool lifecycle events, and blocks the same tool for players without that permission. `POST /api/v1/campaigns/{campaignId}/ai/memory/extract` runs provider-backed memory extraction from supplied or recent campaign text, requires `ai.proposeChanges`, and creates a pending memory fact for GM review.
 
 Proposal approval is a two-step flow: `POST /api/v1/proposals/{proposalId}/approve` marks a pending proposal as approved, and `POST /api/v1/proposals/{proposalId}/apply` mutates campaign state only after approval. Applying a pending proposal returns `409`. `POST /api/v1/ai/memory/{factId}/approve` marks queued AI memory as approved.
+
+Scene vision requests return the same permission-filtered polygons used by token visibility checks. Players receive revealed fog polygons, owned-token vision polygons, and wall-clipped colored light polygons when fog is active; GM-capable users receive unmasked lighting polygons with `fogActive: false`. Wall authoring accepts `kind: "wall" | "terrain"` and optional `blocksMovement`; light authoring accepts `color` and `intensity`.
 
 Create a session token:
 

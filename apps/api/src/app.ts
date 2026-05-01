@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -740,6 +740,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
+  app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId/vision", async (request, reply): Promise<VisionSnapshot | FastifyReply> => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.read");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    return visionSnapshotForUser(store, userId, campaignId, scene);
+  });
+
   app.patch<{ Params: { sceneId: string }; Body: Partial<Scene> }>("/api/v1/scenes/:sceneId", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
@@ -796,6 +806,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       x2: number;
       y2: number;
       blocksVision?: boolean;
+      blocksMovement?: boolean;
+      kind?: WallKind;
     };
   }>("/api/v1/scenes/:sceneId/walls", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
@@ -803,13 +815,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.update");
     if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const kind: WallKind = request.body.kind === "terrain" ? "terrain" : "wall";
     scene.walls.push({
       id: createId("wall"),
       x1: request.body.x1,
       y1: request.body.y1,
       x2: request.body.x2,
       y2: request.body.y2,
-      blocksVision: request.body.blocksVision ?? true
+      blocksVision: request.body.blocksVision ?? true,
+      blocksMovement: request.body.blocksMovement ?? (kind === "wall"),
+      kind
     });
     scene.updatedAt = nowIso();
     store.save();
@@ -826,7 +841,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{
     Params: { sceneId: string };
-    Body: { x: number; y: number; radius?: number; color?: string };
+    Body: { x: number; y: number; radius?: number; color?: string; intensity?: number };
   }>("/api/v1/scenes/:sceneId/lights", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
@@ -838,7 +853,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       x: request.body.x,
       y: request.body.y,
       radius: request.body.radius ?? 180,
-      color: request.body.color ?? "#facc15"
+      color: request.body.color ?? "#facc15",
+      intensity: clampLightIntensity(request.body.intensity ?? 0.28)
     });
     scene.updatedAt = nowIso();
     store.save();
@@ -2094,6 +2110,10 @@ function stringFromRecord(record: Record<string, unknown>, key: string): string 
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function clampLightIntensity(value: number): number {
+  return Math.max(0.05, Math.min(1, value));
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -2124,38 +2144,42 @@ function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: str
   if (!scene) return false;
   const activeFog = scene.fog.filter((region) => !region.hidden);
   if (activeFog.length === 0) return true;
-  const center = tokenCenter(token);
-  if (activeFog.some((region) => distance(center, region) <= region.radius)) return true;
-  const tokens = sceneTokens ?? store.state.tokens.filter((item) => item.sceneId === scene.id);
-  const ownedVisionTokens = tokens.filter((item) => item.visionEnabled && item.visionRadius > 0 && isTokenOwnedByUser(store, userId, item));
-  return ownedVisionTokens.some((ownedToken) => {
-    const origin = tokenCenter(ownedToken);
-    return distance(origin, center) <= ownedToken.visionRadius && !scene.walls.some((wall) => wall.blocksVision && segmentsIntersect(origin, center, { x: wall.x1, y: wall.y1 }, { x: wall.x2, y: wall.y2 }));
-  });
+  const center = centerOfToken(token);
+  const fogPolygons = activeFog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+  if (isPointInsideVisionPolygons(center, fogPolygons)) return true;
+  return isPointInsideVisionPolygons(center, ownedVisionPolygonsForUser(store, userId, scene, sceneTokens));
 }
 
 function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): boolean {
   return Boolean(token.actorId && store.state.actors.some((actor) => actor.id === token.actorId && actor.ownerUserId === userId));
 }
 
-function tokenCenter(token: Token): { x: number; y: number } {
-  return { x: token.x + token.width / 2, y: token.y + token.height / 2 };
+function visionSnapshotForUser(store: StateStore, userId: string, campaignId: string, scene: Scene): VisionSnapshot {
+  const activeFog = scene.fog.filter((region) => !region.hidden);
+  const lightPolygons = scene.lights.map((light) => computeLightVisionPolygon(scene, light));
+  if (canReadHiddenTokens(store, userId, campaignId) || activeFog.length === 0) {
+    return {
+      sceneId: scene.id,
+      userId,
+      fogActive: false,
+      polygons: lightPolygons
+    };
+  }
+  const fogPolygons = activeFog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+  return {
+    sceneId: scene.id,
+    userId,
+    fogActive: true,
+    polygons: [...fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene), ...lightPolygons]
+  };
 }
 
-function distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function segmentsIntersect(a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }, d: { x: number; y: number }): boolean {
-  const abC = orientation(a, b, c);
-  const abD = orientation(a, b, d);
-  const cdA = orientation(c, d, a);
-  const cdB = orientation(c, d, b);
-  return abC * abD <= 0 && cdA * cdB <= 0;
-}
-
-function orientation(a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }): number {
-  return Math.sign((b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y));
+function ownedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[]): VisionPolygon[] {
+  const tokens = sceneTokens ?? store.state.tokens.filter((item) => item.sceneId === scene.id);
+  return tokens
+    .filter((item) => item.visionEnabled && item.visionRadius > 0 && isTokenOwnedByUser(store, userId, item))
+    .map((token) => computeTokenVisionPolygon(scene, token))
+    .filter((polygon): polygon is VisionPolygon => Boolean(polygon));
 }
 
 function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined): EngineEvent | undefined {

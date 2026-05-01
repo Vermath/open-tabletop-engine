@@ -587,13 +587,43 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - A repeated cleanup call skipped the asset with `storage_already_deleted`.
   - SQLite inspection showed lifecycle `status: deleted`, `storageDeletedAt: 2026-05-01T14:57:12.316Z`, `updatedByUserId: usr_demo_gm`, and `cleanupReason: deleted_asset`.
 
+### Advanced Vision Rendering Slice
+
+- Implementation:
+  - Added a shared core ray-cast vision engine that computes bounded polygons from token vision, revealed fog regions, and wall-clipped colored lights.
+  - Replaced player token visibility's center-line wall shortcut with the shared polygon containment check.
+  - Added `GET /api/v1/scenes/{sceneId}/vision` so clients render the same permission-filtered vision state the API uses for token filtering.
+  - Added terrain wall metadata with separate `blocksMovement` and `kind` fields, while preserving hard-wall defaults.
+  - Rendered clipped colored light polygons, terrain-wall styling, and player fog-of-war masks in the browser scene canvas.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/core test` passed with `4 passed`.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `27 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - Core tests verify token and light polygons are clipped by vision-blocking walls, including a terrain wall.
+  - API tests verify player token filtering, the player vision endpoint's token/fog/light polygons, terrain wall authoring, and colored light polygons.
+- Manual API and browser evidence:
+  - API: `http://127.0.0.1:4442`
+  - Web: `http://127.0.0.1:5188`
+  - SQLite file: `storage/manual-vision-polygons-20260501.sqlite`
+  - Configured `scn_vault_entry` with one revealed fog region, one hard wall, one terrain wall, Valen Ash vision radius `220`, one blue light `#38bdf8`, and one amber light `#f59e0b`.
+  - Player token read returned `Valen Ash,Visible Guard,Fog Scout`; GM token read returned `Valen Ash,Visible Guard,Blocked Guard,Fog Scout`; `PlayerSeesBlocked: 0`.
+  - Player vision endpoint returned `fogActive: true`, source counts `fog: 1`, `token: 1`, `light: 2`, token polygon points `129`, light colors `#38bdf8,#f59e0b`, and terrain wall `blocksMovement: false`.
+  - GM vision endpoint returned `fogActive: false`, confirming the GM view is not masked.
+  - Browser loaded as `Demo Player - player`, showed `Realtime connected`, rendered token markers `VA`, `VI`, and `FO`, and did not render the blocked `BL` marker.
+  - Browser DOM verification found one `.vision-mask-layer`, two clipped light polygons, one terrain wall, one hard wall, and one fog outline.
+  - Screenshot saved at `output/playwright/vision-polygons-player.png`.
+  - Browser console had no errors or warnings after reload; it only showed the React DevTools info message and an autocomplete advisory.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, account administration, production session administration, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs first-class reset UI, MFA, SCIM/organization sync, and audit export.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, and cleanup jobs for deleted or expired object bytes. Production storage work still needs CDN edge configuration, malware/content scanning, and deployment scheduling for recurring cleanup jobs.
-- Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
+- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, and browser vision masks now have verified controls and permission filtering. Dynamic fog editing is still limited to simple reveal circles rather than brush/polygon tools.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
 - AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, OpenAI Responses adapter requests and function-call mapping, provider-backed memory extraction, approval/application, and deterministic recap memory. Hosted-model prompt quality and broader tool coverage remain basic.

@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eye, FileText, Hand, Lightbulb, MessageSquare, Plus, ScrollText, Send, Shield, Swords, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, consumeSsoRedirect, getSessionToken, getSessionUserId, loadOidcConfig, loadSnapshot, loginSession, setSessionUserId, startOidcLogin, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
@@ -191,7 +191,8 @@ export function App() {
       x: selectedToken ? selectedToken.x + selectedToken.width / 2 : selectedScene.width / 2,
       y: selectedToken ? selectedToken.y + selectedToken.height / 2 : selectedScene.height / 2,
       radius: 210,
-      color: "#facc15"
+      color: "#38bdf8",
+      intensity: 0.32
     });
     setStatus("Light added");
     await refresh();
@@ -466,7 +467,7 @@ export function App() {
         <div className="table-grid">
           <section className="table-area">
             <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onAddWall={addWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canUpdateScene={hasPermission("scene.update")} />
-            {selectedScene ? <SceneCanvas scene={selectedScene} backgroundAsset={selectedMapAsset} tokens={snapshot.tokens} selectedTokenId={selectedTokenId} onSelect={setSelectedTokenId} onMoved={refresh} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+            {selectedScene ? <SceneCanvas scene={selectedScene} backgroundAsset={selectedMapAsset} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} onSelect={setSelectedTokenId} onMoved={refresh} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
           <aside className="inspector">
@@ -514,10 +515,14 @@ export function App() {
   );
 }
 
-function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: Token[]; selectedTokenId: string; onSelect(id: string): void; onMoved(): Promise<void> }) {
+function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; onSelect(id: string): void; onMoved(): Promise<void> }) {
   const [dragging, setDragging] = useState<string | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const tokens = useMemo(() => props.tokens.filter((token) => token.sceneId === props.scene.id), [props.tokens, props.scene.id]);
+  const vision = props.vision?.sceneId === props.scene.id ? props.vision : undefined;
+  const lightPolygons = useMemo(() => vision?.polygons.filter((polygon) => polygon.source === "light" && polygon.points.length > 2) ?? [], [vision]);
+  const revealedPolygons = useMemo(() => (vision?.fogActive ? vision.polygons.filter((polygon) => polygon.source !== "light" && polygon.points.length > 2) : []), [vision]);
+  const maskId = `vision-mask-${props.scene.id}`;
 
   async function moveToken(token: Token, clientX: number, clientY: number) {
     const rect = boardRef.current?.getBoundingClientRect();
@@ -555,15 +560,39 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
             left: `${(light.x / props.scene.width) * 100}%`,
             top: `${(light.y / props.scene.height) * 100}%`,
             width: `${(light.radius / props.scene.width) * 200}%`,
-            background: light.color
+            background: `radial-gradient(circle, ${light.color} 0%, ${light.color} 22%, transparent 72%)`,
+            opacity: light.intensity ?? 0.18
           }}
         />
       ))}
+      {lightPolygons.length > 0 && (
+        <svg className="lighting-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
+          {lightPolygons.map((polygon) => (
+            <polygon key={polygon.id} points={polygonPoints(polygon)} style={{ fill: polygon.color ?? "#facc15", opacity: polygon.opacity ?? 0.22 }} />
+          ))}
+        </svg>
+      )}
       {props.scene.walls.map((wall) => (
-        <svg className="wall-layer" key={wall.id} viewBox={`0 0 ${props.scene.width} ${props.scene.height}`}>
+        <svg className={`wall-layer ${wall.kind ?? "wall"}`} key={wall.id} viewBox={`0 0 ${props.scene.width} ${props.scene.height}`}>
           <line x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2} />
         </svg>
       ))}
+      {vision?.fogActive && (
+        <svg className="vision-mask-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
+          <defs>
+            <mask id={maskId}>
+              <rect width={props.scene.width} height={props.scene.height} fill="white" />
+              {revealedPolygons.map((polygon) => (
+                <polygon key={polygon.id} points={polygonPoints(polygon)} fill="black" />
+              ))}
+            </mask>
+          </defs>
+          <rect className="vision-dim" width={props.scene.width} height={props.scene.height} mask={`url(#${maskId})`} />
+          {revealedPolygons.map((polygon) => (
+            <polygon key={`${polygon.id}-outline`} className={`vision-outline ${polygon.source}`} points={polygonPoints(polygon)} />
+          ))}
+        </svg>
+      )}
       {tokens.map((token) => (
         <button
           key={token.id}
@@ -583,9 +612,12 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
           <span>{token.name.slice(0, 2).toUpperCase()}</span>
         </button>
       ))}
-      <div className="fog-band">Fog, walls, and token vision are modeled in scene state.</div>
     </div>
   );
+}
+
+function polygonPoints(polygon: VisionPolygon): string {
+  return polygon.points.map((point) => `${point.x},${point.y}`).join(" ");
 }
 
 function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onAddWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; canUpdateScene: boolean }) {

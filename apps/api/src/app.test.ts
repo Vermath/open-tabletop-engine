@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
-import { createTimestamped, emptyState, type AssetStorageRef, type EngineState, type MapAsset } from "@open-tabletop/core";
+import { createTimestamped, emptyState, isPointInsideVisionPolygons, type AssetStorageRef, type EngineState, type MapAsset, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp } from "./app.js";
@@ -1012,6 +1012,19 @@ describe("api", () => {
     expect(playerTokens.statusCode).toBe(200);
     expect(playerTokens.json().map((token: { id: string }) => token.id)).toEqual(["tok_valen", "tok_visible_guard", "tok_fog_scout"]);
 
+    const playerVision = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/vision",
+      headers: playerHeaders
+    });
+    expect(playerVision.statusCode).toBe(200);
+    const vision = playerVision.json() as VisionSnapshot;
+    expect(vision.fogActive).toBe(true);
+    expect(vision.polygons.some((polygon) => polygon.source === "token" && polygon.sourceId === "tok_valen")).toBe(true);
+    expect(vision.polygons.some((polygon) => polygon.source === "fog" && polygon.sourceId === "fog_southeast")).toBe(true);
+    expect(vision.polygons.some((polygon) => polygon.source === "light" && polygon.color === "#f59e0b")).toBe(true);
+    expect(isPointInsideVisionPolygons({ x: 325, y: 225 }, vision.polygons.filter((polygon) => polygon.source !== "light"))).toBe(false);
+
     const gmTokens = await app.inject({
       method: "GET",
       url: "/api/v1/scenes/scn_vault_entry/tokens",
@@ -1174,7 +1187,7 @@ describe("api", () => {
       method: "POST",
       url: "/api/v1/scenes/scn_vault_entry/walls",
       headers: authHeaders,
-      payload: { x1: 220, y1: 160, x2: 840, y2: 160 }
+      payload: { x1: 220, y1: 160, x2: 840, y2: 160, kind: "terrain", blocksMovement: false }
     });
     expect(wall.statusCode).toBe(200);
     expect(wall.json().walls.at(-1)).toEqual(
@@ -1183,7 +1196,9 @@ describe("api", () => {
         y1: 160,
         x2: 840,
         y2: 160,
-        blocksVision: true
+        blocksVision: true,
+        blocksMovement: false,
+        kind: "terrain"
       })
     );
 
@@ -1191,7 +1206,7 @@ describe("api", () => {
       method: "POST",
       url: "/api/v1/scenes/scn_vault_entry/lights",
       headers: authHeaders,
-      payload: { x: 360, y: 340, radius: 240, color: "#facc15" }
+      payload: { x: 360, y: 340, radius: 240, color: "#38bdf8", intensity: 0.42 }
     });
     expect(light.statusCode).toBe(200);
     expect(light.json().lights.at(-1)).toEqual(
@@ -1199,9 +1214,18 @@ describe("api", () => {
         x: 360,
         y: 340,
         radius: 240,
-        color: "#facc15"
+        color: "#38bdf8",
+        intensity: 0.42
       })
     );
+
+    const vision = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/vision",
+      headers: authHeaders
+    });
+    expect(vision.statusCode).toBe(200);
+    expect((vision.json() as VisionSnapshot).polygons.some((polygon) => polygon.source === "light" && polygon.sourceId === light.json().lights.at(-1).id && polygon.color === "#38bdf8")).toBe(true);
 
     const scene = await app.inject({
       method: "GET",

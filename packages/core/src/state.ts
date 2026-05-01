@@ -95,10 +95,12 @@ export function seedState(): EngineState {
         y1: 180,
         x2: 920,
         y2: 180,
-        blocksVision: true
+        blocksVision: true,
+        blocksMovement: true,
+        kind: "wall"
       }
     ],
-    lights: [{ id: "light_brazier", x: 320, y: 320, radius: 180, color: "#f59e0b" }],
+    lights: [{ id: "light_brazier", x: 320, y: 320, radius: 180, color: "#f59e0b", intensity: 0.24 }],
     metadata: {},
     createdAt: now,
     updatedAt: now
