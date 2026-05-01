@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimGroup, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -61,6 +61,14 @@ interface ScimGroupInput {
 
 interface ScimPatchInput {
   Operations?: Array<{ op?: string; path?: string; value?: unknown }>;
+}
+
+interface AdminScimGroupRoleMappingInput {
+  groupId?: string;
+  groupExternalId?: string;
+  groupDisplayName?: string;
+  campaignId?: string;
+  role?: string;
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -450,6 +458,63 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     };
   });
 
+  app.get("/api/v1/admin/scim/group-role-mappings", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const mappings = store.state.scimGroupRoleMappings.map((mapping) => publicScimGroupRoleMapping(store, mapping));
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.scim.groupRoleMappings.list",
+      targetType: "scim_group_role_mapping",
+      after: { count: mappings.length }
+    });
+    store.save();
+    return mappings;
+  });
+
+  app.post<{ Body: AdminScimGroupRoleMappingInput }>("/api/v1/admin/scim/group-role-mappings", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const normalized = normalizeScimGroupRoleMappingInput(store, request.body ?? {});
+    if ("error" in normalized) return badRequest(reply, normalized.error);
+    const duplicate = store.state.scimGroupRoleMappings.find((mapping) =>
+      mapping.campaignId === normalized.campaignId &&
+      mapping.role === normalized.role &&
+      scimGroupRoleMappingIdentity(mapping) === scimGroupRoleMappingIdentity(normalized)
+    );
+    if (duplicate) return conflict(reply, "SCIM group role mapping already exists");
+    const mapping = createTimestamped("scimmap", normalized) satisfies ScimGroupRoleMapping;
+    store.state.scimGroupRoleMappings.push(mapping);
+    const sync = syncScimGroupRoleMapping(store, mapping);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.scim.groupRoleMapping.create",
+      targetType: "scim_group_role_mapping",
+      targetId: mapping.id,
+      after: { mapping: publicScimGroupRoleMapping(store, mapping), sync }
+    });
+    store.save();
+    reply.code(201);
+    return { mapping: publicScimGroupRoleMapping(store, mapping), sync };
+  });
+
+  app.delete<{ Params: { mappingId: string } }>("/api/v1/admin/scim/group-role-mappings/:mappingId", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const mapping = store.state.scimGroupRoleMappings.find((item) => item.id === request.params.mappingId);
+    if (!mapping) return notFound(reply, "SCIM group role mapping not found");
+    const before = publicScimGroupRoleMapping(store, mapping);
+    const removedMemberships = removeScimGroupRoleMappingMemberships(store, mapping.id);
+    store.state.scimGroupRoleMappings = store.state.scimGroupRoleMappings.filter((item) => item.id !== mapping.id);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.scim.groupRoleMapping.delete",
+      targetType: "scim_group_role_mapping",
+      targetId: mapping.id,
+      before,
+      after: { removedMemberships }
+    });
+    store.save();
+    return { removedMemberships };
+  });
+
   app.get("/api/v1/scim/v2/ServiceProviderConfig", async (request, reply) => {
     const authorized = requireScimBearer(reply, request.headers);
     if (authorized !== true) return authorized;
@@ -588,11 +653,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       memberUserIds: normalized.memberUserIds
     }) satisfies ScimGroup;
     store.state.scimGroups.push(group);
+    const sync = syncScimGroupRoleMappingsForGroup(store, group);
     appendSystemAuditLog(store, {
       action: "scim.group.create",
       targetType: "scim_group",
       targetId: group.id,
-      after: scimGroupResource(group, request.headers)
+      after: { group: scimGroupResource(group, request.headers), sync }
     });
     store.save();
     reply.code(201).header("location", scimLocation(request.headers, `/api/v1/scim/v2/Groups/${group.id}`));
@@ -620,12 +686,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     group.externalId = normalized.externalId;
     group.memberUserIds = normalized.memberUserIds;
     group.updatedAt = nowIso();
+    const sync = syncScimGroupRoleMappingsForGroup(store, group);
     appendSystemAuditLog(store, {
       action: "scim.group.replace",
       targetType: "scim_group",
       targetId: group.id,
       before,
-      after: scimGroupResource(group, request.headers)
+      after: { group: scimGroupResource(group, request.headers), sync }
     });
     store.save();
     return scimGroupResource(group, request.headers);
@@ -640,12 +707,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const patched = applyScimPatchToGroup(store, group, request.body);
     if ("error" in patched) return scimError(reply, 400, patched.error);
     if (findScimGroup(store, group.displayName, group.externalId, group.id)) return scimError(reply, 409, "SCIM group already exists");
+    const sync = syncScimGroupRoleMappingsForGroup(store, group);
     appendSystemAuditLog(store, {
       action: "scim.group.patch",
       targetType: "scim_group",
       targetId: group.id,
       before,
-      after: scimGroupResource(group, request.headers)
+      after: { group: scimGroupResource(group, request.headers), sync }
     });
     store.save();
     return scimGroupResource(group, request.headers);
@@ -656,6 +724,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (authorized !== true) return authorized;
     const group = store.state.scimGroups.find((item) => item.id === request.params.groupId);
     if (!group) return scimError(reply, 404, "SCIM group not found");
+    const removedMemberships = removeScimGroupRoleMembershipsForGroup(store, group);
     const before = store.state.scimGroups.length;
     store.state.scimGroups = store.state.scimGroups.filter((group) => group.id !== request.params.groupId);
     if (store.state.scimGroups.length === before) return scimError(reply, 404, "SCIM group not found");
@@ -663,7 +732,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       action: "scim.group.delete",
       targetType: "scim_group",
       targetId: group.id,
-      before: scimGroupResource(group, request.headers)
+      before: scimGroupResource(group, request.headers),
+      after: { removedMemberships }
     });
     store.save();
     return reply.code(204).send();
@@ -3863,6 +3933,129 @@ function findScimGroup(store: StateStore, displayName: string | undefined, exter
   });
 }
 
+interface ScimGroupRoleSyncResult {
+  matchedGroups: number;
+  createdMemberships: number;
+  updatedMemberships: number;
+  removedMemberships: number;
+  preservedManualMemberships: number;
+}
+
+const scimAssignableRoles = new Set<ScimAssignableRole>(["gm", "assistant_gm", "player", "observer"]);
+
+function normalizeScimGroupRoleMappingInput(store: StateStore, input: AdminScimGroupRoleMappingInput): Omit<ScimGroupRoleMapping, "id" | "createdAt" | "updatedAt"> | { error: string } {
+  const role = normalizeScimAssignableRole(input.role);
+  if (!role) return { error: "SCIM group role mapping role must be gm, assistant_gm, player, or observer" };
+  const campaignId = normalizeScimText(input.campaignId);
+  if (!campaignId || !store.state.campaigns.some((campaign) => campaign.id === campaignId)) return { error: "SCIM group role mapping campaignId is required" };
+  const groupId = normalizeScimText(input.groupId);
+  const groupExternalId = normalizeScimText(input.groupExternalId);
+  const groupDisplayName = normalizeScimText(input.groupDisplayName);
+  if ([groupId, groupExternalId, groupDisplayName].filter(Boolean).length !== 1) return { error: "SCIM group role mapping requires exactly one of groupId, groupExternalId, or groupDisplayName" };
+  if (groupId && !store.state.scimGroups.some((group) => group.id === groupId)) return { error: "SCIM group role mapping groupId was not found" };
+  return { groupId, groupExternalId, groupDisplayName, campaignId, role };
+}
+
+function normalizeScimAssignableRole(value: string | undefined): ScimAssignableRole | undefined {
+  return scimAssignableRoles.has(value as ScimAssignableRole) ? value as ScimAssignableRole : undefined;
+}
+
+function scimGroupRoleMappingIdentity(mapping: Pick<ScimGroupRoleMapping, "groupId" | "groupExternalId" | "groupDisplayName">): string {
+  if (mapping.groupId) return `id:${mapping.groupId}`;
+  if (mapping.groupExternalId) return `externalId:${mapping.groupExternalId}`;
+  return `displayName:${mapping.groupDisplayName?.toLowerCase() ?? ""}`;
+}
+
+function publicScimGroupRoleMapping(store: StateStore, mapping: ScimGroupRoleMapping): ScimGroupRoleMapping & { group?: Pick<ScimGroup, "id" | "displayName" | "externalId" | "memberUserIds"> } {
+  const group = findGroupForScimGroupRoleMapping(store, mapping);
+  return {
+    ...mapping,
+    group: group ? { id: group.id, displayName: group.displayName, externalId: group.externalId, memberUserIds: [...group.memberUserIds] } : undefined
+  };
+}
+
+function syncScimGroupRoleMappingsForGroup(store: StateStore, group: ScimGroup): ScimGroupRoleSyncResult {
+  const mappings = store.state.scimGroupRoleMappings.filter((mapping) =>
+    scimGroupRoleMappingMatchesGroup(mapping, group) ||
+    store.state.members.some((member) => member.source?.type === "scim_group" && member.source.groupId === group.id && member.source.mappingId === mapping.id)
+  );
+  return combineScimGroupRoleSyncResults(mappings.map((mapping) => syncScimGroupRoleMapping(store, mapping, group)));
+}
+
+function syncScimGroupRoleMapping(store: StateStore, mapping: ScimGroupRoleMapping, knownGroup?: ScimGroup): ScimGroupRoleSyncResult {
+  const group = knownGroup ? (scimGroupRoleMappingMatchesGroup(mapping, knownGroup) ? knownGroup : undefined) : findGroupForScimGroupRoleMapping(store, mapping);
+  if (!group) return { matchedGroups: 0, createdMemberships: 0, updatedMemberships: 0, removedMemberships: removeScimGroupRoleMappingMemberships(store, mapping.id), preservedManualMemberships: 0 };
+  const desiredUserIds = new Set(group.memberUserIds.filter((userId) => store.state.users.some((user) => user.id === userId)));
+  let createdMemberships = 0;
+  let updatedMemberships = 0;
+  let preservedManualMemberships = 0;
+
+  for (const userId of desiredUserIds) {
+    const sourceMember = store.state.members.find((member) => member.source?.type === "scim_group" && member.source.mappingId === mapping.id && member.userId === userId);
+    if (sourceMember) {
+      if (sourceMember.role !== mapping.role || sourceMember.campaignId !== mapping.campaignId || sourceMember.source?.groupId !== group.id) {
+        sourceMember.campaignId = mapping.campaignId;
+        sourceMember.role = mapping.role;
+        sourceMember.source = { type: "scim_group", groupId: group.id, mappingId: mapping.id };
+        sourceMember.updatedAt = nowIso();
+        updatedMemberships += 1;
+      }
+      continue;
+    }
+    const existingOtherMember = store.state.members.find((member) => member.campaignId === mapping.campaignId && member.userId === userId);
+    if (existingOtherMember) {
+      preservedManualMemberships += 1;
+      continue;
+    }
+    const member = createTimestamped("mem", {
+      campaignId: mapping.campaignId,
+      userId,
+      role: mapping.role,
+      source: { type: "scim_group" as const, groupId: group.id, mappingId: mapping.id }
+    }) satisfies CampaignMember;
+    store.state.members.push(member);
+    createdMemberships += 1;
+  }
+
+  const before = store.state.members.length;
+  store.state.members = store.state.members.filter((member) => member.source?.type !== "scim_group" || member.source.mappingId !== mapping.id || desiredUserIds.has(member.userId));
+  const removedMemberships = before - store.state.members.length;
+  return { matchedGroups: 1, createdMemberships, updatedMemberships, removedMemberships, preservedManualMemberships };
+}
+
+function removeScimGroupRoleMembershipsForGroup(store: StateStore, group: ScimGroup): number {
+  const mappingIds = new Set(store.state.scimGroupRoleMappings.filter((mapping) => scimGroupRoleMappingMatchesGroup(mapping, group)).map((mapping) => mapping.id));
+  const before = store.state.members.length;
+  store.state.members = store.state.members.filter((member) => member.source?.type !== "scim_group" || !mappingIds.has(member.source.mappingId));
+  return before - store.state.members.length;
+}
+
+function removeScimGroupRoleMappingMemberships(store: StateStore, mappingId: string): number {
+  const before = store.state.members.length;
+  store.state.members = store.state.members.filter((member) => member.source?.type !== "scim_group" || member.source.mappingId !== mappingId);
+  return before - store.state.members.length;
+}
+
+function findGroupForScimGroupRoleMapping(store: StateStore, mapping: ScimGroupRoleMapping): ScimGroup | undefined {
+  return store.state.scimGroups.find((group) => scimGroupRoleMappingMatchesGroup(mapping, group));
+}
+
+function scimGroupRoleMappingMatchesGroup(mapping: ScimGroupRoleMapping, group: ScimGroup): boolean {
+  if (mapping.groupId && mapping.groupId === group.id) return true;
+  if (mapping.groupExternalId && mapping.groupExternalId === group.externalId) return true;
+  return Boolean(mapping.groupDisplayName && mapping.groupDisplayName.toLowerCase() === group.displayName.toLowerCase());
+}
+
+function combineScimGroupRoleSyncResults(results: ScimGroupRoleSyncResult[]): ScimGroupRoleSyncResult {
+  return results.reduce<ScimGroupRoleSyncResult>((total, item) => ({
+    matchedGroups: total.matchedGroups + item.matchedGroups,
+    createdMemberships: total.createdMemberships + item.createdMemberships,
+    updatedMemberships: total.updatedMemberships + item.updatedMemberships,
+    removedMemberships: total.removedMemberships + item.removedMemberships,
+    preservedManualMemberships: total.preservedManualMemberships + item.preservedManualMemberships
+  }), { matchedGroups: 0, createdMemberships: 0, updatedMemberships: 0, removedMemberships: 0, preservedManualMemberships: 0 });
+}
+
 function applyScimUserInput(store: StateStore, user: User, input: NormalizedScimUser): void {
   const now = nowIso();
   user.displayName = input.displayName;
@@ -4973,6 +5166,7 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     passwordResetTokens: 0,
     emailOutbox: 0,
     scimGroups: 0,
+    scimGroupRoleMappings: 0,
     invites: 0,
     campaigns: upsertRecords(state.campaigns, archive.data.campaigns),
     members: upsertRecords(state.members, archive.data.members),

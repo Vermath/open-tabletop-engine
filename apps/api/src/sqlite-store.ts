@@ -29,6 +29,7 @@ const stateCollections = [
   "passwordResetTokens",
   "emailOutbox",
   "scimGroups",
+  "scimGroupRoleMappings",
   "invites",
   "campaigns",
   "members",

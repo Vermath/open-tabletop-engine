@@ -876,11 +876,46 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - `POST /api/v1/scim/v2/Groups` created `scimg_mon5mcotk08gz5ef` with one member, and `PATCH /api/v1/scim/v2/Groups/scimg_mon5mcotk08gz5ef` replaced members with an empty list.
   - Admin audit export for `action=scim.user.create` returned `count: 1`, `firstAction: scim.user.create`, and `firstActorType: system`.
 
+### SCIM Group Role Mapping Slice
+
+- Implementation:
+  - Added server-admin endpoints under `/api/v1/admin/scim/group-role-mappings` to list, create, and delete SCIM group-to-campaign role mappings.
+  - Mappings can target a provisioned group by `groupId`, `groupExternalId`, or `groupDisplayName` and assign `gm`, `assistant_gm`, `player`, or `observer`.
+  - SCIM group create/replace/patch operations now sync matching mappings into `CampaignMember` rows with `source: { type: "scim_group", groupId, mappingId }`.
+  - Removing a user from a mapped SCIM group removes only memberships created by that mapping; manually managed campaign members are preserved.
+  - Deleting a mapping removes the campaign memberships sourced from that mapping.
+  - Campaign archives omit SCIM group role mappings and SCIM membership source metadata with the rest of operational identity state.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/core typecheck` passed.
+  - `pnpm --filter @open-tabletop/api-contracts typecheck` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `37 passed`.
+  - `pnpm check` passed.
+  - API tests verify server-admin mapping creation, initial membership sync, SCIM group member removal/restoration, external-id change cleanup/restoration, mapping list group snapshots, mapping deletion cleanup, and audit log actions.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4455`
+  - SQLite file: `storage/manual-scim-role-map-20260501-1218.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_SQLITE_PATH=storage/manual-scim-role-map-20260501-1218.sqlite`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, and `OTTE_SCIM_BEARER_TOKEN=manual-role-map-secret`.
+  - Admin login returned `200`.
+  - `POST /api/v1/scim/v2/Users` created `usr_mon6c5cfagkadgnh` for `manual.role.member.accept@example.test`.
+  - `POST /api/v1/scim/v2/Groups` created `scimg_mon6c5cmbcyrlynj` with display name `Manual Accepted Observers`, external id `manual-role-group-accept-1`, and the provisioned user as a member.
+  - A mapping create request with both `groupId` and `groupExternalId` returned `400` with message `SCIM group role mapping requires exactly one of groupId, groupExternalId, or groupDisplayName`.
+  - `POST /api/v1/admin/scim/group-role-mappings` created `scimmap_mon6c5cvfu234ver` for `campaignId: camp_demo`, `role: observer`, and returned sync `{ matchedGroups: 1, createdMemberships: 1, updatedMemberships: 0, removedMemberships: 0, preservedManualMemberships: 0 }`.
+  - `GET /api/v1/campaigns/camp_demo/members` showed the provisioned user as an `observer` with SCIM source `{ groupId: scimg_mon6c5cmbcyrlynj, mappingId: scimmap_mon6c5cvfu234ver }`.
+  - `GET /api/v1/campaigns/camp_demo/export` returned an archive where the mapped member had no `source` metadata and the archive JSON did not contain `scimmap_mon6c5cvfu234ver`.
+  - `PATCH /api/v1/scim/v2/Groups/scimg_mon6c5cmbcyrlynj` with an empty `members` list removed that sourced campaign membership.
+  - Restoring the group member through SCIM recreated the `observer` campaign membership with the same SCIM source.
+  - Changing the SCIM group `externalId` to `manual-role-group-accept-renamed` removed the sourced campaign membership; restoring `externalId: manual-role-group-accept-1` recreated it.
+  - `GET /api/v1/admin/scim/group-role-mappings` returned the mapping with a group snapshot for `Manual Accepted Observers`, external id `manual-role-group-accept-1`, and one member user id.
+  - `DELETE /api/v1/admin/scim/group-role-mappings/scimmap_mon6c5cvfu234ver` returned `{ removedMemberships: 1 }`, and a final member list check confirmed the provisioned user was no longer a `camp_demo` member.
+  - Admin audit exports for `admin.scim.groupRoleMapping.create` and `admin.scim.groupRoleMapping.delete` each returned `count: 1`.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
-- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification, group-to-campaign role mapping, and an organization-admin UI.
+- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.

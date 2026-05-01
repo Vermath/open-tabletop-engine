@@ -730,6 +730,149 @@ describe("api", () => {
     }
   });
 
+  it("maps SCIM groups into campaign memberships", async () => {
+    const previousEnv = snapshotEnv(["OTTE_SCIM_BEARER_TOKEN", "OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_SCIM_BEARER_TOKEN = "scim-secret";
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const scimHeaders = { authorization: "Bearer scim-secret" };
+    try {
+      const adminLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_gm" }
+      });
+      expect(adminLogin.statusCode).toBe(200);
+      const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
+
+      const createdUser = await app.inject({
+        method: "POST",
+        url: "/api/v1/scim/v2/Users",
+        headers: scimHeaders,
+        payload: {
+          userName: "scim.role.member@example.test",
+          externalId: "role-user-1",
+          displayName: "SCIM Role Member",
+          emails: [{ value: "scim.role.member@example.test", primary: true }],
+          active: true
+        }
+      });
+      expect(createdUser.statusCode).toBe(201);
+      const userId = createdUser.json().id as string;
+
+      const createdGroup = await app.inject({
+        method: "POST",
+        url: "/api/v1/scim/v2/Groups",
+        headers: scimHeaders,
+        payload: {
+          displayName: "Observer Group",
+          externalId: "role-group-1",
+          members: [{ value: userId }]
+        }
+      });
+      expect(createdGroup.statusCode).toBe(201);
+      const groupId = createdGroup.json().id as string;
+
+      const createdMapping = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/scim/group-role-mappings",
+        headers: adminHeaders,
+        payload: {
+          groupExternalId: "role-group-1",
+          campaignId: "camp_demo",
+          role: "observer"
+        }
+      });
+      expect(createdMapping.statusCode).toBe(201);
+      expect(createdMapping.json().sync).toMatchObject({ matchedGroups: 1, createdMemberships: 1, removedMemberships: 0 });
+      const mappingId = createdMapping.json().mapping.id as string;
+      expect(store.state.members.find((member) => member.campaignId === "camp_demo" && member.userId === userId)).toMatchObject({
+        role: "observer",
+        source: { type: "scim_group", groupId, mappingId }
+      });
+
+      const archive = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/export",
+        headers: adminHeaders
+      });
+      expect(archive.statusCode).toBe(200);
+      const archivedMember = archive.json().data.members.find((member: { userId: string }) => member.userId === userId);
+      expect(archivedMember).not.toHaveProperty("source");
+      expect(JSON.stringify(archive.json())).not.toContain(mappingId);
+
+      const removedMember = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Groups/${groupId}`,
+        headers: scimHeaders,
+        payload: { Operations: [{ op: "replace", path: "members", value: [] }] }
+      });
+      expect(removedMember.statusCode).toBe(200);
+      expect(store.state.members.some((member) => member.source?.type === "scim_group" && member.source.mappingId === mappingId)).toBe(false);
+
+      const restoredMember = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Groups/${groupId}`,
+        headers: scimHeaders,
+        payload: { Operations: [{ op: "replace", path: "members", value: [{ value: userId }] }] }
+      });
+      expect(restoredMember.statusCode).toBe(200);
+      expect(store.state.members.find((member) => member.source?.type === "scim_group" && member.source.mappingId === mappingId)).toMatchObject({
+        userId,
+        campaignId: "camp_demo",
+        role: "observer"
+      });
+
+      const changedIdentity = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Groups/${groupId}`,
+        headers: scimHeaders,
+        payload: { Operations: [{ op: "replace", path: "externalId", value: "renamed-role-group-1" }] }
+      });
+      expect(changedIdentity.statusCode).toBe(200);
+      expect(store.state.members.some((member) => member.source?.type === "scim_group" && member.source.mappingId === mappingId)).toBe(false);
+
+      const restoredIdentity = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/scim/v2/Groups/${groupId}`,
+        headers: scimHeaders,
+        payload: { Operations: [{ op: "replace", path: "externalId", value: "role-group-1" }] }
+      });
+      expect(restoredIdentity.statusCode).toBe(200);
+      expect(store.state.members.find((member) => member.source?.type === "scim_group" && member.source.mappingId === mappingId)).toMatchObject({
+        userId,
+        campaignId: "camp_demo",
+        role: "observer"
+      });
+
+      const mappings = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/scim/group-role-mappings",
+        headers: adminHeaders
+      });
+      expect(mappings.statusCode).toBe(200);
+      expect(mappings.json()[0]).toMatchObject({
+        id: mappingId,
+        groupExternalId: "role-group-1",
+        group: { id: groupId, displayName: "Observer Group" }
+      });
+
+      const deletedMapping = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/admin/scim/group-role-mappings/${mappingId}`,
+        headers: adminHeaders
+      });
+      expect(deletedMapping.statusCode).toBe(200);
+      expect(deletedMapping.json()).toEqual({ removedMemberships: 1 });
+      expect(store.state.members.some((member) => member.userId === userId && member.campaignId === "camp_demo")).toBe(false);
+      expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["admin.scim.groupRoleMapping.create", "admin.scim.groupRoleMapping.delete", "scim.group.patch"]));
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("lets server admins manage users and sessions", async () => {
     const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";

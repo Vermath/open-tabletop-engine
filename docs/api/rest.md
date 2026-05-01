@@ -197,7 +197,24 @@ curl -X POST \
   "http://localhost:4000/api/v1/scim/v2/Groups"
 ```
 
-Server administrators are the user ids listed in `OTTE_ADMIN_USER_IDS`. Admin endpoints can list/update users, require password resets, disable accounts, revoke sessions, inspect the email outbox, and export redacted audit logs for account/session operations:
+Server administrators can map SCIM groups into campaign roles. A mapping targets exactly one group identifier: `groupId`, `groupExternalId`, or `groupDisplayName`; supported campaign roles are `gm`, `assistant_gm`, `player`, and `observer`. Creating or changing a matching SCIM group syncs membership into the campaign, removing only memberships that were created by that mapping and preserving manually managed campaign members.
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"groupExternalId":"campaign-staff","campaignId":"camp_demo","role":"assistant_gm"}' \
+  "http://localhost:4000/api/v1/admin/scim/group-role-mappings"
+
+curl -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  "http://localhost:4000/api/v1/admin/scim/group-role-mappings"
+
+curl -X DELETE \
+  -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  "http://localhost:4000/api/v1/admin/scim/group-role-mappings/scimmap_..."
+```
+
+Server administrators are the user ids listed in `OTTE_ADMIN_USER_IDS`. Admin endpoints can list/update users, require password resets, disable accounts, revoke sessions, inspect the email outbox, manage SCIM group role mappings, and export redacted audit logs for account/session operations:
 
 ```bash
 curl -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
@@ -240,7 +257,7 @@ curl -X POST \
   "http://localhost:4000/api/v1/invites/accept"
 ```
 
-Invite and password-reset tokens are returned only once and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. TOTP MFA secrets, recovery-code hashes, and SCIM profiles are redacted from public/admin user responses and campaign archives. Admin audit exports accept `campaignId`, `actorUserId`, `actorType`, `action`, `targetType`, `targetId`, `since`, `until`, `limit`, and `format=json|ndjson` query filters. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, password reset records, email outbox records, SCIM groups, user password hashes, MFA secrets, and SCIM profiles.
+Invite and password-reset tokens are returned only once and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. TOTP MFA secrets, recovery-code hashes, and SCIM profiles are redacted from public/admin user responses and campaign archives. Admin audit exports accept `campaignId`, `actorUserId`, `actorType`, `action`, `targetType`, `targetId`, `since`, `until`, `limit`, and `format=json|ndjson` query filters. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, password reset records, email outbox records, SCIM groups, SCIM group role mappings, SCIM membership source metadata, user password hashes, MFA secrets, and SCIM profiles.
 
 Password reset and admin environment variables:
 

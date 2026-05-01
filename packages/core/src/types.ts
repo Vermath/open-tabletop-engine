@@ -2,6 +2,7 @@ export type ID = string;
 
 export type Visibility = "gm_only" | "public" | "specific_players" | "specific_characters";
 export type UserRole = "owner" | "gm" | "assistant_gm" | "player" | "observer" | "plugin" | "ai_assistant";
+export type ScimAssignableRole = Extract<UserRole, "gm" | "assistant_gm" | "player" | "observer">;
 export type GridType = "square" | "gridless";
 export type ProposalStatus = "draft" | "pending" | "approved" | "rejected" | "applied" | "reverted";
 export type MessageType = "plain" | "emote" | "whisper" | "roll" | "system" | "gm" | "ooc" | "ai" | "plugin";
@@ -45,6 +46,15 @@ export interface ScimGroup extends Timestamps {
   displayName: string;
   externalId?: string;
   memberUserIds: ID[];
+}
+
+export interface ScimGroupRoleMapping extends Timestamps {
+  id: ID;
+  groupId?: ID;
+  groupExternalId?: string;
+  groupDisplayName?: string;
+  campaignId: ID;
+  role: ScimAssignableRole;
 }
 
 export interface UserSession extends Timestamps {
@@ -113,6 +123,15 @@ export interface CampaignMember extends Timestamps {
   campaignId: ID;
   userId: ID;
   role: UserRole;
+  source?: CampaignMemberSource;
+}
+
+export type CampaignMemberSource = CampaignMemberScimSource;
+
+export interface CampaignMemberScimSource {
+  type: "scim_group";
+  groupId: ID;
+  mappingId: ID;
 }
 
 export interface CampaignInvite extends Timestamps {
@@ -536,6 +555,7 @@ export interface EngineState {
   passwordResetTokens: PasswordResetToken[];
   emailOutbox: EmailOutboxMessage[];
   scimGroups: ScimGroup[];
+  scimGroupRoleMappings: ScimGroupRoleMapping[];
   invites: CampaignInvite[];
   campaigns: Campaign[];
   members: CampaignMember[];
