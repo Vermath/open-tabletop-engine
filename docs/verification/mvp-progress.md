@@ -55,6 +55,25 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - Direct blob request without a session returned `401`.
     - Direct blob request with `userId=usr_demo_gm` returned `200`, `image/svg+xml`, and contained `Manual Acceptance Map`.
 
+### AI Provider And Chat Permission Slice
+
+- Commit: `e37b252 feat: permission ai provider threads`
+- Evidence:
+  - `pnpm --filter @open-tabletop/api test` passed with `9 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test verifies:
+    - Player AI provider context includes public journal context and excludes `Session Hook`.
+    - Player AI provider context has no GM secrets.
+    - GM AI provider context includes the seeded founder oath secret.
+    - AI responses persist to chat as `public` for player-visible context and `gm_only` for GM context.
+    - Player chat reads include the public AI answer and exclude the GM-only AI answer.
+    - `OTTE_AI_PROVIDER=codex-loopback` selects the Codex App Server provider and returns a `message.completed` event.
+  - Manual API evidence on local dev server `http://127.0.0.1:4420` with `OTTE_AI_PROVIDER=codex-loopback`:
+    - Imported `usr_manual_player` as a player member of `camp_demo`.
+    - GM AI thread returned provider `codex-app-server`, event `message.completed`, and persisted chat visibility `gm_only`.
+    - Player AI thread returned provider `codex-app-server` and persisted chat visibility `public`.
+    - Player chat feed showed the player's own AI message and did not show the GM-only AI message.
+
 ## Known Remaining Gaps
 
 - Auth is still a development `x-user-id` session header, not production authentication.
@@ -63,5 +82,5 @@ This document tracks verified MVP progress without treating the whole PRD as com
 - Fog, walls, and lights exist in scene state, but wall/light authoring tools are still basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
-- AI flows still need deeper provider configuration, Codex adapter validation, approval queue UX, and end-to-end proposal application coverage.
+- AI flows still need approval queue UX, end-to-end proposal application coverage, and broader browser coverage beyond the provider thread path.
 - Full MVP completion still requires a clean-checkout runbook and a final prompt-to-artifact audit covering every PRD requirement.
