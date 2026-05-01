@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -91,6 +91,35 @@ describe("generic fantasy rules", () => {
       difficulty: "standard"
     });
     expect(plan.summary).toContain("2x Skeletal Guard");
+  });
+
+  it("normalizes imported fantasy characters", () => {
+    const imported = genericFantasyCharacterImport({
+      name: "Imported Mender",
+      data: {
+        level: 3,
+        class: "Mender",
+        hp: { current: 14, max: 18 },
+        attributes: { strength: 8, dexterity: 12, constitution: 13, intelligence: 13, wisdom: 16, charisma: 14 },
+        features: ["Field Prayer"],
+        conditions: ["blessed", "missing-condition"],
+        items: ["healing-word", "longsword", "missing-item"]
+      }
+    });
+
+    expect(imported).toMatchObject({
+      systemId: "generic-fantasy",
+      actorType: "character",
+      name: "Imported Mender",
+      data: {
+        level: 3,
+        class: "Mender",
+        hp: { current: 14, max: 18 },
+        conditions: [{ id: "blessed" }]
+      },
+      items: [{ entryId: "healing-word" }, { entryId: "longsword" }]
+    });
+    expect(imported.warnings).toEqual(["Unknown condition skipped: missing-condition", "Unknown compendium entry skipped: missing-item"]);
   });
 });
 
@@ -187,5 +216,34 @@ describe("stellar frontiers rules", () => {
       difficulty: "standard"
     });
     expect(plan.summary).toContain("2x Boarding Drone");
+  });
+
+  it("normalizes imported sci-fi characters", () => {
+    const imported = stellarFrontiersCharacterImport({
+      name: "Imported Ace",
+      data: {
+        rank: 4,
+        background: "Corsair Defector",
+        aptitudes: { combat: 3, tech: 2, pilot: 4, science: 1, charm: 1 },
+        strain: { current: 5, max: 8 },
+        milestones: ["Defected at Dawn"],
+        conditions: ["locked-in"],
+        items: ["laser-carbine", "overclock", "vacuum-exposed"]
+      }
+    });
+
+    expect(imported).toMatchObject({
+      systemId: "stellar-frontiers",
+      actorType: "character",
+      name: "Imported Ace",
+      data: {
+        rank: 4,
+        background: "Corsair Defector",
+        strain: { current: 5, max: 8 },
+        conditions: [{ id: "locked-in" }, { id: "vacuum-exposed" }]
+      },
+      items: [{ entryId: "laser-carbine" }, { entryId: "overclock" }]
+    });
+    expect(imported.warnings).toEqual([]);
   });
 });

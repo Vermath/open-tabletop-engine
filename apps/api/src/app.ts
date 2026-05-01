@@ -7,7 +7,7 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection } from "@open-tabletop/system-sdk";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -2524,6 +2524,41 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     return { template, actor, items, sheet: systemSheet(actor, items) };
+  });
+
+  app.post<{
+    Params: { campaignId: string; systemId: string };
+    Body: CharacterImportInput & { ownerUserId?: string };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/characters/import", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.create");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    if (!system) return notFound(reply, "System not found");
+    const imported = characterImportForSystem(system.id, request.body ?? {});
+    const actor = createTimestamped("act", {
+      campaignId: request.params.campaignId,
+      systemId: imported.systemId,
+      ownerUserId: request.body?.ownerUserId ?? userId,
+      type: imported.actorType,
+      name: imported.name,
+      data: cloneRecord(imported.data),
+      permissions: {}
+    }) satisfies Actor;
+    const items = createImportedItems(request.params.campaignId, actor, imported);
+    store.state.actors.push(actor);
+    store.state.items.push(...items);
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: actor.campaignId,
+        type: "actor.created",
+        targetId: actor.id,
+        payload: actor
+      })
+    );
+    return { import: imported, actor, items, sheet: systemSheet(actor, items) };
   });
 
   app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/compendium", async (request, reply) => {
@@ -5360,6 +5395,28 @@ function createTemplateItems(campaignId: string, actor: Actor, template: Charact
         type: entry.type,
         name: entry.name,
         data: { ...cloneRecord(entry.data), compendiumId: entry.id, quantity: templateItem.quantity ?? 1 }
+      }) satisfies Item
+    ];
+  });
+}
+
+function characterImportForSystem(systemId: string, input: CharacterImportInput): CharacterImportResult {
+  if (systemId === "stellar-frontiers") return stellarFrontiersCharacterImport(input);
+  return genericFantasyCharacterImport(input);
+}
+
+function createImportedItems(campaignId: string, actor: Actor, imported: CharacterImportResult): Item[] {
+  return imported.items.flatMap((importedItem) => {
+    const entry = compendiumEntryForSystem(imported.systemId, importedItem.entryId);
+    if (!entry || entry.type === "condition") return [];
+    return [
+      createTimestamped("itm", {
+        campaignId,
+        systemId: imported.systemId,
+        actorId: actor.id,
+        type: entry.type,
+        name: entry.name,
+        data: { ...cloneRecord(entry.data), compendiumId: entry.id, quantity: importedItem.quantity ?? 1 }
       }) satisfies Item
     ];
   });

@@ -2331,6 +2331,83 @@ describe("api", () => {
     }
   });
 
+  it("imports system characters from normalized character data", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const playerImport = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters/import",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { name: "Player Imported", data: { level: 2 } }
+      });
+      expect(playerImport.statusCode).toBe(403);
+
+      const imported = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters/import",
+        headers: authHeaders,
+        payload: {
+          name: "Imported Mender",
+          ownerUserId: "usr_demo_player",
+          data: {
+            level: 3,
+            class: "Mender",
+            hp: { current: 14, max: 18 },
+            attributes: { strength: 8, dexterity: 12, constitution: 13, intelligence: 13, wisdom: 16, charisma: 14 },
+            features: ["Field Prayer"],
+            conditions: ["blessed"],
+            items: ["healing-word", "longsword", "missing-item"]
+          }
+        }
+      });
+      expect(imported.statusCode).toBe(200);
+      expect(imported.json().actor).toEqual(
+        expect.objectContaining({
+          systemId: "generic-fantasy",
+          ownerUserId: "usr_demo_player",
+          name: "Imported Mender"
+        })
+      );
+      expect(imported.json().actor.data).toEqual(expect.objectContaining({ level: 3, class: "Mender", conditions: [{ id: "blessed" }] }));
+      expect(imported.json().items.map((item: { name: string }) => item.name)).toEqual(["Healing Word", "Longsword"]);
+      expect(imported.json().sheet.spells).toEqual([expect.objectContaining({ name: "Healing Word" })]);
+      expect(imported.json().import.warnings).toEqual(["Unknown compendium entry skipped: missing-item"]);
+
+      const stellar = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/stellar-frontiers/characters/import",
+        headers: authHeaders,
+        payload: {
+          name: "Imported Ace",
+          data: {
+            rank: 4,
+            background: "Corsair Defector",
+            aptitudes: { combat: 3, tech: 2, pilot: 4, science: 1, charm: 1 },
+            strain: { current: 5, max: 8 },
+            milestones: ["Defected at Dawn"],
+            conditions: ["locked-in"],
+            items: ["laser-carbine", "overclock", "vacuum-exposed"]
+          }
+        }
+      });
+      expect(stellar.statusCode).toBe(200);
+      expect(stellar.json().actor.data).toEqual(
+        expect.objectContaining({
+          rank: 4,
+          background: "Corsair Defector",
+          conditions: [{ id: "locked-in" }, { id: "vacuum-exposed" }]
+        })
+      );
+      expect(stellar.json().sheet.inventory).toEqual([expect.objectContaining({ name: "Laser Carbine" })]);
+      expect(stellar.json().sheet.talents).toEqual([expect.objectContaining({ name: "Overclock" })]);
+      expect(store.state.actors.some((actor) => actor.name === "Imported Ace")).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("plans system encounters with threat budgets and permission boundaries", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });

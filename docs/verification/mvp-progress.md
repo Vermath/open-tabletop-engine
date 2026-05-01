@@ -1003,6 +1003,38 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/rules-encounter-math.png`.
   - Browser page errors were empty; console output only showed Vite connection/debug lines and the React DevTools info message.
 
+### Rules Character Importer Slice
+
+- Implementation:
+  - Added Generic Fantasy and Stellar Frontiers character import normalizers that accept external JSON-like character data and normalize names, levels/ranks, HP/strain pools, abilities/aptitudes, features/milestones, conditions, and compendium-backed item selections.
+  - Added campaign-scoped API route `POST /api/v1/campaigns/{campaignId}/systems/{systemId}/characters/import`.
+  - Kept importer creation behind the existing `actor.create` permission boundary.
+  - Added browser SDK-panel support for importing a sample active-system character and displaying the imported actor name.
+  - Updated API contracts and REST/System SDK docs for the importer route.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk test` passed with `10 passed`.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `52 passed`.
+  - `pnpm --filter @open-tabletop/api-contracts build` passed.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - System SDK tests verify Generic Fantasy and Stellar Frontiers importer normalization, compendium item mapping, condition mapping, and skipped unknown entries.
+  - API tests verify player importer denial, GM imported actor creation, item and sheet creation, warnings for skipped unknown entries, and Stellar Frontiers gear/talent/condition import behavior.
+- Manual API and browser evidence:
+  - API: `http://127.0.0.1:4469`
+  - Web: `http://127.0.0.1:5195`
+  - SQLite file: `apps/api/storage/manual-character-import-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, and `OTTE_SQLITE_PATH=apps/api/storage/manual-character-import-20260501.sqlite`.
+  - GM and player bearer logins each returned an `ots_` token prefix.
+  - Player direct import returned `403`, confirming `actor.create` is required.
+  - GM imported `Manual Imported Mender` for owner `usr_demo_player`; normalized level was `3`, condition was `blessed`, items were `Healing Word,Longsword`, and warning was `Unknown compendium entry skipped: missing-item`.
+  - GM imported `Manual Imported Ace`; normalized rank was `4`, conditions were `locked-in,vacuum-exposed`, inventory listed `Laser Carbine`, and talents listed `Overclock`.
+  - Campaign actor list contained two manual imported actors.
+  - Browser SDK panel loaded with `Generic Fantasy` active, clicked `Import Character`, issued `POST /api/v1/campaigns/camp_demo/systems/generic-fantasy/characters/import`, and rendered `Imported Character` as `Imported Mender`.
+  - Screenshot saved at `output/playwright/rules-character-import.png`.
+  - Browser page errors were empty; console output only showed Vite connection/debug lines, the React DevTools info message, and the expected Vite hot update for `App.tsx`.
+
 ### AI Tool Depth And Observability Slice
 
 - Implementation:
@@ -1280,5 +1312,5 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
-- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, character templates, guided level advancement, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, system activation, conditions, character templates, guided rank advancement, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, importers, and deeper automation across more systems.
+- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and deeper automation across more systems.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

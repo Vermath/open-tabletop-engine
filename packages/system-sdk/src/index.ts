@@ -59,6 +59,22 @@ export interface CharacterTemplate {
   items: CharacterTemplateItem[];
 }
 
+export interface CharacterImportInput {
+  name?: unknown;
+  data?: Record<string, unknown>;
+  items?: unknown;
+  conditions?: unknown;
+}
+
+export interface CharacterImportResult {
+  systemId: string;
+  actorType: string;
+  name: string;
+  data: Record<string, unknown>;
+  items: CharacterTemplateItem[];
+  warnings: string[];
+}
+
 export interface AdvancementOption {
   id: string;
   systemId: string;
@@ -294,6 +310,33 @@ export function genericFantasyCharacterTemplate(templateId: string): CharacterTe
   return genericFantasyCharacterTemplates().find((template) => template.id === templateId);
 }
 
+export function genericFantasyCharacterImport(input: CharacterImportInput): CharacterImportResult {
+  const source = importSource(input);
+  const level = clampInteger(source.level, 1, 20, 1);
+  const attributes = normalizeNumberRecord(source.attributes, { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 });
+  const conModifier = abilityModifier(attributes.constitution ?? 10);
+  const defaultMaxHp = Math.max(1, 8 + conModifier + (level - 1) * 5);
+  const hp = normalizePool(source.hp, defaultMaxHp);
+  const warnings: string[] = [];
+  const conditions = normalizeImportConditions(source.conditions ?? input.conditions, genericFantasyCompendiumEntry, warnings);
+  const items = normalizeImportItems(source.items ?? input.items, genericFantasyCompendiumEntry, warnings, conditions);
+  return {
+    systemId: "generic-fantasy",
+    actorType: "character",
+    name: stringValue(input.name) || stringValue(source.name) || "Imported Adventurer",
+    data: {
+      level,
+      class: stringValue(source.class) || "Adventurer",
+      hp,
+      attributes,
+      conditions: conditions.map((id) => ({ id })),
+      features: normalizeStringArray(source.features)
+    },
+    items,
+    warnings
+  };
+}
+
 export function genericFantasyEncounterThreats(): EncounterThreat[] {
   return [
     {
@@ -520,6 +563,31 @@ export function stellarFrontiersCharacterTemplate(templateId: string): Character
   return stellarFrontiersCharacterTemplates().find((template) => template.id === templateId);
 }
 
+export function stellarFrontiersCharacterImport(input: CharacterImportInput): CharacterImportResult {
+  const source = importSource(input);
+  const rank = clampInteger(source.rank, 1, 10, 1);
+  const aptitudes = normalizeNumberRecord(source.aptitudes, { combat: 1, tech: 1, pilot: 1, science: 1, charm: 0 });
+  const strain = normalizePool(source.strain, 4 + rank);
+  const warnings: string[] = [];
+  const conditions = normalizeImportConditions(source.conditions ?? input.conditions, stellarFrontiersCompendiumEntry, warnings);
+  const items = normalizeImportItems(source.items ?? input.items, stellarFrontiersCompendiumEntry, warnings, conditions);
+  return {
+    systemId: "stellar-frontiers",
+    actorType: "character",
+    name: stringValue(input.name) || stringValue(source.name) || "Imported Spacer",
+    data: {
+      rank,
+      background: stringValue(source.background) || "Independent Operator",
+      aptitudes,
+      strain,
+      conditions: conditions.map((id) => ({ id })),
+      milestones: normalizeStringArray(source.milestones)
+    },
+    items,
+    warnings
+  };
+}
+
 export function stellarFrontiersEncounterThreats(): EncounterThreat[] {
   return [
     {
@@ -652,8 +720,82 @@ function numericValue(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
 function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function importSource(input: CharacterImportInput): Record<string, unknown> {
+  return { ...recordValue(input.data), ...recordValue(input) };
+}
+
+function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
+  const numeric = numericValue(value, fallback);
+  return Math.max(min, Math.min(max, Math.floor(numeric)));
+}
+
+function normalizeNumberRecord(value: unknown, defaults: Record<string, number>): Record<string, number> {
+  const source = recordValue(value);
+  return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [key, numericValue(source[key], fallback)]));
+}
+
+function normalizePool(value: unknown, defaultMax: number): { current: number; max: number } {
+  const source = recordValue(value);
+  const max = Math.max(1, numericValue(source.max, defaultMax));
+  const current = Math.max(0, Math.min(max, numericValue(source.current, max)));
+  return { current, max };
+}
+
+function normalizeImportConditions(value: unknown, lookup: (entryId: string) => RulesCompendiumEntry | undefined, warnings: string[]): string[] {
+  const conditions: string[] = [];
+  for (const id of normalizeImportIds(value)) {
+    const entry = lookup(id);
+    if (!entry || entry.type !== "condition") {
+      warnings.push(`Unknown condition skipped: ${id}`);
+      continue;
+    }
+    if (!conditions.includes(id)) conditions.push(id);
+  }
+  return conditions;
+}
+
+function normalizeImportItems(value: unknown, lookup: (entryId: string) => RulesCompendiumEntry | undefined, warnings: string[], conditions: string[]): CharacterTemplateItem[] {
+  const items: CharacterTemplateItem[] = [];
+  for (const selection of normalizeImportSelections(value)) {
+    const entry = lookup(selection.entryId);
+    if (!entry) {
+      warnings.push(`Unknown compendium entry skipped: ${selection.entryId}`);
+      continue;
+    }
+    if (entry.type === "condition") {
+      if (!conditions.includes(entry.id)) conditions.push(entry.id);
+      continue;
+    }
+    items.push(selection);
+  }
+  return items;
+}
+
+function normalizeImportIds(value: unknown): string[] {
+  return normalizeImportSelections(value).map((selection) => selection.entryId);
+}
+
+function normalizeImportSelections(value: unknown): CharacterTemplateItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string" && item.trim().length > 0) return [{ entryId: item.trim() }];
+    const record = recordValue(item);
+    const entryId = stringValue(record.entryId) ?? stringValue(record.id);
+    if (!entryId) return [];
+    return [{ entryId, quantity: Math.max(1, Math.floor(numericValue(record.quantity, 1))) }];
+  });
 }
 
 function buildEncounterPlan(input: { systemId: string; partyRating: number; threats: EncounterThreat[]; selections: EncounterThreatSelection[] }): EncounterPlan {

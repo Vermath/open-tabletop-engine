@@ -66,6 +66,7 @@ export function App() {
   const [adminSnapshot, setAdminSnapshot] = useState<AdminSnapshot>();
   const [adminStatus, setAdminStatus] = useState("Admin idle");
   const [encounterPlan, setEncounterPlan] = useState<EncounterPlanInfo>();
+  const [importedActor, setImportedActor] = useState<Actor>();
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const selectedScene = snapshot.scenes.find((scene) => scene.id === sceneId);
@@ -434,6 +435,43 @@ export function App() {
     await refresh();
   }
 
+  async function importSystemCharacter() {
+    const system = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
+    if (!system) return;
+    const payload =
+      system.id === "stellar-frontiers"
+        ? {
+            name: "Imported Ace",
+            ownerUserId: currentUserId,
+            data: {
+              rank: 4,
+              background: "Corsair Defector",
+              aptitudes: { combat: 3, tech: 2, pilot: 4, science: 1, charm: 1 },
+              strain: { current: 5, max: 8 },
+              milestones: ["Defected at Dawn"],
+              conditions: ["locked-in"],
+              items: ["laser-carbine", "overclock"]
+            }
+          }
+        : {
+            name: "Imported Mender",
+            ownerUserId: currentUserId,
+            data: {
+              level: 3,
+              class: "Mender",
+              hp: { current: 14, max: 18 },
+              attributes: { strength: 8, dexterity: 12, constitution: 13, intelligence: 13, wisdom: 16, charisma: 14 },
+              features: ["Field Prayer"],
+              conditions: ["blessed"],
+              items: ["healing-word", "longsword"]
+            }
+          };
+    const imported = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${system.id}/characters/import`, payload);
+    setImportedActor(imported.actor);
+    setStatus(`${imported.actor.name} imported`);
+    await refresh();
+  }
+
   async function advanceSelectedActor() {
     if (!selectedActor) return;
     const optionId = selectedActor.systemId === "stellar-frontiers" ? "rank-up" : "level-up";
@@ -726,7 +764,7 @@ export function App() {
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
-            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} encounterPlan={encounterPlan} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onAdvanceActor={advanceSelectedActor} onPlanEncounter={planSystemEncounter} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canPlanEncounter={hasPermission("combat.manage")} canRollSystem={hasPermission("dice.roll")} />}
+            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} importedActor={importedActor} encounterPlan={encounterPlan} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onAdvanceActor={advanceSelectedActor} onPlanEncounter={planSystemEncounter} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canPlanEncounter={hasPermission("combat.manage")} canRollSystem={hasPermission("dice.roll")} />}
             {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} />}
           </aside>
         </div>
@@ -1367,7 +1405,7 @@ function formatDateTime(value?: string): string {
   return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; encounterPlan?: EncounterPlanInfo; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onAdvanceActor(): void; onPlanEncounter(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canAdvanceActor: boolean; canPlanEncounter: boolean; canRollSystem: boolean }) {
+function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; importedActor?: Actor; encounterPlan?: EncounterPlanInfo; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onAdvanceActor(): void; onPlanEncounter(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canPlanEncounter: boolean; canRollSystem: boolean }) {
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   const rollLabel = props.actor?.systemId === "stellar-frontiers" ? "Tech Check" : "Charisma Check";
   const advancementLabel = props.actor?.systemId === "stellar-frontiers" ? "Advance Rank" : "Level Up";
@@ -1423,6 +1461,15 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
         <span>Sheet Actor</span>
         <strong>{props.actor?.name ?? "No actor"}</strong>
       </div>
+      <button className="ghost-button wide" onClick={props.onImportCharacter} disabled={!activeSystem || !props.canImportActor}>
+        <Upload size={16} /> Import Character
+      </button>
+      {props.importedActor && (
+        <div className="metric-row">
+          <span>Imported Character</span>
+          <strong>{props.importedActor.name}</strong>
+        </div>
+      )}
       <button className="ghost-button wide" onClick={props.onAdvanceActor} disabled={!props.actor || !props.canAdvanceActor}>
         <RefreshCw size={16} /> {advancementLabel}
       </button>
