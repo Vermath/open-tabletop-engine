@@ -2034,6 +2034,49 @@ describe("api", () => {
     expect(learnedSpell.statusCode).toBe(200);
     expect(learnedSpell.json().item).toEqual(expect.objectContaining({ type: "spell", name: "Healing Word", actorId: "act_valen" }));
     expect(learnedSpell.json().sheet.spells).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Healing Word" })]));
+    const spellRollId = `spell-${learnedSpell.json().item.id}-healing`;
+    expect(learnedSpell.json().sheet.quickRolls).toContainEqual({
+      id: spellRollId,
+      label: "Healing Word Healing",
+      formula: "1d4+2"
+    });
+
+    const learnedWeapon = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/compendium",
+      headers: authHeaders,
+      payload: { entryId: "longsword" }
+    });
+    expect(learnedWeapon.statusCode).toBe(200);
+    expect(learnedWeapon.json().item).toEqual(expect.objectContaining({ type: "item", name: "Longsword", actorId: "act_valen" }));
+    const weaponRollId = `item-${learnedWeapon.json().item.id}-damage`;
+    expect(learnedWeapon.json().sheet.quickRolls).toEqual(
+      expect.arrayContaining([
+        { id: weaponRollId, label: "Longsword Damage", formula: "1d8+2" },
+        { id: `item-${learnedWeapon.json().item.id}-versatile-damage`, label: "Longsword Versatile Damage", formula: "1d10+2" },
+        { id: spellRollId, label: "Healing Word Healing", formula: "1d4+2" }
+      ])
+    );
+
+    const weaponActionRoll = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll",
+      headers: authHeaders,
+      payload: { rollId: weaponRollId }
+    });
+    expect(weaponActionRoll.statusCode).toBe(200);
+    expect(weaponActionRoll.json().quickRoll).toEqual({ id: weaponRollId, label: "Longsword Damage", formula: "1d8+2" });
+    expect(store.state.chat.some((message) => message.body.includes("Valen Ash Longsword Damage"))).toBe(true);
+
+    const spellActionRoll = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll",
+      headers: authHeaders,
+      payload: { rollId: spellRollId }
+    });
+    expect(spellActionRoll.statusCode).toBe(200);
+    expect(spellActionRoll.json().quickRoll).toEqual({ id: spellRollId, label: "Healing Word Healing", formula: "1d4+2" });
+    expect(store.state.chat.some((message) => message.body.includes("Valen Ash Healing Word Healing"))).toBe(true);
 
     const blessed = await app.inject({
       method: "POST",
@@ -2185,6 +2228,48 @@ describe("api", () => {
       expect(learnedTalent.statusCode).toBe(200);
       expect(learnedTalent.json().item).toEqual(expect.objectContaining({ type: "talent", name: "Overclock", actorId }));
       expect(learnedTalent.json().sheet.talents).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Overclock" })]));
+      const talentRollId = `talent-${learnedTalent.json().item.id}-boost`;
+      expect(learnedTalent.json().sheet.quickRolls).toContainEqual({
+        id: talentRollId,
+        label: "Overclock Boost",
+        formula: "1d6+3"
+      });
+
+      const learnedGear = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${actorId}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "laser-carbine" }
+      });
+      expect(learnedGear.statusCode).toBe(200);
+      expect(learnedGear.json().item).toEqual(expect.objectContaining({ type: "gear", name: "Laser Carbine", actorId }));
+      const gearRollId = `gear-${learnedGear.json().item.id}-damage`;
+      expect(learnedGear.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          { id: talentRollId, label: "Overclock Boost", formula: "1d6+3" },
+          { id: gearRollId, label: "Laser Carbine Damage", formula: "1d8+2" }
+        ])
+      );
+
+      const talentActionRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: talentRollId }
+      });
+      expect(talentActionRoll.statusCode).toBe(200);
+      expect(talentActionRoll.json().quickRoll).toEqual({ id: talentRollId, label: "Overclock Boost", formula: "1d6+3" });
+      expect(store.state.chat.some((message) => message.body.includes("Nova Quill Overclock Boost"))).toBe(true);
+
+      const gearActionRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: gearRollId }
+      });
+      expect(gearActionRoll.statusCode).toBe(200);
+      expect(gearActionRoll.json().quickRoll).toEqual({ id: gearRollId, label: "Laser Carbine Damage", formula: "1d8+2" });
+      expect(store.state.chat.some((message) => message.body.includes("Nova Quill Laser Carbine Damage"))).toBe(true);
 
       const lockedIn = await app.inject({
         method: "POST",

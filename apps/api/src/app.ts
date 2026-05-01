@@ -2693,7 +2693,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
     if (!actor) return notFound(reply, "System actor not found");
-    const quickRolls = systemQuickRolls(actor);
+    const quickRolls = systemQuickRolls(actor, actorItems(store, actor));
     const rollDefinition =
       quickRolls.find((item) => item.id === request.body.rollId) ??
       quickRolls.find((item) => item.id === `ability-${request.body.ability}`) ??
@@ -5427,9 +5427,9 @@ function systemSheet(actor: Actor, items: Item[]) {
   return genericFantasySheet(actor, items);
 }
 
-function systemQuickRolls(actor: Actor) {
-  if (actor.systemId === "stellar-frontiers") return stellarFrontiersQuickRolls(actor);
-  return genericFantasyQuickRolls(actor);
+function systemQuickRolls(actor: Actor, items: Item[] = []) {
+  if (actor.systemId === "stellar-frontiers") return stellarFrontiersQuickRolls(actor, items);
+  return genericFantasyQuickRolls(actor, items);
 }
 
 function applySystemCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {

@@ -44,7 +44,7 @@ describe("generic fantasy rules", () => {
         actorId: actor.id,
         type: "item",
         name: "Longsword",
-        data: {},
+        data: { damage: "1d8", versatileDamage: "1d10", ability: "strength", compendiumId: "longsword" },
         createdAt: "2026-05-01T00:00:00.000Z",
         updatedAt: "2026-05-01T00:00:00.000Z"
       },
@@ -55,7 +55,7 @@ describe("generic fantasy rules", () => {
         actorId: actor.id,
         type: "spell",
         name: "Healing Word",
-        data: {},
+        data: { healingFormula: "1d4+@attributes.charisma", compendiumId: "healing-word" },
         createdAt: "2026-05-01T00:00:00.000Z",
         updatedAt: "2026-05-01T00:00:00.000Z"
       }
@@ -65,6 +65,13 @@ describe("generic fantasy rules", () => {
     const sheet = genericFantasySheet(actor, items);
     expect(sheet.inventory.map((item) => item.name)).toEqual(["Longsword"]);
     expect(sheet.spells.map((item) => item.name)).toEqual(["Healing Word"]);
+    expect(sheet.quickRolls).toEqual(
+      expect.arrayContaining([
+        { id: "item-itm_longsword-damage", label: "Longsword Damage", formula: "1d8+2" },
+        { id: "item-itm_longsword-versatile-damage", label: "Longsword Versatile Damage", formula: "1d10+2" },
+        { id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+2" }
+      ])
+    );
   });
 
   it("provides guided character templates and level advancement", () => {
@@ -165,7 +172,7 @@ describe("stellar frontiers rules", () => {
         actorId: pilot.id,
         type: "gear",
         name: "Laser Carbine",
-        data: {},
+        data: { damage: "1d8", aptitude: "combat", compendiumId: "laser-carbine" },
         createdAt: "2026-05-01T00:00:00.000Z",
         updatedAt: "2026-05-01T00:00:00.000Z"
       },
@@ -176,7 +183,7 @@ describe("stellar frontiers rules", () => {
         actorId: pilot.id,
         type: "talent",
         name: "Overclock",
-        data: {},
+        data: { bonusFormula: "1d6", aptitude: "tech", compendiumId: "overclock" },
         createdAt: "2026-05-01T00:00:00.000Z",
         updatedAt: "2026-05-01T00:00:00.000Z"
       }
@@ -187,6 +194,12 @@ describe("stellar frontiers rules", () => {
     expect(sheet.summary).toContain("Nova Quill");
     expect(sheet.inventory.map((item) => item.name)).toEqual(["Laser Carbine"]);
     expect(sheet.talents.map((item) => item.name)).toEqual(["Overclock"]);
+    expect(sheet.quickRolls).toEqual(
+      expect.arrayContaining([
+        { id: "gear-itm_carbine-damage", label: "Laser Carbine Damage", formula: "1d8+2" },
+        { id: "talent-itm_overclock-boost", label: "Overclock Boost", formula: "1d6+3" }
+      ])
+    );
   });
 
   it("provides guided sci-fi templates and rank advancement", () => {

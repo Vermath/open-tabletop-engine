@@ -202,11 +202,20 @@ export function abilityModifier(score: number): number {
   return Math.floor((score - 10) / 2);
 }
 
+function formatSignedNumber(value: number): string {
+  return value >= 0 ? `+${value}` : String(value);
+}
+
+function appendFormulaBonus(formula: string, bonus: number): string {
+  return `${formula}${formatSignedNumber(bonus)}`;
+}
+
+function itemBelongsToActor(actor: Actor, item: Item): boolean {
+  return item.actorId === actor.id;
+}
+
 export function genericFantasyAbilityCheck(actor: Actor, ability: string): QuickRoll {
-  const attributes = actor.data.attributes as Record<string, number> | undefined;
-  const score = attributes?.[ability] ?? 10;
-  const modifier = abilityModifier(score);
-  const formattedModifier = modifier >= 0 ? `+${modifier}` : String(modifier);
+  const modifier = genericFantasyAttributeModifier(actor, ability);
   const label = `${ability.charAt(0).toUpperCase()}${ability.slice(1)} Check`;
   const conditions = genericFantasyActorConditions(actor);
   const d20 = conditions.some((condition) => condition.id === "poisoned") ? "2d20kl1" : "1d20";
@@ -214,15 +223,52 @@ export function genericFantasyAbilityCheck(actor: Actor, ability: string): Quick
   return {
     id: `ability-${ability}`,
     label,
-    formula: `${d20}${formattedModifier}${bonus}`
+    formula: `${d20}${formatSignedNumber(modifier)}${bonus}`
   };
 }
 
-export function genericFantasyQuickRolls(actor: Actor): QuickRoll[] {
+export function genericFantasyActionRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
+  return items.filter((item) => itemBelongsToActor(actor, item)).flatMap((item) => {
+    const data = recordValue(item.data);
+    const rolls: QuickRoll[] = [];
+    const prefix = item.type === "spell" ? "spell" : "item";
+    const damage = stringValue(data.damage);
+    const ability = stringValue(data.ability);
+    if (damage && ability) {
+      rolls.push({
+        id: `${prefix}-${item.id}-damage`,
+        label: `${item.name} Damage`,
+        formula: appendFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability))
+      });
+    }
+    const versatileDamage = stringValue(data.versatileDamage);
+    if (versatileDamage && ability) {
+      rolls.push({
+        id: `${prefix}-${item.id}-versatile-damage`,
+        label: `${item.name} Versatile Damage`,
+        formula: appendFormulaBonus(versatileDamage, genericFantasyAttributeModifier(actor, ability))
+      });
+    }
+    const healingFormula = stringValue(data.healingFormula);
+    if (healingFormula) {
+      rolls.push({
+        id: `${prefix}-${item.id}-healing`,
+        label: `${item.name} Healing`,
+        formula: resolveGenericFantasyFormulaTokens(healingFormula, actor)
+      });
+    }
+    return rolls;
+  });
+}
+
+export function genericFantasyQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
   const attributes = actor.data.attributes as Record<string, number> | undefined;
-  return Object.keys(attributes ?? { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 }).map((ability) =>
-    genericFantasyAbilityCheck(actor, ability)
-  );
+  return [
+    ...Object.keys(attributes ?? { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 }).map((ability) =>
+      genericFantasyAbilityCheck(actor, ability)
+    ),
+    ...genericFantasyActionRolls(actor, items)
+  ];
 }
 
 export function genericFantasyCompendium(): GenericFantasyCompendiumEntry[] {
@@ -418,7 +464,7 @@ export function genericFantasySheet(actor: Actor, items: Item[] = []): GenericFa
     actorId: actor.id,
     summary: summarizeActor(actor),
     data: actor.data,
-    quickRolls: genericFantasyQuickRolls(actor),
+    quickRolls: genericFantasyQuickRolls(actor, items),
     conditions: genericFantasyActorConditions(actor),
     inventory: items.filter((item) => item.actorId === actor.id && item.type !== "spell"),
     spells: items.filter((item) => item.actorId === actor.id && item.type === "spell")
@@ -452,9 +498,7 @@ export function removeGenericFantasyCondition(actor: Actor, conditionId: string)
 }
 
 export function stellarFrontiersAptitudeCheck(actor: Actor, aptitude: string): QuickRoll {
-  const aptitudes = actor.data.aptitudes as Record<string, number> | undefined;
-  const modifier = aptitudes?.[aptitude] ?? 0;
-  const formattedModifier = modifier >= 0 ? `+${modifier}` : String(modifier);
+  const modifier = stellarFrontiersAptitudeModifier(actor, aptitude);
   const label = `${aptitude.charAt(0).toUpperCase()}${aptitude.slice(1)} Check`;
   const conditions = stellarFrontiersActorConditions(actor);
   const d20 = conditions.some((condition) => condition.id === "jammed") ? "2d20kl1" : "1d20";
@@ -462,13 +506,50 @@ export function stellarFrontiersAptitudeCheck(actor: Actor, aptitude: string): Q
   return {
     id: `aptitude-${aptitude}`,
     label,
-    formula: `${d20}${formattedModifier}${bonus}`
+    formula: `${d20}${formatSignedNumber(modifier)}${bonus}`
   };
 }
 
-export function stellarFrontiersQuickRolls(actor: Actor): QuickRoll[] {
+export function stellarFrontiersActionRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
+  return items.filter((item) => itemBelongsToActor(actor, item)).flatMap((item) => {
+    const data = recordValue(item.data);
+    const rolls: QuickRoll[] = [];
+    const prefix = item.type === "talent" ? "talent" : "gear";
+    const aptitude = stringValue(data.aptitude);
+    const damage = stringValue(data.damage);
+    if (damage) {
+      rolls.push({
+        id: `${prefix}-${item.id}-damage`,
+        label: `${item.name} Damage`,
+        formula: aptitude ? appendFormulaBonus(damage, stellarFrontiersAptitudeModifier(actor, aptitude)) : damage
+      });
+    }
+    const healingFormula = stringValue(data.healingFormula);
+    if (healingFormula) {
+      rolls.push({
+        id: `${prefix}-${item.id}-healing`,
+        label: `${item.name} Healing`,
+        formula: healingFormula
+      });
+    }
+    const bonusFormula = stringValue(data.bonusFormula);
+    if (bonusFormula) {
+      rolls.push({
+        id: `${prefix}-${item.id}-boost`,
+        label: `${item.name} Boost`,
+        formula: aptitude ? appendFormulaBonus(bonusFormula, stellarFrontiersAptitudeModifier(actor, aptitude)) : bonusFormula
+      });
+    }
+    return rolls;
+  });
+}
+
+export function stellarFrontiersQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
   const aptitudes = actor.data.aptitudes as Record<string, number> | undefined;
-  return Object.keys(aptitudes ?? { combat: 2, tech: 2, pilot: 1, science: 1, charm: 0 }).map((aptitude) => stellarFrontiersAptitudeCheck(actor, aptitude));
+  return [
+    ...Object.keys(aptitudes ?? { combat: 2, tech: 2, pilot: 1, science: 1, charm: 0 }).map((aptitude) => stellarFrontiersAptitudeCheck(actor, aptitude)),
+    ...stellarFrontiersActionRolls(actor, items)
+  ];
 }
 
 export function stellarFrontiersCompendium(): StellarFrontiersCompendiumEntry[] {
@@ -669,7 +750,7 @@ export function stellarFrontiersSheet(actor: Actor, items: Item[] = []): Stellar
     actorId: actor.id,
     summary: `${actor.name}${strain ? ` (${strain.current ?? "?"}/${strain.max ?? "?"} strain)` : ""}`,
     data: actor.data,
-    quickRolls: stellarFrontiersQuickRolls(actor),
+    quickRolls: stellarFrontiersQuickRolls(actor, items),
     conditions: stellarFrontiersActorConditions(actor),
     inventory: items.filter((item) => item.actorId === actor.id && item.type !== "talent" && item.type !== "spell"),
     spells: [],
@@ -714,6 +795,24 @@ function normalizeConditionRecords(value: unknown): Array<{ id: string; appliedA
       return undefined;
     })
     .filter((item): item is { id: string; appliedAt?: string } => Boolean(item));
+}
+
+function genericFantasyAttributeModifier(actor: Actor, ability: string): number {
+  const attributes = actor.data.attributes as Record<string, number> | undefined;
+  return abilityModifier(numericValue(attributes?.[ability], 10));
+}
+
+function stellarFrontiersAptitudeModifier(actor: Actor, aptitude: string): number {
+  const aptitudes = actor.data.aptitudes as Record<string, number> | undefined;
+  return numericValue(aptitudes?.[aptitude], 0);
+}
+
+function resolveGenericFantasyFormulaTokens(formula: string, actor: Actor): string {
+  return formula.replace(/([+-]?)@attributes\.([A-Za-z0-9_-]+)/g, (_match, operator: string, ability: string) => {
+    const modifier = genericFantasyAttributeModifier(actor, ability);
+    const signedModifier = operator === "-" ? -modifier : modifier;
+    return operator ? formatSignedNumber(signedModifier) : String(signedModifier);
+  });
 }
 
 function numericValue(value: unknown, fallback: number): number {

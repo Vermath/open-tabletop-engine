@@ -961,6 +961,7 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
   const inventory = props.items.filter((item) => item.type !== "spell" && item.type !== "talent");
   const spells = props.items.filter((item) => item.type === "spell");
   const talents = props.items.filter((item) => item.type === "talent");
+  const actionLabels = actorActionLabels(props.actor, props.items);
   return (
     <div className="panel-stack">
       <div className="section-title">Selected Actor</div>
@@ -999,6 +1000,12 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
           <strong>{talents.map((item) => item.name).join(", ")}</strong>
         </div>
       )}
+      {actionLabels.length > 0 && (
+        <div className="metric-row">
+          <span>Actions</span>
+          <strong>{actionLabels.join(", ")}</strong>
+        </div>
+      )}
       <div className="sheet-row">
         <label htmlFor="actor-hp">Current HP</label>
         <input id="actor-hp" type="number" value={hp?.current ?? 0} disabled={!props.canUpdateActor} onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))} />
@@ -1026,6 +1033,79 @@ function actorConditionLabels(actor: Actor): string[] {
       return undefined;
     })
     .filter((condition): condition is string => Boolean(condition));
+}
+
+function actorActionLabels(actor: Actor, items: Item[]): string[] {
+  if (actor.systemId === "stellar-frontiers") return stellarFrontiersActionLabels(actor, items);
+  return genericFantasyActionLabels(actor, items);
+}
+
+function genericFantasyActionLabels(actor: Actor, items: Item[]): string[] {
+  return items.filter((item) => item.actorId === actor.id).flatMap((item) => {
+    const data = recordValue(item.data);
+    const labels: string[] = [];
+    const ability = stringValue(data.ability);
+    const damage = stringValue(data.damage);
+    if (damage && ability) labels.push(`${item.name} Damage: ${appendActionFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability))}`);
+    const versatileDamage = stringValue(data.versatileDamage);
+    if (versatileDamage && ability) labels.push(`${item.name} Versatile: ${appendActionFormulaBonus(versatileDamage, genericFantasyAttributeModifier(actor, ability))}`);
+    const healingFormula = stringValue(data.healingFormula);
+    if (healingFormula) labels.push(`${item.name} Healing: ${resolveGenericFantasyActionFormula(healingFormula, actor)}`);
+    return labels;
+  });
+}
+
+function stellarFrontiersActionLabels(actor: Actor, items: Item[]): string[] {
+  return items.filter((item) => item.actorId === actor.id).flatMap((item) => {
+    const data = recordValue(item.data);
+    const labels: string[] = [];
+    const aptitude = stringValue(data.aptitude);
+    const damage = stringValue(data.damage);
+    if (damage) labels.push(`${item.name} Damage: ${aptitude ? appendActionFormulaBonus(damage, stellarFrontiersAptitudeModifier(actor, aptitude)) : damage}`);
+    const healingFormula = stringValue(data.healingFormula);
+    if (healingFormula) labels.push(`${item.name} Healing: ${healingFormula}`);
+    const bonusFormula = stringValue(data.bonusFormula);
+    if (bonusFormula) labels.push(`${item.name} Boost: ${aptitude ? appendActionFormulaBonus(bonusFormula, stellarFrontiersAptitudeModifier(actor, aptitude)) : bonusFormula}`);
+    return labels;
+  });
+}
+
+function genericFantasyAttributeModifier(actor: Actor, ability: string): number {
+  const attributes = recordValue(actor.data.attributes);
+  return Math.floor((numericValue(attributes[ability], 10) - 10) / 2);
+}
+
+function stellarFrontiersAptitudeModifier(actor: Actor, aptitude: string): number {
+  const aptitudes = recordValue(actor.data.aptitudes);
+  return numericValue(aptitudes[aptitude], 0);
+}
+
+function resolveGenericFantasyActionFormula(formula: string, actor: Actor): string {
+  return formula.replace(/([+-]?)@attributes\.([A-Za-z0-9_-]+)/g, (_match, operator: string, ability: string) => {
+    const modifier = genericFantasyAttributeModifier(actor, ability);
+    const signedModifier = operator === "-" ? -modifier : modifier;
+    return operator ? formatSignedActionNumber(signedModifier) : String(signedModifier);
+  });
+}
+
+function appendActionFormulaBonus(formula: string, bonus: number): string {
+  return `${formula}${formatSignedActionNumber(bonus)}`;
+}
+
+function formatSignedActionNumber(value: number): string {
+  return value >= 0 ? `+${value}` : String(value);
+}
+
+function numericValue(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function JournalPanel(props: { journals: JournalEntry[]; onCreate(): void; canCreate: boolean }) {

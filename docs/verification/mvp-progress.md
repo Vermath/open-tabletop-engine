@@ -1035,6 +1035,36 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/rules-character-import.png`.
   - Browser page errors were empty; console output only showed Vite connection/debug lines, the React DevTools info message, and the expected Vite hot update for `App.tsx`.
 
+### Rules Action Automation Slice
+
+- Implementation:
+  - Added Generic Fantasy action quick rolls for actor-owned compendium items and spells, including Longsword damage/versatile damage and Healing Word healing formulas resolved from actor attributes.
+  - Added Stellar Frontiers action quick rolls for actor-owned gear and talents, including Laser Carbine damage, Med Patch healing, and Overclock boost formulas resolved from actor aptitudes.
+  - Updated the system roll endpoint so item/spell/gear/talent action roll ids are available alongside ability and aptitude checks and can post the resolved formulas into chat.
+  - Added browser actor-panel Actions output so compendium-backed action formulas are visible with inventory, spells, and talents.
+  - Updated REST and System SDK docs for compendium-backed action formulas.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk test` passed with `10 passed`.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `52 passed`.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - System SDK tests verify Generic Fantasy item/spell action rolls and Stellar Frontiers gear/talent action rolls in sheet quick rolls.
+  - API tests verify compendium-backed action roll ids can be selected through the system roll endpoint and posted into chat for both systems.
+- Manual API and browser evidence:
+  - API: `http://127.0.0.1:4470`
+  - Web: `http://localhost:5175`
+  - SQLite file: `apps/api/storage/manual-rules-action-automation-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, `OTTE_SQLITE_PATH=storage/manual-rules-action-automation-20260501.sqlite`, and `VITE_API_URL=http://127.0.0.1:4470`.
+  - GM and player bearer logins each returned an `ots_` token prefix.
+  - GM attached `Healing Word` and `Longsword` to Valen Ash; the sheet action quick rolls showed `Healing Word Healing=1d4+2` and `Longsword Damage=1d8+2`.
+  - GM rolled Longsword damage and the player rolled Healing Word healing through the system roll endpoint; returned formulas were `1d8+2` and `1d4+2`.
+  - GM installed Stellar Frontiers, created `Manual Ship Tech`, and attached `Laser Carbine`, `Overclock`, and `Med Patch`; the sheet action quick rolls showed `Laser Carbine Damage=1d8+2`, `Overclock Boost=1d6+3`, and `Med Patch Healing=1d6+2`.
+  - GM/player action rolls for the Stellar actor returned formulas `1d8+2`, `1d6+3`, and `1d6+2`.
+  - Manual item count was `5` and chat roll message count was `5`, confirming the evidence run created the intended action items and posted each roll once.
+  - Browser actor panel showed `Inventory: Longsword`, `Spells: Healing Word`, and `Actions: Healing Word Healing: 1d4+2, Longsword Damage: 1d8+2, Longsword Versatile: 1d10+2`.
+  - Screenshot saved at `output/playwright/rules-action-automation.png`.
+  - Browser page errors had no application runtime failures; console output was limited to the React DevTools info message, a missing `favicon.ico` 404, and an autocomplete hint.
+
 ### AI Tool Depth And Observability Slice
 
 - Implementation:
@@ -1312,5 +1342,5 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
-- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and deeper automation across more systems.
+- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.
