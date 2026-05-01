@@ -1,7 +1,7 @@
-import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
-import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, Lightbulb, LockKeyhole, MessageSquare, Pentagon, Plus, ScrollText, Send, Shield, Swords, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, Lightbulb, LockKeyhole, MessageSquare, Pentagon, Plus, ScrollText, Send, Shield, Swords, Timer, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AiUsageSummary, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -33,6 +33,8 @@ export function App() {
     combats: [],
     proposals: [],
     memory: [],
+    aiThreads: [],
+    aiToolCalls: [],
     plugins: [],
     systems: []
   });
@@ -617,7 +619,7 @@ export function App() {
             {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} items={selectedActorItems} updateActorHp={updateActorHp} canUpdateActor={canUpdateSelectedActor} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
-            {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
+            {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} actor={selectedActor} onInstallPlugin={installPlugin} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
         </div>
@@ -922,7 +924,7 @@ function CombatPanel(props: { combat?: Combat; onStart(): void; canManage: boole
   );
 }
 
-function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; recapSession(): void; extractMemory(): void; proposals: Proposal[]; memory: AiMemoryFact[]; approveAndApply(proposal: Proposal): void; approveMemory(fact: AiMemoryFact): void; canPropose: boolean; canApply: boolean }) {
+function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; recapSession(): void; extractMemory(): void; proposals: Proposal[]; memory: AiMemoryFact[]; aiThreads: AiThread[]; aiUsage?: AiUsageSummary; aiToolCalls: AiToolCall[]; approveAndApply(proposal: Proposal): void; approveMemory(fact: AiMemoryFact): void; canPropose: boolean; canApply: boolean }) {
   return (
     <div className="panel-stack">
       <div className="section-title">Permissioned AI</div>
@@ -936,6 +938,7 @@ function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(
       <button className="ghost-button wide" onClick={props.extractMemory} disabled={!props.canPropose}>
         <FileText size={16} /> Extract Memory
       </button>
+      {props.canPropose && <AiOperationsPanel summary={props.aiUsage} threads={props.aiThreads} toolCalls={props.aiToolCalls} />}
       {props.memory.map((fact) => (
         <article className="proposal" key={fact.id}>
           <span>{fact.approvedByUserId ? "approved memory" : "pending memory"}</span>
@@ -961,6 +964,106 @@ function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(
       ))}
     </div>
   );
+}
+
+function AiOperationsPanel(props: { summary?: AiUsageSummary; threads: AiThread[]; toolCalls: AiToolCall[] }) {
+  const summary = props.summary;
+  const recentThreads = props.threads.slice(0, 4);
+  const recentToolCalls = props.toolCalls.slice(0, 5);
+  const usage = summary?.usage;
+  return (
+    <section className="operator-section" aria-label="AI operations">
+      <div className="operator-heading">
+        <div className="section-title">Operator Signals</div>
+        <Activity size={15} />
+      </div>
+      <div className="metric-grid">
+        <MetricTile label="Threads" value={formatNumber(summary?.threadCount ?? props.threads.length)} />
+        <MetricTile label="Failures" value={formatNumber(summary?.failedThreadCount)} />
+        <MetricTile label="Retries" value={formatNumber(summary?.retryAttempts)} />
+        <MetricTile label="Tokens" value={formatNumber(usage?.totalTokens)} />
+        <MetricTile label="Cost" value={formatCost(usage?.estimatedCostUsd)} />
+        <MetricTile label="Tools" value={formatNumber(summary?.toolCallCount ?? props.toolCalls.length)} />
+      </div>
+      {summary && summary.providers.length > 0 && (
+        <div className="operator-list">
+          {summary.providers.map((provider) => (
+            <div className="operator-row" key={provider.provider}>
+              <span>{provider.provider}</span>
+              <strong>{formatNumber(provider.usage.totalTokens)} tokens</strong>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="operator-list">
+        <div className="operator-heading">
+          <div className="section-title">Recent Threads</div>
+          <Timer size={15} />
+        </div>
+        {recentThreads.length === 0 ? (
+          <div className="empty-state compact">No AI threads.</div>
+        ) : (
+          recentThreads.map((thread) => (
+            <article className="operator-item" key={thread.id}>
+              <div className="operator-row">
+                <span className={`status-pill ${thread.status ?? "running"}`}>{thread.status ?? "running"}</span>
+                <strong>{formatDuration(thread.durationMs)}</strong>
+              </div>
+              <h3>{thread.title}</h3>
+              <p>{thread.provider} - {formatTime(thread.startedAt)}</p>
+              <div className="operator-row">
+                <span>{formatNumber(thread.usage?.totalTokens)} tokens</span>
+                <span>{formatCost(thread.usage?.estimatedCostUsd)}</span>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+      <div className="operator-list">
+        <div className="section-title">Tool Calls</div>
+        {recentToolCalls.length === 0 ? (
+          <div className="empty-state compact">No tool calls.</div>
+        ) : (
+          recentToolCalls.map((toolCall) => (
+            <div className="operator-row tool-call-row" key={toolCall.id}>
+              <span>{toolCall.toolName}</span>
+              <strong>{toolCall.status} - {formatDuration(toolCall.durationMs)}</strong>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MetricTile(props: { label: string; value: string }) {
+  return (
+    <div className="metric-tile">
+      <span>{props.label}</span>
+      <strong>{props.value}</strong>
+    </div>
+  );
+}
+
+function formatNumber(value?: number): string {
+  return typeof value === "number" && Number.isFinite(value) ? value.toLocaleString() : "0";
+}
+
+function formatCost(value?: number): string {
+  return typeof value === "number" && Number.isFinite(value) ? `$${value.toFixed(6)}` : "n/a";
+}
+
+function formatDuration(value?: number): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "0 ms";
+  if (value < 1000) return `${Math.round(value)} ms`;
+  return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)} s`;
+}
+
+function formatTime(value?: string): string {
+  if (!value) return "";
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) return value;
+  return time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; actor?: Actor; onInstallPlugin(plugin: PluginRuntimeInfo): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canRollSystem: boolean }) {

@@ -9,7 +9,7 @@ The AI layer is provider-agnostic. `packages/ai-core` defines:
 - local echo provider for development
 - OpenAI Responses API provider adapter
 
-The API endpoint `POST /api/v1/campaigns/{campaignId}/ai/threads` creates a thread and returns an assistant response. `GET /api/v1/campaigns/{campaignId}/ai/threads` gives GMs the campaign's AI thread status history, and `GET /api/v1/campaigns/{campaignId}/ai/usage` aggregates operational usage by provider. The web client wraps assistant output in a reviewable proposal before applying campaign changes.
+The API endpoint `POST /api/v1/campaigns/{campaignId}/ai/threads` creates a thread and returns an assistant response. `GET /api/v1/campaigns/{campaignId}/ai/threads` gives GMs the campaign's AI thread status history, and `GET /api/v1/campaigns/{campaignId}/ai/usage` aggregates operational usage by provider. The web AI panel shows GM-only operational rollups, recent threads, provider usage, and recent tool calls. The web client wraps assistant output in a reviewable proposal before applying campaign changes.
 
 AI MVP endpoints also include:
 

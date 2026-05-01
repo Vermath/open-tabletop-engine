@@ -3,6 +3,8 @@ dist/
 coverage/
 .turbo/
 .vite/
+.playwright-cli/
+output/
 .env
 .env.*
 !.env.example

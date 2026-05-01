@@ -904,6 +904,29 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - GM `GET /api/v1/campaigns/camp_demo/ai/threads` listed the same thread.
   - Player `GET /api/v1/campaigns/camp_demo/ai/usage` returned `403`.
 
+### AI Operator Dashboard Slice
+
+- Implementation:
+  - Added AI thread, usage, and tool-call telemetry to the web snapshot contract.
+  - Gated web telemetry fetches behind the current campaign member's `ai.proposeChanges` permission.
+  - Added GM-only AI panel operator signals for thread counts, failures, retries, tokens, estimated cost, tool calls, provider usage, recent thread status, and recent tool-call status.
+  - Player sessions keep the existing AI action controls disabled and do not load the GM-only telemetry endpoints.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - `git diff --check` passed.
+- Manual browser/API evidence:
+  - API: `http://127.0.0.1:4458`
+  - Web: `http://127.0.0.1:5175`
+  - Fake OpenAI-compatible endpoint: `http://127.0.0.1:4715/v1/responses`
+  - SQLite file: `apps/api/storage/manual-ai-operator-dashboard-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_AI_PROVIDER=openai-responses`, `OPENAI_API_KEY=sk-local-smoke`, `OPENAI_BASE_URL=http://127.0.0.1:4715/v1`, `OPENAI_MODEL=gpt-local-operator-smoke`, `OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K=0.01`, and `OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K=0.02`.
+  - Seeded GM AI thread returned provider `openai-responses`, status `completed`, input tokens `888`, output tokens `222`, total tokens `1110`, and estimated cost `0.01332`.
+  - GM browser AI tab showed `Operator Signals`, thread count `1`, failures `0`, retries `0`, tokens `1,110`, cost `$0.013320`, provider `openai-responses`, and recent completed thread `Create operator dashboard smoke telemetry.`
+  - Player browser session kept AI action buttons disabled, hid `Operator Signals`, and the post-switch network request list did not include `/ai/threads`, `/ai/usage`, or `/ai/tool-calls`.
+  - Screenshots saved at `output/playwright/ai-operator-dashboard-gm.png` and `output/playwright/ai-operator-dashboard-player.png`.
+
 ### SCIM Organization Sync Slice
 
 - Implementation:
@@ -977,4 +1000,4 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
-- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/memory/dice/compendium tools, provider retry/failure handling, thread status history, tool-call observability, provider-backed memory extraction, usage and estimated-cost metrics, approval/application, and deterministic recap memory. Remaining Codex integration work is broader campaign-edit tool coverage, deeper permission-regression breadth, and richer front-end operator dashboards.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/memory/dice/compendium tools, provider retry/failure handling, thread status history, tool-call observability, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, approval/application, and deterministic recap memory. Remaining Codex integration work is broader campaign-edit tool coverage and deeper permission-regression breadth.

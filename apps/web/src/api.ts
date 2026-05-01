@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, Campaign, CampaignMember, ChatMessage, Combat, Encounter, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, Campaign, CampaignMember, ChatMessage, Combat, Encounter, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -169,6 +169,9 @@ export interface Snapshot {
   combats: Combat[];
   proposals: Proposal[];
   memory: AiMemoryFact[];
+  aiThreads: AiThread[];
+  aiUsage?: AiUsageSummary;
+  aiToolCalls: AiToolCall[];
   plugins: PluginRuntimeInfo[];
   systems: SystemRuntimeInfo[];
 }
@@ -269,6 +272,23 @@ export interface SystemRuntimeInfo {
   active: boolean;
 }
 
+export interface AiUsageRollup {
+  threadCount: number;
+  completedThreadCount: number;
+  failedThreadCount: number;
+  runningThreadCount: number;
+  retryAttempts: number;
+  eventCount: number;
+  toolCallCount: number;
+  durationMs: number;
+  usage: AiUsageMetrics;
+}
+
+export interface AiUsageSummary extends AiUsageRollup {
+  campaignId: string;
+  providers: Array<AiUsageRollup & { provider: string }>;
+}
+
 export function assetBlobUrl(asset: MapAsset): string {
   if (/^(https?:|data:|blob:)/.test(asset.url)) return asset.url;
   const separator = asset.url.includes("?") ? "&" : "?";
@@ -312,14 +332,18 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       combats: [],
       proposals: [],
       memory: [],
+      aiThreads: [],
+      aiToolCalls: [],
       plugins: [],
       systems: []
     };
   }
   const scenes = await apiGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
   const selectedSceneId = sceneId ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
-  const [members, assets, tokens, vision, actors, items, journals, chat, encounters, combats, proposals, memory, plugins, systems] = await Promise.all([
-    apiGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`),
+  const members = await apiGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`);
+  const currentMember = members.find((member) => member.user.id === session.user.id);
+  const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
+  const [assets, tokens, vision, actors, items, journals, chat, encounters, combats, proposals, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
     apiGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
     selectedSceneId ? apiGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
     selectedSceneId ? apiGet<VisionSnapshot>(`/api/v1/scenes/${selectedSceneId}/vision`) : Promise.resolve(undefined),
@@ -331,6 +355,9 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     apiGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
     apiGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
     apiGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`),
+    canViewAiOperations ? apiGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
+    canViewAiOperations ? apiGet<AiUsageSummary>(`/api/v1/campaigns/${selectedCampaignId}/ai/usage`) : Promise.resolve(undefined),
+    canViewAiOperations ? apiGet<AiToolCall[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/tool-calls`) : Promise.resolve([]),
     apiGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
     apiGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)
   ]);
@@ -350,6 +377,9 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     combats,
     proposals,
     memory,
+    aiThreads,
+    aiUsage,
+    aiToolCalls,
     plugins,
     systems
   };

@@ -461,6 +461,13 @@ input:disabled {
   color: var(--muted);
 }
 
+.empty-state.compact {
+  padding: 9px;
+  border: 1px dashed #463b2a;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
 .inspector {
   min-width: 0;
   border-left: 1px solid var(--line);
@@ -511,6 +518,120 @@ input:disabled {
 .panel-stack h2 {
   font-family: Georgia, serif;
   font-size: 26px;
+}
+
+.operator-section {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1b1812;
+}
+
+.operator-heading,
+.operator-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.operator-heading svg {
+  flex: 0 0 auto;
+  color: var(--brass);
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metric-tile {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #463b2a;
+  border-radius: 7px;
+  background: #15130f;
+}
+
+.metric-tile span,
+.operator-row span,
+.operator-item p,
+.tool-call-row strong {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.metric-tile strong,
+.operator-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.operator-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.operator-item,
+.tool-call-row {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #463b2a;
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+
+.operator-item {
+  display: grid;
+  gap: 6px;
+}
+
+.operator-item h3,
+.operator-item p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.operator-item h3 {
+  font-size: 14px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid #5d503a;
+  border-radius: 999px;
+  color: var(--paper);
+  background: #15130f;
+  text-transform: uppercase;
+}
+
+.status-pill.completed {
+  border-color: rgba(145, 185, 113, 0.72);
+  color: var(--green);
+}
+
+.status-pill.failed {
+  border-color: rgba(190, 102, 88, 0.72);
+  color: var(--red);
+}
+
+.status-pill.running {
+  border-color: rgba(214, 168, 84, 0.72);
+  color: var(--brass);
 }
 
 .metric-row,
