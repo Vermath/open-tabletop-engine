@@ -386,6 +386,28 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Ownership boundary check created GM token `tok_momxh08h2s67kkt8`; a player `PATCH /api/v1/tokens/tok_momxh08h2s67kkt8` returned `403`.
   - Manual evidence screenshots were saved in the clean clone at `output/playwright/role-clean-gm.png` and `output/playwright/role-clean-player.png`.
 
+### OpenAI Responses Provider Adapter Slice
+
+- Implementation:
+  - Added `OpenAiResponsesProvider` to `packages/ai-core`.
+  - The provider posts permission-filtered campaign context to the OpenAI Responses API, maps OpenTabletop AI tools to function tools, maps returned function calls to OpenTabletop tool events, supports `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_ORGANIZATION`, and `OPENAI_PROJECT`, and returns a clear configuration message when selected without an API key.
+  - The API now supports `OTTE_AI_PROVIDER=openai` and `OTTE_AI_PROVIDER=openai-responses`.
+  - The AI gateway provider registry now exposes the real OpenAI Responses adapter instead of the previous placeholder.
+- Automated evidence:
+  - `pnpm --filter @open-tabletop/ai-core test` passed with `3 passed`.
+  - `pnpm --filter @open-tabletop/ai-core typecheck` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `18 passed`, including API provider-selection coverage for `openai-responses`.
+- Manual API evidence with a local OpenAI-compatible `/v1/responses` endpoint:
+  - Fake OpenAI-compatible endpoint: `http://127.0.0.1:4711/v1/responses`
+  - API: `http://127.0.0.1:4436`
+  - SQLite file: `storage/openai-responses-smoke-20260501.sqlite`
+  - Environment: `OTTE_AI_PROVIDER=openai-responses`, `OPENAI_API_KEY=sk-local-smoke`, `OPENAI_BASE_URL=http://127.0.0.1:4711/v1`, `OPENAI_MODEL=gpt-local-smoke`.
+  - Fake endpoint logged `POST /v1/responses` with `Authorization: Bearer sk-local-smoke` and request body model `gpt-local-smoke`.
+  - AI thread smoke returned provider `openai-responses`, assistant message `OpenAI-compatible smoke completed.`, and event sequence `tool.started,tool.completed,proposal.created,message.completed`.
+  - The provider-returned `create_proposal` function call executed through the API permission boundary and created pending proposal `Fake OpenAI Prep`.
+  - Proposal change payload targeted journal `Fake OpenAI Prep Note`.
+
 ## Known Remaining Gaps
 
 - Auth now has MVP bearer sessions for seeded users across REST, realtime, and asset blob access, but still lacks password login, OAuth, invites, account management, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
@@ -393,5 +415,5 @@ This document tracks verified MVP progress without treating the whole PRD as com
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
-- AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, provider-backed memory extraction, approval/application, and deterministic recap memory. Real-provider prompt quality and broader tool coverage remain basic.
+- AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, OpenAI Responses adapter requests and function-call mapping, provider-backed memory extraction, approval/application, and deterministic recap memory. Hosted-model prompt quality and broader tool coverage remain basic.
 - Clean-checkout local dev, Docker Compose startup, and prompt-to-artifact audit are now documented and verified in `docs/verification/mvp-acceptance-audit.md`.

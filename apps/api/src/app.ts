@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { basename, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
+import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserSession } from "@open-tabletop/core";
@@ -1489,6 +1489,15 @@ function createConfiguredAiProvider(): AiProvider {
     return new CodexAppServerProvider({
       transport: new LoopbackCodexTransport(),
       approvalMode: "proposal"
+    });
+  }
+  if (process.env.OTTE_AI_PROVIDER === "openai" || process.env.OTTE_AI_PROVIDER === "openai-responses") {
+    return new OpenAiResponsesProvider({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseUrl: process.env.OPENAI_BASE_URL,
+      model: process.env.OPENAI_MODEL,
+      organization: process.env.OPENAI_ORGANIZATION ?? process.env.OPENAI_ORG_ID,
+      project: process.env.OPENAI_PROJECT ?? process.env.OPENAI_PROJECT_ID
     });
   }
   return new EchoAiProvider();

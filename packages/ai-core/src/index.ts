@@ -1,4 +1,5 @@
 import type { EngineState, PermissionName, ProposalChange, Visibility } from "@open-tabletop/core";
+export { OpenAiResponsesProvider, type OpenAiResponsesProviderOptions } from "./openai-responses-provider";
 
 export interface AiMessage {
   role: "system" | "user" | "assistant" | "tool";
