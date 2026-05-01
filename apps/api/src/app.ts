@@ -14,9 +14,11 @@ import {
   type Actor,
   type AiMemoryFact,
   type Campaign,
+  type CampaignArchive,
   type ChatMessage,
   type Combat,
   type Encounter,
+  type EngineState,
   type JournalEntry,
   type MapAsset,
   type PermissionName,
@@ -752,28 +754,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return makeArchive(store.state, request.params.campaignId);
   });
 
-  app.post<{ Body: { data?: unknown } }>("/api/v1/import/campaign", async (request, reply) => {
+  app.post<{ Body: CampaignArchive | { archive: CampaignArchive; mode?: "upsert" | "reject_conflicts" } }>("/api/v1/import/campaign", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const archive = request.body as ReturnType<typeof makeArchive>;
+    const payload = request.body as CampaignArchive | { archive: CampaignArchive; mode?: "upsert" | "reject_conflicts" };
+    const archive = "archive" in payload ? payload.archive : payload;
+    const mode = "archive" in payload ? (payload.mode ?? "upsert") : "upsert";
     if (archive.format !== "ottx") throw new Error("Unsupported archive format");
-    store.state.campaigns.push(...archive.data.campaigns);
-    store.state.members.push(...archive.data.members);
-    store.state.worlds.push(...archive.data.worlds);
-    store.state.scenes.push(...archive.data.scenes);
-    store.state.assets.push(...archive.data.assets);
-    store.state.tokens.push(...archive.data.tokens);
-    store.state.actors.push(...archive.data.actors);
-    store.state.items.push(...archive.data.items);
-    store.state.journals.push(...archive.data.journals);
-    store.state.handouts.push(...archive.data.handouts);
-    store.state.chat.push(...archive.data.chat);
-    store.state.rolls.push(...archive.data.rolls);
-    store.state.encounters.push(...archive.data.encounters);
-    store.state.combats.push(...archive.data.combats);
-    store.state.proposals.push(...archive.data.proposals);
+
+    const conflicts = findArchiveConflicts(store.state, archive);
+    if (mode === "reject_conflicts" && conflicts.length > 0) {
+      return reply.code(409).send({ error: "import_conflict", conflicts });
+    }
+
+    const counts = mergeArchive(store.state, archive);
     store.save();
-    return { importedCampaignIds: archive.data.campaigns.map((item) => item.id) };
+    return { importedCampaignIds: archive.data.campaigns.map((item) => item.id), counts, conflicts };
   });
 
   return app;
@@ -841,6 +837,57 @@ function campaignIdForScene(store: StateStore, sceneId: string): string | undefi
 function campaignIdForToken(store: StateStore, tokenId: string): string | undefined {
   const token = store.state.tokens.find((item) => item.id === tokenId);
   return token ? campaignIdForScene(store, token.sceneId) : undefined;
+}
+
+function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyof EngineState, number> {
+  return {
+    users: upsertRecords(state.users, archive.data.users),
+    campaigns: upsertRecords(state.campaigns, archive.data.campaigns),
+    members: upsertRecords(state.members, archive.data.members),
+    worlds: upsertRecords(state.worlds, archive.data.worlds),
+    scenes: upsertRecords(state.scenes, archive.data.scenes),
+    assets: upsertRecords(state.assets, archive.data.assets),
+    tokens: upsertRecords(state.tokens, archive.data.tokens),
+    actors: upsertRecords(state.actors, archive.data.actors),
+    items: upsertRecords(state.items, archive.data.items),
+    journals: upsertRecords(state.journals, archive.data.journals),
+    handouts: upsertRecords(state.handouts, archive.data.handouts),
+    chat: upsertRecords(state.chat, archive.data.chat),
+    rolls: upsertRecords(state.rolls, archive.data.rolls),
+    encounters: upsertRecords(state.encounters, archive.data.encounters),
+    combats: upsertRecords(state.combats, archive.data.combats),
+    compendia: upsertRecords(state.compendia, archive.data.compendia),
+    proposals: upsertRecords(state.proposals, archive.data.proposals),
+    aiThreads: upsertRecords(state.aiThreads, archive.data.aiThreads),
+    aiMemory: upsertRecords(state.aiMemory, archive.data.aiMemory),
+    aiToolCalls: upsertRecords(state.aiToolCalls, archive.data.aiToolCalls),
+    auditLogs: upsertRecords(state.auditLogs, archive.data.auditLogs),
+    permissionGrants: upsertRecords(state.permissionGrants, archive.data.permissionGrants)
+  };
+}
+
+function findArchiveConflicts(state: EngineState, archive: CampaignArchive): Array<{ collection: keyof EngineState; id: string }> {
+  const conflicts: Array<{ collection: keyof EngineState; id: string }> = [];
+  for (const collection of Object.keys(archive.data) as Array<keyof EngineState>) {
+    const target = state[collection] as Array<{ id: string }>;
+    const incoming = archive.data[collection] as Array<{ id: string }>;
+    for (const record of incoming) {
+      if (target.some((item) => item.id === record.id)) conflicts.push({ collection, id: record.id });
+    }
+  }
+  return conflicts;
+}
+
+function upsertRecords<T extends { id: string }>(target: T[], incoming: T[]): number {
+  for (const record of incoming) {
+    const index = target.findIndex((item) => item.id === record.id);
+    if (index >= 0) {
+      target[index] = record;
+    } else {
+      target.push(record);
+    }
+  }
+  return incoming.length;
 }
 
 function notFound(reply: FastifyReply, message: string): FastifyReply {

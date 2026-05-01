@@ -37,6 +37,17 @@ Authenticated endpoints require an `x-user-id` session header. The seeded local 
 - `GET /api/v1/campaigns/{campaignId}/export`
 - `POST /api/v1/import/campaign`
 
+`POST /api/v1/import/campaign` accepts either a raw `.ottx` archive or:
+
+```json
+{
+  "archive": {},
+  "mode": "upsert"
+}
+```
+
+The default `upsert` mode replaces records with matching ids and inserts missing records, which supports round-tripping a campaign into a fresh instance or refreshing an existing imported campaign. Use `reject_conflicts` to return `409` when imported ids already exist.
+
 Realtime clients connect to:
 
 ```text

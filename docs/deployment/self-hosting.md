@@ -30,3 +30,5 @@ The browser client sends the development session header `x-user-id: usr_demo_gm`
 ```bash
 curl -H "x-user-id: usr_demo_gm" http://localhost:4000/api/v1/campaigns
 ```
+
+Campaign archives are JSON `.ottx` files. The import endpoint upserts every archive collection, including users, members, scenes, assets, tokens, actors, journals, encounters, combats, AI memory, audit logs, and permission grants.

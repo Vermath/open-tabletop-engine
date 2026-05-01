@@ -146,9 +146,10 @@ export function seedState(): EngineState {
 export function makeArchive(state: EngineState, campaignId: string): CampaignArchive {
   const campaign = state.campaigns.find((item) => item.id === campaignId);
   if (!campaign) throw new Error(`Campaign not found: ${campaignId}`);
+  const memberUserIds = new Set(state.members.filter((item) => item.campaignId === campaignId).map((item) => item.userId));
   const campaignData: EngineState = {
     ...emptyState(),
-    users: state.users,
+    users: state.users.filter((item) => memberUserIds.has(item.id)),
     campaigns: state.campaigns.filter((item) => item.id === campaignId),
     members: state.members.filter((item) => item.campaignId === campaignId),
     worlds: state.worlds.filter((item) => item.campaignId === campaignId),

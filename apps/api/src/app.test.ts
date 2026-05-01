@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { emptyState, type EngineState } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
 import { SqliteStateStore } from "./sqlite-store.js";
@@ -147,5 +148,70 @@ describe("api", () => {
     await secondApp.close();
     secondStore.close();
     rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("round-trips a campaign archive into a fresh instance with all MVP collections", async () => {
+    const sourceStore = new MemoryStateStore();
+    sourceStore.state.permissionGrants.push({
+      id: "grant_player_token_move",
+      subjectType: "user",
+      subjectId: "usr_demo_gm",
+      campaignId: "camp_demo",
+      permissions: ["token.move"],
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    const sourceApp = await buildApp({ store: sourceStore });
+    await sourceApp.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/assets",
+      headers: authHeaders,
+      payload: { id: "asset_roundtrip", name: "Roundtrip Map", url: "map://roundtrip", mimeType: "image/png", checksum: "sha256:test" }
+    });
+    await sourceApp.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/encounters",
+      headers: authHeaders,
+      payload: { id: "enc_roundtrip", name: "Roundtrip Encounter", summary: "Imported later", tokenIds: ["tok_valen"] }
+    });
+    const exported = await sourceApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export", headers: authHeaders });
+    expect(exported.statusCode).toBe(200);
+    const archive = exported.json();
+    await sourceApp.close();
+
+    const freshState: EngineState = emptyState();
+    freshState.users.push({
+      id: "usr_demo_gm",
+      displayName: "Import Admin",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    const targetStore = new MemoryStateStore(freshState);
+    const targetApp = await buildApp({ store: targetStore });
+    const imported = await targetApp.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    expect(imported.statusCode).toBe(200);
+    expect(imported.json().importedCampaignIds).toEqual(["camp_demo"]);
+
+    const importedScenes = await targetApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/scenes", headers: authHeaders });
+    const importedTokens = await targetApp.inject({ method: "GET", url: "/api/v1/scenes/scn_vault_entry/tokens", headers: authHeaders });
+    const importedActors = await targetApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/actors", headers: authHeaders });
+    const importedJournals = await targetApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/journal", headers: authHeaders });
+    const importedAssets = await targetApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/assets", headers: authHeaders });
+    const importedEncounters = await targetApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/encounters", headers: authHeaders });
+
+    expect(importedScenes.json().map((scene: { id: string }) => scene.id)).toContain("scn_vault_entry");
+    expect(importedTokens.json().map((token: { id: string }) => token.id)).toContain("tok_valen");
+    expect(importedActors.json().map((actor: { id: string }) => actor.id)).toContain("act_valen");
+    expect(importedJournals.json().map((journal: { id: string }) => journal.id)).toContain("jnl_hook");
+    expect(importedAssets.json().map((asset: { name: string }) => asset.name)).toContain("Roundtrip Map");
+    expect(importedEncounters.json().map((encounter: { name: string }) => encounter.name)).toContain("Roundtrip Encounter");
+    expect(targetStore.state.permissionGrants.map((grant) => grant.id)).toContain("grant_player_token_move");
+
+    await targetApp.close();
   });
 });
