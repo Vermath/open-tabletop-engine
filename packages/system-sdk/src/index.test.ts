@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyMysticNoirAdvancement, applyMysticNoirCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -86,6 +86,59 @@ describe("generic fantasy rules", () => {
     expect(advancedData.hp).toEqual({ current: 17, max: 17 });
     expect((advancedData.attributes as Record<string, number>).strength).toBe(17);
     expect(advancedData.features).toEqual(expect.arrayContaining(["Guardian Level 2"]));
+
+    const mender = genericFantasyCharacterTemplate("mender");
+    const menderActor = {
+      ...actor,
+      data: {
+        ...mender!.data,
+        level: 2,
+        spellSlots: { level1: { current: 1, max: 2, recovery: "long" } }
+      }
+    };
+    const advancedMender = applyGenericFantasyAdvancement(menderActor, "level-up");
+    expect(advancedMender.spellSlots).toEqual({ level1: { current: 1, max: 3, recovery: "long" } });
+  });
+
+  it("applies fantasy short and long rest recovery rules", () => {
+    const depletedActor: Actor = {
+      ...actor,
+      data: {
+        ...actor.data,
+        class: "Mender",
+        level: 2,
+        hp: { current: 2, max: 12 },
+        hitDice: { current: 1, max: 2, size: "d8" },
+        resources: {
+          fieldPrayer: { current: 0, max: 1, recovery: "long" },
+          secondWind: { current: 0, max: 1, recovery: "short" }
+        },
+        spellSlots: { level1: { current: 0, max: 3, recovery: "long" } },
+        conditions: [{ id: "blessed" }, { id: "poisoned" }, { id: "restrained" }]
+      }
+    };
+
+    const shortRest = applyGenericFantasyRest(depletedActor, "short");
+    expect(shortRest.data.hp).toEqual({ current: 8, max: 12 });
+    expect(shortRest.data.hitDice).toEqual({ current: 0, max: 2, size: "d8" });
+    expect(shortRest.data.resources).toEqual({
+      fieldPrayer: { current: 0, max: 1, recovery: "long" },
+      secondWind: { current: 1, max: 1, recovery: "short" }
+    });
+    expect(shortRest.data.spellSlots).toEqual({ level1: { current: 0, max: 3, recovery: "long" } });
+    expect(shortRest.data.conditions).toEqual([{ id: "blessed" }, { id: "poisoned" }]);
+    expect(shortRest.removedConditions.map((condition) => condition.id)).toEqual(["restrained"]);
+
+    const longRest = applyGenericFantasyRest(depletedActor, "long");
+    expect(longRest.data.hp).toEqual({ current: 12, max: 12 });
+    expect(longRest.data.hitDice).toEqual({ current: 2, max: 2, size: "d8" });
+    expect(longRest.data.resources).toEqual({
+      fieldPrayer: { current: 1, max: 1, recovery: "long" },
+      secondWind: { current: 1, max: 1, recovery: "short" }
+    });
+    expect(longRest.data.spellSlots).toEqual({ level1: { current: 3, max: 3, recovery: "long" } });
+    expect(longRest.data.conditions).toEqual([{ id: "blessed" }]);
+    expect(longRest.removedConditions.map((condition) => condition.id)).toEqual(["poisoned", "restrained"]);
   });
 
   it("calculates encounter budgets from threat selections", () => {
@@ -214,6 +267,39 @@ describe("stellar frontiers rules", () => {
     expect(advancedData.strain).toEqual({ current: 4, max: 7 });
     expect((advancedData.aptitudes as Record<string, number>).tech).toBe(4);
     expect(advancedData.milestones).toEqual(expect.arrayContaining(["Rank 2 Field Promotion"]));
+  });
+
+  it("applies sci-fi rest recovery rules", () => {
+    const depletedPilot: Actor = {
+      ...pilot,
+      data: {
+        ...pilot.data,
+        strain: { current: 1, max: 6 },
+        resources: {
+          evasiveBurst: { current: 0, max: 1, recovery: "short" },
+          fieldRepair: { current: 0, max: 2, recovery: "long" }
+        },
+        conditions: [{ id: "locked-in" }, { id: "jammed" }, { id: "vacuum-exposed" }]
+      }
+    };
+
+    const shortRest = applyStellarFrontiersRest(depletedPilot, "short");
+    expect(shortRest.data.strain).toEqual({ current: 3, max: 6 });
+    expect(shortRest.data.resources).toEqual({
+      evasiveBurst: { current: 1, max: 1, recovery: "short" },
+      fieldRepair: { current: 0, max: 2, recovery: "long" }
+    });
+    expect(shortRest.data.conditions).toEqual([{ id: "vacuum-exposed" }]);
+    expect(shortRest.removedConditions.map((condition) => condition.id)).toEqual(["locked-in", "jammed"]);
+
+    const longRest = applyStellarFrontiersRest(depletedPilot, "long");
+    expect(longRest.data.strain).toEqual({ current: 6, max: 6 });
+    expect(longRest.data.resources).toEqual({
+      evasiveBurst: { current: 1, max: 1, recovery: "short" },
+      fieldRepair: { current: 2, max: 2, recovery: "long" }
+    });
+    expect(longRest.data.conditions).toEqual([]);
+    expect(longRest.removedConditions.map((condition) => condition.id)).toEqual(["locked-in", "jammed", "vacuum-exposed"]);
   });
 
   it("calculates sci-fi encounter budgets from threat selections", () => {
@@ -347,6 +433,39 @@ describe("mystic noir rules", () => {
     expect(advancedData.composure).toEqual({ current: 5, max: 7 });
     expect((advancedData.skills as Record<string, number>).investigation).toBe(4);
     expect(advancedData.breakthroughs).toEqual(expect.arrayContaining(["Case 2 Breakthrough"]));
+  });
+
+  it("applies investigation rest recovery rules", () => {
+    const depletedInvestigator: Actor = {
+      ...investigator,
+      data: {
+        ...investigator.data,
+        composure: { current: 1, max: 6 },
+        resources: {
+          ward: { current: 0, max: 1, recovery: "short" },
+          lead: { current: 0, max: 2, recovery: "long" }
+        },
+        conditions: [{ id: "focused" }, { id: "shaken" }, { id: "marked" }]
+      }
+    };
+
+    const shortRest = applyMysticNoirRest(depletedInvestigator, "short");
+    expect(shortRest.data.composure).toEqual({ current: 3, max: 6 });
+    expect(shortRest.data.resources).toEqual({
+      ward: { current: 1, max: 1, recovery: "short" },
+      lead: { current: 0, max: 2, recovery: "long" }
+    });
+    expect(shortRest.data.conditions).toEqual([{ id: "marked" }]);
+    expect(shortRest.removedConditions.map((condition) => condition.id)).toEqual(["focused", "shaken"]);
+
+    const longRest = applyMysticNoirRest(depletedInvestigator, "long");
+    expect(longRest.data.composure).toEqual({ current: 6, max: 6 });
+    expect(longRest.data.resources).toEqual({
+      ward: { current: 1, max: 1, recovery: "short" },
+      lead: { current: 2, max: 2, recovery: "long" }
+    });
+    expect(longRest.data.conditions).toEqual([]);
+    expect(longRest.removedConditions.map((condition) => condition.id)).toEqual(["focused", "shaken", "marked"]);
   });
 
   it("calculates investigation encounter budgets from threat selections", () => {

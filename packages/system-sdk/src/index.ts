@@ -83,6 +83,18 @@ export interface AdvancementOption {
   nextValue: number;
 }
 
+export type SystemRestType = "short" | "long";
+
+export interface SystemRestResult {
+  systemId: string;
+  actorId: string;
+  restType: SystemRestType;
+  summary: string;
+  recovered: Record<string, unknown>;
+  removedConditions: AppliedCondition[];
+  data: Record<string, unknown>;
+}
+
 export interface EncounterThreat {
   id: string;
   systemId: string;
@@ -268,6 +280,15 @@ export function genericFantasyActionRolls(actor: Actor, items: Item[] = []): Qui
         formula: resolveGenericFantasyFormulaTokens(healingFormula, actor)
       });
     }
+    const saveDcAbility = stringValue(data.saveDcAbility);
+    const effectFormula = stringValue(data.effectFormula);
+    if (saveDcAbility && effectFormula) {
+      rolls.push({
+        id: `${prefix}-${item.id}-effect`,
+        label: `${item.name} Effect`,
+        formula: appendFormulaBonus(effectFormula, genericFantasyAttributeModifier(actor, saveDcAbility))
+      });
+    }
     return rolls;
   });
 }
@@ -299,6 +320,27 @@ export function genericFantasyCompendium(): GenericFantasyCompendiumEntry[] {
       data: { level: 1, school: "evocation", action: "bonus", range: "60 ft", healingFormula: "1d4+@attributes.charisma" }
     },
     {
+      id: "fire-bolt",
+      type: "spell",
+      name: "Fire Bolt",
+      summary: "Ranged spell attack that deals fire damage.",
+      data: { level: 0, school: "evocation", action: "action", range: "120 ft", damage: "1d10", ability: "intelligence" }
+    },
+    {
+      id: "cure-wounds",
+      type: "spell",
+      name: "Cure Wounds",
+      summary: "Touch-range healing spell that scales with the caster's magic.",
+      data: { level: 1, school: "evocation", action: "action", range: "touch", healingFormula: "1d8+@attributes.wisdom" }
+    },
+    {
+      id: "shield",
+      type: "spell",
+      name: "Shield",
+      summary: "Reaction spell that reinforces defense until the next turn.",
+      data: { level: 1, school: "abjuration", action: "reaction", range: "self", effectFormula: "5", saveDcAbility: "intelligence" }
+    },
+    {
       id: "blessed",
       type: "condition",
       name: "Blessed",
@@ -310,14 +352,14 @@ export function genericFantasyCompendium(): GenericFantasyCompendiumEntry[] {
       type: "condition",
       name: "Poisoned",
       summary: "Rolls ability checks with disadvantage in the Generic Fantasy runtime.",
-      data: { rollMode: "disadvantage" }
+      data: { rollMode: "disadvantage", longRestClears: true }
     },
     {
       id: "restrained",
       type: "condition",
       name: "Restrained",
       summary: "Marks the actor as unable to freely move.",
-      data: { speedMultiplier: 0 }
+      data: { speedMultiplier: 0, shortRestClears: true }
     }
   ];
 }
@@ -339,6 +381,9 @@ export function genericFantasyCharacterTemplates(): CharacterTemplate[] {
         class: "Guardian",
         hp: { current: 12, max: 12 },
         attributes: { strength: 16, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 10, charisma: 12 },
+        hitDice: { current: 1, max: 1, size: "d10" },
+        resources: { secondWind: { current: 1, max: 1, recovery: "short" } },
+        spellSlots: {},
         conditions: [],
         features: ["Shield Wall"]
       },
@@ -355,10 +400,13 @@ export function genericFantasyCharacterTemplates(): CharacterTemplate[] {
         class: "Mender",
         hp: { current: 9, max: 9 },
         attributes: { strength: 8, dexterity: 12, constitution: 12, intelligence: 13, wisdom: 15, charisma: 14 },
+        hitDice: { current: 1, max: 1, size: "d8" },
+        resources: { fieldPrayer: { current: 1, max: 1, recovery: "long" } },
+        spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
         features: ["Field Prayer"]
       },
-      items: [{ entryId: "healing-word" }]
+      items: [{ entryId: "healing-word" }, { entryId: "cure-wounds" }]
     }
   ];
 }
@@ -370,10 +418,13 @@ export function genericFantasyCharacterTemplate(templateId: string): CharacterTe
 export function genericFantasyCharacterImport(input: CharacterImportInput): CharacterImportResult {
   const source = importSource(input);
   const level = clampInteger(source.level, 1, 20, 1);
+  const className = stringValue(source.class) || "Adventurer";
   const attributes = normalizeNumberRecord(source.attributes, { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 });
   const conModifier = abilityModifier(attributes.constitution ?? 10);
   const defaultMaxHp = Math.max(1, 8 + conModifier + (level - 1) * 5);
   const hp = normalizePool(source.hp, defaultMaxHp);
+  const defaultHitDieSize = className === "Mender" ? "d8" : "d10";
+  const sourceHitDice = recordValue(source.hitDice);
   const warnings: string[] = [];
   const conditions = normalizeImportConditions(source.conditions ?? input.conditions, genericFantasyCompendiumEntry, warnings);
   const items = normalizeImportItems(source.items ?? input.items, genericFantasyCompendiumEntry, warnings, conditions);
@@ -383,9 +434,12 @@ export function genericFantasyCharacterImport(input: CharacterImportInput): Char
     name: stringValue(input.name) || stringValue(source.name) || "Imported Adventurer",
     data: {
       level,
-      class: stringValue(source.class) || "Adventurer",
+      class: className,
       hp,
       attributes,
+      hitDice: { ...sourceHitDice, ...normalizePool(source.hitDice, level), size: stringValue(sourceHitDice.size) ?? defaultHitDieSize },
+      resources: normalizeResourcePools(source.resources, defaultGenericFantasyResources(className)),
+      spellSlots: normalizeResourcePools(source.spellSlots, defaultGenericFantasySpellSlots(className, level)),
       conditions: conditions.map((id) => ({ id })),
       features: normalizeStringArray(source.features)
     },
@@ -457,6 +511,9 @@ export function applyGenericFantasyAdvancement(actor: Actor, optionId: string): 
   const features = normalizeStringArray(actor.data.features);
   const featureName = `${className || "Character"} Level ${option.nextValue}`;
   if (!features.includes(featureName)) features.push(featureName);
+  const hitDice = actor.data.hitDice as { current?: number; max?: number; size?: string } | undefined;
+  const spellSlots = normalizeResourcePools(actor.data.spellSlots, defaultGenericFantasySpellSlots(className, option.nextValue), { raiseMaxToDefault: true });
+  const resources = normalizeResourcePools(actor.data.resources, defaultGenericFantasyResources(className));
   return {
     ...actor.data,
     level: option.nextValue,
@@ -464,9 +521,59 @@ export function applyGenericFantasyAdvancement(actor: Actor, optionId: string): 
       current: numericValue(hp?.current, numericValue(hp?.max, 10)) + 5,
       max: numericValue(hp?.max, 10) + 5
     },
+    hitDice: {
+      current: numericValue(hitDice?.current, numericValue(hitDice?.max, 1)) + 1,
+      max: numericValue(hitDice?.max, 1) + 1,
+      size: stringValue(hitDice?.size) ?? (className === "Mender" ? "d8" : "d10")
+    },
+    resources,
+    spellSlots,
     attributes,
     proficiencyBonus: Math.max(2, 2 + Math.floor((option.nextValue - 1) / 4)),
     features
+  };
+}
+
+export function applyGenericFantasyRest(actor: Actor, restType: SystemRestType): SystemRestResult {
+  const hp = normalizePool(actor.data.hp, 1);
+  const hitDiceRecord = recordValue(actor.data.hitDice);
+  const hitDice = normalizePool(actor.data.hitDice, numericValue(actor.data.level, 1));
+  const hitDieSize = stringValue(hitDiceRecord.size) ?? "d8";
+  const resources = recoverResourcePools(actor.data.resources, restType);
+  const spellSlots = restType === "long" ? recoverResourcePools(actor.data.spellSlots, "long") : { value: normalizeResourcePools(actor.data.spellSlots), recovered: {} };
+  const recovered: Record<string, unknown> = {};
+  let nextHp = hp;
+  let nextHitDice = { ...hitDice, size: hitDieSize };
+  if (restType === "short" && hp.current < hp.max && hitDice.current > 0) {
+    const healAmount = Math.min(hp.max - hp.current, Math.max(1, averageHitDie(hitDieSize) + genericFantasyAttributeModifier(actor, "constitution")));
+    nextHp = { ...hp, current: hp.current + healAmount };
+    nextHitDice = { ...nextHitDice, current: hitDice.current - 1 };
+    recovered.hp = healAmount;
+    recovered.hitDiceSpent = 1;
+  }
+  if (restType === "long") {
+    nextHp = { ...hp, current: hp.max };
+    nextHitDice = { ...nextHitDice, current: Math.min(hitDice.max, hitDice.current + Math.max(1, Math.ceil(hitDice.max / 2))) };
+    recovered.hp = Math.max(0, nextHp.current - hp.current);
+    recovered.hitDiceRecovered = nextHitDice.current - hitDice.current;
+  }
+  const conditionUpdate = conditionsAfterRest(actor, genericFantasyCompendiumEntry, restType);
+  const data = {
+    ...actor.data,
+    hp: nextHp,
+    hitDice: nextHitDice,
+    resources: resources.value,
+    spellSlots: spellSlots.value,
+    conditions: conditionUpdate.conditions
+  };
+  return {
+    systemId: "generic-fantasy",
+    actorId: actor.id,
+    restType,
+    summary: `${actor.name} completed a ${restType} rest`,
+    recovered: { ...recovered, resources: resources.recovered, spellSlots: spellSlots.recovered },
+    removedConditions: conditionUpdate.removed,
+    data
   };
 }
 
@@ -591,21 +698,21 @@ export function stellarFrontiersCompendium(): StellarFrontiersCompendiumEntry[] 
       type: "condition",
       name: "Locked In",
       summary: "Adds 1d6 to Stellar Frontiers aptitude checks.",
-      data: { rollBonusFormula: "1d6" }
+      data: { rollBonusFormula: "1d6", shortRestClears: true }
     },
     {
       id: "jammed",
       type: "condition",
       name: "Jammed",
       summary: "Rolls Stellar Frontiers aptitude checks with disadvantage.",
-      data: { rollMode: "disadvantage" }
+      data: { rollMode: "disadvantage", shortRestClears: true }
     },
     {
       id: "vacuum-exposed",
       type: "condition",
       name: "Vacuum Exposed",
       summary: "Marks a character exposed to hard vacuum or suit breach.",
-      data: { hazard: "vacuum" }
+      data: { hazard: "vacuum", longRestClears: true }
     }
   ];
 }
@@ -627,6 +734,7 @@ export function stellarFrontiersCharacterTemplates(): CharacterTemplate[] {
         background: "Freighter Pilot",
         aptitudes: { combat: 1, tech: 2, pilot: 3, science: 1, charm: 1 },
         strain: { current: 2, max: 5 },
+        resources: { evasiveBurst: { current: 1, max: 1, recovery: "short" } },
         conditions: [],
         milestones: ["Dockside Veteran"]
       },
@@ -643,6 +751,7 @@ export function stellarFrontiersCharacterTemplates(): CharacterTemplate[] {
         background: "Ship Tech",
         aptitudes: { combat: 1, tech: 3, pilot: 1, science: 2, charm: 0 },
         strain: { current: 3, max: 6 },
+        resources: { fieldRepair: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
         milestones: ["Patch Cable Genius"]
       },
@@ -672,6 +781,7 @@ export function stellarFrontiersCharacterImport(input: CharacterImportInput): Ch
       background: stringValue(source.background) || "Independent Operator",
       aptitudes,
       strain,
+      resources: normalizeResourcePools(source.resources, {}),
       conditions: conditions.map((id) => ({ id })),
       milestones: normalizeStringArray(source.milestones)
     },
@@ -743,6 +853,7 @@ export function applyStellarFrontiersAdvancement(actor: Actor, optionId: string)
   const milestones = normalizeStringArray(actor.data.milestones);
   const milestone = `Rank ${option.nextValue} Field Promotion`;
   if (!milestones.includes(milestone)) milestones.push(milestone);
+  const resources = normalizeResourcePools(actor.data.resources);
   return {
     ...actor.data,
     rank: option.nextValue,
@@ -751,7 +862,31 @@ export function applyStellarFrontiersAdvancement(actor: Actor, optionId: string)
       current: numericValue(strain?.current, numericValue(strain?.max, 5)) + 1,
       max: numericValue(strain?.max, 5) + 1
     },
+    resources,
     milestones
+  };
+}
+
+export function applyStellarFrontiersRest(actor: Actor, restType: SystemRestType): SystemRestResult {
+  const strain = normalizePool(actor.data.strain, 5);
+  const recoverAmount = restType === "long" ? strain.max - strain.current : Math.min(2, strain.max - strain.current);
+  const nextStrain = { ...strain, current: strain.current + Math.max(0, recoverAmount) };
+  const resources = recoverResourcePools(actor.data.resources, restType);
+  const conditionUpdate = conditionsAfterRest(actor, stellarFrontiersCompendiumEntry, restType);
+  const data = {
+    ...actor.data,
+    strain: nextStrain,
+    resources: resources.value,
+    conditions: conditionUpdate.conditions
+  };
+  return {
+    systemId: "stellar-frontiers",
+    actorId: actor.id,
+    restType,
+    summary: `${actor.name} completed ${restType === "long" ? "downtime" : "a breather"}`,
+    recovered: { strain: Math.max(0, recoverAmount), resources: resources.recovered },
+    removedConditions: conditionUpdate.removed,
+    data
   };
 }
 
@@ -863,21 +998,21 @@ export function mysticNoirCompendium(): MysticNoirCompendiumEntry[] {
       type: "condition",
       name: "Focused",
       summary: "Adds 1d4 to Mystic Noir skill checks.",
-      data: { rollBonusFormula: "1d4" }
+      data: { rollBonusFormula: "1d4", shortRestClears: true }
     },
     {
       id: "shaken",
       type: "condition",
       name: "Shaken",
       summary: "Rolls Mystic Noir skill checks with disadvantage.",
-      data: { rollMode: "disadvantage" }
+      data: { rollMode: "disadvantage", shortRestClears: true }
     },
     {
       id: "marked",
       type: "condition",
       name: "Marked",
       summary: "Marks a character as watched by a rival faction.",
-      data: { factionPressure: true }
+      data: { factionPressure: true, longRestClears: true }
     }
   ];
 }
@@ -899,6 +1034,7 @@ export function mysticNoirCharacterTemplates(): CharacterTemplate[] {
         archetype: "Field Investigator",
         skills: { investigation: 3, resolve: 2, influence: 1, stealth: 2, occult: 1 },
         composure: { current: 4, max: 6 },
+        resources: { lead: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
         breakthroughs: ["First Lead"]
       },
@@ -915,6 +1051,7 @@ export function mysticNoirCharacterTemplates(): CharacterTemplate[] {
         archetype: "Occult Scholar",
         skills: { investigation: 2, resolve: 2, influence: 1, stealth: 1, occult: 3 },
         composure: { current: 3, max: 5 },
+        resources: { ward: { current: 1, max: 1, recovery: "short" } },
         conditions: [],
         breakthroughs: ["Catalogued Omen"]
       },
@@ -944,6 +1081,7 @@ export function mysticNoirCharacterImport(input: CharacterImportInput): Characte
       archetype: stringValue(source.archetype) || "Independent Investigator",
       skills,
       composure,
+      resources: normalizeResourcePools(source.resources, {}),
       conditions: conditions.map((id) => ({ id })),
       breakthroughs: normalizeStringArray(source.breakthroughs)
     },
@@ -1015,6 +1153,7 @@ export function applyMysticNoirAdvancement(actor: Actor, optionId: string): Reco
   const breakthroughs = normalizeStringArray(actor.data.breakthroughs);
   const breakthrough = `Case ${option.nextValue} Breakthrough`;
   if (!breakthroughs.includes(breakthrough)) breakthroughs.push(breakthrough);
+  const resources = normalizeResourcePools(actor.data.resources);
   return {
     ...actor.data,
     rank: option.nextValue,
@@ -1023,7 +1162,31 @@ export function applyMysticNoirAdvancement(actor: Actor, optionId: string): Reco
       current: numericValue(composure?.current, numericValue(composure?.max, 5)) + 1,
       max: numericValue(composure?.max, 5) + 1
     },
+    resources,
     breakthroughs
+  };
+}
+
+export function applyMysticNoirRest(actor: Actor, restType: SystemRestType): SystemRestResult {
+  const composure = normalizePool(actor.data.composure, 5);
+  const recoverAmount = restType === "long" ? composure.max - composure.current : Math.min(2, composure.max - composure.current);
+  const nextComposure = { ...composure, current: composure.current + Math.max(0, recoverAmount) };
+  const resources = recoverResourcePools(actor.data.resources, restType);
+  const conditionUpdate = conditionsAfterRest(actor, mysticNoirCompendiumEntry, restType);
+  const data = {
+    ...actor.data,
+    composure: nextComposure,
+    resources: resources.value,
+    conditions: conditionUpdate.conditions
+  };
+  return {
+    systemId: "mystic-noir",
+    actorId: actor.id,
+    restType,
+    summary: `${actor.name} completed ${restType === "long" ? "downtime" : "a breather"}`,
+    recovered: { composure: Math.max(0, recoverAmount), resources: resources.recovered },
+    removedConditions: conditionUpdate.removed,
+    data
   };
 }
 
@@ -1108,6 +1271,10 @@ function numericValue(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function booleanValue(value: unknown): boolean {
+  return value === true;
+}
+
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
@@ -1139,6 +1306,84 @@ function normalizePool(value: unknown, defaultMax: number): { current: number; m
   const max = Math.max(1, numericValue(source.max, defaultMax));
   const current = Math.max(0, Math.min(max, numericValue(source.current, max)));
   return { current, max };
+}
+
+function normalizeResourcePools(
+  value: unknown,
+  defaults: Record<string, Record<string, unknown>> = {},
+  options: { raiseMaxToDefault?: boolean } = {}
+): Record<string, Record<string, unknown> & { current: number; max: number }> {
+  const source = recordValue(value);
+  const keys = new Set([...Object.keys(defaults), ...Object.keys(source)]);
+  return Object.fromEntries(
+    [...keys].map((key) => {
+      const fallback = recordValue(defaults[key]);
+      const currentSource = recordValue(source[key]);
+      const fallbackMax = numericValue(fallback.max, 0);
+      const sourceMax = numericValue(currentSource.max, fallbackMax);
+      const max = Math.max(0, options.raiseMaxToDefault ? Math.max(sourceMax, fallbackMax) : sourceMax);
+      const current = Math.max(0, Math.min(max, numericValue(currentSource.current, numericValue(fallback.current, max))));
+      return [key, { ...fallback, ...currentSource, current, max }];
+    })
+  );
+}
+
+function recoverResourcePools(value: unknown, restType: SystemRestType): { value: Record<string, Record<string, unknown> & { current: number; max: number }>; recovered: Record<string, number> } {
+  const pools = normalizeResourcePools(value);
+  const recovered: Record<string, number> = {};
+  for (const [key, pool] of Object.entries(pools)) {
+    const canRecover = restType === "long" || stringValue(pool.recovery) === "short";
+    if (!canRecover) continue;
+    const delta = pool.max - pool.current;
+    if (delta > 0) {
+      pool.current = pool.max;
+      recovered[key] = delta;
+    }
+  }
+  return { value: pools, recovered };
+}
+
+function defaultGenericFantasyResources(className: string): Record<string, Record<string, unknown>> {
+  if (className === "Mender") return { fieldPrayer: { current: 1, max: 1, recovery: "long" } };
+  if (className === "Guardian") return { secondWind: { current: 1, max: 1, recovery: "short" } };
+  return {};
+}
+
+function defaultGenericFantasySpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
+  if (className !== "Mender") return {};
+  const levelOneSlots = Math.min(4, 2 + Math.floor((level - 1) / 2));
+  return { level1: { current: levelOneSlots, max: levelOneSlots, recovery: "long" } };
+}
+
+function averageHitDie(hitDieSize: string): number {
+  const match = /^d(\d+)$/i.exec(hitDieSize.trim());
+  const sides = match ? numericValue(Number(match[1]), 8) : 8;
+  return Math.floor(sides / 2) + 1;
+}
+
+function conditionsAfterRest(
+  actor: Actor,
+  lookup: (entryId: string) => RulesCompendiumEntry | undefined,
+  restType: SystemRestType
+): { conditions: Array<{ id: string; appliedAt?: string }>; removed: AppliedCondition[] } {
+  const conditions = normalizeConditionRecords(actor.data.conditions);
+  const kept: Array<{ id: string; appliedAt?: string }> = [];
+  const removed: AppliedCondition[] = [];
+  for (const condition of conditions) {
+    const entry = lookup(condition.id);
+    if (entry && conditionClearsOnRest(entry, restType)) {
+      removed.push({ id: condition.id, name: entry.name, summary: entry.summary, appliedAt: condition.appliedAt });
+    } else {
+      kept.push(condition);
+    }
+  }
+  return { conditions: kept, removed };
+}
+
+function conditionClearsOnRest(entry: RulesCompendiumEntry, restType: SystemRestType): boolean {
+  const data = recordValue(entry.data);
+  if (restType === "long") return booleanValue(data.longRestClears) || booleanValue(data.shortRestClears);
+  return booleanValue(data.shortRestClears);
 }
 
 function normalizeImportConditions(value: unknown, lookup: (entryId: string) => RulesCompendiumEntry | undefined, warnings: string[]): string[] {

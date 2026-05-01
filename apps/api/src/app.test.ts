@@ -2819,6 +2819,128 @@ describe("api", () => {
     }
   });
 
+  it("applies system rest recovery with permission boundaries", async () => {
+    const store = new MemoryStateStore();
+    store.state.users.push(
+      createTimestamped("usr", {
+        id: "usr_observer",
+        displayName: "Observer"
+      })
+    );
+    store.state.members.push(
+      createTimestamped("mem", {
+        campaignId: "camp_demo",
+        userId: "usr_observer",
+        role: "observer" as const
+      })
+    );
+    const app = await buildApp({ store });
+
+    try {
+      const fantasy = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "generic-fantasy",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: "Resting Mender",
+          data: {
+            class: "Mender",
+            level: 2,
+            attributes: { strength: 8, dexterity: 12, constitution: 13, intelligence: 13, wisdom: 16, charisma: 14 },
+            hp: { current: 2, max: 12 },
+            hitDice: { current: 1, max: 2, size: "d8" },
+            resources: {
+              fieldPrayer: { current: 0, max: 1, recovery: "long" },
+              secondWind: { current: 0, max: 1, recovery: "short" }
+            },
+            spellSlots: { level1: { current: 0, max: 3, recovery: "long" } },
+            conditions: [{ id: "blessed" }, { id: "poisoned" }, { id: "restrained" }]
+          }
+        }
+      });
+      expect(fantasy.statusCode).toBe(200);
+      const fantasyActorId = fantasy.json().id;
+
+      const observerRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${fantasyActorId}/rest`,
+        headers: { "x-user-id": "usr_observer" },
+        payload: { restType: "long" }
+      });
+      expect(observerRest.statusCode).toBe(403);
+
+      const fantasyRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${fantasyActorId}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "long" }
+      });
+      expect(fantasyRest.statusCode).toBe(200);
+      expect(fantasyRest.json().rest).toEqual(
+        expect.objectContaining({
+          systemId: "generic-fantasy",
+          actorId: fantasyActorId,
+          restType: "long",
+          removedConditions: expect.arrayContaining([expect.objectContaining({ id: "poisoned" }), expect.objectContaining({ id: "restrained" })])
+        })
+      );
+      expect(fantasyRest.json().actor.data.hp).toEqual({ current: 12, max: 12 });
+      expect(fantasyRest.json().actor.data.hitDice).toEqual({ current: 2, max: 2, size: "d8" });
+      expect(fantasyRest.json().actor.data.resources).toEqual({
+        fieldPrayer: { current: 1, max: 1, recovery: "long" },
+        secondWind: { current: 1, max: 1, recovery: "short" }
+      });
+      expect(fantasyRest.json().actor.data.spellSlots).toEqual({ level1: { current: 3, max: 3, recovery: "long" } });
+      expect(fantasyRest.json().sheet.conditions.map((condition: { id: string }) => condition.id)).toEqual(["blessed"]);
+      expect(store.state.actors.find((actor) => actor.id === fantasyActorId)?.data.hp).toEqual({ current: 12, max: 12 });
+
+      const mystic = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "mystic-noir",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: "Resting Occultist",
+          data: {
+            rank: 1,
+            archetype: "Occult Scholar",
+            skills: { investigation: 2, resolve: 3, influence: 1, stealth: 1, occult: 4 },
+            composure: { current: 1, max: 6 },
+            resources: {
+              ward: { current: 0, max: 1, recovery: "short" },
+              lead: { current: 0, max: 2, recovery: "long" }
+            },
+            conditions: [{ id: "focused" }, { id: "shaken" }, { id: "marked" }]
+          }
+        }
+      });
+      expect(mystic.statusCode).toBe(200);
+      const mysticActorId = mystic.json().id;
+
+      const mysticRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/mystic-noir/actors/${mysticActorId}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short" }
+      });
+      expect(mysticRest.statusCode).toBe(200);
+      expect(mysticRest.json().actor.data.composure).toEqual({ current: 3, max: 6 });
+      expect(mysticRest.json().actor.data.resources).toEqual({
+        ward: { current: 1, max: 1, recovery: "short" },
+        lead: { current: 0, max: 2, recovery: "long" }
+      });
+      expect(mysticRest.json().sheet.conditions.map((condition: { id: string }) => condition.id)).toEqual(["marked"]);
+      expect(mysticRest.json().rest.removedConditions.map((condition: { id: string }) => condition.id)).toEqual(["focused", "shaken"]);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("imports system characters from normalized character data", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });

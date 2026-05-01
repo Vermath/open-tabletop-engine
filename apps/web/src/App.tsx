@@ -513,6 +513,15 @@ export function App() {
     await refresh();
   }
 
+  async function restSelectedActor(restType: "short" | "long") {
+    if (!selectedActor) return;
+    const rested = await apiPost<{ rest: { summary: string } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/rest`, {
+      restType
+    });
+    setStatus(rested.rest.summary);
+    await refresh();
+  }
+
   async function planSystemEncounter() {
     const system = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
     if (!system) return;
@@ -819,7 +828,7 @@ export function App() {
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
-            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} importedActor={importedActor} encounterPlan={encounterPlan} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onAdvanceActor={advanceSelectedActor} onPlanEncounter={planSystemEncounter} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canPlanEncounter={hasPermission("combat.manage")} canRollSystem={hasPermission("dice.roll")} />}
+            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} importedActor={importedActor} encounterPlan={encounterPlan} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onPlanEncounter={planSystemEncounter} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canPlanEncounter={hasPermission("combat.manage")} canRollSystem={hasPermission("dice.roll")} />}
             {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} campaigns={snapshot.campaigns} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onUpdatePluginReview={updatePluginReview} onCreateScimMapping={createScimGroupRoleMapping} onDeleteScimMapping={deleteScimGroupRoleMapping} />}
           </aside>
         </div>
@@ -1185,6 +1194,7 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
   const talents = props.items.filter((item) => item.type === "talent");
   const clues = props.items.filter((item) => item.type === "clue");
   const rituals = props.items.filter((item) => item.type === "ritual");
+  const resources = actorResourceLabels(props.actor);
   const actionLabels = actorActionLabels(props.actor, props.items);
   return (
     <div className="panel-stack">
@@ -1204,6 +1214,12 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
         <div className="metric-row">
           <span>Conditions</span>
           <strong>{conditions.join(", ")}</strong>
+        </div>
+      )}
+      {resources.length > 0 && (
+        <div className="metric-row">
+          <span>Resources</span>
+          <strong>{resources.join(", ")}</strong>
         </div>
       )}
       {inventory.length > 0 && (
@@ -1274,6 +1290,16 @@ function actorConditionLabels(actor: Actor): string[] {
     .filter((condition): condition is string => Boolean(condition));
 }
 
+function actorResourceLabels(actor: Actor): string[] {
+  return Object.entries(recordValue(actor.data.resources)).flatMap(([key, value]) => {
+    const pool = recordValue(value);
+    const current = numericValue(pool.current, NaN);
+    const max = numericValue(pool.max, NaN);
+    if (!Number.isFinite(current) || !Number.isFinite(max)) return [];
+    return `${titleCaseLabel(key)} ${current}/${max}`;
+  });
+}
+
 function actorActionLabels(actor: Actor, items: Item[]): string[] {
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersActionLabels(actor, items);
   if (actor.systemId === "mystic-noir") return mysticNoirActionLabels(actor, items);
@@ -1291,6 +1317,9 @@ function genericFantasyActionLabels(actor: Actor, items: Item[]): string[] {
     if (versatileDamage && ability) labels.push(`${item.name} Versatile: ${appendActionFormulaBonus(versatileDamage, genericFantasyAttributeModifier(actor, ability))}`);
     const healingFormula = stringValue(data.healingFormula);
     if (healingFormula) labels.push(`${item.name} Healing: ${resolveGenericFantasyActionFormula(healingFormula, actor)}`);
+    const effectFormula = stringValue(data.effectFormula);
+    const effectAbility = stringValue(data.saveDcAbility);
+    if (effectFormula) labels.push(`${item.name} Effect: ${effectAbility ? appendActionFormulaBonus(effectFormula, genericFantasyAttributeModifier(actor, effectAbility)) : effectFormula}`);
     return labels;
   });
 }
@@ -1364,6 +1393,10 @@ function stringValue(value: unknown): string | undefined {
 
 function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function titleCaseLabel(value: string): string {
+  return value.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function JournalPanel(props: { journals: JournalEntry[]; onCreate(): void; canCreate: boolean }) {
@@ -1909,7 +1942,7 @@ function formatDateTime(value?: string): string {
   return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; importedActor?: Actor; encounterPlan?: EncounterPlanInfo; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onAdvanceActor(): void; onPlanEncounter(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canPlanEncounter: boolean; canRollSystem: boolean }) {
+function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; importedActor?: Actor; encounterPlan?: EncounterPlanInfo; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onAdvanceActor(): void; onRestActor(restType: "short" | "long"): void; onPlanEncounter(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canPlanEncounter: boolean; canRollSystem: boolean }) {
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   const rollLabel = systemRollLabel(props.actor?.systemId);
   const advancementLabel = systemAdvancementLabel(props.actor?.systemId);
@@ -1976,6 +2009,12 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
       )}
       <button className="ghost-button wide" onClick={props.onAdvanceActor} disabled={!props.actor || !props.canAdvanceActor}>
         <RefreshCw size={16} /> {advancementLabel}
+      </button>
+      <button className="ghost-button wide" onClick={() => props.onRestActor("short")} disabled={!props.actor || !props.canRestActor}>
+        <RefreshCw size={16} /> Short Rest
+      </button>
+      <button className="ghost-button wide" onClick={() => props.onRestActor("long")} disabled={!props.actor || !props.canRestActor}>
+        <RefreshCw size={16} /> Long Rest
       </button>
       <button className="ghost-button wide" onClick={props.onPlanEncounter} disabled={!activeSystem || !props.canPlanEncounter}>
         <Swords size={16} /> Plan Encounter

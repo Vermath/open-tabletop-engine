@@ -94,6 +94,7 @@ export const routes = {
   systemActorCondition: (campaignId: string, systemId: string, actorId: string, conditionId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/conditions/${conditionId}`,
   systemActorAdvancement: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/advancement`,
   systemActorAdvance: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/advance`,
+  systemActorRest: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/rest`,
   systemActorSheet: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/sheet`,
   systemActorRoll: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/roll`,
   plugins: "/api/v1/plugins",
@@ -227,6 +228,7 @@ const endpointSpecs = [
   ["DELETE", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement"],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advance"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/rest"],
   ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet"],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]
 ] as const;
