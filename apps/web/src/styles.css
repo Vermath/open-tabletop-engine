@@ -1,10 +1,6 @@
 :root {
   color-scheme: dark;
-  font-family:
-    "Aptos",
-    "Segoe UI",
-    system-ui,
-    sans-serif;
+  font-family: "Aptos", "Segoe UI", system-ui, sans-serif;
   --ink: #171512;
   --panel: #242018;
   --panel-2: #302a20;
@@ -29,6 +25,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -135,6 +132,31 @@ button {
   transform: translateY(-1px);
 }
 
+button:disabled,
+input:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+}
+
+.session-switcher {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.session-switcher select {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--paper);
+  background: #1b1812;
+}
+
 .status {
   margin-top: auto;
   padding-top: 16px;
@@ -191,10 +213,7 @@ button {
   min-width: 0;
   padding: 22px;
   overflow: hidden;
-  background:
-    linear-gradient(rgba(239, 228, 205, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(239, 228, 205, 0.04) 1px, transparent 1px),
-    #15130f;
+  background: linear-gradient(rgba(239, 228, 205, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(239, 228, 205, 0.04) 1px, transparent 1px), #15130f;
   background-size: 28px 28px;
 }
 
@@ -225,9 +244,7 @@ button {
   overflow: hidden;
   border: 1px solid #806c49;
   border-radius: 8px;
-  background:
-    radial-gradient(circle at 30% 28%, rgba(214, 168, 84, 0.18), transparent 24%),
-    linear-gradient(135deg, #463923, #211b13 48%, #332415);
+  background: radial-gradient(circle at 30% 28%, rgba(214, 168, 84, 0.18), transparent 24%), linear-gradient(135deg, #463923, #211b13 48%, #332415);
   box-shadow: 0 22px 70px rgba(0, 0, 0, 0.36);
 }
 
@@ -246,9 +263,7 @@ button {
   position: absolute;
   z-index: 1;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(239, 228, 205, 0.13) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(239, 228, 205, 0.13) 1px, transparent 1px);
+  background-image: linear-gradient(rgba(239, 228, 205, 0.13) 1px, transparent 1px), linear-gradient(90deg, rgba(239, 228, 205, 0.13) 1px, transparent 1px);
 }
 
 .light-source {

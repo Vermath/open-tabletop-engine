@@ -6,32 +6,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import {
-  applyProposal,
-  approveProposal,
-  createEvent,
-  createId,
-  createTimestamped,
-  hasPermission,
-  makeArchive,
-  nowIso,
-  type Actor,
-  type AiMemoryFact,
-  type Campaign,
-  type CampaignArchive,
-  type ChatMessage,
-  type Combat,
-  type DiceRoll,
-  type Encounter,
-  type EngineState,
-  type JournalEntry,
-  type MapAsset,
-  type PermissionGrant,
-  type PermissionName,
-  type Proposal,
-  type Scene,
-  type Token
-} from "@open-tabletop/core";
+import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type Scene, type Token, type User } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -114,11 +89,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       defaultSystemId: request.body.defaultSystemId ?? "generic-fantasy",
       visibility: request.body.visibility ?? "private"
     }) satisfies Campaign;
-    const member = createTimestamped("mem", { campaignId: campaign.id, userId, role: "owner" as const });
+    const member = createTimestamped("mem", {
+      campaignId: campaign.id,
+      userId,
+      role: "owner" as const
+    });
     store.state.campaigns.push(campaign);
     store.state.members.push(member);
     store.save();
-    hub.broadcast(createEvent({ campaignId: campaign.id, type: "campaign.member.joined", actorUserId: userId, targetId: campaign.id, payload: member }));
+    hub.broadcast(
+      createEvent({
+        campaignId: campaign.id,
+        type: "campaign.member.joined",
+        actorUserId: userId,
+        targetId: campaign.id,
+        payload: member
+      })
+    );
     return campaign;
   });
 
@@ -128,6 +115,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
     return campaign;
+  });
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/members", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    return store.state.members.filter((member) => member.campaignId === request.params.campaignId).map((member) => memberSessionInfo(store, member));
   });
 
   app.patch<{ Params: { campaignId: string }; Body: Partial<Campaign> }>("/api/v1/campaigns/:campaignId", async (request, reply) => {
@@ -176,7 +169,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Scene;
     store.state.scenes.push(scene);
     store.save();
-    hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.created", targetId: scene.id, payload: scene }));
+    hub.broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.created",
+        targetId: scene.id,
+        payload: scene
+      })
+    );
     return scene;
   });
 
@@ -202,50 +202,63 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return asset;
   });
 
-  app.post<{ Params: { campaignId: string }; Querystring: { sceneId?: string; setAsBackground?: string }; Body: Buffer }>(
-    "/api/v1/campaigns/:campaignId/assets/upload",
-    async (request, reply) => {
-      const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
-      if (allowed !== true) return allowed;
-      const shouldSetBackground = request.query.sceneId && truthyQuery(request.query.setAsBackground);
-      if (shouldSetBackground) {
-        const sceneUpdateAllowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.update");
-        if (sceneUpdateAllowed !== true) return sceneUpdateAllowed;
-      }
-      const body = Buffer.isBuffer(request.body) ? request.body : Buffer.from([]);
-      if (body.length === 0) return reply.code(400).send({ error: "empty_upload", message: "Asset upload body is empty" });
-      if (body.length > maxAssetBytes) return reply.code(413).send({ error: "asset_too_large", message: `Asset exceeds ${maxAssetBytes} bytes` });
-      const mimeType = normalizeAssetMimeType(request.headers["content-type"]);
-      const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
-      const checksum = `sha256:${createHash("sha256").update(body).digest("hex")}`;
-      const scene = shouldSetBackground
-        ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId)
-        : undefined;
-      if (shouldSetBackground && !scene) return notFound(reply, "Scene not found");
-      const asset = createTimestamped("asset", {
-        campaignId: request.params.campaignId,
-        name: sourceName,
-        url: "",
-        mimeType,
-        sizeBytes: body.length,
-        checksum
-      }) satisfies MapAsset;
-      const filePath = localAssetPath(uploadDir, request.params.campaignId, asset);
-      mkdirSync(resolve(uploadDir, request.params.campaignId), { recursive: true });
-      writeFileSync(filePath, body);
-      asset.url = `/api/v1/assets/${asset.id}/blob`;
-      store.state.assets.push(asset);
-
-      if (scene) {
-        scene.backgroundAssetId = asset.id;
-        scene.updatedAt = nowIso();
-      }
-
-      store.save();
-      if (scene) hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
-      return { asset, scene };
+  app.post<{
+    Params: { campaignId: string };
+    Querystring: { sceneId?: string; setAsBackground?: string };
+    Body: Buffer;
+  }>("/api/v1/campaigns/:campaignId/assets/upload", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
+    if (allowed !== true) return allowed;
+    const shouldSetBackground = request.query.sceneId && truthyQuery(request.query.setAsBackground);
+    if (shouldSetBackground) {
+      const sceneUpdateAllowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.update");
+      if (sceneUpdateAllowed !== true) return sceneUpdateAllowed;
     }
-  );
+    const body = Buffer.isBuffer(request.body) ? request.body : Buffer.from([]);
+    if (body.length === 0) return reply.code(400).send({ error: "empty_upload", message: "Asset upload body is empty" });
+    if (body.length > maxAssetBytes)
+      return reply.code(413).send({
+        error: "asset_too_large",
+        message: `Asset exceeds ${maxAssetBytes} bytes`
+      });
+    const mimeType = normalizeAssetMimeType(request.headers["content-type"]);
+    const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
+    const checksum = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+    const scene = shouldSetBackground ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId) : undefined;
+    if (shouldSetBackground && !scene) return notFound(reply, "Scene not found");
+    const asset = createTimestamped("asset", {
+      campaignId: request.params.campaignId,
+      name: sourceName,
+      url: "",
+      mimeType,
+      sizeBytes: body.length,
+      checksum
+    }) satisfies MapAsset;
+    const filePath = localAssetPath(uploadDir, request.params.campaignId, asset);
+    mkdirSync(resolve(uploadDir, request.params.campaignId), {
+      recursive: true
+    });
+    writeFileSync(filePath, body);
+    asset.url = `/api/v1/assets/${asset.id}/blob`;
+    store.state.assets.push(asset);
+
+    if (scene) {
+      scene.backgroundAssetId = asset.id;
+      scene.updatedAt = nowIso();
+    }
+
+    store.save();
+    if (scene)
+      hub.broadcast(
+        createEvent({
+          campaignId: scene.campaignId,
+          type: "scene.updated",
+          targetId: scene.id,
+          payload: scene
+        })
+      );
+    return { asset, scene };
+  });
 
   app.get<{ Params: { assetId: string }; Querystring: { userId?: string } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
     const asset = store.state.assets.find((item) => item.id === request.params.assetId);
@@ -255,10 +268,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!canCampaign(store, userId, asset.campaignId, "scene.read")) return forbidden(reply, "Missing permission: scene.read");
     const filePath = localAssetPath(uploadDir, asset.campaignId, asset);
     if (!existsSync(filePath)) return notFound(reply, "Asset file not found");
-    return reply
-      .header("content-type", asset.mimeType)
-      .header("cache-control", "private, max-age=60")
-      .send(createReadStream(filePath));
+    return reply.header("content-type", asset.mimeType).header("cache-control", "private, max-age=60").send(createReadStream(filePath));
   });
 
   app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId", async (request, reply) => {
@@ -278,11 +288,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     Object.assign(scene, request.body, { updatedAt: nowIso() });
     store.save();
-    hub.broadcast(createEvent({ campaignId: scene.campaignId, type: scene.active ? "scene.activated" : "scene.updated", targetId: scene.id, payload: scene }));
+    hub.broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: scene.active ? "scene.activated" : "scene.updated",
+        targetId: scene.id,
+        payload: scene
+      })
+    );
     return scene;
   });
 
-  app.post<{ Params: { sceneId: string }; Body: { x: number; y: number; radius?: number; hidden?: boolean } }>("/api/v1/scenes/:sceneId/fog", async (request, reply) => {
+  app.post<{
+    Params: { sceneId: string };
+    Body: { x: number; y: number; radius?: number; hidden?: boolean };
+  }>("/api/v1/scenes/:sceneId/fog", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.reveal");
@@ -297,11 +317,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     scene.updatedAt = nowIso();
     store.save();
-    hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
+    hub.broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        targetId: scene.id,
+        payload: scene
+      })
+    );
     return scene;
   });
 
-  app.post<{ Params: { sceneId: string }; Body: { x1: number; y1: number; x2: number; y2: number; blocksVision?: boolean } }>("/api/v1/scenes/:sceneId/walls", async (request, reply) => {
+  app.post<{
+    Params: { sceneId: string };
+    Body: {
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      blocksVision?: boolean;
+    };
+  }>("/api/v1/scenes/:sceneId/walls", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.update");
@@ -317,11 +353,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     scene.updatedAt = nowIso();
     store.save();
-    hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
+    hub.broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        targetId: scene.id,
+        payload: scene
+      })
+    );
     return scene;
   });
 
-  app.post<{ Params: { sceneId: string }; Body: { x: number; y: number; radius?: number; color?: string } }>("/api/v1/scenes/:sceneId/lights", async (request, reply) => {
+  app.post<{
+    Params: { sceneId: string };
+    Body: { x: number; y: number; radius?: number; color?: string };
+  }>("/api/v1/scenes/:sceneId/lights", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.update");
@@ -336,7 +382,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     scene.updatedAt = nowIso();
     store.save();
-    hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
+    hub.broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        targetId: scene.id,
+        payload: scene
+      })
+    );
     return scene;
   });
 
@@ -349,7 +402,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (index < 0) return notFound(reply, "Scene not found");
     const deleted = store.state.scenes.splice(index, 1)[0]!;
     store.save();
-    hub.broadcast(createEvent({ campaignId: deleted.campaignId, type: "scene.deleted", targetId: deleted.id, payload: deleted }));
+    hub.broadcast(
+      createEvent({
+        campaignId: deleted.campaignId,
+        type: "scene.deleted",
+        targetId: deleted.id,
+        payload: deleted
+      })
+    );
     return deleted;
   });
 
@@ -386,7 +446,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Token;
     store.state.tokens.push(token);
     store.save();
-    hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "token.created", targetId: token.id, payload: token }));
+    hub.broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "token.created",
+        targetId: token.id,
+        payload: token
+      })
+    );
     return token;
   });
 
@@ -403,7 +470,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     if (scene) {
       const moved = request.body.x !== undefined || request.body.y !== undefined;
-      hub.broadcast(createEvent({ campaignId: scene.campaignId, type: moved ? "token.moved" : "token.updated", targetId: token.id, payload: token }));
+      hub.broadcast(
+        createEvent({
+          campaignId: scene.campaignId,
+          type: moved ? "token.moved" : "token.updated",
+          targetId: token.id,
+          payload: token
+        })
+      );
     }
     return token;
   });
@@ -418,7 +492,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const deleted = store.state.tokens.splice(index, 1)[0]!;
     store.save();
     const scene = store.state.scenes.find((item) => item.id === deleted.sceneId);
-    if (scene) hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "token.deleted", targetId: deleted.id, payload: deleted }));
+    if (scene)
+      hub.broadcast(
+        createEvent({
+          campaignId: scene.campaignId,
+          type: "token.deleted",
+          targetId: deleted.id,
+          payload: deleted
+        })
+      );
     return deleted;
   });
 
@@ -438,12 +520,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       type: request.body.type ?? "character",
       name: request.body.name ?? "New Actor",
       imageAssetId: request.body.imageAssetId,
-      data: request.body.data ?? { hp: { current: 10, max: 10 }, attributes: {} },
+      data: request.body.data ?? {
+        hp: { current: 10, max: 10 },
+        attributes: {}
+      },
       permissions: request.body.permissions ?? {}
     }) satisfies Actor;
     store.state.actors.push(actor);
     store.save();
-    hub.broadcast(createEvent({ campaignId: actor.campaignId, type: "actor.created", targetId: actor.id, payload: actor }));
+    hub.broadcast(
+      createEvent({
+        campaignId: actor.campaignId,
+        type: "actor.created",
+        targetId: actor.id,
+        payload: actor
+      })
+    );
     return actor;
   });
 
@@ -457,7 +549,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!canUpdate && !canUpdateOwned) return forbidden(reply, "Missing permission: actor.update");
     Object.assign(actor, request.body, { updatedAt: nowIso() });
     store.save();
-    hub.broadcast(createEvent({ campaignId: actor.campaignId, type: "actor.updated", targetId: actor.id, payload: actor }));
+    hub.broadcast(
+      createEvent({
+        campaignId: actor.campaignId,
+        type: "actor.updated",
+        targetId: actor.id,
+        payload: actor
+      })
+    );
     return actor;
   });
 
@@ -488,9 +587,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     if (!canCampaign(store, userId, request.params.campaignId, "journal.read")) return forbidden(reply, "Missing permission: journal.read");
     const canReadSecret = canCampaign(store, userId, request.params.campaignId, "journal.readSecret");
-    return store.state.journals
-      .filter((item) => item.campaignId === request.params.campaignId)
-      .filter((item) => item.visibility === "public" || canReadSecret || item.visibleToUserIds.includes(userId));
+    return store.state.journals.filter((item) => item.campaignId === request.params.campaignId).filter((item) => item.visibility === "public" || canReadSecret || item.visibleToUserIds.includes(userId));
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<JournalEntry> }>("/api/v1/campaigns/:campaignId/journal", async (request, reply) => {
@@ -512,7 +609,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies JournalEntry;
     store.state.journals.push(entry);
     store.save();
-    hub.broadcast(createEvent({ campaignId: entry.campaignId, type: "journal.created", targetId: entry.id, payload: entry }));
+    hub.broadcast(
+      createEvent({
+        campaignId: entry.campaignId,
+        type: "journal.created",
+        targetId: entry.id,
+        payload: entry
+      })
+    );
     return entry;
   });
 
@@ -523,13 +627,30 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    Object.assign(entry, request.body, { updatedAt: nowIso(), updatedBy: userId });
+    Object.assign(entry, request.body, {
+      updatedAt: nowIso(),
+      updatedBy: userId
+    });
     store.save();
-    hub.broadcast(createEvent({ campaignId: entry.campaignId, type: "journal.updated", targetId: entry.id, payload: entry }));
+    hub.broadcast(
+      createEvent({
+        campaignId: entry.campaignId,
+        type: "journal.updated",
+        targetId: entry.id,
+        payload: entry
+      })
+    );
     return entry;
   });
 
-  app.post<{ Body: { campaignId: string; formula: string; visibility?: "public" | "gm_only" | "whisper"; label?: string } }>("/api/v1/dice/roll", async (request, reply) => {
+  app.post<{
+    Body: {
+      campaignId: string;
+      formula: string;
+      visibility?: "public" | "gm_only" | "whisper";
+      label?: string;
+    };
+  }>("/api/v1/dice/roll", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.body.campaignId, "dice.roll");
     if (allowed !== true) return allowed;
     const userId = currentUserId(request.headers)!;
@@ -555,8 +676,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     store.state.chat.push(message);
     store.save();
-    hub.broadcast(createEvent({ campaignId: roll.campaignId, type: "dice.roll.created", actorUserId: userId, targetId: roll.id, payload: roll }));
-    hub.broadcast(createEvent({ campaignId: roll.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
+    hub.broadcast(
+      createEvent({
+        campaignId: roll.campaignId,
+        type: "dice.roll.created",
+        actorUserId: userId,
+        targetId: roll.id,
+        payload: roll
+      })
+    );
+    hub.broadcast(
+      createEvent({
+        campaignId: roll.campaignId,
+        type: "chat.message.created",
+        actorUserId: userId,
+        targetId: message.id,
+        payload: message
+      })
+    );
     return roll;
   });
 
@@ -571,7 +708,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return store.state.chat.filter((item) => item.campaignId === request.query.campaignId && canReadChatMessage(store, userId, item));
   });
 
-  app.post<{ Body: Partial<ChatMessage> & { campaignId: string; body: string } }>("/api/v1/chat/messages", async (request, reply) => {
+  app.post<{
+    Body: Partial<ChatMessage> & { campaignId: string; body: string };
+  }>("/api/v1/chat/messages", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.body.campaignId, "chat.write");
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
@@ -588,7 +727,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies ChatMessage;
     store.state.chat.push(message);
     store.save();
-    hub.broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: message.userId, targetId: message.id, payload: message }));
+    hub.broadcast(
+      createEvent({
+        campaignId: message.campaignId,
+        type: "chat.message.created",
+        actorUserId: message.userId,
+        targetId: message.id,
+        payload: message
+      })
+    );
     return message;
   });
 
@@ -632,7 +779,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Combat;
     store.state.combats.push(combat);
     store.save();
-    hub.broadcast(createEvent({ campaignId: combat.campaignId, type: "combat.started", targetId: combat.id, payload: combat }));
+    hub.broadcast(
+      createEvent({
+        campaignId: combat.campaignId,
+        type: "combat.started",
+        targetId: combat.id,
+        payload: combat
+      })
+    );
     return combat;
   });
 
@@ -663,7 +817,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Proposal;
     store.state.proposals.push(proposal);
     store.save();
-    hub.broadcast(createEvent({ campaignId: proposal.campaignId, type: "proposal.created", targetId: proposal.id, payload: proposal }));
+    hub.broadcast(
+      createEvent({
+        campaignId: proposal.campaignId,
+        type: "proposal.created",
+        targetId: proposal.id,
+        payload: proposal
+      })
+    );
     return proposal;
   });
 
@@ -677,7 +838,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const approved = approveProposal(proposal, userId);
     Object.assign(proposal, approved);
     store.save();
-    hub.broadcast(createEvent({ campaignId: proposal.campaignId, type: "proposal.approved", targetId: proposal.id, payload: proposal }));
+    hub.broadcast(
+      createEvent({
+        campaignId: proposal.campaignId,
+        type: "proposal.approved",
+        targetId: proposal.id,
+        payload: proposal
+      })
+    );
     return proposal;
   });
 
@@ -693,7 +861,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return reply.code(409).send({ error: "proposal_not_ready", message });
     }
     const applied = store.state.proposals.find((item) => item.id === request.params.proposalId);
-    hub.broadcast(createEvent({ campaignId: proposal.campaignId, type: "proposal.applied", targetId: proposal.id, payload: applied }));
+    hub.broadcast(
+      createEvent({
+        campaignId: proposal.campaignId,
+        type: "proposal.applied",
+        targetId: proposal.id,
+        payload: applied
+      })
+    );
     return applied;
   });
 
@@ -717,7 +892,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     let content = "";
     const events: AiProviderEvent[] = [];
-    for await (const event of aiProvider.stream({ threadId: thread.id, messages: [{ role: "user", content: request.body.prompt }], tools: [], context })) {
+    for await (const event of aiProvider.stream({
+      threadId: thread.id,
+      messages: [{ role: "user", content: request.body.prompt }],
+      tools: [],
+      context
+    })) {
       events.push(event);
       if (event.type === "message.delta") content += event.delta;
       if (event.type === "message.completed" && !content) content = event.content;
@@ -743,10 +923,26 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         recipientUserIds: []
       }) satisfies ChatMessage;
       store.state.chat.push(message);
-      hub.broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
+      hub.broadcast(
+        createEvent({
+          campaignId: message.campaignId,
+          type: "chat.message.created",
+          actorUserId: userId,
+          targetId: message.id,
+          payload: message
+        })
+      );
     }
     store.save();
-    hub.broadcast(createEvent({ campaignId: thread.campaignId, type: "ai.thread.started", actorUserId: userId, targetId: thread.id, payload: thread }));
+    hub.broadcast(
+      createEvent({
+        campaignId: thread.campaignId,
+        type: "ai.thread.started",
+        actorUserId: userId,
+        targetId: thread.id,
+        payload: thread
+      })
+    );
     return { thread, assistantMessage: content, events };
   });
 
@@ -756,12 +952,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const canReadPublic = canCampaign(store, userId, request.params.campaignId, "ai.readPublicMemory");
     const canReadGm = canCampaign(store, userId, request.params.campaignId, "ai.readGmMemory");
     if (!canReadPublic && !canReadGm) return forbidden(reply, "Missing permission: ai.readPublicMemory");
-    return store.state.aiMemory
-      .filter((item) => item.campaignId === request.params.campaignId)
-      .filter((item) => item.visibility === "public" || canReadGm);
+    return store.state.aiMemory.filter((item) => item.campaignId === request.params.campaignId).filter((item) => item.visibility === "public" || canReadGm);
   });
 
-  app.post<{ Params: { campaignId: string }; Body: Partial<AiMemoryFact> & { text: string } }>("/api/v1/campaigns/:campaignId/ai/memory", async (request, reply) => {
+  app.post<{
+    Params: { campaignId: string };
+    Body: Partial<AiMemoryFact> & { text: string };
+  }>("/api/v1/campaigns/:campaignId/ai/memory", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
     if (allowed !== true) return allowed;
     const fact = createTimestamped("mem", {
@@ -796,7 +993,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const recap = request.body.transcript?.trim()
       ? `Session recap: ${request.body.transcript.trim()}`
-      : `Session recap: ${store.state.chat.filter((message) => message.campaignId === request.params.campaignId).map((message) => message.body).join(" ")}`;
+      : `Session recap: ${store.state.chat
+          .filter((message) => message.campaignId === request.params.campaignId)
+          .map((message) => message.body)
+          .join(" ")}`;
     const proposal = createTimestamped("prop", {
       campaignId: request.params.campaignId,
       createdByUserId: userId,
@@ -833,18 +1033,26 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.proposals.push(proposal);
     store.state.aiMemory.push(memory);
     store.save();
-    hub.broadcast(createEvent({ campaignId: proposal.campaignId, type: "ai.proposal.created", targetId: proposal.id, payload: proposal }));
+    hub.broadcast(
+      createEvent({
+        campaignId: proposal.campaignId,
+        type: "ai.proposal.created",
+        targetId: proposal.id,
+        payload: proposal
+      })
+    );
     return { proposal, memory };
   });
 
-  app.post<{ Params: { campaignId: string }; Body: { prompt: string; difficulty?: string } }>("/api/v1/campaigns/:campaignId/ai/encounter-design", async (request, reply) => {
+  app.post<{
+    Params: { campaignId: string };
+    Body: { prompt: string; difficulty?: string };
+  }>("/api/v1/campaigns/:campaignId/ai/encounter-design", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const tokenIds = store.state.tokens
-      .filter((token) => store.state.scenes.some((scene) => scene.campaignId === request.params.campaignId && scene.id === token.sceneId))
-      .map((token) => token.id);
+    const tokenIds = store.state.tokens.filter((token) => store.state.scenes.some((scene) => scene.campaignId === request.params.campaignId && scene.id === token.sceneId)).map((token) => token.id);
     const encounter = createTimestamped("enc", {
       campaignId: request.params.campaignId,
       name: "AI Draft Encounter",
@@ -859,13 +1067,26 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       title: "Encounter Designer Draft",
       summary: `Drafted ${encounter.difficulty} encounter: ${request.body.prompt}`,
       status: "pending" as const,
-      changesJson: [{ entity: "encounter" as const, action: "create" as const, data: encounter }],
+      changesJson: [
+        {
+          entity: "encounter" as const,
+          action: "create" as const,
+          data: encounter
+        }
+      ],
       diffJson: { tokenIds },
       approvalRequired: true
     }) satisfies Proposal;
     store.state.proposals.push(proposal);
     store.save();
-    hub.broadcast(createEvent({ campaignId: proposal.campaignId, type: "ai.proposal.created", targetId: proposal.id, payload: proposal }));
+    hub.broadcast(
+      createEvent({
+        campaignId: proposal.campaignId,
+        type: "ai.proposal.created",
+        targetId: proposal.id,
+        payload: proposal
+      })
+    );
     return { proposal, encounter };
   });
 
@@ -923,53 +1144,60 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { plugin, grant };
   });
 
-  app.post<{ Params: { campaignId: string; pluginId: string }; Body: { command: string; args?: string } }>(
-    "/api/v1/campaigns/:campaignId/plugins/:pluginId/chat-command",
-    async (request, reply) => {
-      const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "chat.write");
-      if (allowed !== true) return allowed;
-      const userId = requireUser(store, reply, request.headers);
-      if (typeof userId !== "string") return userId;
-      const plugin = installedPlugins.find((item) => item.id === request.params.pluginId);
-      if (!plugin) return notFound(reply, "Plugin not found");
-      const command = request.body.command.startsWith("/") ? request.body.command : `/${request.body.command}`;
-      if (!plugin.chatCommands?.some((item) => item.command === command)) return notFound(reply, "Plugin command not found");
-      if (!pluginCan(store, request.params.campaignId, plugin.id, "chat.write")) {
-        return forbidden(reply, `Plugin ${plugin.id} lacks chat.write in this campaign`);
-      }
-      const canReadTokens = pluginCan(store, request.params.campaignId, plugin.id, "token.read");
-      const sceneIds = campaignSceneIds(store, request.params.campaignId);
-      const tokenNames = canReadTokens ? store.state.tokens.filter((token) => sceneIds.includes(token.sceneId)).map((token) => token.name) : [];
-      const message = createTimestamped("msg", {
-        campaignId: request.params.campaignId,
-        userId: plugin.id,
-        type: "plugin" as const,
-        body:
-          command === "/spark"
-            ? `Spark macro: ${request.body.args?.trim() || "arcane sparks flare across the scene"}${tokenNames.length ? ` near ${tokenNames.join(", ")}` : ""}.`
-            : `${plugin.name} ran ${command}.`,
-        visibility: "public" as const,
-        recipientUserIds: []
-      }) satisfies ChatMessage;
-      store.state.chat.push(message);
-      store.state.auditLogs.push(
-        createTimestamped("audit", {
-          campaignId: request.params.campaignId,
-          actorUserId: userId,
-          actorType: "plugin" as const,
-          action: "plugin.chatCommand",
-          targetType: "chat",
-          targetId: message.id,
-          after: { pluginId: plugin.id, command }
-        })
-      );
-      store.save();
-      hub.broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
-      return { pluginId: plugin.id, command, chat: message };
+  app.post<{
+    Params: { campaignId: string; pluginId: string };
+    Body: { command: string; args?: string };
+  }>("/api/v1/campaigns/:campaignId/plugins/:pluginId/chat-command", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "chat.write");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const plugin = installedPlugins.find((item) => item.id === request.params.pluginId);
+    if (!plugin) return notFound(reply, "Plugin not found");
+    const command = request.body.command.startsWith("/") ? request.body.command : `/${request.body.command}`;
+    if (!plugin.chatCommands?.some((item) => item.command === command)) return notFound(reply, "Plugin command not found");
+    if (!pluginCan(store, request.params.campaignId, plugin.id, "chat.write")) {
+      return forbidden(reply, `Plugin ${plugin.id} lacks chat.write in this campaign`);
     }
-  );
+    const canReadTokens = pluginCan(store, request.params.campaignId, plugin.id, "token.read");
+    const sceneIds = campaignSceneIds(store, request.params.campaignId);
+    const tokenNames = canReadTokens ? store.state.tokens.filter((token) => sceneIds.includes(token.sceneId)).map((token) => token.name) : [];
+    const message = createTimestamped("msg", {
+      campaignId: request.params.campaignId,
+      userId: plugin.id,
+      type: "plugin" as const,
+      body: command === "/spark" ? `Spark macro: ${request.body.args?.trim() || "arcane sparks flare across the scene"}${tokenNames.length ? ` near ${tokenNames.join(", ")}` : ""}.` : `${plugin.name} ran ${command}.`,
+      visibility: "public" as const,
+      recipientUserIds: []
+    }) satisfies ChatMessage;
+    store.state.chat.push(message);
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: request.params.campaignId,
+        actorUserId: userId,
+        actorType: "plugin" as const,
+        action: "plugin.chatCommand",
+        targetType: "chat",
+        targetId: message.id,
+        after: { pluginId: plugin.id, command }
+      })
+    );
+    store.save();
+    hub.broadcast(
+      createEvent({
+        campaignId: message.campaignId,
+        type: "chat.message.created",
+        actorUserId: userId,
+        targetId: message.id,
+        payload: message
+      })
+    );
+    return { pluginId: plugin.id, command, chat: message };
+  });
 
-  app.post<{ Body: (typeof installedPlugins)[number] & { campaignId?: string } }>("/api/v1/plugins/install", async (request, reply) => {
+  app.post<{
+    Body: (typeof installedPlugins)[number] & { campaignId?: string };
+  }>("/api/v1/plugins/install", async (request, reply) => {
     const campaignId = request.body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(request.headers))?.campaignId;
     if (!campaignId) return forbidden(reply, "Plugin installation requires a campaign context");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "plugin.install");
@@ -989,7 +1217,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
-    return installedSystems.map((system) => ({ ...system, active: campaign.defaultSystemId === system.id }));
+    return installedSystems.map((system) => ({
+      ...system,
+      active: campaign.defaultSystemId === system.id
+    }));
   });
 
   app.post<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/install", async (request, reply) => {
@@ -1017,69 +1248,87 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { system, campaign };
   });
 
-  app.get<{ Params: { campaignId: string; systemId: string; actorId: string } }>(
-    "/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/sheet",
-    async (request, reply) => {
-      const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
-      if (allowed !== true) return allowed;
-      const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
-      if (!actor) return notFound(reply, "System actor not found");
-      return {
-        actorId: actor.id,
-        systemId: request.params.systemId,
-        summary: summarizeActor(actor),
-        data: actor.data,
-        quickRolls: genericFantasyQuickRolls(actor)
-      };
-    }
-  );
+  app.get<{
+    Params: { campaignId: string; systemId: string; actorId: string };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/sheet", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
+    if (allowed !== true) return allowed;
+    const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+    if (!actor) return notFound(reply, "System actor not found");
+    return {
+      actorId: actor.id,
+      systemId: request.params.systemId,
+      summary: summarizeActor(actor),
+      data: actor.data,
+      quickRolls: genericFantasyQuickRolls(actor)
+    };
+  });
 
-  app.post<{ Params: { campaignId: string; systemId: string; actorId: string }; Body: { rollId?: string; ability?: string; visibility?: "public" | "gm_only" | "whisper" } }>(
-    "/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/roll",
-    async (request, reply) => {
-      const canReadActor = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
-      if (canReadActor !== true) return canReadActor;
-      const canRoll = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "dice.roll");
-      if (canRoll !== true) return canRoll;
-      const userId = requireUser(store, reply, request.headers);
-      if (typeof userId !== "string") return userId;
-      const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
-      if (!actor) return notFound(reply, "System actor not found");
-      const quickRolls = genericFantasyQuickRolls(actor);
-      const rollDefinition =
-        quickRolls.find((item) => item.id === request.body.rollId) ??
-        quickRolls.find((item) => item.id === `ability-${request.body.ability}`) ??
-        quickRolls[0];
-      if (!rollDefinition) return notFound(reply, "No system roll is available for this actor");
-      const rolled = rollFormula(rollDefinition.formula);
-      const roll = createTimestamped("roll", {
-        campaignId: request.params.campaignId,
-        userId,
-        formula: rollDefinition.formula,
-        label: rollDefinition.label,
-        visibility: request.body.visibility ?? "public",
-        terms: rolled.terms,
-        total: rolled.total
-      }) satisfies DiceRoll;
-      const message = createTimestamped("msg", {
-        campaignId: request.params.campaignId,
-        userId,
-        type: "roll" as const,
-        body: `${actor.name} ${rollDefinition.label}: ${rollDefinition.formula} = ${roll.total}`,
-        visibility: roll.visibility,
-        recipientUserIds: [],
-        rollId: roll.id
-      }) satisfies ChatMessage;
-      store.state.rolls.push(roll);
-      store.state.chat.push(message);
-      store.save();
-      hub.broadcast(createEvent({ campaignId: roll.campaignId, type: "dice.roll.created", actorUserId: userId, targetId: roll.id, payload: roll }));
-      hub.broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
-      return { roll, chat: message, quickRoll: rollDefinition };
-    }
-  );
+  app.post<{
+    Params: { campaignId: string; systemId: string; actorId: string };
+    Body: {
+      rollId?: string;
+      ability?: string;
+      visibility?: "public" | "gm_only" | "whisper";
+    };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/roll", async (request, reply) => {
+    const canReadActor = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
+    if (canReadActor !== true) return canReadActor;
+    const canRoll = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "dice.roll");
+    if (canRoll !== true) return canRoll;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+    if (!actor) return notFound(reply, "System actor not found");
+    const quickRolls = genericFantasyQuickRolls(actor);
+    const rollDefinition = quickRolls.find((item) => item.id === request.body.rollId) ?? quickRolls.find((item) => item.id === `ability-${request.body.ability}`) ?? quickRolls[0];
+    if (!rollDefinition) return notFound(reply, "No system roll is available for this actor");
+    const rolled = rollFormula(rollDefinition.formula);
+    const roll = createTimestamped("roll", {
+      campaignId: request.params.campaignId,
+      userId,
+      formula: rollDefinition.formula,
+      label: rollDefinition.label,
+      visibility: request.body.visibility ?? "public",
+      terms: rolled.terms,
+      total: rolled.total
+    }) satisfies DiceRoll;
+    const message = createTimestamped("msg", {
+      campaignId: request.params.campaignId,
+      userId,
+      type: "roll" as const,
+      body: `${actor.name} ${rollDefinition.label}: ${rollDefinition.formula} = ${roll.total}`,
+      visibility: roll.visibility,
+      recipientUserIds: [],
+      rollId: roll.id
+    }) satisfies ChatMessage;
+    store.state.rolls.push(roll);
+    store.state.chat.push(message);
+    store.save();
+    hub.broadcast(
+      createEvent({
+        campaignId: roll.campaignId,
+        type: "dice.roll.created",
+        actorUserId: userId,
+        targetId: roll.id,
+        payload: roll
+      })
+    );
+    hub.broadcast(
+      createEvent({
+        campaignId: message.campaignId,
+        type: "chat.message.created",
+        actorUserId: userId,
+        targetId: message.id,
+        payload: message
+      })
+    );
+    return { roll, chat: message, quickRoll: rollDefinition };
+  });
 
-  app.post<{ Body: (typeof installedSystems)[number] & { campaignId?: string } }>("/api/v1/systems/install", async (request, reply) => {
+  app.post<{
+    Body: (typeof installedSystems)[number] & { campaignId?: string };
+  }>("/api/v1/systems/install", async (request, reply) => {
     const campaignId = request.body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(request.headers))?.campaignId;
     if (!campaignId) return forbidden(reply, "System installation requires a campaign context");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
@@ -1095,7 +1344,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return makeArchive(store.state, request.params.campaignId);
   });
 
-  app.post<{ Body: CampaignArchive | { archive: CampaignArchive; mode?: "upsert" | "reject_conflicts" } }>("/api/v1/import/campaign", async (request, reply) => {
+  app.post<{
+    Body: CampaignArchive | { archive: CampaignArchive; mode?: "upsert" | "reject_conflicts" };
+  }>("/api/v1/import/campaign", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     const payload = request.body as CampaignArchive | { archive: CampaignArchive; mode?: "upsert" | "reject_conflicts" };
@@ -1110,55 +1361,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
     const counts = mergeArchive(store.state, archive);
     store.save();
-    return { importedCampaignIds: archive.data.campaigns.map((item) => item.id), counts, conflicts };
+    return {
+      importedCampaignIds: archive.data.campaigns.map((item) => item.id),
+      counts,
+      conflicts
+    };
   });
 
   return app;
 }
 
-const ALL_PERMISSIONS: PermissionName[] = [
-  "campaign.read",
-  "campaign.update",
-  "campaign.delete",
-  "scene.read",
-  "scene.create",
-  "scene.update",
-  "scene.delete",
-  "scene.activate",
-  "token.read",
-  "token.create",
-  "token.update",
-  "token.move",
-  "token.delete",
-  "token.reveal",
-  "actor.read",
-  "actor.create",
-  "actor.update",
-  "actor.delete",
-  "actor.readPrivate",
-  "actor.updateOwned",
-  "journal.read",
-  "journal.readSecret",
-  "journal.create",
-  "journal.update",
-  "journal.delete",
-  "chat.read",
-  "chat.write",
-  "chat.moderate",
-  "combat.manage",
-  "plugin.install",
-  "plugin.configure",
-  "dice.roll",
-  "ai.use",
-  "ai.readPublicMemory",
-  "ai.readGmMemory",
-  "ai.proposeChanges",
-  "ai.applyChanges"
-];
+const ALL_PERMISSIONS: PermissionName[] = ["campaign.read", "campaign.update", "campaign.delete", "scene.read", "scene.create", "scene.update", "scene.delete", "scene.activate", "token.read", "token.create", "token.update", "token.move", "token.delete", "token.reveal", "actor.read", "actor.create", "actor.update", "actor.delete", "actor.readPrivate", "actor.updateOwned", "journal.read", "journal.readSecret", "journal.create", "journal.update", "journal.delete", "chat.read", "chat.write", "chat.moderate", "combat.manage", "plugin.install", "plugin.configure", "dice.roll", "ai.use", "ai.readPublicMemory", "ai.readGmMemory", "ai.proposeChanges", "ai.applyChanges"];
 
 function createConfiguredAiProvider(): AiProvider {
   if (process.env.OTTE_AI_PROVIDER === "codex-loopback") {
-    return new CodexAppServerProvider({ transport: new LoopbackCodexTransport(), approvalMode: "proposal" });
+    return new CodexAppServerProvider({
+      transport: new LoopbackCodexTransport(),
+      approvalMode: "proposal"
+    });
   }
   return new EchoAiProvider();
 }
@@ -1167,16 +1387,32 @@ function permissionsForUser(store: StateStore, userId: string, campaignId: strin
   return ALL_PERMISSIONS.filter((permission) => canCampaign(store, userId, campaignId, permission));
 }
 
+function memberSessionInfo(
+  store: StateStore,
+  member: CampaignMember
+): CampaignMember & {
+  user: Pick<User, "id" | "displayName" | "email">;
+  permissions: PermissionName[];
+} {
+  const user = store.state.users.find((item) => item.id === member.userId);
+  const grantPermissions = store.state.permissionGrants.filter((grant) => grant.campaignId === member.campaignId && grant.subjectType === "user" && grant.subjectId === member.userId && (!grant.expiresAt || Date.parse(grant.expiresAt) > Date.now())).flatMap((grant) => grant.permissions);
+  return {
+    ...member,
+    user: {
+      id: member.userId,
+      displayName: user?.displayName ?? member.userId,
+      email: user?.email
+    },
+    permissions: [...new Set([...permissionsForRole(member.role), ...grantPermissions])]
+  };
+}
+
 function canReadChatMessage(store: StateStore, userId: string, message: ChatMessage): boolean {
   if (message.visibility === "public") return true;
   if (message.visibility === "whisper") {
     return message.userId === userId || message.recipientUserIds.includes(userId) || canCampaign(store, userId, message.campaignId, "chat.moderate");
   }
-  return (
-    canCampaign(store, userId, message.campaignId, "chat.moderate") ||
-    canCampaign(store, userId, message.campaignId, "journal.readSecret") ||
-    canCampaign(store, userId, message.campaignId, "ai.readGmMemory")
-  );
+  return canCampaign(store, userId, message.campaignId, "chat.moderate") || canCampaign(store, userId, message.campaignId, "journal.readSecret") || canCampaign(store, userId, message.campaignId, "ai.readGmMemory");
 }
 
 function currentUserId(headers: Record<string, string | string[] | undefined>): string | undefined {
@@ -1196,13 +1432,7 @@ function requireUser(store: StateStore, reply: FastifyReply, headers: Record<str
   return userId;
 }
 
-function requireCampaignPermission(
-  store: StateStore,
-  reply: FastifyReply,
-  headers: Record<string, string | string[] | undefined>,
-  campaignId: string,
-  permission: PermissionName
-): true | FastifyReply {
+function requireCampaignPermission(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>, campaignId: string, permission: PermissionName): true | FastifyReply {
   const userId = requireUser(store, reply, headers);
   if (typeof userId !== "string") return userId;
   if (
@@ -1219,12 +1449,7 @@ function requireCampaignPermission(
   return true;
 }
 
-function canCampaign(
-  store: StateStore,
-  userId: string,
-  campaignId: string,
-  permission: PermissionName
-): boolean {
+function canCampaign(store: StateStore, userId: string, campaignId: string, permission: PermissionName): boolean {
   return hasPermission({
     userId,
     campaignId,
@@ -1248,13 +1473,7 @@ function campaignSceneIds(store: StateStore, campaignId: string): string[] {
 }
 
 function findPluginGrant(store: StateStore, campaignId: string, pluginId: string): PermissionGrant | undefined {
-  return store.state.permissionGrants.find(
-    (grant) =>
-      grant.subjectType === "plugin" &&
-      grant.subjectId === pluginId &&
-      grant.campaignId === campaignId &&
-      (!grant.expiresAt || Date.parse(grant.expiresAt) > Date.now())
-  );
+  return store.state.permissionGrants.find((grant) => grant.subjectType === "plugin" && grant.subjectId === pluginId && grant.campaignId === campaignId && (!grant.expiresAt || Date.parse(grant.expiresAt) > Date.now()));
 }
 
 function pluginCan(store: StateStore, campaignId: string, pluginId: string, permission: PermissionName): boolean {

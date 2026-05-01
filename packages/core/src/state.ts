@@ -1,15 +1,5 @@
 import { createId, nowIso } from "./ids.js";
-import type {
-  Actor,
-  Campaign,
-  CampaignArchive,
-  CampaignMember,
-  EngineState,
-  JournalEntry,
-  Scene,
-  Token,
-  User
-} from "./types.js";
+import type { Actor, Campaign, CampaignArchive, CampaignMember, EngineState, JournalEntry, Scene, Token, User } from "./types.js";
 
 export function emptyState(): EngineState {
   return {
@@ -48,6 +38,13 @@ export function seedState(): EngineState {
     createdAt: now,
     updatedAt: now
   };
+  const player: User = {
+    id: "usr_demo_player",
+    displayName: "Demo Player",
+    email: "player@example.test",
+    createdAt: now,
+    updatedAt: now
+  };
   const campaign: Campaign = {
     id: "camp_demo",
     ownerUserId: user.id,
@@ -66,6 +63,14 @@ export function seedState(): EngineState {
     createdAt: now,
     updatedAt: now
   };
+  const playerMember: CampaignMember = {
+    id: "mem_demo_player",
+    campaignId: campaign.id,
+    userId: player.id,
+    role: "player",
+    createdAt: now,
+    updatedAt: now
+  };
   const scene: Scene = {
     id: "scn_vault_entry",
     campaignId: campaign.id,
@@ -77,7 +82,16 @@ export function seedState(): EngineState {
     active: true,
     sortOrder: 1,
     fog: [{ id: "fog_center", x: 540, y: 360, radius: 190, hidden: false }],
-    walls: [{ id: "wall_north", x1: 250, y1: 180, x2: 920, y2: 180, blocksVision: true }],
+    walls: [
+      {
+        id: "wall_north",
+        x1: 250,
+        y1: 180,
+        x2: 920,
+        y2: 180,
+        blocksVision: true
+      }
+    ],
     lights: [{ id: "light_brazier", x: 320, y: 320, radius: 180, color: "#f59e0b" }],
     metadata: {},
     createdAt: now,
@@ -87,11 +101,18 @@ export function seedState(): EngineState {
     id: "act_valen",
     campaignId: campaign.id,
     systemId: "generic-fantasy",
-    ownerUserId: user.id,
+    ownerUserId: player.id,
     type: "character",
     name: "Valen Ash",
     data: {
-      attributes: { strength: 14, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 10, charisma: 15 },
+      attributes: {
+        strength: 14,
+        dexterity: 12,
+        constitution: 13,
+        intelligence: 11,
+        wisdom: 10,
+        charisma: 15
+      },
       hp: { current: 18, max: 22 },
       resources: { focus: 3 }
     },
@@ -133,9 +154,9 @@ export function seedState(): EngineState {
     updatedAt: now
   };
 
-  state.users.push(user);
+  state.users.push(user, player);
   state.campaigns.push(campaign);
-  state.members.push(member);
+  state.members.push(member, playerMember);
   state.scenes.push(scene);
   state.actors.push(actor);
   state.tokens.push(token);

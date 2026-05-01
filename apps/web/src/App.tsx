@@ -1,44 +1,14 @@
-import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, Proposal, Scene, Token } from "@open-tabletop/core";
-import {
-  Bot,
-  Boxes,
-  BrickWall,
-  Check,
-  ChevronRight,
-  Download,
-  Eye,
-  FileText,
-  Hand,
-  Lightbulb,
-  MessageSquare,
-  Plus,
-  ScrollText,
-  Send,
-  Shield,
-  Swords,
-  Upload,
-  Users,
-  WandSparkles
-} from "lucide-react";
+import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token } from "@open-tabletop/core";
+import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eye, FileText, Hand, Lightbulb, MessageSquare, Plus, ScrollText, Send, Shield, Swords, Upload, Users, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  apiGet,
-  apiPatch,
-  apiPost,
-  apiUploadAsset,
-  assetBlobUrl,
-  loadSnapshot,
-  sessionUserId,
-  type PluginRuntimeInfo,
-  type Snapshot,
-  type SystemRuntimeInfo
-} from "./api.js";
+import { apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, getSessionUserId, loadSnapshot, setSessionUserId, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
     campaigns: [],
+    members: [],
     scenes: [],
     assets: [],
     tokens: [],
@@ -52,6 +22,7 @@ export function App() {
     plugins: [],
     systems: []
   });
+  const [currentUserId, setCurrentUserId] = useState(getSessionUserId());
   const [campaignId, setCampaignId] = useState("camp_demo");
   const [sceneId, setSceneId] = useState("scn_vault_entry");
   const [selectedTokenId, setSelectedTokenId] = useState("tok_valen");
@@ -67,6 +38,9 @@ export function App() {
   const selectedToken = snapshot.tokens.find((token) => token.id === selectedTokenId);
   const selectedActor = snapshot.actors.find((actor) => actor.id === selectedToken?.actorId) ?? snapshot.actors[0];
   const activeCombat = snapshot.combats.find((combat) => combat.active);
+  const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
+  const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
+  const canUpdateSelectedActor = hasPermission("actor.update") || (selectedActor?.ownerUserId === currentUserId && hasPermission("actor.updateOwned"));
 
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId) {
     const next = await loadSnapshot(nextCampaignId, nextSceneId);
@@ -84,9 +58,7 @@ export function App() {
 
   useEffect(() => {
     if (!campaignId) return;
-    const wsUrl =
-      `${apiBase || window.location.origin}`.replace(/^http/, "ws") +
-      `/api/v1/realtime?campaignId=${campaignId}&userId=${encodeURIComponent(sessionUserId)}`;
+    const wsUrl = `${apiBase || window.location.origin}`.replace(/^http/, "ws") + `/api/v1/realtime?campaignId=${campaignId}&userId=${encodeURIComponent(currentUserId)}`;
     const socket = new WebSocket(wsUrl);
     socket.onopen = () => setStatus("Realtime connected");
     socket.onmessage = () => {
@@ -94,7 +66,14 @@ export function App() {
     };
     socket.onerror = () => setStatus("Realtime unavailable");
     return () => socket.close();
-  }, [campaignId, sceneId]);
+  }, [campaignId, sceneId, currentUserId]);
+
+  async function switchSession(userId: string) {
+    setSessionUserId(userId);
+    setCurrentUserId(userId);
+    setStatus("Switching session");
+    await refresh(campaignId, sceneId);
+  }
 
   async function createScene() {
     const scene = await apiPost<Scene>(`/api/v1/campaigns/${campaignId}/scenes`, {
@@ -119,7 +98,12 @@ export function App() {
 
   async function uploadMap(file: File) {
     if (!selectedScene) return;
-    await apiUploadAsset({ campaignId, sceneId: selectedScene.id, file, setAsBackground: true });
+    await apiUploadAsset({
+      campaignId,
+      sceneId: selectedScene.id,
+      file,
+      setAsBackground: true
+    });
     setStatus("Map uploaded");
     await refresh(campaignId, selectedScene.id);
   }
@@ -182,7 +166,11 @@ export function App() {
 
   async function sendChat() {
     if (!chatBody.trim()) return;
-    await apiPost<ChatMessage>("/api/v1/chat/messages", { campaignId, body: chatBody, type: "plain" });
+    await apiPost<ChatMessage>("/api/v1/chat/messages", {
+      campaignId,
+      body: chatBody,
+      type: "plain"
+    });
     setChatBody("");
     await refresh();
   }
@@ -206,13 +194,18 @@ export function App() {
       initiative: 20 - index,
       defeated: false
     }));
-    await apiPost<Combat>(`/api/v1/campaigns/${campaignId}/combats`, { combatants });
+    await apiPost<Combat>(`/api/v1/campaigns/${campaignId}/combats`, {
+      combatants
+    });
     setTab("combat");
     await refresh();
   }
 
   async function askAi() {
-    await apiPost(`/api/v1/campaigns/${campaignId}/ai/encounter-design`, { prompt: aiPrompt, difficulty: "standard" });
+    await apiPost(`/api/v1/campaigns/${campaignId}/ai/encounter-design`, {
+      prompt: aiPrompt,
+      difficulty: "standard"
+    });
     setStatus("Encounter proposal drafted");
     await refresh();
   }
@@ -262,7 +255,9 @@ export function App() {
 
   async function exportCampaign() {
     const archive = await apiGet<object>(`/api/v1/campaigns/${campaignId}/export`);
-    const blob = new Blob([JSON.stringify(archive, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(archive, null, 2)], {
+      type: "application/json"
+    });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -293,7 +288,21 @@ export function App() {
             </button>
           ))}
         </nav>
-        <button className="ghost-button" onClick={createScene}>
+        <label className="session-switcher">
+          <span>Session</span>
+          <select aria-label="Session user" value={currentUserId} onChange={(event) => switchSession(event.target.value).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+            {snapshot.members.length === 0 ? (
+              <option value={currentUserId}>{currentUserId}</option>
+            ) : (
+              snapshot.members.map((member) => (
+                <option key={member.id} value={member.user.id}>
+                  {member.user.displayName} - {member.role}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+        <button className="ghost-button" onClick={createScene} disabled={!hasPermission("scene.create")}>
           <Plus size={16} /> Scene
         </button>
         <button className="ghost-button" onClick={exportCampaign}>
@@ -302,7 +311,7 @@ export function App() {
         <button className="ghost-button" onClick={() => document.getElementById("import-file")?.click()}>
           <Upload size={16} /> Import
         </button>
-        <button className="ghost-button" onClick={() => document.getElementById("map-upload-file")?.click()}>
+        <button className="ghost-button" onClick={() => document.getElementById("map-upload-file")?.click()} disabled={!hasPermission("scene.create") || !hasPermission("scene.update")}>
           <Upload size={16} /> Map
         </button>
         <input
@@ -346,26 +355,15 @@ export function App() {
               </button>
             ))}
           </div>
-          <button className="primary-button" onClick={createToken}>
+          <button className="primary-button" onClick={createToken} disabled={!hasPermission("token.create")}>
             <Plus size={16} /> Token
           </button>
         </header>
 
         <div className="table-grid">
           <section className="table-area">
-              <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onAddWall={addWall} onAddLight={addLight} />
-            {selectedScene ? (
-              <SceneCanvas
-                scene={selectedScene}
-                backgroundAsset={selectedMapAsset}
-                tokens={snapshot.tokens}
-                selectedTokenId={selectedTokenId}
-                onSelect={setSelectedTokenId}
-                onMoved={refresh}
-              />
-            ) : (
-              <div className="empty-state">Create a scene to open the tabletop.</div>
-            )}
+            <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onAddWall={addWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canUpdateScene={hasPermission("scene.update")} />
+            {selectedScene ? <SceneCanvas scene={selectedScene} backgroundAsset={selectedMapAsset} tokens={snapshot.tokens} selectedTokenId={selectedTokenId} onSelect={setSelectedTokenId} onMoved={refresh} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
           <aside className="inspector">
@@ -376,31 +374,11 @@ export function App() {
               <TabButton active={tab === "ai"} icon={<Bot size={15} />} label="AI" onClick={() => setTab("ai")} />
               <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="SDK" onClick={() => setTab("plugins")} />
             </div>
-            {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} updateActorHp={updateActorHp} />}
-            {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} />}
-            {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} />}
-            {tab === "ai" && (
-              <AiPanel
-                prompt={aiPrompt}
-                setPrompt={setAiPrompt}
-                askAi={askAi}
-                recapSession={recapSession}
-                proposals={snapshot.proposals}
-                memory={snapshot.memory}
-                approveAndApply={approveAndApply}
-                approveMemory={approveMemory}
-              />
-            )}
-            {tab === "plugins" && (
-              <SdkPanel
-                plugins={snapshot.plugins}
-                systems={snapshot.systems}
-                actor={selectedActor}
-                onInstallPlugin={installPlugin}
-                onRunCommand={runPluginCommand}
-                onSystemRoll={rollSystemCheck}
-              />
-            )}
+            {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} updateActorHp={updateActorHp} canUpdateActor={canUpdateSelectedActor} />}
+            {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
+            {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
+            {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} proposals={snapshot.proposals} memory={snapshot.memory} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
+            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} actor={selectedActor} onInstallPlugin={installPlugin} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
         </div>
 
@@ -433,14 +411,7 @@ export function App() {
   );
 }
 
-function SceneCanvas(props: {
-  scene: Scene;
-  backgroundAsset?: MapAsset;
-  tokens: Token[];
-  selectedTokenId: string;
-  onSelect(id: string): void;
-  onMoved(): Promise<void>;
-}) {
+function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: Token[]; selectedTokenId: string; onSelect(id: string): void; onMoved(): Promise<void> }) {
   const [dragging, setDragging] = useState<string | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const tokens = useMemo(() => props.tokens.filter((token) => token.sceneId === props.scene.id), [props.tokens, props.scene.id]);
@@ -467,7 +438,12 @@ function SceneCanvas(props: {
       onPointerUp={() => setDragging(null)}
     >
       {props.backgroundAsset && <img className="scene-map" src={assetBlobUrl(props.backgroundAsset)} alt="" draggable={false} />}
-      <div className="grid-lines" style={{ backgroundSize: `${(props.scene.gridSize / props.scene.width) * 100}% ${(props.scene.gridSize / props.scene.height) * 100}%` }} />
+      <div
+        className="grid-lines"
+        style={{
+          backgroundSize: `${(props.scene.gridSize / props.scene.width) * 100}% ${(props.scene.gridSize / props.scene.height) * 100}%`
+        }}
+      />
       {props.scene.lights.map((light) => (
         <div
           className="light-source"
@@ -509,25 +485,25 @@ function SceneCanvas(props: {
   );
 }
 
-function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onAddWall(): void; onAddLight(): void }) {
+function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onAddWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; canUpdateScene: boolean }) {
   return (
     <div className="toolbar">
       <button className="tool active" title="Select">
         <Hand size={17} />
       </button>
-      <button className="tool" title="Add token" onClick={props.onCreateToken}>
+      <button className="tool" title="Add token" onClick={props.onCreateToken} disabled={!props.canCreateToken}>
         <Plus size={17} />
       </button>
-      <button className="tool" title="Start combat" onClick={props.onStartCombat}>
+      <button className="tool" title="Start combat" onClick={props.onStartCombat} disabled={!props.canManageCombat}>
         <Swords size={17} />
       </button>
-      <button className="tool" title="Reveal fog" onClick={props.onRevealFog}>
+      <button className="tool" title="Reveal fog" onClick={props.onRevealFog} disabled={!props.canRevealFog}>
         <Eye size={17} />
       </button>
-      <button className="tool" title="Add wall" onClick={props.onAddWall}>
+      <button className="tool" title="Add wall" onClick={props.onAddWall} disabled={!props.canUpdateScene}>
         <BrickWall size={17} />
       </button>
-      <button className="tool" title="Add light" onClick={props.onAddLight}>
+      <button className="tool" title="Add light" onClick={props.onAddLight} disabled={!props.canUpdateScene}>
         <Lightbulb size={17} />
       </button>
     </div>
@@ -543,7 +519,7 @@ function TabButton(props: { active: boolean; icon: React.ReactNode; label: strin
   );
 }
 
-function ActorPanel(props: { actor?: Actor; token?: Token; updateActorHp(actor: Actor, current: number): void }) {
+function ActorPanel(props: { actor?: Actor; token?: Token; updateActorHp(actor: Actor, current: number): void; canUpdateActor: boolean }) {
   if (!props.actor) return <div className="panel-empty">No actor selected.</div>;
   const hp = props.actor.data.hp as { current?: number; max?: number } | undefined;
   return (
@@ -562,24 +538,19 @@ function ActorPanel(props: { actor?: Actor; token?: Token; updateActorHp(actor: 
       </div>
       <div className="sheet-row">
         <label htmlFor="actor-hp">Current HP</label>
-        <input
-          id="actor-hp"
-          type="number"
-          value={hp?.current ?? 0}
-          onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))}
-        />
+        <input id="actor-hp" type="number" value={hp?.current ?? 0} disabled={!props.canUpdateActor} onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))} />
       </div>
       <pre>{JSON.stringify(props.actor.data, null, 2)}</pre>
     </div>
   );
 }
 
-function JournalPanel(props: { journals: JournalEntry[]; onCreate(): void }) {
+function JournalPanel(props: { journals: JournalEntry[]; onCreate(): void; canCreate: boolean }) {
   return (
     <div className="panel-stack">
       <div className="panel-heading">
         <div className="section-title">Journal</div>
-        <button className="icon-button" title="Create journal entry" onClick={props.onCreate}>
+        <button className="icon-button" title="Create journal entry" onClick={props.onCreate} disabled={!props.canCreate}>
           <Plus size={16} />
         </button>
       </div>
@@ -594,12 +565,12 @@ function JournalPanel(props: { journals: JournalEntry[]; onCreate(): void }) {
   );
 }
 
-function CombatPanel(props: { combat?: Combat; onStart(): void }) {
+function CombatPanel(props: { combat?: Combat; onStart(): void; canManage: boolean }) {
   return (
     <div className="panel-stack">
       <div className="panel-heading">
         <div className="section-title">Combat Tracker</div>
-        <button className="icon-button" title="Start combat" onClick={props.onStart}>
+        <button className="icon-button" title="Start combat" onClick={props.onStart} disabled={!props.canManage}>
           <Swords size={16} />
         </button>
       </div>
@@ -617,7 +588,7 @@ function CombatPanel(props: { combat?: Combat; onStart(): void }) {
           ))}
         </>
       ) : (
-        <button className="primary-button wide" onClick={props.onStart}>
+        <button className="primary-button wide" onClick={props.onStart} disabled={!props.canManage}>
           Start from scene tokens
         </button>
       )}
@@ -625,24 +596,15 @@ function CombatPanel(props: { combat?: Combat; onStart(): void }) {
   );
 }
 
-function AiPanel(props: {
-  prompt: string;
-  setPrompt(value: string): void;
-  askAi(): void;
-  recapSession(): void;
-  proposals: Proposal[];
-  memory: AiMemoryFact[];
-  approveAndApply(proposal: Proposal): void;
-  approveMemory(fact: AiMemoryFact): void;
-}) {
+function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; recapSession(): void; proposals: Proposal[]; memory: AiMemoryFact[]; approveAndApply(proposal: Proposal): void; approveMemory(fact: AiMemoryFact): void; canPropose: boolean; canApply: boolean }) {
   return (
     <div className="panel-stack">
       <div className="section-title">Permissioned AI</div>
       <textarea value={props.prompt} onChange={(event) => props.setPrompt(event.target.value)} />
-      <button className="primary-button wide" onClick={props.askAi}>
+      <button className="primary-button wide" onClick={props.askAi} disabled={!props.canPropose}>
         <Bot size={16} /> Draft Encounter
       </button>
-      <button className="ghost-button wide" onClick={props.recapSession}>
+      <button className="ghost-button wide" onClick={props.recapSession} disabled={!props.canPropose}>
         <ScrollText size={16} /> Recap Session
       </button>
       {props.memory.map((fact) => (
@@ -650,7 +612,7 @@ function AiPanel(props: {
           <span>{fact.approvedByUserId ? "approved memory" : "pending memory"}</span>
           <p>{fact.text}</p>
           {!fact.approvedByUserId && (
-            <button className="ghost-button" onClick={() => props.approveMemory(fact)}>
+            <button className="ghost-button" onClick={() => props.approveMemory(fact)} disabled={!props.canApply}>
               <Check size={15} /> Approve memory
             </button>
           )}
@@ -662,7 +624,7 @@ function AiPanel(props: {
           <h3>{proposal.title}</h3>
           <p>{proposal.summary}</p>
           {proposal.status !== "applied" && (
-            <button className="ghost-button" onClick={() => props.approveAndApply(proposal)}>
+            <button className="ghost-button" onClick={() => props.approveAndApply(proposal)} disabled={!props.canApply}>
               <Check size={15} /> Approve and apply
             </button>
           )}
@@ -672,14 +634,7 @@ function AiPanel(props: {
   );
 }
 
-function SdkPanel(props: {
-  plugins: PluginRuntimeInfo[];
-  systems: SystemRuntimeInfo[];
-  actor?: Actor;
-  onInstallPlugin(plugin: PluginRuntimeInfo): void;
-  onRunCommand(plugin: PluginRuntimeInfo, command: string): void;
-  onSystemRoll(): void;
-}) {
+function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; actor?: Actor; onInstallPlugin(plugin: PluginRuntimeInfo): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canRollSystem: boolean }) {
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   return (
     <div className="panel-stack">
@@ -690,7 +645,7 @@ function SdkPanel(props: {
           <h3>{plugin.name}</h3>
           <p>{plugin.permissions.join(", ")}</p>
           {!plugin.installed ? (
-            <button className="ghost-button" onClick={() => props.onInstallPlugin(plugin)}>
+            <button className="ghost-button" onClick={() => props.onInstallPlugin(plugin)} disabled={!props.canInstall}>
               <Plus size={15} /> Install
             </button>
           ) : (
@@ -710,7 +665,7 @@ function SdkPanel(props: {
         <span>Sheet Actor</span>
         <strong>{props.actor?.name ?? "No actor"}</strong>
       </div>
-      <button className="primary-button wide" onClick={props.onSystemRoll} disabled={!props.actor}>
+      <button className="primary-button wide" onClick={props.onSystemRoll} disabled={!props.actor || !props.canRollSystem}>
         <ChevronRight size={16} /> Charisma Check
       </button>
     </div>

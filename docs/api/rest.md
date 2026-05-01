@@ -2,13 +2,14 @@
 
 The API is served from `apps/api` and exposes:
 
-Authenticated endpoints require an `x-user-id` session header. The seeded local GM user is `usr_demo_gm`.
+Authenticated endpoints require an `x-user-id` session header. The seeded local users are `usr_demo_gm` and `usr_demo_player`.
 
 - `GET /api/v1/health`
 - `GET /api/v1/auth/session`
 - `GET /api/v1/openapi.json`
 - `GET|POST /api/v1/campaigns`
 - `GET|PATCH|DELETE /api/v1/campaigns/{campaignId}`
+- `GET /api/v1/campaigns/{campaignId}/members`
 - `GET|POST /api/v1/campaigns/{campaignId}/scenes`
 - `GET|POST /api/v1/campaigns/{campaignId}/assets`
 - `POST /api/v1/campaigns/{campaignId}/assets/upload`

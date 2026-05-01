@@ -1,26 +1,23 @@
-import type {
-  Actor,
-  AiMemoryFact,
-  Campaign,
-  ChatMessage,
-  Combat,
-  Encounter,
-  JournalEntry,
-  MapAsset,
-  Proposal,
-  Scene,
-  Token
-} from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, Campaign, CampaignMember, ChatMessage, Combat, Encounter, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
-export const sessionUserId = localStorage.getItem("otte:userId") ?? "usr_demo_gm";
 
-const sessionHeaders = {
-  "x-user-id": sessionUserId
-};
+export function getSessionUserId(): string {
+  return localStorage.getItem("otte:userId") ?? "usr_demo_gm";
+}
+
+export function setSessionUserId(userId: string): void {
+  localStorage.setItem("otte:userId", userId);
+}
+
+function sessionHeaders(): Record<string, string> {
+  return { "x-user-id": getSessionUserId() };
+}
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, { headers: sessionHeaders });
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: sessionHeaders()
+  });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
 }
@@ -28,7 +25,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...sessionHeaders },
+    headers: { "content-type": "application/json", ...sessionHeaders() },
     body: JSON.stringify(body)
   });
   if (!response.ok) throw new Error(await response.text());
@@ -38,7 +35,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "PATCH",
-    headers: { "content-type": "application/json", ...sessionHeaders },
+    headers: { "content-type": "application/json", ...sessionHeaders() },
     body: JSON.stringify(body)
   });
   if (!response.ok) throw new Error(await response.text());
@@ -46,7 +43,9 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
 }
 
 export interface Snapshot {
+  session?: SessionInfo;
   campaigns: Campaign[];
+  members: CampaignMemberInfo[];
   scenes: Scene[];
   assets: MapAsset[];
   tokens: Token[];
@@ -59,6 +58,16 @@ export interface Snapshot {
   memory: AiMemoryFact[];
   plugins: PluginRuntimeInfo[];
   systems: SystemRuntimeInfo[];
+}
+
+export interface SessionInfo {
+  user: User;
+  memberships: CampaignMember[];
+}
+
+export interface CampaignMemberInfo extends CampaignMember {
+  user: Pick<User, "id" | "displayName" | "email">;
+  permissions: PermissionName[];
 }
 
 export interface PluginRuntimeInfo {
@@ -82,7 +91,7 @@ export interface SystemRuntimeInfo {
 export function assetBlobUrl(asset: MapAsset): string {
   if (/^(https?:|data:|blob:)/.test(asset.url)) return asset.url;
   const separator = asset.url.includes("?") ? "&" : "?";
-  return `${baseUrl}${asset.url}${separator}userId=${encodeURIComponent(sessionUserId)}`;
+  return `${baseUrl}${asset.url}${separator}userId=${encodeURIComponent(getSessionUserId())}`;
 }
 
 export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean }): Promise<{ asset: MapAsset; scene?: Scene }> {
@@ -94,7 +103,7 @@ export async function apiUploadAsset(input: { campaignId: string; sceneId?: stri
     headers: {
       "content-type": input.file.type || "application/octet-stream",
       "x-asset-name": encodeURIComponent(input.file.name),
-      ...sessionHeaders
+      ...sessionHeaders()
     },
     body: input.file
   });
@@ -103,25 +112,45 @@ export async function apiUploadAsset(input: { campaignId: string; sceneId?: stri
 }
 
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
-  const campaigns = await apiGet<Campaign[]>("/api/v1/campaigns");
+  const [session, campaigns] = await Promise.all([apiGet<SessionInfo>("/api/v1/auth/session"), apiGet<Campaign[]>("/api/v1/campaigns")]);
   const selectedCampaignId = campaignId ?? campaigns[0]?.id;
   if (!selectedCampaignId) {
-    return { campaigns, scenes: [], assets: [], tokens: [], actors: [], journals: [], chat: [], encounters: [], combats: [], proposals: [], memory: [], plugins: [], systems: [] };
+    return {
+      session,
+      campaigns,
+      members: [],
+      scenes: [],
+      assets: [],
+      tokens: [],
+      actors: [],
+      journals: [],
+      chat: [],
+      encounters: [],
+      combats: [],
+      proposals: [],
+      memory: [],
+      plugins: [],
+      systems: []
+    };
   }
   const scenes = await apiGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
   const selectedSceneId = sceneId ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
-  const [assets, tokens, actors, journals, chat, encounters, combats, proposals, memory, plugins, systems] = await Promise.all([
-    apiGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
-    selectedSceneId ? apiGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
-    apiGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
-    apiGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`),
-    apiGet<ChatMessage[]>(`/api/v1/chat/messages?campaignId=${selectedCampaignId}`),
-    apiGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
-    apiGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
-    apiGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
-    apiGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`),
-    apiGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
-    apiGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)
-  ]);
-  return { campaigns, scenes, assets, tokens, actors, journals, chat, encounters, combats, proposals, memory, plugins, systems };
+  const [members, assets, tokens, actors, journals, chat, encounters, combats, proposals, memory, plugins, systems] = await Promise.all([apiGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`), apiGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`), selectedSceneId ? apiGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]), apiGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`), apiGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`), apiGet<ChatMessage[]>(`/api/v1/chat/messages?campaignId=${selectedCampaignId}`), apiGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`), apiGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`), apiGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`), apiGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`), apiGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`), apiGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)]);
+  return {
+    session,
+    campaigns,
+    members,
+    scenes,
+    assets,
+    tokens,
+    actors,
+    journals,
+    chat,
+    encounters,
+    combats,
+    proposals,
+    memory,
+    plugins,
+    systems
+  };
 }

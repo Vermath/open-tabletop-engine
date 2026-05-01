@@ -14,7 +14,11 @@ describe("api", () => {
   it("serves campaigns, rolls dice, and exports campaign data", async () => {
     const app = await buildApp({ store: new MemoryStateStore() });
 
-    const campaigns = await app.inject({ method: "GET", url: "/api/v1/campaigns", headers: authHeaders });
+    const campaigns = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns",
+      headers: authHeaders
+    });
     expect(campaigns.statusCode).toBe(200);
     expect(campaigns.json()).toHaveLength(1);
 
@@ -22,14 +26,91 @@ describe("api", () => {
       method: "POST",
       url: "/api/v1/dice/roll",
       headers: authHeaders,
-      payload: { campaignId: "camp_demo", formula: "1d20+5", visibility: "public" }
+      payload: {
+        campaignId: "camp_demo",
+        formula: "1d20+5",
+        visibility: "public"
+      }
     });
     expect(roll.statusCode).toBe(200);
     expect(roll.json().total).toBeGreaterThanOrEqual(6);
 
-    const exported = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export", headers: authHeaders });
+    const exported = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export",
+      headers: authHeaders
+    });
     expect(exported.statusCode).toBe(200);
     expect(exported.json().format).toBe("ottx");
+
+    await app.close();
+  });
+
+  it("supports a seeded player session without GM permissions", async () => {
+    const app = await buildApp({ store: new MemoryStateStore() });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    const session = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/session",
+      headers: playerHeaders
+    });
+    expect(session.statusCode).toBe(200);
+    expect(session.json().user.displayName).toBe("Demo Player");
+    expect(session.json().memberships[0]).toEqual(expect.objectContaining({ campaignId: "camp_demo", role: "player" }));
+
+    const campaigns = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns",
+      headers: playerHeaders
+    });
+    expect(campaigns.statusCode).toBe(200);
+    expect(campaigns.json().map((campaign: { id: string }) => campaign.id)).toEqual(["camp_demo"]);
+
+    const members = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/members",
+      headers: playerHeaders
+    });
+    expect(members.statusCode).toBe(200);
+    expect(members.json()).toHaveLength(2);
+    const playerMember = members.json().find((member: { user: { id: string } }) => member.user.id === "usr_demo_player");
+    expect(playerMember.permissions).toContain("token.move");
+    expect(playerMember.permissions).not.toContain("scene.update");
+
+    const movedToken = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_valen",
+      headers: playerHeaders,
+      payload: { x: 460, y: 390 }
+    });
+    expect(movedToken.statusCode).toBe(200);
+    expect(movedToken.json()).toEqual(expect.objectContaining({ x: 460, y: 390 }));
+
+    const updatedActor = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/actors/act_valen",
+      headers: playerHeaders,
+      payload: { data: { hp: { current: 17, max: 22 } } }
+    });
+    expect(updatedActor.statusCode).toBe(200);
+    expect(updatedActor.json().data.hp.current).toBe(17);
+
+    const blockedWall = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/walls",
+      headers: playerHeaders,
+      payload: { x1: 100, y1: 100, x2: 500, y2: 100 }
+    });
+    expect(blockedWall.statusCode).toBe(403);
+
+    const secretJournal = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/journal",
+      headers: playerHeaders
+    });
+    expect(secretJournal.statusCode).toBe(200);
+    expect(secretJournal.json()).toEqual([]);
 
     await app.close();
   });
@@ -37,7 +118,11 @@ describe("api", () => {
   it("covers auth, assets, fog, encounter design, and session memory", async () => {
     const app = await buildApp({ store: new MemoryStateStore() });
 
-    const session = await app.inject({ method: "GET", url: "/api/v1/auth/session", headers: authHeaders });
+    const session = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/session",
+      headers: authHeaders
+    });
     expect(session.statusCode).toBe(200);
     expect(session.json().user.id).toBe("usr_demo_gm");
 
@@ -45,7 +130,11 @@ describe("api", () => {
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/assets",
       headers: authHeaders,
-      payload: { name: "Vault Map", url: "https://example.test/vault.png", mimeType: "image/png" }
+      payload: {
+        name: "Vault Map",
+        url: "https://example.test/vault.png",
+        mimeType: "image/png"
+      }
     });
     expect(asset.statusCode).toBe(200);
     expect(asset.json().name).toBe("Vault Map");
@@ -77,7 +166,11 @@ describe("api", () => {
     expect(recap.statusCode).toBe(200);
     expect(recap.json().memory.text).toContain("vault");
 
-    const memory = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/ai/memory", headers: authHeaders });
+    const memory = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/ai/memory",
+      headers: authHeaders
+    });
     expect(memory.statusCode).toBe(200);
     expect(memory.json()).toHaveLength(1);
 
@@ -102,7 +195,10 @@ describe("api", () => {
     });
     const app = await buildApp({ store });
 
-    const missingSession = await app.inject({ method: "GET", url: "/api/v1/campaigns" });
+    const missingSession = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns"
+    });
     expect(missingSession.statusCode).toBe(401);
 
     const blockedMutation = await app.inject({
@@ -157,7 +253,15 @@ describe("api", () => {
       payload: { x1: 220, y1: 160, x2: 840, y2: 160 }
     });
     expect(wall.statusCode).toBe(200);
-    expect(wall.json().walls.at(-1)).toEqual(expect.objectContaining({ x1: 220, y1: 160, x2: 840, y2: 160, blocksVision: true }));
+    expect(wall.json().walls.at(-1)).toEqual(
+      expect.objectContaining({
+        x1: 220,
+        y1: 160,
+        x2: 840,
+        y2: 160,
+        blocksVision: true
+      })
+    );
 
     const light = await app.inject({
       method: "POST",
@@ -166,9 +270,20 @@ describe("api", () => {
       payload: { x: 360, y: 340, radius: 240, color: "#facc15" }
     });
     expect(light.statusCode).toBe(200);
-    expect(light.json().lights.at(-1)).toEqual(expect.objectContaining({ x: 360, y: 340, radius: 240, color: "#facc15" }));
+    expect(light.json().lights.at(-1)).toEqual(
+      expect.objectContaining({
+        x: 360,
+        y: 340,
+        radius: 240,
+        color: "#facc15"
+      })
+    );
 
-    const scene = await app.inject({ method: "GET", url: "/api/v1/scenes/scn_vault_entry", headers: authHeaders });
+    const scene = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry",
+      headers: authHeaders
+    });
     expect(scene.json().walls).toHaveLength(2);
     expect(scene.json().lights).toHaveLength(2);
 
@@ -237,7 +352,11 @@ describe("api", () => {
     });
     expect(sheet.statusCode).toBe(200);
     expect(sheet.json().summary).toContain("Valen Ash");
-    expect(sheet.json().quickRolls).toContainEqual({ id: "ability-charisma", label: "Charisma Check", formula: "1d20+2" });
+    expect(sheet.json().quickRolls).toContainEqual({
+      id: "ability-charisma",
+      label: "Charisma Check",
+      formula: "1d20+2"
+    });
 
     const observerRoll = await app.inject({
       method: "POST",
@@ -268,7 +387,10 @@ describe("api", () => {
 
       async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
         this.requests.push(input);
-        yield { type: "message.completed", content: `Captured response ${this.requests.length}` };
+        yield {
+          type: "message.completed",
+          content: `Captured response ${this.requests.length}`
+        };
       }
     }
 
@@ -396,7 +518,10 @@ describe("api", () => {
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/ai/encounter-design",
       headers: authHeaders,
-      payload: { prompt: "A mirror knight guarding the vault", difficulty: "hard" }
+      payload: {
+        prompt: "A mirror knight guarding the vault",
+        difficulty: "hard"
+      }
     });
     expect(encounterDraft.statusCode).toBe(200);
     const proposalId = encounterDraft.json().proposal.id as string;
@@ -469,13 +594,20 @@ describe("api", () => {
 
   it("uploads a map asset, assigns it to a scene, and serves the stored bytes", async () => {
     const directory = mkdtempSync(join(tmpdir(), "otte-assets-"));
-    const app = await buildApp({ store: new MemoryStateStore(), uploadDir: directory });
+    const app = await buildApp({
+      store: new MemoryStateStore(),
+      uploadDir: directory
+    });
     const bytes = Buffer.from("fake-image-bytes");
 
     const uploaded = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true",
-      headers: { ...authHeaders, "content-type": "image/png", "x-asset-name": encodeURIComponent("Vault Upload.png") },
+      headers: {
+        ...authHeaders,
+        "content-type": "image/png",
+        "x-asset-name": encodeURIComponent("Vault Upload.png")
+      },
       payload: bytes
     });
     expect(uploaded.statusCode).toBe(200);
@@ -487,10 +619,16 @@ describe("api", () => {
     const assetId = uploaded.json().asset.id as string;
     expect(existsSync(join(directory, "camp_demo", `${assetId}.png`))).toBe(true);
 
-    const unauthenticatedBlob = await app.inject({ method: "GET", url: `/api/v1/assets/${assetId}/blob` });
+    const unauthenticatedBlob = await app.inject({
+      method: "GET",
+      url: `/api/v1/assets/${assetId}/blob`
+    });
     expect(unauthenticatedBlob.statusCode).toBe(401);
 
-    const blob = await app.inject({ method: "GET", url: `/api/v1/assets/${assetId}/blob?userId=usr_demo_gm` });
+    const blob = await app.inject({
+      method: "GET",
+      url: `/api/v1/assets/${assetId}/blob?userId=usr_demo_gm`
+    });
     expect(blob.statusCode).toBe(200);
     expect(blob.headers["content-type"]).toContain("image/png");
     expect(blob.body).toBe("fake-image-bytes");
@@ -509,7 +647,10 @@ describe("api", () => {
       method: "POST",
       url: "/api/v1/campaigns",
       headers: authHeaders,
-      payload: { name: "Restart Safe Campaign", description: "Stored in SQLite" }
+      payload: {
+        name: "Restart Safe Campaign",
+        description: "Stored in SQLite"
+      }
     });
     expect(created.statusCode).toBe(200);
     const campaignId = created.json().id;
@@ -518,7 +659,11 @@ describe("api", () => {
 
     const secondStore = new SqliteStateStore(dbPath);
     const secondApp = await buildApp({ store: secondStore });
-    const campaigns = await secondApp.inject({ method: "GET", url: "/api/v1/campaigns", headers: authHeaders });
+    const campaigns = await secondApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns",
+      headers: authHeaders
+    });
     expect(campaigns.statusCode).toBe(200);
     expect(campaigns.json().some((campaign: { id: string }) => campaign.id === campaignId)).toBe(true);
     await secondApp.close();
@@ -542,15 +687,30 @@ describe("api", () => {
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/assets",
       headers: authHeaders,
-      payload: { id: "asset_roundtrip", name: "Roundtrip Map", url: "map://roundtrip", mimeType: "image/png", checksum: "sha256:test" }
+      payload: {
+        id: "asset_roundtrip",
+        name: "Roundtrip Map",
+        url: "map://roundtrip",
+        mimeType: "image/png",
+        checksum: "sha256:test"
+      }
     });
     await sourceApp.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/encounters",
       headers: authHeaders,
-      payload: { id: "enc_roundtrip", name: "Roundtrip Encounter", summary: "Imported later", tokenIds: ["tok_valen"] }
+      payload: {
+        id: "enc_roundtrip",
+        name: "Roundtrip Encounter",
+        summary: "Imported later",
+        tokenIds: ["tok_valen"]
+      }
     });
-    const exported = await sourceApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/export", headers: authHeaders });
+    const exported = await sourceApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export",
+      headers: authHeaders
+    });
     expect(exported.statusCode).toBe(200);
     const archive = exported.json();
     await sourceApp.close();
@@ -573,12 +733,36 @@ describe("api", () => {
     expect(imported.statusCode).toBe(200);
     expect(imported.json().importedCampaignIds).toEqual(["camp_demo"]);
 
-    const importedScenes = await targetApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/scenes", headers: authHeaders });
-    const importedTokens = await targetApp.inject({ method: "GET", url: "/api/v1/scenes/scn_vault_entry/tokens", headers: authHeaders });
-    const importedActors = await targetApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/actors", headers: authHeaders });
-    const importedJournals = await targetApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/journal", headers: authHeaders });
-    const importedAssets = await targetApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/assets", headers: authHeaders });
-    const importedEncounters = await targetApp.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/encounters", headers: authHeaders });
+    const importedScenes = await targetApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders
+    });
+    const importedTokens = await targetApp.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: authHeaders
+    });
+    const importedActors = await targetApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/actors",
+      headers: authHeaders
+    });
+    const importedJournals = await targetApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/journal",
+      headers: authHeaders
+    });
+    const importedAssets = await targetApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/assets",
+      headers: authHeaders
+    });
+    const importedEncounters = await targetApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/encounters",
+      headers: authHeaders
+    });
 
     expect(importedScenes.json().map((scene: { id: string }) => scene.id)).toContain("scn_vault_entry");
     expect(importedTokens.json().map((token: { id: string }) => token.id)).toContain("tok_valen");
