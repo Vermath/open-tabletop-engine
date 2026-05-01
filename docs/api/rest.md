@@ -94,6 +94,8 @@ Scene layer authoring is split into focused endpoints. Fog reveal uses `token.re
 
 The default `upsert` mode replaces records with matching ids and inserts missing records, which supports round-tripping a campaign into a fresh instance or refreshing an existing imported campaign. Use `reject_conflicts` to return `409` when imported ids already exist.
 
+Archives include uploaded local asset files in a top-level `files` array. Each entry stores base64 data plus size and `sha256` checksum metadata. Import validates the asset id, size, and checksum before restoring the file under `OTTE_UPLOAD_DIR`, so uploaded map backgrounds can round-trip into a fresh instance.
+
 Realtime clients connect to:
 
 ```text

@@ -25,19 +25,24 @@ pnpm --filter @open-tabletop/api dev
 pnpm --filter @open-tabletop/web dev
 ```
 
-The browser client sends the development session header `x-user-id: usr_demo_gm`. Direct API calls must include an authenticated user header:
+Direct API calls must include an authenticated bearer session token:
 
 ```bash
-curl -H "x-user-id: usr_demo_gm" http://localhost:4000/api/v1/campaigns
+OTTE_SESSION_TOKEN="$(curl -sS -X POST \
+  -H "content-type: application/json" \
+  --data '{"userId":"usr_demo_gm"}' \
+  http://localhost:4000/api/v1/auth/login | jq -r .token)"
+
+curl -H "Authorization: Bearer $OTTE_SESSION_TOKEN" http://localhost:4000/api/v1/campaigns
 ```
 
-Campaign archives are JSON `.ottx` files. The import endpoint upserts every archive collection, including users, members, scenes, assets, tokens, actors, journals, encounters, combats, AI memory, audit logs, and permission grants.
+Campaign archives are JSON `.ottx` files. The import endpoint upserts every archive collection, including users, members, scenes, assets, tokens, actors, journals, encounters, combats, AI memory, audit logs, and permission grants. Uploaded local asset files are embedded as base64 archive `files` entries with size and `sha256` checksums; import validates and restores them under `OTTE_UPLOAD_DIR`.
 
 Raw image uploads can be assigned directly to a scene background:
 
 ```bash
 curl -X POST \
-  -H "x-user-id: usr_demo_gm" \
+  -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
   -H "content-type: image/png" \
   -H "x-asset-name: vault.png" \
   --data-binary @vault.png \

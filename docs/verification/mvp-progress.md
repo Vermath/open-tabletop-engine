@@ -232,6 +232,33 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - Blob request without a token returned `401`.
     - Blob request with `sessionToken=<token>` returned `200`, `image/svg+xml`, and contained `Session Asset`.
 
+### Uploaded Asset Archive Round Trip Slice
+
+- Commit: `7b73c10 feat: archive uploaded asset files`
+- Evidence:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `15 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test verifies:
+    - Export embeds an uploaded map asset as one base64 archive file.
+    - Archive file metadata includes the uploaded asset id, mime type, size, and checksum.
+    - Import into a fresh store and fresh upload directory restores the asset file.
+    - Imported scene background points at the restored asset id.
+    - Imported blob serving returns the original uploaded bytes.
+    - Existing archive collection checks still cover scenes, tokens, actors, journals, encounters, and permission grants.
+  - Manual API evidence across two fresh API instances:
+    - Source API: `http://127.0.0.1:4429`
+    - Target API: `http://127.0.0.1:4430`
+    - Source SQLite file: `apps/api/storage/manual-archive-source-20260501.sqlite`
+    - Target SQLite file: `apps/api/storage/manual-archive-target-20260501.sqlite`
+    - Uploaded source asset `asset_momf20w7s3tv41hg` with bearer auth.
+    - Export returned `assetCount: 1`, `assetFileCount: 1`, one `base64` file, and decoded file data containing `Archive Roundtrip Asset`.
+    - Target import returned `ImportCampaignIds: camp_demo` and `ImportAssetFiles: 1`.
+    - Target blob request without a token returned `401`.
+    - Target blob request with `sessionToken=<token>` returned `200`, `image/svg+xml`, and contained `Archive Roundtrip Asset`.
+    - Source and target restored files both existed at `apps/api/uploads/manual-archive-*/camp_demo/asset_momf20w7s3tv41hg.svg`.
+
 ## Known Remaining Gaps
 
 - Auth now has MVP bearer sessions for seeded users across REST, realtime, and asset blob access, but still lacks password login, OAuth, invites, account management, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
