@@ -25,6 +25,9 @@ export interface SystemManifest {
   permissions: PermissionName[];
 }
 
+export const DND_5E_SRD_SYSTEM_ID = "dnd-5e-srd";
+export const DND_5E_SRD_VERSION = "SRD 5.2.1";
+
 export interface ActorSheetRegistration {
   systemId: string;
   actorType: string;
@@ -322,6 +325,10 @@ export function genericFantasyQuickRolls(actor: Actor, items: Item[] = []): Quic
   ];
 }
 
+export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
+  return genericFantasyQuickRolls(actor, items);
+}
+
 export function genericFantasyCompendium(): GenericFantasyCompendiumEntry[] {
   return [
     {
@@ -387,6 +394,37 @@ export function genericFantasyCompendiumEntry(entryId: string): GenericFantasyCo
   return genericFantasyCompendium().find((entry) => entry.id === entryId);
 }
 
+export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
+  return [
+    ...genericFantasyCompendium().map((entry) => {
+      const dndDataOverrides = entry.id === "healing-word" ? { healingFormula: "1d4+@attributes.wisdom" } : {};
+      return {
+        ...entry,
+        summary: entry.summary.replace("Generic Fantasy runtime", "D&D 5.5e SRD runtime"),
+        data: { ...entry.data, ...dndDataOverrides, source: DND_5E_SRD_VERSION }
+      };
+    }),
+    {
+      id: "magic-initiate",
+      type: "condition",
+      name: "Magic Initiate",
+      summary: "Tracks the SRD-origin feat choice on a character sheet.",
+      data: { source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "savage-attacker",
+      type: "condition",
+      name: "Savage Attacker",
+      summary: "Tracks the SRD-origin feat choice on a character sheet.",
+      data: { source: DND_5E_SRD_VERSION }
+    }
+  ];
+}
+
+export function dnd5eSrdCompendiumEntry(entryId: string): GenericFantasyCompendiumEntry | undefined {
+  return dnd5eSrdCompendium().find((entry) => entry.id === entryId);
+}
+
 export function genericFantasyCharacterTemplates(): CharacterTemplate[] {
   return [
     {
@@ -430,8 +468,89 @@ export function genericFantasyCharacterTemplates(): CharacterTemplate[] {
   ];
 }
 
+export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
+  return [
+    {
+      id: "fighter",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Fighter",
+      summary: "SRD 5.2.1 martial character using Strength, armor, and weapon attacks.",
+      actorType: "character",
+      data: {
+        ruleset: DND_5E_SRD_VERSION,
+        level: 1,
+        class: "Fighter",
+        species: "Human",
+        background: "Soldier",
+        proficiencyBonus: 2,
+        hp: { current: 12, max: 12 },
+        attributes: { strength: 16, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 10, charisma: 12 },
+        hitDice: { current: 1, max: 1, size: "d10" },
+        resources: { secondWind: { current: 1, max: 1, recovery: "short" } },
+        spellSlots: {},
+        conditions: [],
+        features: ["Fighting Style", "Second Wind"],
+        feats: ["Savage Attacker"]
+      },
+      items: [{ entryId: "longsword" }]
+    },
+    {
+      id: "cleric",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Cleric",
+      summary: "SRD 5.2.1 divine spellcaster with prepared healing magic.",
+      actorType: "character",
+      data: {
+        ruleset: DND_5E_SRD_VERSION,
+        level: 1,
+        class: "Cleric",
+        species: "Human",
+        background: "Sage",
+        proficiencyBonus: 2,
+        hp: { current: 9, max: 9 },
+        attributes: { strength: 10, dexterity: 12, constitution: 12, intelligence: 13, wisdom: 16, charisma: 10 },
+        hitDice: { current: 1, max: 1, size: "d8" },
+        resources: {},
+        spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
+        conditions: [],
+        features: ["Spellcasting"],
+        feats: ["Magic Initiate"]
+      },
+      items: [{ entryId: "healing-word" }, { entryId: "cure-wounds" }]
+    },
+    {
+      id: "wizard",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Wizard",
+      summary: "SRD 5.2.1 arcane spellcaster with cantrip damage and defensive magic.",
+      actorType: "character",
+      data: {
+        ruleset: DND_5E_SRD_VERSION,
+        level: 1,
+        class: "Wizard",
+        species: "Human",
+        background: "Sage",
+        proficiencyBonus: 2,
+        hp: { current: 8, max: 8 },
+        attributes: { strength: 8, dexterity: 14, constitution: 14, intelligence: 16, wisdom: 12, charisma: 10 },
+        hitDice: { current: 1, max: 1, size: "d6" },
+        resources: {},
+        spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
+        conditions: [],
+        features: ["Spellcasting", "Ritual Adept"],
+        feats: []
+      },
+      items: [{ entryId: "fire-bolt" }, { entryId: "shield" }]
+    }
+  ];
+}
+
 export function genericFantasyCharacterTemplate(templateId: string): CharacterTemplate | undefined {
   return genericFantasyCharacterTemplates().find((template) => template.id === templateId);
+}
+
+export function dnd5eSrdCharacterTemplate(templateId: string): CharacterTemplate | undefined {
+  return dnd5eSrdCharacterTemplates().find((template) => template.id === templateId);
 }
 
 export function genericFantasyCharacterImport(input: CharacterImportInput): CharacterImportResult {
@@ -467,6 +586,35 @@ export function genericFantasyCharacterImport(input: CharacterImportInput): Char
   };
 }
 
+export function dnd5eSrdCharacterImport(input: CharacterImportInput): CharacterImportResult {
+  const source = importSource(input);
+  const imported = genericFantasyCharacterImport(input);
+  const warnings: string[] = [];
+  const conditions = normalizeImportConditions(source.conditions ?? input.conditions, dnd5eSrdCompendiumEntry, warnings);
+  const items = normalizeImportItems(source.items ?? input.items, dnd5eSrdCompendiumEntry, warnings, conditions);
+  const level = numericValue(imported.data.level, 1);
+  const className = stringValue(source.class) || "Fighter";
+  const sourceHitDice = recordValue(source.hitDice);
+  return {
+    ...imported,
+    systemId: DND_5E_SRD_SYSTEM_ID,
+    name: stringValue(input.name) || stringValue(source.name) || "Imported SRD Character",
+    data: {
+      ...imported.data,
+      ruleset: DND_5E_SRD_VERSION,
+      class: className,
+      species: stringValue(source.species) || "Human",
+      background: stringValue(source.background) || "Soldier",
+      hitDice: { ...recordValue(imported.data.hitDice), size: stringValue(sourceHitDice.size) ?? dnd5eSrdHitDieSize(className) },
+      resources: normalizeResourcePools(source.resources, defaultDnd5eSrdResources(className)),
+      spellSlots: normalizeResourcePools(source.spellSlots, defaultDnd5eSrdSpellSlots(className, level)),
+      conditions: conditions.map((id) => ({ id }))
+    },
+    items,
+    warnings
+  };
+}
+
 export function genericFantasyEncounterThreats(): EncounterThreat[] {
   return [
     {
@@ -496,11 +644,57 @@ export function genericFantasyEncounterThreats(): EncounterThreat[] {
   ];
 }
 
+export function dnd5eSrdEncounterThreats(): EncounterThreat[] {
+  return [
+    {
+      id: "goblin-minion",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Goblin Minion",
+      summary: "Low-budget SRD humanoid threat for skirmishes.",
+      role: "minion",
+      budget: 50
+    },
+    {
+      id: "goblin-boss",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Goblin Boss",
+      summary: "Command threat for a low-level SRD encounter.",
+      role: "leader",
+      budget: 100
+    },
+    {
+      id: "guard-captain",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Guard Captain",
+      summary: "Disciplined martial SRD threat for urban or military scenes.",
+      role: "captain",
+      budget: 150
+    },
+    {
+      id: "tough-boss",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Tough Boss",
+      summary: "Durable SRD boss threat for a resource-spending fight.",
+      role: "boss",
+      budget: 250
+    }
+  ];
+}
+
 export function genericFantasyEncounterPlan(party: Actor[], selections: EncounterThreatSelection[]): EncounterPlan {
   return buildEncounterPlan({
     systemId: "generic-fantasy",
     partyRating: party.reduce((total, actor) => total + numericValue(actor.data.level, 1) * 100, 0) || 100,
     threats: genericFantasyEncounterThreats(),
+    selections
+  });
+}
+
+export function dnd5eSrdEncounterPlan(party: Actor[], selections: EncounterThreatSelection[]): EncounterPlan {
+  return buildEncounterPlan({
+    systemId: DND_5E_SRD_SYSTEM_ID,
+    partyRating: party.reduce((total, actor) => total + numericValue(actor.data.level, 1) * 100, 0) || 100,
+    threats: dnd5eSrdEncounterThreats(),
     selections
   });
 }
@@ -517,6 +711,14 @@ export function genericFantasyAdvancementOptions(actor: Actor): AdvancementOptio
       nextValue: level + 1
     }
   ];
+}
+
+export function dnd5eSrdAdvancementOptions(actor: Actor): AdvancementOption[] {
+  return genericFantasyAdvancementOptions(actor).map((option) => ({
+    ...option,
+    systemId: DND_5E_SRD_SYSTEM_ID,
+    summary: "Increase level, hit point maximum, proficiency bonus, and a class ability for SRD 5.2.1 play."
+  }));
 }
 
 export function applyGenericFantasyAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
@@ -550,6 +752,28 @@ export function applyGenericFantasyAdvancement(actor: Actor, optionId: string): 
     attributes,
     proficiencyBonus: Math.max(2, 2 + Math.floor((option.nextValue - 1) / 4)),
     features
+  };
+}
+
+export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
+  const next = applyGenericFantasyAdvancement(actor, optionId);
+  const className = typeof actor.data.class === "string" ? actor.data.class : "Fighter";
+  const genericPrimary = className === "Mender" ? "wisdom" : "strength";
+  const srdPrimary = dnd5eSrdPrimaryAbility(className);
+  const attributes = { ...((next.attributes as Record<string, number> | undefined) ?? {}) };
+  if (srdPrimary !== genericPrimary) {
+    attributes[genericPrimary] = numericValue(attributes[genericPrimary], 10) - 1;
+    attributes[srdPrimary] = numericValue(attributes[srdPrimary], 10) + 1;
+  }
+  const level = numericValue(next.level, numericValue(actor.data.level, 1) + 1);
+  const hitDice = recordValue(next.hitDice);
+  return {
+    ...next,
+    ruleset: DND_5E_SRD_VERSION,
+    attributes,
+    hitDice: { ...hitDice, size: stringValue(hitDice.size) ?? dnd5eSrdHitDieSize(className) },
+    resources: normalizeResourcePools(next.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true }),
+    spellSlots: normalizeResourcePools(next.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true })
   };
 }
 
@@ -596,6 +820,15 @@ export function applyGenericFantasyRest(actor: Actor, restType: SystemRestType):
   };
 }
 
+export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType): SystemRestResult {
+  const rest = applyGenericFantasyRest(actor, restType);
+  return {
+    ...rest,
+    systemId: DND_5E_SRD_SYSTEM_ID,
+    summary: `${actor.name} completed a ${restType} rest using ${DND_5E_SRD_VERSION}`
+  };
+}
+
 export function genericFantasySheet(actor: Actor, items: Item[] = []): GenericFantasySheet {
   return {
     actorId: actor.id,
@@ -605,6 +838,13 @@ export function genericFantasySheet(actor: Actor, items: Item[] = []): GenericFa
     conditions: genericFantasyActorConditions(actor),
     inventory: items.filter((item) => item.actorId === actor.id && item.type !== "spell"),
     spells: items.filter((item) => item.actorId === actor.id && item.type === "spell")
+  };
+}
+
+export function dnd5eSrdSheet(actor: Actor, items: Item[] = []): GenericFantasySheet {
+  return {
+    ...genericFantasySheet(actor, items),
+    conditions: dnd5eSrdActorConditions(actor)
   };
 }
 
@@ -623,10 +863,27 @@ export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId
   return { systemId: "generic-fantasy", actorId: actor.id, rollId, consumed, data, items: [] };
 }
 
+export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: string): SystemActionUseResult {
+  return { ...useGenericFantasyAction(actor, items, rollId), systemId: DND_5E_SRD_SYSTEM_ID };
+}
+
 export function genericFantasyActorConditions(actor: Actor): AppliedCondition[] {
   const rawConditions = normalizeConditionRecords(actor.data.conditions);
   return rawConditions.map((condition) => {
     const entry = genericFantasyCompendiumEntry(condition.id);
+    return {
+      id: condition.id,
+      name: entry?.name ?? condition.id,
+      summary: entry?.summary ?? "",
+      appliedAt: condition.appliedAt
+    };
+  });
+}
+
+export function dnd5eSrdActorConditions(actor: Actor): AppliedCondition[] {
+  const rawConditions = normalizeConditionRecords(actor.data.conditions);
+  return rawConditions.map((condition) => {
+    const entry = dnd5eSrdCompendiumEntry(condition.id);
     return {
       id: condition.id,
       name: entry?.name ?? condition.id,
@@ -644,9 +901,21 @@ export function applyGenericFantasyCondition(actor: Actor, conditionId: string, 
   return { ...actor.data, conditions };
 }
 
+export function applyDnd5eSrdCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {
+  const entry = dnd5eSrdCompendiumEntry(conditionId);
+  if (!entry || entry.type !== "condition") throw new Error(`Unknown condition: ${conditionId}`);
+  const conditions = normalizeConditionRecords(actor.data.conditions);
+  if (!conditions.some((condition) => condition.id === conditionId)) conditions.push({ id: conditionId, appliedAt });
+  return { ...actor.data, conditions };
+}
+
 export function removeGenericFantasyCondition(actor: Actor, conditionId: string): Record<string, unknown> {
   const conditions = normalizeConditionRecords(actor.data.conditions).filter((condition) => condition.id !== conditionId);
   return { ...actor.data, conditions };
+}
+
+export function removeDnd5eSrdCondition(actor: Actor, conditionId: string): Record<string, unknown> {
+  return removeGenericFantasyCondition(actor, conditionId);
 }
 
 export function stellarFrontiersAptitudeCheck(actor: Actor, aptitude: string): QuickRoll {
@@ -1451,6 +1720,29 @@ function defaultGenericFantasyResources(className: string): Record<string, Recor
 
 function defaultGenericFantasySpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
   if (className !== "Mender") return {};
+  const levelOneSlots = Math.min(4, 2 + Math.floor((level - 1) / 2));
+  return { level1: { current: levelOneSlots, max: levelOneSlots, recovery: "long" } };
+}
+
+function dnd5eSrdPrimaryAbility(className: string): string {
+  if (className === "Cleric") return "wisdom";
+  if (className === "Wizard") return "intelligence";
+  return "strength";
+}
+
+function dnd5eSrdHitDieSize(className: string): string {
+  if (className === "Wizard") return "d6";
+  if (className === "Cleric") return "d8";
+  return "d10";
+}
+
+function defaultDnd5eSrdResources(className: string): Record<string, Record<string, unknown>> {
+  if (className === "Fighter") return { secondWind: { current: 1, max: 1, recovery: "short" } };
+  return {};
+}
+
+function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
+  if (className !== "Cleric" && className !== "Wizard") return {};
   const levelOneSlots = Math.min(4, 2 + Math.floor((level - 1) / 2));
   return { level1: { current: levelOneSlots, max: levelOneSlots, recovery: "long" } };
 }

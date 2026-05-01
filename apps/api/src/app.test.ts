@@ -2359,7 +2359,8 @@ describe("api", () => {
       expect(systems.statusCode).toBe(200);
       expect(systems.json()).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ id: "generic-fantasy", active: true }),
+          expect.objectContaining({ id: "dnd-5e-srd", active: true }),
+          expect.objectContaining({ id: "generic-fantasy", active: false }),
           expect.objectContaining({ id: "stellar-frontiers", active: false }),
           expect.objectContaining({ id: "mystic-noir", active: false })
         ])
@@ -3048,6 +3049,214 @@ describe("api", () => {
       });
       expect(depletedMedPatch.statusCode).toBe(409);
       expect(depletedMedPatch.json().message).toBe("Med Patch has no remaining uses");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("applies system action damage and healing effects to target actor pools", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const source = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "generic-fantasy",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: "Effect Mender",
+          data: {
+            class: "Mender",
+            level: 2,
+            attributes: { strength: 14, dexterity: 12, constitution: 13, intelligence: 10, wisdom: 13, charisma: 16 },
+            hp: { current: 12, max: 12 },
+            spellSlots: { level1: { current: 1, max: 1, recovery: "long" } },
+            conditions: []
+          }
+        }
+      });
+      expect(source.statusCode).toBe(200);
+      const sourceActorId = source.json().id;
+
+      const target = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "generic-fantasy",
+          ownerUserId: "usr_demo_gm",
+          type: "character",
+          name: "Effect Target",
+          data: {
+            class: "Guard",
+            level: 1,
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            hp: { current: 10, max: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(target.statusCode).toBe(200);
+      const targetActorId = target.json().id;
+
+      const weapon = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${sourceActorId}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "longsword" }
+      });
+      expect(weapon.statusCode).toBe(200);
+      const weaponRollId = `item-${weapon.json().item.id}-damage`;
+
+      const spell = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${sourceActorId}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "healing-word" }
+      });
+      expect(spell.statusCode).toBe(200);
+      const spellRollId = `spell-${spell.json().item.id}-healing`;
+
+      const damage = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${sourceActorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: weaponRollId, applyEffect: true, targetActorId }
+      });
+      expect(damage.statusCode).toBe(200);
+      const damageEffect = damage.json().effect as { amount: number; after: number };
+      expect(damage.json().effect).toEqual(
+        expect.objectContaining({
+          type: "damage",
+          targetActorId,
+          targetActorName: "Effect Target",
+          pool: "hp",
+          before: 10,
+          max: 10
+        })
+      );
+      expect(damageEffect.after).toBe(Math.max(0, 10 - damageEffect.amount));
+      expect(store.state.actors.find((actor) => actor.id === targetActorId)?.data.hp).toEqual({ current: damageEffect.after, max: 10 });
+
+      const deniedHeal = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${sourceActorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: spellRollId, consumeResources: true, applyEffect: true, targetActorId }
+      });
+      expect(deniedHeal.statusCode).toBe(403);
+      expect(store.state.actors.find((actor) => actor.id === targetActorId)?.data.hp).toEqual({ current: damageEffect.after, max: 10 });
+      expect(store.state.actors.find((actor) => actor.id === sourceActorId)?.data.spellSlots).toEqual({ level1: { current: 1, max: 1, recovery: "long" } });
+
+      const healing = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${sourceActorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: spellRollId, consumeResources: true, applyEffect: true, targetActorId }
+      });
+      expect(healing.statusCode).toBe(200);
+      const healingEffect = healing.json().effect as { amount: number; after: number };
+      expect(healing.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }]);
+      expect(healing.json().effect).toEqual(
+        expect.objectContaining({
+          type: "healing",
+          targetActorId,
+          targetActorName: "Effect Target",
+          pool: "hp",
+          before: damageEffect.after,
+          max: 10
+        })
+      );
+      expect(healingEffect.after).toBe(Math.min(10, damageEffect.after + healingEffect.amount));
+      expect(store.state.actors.find((actor) => actor.id === targetActorId)?.data.hp).toEqual({ current: healingEffect.after, max: 10 });
+      expect(store.state.actors.find((actor) => actor.id === sourceActorId)?.data.spellSlots).toEqual({ level1: { current: 0, max: 1, recovery: "long" } });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("supports the D&D 5.5e SRD system as a first-class rules runtime", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const systems = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems",
+        headers: authHeaders
+      });
+      expect(systems.statusCode).toBe(200);
+      expect(systems.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "dnd-5e-srd", name: "D&D 5.5e SRD" })]));
+
+      const templates = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/character-templates",
+        headers: authHeaders
+      });
+      expect(templates.statusCode).toBe(200);
+      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "cleric", "wizard"]);
+
+      const cleric = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "cleric", name: "SRD Cleric", ownerUserId: "usr_demo_player" }
+      });
+      expect(cleric.statusCode).toBe(200);
+      expect(cleric.json().actor).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "SRD Cleric" }));
+      expect(cleric.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Healing Word", "Cure Wounds"]);
+      const healingWord = cleric.json().items.find((item: { name: string }) => item.name === "Healing Word");
+      const healingRollId = `spell-${healingWord.id}-healing`;
+
+      const compendium = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/compendium",
+        headers: authHeaders
+      });
+      expect(compendium.statusCode).toBe(200);
+      expect(compendium.json().entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "healing-word", name: "Healing Word" }),
+          expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" })
+        ])
+      );
+
+      const target = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_gm",
+          type: "character",
+          name: "SRD Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            class: "Fighter",
+            species: "Human",
+            background: "Soldier",
+            hp: { current: 4, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(target.statusCode).toBe(200);
+
+      const roll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: healingRollId, consumeResources: true, applyEffect: true, targetActorId: target.json().id }
+      });
+      expect(roll.statusCode).toBe(200);
+      expect(roll.json().usage).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd" }));
+      expect(roll.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 1 }]);
+      expect(roll.json().effect).toEqual(expect.objectContaining({ type: "healing", targetActorId: target.json().id, pool: "hp", before: 4, max: 12 }));
+      expect(store.state.actors.find((actor) => actor.id === target.json().id)?.data.hp).toEqual({ current: roll.json().effect.after, max: 12 });
     } finally {
       await app.close();
     }
@@ -4439,7 +4648,7 @@ registerCommand("/state", (input) => {
         yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: 220, y: 240, disposition: "friendly" } };
         yield { type: "tool.started", toolName: "draft_actor_update", input: { actorId: "act_valen", data: { resources: { focus: 4 } } } };
         yield { type: "tool.started", toolName: "roll_dice", input: { formula: "1d20+5", label: "AI Perception" } };
-        yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: "act_valen", actionName: "Healing Word Healing" } };
+        yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: "act_valen", actionName: "Healing Word Healing", applyEffect: true, targetActorId: "act_valen" } };
         yield { type: "tool.started", toolName: "unknown_tool", input: {} };
         yield { type: "message.completed", content: "Expanded tools requested" };
       }
@@ -4492,7 +4701,8 @@ registerCommand("/state", (input) => {
           output: expect.objectContaining({
             actorId: "act_valen",
             actionRollId: "spell-item_ai_healing_word-healing",
-            consumed: [{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }]
+            consumed: [{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }],
+            effect: expect.objectContaining({ type: "healing", targetActorId: "act_valen", targetActorName: "Valen Ash", pool: "hp", before: 18, max: 22 })
           })
         }),
         expect.objectContaining({ type: "tool.completed", toolName: "unknown_tool", output: { error: "unknown_tool", toolName: "unknown_tool" } })
@@ -4509,6 +4719,8 @@ registerCommand("/state", (input) => {
     expect(gmStore.state.chat.some((message) => message.body.includes("AI Perception: 1d20+5"))).toBe(true);
     expect(gmStore.state.chat.some((message) => message.body.includes("Valen Ash Healing Word Healing"))).toBe(true);
     expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.spellSlots).toEqual({ level1: { current: 0, max: 1, recovery: "long" } });
+    const actorActionOutput = gmStore.state.aiToolCalls.find((call) => call.toolName === "use_actor_action" && call.status === "completed")?.output as { effect: { after: number } };
+    expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.hp).toEqual({ current: actorActionOutput.effect.after, max: 22 });
 
     const observedToolCalls = await gmApp.inject({
       method: "GET",

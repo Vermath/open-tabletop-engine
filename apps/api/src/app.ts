@@ -7,7 +7,7 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemActionUseResult, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
+import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdAdvancementOptions, dnd5eSrdCharacterImport, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemActionUseResult, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -41,6 +41,7 @@ interface AdminAuditLogQuery {
 type PluginReviewPolicyMode = "allow_unreviewed" | "require_approved";
 
 const MAX_FOG_HISTORY_ENTRIES = 100;
+const DEFAULT_SYSTEM_ID = DND_5E_SRD_SYSTEM_ID;
 
 interface AdminPluginReviewInfo {
   review: PluginReview;
@@ -931,7 +932,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       ownerUserId: userId,
       name: request.body.name ?? "Untitled Campaign",
       description: request.body.description ?? "",
-      defaultSystemId: request.body.defaultSystemId ?? "generic-fantasy",
+      defaultSystemId: request.body.defaultSystemId ?? DEFAULT_SYSTEM_ID,
       visibility: request.body.visibility ?? "private"
     }) satisfies Campaign;
     const member = createTimestamped("mem", {
@@ -1808,7 +1809,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const actor = createTimestamped("act", {
       campaignId: request.params.campaignId,
-      systemId: request.body.systemId ?? "generic-fantasy",
+      systemId: request.body.systemId ?? DEFAULT_SYSTEM_ID,
       ownerUserId: request.body.ownerUserId,
       type: request.body.type ?? "character",
       name: request.body.name ?? "New Actor",
@@ -1864,7 +1865,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const item = createTimestamped("itm", {
       campaignId: request.params.campaignId,
-      systemId: String(request.body.systemId ?? "generic-fantasy"),
+      systemId: String(request.body.systemId ?? DEFAULT_SYSTEM_ID),
       actorId: request.body.actorId ? String(request.body.actorId) : undefined,
       type: String(request.body.type ?? "gear"),
       name: String(request.body.name ?? "New Item"),
@@ -3123,6 +3124,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       ability?: string;
       visibility?: "public" | "gm_only" | "whisper";
       consumeResources?: boolean;
+      applyEffect?: boolean;
+      targetActorId?: string;
     };
   }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/roll", async (request, reply) => {
     const canReadActor = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
@@ -3142,6 +3145,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       quickRolls[0];
     if (!rollDefinition) return notFound(reply, "No system roll is available for this actor");
     let usage: SystemActionUseResult | undefined;
+    const actorDataUpdates = new Map<string, Record<string, unknown>>();
+    let itemUpdates: Item[] = [];
     if (request.body.consumeResources) {
       if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
       try {
@@ -3150,19 +3155,42 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         return conflict(reply, error instanceof Error ? error.message : "System action resources are unavailable");
       }
       if (usage.consumed.length > 0 || usage.items.length > 0) {
-        const updatedAt = nowIso();
-        actor.data = usage.data;
-        actor.updatedAt = updatedAt;
-        for (const updatedItem of usage.items) {
-          const storedItem = store.state.items.find((item) => item.id === updatedItem.id && item.campaignId === actor.campaignId);
-          if (storedItem) {
-            storedItem.data = updatedItem.data;
-            storedItem.updatedAt = updatedAt;
-          }
-        }
+        actorDataUpdates.set(actor.id, usage.data);
+        itemUpdates = usage.items;
       }
     }
     const rolled = rollFormula(rollDefinition.formula);
+    let effect: SystemRollEffectResult | undefined;
+    if (request.body.applyEffect) {
+      const targetActorId = request.body.targetActorId ?? actor.id;
+      const targetActor = store.state.actors.find((item) => item.id === targetActorId && item.campaignId === request.params.campaignId);
+      if (!targetActor) return notFound(reply, "Target actor not found");
+      if (!canUpdateActorForUser(store, userId, targetActor)) return forbidden(reply, "Missing permission: actor.update");
+      const targetForEffect = { ...targetActor, data: actorDataUpdates.get(targetActor.id) ?? targetActor.data };
+      const applied = applySystemRollEffect(targetForEffect, rollDefinition, rolled.total);
+      if ("error" in applied) return badRequest(reply, applied.message);
+      actorDataUpdates.set(targetActor.id, applied.data);
+      effect = applied.effect;
+    }
+    const actorsToBroadcast = new Set<string>();
+    if (actorDataUpdates.size > 0 || itemUpdates.length > 0) {
+      const updatedAt = nowIso();
+      for (const [actorId, data] of actorDataUpdates) {
+        const storedActor = store.state.actors.find((item) => item.id === actorId && item.campaignId === request.params.campaignId);
+        if (storedActor) {
+          storedActor.data = data;
+          storedActor.updatedAt = updatedAt;
+          actorsToBroadcast.add(storedActor.id);
+        }
+      }
+      for (const updatedItem of itemUpdates) {
+        const storedItem = store.state.items.find((item) => item.id === updatedItem.id && item.campaignId === actor.campaignId);
+        if (storedItem) {
+          storedItem.data = updatedItem.data;
+          storedItem.updatedAt = updatedAt;
+        }
+      }
+    }
     const roll = createTimestamped("roll", {
       campaignId: request.params.campaignId,
       userId,
@@ -3184,7 +3212,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.rolls.push(roll);
     store.state.chat.push(message);
     store.save();
-    if (usage && (usage.consumed.length > 0 || usage.items.length > 0)) broadcastActorUpdated(broadcast, actor);
+    for (const actorId of actorsToBroadcast) {
+      const updatedActor = store.state.actors.find((item) => item.id === actorId && item.campaignId === request.params.campaignId);
+      if (updatedActor) broadcastActorUpdated(broadcast, updatedActor);
+    }
     broadcast(
       createEvent({
         campaignId: roll.campaignId,
@@ -3203,7 +3234,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: message
       })
     );
-    return { roll, chat: message, quickRoll: rollDefinition, usage, actor, sheet: systemSheet(actor, actorItems(store, actor)) };
+    return { roll, chat: message, quickRoll: rollDefinition, usage, effect, actor, sheet: systemSheet(actor, actorItems(store, actor)) };
   });
 
   app.post<{
@@ -3850,6 +3881,8 @@ function createAiThreadTools(): AiToolDefinition[] {
           actorId: { type: "string", description: "Actor id that owns the action." },
           actionRollId: { type: "string", description: "Exact system action roll id from visible actor context." },
           actionName: { type: "string", description: "Optional action label to resolve when an exact roll id is not available." },
+          targetActorId: { type: "string", description: "Optional target actor id for applying damage or healing." },
+          applyEffect: { type: "boolean", description: "When true, apply damage or healing roll totals to the target actor's tracked pool." },
           visibility: { type: "string", description: "Chat visibility for the action roll.", enum: ["public", "gm_only", "whisper"] }
         },
         required: ["actorId"],
@@ -3860,8 +3893,10 @@ function createAiThreadTools(): AiToolDefinition[] {
         const actorId = stringFromRecord(request, "actorId") ?? "";
         const actionRollId = stringFromRecord(request, "actionRollId");
         const actionName = stringFromRecord(request, "actionName");
+        const targetActorId = stringFromRecord(request, "targetActorId");
+        const applyEffect = booleanFromRecord(request, "applyEffect") ?? false;
         const visibility = rollVisibilityFromRecord(request, "visibility", "public");
-        return context.useActorAction({ actorId, actionRollId, actionName, visibility });
+        return context.useActorAction({ actorId, actionRollId, actionName, targetActorId, applyEffect, visibility });
       }
     },
     {
@@ -3871,13 +3906,13 @@ function createAiThreadTools(): AiToolDefinition[] {
       parameters: {
         type: "object",
         properties: {
-          systemId: { type: "string", description: "Rules system id. Supports generic-fantasy, stellar-frontiers, and mystic-noir." }
+          systemId: { type: "string", description: "Rules system id. Prefer dnd-5e-srd; legacy demo systems generic-fantasy, stellar-frontiers, and mystic-noir remain available." }
         },
         additionalProperties: false
       },
       async execute(input: unknown): Promise<CompendiumToolOutput> {
         const request = isRecord(input) ? input : {};
-        const systemId = stringFromRecord(request, "systemId") ?? "generic-fantasy";
+        const systemId = stringFromRecord(request, "systemId") ?? DEFAULT_SYSTEM_ID;
         const entries = compendiumEntriesForSystem(systemId).map((entry) => ({ id: entry.id, type: entry.type, name: entry.name, summary: entry.summary }));
         return { systemId, entries };
       }
@@ -3911,6 +3946,19 @@ interface CompendiumToolOutput {
   systemId: string;
   entries: Array<{ id: string; type: string; name: string; summary: string }>;
 }
+
+interface SystemRollEffectResult {
+  type: "damage" | "healing";
+  targetActorId: string;
+  targetActorName: string;
+  pool: string;
+  amount: number;
+  before: number;
+  after: number;
+  max: number;
+}
+
+type SystemRollEffectApplication = { data: Record<string, unknown>; effect: SystemRollEffectResult } | { error: string; message: string };
 
 function createAiToolContext(store: StateStore, campaignId: string, userId: string, permissions: PermissionName[]): AiToolContext {
   return {
@@ -3969,7 +4017,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       store.state.chat.push(message);
       return { rollId: roll.id, formula: roll.formula, label: roll.label, total: roll.total, visibility: roll.visibility };
     },
-    useActorAction: async ({ actorId, actionRollId, actionName, visibility }) => {
+    useActorAction: async ({ actorId, actionRollId, actionName, targetActorId, applyEffect, visibility }) => {
       const actor = store.state.actors.find((item) => item.id === actorId && item.campaignId === campaignId);
       if (!actor) return toolError("not_found", { entity: "actor", id: actorId });
       if (!canUpdateActorForUser(store, userId, actor)) return missingPermissionToolOutput("actor.update");
@@ -3989,11 +4037,34 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       } catch (error) {
         return toolError("conflict", { message: error instanceof Error ? error.message : "System action resources are unavailable" });
       }
+      const actorDataUpdates = new Map<string, Record<string, unknown>>();
+      let itemUpdates: Item[] = [];
+      let effect: SystemRollEffectResult | undefined;
       if (usage.consumed.length > 0 || usage.items.length > 0) {
+        actorDataUpdates.set(actor.id, usage.data);
+        itemUpdates = usage.items;
+      }
+      const rolled = rollFormula(action.formula);
+      if (applyEffect) {
+        const target = store.state.actors.find((item) => item.id === (targetActorId ?? actor.id) && item.campaignId === campaignId);
+        if (!target) return toolError("not_found", { entity: "target_actor", id: targetActorId ?? actor.id });
+        if (!canUpdateActorForUser(store, userId, target)) return missingPermissionToolOutput("actor.update");
+        const targetForEffect = { ...target, data: actorDataUpdates.get(target.id) ?? target.data };
+        const applied = applySystemRollEffect(targetForEffect, action, rolled.total);
+        if ("error" in applied) return toolError(applied.error, { message: applied.message });
+        actorDataUpdates.set(target.id, applied.data);
+        effect = applied.effect;
+      }
+      if (actorDataUpdates.size > 0 || itemUpdates.length > 0) {
         const updatedAt = nowIso();
-        actor.data = usage.data;
-        actor.updatedAt = updatedAt;
-        for (const updatedItem of usage.items) {
+        for (const [updatedActorId, data] of actorDataUpdates) {
+          const storedActor = store.state.actors.find((item) => item.id === updatedActorId && item.campaignId === campaignId);
+          if (storedActor) {
+            storedActor.data = data;
+            storedActor.updatedAt = updatedAt;
+          }
+        }
+        for (const updatedItem of itemUpdates) {
           const storedItem = store.state.items.find((item) => item.id === updatedItem.id && item.campaignId === actor.campaignId);
           if (storedItem) {
             storedItem.data = updatedItem.data;
@@ -4001,7 +4072,6 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
           }
         }
       }
-      const rolled = rollFormula(action.formula);
       const roll = createTimestamped("roll", {
         campaignId,
         userId,
@@ -4040,7 +4110,8 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
             name: item.name,
             quantity: typeof data.quantity === "number" ? data.quantity : undefined
           };
-        })
+        }),
+        effect
       };
     }
   };
@@ -4079,6 +4150,54 @@ function resolveSystemActionRoll(
 
 function normalizeActionLookup(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function applySystemRollEffect(actor: Actor, rollDefinition: { id: string; label: string }, total: number): SystemRollEffectApplication {
+  const type = systemRollEffectType(rollDefinition);
+  if (!type) return { error: "unsupported_effect", message: "Roll is not a damage or healing action" };
+  const pool = systemEffectPool(actor);
+  if (!pool) return { error: "unsupported_target", message: "Target actor does not expose a supported damage/healing pool" };
+  const poolValue = actor.data[pool];
+  if (!isRecord(poolValue)) return { error: "unsupported_target", message: `Target actor ${pool} pool is unavailable` };
+  const current = typeof poolValue.current === "number" ? poolValue.current : Number.NaN;
+  const max = typeof poolValue.max === "number" ? poolValue.max : Number.NaN;
+  if (!Number.isFinite(current) || !Number.isFinite(max)) return { error: "unsupported_target", message: `Target actor ${pool} pool is invalid` };
+  const amount = Math.max(0, Math.floor(total));
+  const after = type === "healing" ? Math.min(max, current + amount) : Math.max(0, current - amount);
+  return {
+    data: {
+      ...actor.data,
+      [pool]: {
+        ...poolValue,
+        current: after
+      }
+    },
+    effect: {
+      type,
+      targetActorId: actor.id,
+      targetActorName: actor.name,
+      pool,
+      amount,
+      before: current,
+      after,
+      max
+    }
+  };
+}
+
+function systemRollEffectType(rollDefinition: { id: string; label: string }): "damage" | "healing" | undefined {
+  const id = rollDefinition.id.toLowerCase();
+  const label = rollDefinition.label.toLowerCase();
+  if (id.endsWith("-healing") || /\bhealing\b/.test(label)) return "healing";
+  if (id.endsWith("-damage") || /\bdamage\b/.test(label)) return "damage";
+  return undefined;
+}
+
+function systemEffectPool(actor: Actor): "hp" | "strain" | "composure" | undefined {
+  if (isRecord(actor.data.hp)) return "hp";
+  if (isRecord(actor.data.strain)) return "strain";
+  if (isRecord(actor.data.composure)) return "composure";
+  return undefined;
 }
 
 function normalizeProposalChanges(changes: ProposalChange[], campaignId: string, userId: string): ProposalChange[] {
@@ -6339,6 +6458,7 @@ function findSystemActor(store: StateStore, campaignId: string, systemId: string
 }
 
 function compendiumEntriesForSystem(systemId: string) {
+  if (systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdCompendium();
   if (systemId === "generic-fantasy") return genericFantasyCompendium();
   if (systemId === "stellar-frontiers") return stellarFrontiersCompendium();
   if (systemId === "mystic-noir") return mysticNoirCompendium();
@@ -6346,6 +6466,7 @@ function compendiumEntriesForSystem(systemId: string) {
 }
 
 function compendiumEntryForSystem(systemId: string, entryId: string) {
+  if (systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdCompendiumEntry(entryId);
   if (systemId === "generic-fantasy") return genericFantasyCompendiumEntry(entryId);
   if (systemId === "stellar-frontiers") return stellarFrontiersCompendiumEntry(entryId);
   if (systemId === "mystic-noir") return mysticNoirCompendiumEntry(entryId);
@@ -6353,6 +6474,7 @@ function compendiumEntryForSystem(systemId: string, entryId: string) {
 }
 
 function characterTemplatesForSystem(systemId: string): CharacterTemplate[] {
+  if (systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdCharacterTemplates();
   if (systemId === "generic-fantasy") return genericFantasyCharacterTemplates();
   if (systemId === "stellar-frontiers") return stellarFrontiersCharacterTemplates();
   if (systemId === "mystic-noir") return mysticNoirCharacterTemplates();
@@ -6377,6 +6499,7 @@ function createTemplateItems(campaignId: string, actor: Actor, template: Charact
 }
 
 function characterImportForSystem(systemId: string, input: CharacterImportInput): CharacterImportResult {
+  if (systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdCharacterImport(input);
   if (systemId === "stellar-frontiers") return stellarFrontiersCharacterImport(input);
   if (systemId === "mystic-noir") return mysticNoirCharacterImport(input);
   return genericFantasyCharacterImport(input);
@@ -6400,54 +6523,63 @@ function createImportedItems(campaignId: string, actor: Actor, imported: Charact
 }
 
 function systemSheet(actor: Actor, items: Item[]) {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdSheet(actor, items);
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersSheet(actor, items);
   if (actor.systemId === "mystic-noir") return mysticNoirSheet(actor, items);
   return genericFantasySheet(actor, items);
 }
 
 function systemQuickRolls(actor: Actor, items: Item[] = []) {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdQuickRolls(actor, items);
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersQuickRolls(actor, items);
   if (actor.systemId === "mystic-noir") return mysticNoirQuickRolls(actor, items);
   return genericFantasyQuickRolls(actor, items);
 }
 
 function useSystemAction(actor: Actor, items: Item[], rollId: string): SystemActionUseResult {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return useDnd5eSrdAction(actor, items, rollId);
   if (actor.systemId === "stellar-frontiers") return useStellarFrontiersAction(actor, items, rollId);
   if (actor.systemId === "mystic-noir") return useMysticNoirAction(actor, items, rollId);
   return useGenericFantasyAction(actor, items, rollId);
 }
 
 function applySystemCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return applyDnd5eSrdCondition(actor, conditionId, appliedAt);
   if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersCondition(actor, conditionId, appliedAt);
   if (actor.systemId === "mystic-noir") return applyMysticNoirCondition(actor, conditionId, appliedAt);
   return applyGenericFantasyCondition(actor, conditionId, appliedAt);
 }
 
 function removeSystemCondition(actor: Actor, conditionId: string): Record<string, unknown> {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return removeDnd5eSrdCondition(actor, conditionId);
   if (actor.systemId === "stellar-frontiers") return removeStellarFrontiersCondition(actor, conditionId);
   if (actor.systemId === "mystic-noir") return removeMysticNoirCondition(actor, conditionId);
   return removeGenericFantasyCondition(actor, conditionId);
 }
 
 function advancementOptionsForActor(actor: Actor) {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdAdvancementOptions(actor);
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersAdvancementOptions(actor);
   if (actor.systemId === "mystic-noir") return mysticNoirAdvancementOptions(actor);
   return genericFantasyAdvancementOptions(actor);
 }
 
 function applySystemAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return applyDnd5eSrdAdvancement(actor, optionId);
   if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersAdvancement(actor, optionId);
   if (actor.systemId === "mystic-noir") return applyMysticNoirAdvancement(actor, optionId);
   return applyGenericFantasyAdvancement(actor, optionId);
 }
 
 function applySystemRest(actor: Actor, restType: SystemRestType): SystemRestResult {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return applyDnd5eSrdRest(actor, restType);
   if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersRest(actor, restType);
   if (actor.systemId === "mystic-noir") return applyMysticNoirRest(actor, restType);
   return applyGenericFantasyRest(actor, restType);
 }
 
 function encounterThreatsForSystem(systemId: string) {
+  if (systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdEncounterThreats();
   if (systemId === "stellar-frontiers") return stellarFrontiersEncounterThreats();
   if (systemId === "mystic-noir") return mysticNoirEncounterThreats();
   if (systemId === "generic-fantasy") return genericFantasyEncounterThreats();
@@ -6455,6 +6587,7 @@ function encounterThreatsForSystem(systemId: string) {
 }
 
 function encounterPlanForSystem(systemId: string, party: Actor[], threats: EncounterThreatSelection[]): EncounterPlan {
+  if (systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdEncounterPlan(party, threats);
   if (systemId === "stellar-frontiers") return stellarFrontiersEncounterPlan(party, threats);
   if (systemId === "mystic-noir") return mysticNoirEncounterPlan(party, threats);
   return genericFantasyEncounterPlan(party, threats);

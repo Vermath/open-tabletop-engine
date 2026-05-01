@@ -2,6 +2,21 @@ import type { SystemManifest } from "@open-tabletop/system-sdk";
 
 export const installedSystems: SystemManifest[] = [
   {
+    id: "dnd-5e-srd",
+    name: "D&D 5.5e SRD",
+    version: "5.2.1",
+    compatibleCore: ">=0.1.0",
+    entrypoints: {
+      client: "/systems/dnd-5e-srd/client.js",
+      server: "/systems/dnd-5e-srd/server.js"
+    },
+    schemas: {
+      actor: "/systems/dnd-5e-srd/actor.schema.json",
+      item: "/systems/dnd-5e-srd/item.schema.json"
+    },
+    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
+  },
+  {
     id: "generic-fantasy",
     name: "Generic Fantasy",
     version: "0.1.0",

@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
+import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdAdvancementOptions, dnd5eSrdCharacterImport, dnd5eSrdCharacterTemplate, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -203,6 +203,97 @@ describe("generic fantasy rules", () => {
         hp: { current: 14, max: 18 },
         conditions: [{ id: "blessed" }]
       },
+      items: [{ entryId: "healing-word" }, { entryId: "longsword" }]
+    });
+    expect(imported.warnings).toEqual(["Unknown condition skipped: missing-condition", "Unknown compendium entry skipped: missing-item"]);
+  });
+});
+
+describe("dnd 5.5e srd rules", () => {
+  const srdActor: Actor = {
+    ...actor,
+    systemId: "dnd-5e-srd",
+    data: {
+      ...actor.data,
+      ruleset: "SRD 5.2.1",
+      class: "Cleric",
+      species: "Human",
+      background: "Sage",
+      attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 },
+      spellSlots: { level1: { current: 1, max: 2, recovery: "long" } }
+    }
+  };
+
+  it("exposes first-class SRD templates, compendium entries, and quick rolls", () => {
+    const cleric = dnd5eSrdCharacterTemplate("cleric");
+    expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
+    expect(cleric?.items.map((item) => item.entryId)).toEqual(["healing-word", "cure-wounds"]);
+    expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
+
+    const spell: Item = {
+      id: "itm_healing_word",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Healing Word",
+      data: { level: 1, healingFormula: "1d4+@attributes.wisdom", compendiumId: "healing-word" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(dnd5eSrdSheet(srdActor, [spell]).spells.map((item) => item.name)).toEqual(["Healing Word"]);
+    expect(dnd5eSrdQuickRolls(srdActor, [spell])).toEqual(expect.arrayContaining([{ id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3" }]));
+  });
+
+  it("uses SRD system ids for advancement, rests, actions, imports, and encounter planning", () => {
+    expect(dnd5eSrdAdvancementOptions(srdActor)).toContainEqual(expect.objectContaining({ systemId: "dnd-5e-srd", id: "level-up" }));
+    const advanced = applyDnd5eSrdAdvancement(srdActor, "level-up");
+    expect(advanced).toEqual(expect.objectContaining({ ruleset: "SRD 5.2.1", level: 2 }));
+    expect((advanced.attributes as Record<string, number>).wisdom).toBe(17);
+    expect(applyDnd5eSrdRest(srdActor, "long")).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd" }));
+    expect(dnd5eSrdEncounterThreats().map((threat) => threat.id)).toContain("goblin-minion");
+    expect(dnd5eSrdEncounterPlan([{ ...srdActor, data: { ...srdActor.data, level: 2 } }], [{ id: "goblin-boss", count: 1 }])).toMatchObject({
+      systemId: "dnd-5e-srd",
+      partyRating: 200,
+      threatBudget: 100
+    });
+
+    const spell: Item = {
+      id: "itm_cure_wounds",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Cure Wounds",
+      data: { level: 1, healingFormula: "1d8+@attributes.wisdom", compendiumId: "cure-wounds" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(useDnd5eSrdAction(srdActor, [spell], `spell-${spell.id}-healing`)).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }]
+      })
+    );
+
+    const conditioned = applyDnd5eSrdCondition(srdActor, "magic-initiate", "2026-05-01T00:00:00.000Z");
+    expect(dnd5eSrdSheet({ ...srdActor, data: conditioned }, []).conditions).toContainEqual(expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" }));
+
+    const imported = dnd5eSrdCharacterImport({
+      name: "Imported SRD Cleric",
+      data: {
+        level: 3,
+        class: "Cleric",
+        species: "Human",
+        background: "Sage",
+        conditions: ["magic-initiate", "missing-condition"],
+        items: ["healing-word", "longsword", "missing-item"]
+      }
+    });
+    expect(imported).toMatchObject({
+      systemId: "dnd-5e-srd",
+      name: "Imported SRD Cleric",
+      data: { ruleset: "SRD 5.2.1", class: "Cleric", species: "Human", background: "Sage", conditions: [{ id: "magic-initiate" }] },
       items: [{ entryId: "healing-word" }, { entryId: "longsword" }]
     });
     expect(imported.warnings).toEqual(["Unknown condition skipped: missing-condition", "Unknown compendium entry skipped: missing-item"]);

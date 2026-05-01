@@ -39,7 +39,7 @@ export interface AiToolContext {
   createProposal(input: { title: string; summary: string; changes: ProposalChange[] }): Promise<string>;
   createMemory(input: { text: string; visibility: Visibility; sourceIds: string[] }): Promise<string>;
   rollDice(input: { formula: string; label?: string; visibility: "public" | "gm_only" | "whisper" }): Promise<{ rollId: string; formula: string; label?: string; total: number; visibility: string }>;
-  useActorAction(input: { actorId: string; actionRollId?: string; actionName?: string; visibility: "public" | "gm_only" | "whisper" }): Promise<{
+  useActorAction(input: { actorId: string; actionRollId?: string; actionName?: string; targetActorId?: string; applyEffect?: boolean; visibility: "public" | "gm_only" | "whisper" }): Promise<{
     actorId: string;
     systemId: string;
     actionRollId: string;
@@ -50,6 +50,7 @@ export interface AiToolContext {
     visibility: string;
     consumed: Array<{ type: string; key: string; label: string; amount: number; remaining: number }>;
     updatedItems: Array<{ id: string; name: string; quantity?: number }>;
+    effect?: { type: "damage" | "healing"; targetActorId: string; targetActorName: string; pool: string; amount: number; before: number; after: number; max: number };
   } | { error: string; permission?: PermissionName; [key: string]: unknown }>;
 }
 

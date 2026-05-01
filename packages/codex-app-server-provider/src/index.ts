@@ -187,7 +187,7 @@ export class LoopbackCodexTransport implements JsonRpcTransport {
           type: "tool.started",
           toolName: "read_compendium",
           input: {
-            systemId: "generic-fantasy"
+            systemId: "dnd-5e-srd"
           }
         });
       }

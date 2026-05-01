@@ -61,7 +61,7 @@ export function seedState(): EngineState {
     ownerUserId: user.id,
     name: "The Ember Vault",
     description: "A sample fantasy campaign for local development.",
-    defaultSystemId: "generic-fantasy",
+    defaultSystemId: "dnd-5e-srd",
     visibility: "private",
     createdAt: now,
     updatedAt: now
