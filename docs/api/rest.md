@@ -3,11 +3,14 @@
 The API is served from `apps/api` and exposes:
 
 - `GET /api/v1/health`
+- `GET /api/v1/auth/session`
 - `GET /api/v1/openapi.json`
 - `GET|POST /api/v1/campaigns`
 - `GET|PATCH|DELETE /api/v1/campaigns/{campaignId}`
 - `GET|POST /api/v1/campaigns/{campaignId}/scenes`
+- `GET|POST /api/v1/campaigns/{campaignId}/assets`
 - `GET|PATCH|DELETE /api/v1/scenes/{sceneId}`
+- `POST /api/v1/scenes/{sceneId}/fog`
 - `GET|POST /api/v1/scenes/{sceneId}/tokens`
 - `PATCH|DELETE /api/v1/tokens/{tokenId}`
 - `GET|POST /api/v1/campaigns/{campaignId}/actors`
@@ -23,6 +26,10 @@ The API is served from `apps/api` and exposes:
 - `POST /api/v1/proposals/{proposalId}/approve`
 - `POST /api/v1/proposals/{proposalId}/apply`
 - `POST /api/v1/campaigns/{campaignId}/ai/threads`
+- `POST /api/v1/campaigns/{campaignId}/ai/encounter-design`
+- `POST /api/v1/campaigns/{campaignId}/ai/session-recap`
+- `GET|POST /api/v1/campaigns/{campaignId}/ai/memory`
+- `POST /api/v1/ai/memory/{factId}/approve`
 - `GET|POST /api/v1/plugins`
 - `GET|POST /api/v1/systems`
 - `GET /api/v1/campaigns/{campaignId}/export`

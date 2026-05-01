@@ -2,9 +2,11 @@ export const apiVersion = "v1";
 
 export const routes = {
   health: "/api/v1/health",
+  session: "/api/v1/auth/session",
   campaigns: "/api/v1/campaigns",
   campaign: (campaignId: string) => `/api/v1/campaigns/${campaignId}`,
   scenes: (campaignId: string) => `/api/v1/campaigns/${campaignId}/scenes`,
+  assets: (campaignId: string) => `/api/v1/campaigns/${campaignId}/assets`,
   scene: (sceneId: string) => `/api/v1/scenes/${sceneId}`,
   tokens: (sceneId: string) => `/api/v1/scenes/${sceneId}/tokens`,
   token: (tokenId: string) => `/api/v1/tokens/${tokenId}`,
@@ -20,6 +22,9 @@ export const routes = {
   proposals: (campaignId: string) => `/api/v1/campaigns/${campaignId}/proposals`,
   proposal: (proposalId: string) => `/api/v1/proposals/${proposalId}`,
   aiThreads: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/threads`,
+  aiMemory: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/memory`,
+  aiSessionRecap: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/session-recap`,
+  aiEncounterDesign: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/encounter-design`,
   systems: "/api/v1/systems",
   plugins: "/api/v1/plugins",
   exportCampaign: (campaignId: string) => `/api/v1/campaigns/${campaignId}/export`,

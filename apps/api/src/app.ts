@@ -11,11 +11,13 @@ import {
   makeArchive,
   nowIso,
   type Actor,
+  type AiMemoryFact,
   type Campaign,
   type ChatMessage,
   type Combat,
   type Encounter,
   type JournalEntry,
+  type MapAsset,
   type Proposal,
   type Scene,
   type Token
@@ -46,6 +48,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }));
 
   app.get("/api/v1/openapi.json", async () => openApiSpec);
+
+  app.get("/api/v1/auth/session", async (request) => {
+    const userId = currentUserId(request.headers);
+    return {
+      user: store.state.users.find((user) => user.id === userId) ?? store.state.users[0],
+      memberships: store.state.members.filter((member) => member.userId === userId)
+    };
+  });
 
   app.get("/api/v1/realtime", { websocket: true }, (socket, request) => {
     const url = new URL(request.url ?? "/api/v1/realtime", "http://localhost");
@@ -124,6 +134,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/assets", async (request) =>
+    store.state.assets.filter((item) => item.campaignId === request.params.campaignId)
+  );
+
+  app.post<{ Params: { campaignId: string }; Body: Partial<MapAsset> }>("/api/v1/campaigns/:campaignId/assets", async (request) => {
+    const asset = createTimestamped("asset", {
+      campaignId: request.params.campaignId,
+      name: request.body.name ?? "Map Asset",
+      url: request.body.url ?? "",
+      mimeType: request.body.mimeType ?? "image/png",
+      sizeBytes: request.body.sizeBytes ?? 0,
+      checksum: request.body.checksum
+    }) satisfies MapAsset;
+    store.state.assets.push(asset);
+    store.save();
+    return asset;
+  });
+
   app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId", async (request, reply) => {
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId);
     if (!scene) return notFound(reply, "Scene not found");
@@ -136,6 +164,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     Object.assign(scene, request.body, { updatedAt: nowIso() });
     store.save();
     hub.broadcast(createEvent({ campaignId: scene.campaignId, type: scene.active ? "scene.activated" : "scene.updated", targetId: scene.id, payload: scene }));
+    return scene;
+  });
+
+  app.post<{ Params: { sceneId: string }; Body: { x: number; y: number; radius?: number; hidden?: boolean } }>("/api/v1/scenes/:sceneId/fog", async (request, reply) => {
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId);
+    if (!scene) return notFound(reply, "Scene not found");
+    scene.fog.push({
+      id: createId("fog"),
+      x: request.body.x,
+      y: request.body.y,
+      radius: request.body.radius ?? 120,
+      hidden: request.body.hidden ?? false
+    });
+    scene.updatedAt = nowIso();
+    store.save();
+    hub.broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
     return scene;
   });
 
@@ -432,6 +476,104 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.save();
     hub.broadcast(createEvent({ campaignId: thread.campaignId, type: "ai.thread.started", actorUserId: userId, targetId: thread.id, payload: thread }));
     return { thread, assistantMessage: content };
+  });
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/ai/memory", async (request) =>
+    store.state.aiMemory.filter((item) => item.campaignId === request.params.campaignId)
+  );
+
+  app.post<{ Params: { campaignId: string }; Body: Partial<AiMemoryFact> & { text: string } }>("/api/v1/campaigns/:campaignId/ai/memory", async (request) => {
+    const fact = createTimestamped("mem", {
+      campaignId: request.params.campaignId,
+      text: request.body.text,
+      visibility: request.body.visibility ?? "gm_only",
+      sourceIds: request.body.sourceIds ?? [],
+      approvedByUserId: request.body.approvedByUserId
+    }) satisfies AiMemoryFact;
+    store.state.aiMemory.push(fact);
+    store.save();
+    return fact;
+  });
+
+  app.post<{ Params: { factId: string } }>("/api/v1/ai/memory/:factId/approve", async (request, reply) => {
+    const fact = store.state.aiMemory.find((item) => item.id === request.params.factId);
+    if (!fact) return notFound(reply, "Memory fact not found");
+    fact.approvedByUserId = currentUserId(request.headers);
+    fact.updatedAt = nowIso();
+    store.save();
+    return fact;
+  });
+
+  app.post<{ Params: { campaignId: string }; Body: { transcript?: string } }>("/api/v1/campaigns/:campaignId/ai/session-recap", async (request) => {
+    const recap = request.body.transcript?.trim()
+      ? `Session recap: ${request.body.transcript.trim()}`
+      : `Session recap: ${store.state.chat.filter((message) => message.campaignId === request.params.campaignId).map((message) => message.body).join(" ")}`;
+    const proposal = createTimestamped("prop", {
+      campaignId: request.params.campaignId,
+      createdByUserId: currentUserId(request.headers),
+      createdByType: "ai" as const,
+      title: "Session Recap",
+      summary: recap.slice(0, 500),
+      status: "pending" as const,
+      changesJson: [
+        {
+          entity: "journal" as const,
+          action: "create" as const,
+          data: createTimestamped("jnl", {
+            campaignId: request.params.campaignId,
+            title: "Session Recap",
+            body: recap,
+            visibility: "gm_only" as const,
+            visibleToUserIds: [],
+            visibleToActorIds: [],
+            tags: ["ai", "recap"],
+            createdBy: currentUserId(request.headers),
+            updatedBy: currentUserId(request.headers)
+          })
+        }
+      ],
+      diffJson: {},
+      approvalRequired: true
+    }) satisfies Proposal;
+    const memory = createTimestamped("mem", {
+      campaignId: request.params.campaignId,
+      text: recap.slice(0, 240),
+      visibility: "gm_only" as const,
+      sourceIds: [proposal.id]
+    }) satisfies AiMemoryFact;
+    store.state.proposals.push(proposal);
+    store.state.aiMemory.push(memory);
+    store.save();
+    hub.broadcast(createEvent({ campaignId: proposal.campaignId, type: "ai.proposal.created", targetId: proposal.id, payload: proposal }));
+    return { proposal, memory };
+  });
+
+  app.post<{ Params: { campaignId: string }; Body: { prompt: string; difficulty?: string } }>("/api/v1/campaigns/:campaignId/ai/encounter-design", async (request) => {
+    const tokenIds = store.state.tokens
+      .filter((token) => store.state.scenes.some((scene) => scene.campaignId === request.params.campaignId && scene.id === token.sceneId))
+      .map((token) => token.id);
+    const encounter = createTimestamped("enc", {
+      campaignId: request.params.campaignId,
+      name: "AI Draft Encounter",
+      summary: request.body.prompt,
+      tokenIds,
+      difficulty: request.body.difficulty ?? "standard"
+    }) satisfies Encounter;
+    const proposal = createTimestamped("prop", {
+      campaignId: request.params.campaignId,
+      createdByUserId: currentUserId(request.headers),
+      createdByType: "ai" as const,
+      title: "Encounter Designer Draft",
+      summary: `Drafted ${encounter.difficulty} encounter: ${request.body.prompt}`,
+      status: "pending" as const,
+      changesJson: [{ entity: "encounter" as const, action: "create" as const, data: encounter }],
+      diffJson: { tokenIds },
+      approvalRequired: true
+    }) satisfies Proposal;
+    store.state.proposals.push(proposal);
+    store.save();
+    hub.broadcast(createEvent({ campaignId: proposal.campaignId, type: "ai.proposal.created", targetId: proposal.id, payload: proposal }));
+    return { proposal, encounter };
   });
 
   app.get("/api/v1/plugins", async () => installedPlugins);

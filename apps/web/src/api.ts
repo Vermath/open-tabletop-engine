@@ -1,5 +1,6 @@
 import type {
   Actor,
+  AiMemoryFact,
   Campaign,
   ChatMessage,
   Combat,
@@ -48,24 +49,26 @@ export interface Snapshot {
   encounters: Encounter[];
   combats: Combat[];
   proposals: Proposal[];
+  memory: AiMemoryFact[];
 }
 
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
   const campaigns = await apiGet<Campaign[]>("/api/v1/campaigns");
   const selectedCampaignId = campaignId ?? campaigns[0]?.id;
   if (!selectedCampaignId) {
-    return { campaigns, scenes: [], tokens: [], actors: [], journals: [], chat: [], encounters: [], combats: [], proposals: [] };
+    return { campaigns, scenes: [], tokens: [], actors: [], journals: [], chat: [], encounters: [], combats: [], proposals: [], memory: [] };
   }
   const scenes = await apiGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
   const selectedSceneId = sceneId ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
-  const [tokens, actors, journals, chat, encounters, combats, proposals] = await Promise.all([
+  const [tokens, actors, journals, chat, encounters, combats, proposals, memory] = await Promise.all([
     selectedSceneId ? apiGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
     apiGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
     apiGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`),
     apiGet<ChatMessage[]>(`/api/v1/chat/messages?campaignId=${selectedCampaignId}`),
     apiGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
     apiGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
-    apiGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`)
+    apiGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
+    apiGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`)
   ]);
-  return { campaigns, scenes, tokens, actors, journals, chat, encounters, combats, proposals };
+  return { campaigns, scenes, tokens, actors, journals, chat, encounters, combats, proposals, memory };
 }

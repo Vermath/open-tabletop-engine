@@ -35,6 +35,9 @@ importers:
       '@open-tabletop/ai-core':
         specifier: workspace:*
         version: link:../../packages/ai-core
+      '@open-tabletop/codex-app-server-provider':
+        specifier: workspace:*
+        version: link:../../packages/codex-app-server-provider
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -165,6 +168,19 @@ importers:
         version: 2.1.9(@types/node@22.19.17)
 
   packages/api-contracts:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.17)
+
+  packages/codex-app-server-provider:
+    dependencies:
+      '@open-tabletop/ai-core':
+        specifier: workspace:*
+        version: link:../ai-core
     devDependencies:
       typescript:
         specifier: ^5.7.2

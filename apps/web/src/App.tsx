@@ -1,4 +1,4 @@
-import type { Actor, Campaign, ChatMessage, Combat, JournalEntry, Proposal, Scene, Token } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, Proposal, Scene, Token } from "@open-tabletop/core";
 import {
   Bot,
   Boxes,
@@ -33,7 +33,8 @@ export function App() {
     chat: [],
     encounters: [],
     combats: [],
-    proposals: []
+    proposals: [],
+    memory: []
   });
   const [campaignId, setCampaignId] = useState("camp_demo");
   const [sceneId, setSceneId] = useState("scn_vault_entry");
@@ -97,6 +98,26 @@ export function App() {
     await refresh();
   }
 
+  async function revealFog() {
+    if (!selectedScene) return;
+    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
+      x: selectedToken?.x ?? selectedScene.width / 2,
+      y: selectedToken?.y ?? selectedScene.height / 2,
+      radius: 160,
+      hidden: false
+    });
+    setStatus("Fog updated");
+    await refresh();
+  }
+
+  async function updateActorHp(actor: Actor, current: number) {
+    const hp = actor.data.hp as { current?: number; max?: number } | undefined;
+    await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, {
+      data: { ...actor.data, hp: { current, max: hp?.max ?? current } }
+    });
+    await refresh();
+  }
+
   async function rollDice() {
     const roll = await apiPost<{ total: number }>("/api/v1/dice/roll", {
       campaignId,
@@ -140,33 +161,14 @@ export function App() {
   }
 
   async function askAi() {
-    const result = await apiPost<{ assistantMessage: string }>(`/api/v1/campaigns/${campaignId}/ai/threads`, { prompt: aiPrompt });
-    await apiPost<Proposal>(`/api/v1/campaigns/${campaignId}/proposals`, {
-      createdByType: "ai",
-      title: "AI Encounter Draft",
-      summary: result.assistantMessage,
-      changesJson: [
-        {
-          entity: "journal",
-          action: "create",
-          data: {
-            id: `jnl_ai_${Date.now()}`,
-            campaignId,
-            title: "AI Encounter Draft",
-            body: result.assistantMessage,
-            visibility: "gm_only",
-            visibleToUserIds: [],
-            visibleToActorIds: [],
-            tags: ["ai", "encounter"],
-            createdBy: "usr_demo_gm",
-            updatedBy: "usr_demo_gm",
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
-        }
-      ]
-    });
-    setStatus("AI proposal drafted");
+    await apiPost(`/api/v1/campaigns/${campaignId}/ai/encounter-design`, { prompt: aiPrompt, difficulty: "standard" });
+    setStatus("Encounter proposal drafted");
+    await refresh();
+  }
+
+  async function recapSession() {
+    await apiPost(`/api/v1/campaigns/${campaignId}/ai/session-recap`, {});
+    setStatus("Session recap queued for approval");
     await refresh();
   }
 
@@ -254,7 +256,7 @@ export function App() {
 
         <div className="table-grid">
           <section className="table-area">
-            <Toolbar onCreateToken={createToken} onStartCombat={startCombat} />
+              <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} />
             {selectedScene ? (
               <SceneCanvas scene={selectedScene} tokens={snapshot.tokens} selectedTokenId={selectedTokenId} onSelect={setSelectedTokenId} onMoved={refresh} />
             ) : (
@@ -270,10 +272,20 @@ export function App() {
               <TabButton active={tab === "ai"} icon={<Bot size={15} />} label="AI" onClick={() => setTab("ai")} />
               <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="SDK" onClick={() => setTab("plugins")} />
             </div>
-            {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} />}
+            {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} updateActorHp={updateActorHp} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} />}
-            {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} proposals={snapshot.proposals} approveAndApply={approveAndApply} />}
+            {tab === "ai" && (
+              <AiPanel
+                prompt={aiPrompt}
+                setPrompt={setAiPrompt}
+                askAi={askAi}
+                recapSession={recapSession}
+                proposals={snapshot.proposals}
+                memory={snapshot.memory}
+                approveAndApply={approveAndApply}
+              />
+            )}
             {tab === "plugins" && <SdkPanel />}
           </aside>
         </div>
@@ -381,7 +393,7 @@ function SceneCanvas(props: {
   );
 }
 
-function Toolbar(props: { onCreateToken(): void; onStartCombat(): void }) {
+function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void }) {
   return (
     <div className="toolbar">
       <button className="tool active" title="Select">
@@ -392,6 +404,9 @@ function Toolbar(props: { onCreateToken(): void; onStartCombat(): void }) {
       </button>
       <button className="tool" title="Start combat" onClick={props.onStartCombat}>
         <Swords size={17} />
+      </button>
+      <button className="tool" title="Reveal fog" onClick={props.onRevealFog}>
+        <Eye size={17} />
       </button>
     </div>
   );
@@ -406,7 +421,7 @@ function TabButton(props: { active: boolean; icon: React.ReactNode; label: strin
   );
 }
 
-function ActorPanel(props: { actor?: Actor; token?: Token }) {
+function ActorPanel(props: { actor?: Actor; token?: Token; updateActorHp(actor: Actor, current: number): void }) {
   if (!props.actor) return <div className="panel-empty">No actor selected.</div>;
   const hp = props.actor.data.hp as { current?: number; max?: number } | undefined;
   return (
@@ -422,6 +437,15 @@ function ActorPanel(props: { actor?: Actor; token?: Token }) {
         <strong>
           {hp?.current ?? "?"}/{hp?.max ?? "?"}
         </strong>
+      </div>
+      <div className="sheet-row">
+        <label htmlFor="actor-hp">Current HP</label>
+        <input
+          id="actor-hp"
+          type="number"
+          value={hp?.current ?? 0}
+          onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))}
+        />
       </div>
       <pre>{JSON.stringify(props.actor.data, null, 2)}</pre>
     </div>
@@ -483,7 +507,9 @@ function AiPanel(props: {
   prompt: string;
   setPrompt(value: string): void;
   askAi(): void;
+  recapSession(): void;
   proposals: Proposal[];
+  memory: AiMemoryFact[];
   approveAndApply(proposal: Proposal): void;
 }) {
   return (
@@ -491,8 +517,17 @@ function AiPanel(props: {
       <div className="section-title">Permissioned AI</div>
       <textarea value={props.prompt} onChange={(event) => props.setPrompt(event.target.value)} />
       <button className="primary-button wide" onClick={props.askAi}>
-        <Bot size={16} /> Draft Proposal
+        <Bot size={16} /> Draft Encounter
       </button>
+      <button className="ghost-button wide" onClick={props.recapSession}>
+        <ScrollText size={16} /> Recap Session
+      </button>
+      {props.memory.map((fact) => (
+        <article className="proposal" key={fact.id}>
+          <span>{fact.approvedByUserId ? "approved memory" : "pending memory"}</span>
+          <p>{fact.text}</p>
+        </article>
+      ))}
       {props.proposals.map((proposal) => (
         <article className="proposal" key={proposal.id}>
           <span>{proposal.status}</span>

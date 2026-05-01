@@ -337,6 +337,7 @@ button {
 
 .panel-heading,
 .metric-row,
+.sheet-row,
 .combatant {
   display: flex;
   align-items: center;
@@ -356,6 +357,7 @@ button {
 }
 
 .metric-row,
+.sheet-row,
 .combatant,
 .journal-entry,
 .proposal,
@@ -367,8 +369,27 @@ textarea {
 }
 
 .metric-row,
+.sheet-row,
 .combatant {
   padding: 10px 11px;
+}
+
+.sheet-row {
+  display: grid;
+  gap: 7px;
+}
+
+.sheet-row label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sheet-row input {
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #1b1812;
 }
 
 .combatant.active {

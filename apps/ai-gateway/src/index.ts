@@ -1,4 +1,5 @@
 import { EchoAiProvider } from "@open-tabletop/ai-core";
+import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 
 export const providers = [
   new EchoAiProvider(),
@@ -9,11 +10,5 @@ export const providers = [
       yield { type: "message.completed" as const, content: "Configure OPENAI_API_KEY to enable this provider." };
     }
   },
-  {
-    id: "codex-app-server-placeholder",
-    label: "Codex App Server",
-    async *stream() {
-      yield { type: "message.completed" as const, content: "Configure the Codex transport to enable rich assistant workflows." };
-    }
-  }
+  new CodexAppServerProvider({ transport: new LoopbackCodexTransport(), approvalMode: "proposal" })
 ];
