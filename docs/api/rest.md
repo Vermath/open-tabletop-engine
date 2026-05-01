@@ -27,6 +27,8 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `DELETE /api/v1/admin/sessions/{sessionId}`
 - `GET /api/v1/admin/email-outbox`
 - `GET /api/v1/admin/assets/storage`
+- `POST /api/v1/admin/assets/migrate`
+- `POST /api/v1/admin/assets/cleanup`
 - `GET /api/v1/openapi.json`
 - `GET|POST /api/v1/campaigns`
 - `GET|PATCH|DELETE /api/v1/campaigns/{campaignId}`
@@ -247,6 +249,22 @@ curl -X PATCH \
 
 Lifecycle status is `active`, `archived`, or `deleted`. Deleted and expired assets return `410` from blob delivery but remain represented in storage stats and archives for operational audit. Server admins can inspect global asset storage with `GET /api/v1/admin/assets/storage`.
 
+Server admins can also run storage migration and object cleanup operations. Migration reads existing asset bytes, verifies size/checksum, and writes the object through the currently configured asset storage provider. Cleanup physically deletes stored bytes for deleted or expired assets after the configured grace period while preserving the metadata row:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"campaignId":"camp_demo","dryRun":true}' \
+  "http://localhost:4000/api/v1/admin/assets/migrate"
+
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"campaignId":"camp_demo","includeExpired":true,"graceDays":7}' \
+  "http://localhost:4000/api/v1/admin/assets/cleanup"
+```
+
 Asset delivery environment variables:
 
 | Variable | Required | Purpose |
@@ -257,6 +275,7 @@ Asset delivery environment variables:
 | `OTTE_ASSET_URL_SIGNING_SECRET` | production | HMAC secret for signed asset URLs. Required when `NODE_ENV=production`. |
 | `OTTE_ASSET_URL_TTL_SECONDS` | no | Default signed URL lifetime. Defaults to 300 seconds. |
 | `OTTE_ASSET_URL_MAX_TTL_SECONDS` | no | Maximum caller-requested signed URL lifetime. Defaults to 3600 seconds. |
+| `OTTE_ASSET_CLEANUP_GRACE_DAYS` | no | Default grace period before admin cleanup jobs physically remove deleted or expired asset bytes. Defaults to 0 for API calls and 7 in Docker Compose. |
 
 Scene layer authoring is split into focused endpoints. Fog reveal uses `token.reveal`; wall and light creation use `scene.update` and return the updated scene for realtime rebroadcast.
 

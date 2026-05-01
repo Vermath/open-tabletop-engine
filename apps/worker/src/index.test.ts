@@ -51,6 +51,49 @@ describe("worker job runner", () => {
     expect(result.output).toEqual({ memory: { text: "The sapphire lens opens the vault." } });
   });
 
+  it("runs asset storage migration and cleanup jobs through admin API routes", async () => {
+    const calls: Array<{ url: string | URL | Request; init?: RequestInit }> = [];
+    const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+
+    const migrate = await runWorkerJob(
+      {
+        id: "job_asset_migrate",
+        type: "asset.storage.migrate",
+        payload: { campaignId: "camp_demo", assetIds: ["asset_a"], dryRun: true, overwrite: true }
+      },
+      {
+        apiBaseUrl: "http://api.test",
+        sessionToken: "ots_admin",
+        fetch: fetchImpl
+      }
+    );
+    const cleanup = await runWorkerJob(
+      {
+        id: "job_asset_cleanup",
+        type: "asset.storage.cleanup",
+        payload: { assetIds: ["asset_a"], includeExpired: true, graceDays: 7 }
+      },
+      {
+        apiBaseUrl: "http://api.test",
+        sessionToken: "ots_admin",
+        fetch: fetchImpl
+      }
+    );
+
+    expect(describeJob({ id: "job_asset_migrate", type: "asset.storage.migrate", payload: {} })).toBe("asset.storage.migrate:job_asset_migrate");
+    expect(calls[0]!.url).toBe("http://api.test/api/v1/admin/assets/migrate");
+    expect(calls[0]!.init!.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.init!.body as string)).toEqual({ campaignId: "camp_demo", assetIds: ["asset_a"], dryRun: true, overwrite: true });
+    expect(calls[1]!.url).toBe("http://api.test/api/v1/admin/assets/cleanup");
+    expect(calls[1]!.init!.method).toBe("POST");
+    expect(JSON.parse(calls[1]!.init!.body as string)).toEqual({ assetIds: ["asset_a"], includeExpired: true, graceDays: 7 });
+    expect(migrate.output).toEqual({ ok: true });
+    expect(cleanup.output).toEqual({ ok: true });
+  });
+
   it("surfaces failed API responses", async () => {
     await expect(
       runWorkerJob(

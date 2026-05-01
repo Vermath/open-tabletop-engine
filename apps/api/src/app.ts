@@ -9,7 +9,7 @@ import { applyProposal, approveProposal, createEvent, createId, createTimestampe
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
-import { createAssetStorage, type AssetStorage } from "./asset-storage.js";
+import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { installedPlugins, installedSystems } from "./registries.js";
 import { RealtimeHub } from "./realtime.js";
 import { FileStateStore, type StateStore } from "./store.js";
@@ -696,6 +696,39 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
     return globalAssetStorageInfo(store);
+  });
+
+  app.post<{
+    Body: {
+      campaignId?: string;
+      assetIds?: string[];
+      dryRun?: boolean;
+      includeDeleted?: boolean;
+      overwrite?: boolean;
+    };
+  }>("/api/v1/admin/assets/migrate", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const result = await migrateStoredAssets(store, assetStorage, uploadDir, request.body ?? {});
+    if (result.changed) store.save();
+    return result;
+  });
+
+  app.post<{
+    Body: {
+      campaignId?: string;
+      assetIds?: string[];
+      dryRun?: boolean;
+      includeDeleted?: boolean;
+      includeExpired?: boolean;
+      graceDays?: number;
+    };
+  }>("/api/v1/admin/assets/cleanup", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const result = await cleanupStoredAssets(store, assetStorage, uploadDir, request.body ?? {}, adminUserId);
+    if (result.changed) store.save();
+    return result;
   });
 
   app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId", async (request, reply) => {
@@ -2891,6 +2924,243 @@ function displayNameFromHeader(value: string | string[] | undefined): string | u
   if (!raw) return undefined;
   const decoded = safeDecodeURIComponent(raw);
   return basename(decoded).trim() || undefined;
+}
+
+interface AssetOperationOptions {
+  campaignId?: string;
+  assetIds?: string[];
+  dryRun?: boolean;
+}
+
+interface AssetMigrationOptions extends AssetOperationOptions {
+  includeDeleted?: boolean;
+  overwrite?: boolean;
+}
+
+interface AssetCleanupOptions extends AssetOperationOptions {
+  includeDeleted?: boolean;
+  includeExpired?: boolean;
+  graceDays?: number;
+}
+
+interface AssetOperationItem {
+  assetId: string;
+  name: string;
+  campaignId: string;
+  fromProvider?: string;
+  toProvider?: string;
+  status: "migrated" | "deleted" | "planned" | "skipped" | "failed" | "missing_marked";
+  reason?: string;
+  sizeBytes?: number;
+  storage?: MapAsset["storage"];
+}
+
+async function migrateStoredAssets(store: StateStore, targetStorage: AssetStorage, uploadDir: string, options: AssetMigrationOptions): Promise<Record<string, unknown>> {
+  const assets = selectAssetOperationTargets(store, options);
+  const results: AssetOperationItem[] = [];
+  let migrated = 0;
+  let planned = 0;
+  let skipped = 0;
+  let failed = 0;
+  let changed = false;
+
+  for (const asset of assets) {
+    const fromProvider = asset.storage?.provider ?? "unmanaged";
+    const base = assetOperationBase(asset, fromProvider, targetStorage.provider);
+    if (!asset.url.startsWith("/api/v1/assets/")) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "external_asset_url" });
+      continue;
+    }
+    if (asset.lifecycle?.status === "deleted" && !options.includeDeleted) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "deleted_asset" });
+      continue;
+    }
+    if (asset.lifecycle?.storageDeletedAt) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "storage_already_deleted" });
+      continue;
+    }
+    if (!options.overwrite && fromProvider === targetStorage.provider) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "already_on_target" });
+      continue;
+    }
+
+    try {
+      const sourceStorage = sourceStorageForAsset(asset, targetStorage, uploadDir);
+      const body = await sourceStorage.read(asset);
+      if (!body) {
+        failed++;
+        results.push({ ...base, status: "failed", reason: "asset_bytes_missing" });
+        continue;
+      }
+      const checksum = checksumForBuffer(body);
+      if (body.length !== asset.sizeBytes || (asset.checksum && asset.checksum !== checksum)) {
+        failed++;
+        results.push({ ...base, status: "failed", reason: "asset_integrity_mismatch", sizeBytes: body.length });
+        continue;
+      }
+      if (options.dryRun) {
+        planned++;
+        results.push({ ...base, status: "planned", reason: "migration_verified", sizeBytes: body.length });
+        continue;
+      }
+      const previousStorage = asset.storage;
+      asset.storage = undefined;
+      try {
+        asset.storage = await targetStorage.put(asset, body);
+      } catch (error) {
+        asset.storage = previousStorage;
+        throw error;
+      }
+      asset.url = `/api/v1/assets/${asset.id}/blob`;
+      asset.updatedAt = nowIso();
+      changed = true;
+      migrated++;
+      results.push({ ...base, toProvider: targetStorage.provider, status: "migrated", sizeBytes: body.length, storage: asset.storage });
+    } catch (error) {
+      failed++;
+      results.push({ ...base, status: "failed", reason: errorMessage(error) });
+    }
+  }
+
+  return {
+    dryRun: Boolean(options.dryRun),
+    targetProvider: targetStorage.provider,
+    assetCount: assets.length,
+    migrated,
+    planned,
+    skipped,
+    failed,
+    changed,
+    results
+  };
+}
+
+async function cleanupStoredAssets(store: StateStore, activeStorage: AssetStorage, uploadDir: string, options: AssetCleanupOptions, adminUserId: string): Promise<Record<string, unknown>> {
+  const assets = selectAssetOperationTargets(store, options);
+  const results: AssetOperationItem[] = [];
+  const cutoffMs = Date.now() - assetCleanupGraceDays(options.graceDays) * 24 * 60 * 60 * 1000;
+  let deleted = 0;
+  let planned = 0;
+  let skipped = 0;
+  let failed = 0;
+  let missingMarked = 0;
+  let changed = false;
+
+  for (const asset of assets) {
+    const base = assetOperationBase(asset, asset.storage?.provider ?? "unmanaged", activeStorage.provider);
+    const cleanupReason = assetCleanupReason(asset, options, cutoffMs);
+    if (!cleanupReason) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "not_cleanup_eligible" });
+      continue;
+    }
+    if (!asset.storage) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "no_storage_ref" });
+      continue;
+    }
+    if (asset.lifecycle?.storageDeletedAt) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "storage_already_deleted" });
+      continue;
+    }
+    if (options.dryRun) {
+      planned++;
+      results.push({ ...base, status: "planned", reason: cleanupReason });
+      continue;
+    }
+
+    try {
+      const sourceStorage = sourceStorageForAsset(asset, activeStorage, uploadDir);
+      const objectDeleted = await sourceStorage.delete(asset);
+      markAssetStorageDeleted(asset, cleanupReason, adminUserId);
+      changed = true;
+      if (objectDeleted) {
+        deleted++;
+        results.push({ ...base, status: "deleted", reason: cleanupReason });
+      } else {
+        missingMarked++;
+        results.push({ ...base, status: "missing_marked", reason: cleanupReason });
+      }
+    } catch (error) {
+      failed++;
+      results.push({ ...base, status: "failed", reason: errorMessage(error) });
+    }
+  }
+
+  return {
+    dryRun: Boolean(options.dryRun),
+    graceDays: assetCleanupGraceDays(options.graceDays),
+    assetCount: assets.length,
+    deleted,
+    missingMarked,
+    planned,
+    skipped,
+    failed,
+    changed,
+    results
+  };
+}
+
+function selectAssetOperationTargets(store: StateStore, options: AssetOperationOptions): MapAsset[] {
+  const assetIds = new Set((options.assetIds ?? []).filter((value): value is string => typeof value === "string" && value.trim().length > 0));
+  return store.state.assets.filter((asset) => {
+    if (options.campaignId && asset.campaignId !== options.campaignId) return false;
+    if (assetIds.size > 0 && !assetIds.has(asset.id)) return false;
+    return true;
+  });
+}
+
+function sourceStorageForAsset(asset: MapAsset, activeStorage: AssetStorage, uploadDir: string): AssetStorage {
+  if (!asset.storage || asset.storage.provider === activeStorage.provider) return activeStorage;
+  return createAssetStorageForProvider(asset.storage.provider, { uploadDir });
+}
+
+function assetOperationBase(asset: MapAsset, fromProvider: string, toProvider: string): Omit<AssetOperationItem, "status"> {
+  return {
+    assetId: asset.id,
+    campaignId: asset.campaignId,
+    name: asset.name,
+    fromProvider,
+    toProvider,
+    sizeBytes: asset.sizeBytes,
+    storage: asset.storage
+  };
+}
+
+function assetCleanupReason(asset: MapAsset, options: AssetCleanupOptions, cutoffMs: number): string | undefined {
+  const includeDeleted = options.includeDeleted ?? true;
+  const includeExpired = options.includeExpired ?? true;
+  if (includeDeleted && asset.lifecycle?.status === "deleted" && lifecycleChangeTime(asset) <= cutoffMs) return "deleted_asset";
+  const expiresAt = asset.lifecycle?.expiresAt ? Date.parse(asset.lifecycle.expiresAt) : Number.NaN;
+  if (includeExpired && Number.isFinite(expiresAt) && expiresAt <= cutoffMs) return "expired_asset";
+  return undefined;
+}
+
+function lifecycleChangeTime(asset: MapAsset): number {
+  return Date.parse(asset.lifecycle?.updatedAt ?? asset.updatedAt ?? asset.createdAt);
+}
+
+function assetCleanupGraceDays(requested: number | undefined): number {
+  const configured = requested ?? Number(process.env.OTTE_ASSET_CLEANUP_GRACE_DAYS);
+  return Number.isFinite(configured) && configured > 0 ? Math.min(configured, 3650) : 0;
+}
+
+function markAssetStorageDeleted(asset: MapAsset, cleanupReason: string, adminUserId: string): void {
+  const updatedAt = nowIso();
+  asset.lifecycle = {
+    status: asset.lifecycle?.status ?? "active",
+    ...asset.lifecycle,
+    updatedAt,
+    updatedByUserId: adminUserId,
+    storageDeletedAt: updatedAt,
+    cleanupReason
+  };
+  asset.updatedAt = updatedAt;
 }
 
 function defaultAssetLifecycle(): NonNullable<MapAsset["lifecycle"]> {

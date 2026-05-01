@@ -1,7 +1,7 @@
-import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
-import { CreateBucketCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { AssetStorageRef, MapAsset } from "@open-tabletop/core";
 
 export interface AssetStorage {
@@ -9,6 +9,7 @@ export interface AssetStorage {
   put(asset: MapAsset, body: Buffer): Promise<AssetStorageRef>;
   read(asset: MapAsset): Promise<Buffer | undefined>;
   stream?(asset: MapAsset): Promise<NodeJS.ReadableStream | undefined>;
+  delete(asset: MapAsset): Promise<boolean>;
 }
 
 export interface AssetStorageOptions {
@@ -17,6 +18,10 @@ export interface AssetStorageOptions {
 
 export function createAssetStorage(options: AssetStorageOptions): AssetStorage {
   const provider = (process.env.OTTE_ASSET_STORAGE ?? "local").toLowerCase();
+  return createAssetStorageForProvider(provider, options);
+}
+
+export function createAssetStorageForProvider(provider: string, options: AssetStorageOptions): AssetStorage {
   if (provider === "s3" || provider === "minio") {
     return new S3AssetStorage({
       bucket: requiredEnv("OTTE_S3_BUCKET"),
@@ -54,6 +59,13 @@ export class LocalAssetStorage implements AssetStorage {
     const filePath = this.filePathForKey(asset.storage?.provider === "local" ? asset.storage.key : assetStorageKey(asset));
     if (!existsSync(filePath)) return undefined;
     return createReadStream(filePath);
+  }
+
+  async delete(asset: MapAsset): Promise<boolean> {
+    const filePath = this.filePathForKey(asset.storage?.provider === "local" ? asset.storage.key : assetStorageKey(asset));
+    if (!existsSync(filePath)) return false;
+    unlinkSync(filePath);
+    return true;
   }
 
   private filePathForKey(key: string): string {
@@ -127,6 +139,18 @@ export class S3AssetStorage implements AssetStorage {
       if (isS3NotFound(error)) return undefined;
       throw error;
     }
+  }
+
+  async delete(asset: MapAsset): Promise<boolean> {
+    await this.ensureBucket();
+    const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
+    await this.client.send(
+      new DeleteObjectCommand({
+        Bucket: asset.storage?.bucket ?? this.options.bucket,
+        Key: key
+      })
+    );
+    return true;
   }
 
   private ensureBucket(): Promise<void> {

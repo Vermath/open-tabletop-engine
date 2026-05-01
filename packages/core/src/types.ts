@@ -177,6 +177,8 @@ export interface AssetLifecycle {
   updatedAt?: string;
   updatedByUserId?: ID;
   reason?: string;
+  storageDeletedAt?: string;
+  cleanupReason?: string;
 }
 
 export interface Token extends Timestamps {

@@ -41,7 +41,7 @@ The worker app can process a single JSON job from stdin against a running API:
 OTTE_API_URL=http://127.0.0.1:4000 OTTE_USER_ID=usr_demo_gm pnpm --filter @open-tabletop/worker exec tsx src/index.ts < job.json
 ```
 
-Supported worker job types are `campaign.export`, `campaign.import`, `ai.memory.extract`, and `ai.session.recap`. Use `OTTE_SESSION_TOKEN` for bearer-session auth in production-like runs; `OTTE_USER_ID` is available for local compatibility with the API's development auth path.
+Supported worker job types are `campaign.export`, `campaign.import`, `asset.storage.migrate`, `asset.storage.cleanup`, `ai.memory.extract`, and `ai.session.recap`. Use `OTTE_SESSION_TOKEN` for bearer-session auth in production-like runs; `OTTE_USER_ID` is available for local compatibility with the API's development auth path. Asset migration and cleanup jobs call server-admin API routes, so the bearer session must belong to a user listed in `OTTE_ADMIN_USER_IDS`.
 
 Asset storage configuration:
 
@@ -59,9 +59,10 @@ OTTE_ASSET_CDN_BASE_URL=https://assets.example.com
 OTTE_ASSET_URL_SIGNING_SECRET=replace-with-random-secret
 OTTE_ASSET_URL_TTL_SECONDS=300
 OTTE_ASSET_URL_MAX_TTL_SECONDS=3600
+OTTE_ASSET_CLEANUP_GRACE_DAYS=7
 ```
 
-`OTTE_ASSET_QUOTA_BYTES` applies per campaign to active and archived assets. `OTTE_ASSET_RETENTION_DAYS` assigns a default asset expiry when new assets are created. Set `OTTE_ASSET_CDN_BASE_URL` when a CDN fronts the API blob route; signed delivery URLs use that base URL and require `OTTE_ASSET_URL_SIGNING_SECRET` in production. Campaign owners can inspect campaign usage at `/api/v1/campaigns/{campaignId}/assets/storage`, request signed delivery at `/api/v1/assets/{assetId}/delivery-url`, and archive or delete assets through `/api/v1/assets/{assetId}/lifecycle`. Server admins can inspect global usage at `/api/v1/admin/assets/storage`.
+`OTTE_ASSET_QUOTA_BYTES` applies per campaign to active and archived assets. `OTTE_ASSET_RETENTION_DAYS` assigns a default asset expiry when new assets are created. Set `OTTE_ASSET_CDN_BASE_URL` when a CDN fronts the API blob route; signed delivery URLs use that base URL and require `OTTE_ASSET_URL_SIGNING_SECRET` in production. `OTTE_ASSET_CLEANUP_GRACE_DAYS` controls the default wait before cleanup jobs physically remove deleted or expired asset bytes. Campaign owners can inspect campaign usage at `/api/v1/campaigns/{campaignId}/assets/storage`, request signed delivery at `/api/v1/assets/{assetId}/delivery-url`, and archive or delete assets through `/api/v1/assets/{assetId}/lifecycle`. Server admins can inspect global usage at `/api/v1/admin/assets/storage`, migrate readable assets to the active storage provider with `/api/v1/admin/assets/migrate`, and remove deleted or expired object bytes with `/api/v1/admin/assets/cleanup`.
 
 For local development without Docker:
 

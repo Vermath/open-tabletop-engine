@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
-import { emptyState, type AssetStorageRef, type EngineState, type MapAsset } from "@open-tabletop/core";
+import { createTimestamped, emptyState, type AssetStorageRef, type EngineState, type MapAsset } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp } from "./app.js";
@@ -29,6 +29,11 @@ class MemoryAssetStorage implements AssetStorage {
     const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
     const body = this.objects.get(key);
     return body ? Buffer.from(body) : undefined;
+  }
+
+  async delete(asset: MapAsset): Promise<boolean> {
+    const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
+    return this.objects.delete(key);
   }
 }
 
@@ -1866,6 +1871,110 @@ describe("api", () => {
         lifecycleCounts: { deleted: 1 },
         providerCounts: { local: 1 }
       });
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("migrates stored assets and cleans up deleted asset objects", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    const directory = mkdtempSync(join(tmpdir(), "otte-asset-ops-"));
+    const store = new MemoryStateStore();
+    const targetStorage = new MemoryAssetStorage("migrated-assets");
+    const bytes = Buffer.from("storage-migration-bytes");
+    const asset: MapAsset = createTimestamped("asset", {
+      campaignId: "camp_demo",
+      name: "Migration Source.png",
+      url: "",
+      mimeType: "image/png",
+      sizeBytes: bytes.length,
+      lifecycle: { status: "active" }
+    });
+    asset.url = `/api/v1/assets/${asset.id}/blob`;
+    asset.storage = { provider: "local", key: assetStorageKey(asset) };
+    mkdirSync(join(directory, asset.campaignId), { recursive: true });
+    writeFileSync(join(directory, asset.campaignId, `${asset.id}.png`), bytes);
+    store.state.assets.push(asset);
+    const app = await buildApp({
+      store,
+      uploadDir: directory,
+      assetStorage: targetStorage
+    });
+    try {
+      const dryRun = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/assets/migrate",
+        headers: authHeaders,
+        payload: { assetIds: [asset.id], dryRun: true }
+      });
+      expect(dryRun.statusCode).toBe(200);
+      expect(dryRun.json()).toMatchObject({ dryRun: true, targetProvider: "s3", planned: 1, migrated: 0, failed: 0, changed: false });
+      expect(asset.storage).toEqual({ provider: "local", key: assetStorageKey(asset) });
+
+      const migrated = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/assets/migrate",
+        headers: authHeaders,
+        payload: { assetIds: [asset.id] }
+      });
+      expect(migrated.statusCode).toBe(200);
+      expect(migrated.json()).toMatchObject({ targetProvider: "s3", migrated: 1, planned: 0, failed: 0, changed: true });
+      expect(asset.storage).toEqual({ provider: "s3", bucket: "migrated-assets", key: assetStorageKey(asset) });
+      expect(targetStorage.objects.get(assetStorageKey(asset))?.toString()).toBe(bytes.toString());
+
+      asset.lifecycle = { status: "deleted", updatedAt: "2026-01-01T00:00:00.000Z", reason: "test cleanup" };
+      const cleanup = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/assets/cleanup",
+        headers: authHeaders,
+        payload: { assetIds: [asset.id] }
+      });
+      expect(cleanup.statusCode).toBe(200);
+      expect(cleanup.json()).toMatchObject({ deleted: 1, missingMarked: 0, failed: 0, changed: true });
+      expect(targetStorage.objects.has(assetStorageKey(asset))).toBe(false);
+      expect(asset.lifecycle).toMatchObject({
+        status: "deleted",
+        updatedByUserId: "usr_demo_gm",
+        cleanupReason: "deleted_asset"
+      });
+      expect(asset.lifecycle.storageDeletedAt).toBeTruthy();
+
+      const repeatedCleanup = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/assets/cleanup",
+        headers: authHeaders,
+        payload: { assetIds: [asset.id] }
+      });
+      expect(repeatedCleanup.statusCode).toBe(200);
+      expect(repeatedCleanup.json()).toMatchObject({ deleted: 0, skipped: 1, changed: false });
+      expect(repeatedCleanup.json().results[0]).toMatchObject({ status: "skipped", reason: "storage_already_deleted" });
+
+      const expiredBytes = Buffer.from("expired-storage-bytes");
+      const expiredAsset: MapAsset = createTimestamped("asset", {
+        campaignId: "camp_demo",
+        name: "Expired Source.png",
+        url: "",
+        mimeType: "image/png",
+        sizeBytes: expiredBytes.length,
+        lifecycle: { status: "active", expiresAt: "2026-01-01T00:00:00.000Z" }
+      });
+      expiredAsset.url = `/api/v1/assets/${expiredAsset.id}/blob`;
+      expiredAsset.storage = await targetStorage.put(expiredAsset, expiredBytes);
+      store.state.assets.push(expiredAsset);
+      const expiredCleanup = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/assets/cleanup",
+        headers: authHeaders,
+        payload: { assetIds: [expiredAsset.id], includeExpired: true }
+      });
+      expect(expiredCleanup.statusCode).toBe(200);
+      expect(expiredCleanup.json()).toMatchObject({ deleted: 1, failed: 0, changed: true });
+      expect(expiredCleanup.json().results[0]).toMatchObject({ status: "deleted", reason: "expired_asset" });
+      expect(targetStorage.objects.has(assetStorageKey(expiredAsset))).toBe(false);
+      expect(expiredAsset.lifecycle).toMatchObject({ status: "active", cleanupReason: "expired_asset" });
     } finally {
       await app.close();
       restoreEnv(previousEnv);

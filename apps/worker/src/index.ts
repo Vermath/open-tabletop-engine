@@ -4,6 +4,8 @@ import type { Readable, Writable } from "node:stream";
 export type WorkerJob =
   | { id: string; type: "campaign.export"; payload: { campaignId: string } }
   | { id: string; type: "campaign.import"; payload: { archive: unknown; mode?: "upsert" | "reject_conflicts" } }
+  | { id: string; type: "asset.storage.migrate"; payload: { campaignId?: string; assetIds?: string[]; dryRun?: boolean; includeDeleted?: boolean; overwrite?: boolean } }
+  | { id: string; type: "asset.storage.cleanup"; payload: { campaignId?: string; assetIds?: string[]; dryRun?: boolean; includeDeleted?: boolean; includeExpired?: boolean; graceDays?: number } }
   | { id: string; type: "ai.memory.extract"; payload: { campaignId: string; sourceText?: string } }
   | { id: string; type: "ai.session.recap"; payload: { campaignId: string; transcript?: string } };
 
@@ -67,6 +69,10 @@ async function dispatchJob(job: WorkerJob, options: WorkerOptions, fetchImpl: ty
         archive: job.payload.archive,
         mode: job.payload.mode ?? "upsert"
       });
+    case "asset.storage.migrate":
+      return fetchJson(fetchImpl, options, "POST", "/api/v1/admin/assets/migrate", compactPayload(job.payload));
+    case "asset.storage.cleanup":
+      return fetchJson(fetchImpl, options, "POST", "/api/v1/admin/assets/cleanup", compactPayload(job.payload));
     case "ai.memory.extract":
       return fetchJson(fetchImpl, options, "POST", `/api/v1/campaigns/${encodeURIComponent(job.payload.campaignId)}/ai/memory/extract`, {
         sourceText: job.payload.sourceText
@@ -113,6 +119,31 @@ function parseWorkerJob(value: unknown): WorkerJob {
       return { id: value.id, type: value.type, payload: { campaignId: requiredString(value.payload, "campaignId") } };
     case "campaign.import":
       return { id: value.id, type: value.type, payload: { archive: value.payload.archive, mode: importMode(value.payload.mode) } };
+    case "asset.storage.migrate":
+      return {
+        id: value.id,
+        type: value.type,
+        payload: {
+          campaignId: optionalString(value.payload, "campaignId"),
+          assetIds: optionalStringArray(value.payload, "assetIds"),
+          dryRun: optionalBoolean(value.payload, "dryRun"),
+          includeDeleted: optionalBoolean(value.payload, "includeDeleted"),
+          overwrite: optionalBoolean(value.payload, "overwrite")
+        }
+      };
+    case "asset.storage.cleanup":
+      return {
+        id: value.id,
+        type: value.type,
+        payload: {
+          campaignId: optionalString(value.payload, "campaignId"),
+          assetIds: optionalStringArray(value.payload, "assetIds"),
+          dryRun: optionalBoolean(value.payload, "dryRun"),
+          includeDeleted: optionalBoolean(value.payload, "includeDeleted"),
+          includeExpired: optionalBoolean(value.payload, "includeExpired"),
+          graceDays: optionalNumber(value.payload, "graceDays")
+        }
+      };
     case "ai.memory.extract":
       return { id: value.id, type: value.type, payload: { campaignId: requiredString(value.payload, "campaignId"), sourceText: optionalString(value.payload, "sourceText") } };
     case "ai.session.recap":
@@ -139,6 +170,31 @@ function optionalString(record: Record<string, unknown>, key: string): string | 
   if (value === undefined) return undefined;
   if (typeof value !== "string") throw new Error(`Worker job payload field ${key} must be a string`);
   return value;
+}
+
+function optionalStringArray(record: Record<string, unknown>, key: string): string[] | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) throw new Error(`Worker job payload field ${key} must be a string array`);
+  return value;
+}
+
+function optionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") throw new Error(`Worker job payload field ${key} must be a boolean`);
+  return value;
+}
+
+function optionalNumber(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(`Worker job payload field ${key} must be a finite number`);
+  return value;
+}
+
+function compactPayload(payload: object): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined));
 }
 
 function readAll(stream: Readable): Promise<string> {

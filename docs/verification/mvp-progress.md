@@ -553,12 +553,46 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Post-delete campaign and admin storage stats both returned `usedBytes: 0`, `allBytes: 21`, `lifecycleCounts.deleted: 1`, and `providerCounts.local: 1`.
   - SQLite inspection of `engine_records` showed the asset lifecycle persisted with `status: deleted` and reason `manual acceptance cleanup`.
 
+### Production Asset Storage Ops Slice
+
+- Implementation:
+  - Added physical object deletion to the asset storage abstraction for local disk and S3-compatible storage.
+  - Added server-admin asset migration at `POST /api/v1/admin/assets/migrate`; it verifies readable asset bytes against metadata before rewriting them through the active storage provider.
+  - Added server-admin asset cleanup at `POST /api/v1/admin/assets/cleanup`; it removes stored bytes for deleted or expired assets after a configurable grace period while preserving metadata.
+  - Added `storageDeletedAt` and `cleanupReason` lifecycle audit fields so repeated cleanup is idempotent and visible in storage records.
+  - Added worker job types `asset.storage.migrate` and `asset.storage.cleanup` for running the admin operations outside request/response workflows.
+  - Added Docker Compose and `.env.example` passthrough for `OTTE_ASSET_CLEANUP_GRACE_DAYS`.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api-contracts build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/worker typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `27 passed`.
+  - `pnpm --filter @open-tabletop/worker test` passed with `4 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API tests cover migration dry-run, migration from a local source object into the active storage provider, deleted-object cleanup, repeated cleanup idempotency, and expired-object cleanup.
+  - Worker tests cover `asset.storage.migrate` and `asset.storage.cleanup` dispatch to the server-admin API routes with bearer auth.
+- Manual API and worker evidence:
+  - API: `http://127.0.0.1:4441`
+  - SQLite file: `storage/manual-asset-ops-20260501.sqlite`
+  - Upload directory: `storage/manual-asset-ops-uploads-20260501`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ASSET_STORAGE=local`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, and `OTTE_ASSET_CLEANUP_GRACE_DAYS=0`.
+  - Asset upload created `asset_mon1drykg6pg6d2k` with local object `storage/manual-asset-ops-uploads-20260501/camp_demo/asset_mon1drykg6pg6d2k.bin`.
+  - Worker CLI job `manual_asset_migrate_dry_run` of type `asset.storage.migrate` succeeded with `planned: 1` and `failed: 0`.
+  - API migration with `overwrite: true` returned `migrated: 1` and `failed: 0`.
+  - Lifecycle deletion returned `200` with reason `manual storage cleanup`.
+  - Worker CLI job `manual_asset_cleanup` of type `asset.storage.cleanup` succeeded with `deleted: 1` and `failed: 0`.
+  - The local object file no longer existed after cleanup.
+  - Blob fetch for the deleted asset returned `410`.
+  - A repeated cleanup call skipped the asset with `storage_already_deleted`.
+  - SQLite inspection showed lifecycle `status: deleted`, `storageDeletedAt: 2026-05-01T14:57:12.316Z`, `updatedByUserId: usr_demo_gm`, and `cleanupReason: deleted_asset`.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, account administration, production session administration, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs first-class reset UI, MFA, SCIM/organization sync, and audit export.
-- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, and storage stats. Production storage work still needs migration tooling, automated object cleanup jobs, CDN edge configuration, and malware/content scanning.
+- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, and cleanup jobs for deleted or expired object bytes. Production storage work still needs CDN edge configuration, malware/content scanning, and deployment scheduling for recurring cleanup jobs.
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.

@@ -140,7 +140,7 @@ Open the browser client at the configured web URL, for example `http://127.0.0.1
 These are intentionally not counted as blockers for the current PRD MVP acceptance:
 
 - First-class password reset UI, MFA, SCIM/organization sync, and audit export.
-- Asset storage migration tooling, automated object cleanup jobs, CDN edge configuration, and malware/content scanning beyond the verified local and S3/MinIO storage backends plus signed delivery, quotas, lifecycle state, and storage stats.
+- CDN edge configuration, malware/content scanning, and deployed recurring cleanup scheduling beyond the verified local and S3/MinIO storage backends plus signed delivery, quotas, lifecycle state, storage stats, migration tooling, and cleanup jobs.
 - Advanced polygon line-of-sight, dynamic fog tools, colored lighting, terrain walls, and production-grade vision rendering.
 - Sandboxed third-party plugin module loading; the MVP verifies a permissioned sample plugin runtime path.
 - A complete rules engine for every game system; the MVP verifies a Generic Fantasy system module with sheets and rolls.
