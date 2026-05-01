@@ -2607,6 +2607,11 @@ describe("api", () => {
     expect(observedToolCalls.json().map((call: { toolName: string }) => call.toolName)).toEqual(
       expect.arrayContaining(["read_compendium", "create_memory", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "roll_dice", "unknown_tool"])
     );
+    expect(gmStore.state.aiToolCalls.find((call) => call.toolName === "unknown_tool" && call.status === "failed")?.output).toEqual({
+      error: "unknown_tool",
+      toolName: "unknown_tool"
+    });
+    expect(gmStore.state.aiToolCalls.find((call) => call.toolName === "draft_encounter" && call.status === "completed")?.durationMs).toEqual(expect.any(Number));
 
     const blockedToolCalls = await gmApp.inject({
       method: "GET",
@@ -2709,6 +2714,54 @@ describe("api", () => {
       ])
     );
     expect(store.state.proposals.some((proposal) => proposal.title.startsWith("Restricted"))).toBe(false);
+    await app.close();
+  });
+
+  it("rejects malformed ai tool inputs without campaign side effects", async () => {
+    class MalformedToolProvider implements AiProvider {
+      id = "malformed-tool-ai";
+      label = "Malformed Tool AI";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield { type: "tool.started", toolName: "create_proposal", input: { rawArguments: "{not-json" } };
+        yield { type: "tool.started", toolName: "draft_scene", input: { width: 900 } };
+        yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: "east" } };
+        yield { type: "tool.started", toolName: "create_memory", input: "remember this" };
+        yield { type: "tool.started", toolName: "unknown_tool", input: { title: "No such tool" } };
+        yield { type: "message.completed", content: "Malformed tools requested" };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const beforeProposals = store.state.proposals.length;
+    const beforeMemory = store.state.aiMemory.length;
+    const beforeRolls = store.state.rolls.length;
+    const app = await buildApp({ store, aiProvider: new MalformedToolProvider() });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Try malformed function-call inputs." }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const completed = response.json().events.filter((event: { type: string }) => event.type === "tool.completed");
+    expect(completed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ toolName: "create_proposal", output: expect.objectContaining({ error: "invalid_tool_input", message: "Missing required field: title" }) }),
+        expect.objectContaining({ toolName: "draft_scene", output: expect.objectContaining({ error: "invalid_tool_input", message: "Missing required field: name" }) }),
+        expect.objectContaining({ toolName: "draft_token_update", output: expect.objectContaining({ error: "invalid_tool_input", message: "Invalid field: x" }) }),
+        expect.objectContaining({ toolName: "create_memory", output: expect.objectContaining({ error: "invalid_tool_input", message: "Tool input must be an object." }) }),
+        expect.objectContaining({ toolName: "unknown_tool", output: { error: "unknown_tool", toolName: "unknown_tool" } })
+      ])
+    );
+    expect(store.state.proposals).toHaveLength(beforeProposals);
+    expect(store.state.aiMemory).toHaveLength(beforeMemory);
+    expect(store.state.rolls).toHaveLength(beforeRolls);
+    const failedToolNames = store.state.aiToolCalls.filter((call) => call.status === "failed").map((call) => call.toolName);
+    expect(failedToolNames).toEqual(expect.arrayContaining(["create_proposal", "draft_scene", "draft_token_update", "create_memory", "unknown_tool"]));
+    expect(store.state.aiToolCalls.some((call) => call.status === "completed" && ["create_proposal", "draft_scene", "draft_token_update", "create_memory", "unknown_tool"].includes(call.toolName))).toBe(false);
     await app.close();
   });
 

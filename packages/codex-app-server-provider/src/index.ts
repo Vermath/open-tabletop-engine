@@ -44,6 +44,26 @@ export class LoopbackCodexTransport implements JsonRpcTransport {
     if (method === "initialize") return { sessionId: "codex_loopback" } as TResponse;
     if (method === "turn/start") {
       const events: AiProviderEvent[] = [];
+      if (shouldRequestMalformedTool(params)) {
+        if (hasTool(params, "create_proposal")) {
+          events.push({ type: "tool.started", toolName: "create_proposal", input: { rawArguments: "{not-json" } });
+        }
+        if (hasTool(params, "draft_scene")) {
+          events.push({ type: "tool.started", toolName: "draft_scene", input: { width: 900 } });
+        }
+        if (hasTool(params, "draft_token_update")) {
+          events.push({ type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: "east" } });
+        }
+        if (hasTool(params, "create_memory")) {
+          events.push({ type: "tool.started", toolName: "create_memory", input: "remember this" });
+        }
+        events.push({ type: "tool.started", toolName: "unknown_tool", input: { title: "No such tool" } });
+        events.push({
+          type: "message.completed",
+          content: "Codex loopback requested malformed tool inputs for integration hardening."
+        });
+        return { events } as TResponse;
+      }
       if (shouldRequestProposalTool(params)) {
         events.push({
           type: "tool.started",
@@ -182,6 +202,10 @@ function shouldRequestProposalTool(params: unknown): boolean {
   if (!hasTool(params, "create_proposal")) return false;
   const prompt = promptFromParams(params);
   return /\bproposal\b|\bpropose\b|\bprep\b/i.test(prompt);
+}
+
+function shouldRequestMalformedTool(params: unknown): boolean {
+  return /\bmalformed\b|\binvalid tool\b|\bedge case\b/i.test(promptFromParams(params));
 }
 
 function shouldRequestEncounterTool(params: unknown): boolean {

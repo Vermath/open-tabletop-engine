@@ -951,6 +951,28 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Tool-call observability included `draft_encounter`, `draft_journal_entry`, `draft_scene`, `draft_token_update`, `draft_actor_update`, `create_memory`, `roll_dice`, and `read_compendium`.
   - The thread created pending AI proposals titled `Encounter: Loopback Vault Sentinel`, `Journal: Loopback Journal Lead`, `Scene: Loopback Test Chamber`, `Token: Valen Ash`, and `Actor: Valen Ash`.
 
+### AI Tool Failure Hardening Slice
+
+- Implementation:
+  - Added schema validation before AI tool execution so required tool fields and basic field types are checked before any proposal, memory, or dice side effect runs.
+  - Changed AI tool-call observability so unknown tools, missing permissions, invalid inputs, and tool-thrown errors persist as `failed` tool calls instead of successful completions with error payloads.
+  - Added a deterministic Codex loopback malformed-tool path for production-mode integration smoke testing.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/codex-app-server-provider typecheck` passed.
+  - `pnpm --filter @open-tabletop/codex-app-server-provider build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `42 passed`.
+  - API tests verify invalid provider inputs for `create_proposal`, `draft_scene`, `draft_token_update`, and `create_memory` return `invalid_tool_input`, unknown tools return `unknown_tool`, all are persisted as failed tool calls, and no proposals, memory facts, or rolls are created from those invalid inputs.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4460`
+  - SQLite file: `apps/api/storage/manual-ai-tool-hardening-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_AI_PROVIDER=codex-loopback`, and `OTTE_SQLITE_PATH=apps/api/storage/manual-ai-tool-hardening-20260501.sqlite`.
+  - GM login returned an `ots_` token prefix.
+  - A Codex loopback prompt for a malformed invalid tool edge case completed with `eventCount: 11` and `toolCallCount: 5`.
+  - Completed tool outputs were `create_proposal: invalid_tool_input / Missing required field: title`, `draft_scene: invalid_tool_input / Missing required field: name`, `draft_token_update: invalid_tool_input / Invalid field: x`, `create_memory: invalid_tool_input / Tool input must be an object.`, and `unknown_tool: unknown_tool`.
+  - `GET /api/v1/campaigns/camp_demo/ai/tool-calls` showed failed tool calls for `create_proposal`, `draft_scene`, `draft_token_update`, `create_memory`, and `unknown_tool`.
+  - Proposal count delta was `0` and memory count delta was `0`, confirming invalid provider inputs did not mutate campaign proposal or memory state.
+
 ### SCIM Organization Sync Slice
 
 - Implementation:
@@ -1024,4 +1046,4 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
-- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, tool-call observability, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases.

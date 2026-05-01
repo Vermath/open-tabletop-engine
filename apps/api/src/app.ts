@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
+import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
@@ -1945,7 +1945,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
                 status: "started" as const
               })
             );
-            const output = await executeAiTool(tools, event.toolName, event.input, toolContext);
+            const result = await executeAiTool(tools, event.toolName, event.input, toolContext);
+            const output = result.output;
             const completedEvent: AiProviderEvent = { type: "tool.completed", toolName: event.toolName, output };
             events.push(completedEvent);
             store.state.aiToolCalls.push(
@@ -1954,7 +1955,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
                 toolName: event.toolName,
                 input: undefined,
                 output,
-                status: "completed" as const,
+                status: result.failed ? ("failed" as const) : ("completed" as const),
                 durationMs: elapsedMs(toolStartedAtMs)
               })
             );
@@ -1968,7 +1969,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
                 toolName: event.toolName,
                 input: undefined,
                 output: event.output,
-                status: "completed" as const
+                status: isToolErrorOutput(event.output) ? ("failed" as const) : ("completed" as const)
               })
             );
           }
@@ -3127,6 +3128,11 @@ interface ToolErrorOutput {
   [key: string]: unknown;
 }
 
+interface AiToolExecutionResult {
+  output: unknown;
+  failed: boolean;
+}
+
 interface MemoryToolOutput {
   memoryId: string;
   visibility: Visibility;
@@ -3302,30 +3308,105 @@ function tokenForCampaign(context: AiToolContext, tokenId: string): Token | unde
   return context.state.tokens.find((token) => token.id === tokenId && context.state.scenes.some((scene) => scene.id === token.sceneId && scene.campaignId === context.campaignId));
 }
 
-async function executeAiTool(tools: AiToolDefinition[], toolName: string, input: unknown, context: AiToolContext): Promise<unknown> {
+async function executeAiTool(tools: AiToolDefinition[], toolName: string, input: unknown, context: AiToolContext): Promise<AiToolExecutionResult> {
   const tool = tools.find((item) => item.name === toolName);
-  if (!tool) return { error: "unknown_tool", toolName };
+  if (!tool) return failedToolOutput({ error: "unknown_tool", toolName });
 
   const missingPermission = tool.requiredPermissions.find((permission) => !context.permissions.includes(permission));
   if (missingPermission) {
-    return {
+    return failedToolOutput({
       error: "missing_permission",
       permission: missingPermission
-    };
+    });
+  }
+
+  const invalidInput = validateAiToolInput(tool, input);
+  if (invalidInput) {
+    return failedToolOutput({
+      error: "invalid_tool_input",
+      message: invalidInput
+    });
   }
 
   try {
-    return await tool.execute(input, context);
-  } catch (error) {
+    const output = await tool.execute(input, context);
     return {
+      output,
+      failed: isToolErrorOutput(output)
+    };
+  } catch (error) {
+    return failedToolOutput({
       error: "tool_failed",
       message: error instanceof Error ? error.message.slice(0, 300) : "Tool execution failed"
-    };
+    });
   }
+}
+
+function failedToolOutput(output: ToolErrorOutput): AiToolExecutionResult {
+  return {
+    output,
+    failed: true
+  };
 }
 
 function isProposalToolOutput(value: unknown): value is ProposalToolOutput {
   return isRecord(value) && typeof value.proposalId === "string";
+}
+
+function isToolErrorOutput(value: unknown): value is ToolErrorOutput {
+  return isRecord(value) && typeof value.error === "string";
+}
+
+function validateAiToolInput(tool: AiToolDefinition, input: unknown): string | undefined {
+  const schema = tool.parameters;
+  if (!schema) return undefined;
+  if (!isRecord(input)) return "Tool input must be an object.";
+
+  for (const key of schema.required ?? []) {
+    if (!(key in input) || input[key] === undefined) return `Missing required field: ${key}`;
+  }
+
+  for (const [key, value] of Object.entries(input)) {
+    const property = schema.properties[key];
+    if (!property) {
+      if (schema.additionalProperties === false) return `Unexpected field: ${key}`;
+      continue;
+    }
+    if (!matchesAiToolJsonSchema(value, property)) return `Invalid field: ${key}`;
+  }
+
+  return undefined;
+}
+
+function matchesAiToolJsonSchema(value: unknown, schema: AiToolJsonSchema): boolean {
+  if (schema.enum && !schema.enum.includes(String(value))) return false;
+  const types = Array.isArray(schema.type) ? schema.type : schema.type ? [schema.type] : [];
+  if (types.length === 0) return true;
+  return types.some((type) => {
+    if (type === "string") return typeof value === "string";
+    if (type === "number" || type === "integer") return typeof value === "number" && Number.isFinite(value);
+    if (type === "boolean") return typeof value === "boolean";
+    if (type === "array") return Array.isArray(value) && (!schema.items || value.every((item) => matchesAiToolJsonSchema(item, schema.items!)));
+    if (type === "object") return matchesAiToolObjectSchema(value, schema);
+    if (type === "null") return value === null;
+    return true;
+  });
+}
+
+function matchesAiToolObjectSchema(value: unknown, schema: AiToolJsonSchema): boolean {
+  if (!isRecord(value)) return false;
+  for (const key of schema.required ?? []) {
+    if (!(key in value) || value[key] === undefined) return false;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const property = schema.properties?.[key];
+    if (!property) {
+      if (schema.additionalProperties === false) return false;
+      continue;
+    }
+    if (!matchesAiToolJsonSchema(child, property)) return false;
+  }
+  return true;
 }
 
 function isProposalChange(value: unknown): value is ProposalChange {
