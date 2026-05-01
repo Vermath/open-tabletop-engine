@@ -96,6 +96,35 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - `Approve and apply` changed the `Session Recap` proposal to `applied`.
     - Live API check returned applied proposal titles `Encounter Designer Draft` and `Session Recap`, encounter name `AI Draft Encounter`, approved memory count `1`, and session recap journal count `1`.
 
+### AI Provider Proposal Tool Slice
+
+- Commit: `d86ed8b feat: execute ai proposal tools`
+- Evidence:
+  - `pnpm --filter @open-tabletop/codex-app-server-provider build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `16 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test verifies:
+    - AI providers receive a `create_proposal` tool definition on thread requests.
+    - A GM-owned provider tool request creates a pending AI proposal.
+    - Provider-created `journal.create` changes are normalized with ids and timestamps before approval/application.
+    - AI tool lifecycle records include started and completed statuses.
+    - A player-owned provider tool request returns `missing_permission` for `ai.proposeChanges` and creates no proposal.
+    - The `codex-loopback` provider can request the proposal tool from a prompt and creates a pending `Codex Loopback Proposal`.
+  - Manual API evidence on local dev server:
+    - API: `http://127.0.0.1:4431`
+    - `OTTE_AI_PROVIDER=codex-loopback`
+    - Fresh SQLite state file: `storage/manual-ai-tool-20260501.sqlite`
+    - GM AI thread returned provider `codex-app-server` and event types `tool.started,tool.completed,proposal.created,message.completed`.
+    - GM tool names were `create_proposal,create_proposal`.
+    - Created proposal `prop_momfbifyl3ixdrar` titled `Codex Loopback Proposal` in `pending` status.
+    - Provider-created journal change had a generated `jnl_` id.
+    - Applying the pending proposal before approval returned `409`.
+    - Approval changed status to `approved`; applying after approval changed status to `applied`.
+    - Applied proposal created the `Codex Loopback Prep` journal entry.
+    - Player AI thread returned provider `codex-app-server`, tool error `missing_permission`, and permission `ai.proposeChanges`.
+    - Final `Codex Loopback Proposal` count remained `1`, proving the player tool request did not create a second proposal.
+
 ### Fog Walls And Lighting Authoring Slice
 
 - Commit: `d2c8e6f feat: add wall and light authoring`
@@ -267,5 +296,5 @@ This document tracks verified MVP progress without treating the whole PRD as com
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
-- AI flows still need richer provider-backed tool proposal creation and memory extraction beyond the deterministic MVP flows.
+- AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, approval/application, and deterministic recap memory. Richer provider-backed memory extraction remains basic.
 - Full MVP completion still requires a clean-checkout runbook and a final prompt-to-artifact audit covering every PRD requirement.
