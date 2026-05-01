@@ -142,12 +142,33 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - A separate GM browser session loaded as `Demo GM - owner` and reflected the moved Valen token; screenshot inspection showed the token at the new lower-center scene position.
     - GM session token bounding box after the player move was approximately `x: 576.75`, `y: 496.27`, showing the second client received the updated scene state.
 
+### Hidden Token Visibility Slice
+
+- Commit: `5e3a8f5 feat: filter hidden token visibility`
+- Evidence:
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test passed with `13 passed`.
+  - API test verifies:
+    - Player token reads filter out a hidden `tok_hidden_sentinel`.
+    - GM token reads still include the hidden token.
+    - Player attempts to patch the hidden token return `404`.
+    - GM can patch the hidden token and it remains hidden.
+  - Manual browser/API evidence on local dev servers:
+    - API: `http://127.0.0.1:4425`
+    - Web: `http://localhost:5178`
+    - Fresh SQLite state file: `storage/manual-hidden-20260501.sqlite`
+    - Created hidden GM token `tok_momeaw2udn5j7m6i` named `Hidden Sentinel` while player and GM browsers were connected.
+    - Player browser loaded as `Demo Player - player` and continued to show only the visible `VA` token in the scene.
+    - GM browser loaded as `Demo GM - owner` and showed both the visible `VA` token and the hidden-token `HI` marker.
+    - Live API check returned GM token IDs `tok_valen,tok_momeaw2udn5j7m6i`, player token IDs `tok_valen`, `PlayerHiddenTokenCount: 0`, and `PlayerPatchStatus: 404`.
+    - GM patch of the hidden token returned `200` with `GmHiddenTokenX: 760`, `GmHiddenTokenY: 300`, and `GmHiddenTokenHidden: true`.
+
 ## Known Remaining Gaps
 
 - Auth is still a development `x-user-id` session header, not production authentication.
 - Browser role switching and GM/player token movement now have MVP coverage; broader multi-user workflows still need final clean-checkout audit coverage.
 - Uploaded maps now have a local binary storage path, but they are not yet backed by S3 or MinIO object storage.
-- Fog, wall, and light authoring now has MVP controls, but advanced line-of-sight enforcement and player-specific visibility remain basic.
+- Fog, wall, light authoring, and hidden-token visibility now have MVP controls and permission filtering, but advanced line-of-sight enforcement and fog-of-war visibility remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
 - AI flows still need richer provider-backed tool proposal creation and memory extraction beyond the deterministic MVP flows.
