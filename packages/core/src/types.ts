@@ -1,0 +1,379 @@
+export type ID = string;
+
+export type Visibility = "gm_only" | "public" | "specific_players" | "specific_characters";
+export type UserRole = "owner" | "gm" | "assistant_gm" | "player" | "observer" | "plugin" | "ai_assistant";
+export type GridType = "square" | "gridless";
+export type ProposalStatus = "draft" | "pending" | "approved" | "rejected" | "applied" | "reverted";
+export type MessageType = "plain" | "emote" | "whisper" | "roll" | "system" | "gm" | "ooc" | "ai" | "plugin";
+
+export interface Timestamps {
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface User extends Timestamps {
+  id: ID;
+  displayName: string;
+  email?: string;
+}
+
+export interface Campaign extends Timestamps {
+  id: ID;
+  ownerUserId: ID;
+  name: string;
+  description: string;
+  defaultSystemId: ID;
+  visibility: "private" | "invite_only" | "public";
+}
+
+export interface CampaignMember extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  userId: ID;
+  role: UserRole;
+}
+
+export interface World extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  name: string;
+  description: string;
+}
+
+export interface Scene extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  name: string;
+  width: number;
+  height: number;
+  gridType: GridType;
+  gridSize: number;
+  backgroundAssetId?: ID;
+  active: boolean;
+  sortOrder: number;
+  fog: FogRegion[];
+  walls: Wall[];
+  lights: LightSource[];
+  metadata: Record<string, unknown>;
+}
+
+export interface FogRegion {
+  id: ID;
+  x: number;
+  y: number;
+  radius: number;
+  hidden: boolean;
+}
+
+export interface Wall {
+  id: ID;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  blocksVision: boolean;
+}
+
+export interface LightSource {
+  id: ID;
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+}
+
+export interface MapAsset extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  name: string;
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+  checksum?: string;
+}
+
+export interface Token extends Timestamps {
+  id: ID;
+  sceneId: ID;
+  actorId?: ID;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  hidden: boolean;
+  locked: boolean;
+  visionEnabled: boolean;
+  visionRadius: number;
+  disposition: "friendly" | "neutral" | "hostile";
+  imageAssetId?: ID;
+  metadata: Record<string, unknown>;
+}
+
+export interface Actor extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  systemId: ID;
+  ownerUserId?: ID;
+  type: string;
+  name: string;
+  imageAssetId?: ID;
+  data: Record<string, unknown>;
+  permissions: Record<ID, PermissionName[]>;
+}
+
+export interface Item extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  systemId: ID;
+  actorId?: ID;
+  type: string;
+  name: string;
+  data: Record<string, unknown>;
+}
+
+export interface JournalEntry extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  parentId?: ID;
+  title: string;
+  body: string;
+  visibility: Visibility;
+  visibleToUserIds: ID[];
+  visibleToActorIds: ID[];
+  tags: string[];
+  createdBy: ID;
+  updatedBy: ID;
+}
+
+export interface Handout extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  title: string;
+  body: string;
+  visibility: Visibility;
+  assetIds: ID[];
+}
+
+export interface ChatMessage extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  sceneId?: ID;
+  userId: ID;
+  type: MessageType;
+  body: string;
+  visibility: "public" | "gm_only" | "whisper";
+  recipientUserIds: ID[];
+  rollId?: ID;
+}
+
+export interface DiceRoll extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  userId: ID;
+  formula: string;
+  label?: string;
+  visibility: "public" | "gm_only" | "whisper";
+  terms: DiceRollTerm[];
+  total: number;
+}
+
+export interface DiceRollTerm {
+  type: "die" | "modifier" | "binding";
+  sides?: number;
+  count?: number;
+  results?: number[];
+  kept?: number[];
+  exploded?: number[];
+  value?: number;
+  path?: string;
+}
+
+export interface Encounter extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  name: string;
+  summary: string;
+  tokenIds: ID[];
+  difficulty?: string;
+}
+
+export interface Combat extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  encounterId?: ID;
+  active: boolean;
+  round: number;
+  turnIndex: number;
+  combatants: Combatant[];
+}
+
+export interface Combatant {
+  id: ID;
+  tokenId: ID;
+  actorId?: ID;
+  name: string;
+  initiative: number;
+  defeated: boolean;
+}
+
+export interface CompendiumPack extends Timestamps {
+  id: ID;
+  systemId: ID;
+  name: string;
+  entries: CompendiumEntry[];
+}
+
+export interface CompendiumEntry {
+  id: ID;
+  type: "actor" | "item" | "journal" | "scene";
+  name: string;
+  data: unknown;
+}
+
+export interface Proposal extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  createdByUserId?: ID;
+  createdByType: "user" | "ai" | "plugin";
+  sourceId?: ID;
+  title: string;
+  summary: string;
+  status: ProposalStatus;
+  changesJson: ProposalChange[];
+  diffJson: Record<string, unknown>;
+  approvalRequired: boolean;
+  approvedByUserId?: ID;
+}
+
+export interface ProposalChange {
+  entity: "campaign" | "scene" | "token" | "actor" | "item" | "journal" | "chat" | "encounter" | "combat";
+  action: "create" | "update" | "delete";
+  id?: ID;
+  data: Record<string, unknown>;
+}
+
+export interface AiThread extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  userId: ID;
+  provider: string;
+  title: string;
+}
+
+export interface AiMemoryFact extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  text: string;
+  visibility: Visibility;
+  sourceIds: ID[];
+  approvedByUserId?: ID;
+}
+
+export interface AiToolCall extends Timestamps {
+  id: ID;
+  threadId: ID;
+  toolName: string;
+  input: unknown;
+  output: unknown;
+  status: "started" | "completed" | "failed";
+}
+
+export interface AuditLog extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  actorUserId?: ID;
+  actorType: "user" | "ai" | "plugin" | "system";
+  action: string;
+  targetType: string;
+  targetId?: ID;
+  before?: unknown;
+  after?: unknown;
+}
+
+export type PermissionName =
+  | "campaign.read"
+  | "campaign.update"
+  | "campaign.delete"
+  | "scene.read"
+  | "scene.create"
+  | "scene.update"
+  | "scene.delete"
+  | "scene.activate"
+  | "token.read"
+  | "token.create"
+  | "token.update"
+  | "token.move"
+  | "token.delete"
+  | "token.reveal"
+  | "actor.read"
+  | "actor.create"
+  | "actor.update"
+  | "actor.delete"
+  | "actor.readPrivate"
+  | "actor.updateOwned"
+  | "journal.read"
+  | "journal.readSecret"
+  | "journal.create"
+  | "journal.update"
+  | "journal.delete"
+  | "chat.read"
+  | "chat.write"
+  | "chat.moderate"
+  | "combat.manage"
+  | "plugin.install"
+  | "plugin.configure"
+  | "dice.roll"
+  | "ai.use"
+  | "ai.readPublicMemory"
+  | "ai.readGmMemory"
+  | "ai.proposeChanges"
+  | "ai.applyChanges";
+
+export interface PermissionGrant extends Timestamps {
+  id: ID;
+  subjectType: "user" | "role" | "plugin" | "ai_assistant";
+  subjectId: ID;
+  campaignId: ID;
+  permissions: PermissionName[];
+  expiresAt?: string;
+}
+
+export interface CampaignArchive {
+  format: "ottx";
+  version: "0.1.0";
+  exportedAt: string;
+  manifest: {
+    campaignId: ID;
+    name: string;
+    schemaVersion: string;
+    assetCount: number;
+  };
+  data: EngineState;
+}
+
+export interface EngineState {
+  users: User[];
+  campaigns: Campaign[];
+  members: CampaignMember[];
+  worlds: World[];
+  scenes: Scene[];
+  assets: MapAsset[];
+  tokens: Token[];
+  actors: Actor[];
+  items: Item[];
+  journals: JournalEntry[];
+  handouts: Handout[];
+  chat: ChatMessage[];
+  rolls: DiceRoll[];
+  encounters: Encounter[];
+  combats: Combat[];
+  compendia: CompendiumPack[];
+  proposals: Proposal[];
+  aiThreads: AiThread[];
+  aiMemory: AiMemoryFact[];
+  aiToolCalls: AiToolCall[];
+  auditLogs: AuditLog[];
+  permissionGrants: PermissionGrant[];
+}
