@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -2357,6 +2357,74 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     };
   });
 
+  app.get<{
+    Params: { campaignId: string; pluginId: string };
+  }>("/api/v1/campaigns/:campaignId/plugins/:pluginId/storage", async (request, reply) => {
+    const access = requirePluginStorageAccess(store, pluginRegistry, reply, request.headers, request.params.campaignId, request.params.pluginId);
+    if (!access.ok) return access.reply;
+    return pluginStorageEntries(store, request.params.campaignId, access.plugin.id).map(publicPluginStorageEntry);
+  });
+
+  app.get<{
+    Params: { campaignId: string; pluginId: string; key: string };
+  }>("/api/v1/campaigns/:campaignId/plugins/:pluginId/storage/:key", async (request, reply) => {
+    const access = requirePluginStorageAccess(store, pluginRegistry, reply, request.headers, request.params.campaignId, request.params.pluginId);
+    if (!access.ok) return access.reply;
+    const key = normalizePluginStorageKey(request.params.key);
+    if (!key) return badRequest(reply, "Plugin storage key must be 1-80 characters of letters, numbers, dot, underscore, colon, or dash");
+    const entry = pluginStorageEntries(store, request.params.campaignId, access.plugin.id).find((item) => item.key === key);
+    return entry ? publicPluginStorageEntry(entry) : notFound(reply, "Plugin storage entry not found");
+  });
+
+  app.put<{
+    Params: { campaignId: string; pluginId: string; key: string };
+    Body: { value?: unknown };
+  }>("/api/v1/campaigns/:campaignId/plugins/:pluginId/storage/:key", async (request, reply) => {
+    const access = requirePluginStorageAccess(store, pluginRegistry, reply, request.headers, request.params.campaignId, request.params.pluginId);
+    if (!access.ok) return access.reply;
+    const key = normalizePluginStorageKey(request.params.key);
+    if (!key) return badRequest(reply, "Plugin storage key must be 1-80 characters of letters, numbers, dot, underscore, colon, or dash");
+    const value = normalizePluginStorageValue(request.body?.value);
+    if (!value.ok) return badRequest(reply, value.error);
+    const entry = upsertPluginStorageEntry(store, request.params.campaignId, access.plugin.id, key, value.value, "user", access.userId);
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: request.params.campaignId,
+        actorUserId: access.userId,
+        actorType: "user" as const,
+        action: "plugin.storageSet",
+        targetType: "pluginStorage",
+        targetId: entry.id,
+        after: { pluginId: access.plugin.id, key, size: pluginStorageValueSize(entry.value) }
+      })
+    );
+    store.save();
+    return publicPluginStorageEntry(entry);
+  });
+
+  app.delete<{
+    Params: { campaignId: string; pluginId: string; key: string };
+  }>("/api/v1/campaigns/:campaignId/plugins/:pluginId/storage/:key", async (request, reply) => {
+    const access = requirePluginStorageAccess(store, pluginRegistry, reply, request.headers, request.params.campaignId, request.params.pluginId);
+    if (!access.ok) return access.reply;
+    const key = normalizePluginStorageKey(request.params.key);
+    if (!key) return badRequest(reply, "Plugin storage key must be 1-80 characters of letters, numbers, dot, underscore, colon, or dash");
+    const deleted = deletePluginStorageEntry(store, request.params.campaignId, access.plugin.id, key);
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: request.params.campaignId,
+        actorUserId: access.userId,
+        actorType: "user" as const,
+        action: "plugin.storageDelete",
+        targetType: "pluginStorage",
+        targetId: deleted?.id,
+        after: { pluginId: access.plugin.id, key, deleted: Boolean(deleted) }
+      })
+    );
+    store.save();
+    return { deleted: Boolean(deleted), key };
+  });
+
   app.post<{
     Params: { campaignId: string; pluginId: string };
     Body: { command: string; args?: string };
@@ -2375,6 +2443,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return forbidden(reply, `Plugin ${plugin.id} lacks chat.write in this campaign`);
     }
     const canReadTokens = pluginCan(store, request.params.campaignId, plugin.id, "token.read");
+    const canConfigurePlugin = pluginCan(store, request.params.campaignId, plugin.id, "plugin.configure");
     const sceneIds = campaignSceneIds(store, request.params.campaignId);
     const tokens: PluginCommandTokenContext[] = canReadTokens ? store.state.tokens.filter((token) => sceneIds.includes(token.sceneId)).map((token) => ({ id: token.id, name: token.name, sceneId: token.sceneId })) : [];
     let commandResult: PluginChatCommandResult;
@@ -2386,12 +2455,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         command,
         args: request.body.args?.trim() ?? "",
         permissions: pluginGrant?.permissions ?? [],
-        tokens
+        tokens,
+        storage: {
+          entries: canConfigurePlugin ? pluginStorageSnapshot(store, request.params.campaignId, plugin.id) : []
+        }
       }, plugin.version);
     } catch (error) {
       return reply.code(500).send({
         error: "plugin_runtime_error",
         message: "Plugin command failed"
+      });
+    }
+    if (commandResult.storage && !canConfigurePlugin) return forbidden(reply, `Plugin ${plugin.id} lacks plugin.configure in this campaign`);
+    let storageMutation: { set: Array<{ key: string; size: number }>; deleted: string[] };
+    try {
+      storageMutation = commandResult.storage ? applyPluginStorageMutation(store, request.params.campaignId, plugin.id, commandResult.storage, "plugin", plugin.id) : { set: [], deleted: [] };
+    } catch {
+      return reply.code(500).send({
+        error: "plugin_runtime_error",
+        message: "Plugin command returned invalid storage mutations"
       });
     }
     const message = createTimestamped("msg", {
@@ -2411,9 +2493,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         action: "plugin.chatCommand",
         targetType: "chat",
         targetId: message.id,
-        after: { pluginId: plugin.id, command, sandbox: plugin.source.sandbox, packageId: plugin.source.packageId, version: plugin.version, checksum: plugin.source.checksum, trust: plugin.trust }
+        after: { pluginId: plugin.id, command, sandbox: plugin.source.sandbox, packageId: plugin.source.packageId, version: plugin.version, checksum: plugin.source.checksum, trust: plugin.trust, storageMutation }
       })
     );
+    if (storageMutation.set.length || storageMutation.deleted.length) {
+      store.state.auditLogs.push(
+        createTimestamped("audit", {
+          campaignId: request.params.campaignId,
+          actorUserId: plugin.id,
+          actorType: "plugin" as const,
+          action: "plugin.storageMutation",
+          targetType: "pluginStorage",
+          targetId: plugin.id,
+          after: storageMutation
+        })
+      );
+    }
     store.save();
     broadcast(
       createEvent({
@@ -2424,7 +2519,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: message
       })
     );
-    return { pluginId: plugin.id, command, chat: message };
+    return { pluginId: plugin.id, command, chat: message, storageMutation };
   });
 
   app.post<{
@@ -5371,6 +5466,138 @@ function pluginCan(store: StateStore, campaignId: string, pluginId: string, perm
   return findPluginGrant(store, campaignId, pluginId)?.permissions.includes(permission) ?? false;
 }
 
+function requirePluginStorageAccess(
+  store: StateStore,
+  pluginRegistry: PluginRuntimeRegistry,
+  reply: FastifyReply,
+  headers: Record<string, string | string[] | undefined>,
+  campaignId: string,
+  pluginId: string
+): { ok: true; userId: string; plugin: LoadedPlugin } | { ok: false; reply: FastifyReply } {
+  const allowed = requireCampaignPermission(store, reply, headers, campaignId, "plugin.configure");
+  if (allowed !== true) return { ok: false, reply: allowed };
+  const userId = requireUser(store, reply, headers);
+  if (typeof userId !== "string") return { ok: false, reply: userId };
+  const pluginGrant = findPluginGrant(store, campaignId, pluginId);
+  const plugin = pluginRegistry.find(pluginId, pluginVersionFromGrant(pluginGrant));
+  if (!plugin) return { ok: false, reply: notFound(reply, "Plugin not found") };
+  if (!pluginGrant) return { ok: false, reply: forbidden(reply, "Plugin is not installed in this campaign") };
+  if (!pluginCan(store, campaignId, plugin.id, "plugin.configure")) return { ok: false, reply: forbidden(reply, `Plugin ${plugin.id} lacks plugin.configure in this campaign`) };
+  return { ok: true, userId, plugin };
+}
+
+function pluginStorageEntries(store: StateStore, campaignId: string, pluginId: string): PluginStorageEntry[] {
+  return store.state.pluginStorage.filter((entry) => entry.campaignId === campaignId && entry.pluginId === pluginId).sort((left, right) => left.key.localeCompare(right.key));
+}
+
+function pluginStorageSnapshot(store: StateStore, campaignId: string, pluginId: string): Array<{ key: string; value: unknown; updatedAt: string }> {
+  return pluginStorageEntries(store, campaignId, pluginId).map((entry) => ({
+    key: entry.key,
+    value: cloneJsonValue(entry.value),
+    updatedAt: entry.updatedAt
+  }));
+}
+
+function publicPluginStorageEntry(entry: PluginStorageEntry): Record<string, unknown> {
+  return {
+    id: entry.id,
+    campaignId: entry.campaignId,
+    pluginId: entry.pluginId,
+    key: entry.key,
+    value: cloneJsonValue(entry.value),
+    updatedByType: entry.updatedByType,
+    updatedById: entry.updatedById,
+    createdAt: entry.createdAt,
+    updatedAt: entry.updatedAt
+  };
+}
+
+function upsertPluginStorageEntry(
+  store: StateStore,
+  campaignId: string,
+  pluginId: string,
+  key: string,
+  value: unknown,
+  updatedByType: "user" | "plugin",
+  updatedById: string
+): PluginStorageEntry {
+  const existing = store.state.pluginStorage.find((entry) => entry.campaignId === campaignId && entry.pluginId === pluginId && entry.key === key);
+  const now = nowIso();
+  if (existing) {
+    existing.value = cloneJsonValue(value);
+    existing.updatedByType = updatedByType;
+    existing.updatedById = updatedById;
+    existing.updatedAt = now;
+    return existing;
+  }
+  const entry = createTimestamped("pstore", {
+    campaignId,
+    pluginId,
+    key,
+    value: cloneJsonValue(value),
+    updatedByType,
+    updatedById
+  }) satisfies PluginStorageEntry;
+  store.state.pluginStorage.push(entry);
+  return entry;
+}
+
+function deletePluginStorageEntry(store: StateStore, campaignId: string, pluginId: string, key: string): PluginStorageEntry | undefined {
+  const index = store.state.pluginStorage.findIndex((entry) => entry.campaignId === campaignId && entry.pluginId === pluginId && entry.key === key);
+  if (index < 0) return undefined;
+  return store.state.pluginStorage.splice(index, 1)[0];
+}
+
+function applyPluginStorageMutation(
+  store: StateStore,
+  campaignId: string,
+  pluginId: string,
+  storage: PluginChatCommandResult["storage"],
+  updatedByType: "user" | "plugin",
+  updatedById: string
+): { set: Array<{ key: string; size: number }>; deleted: string[] } {
+  const mutation = { set: [] as Array<{ key: string; size: number }>, deleted: [] as string[] };
+  if (!storage) return mutation;
+  for (const [rawKey, rawValue] of Object.entries(storage.set ?? {})) {
+    const key = normalizePluginStorageKey(rawKey);
+    if (!key) throw new Error(`Invalid plugin storage key: ${rawKey}`);
+    const value = normalizePluginStorageValue(rawValue);
+    if (!value.ok) throw new Error(value.error);
+    const entry = upsertPluginStorageEntry(store, campaignId, pluginId, key, value.value, updatedByType, updatedById);
+    mutation.set.push({ key: entry.key, size: pluginStorageValueSize(entry.value) });
+  }
+  for (const rawKey of storage.delete ?? []) {
+    const key = normalizePluginStorageKey(rawKey);
+    if (!key) throw new Error(`Invalid plugin storage key: ${rawKey}`);
+    if (deletePluginStorageEntry(store, campaignId, pluginId, key)) mutation.deleted.push(key);
+  }
+  return mutation;
+}
+
+function normalizePluginStorageKey(value: string): string | undefined {
+  const key = value.trim();
+  return /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(key) ? key : undefined;
+}
+
+function normalizePluginStorageValue(value: unknown): { ok: true; value: unknown } | { ok: false; error: string } {
+  const text = JSON.stringify(value);
+  if (text === undefined) return { ok: false, error: "Plugin storage value must be JSON serializable" };
+  if (Buffer.byteLength(text, "utf8") > 16 * 1024) return { ok: false, error: "Plugin storage value is limited to 16 KiB of JSON" };
+  try {
+    return { ok: true, value: JSON.parse(text) as unknown };
+  } catch {
+    return { ok: false, error: "Plugin storage value must be JSON serializable" };
+  }
+}
+
+function pluginStorageValueSize(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function cloneJsonValue(value: unknown): unknown {
+  return JSON.parse(JSON.stringify(value)) as unknown;
+}
+
 function pluginCampaignInfo(
   store: StateStore,
   pluginRegistry: PluginRuntimeRegistry,
@@ -6515,7 +6742,8 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     aiMemory: upsertRecords(state.aiMemory, archive.data.aiMemory),
     aiToolCalls: upsertRecords(state.aiToolCalls, archive.data.aiToolCalls),
     auditLogs: upsertRecords(state.auditLogs, archive.data.auditLogs),
-    permissionGrants: upsertRecords(state.permissionGrants, archive.data.permissionGrants)
+    permissionGrants: upsertRecords(state.permissionGrants, archive.data.permissionGrants),
+    pluginStorage: upsertRecords(state.pluginStorage, archive.data.pluginStorage ?? [])
   };
 }
 

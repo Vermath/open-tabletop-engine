@@ -32,7 +32,8 @@ export function emptyState(): EngineState {
     aiMemory: [],
     aiToolCalls: [],
     auditLogs: [],
-    permissionGrants: []
+    permissionGrants: [],
+    pluginStorage: []
   };
 }
 
@@ -209,7 +210,8 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     aiMemory: state.aiMemory.filter((item) => item.campaignId === campaignId),
     aiToolCalls: state.aiToolCalls,
     auditLogs: state.auditLogs.filter((item) => item.campaignId === campaignId),
-    permissionGrants: state.permissionGrants.filter((item) => item.campaignId === campaignId)
+    permissionGrants: state.permissionGrants.filter((item) => item.campaignId === campaignId),
+    pluginStorage: state.pluginStorage.filter((item) => item.campaignId === campaignId)
   };
   return {
     format: "ottx",

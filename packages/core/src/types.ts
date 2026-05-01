@@ -544,6 +544,16 @@ export interface PermissionGrant extends Timestamps {
   metadata?: Record<string, unknown>;
 }
 
+export interface PluginStorageEntry extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  pluginId: ID;
+  key: string;
+  value: unknown;
+  updatedByType: "user" | "plugin";
+  updatedById: ID;
+}
+
 export interface CampaignArchive {
   format: "ottx";
   version: "0.1.0";
@@ -600,4 +610,5 @@ export interface EngineState {
   aiToolCalls: AiToolCall[];
   auditLogs: AuditLog[];
   permissionGrants: PermissionGrant[];
+  pluginStorage: PluginStorageEntry[];
 }

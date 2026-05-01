@@ -2758,6 +2758,139 @@ describe("api", () => {
     }
   });
 
+  it("persists plugin campaign storage through configure-gated APIs and command mutations", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-storage-"));
+    const packagePath = join(pluginRoot, "stateful-plugin");
+    mkdirSync(packagePath);
+    writeFileSync(
+      join(packagePath, "plugin.manifest.json"),
+      JSON.stringify({
+        id: "stateful-plugin",
+        name: "Stateful Plugin",
+        version: "1.0.0",
+        compatibleCore: ">=0.1.0",
+        entrypoints: { server: "./server.js" },
+        runtime: { apiVersion: "0.1", sandbox: "vm" },
+        permissions: ["chat.write", "plugin.configure"],
+        chatCommands: [{ command: "/state", description: "Persist plugin state" }]
+      })
+    );
+    writeFileSync(
+      join(packagePath, "server.js"),
+      `
+registerCommand("/state", (input) => {
+  const counter = (input.storage?.entries ?? []).find((entry) => entry.key === "counter");
+  const previous = typeof counter?.value?.count === "number" ? counter.value.count : 0;
+  const next = previous + 1;
+  return {
+    body: \`State count \${next}\`,
+    visibility: "public",
+    storage: { set: { counter: { count: next, args: input.args } } }
+  };
+});
+`
+    );
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, pluginRegistry: loadPluginRegistry({ pluginRoot }) });
+    try {
+      const limitedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(limitedInstall.statusCode).toBe(200);
+
+      const deniedStorageWrite = await app.inject({
+        method: "PUT",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/storage/settings",
+        headers: authHeaders,
+        payload: { value: { enabled: true } }
+      });
+      expect(deniedStorageWrite.statusCode).toBe(403);
+      expect(deniedStorageWrite.json().message).toContain("plugin.configure");
+
+      const deniedCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/state" }
+      });
+      expect(deniedCommand.statusCode).toBe(403);
+      expect(store.state.pluginStorage).toEqual([]);
+
+      const fullInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write", "plugin.configure"] }
+      });
+      expect(fullInstall.statusCode).toBe(200);
+
+      const storageWrite = await app.inject({
+        method: "PUT",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/storage/settings",
+        headers: authHeaders,
+        payload: { value: { enabled: true, threshold: 3 } }
+      });
+      expect(storageWrite.statusCode).toBe(200);
+      expect(storageWrite.json()).toEqual(expect.objectContaining({ pluginId: "stateful-plugin", key: "settings", value: { enabled: true, threshold: 3 }, updatedByType: "user" }));
+
+      const firstCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/state", args: "alpha" }
+      });
+      expect(firstCommand.statusCode).toBe(200);
+      expect(firstCommand.json()).toEqual(expect.objectContaining({ storageMutation: { set: [{ key: "counter", size: 26 }], deleted: [] } }));
+      expect(firstCommand.json().chat.body).toBe("State count 1");
+
+      const secondCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/state", args: "beta" }
+      });
+      expect(secondCommand.statusCode).toBe(200);
+      expect(secondCommand.json().chat.body).toBe("State count 2");
+
+      const storageList = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/storage",
+        headers: authHeaders
+      });
+      expect(storageList.statusCode).toBe(200);
+      expect(storageList.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ key: "settings", value: { enabled: true, threshold: 3 } }),
+          expect.objectContaining({ key: "counter", value: { count: 2, args: "beta" }, updatedByType: "plugin" })
+        ])
+      );
+
+      const storageRead = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/storage/counter",
+        headers: authHeaders
+      });
+      expect(storageRead.statusCode).toBe(200);
+      expect(storageRead.json().value).toEqual({ count: 2, args: "beta" });
+
+      const storageDelete = await app.inject({
+        method: "DELETE",
+        url: "/api/v1/campaigns/camp_demo/plugins/stateful-plugin/storage/settings",
+        headers: authHeaders
+      });
+      expect(storageDelete.statusCode).toBe(200);
+      expect(storageDelete.json()).toEqual({ deleted: true, key: "settings" });
+
+      expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["plugin.storageSet", "plugin.storageMutation", "plugin.storageDelete"]));
+    } finally {
+      await app.close();
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("syncs an allowlisted remote plugin registry into the runtime catalog", async () => {
     const previousEnv = snapshotEnv(["OTTE_PLUGIN_REGISTRY_URLS", "OTTE_PLUGIN_REGISTRY_TIMEOUT_MS"]);
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-registry-"));

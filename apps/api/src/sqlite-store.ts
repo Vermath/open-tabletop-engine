@@ -51,7 +51,8 @@ const stateCollections = [
   "aiMemory",
   "aiToolCalls",
   "auditLogs",
-  "permissionGrants"
+  "permissionGrants",
+  "pluginStorage"
 ] as const satisfies ReadonlyArray<keyof EngineState>;
 
 type StateCollection = (typeof stateCollections)[number];

@@ -70,6 +70,12 @@ export interface PluginCommandTokenContext {
   sceneId: string;
 }
 
+export interface PluginCommandStorageEntry {
+  key: string;
+  value: unknown;
+  updatedAt: string;
+}
+
 export interface PluginChatCommandInput {
   campaignId: string;
   pluginId: string;
@@ -78,11 +84,20 @@ export interface PluginChatCommandInput {
   args: string;
   permissions: PermissionName[];
   tokens: PluginCommandTokenContext[];
+  storage?: {
+    entries: PluginCommandStorageEntry[];
+  };
+}
+
+export interface PluginChatCommandStorageMutation {
+  set?: Record<string, unknown>;
+  delete?: string[];
 }
 
 export interface PluginChatCommandResult {
   body: string;
   visibility: "public" | "gm_only";
+  storage?: PluginChatCommandStorageMutation;
 }
 
 interface RuntimePlugin extends LoadedPlugin {
@@ -371,7 +386,26 @@ function normalizeCommandResult(result: unknown): PluginChatCommandResult {
   const body = typeof result.body === "string" ? result.body.trim() : "";
   if (!body) throw new Error("Plugin command must return a non-empty body");
   const visibility = result.visibility === "gm_only" ? "gm_only" : "public";
-  return { body: body.slice(0, 2000), visibility };
+  const storage = normalizeCommandStorageMutation(result.storage);
+  return { body: body.slice(0, 2000), visibility, ...(storage ? { storage } : {}) };
+}
+
+function normalizeCommandStorageMutation(value: unknown): PluginChatCommandStorageMutation | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error("Plugin storage mutation must be an object");
+  const mutation: PluginChatCommandStorageMutation = {};
+  if (value.set !== undefined) {
+    if (!isRecord(value.set)) throw new Error("Plugin storage set mutation must be an object");
+    const setEntries = Object.entries(value.set);
+    if (setEntries.length > 10) throw new Error("Plugin storage set mutation is limited to 10 keys");
+    mutation.set = Object.fromEntries(setEntries);
+  }
+  if (value.delete !== undefined) {
+    if (!Array.isArray(value.delete) || !value.delete.every((item) => typeof item === "string")) throw new Error("Plugin storage delete mutation must be a string array");
+    if (value.delete.length > 10) throw new Error("Plugin storage delete mutation is limited to 10 keys");
+    mutation.delete = [...new Set(value.delete)];
+  }
+  return mutation.set || mutation.delete ? mutation : undefined;
 }
 
 function validateEntrypoint(pluginRoot: string, packagePath: string, entrypoint: string | undefined, label: string, errors: string[]): string | undefined {
