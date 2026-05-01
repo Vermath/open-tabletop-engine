@@ -63,6 +63,10 @@ export const routes = {
   systems: "/api/v1/systems",
   campaignSystems: (campaignId: string) => `/api/v1/campaigns/${campaignId}/systems`,
   campaignSystem: (campaignId: string, systemId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}`,
+  systemCompendium: (campaignId: string, systemId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/compendium`,
+  systemActorCompendium: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/compendium`,
+  systemActorConditions: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/conditions`,
+  systemActorCondition: (campaignId: string, systemId: string, actorId: string, conditionId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/conditions/${conditionId}`,
   systemActorSheet: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/sheet`,
   systemActorRoll: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/roll`,
   plugins: "/api/v1/plugins",
@@ -145,6 +149,10 @@ const endpointSpecs = [
   ["POST", "/api/v1/systems/install"],
   ["GET", "/api/v1/campaigns/{campaignId}/systems"],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/install"],
+  ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/compendium"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium"],
+  ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions"],
+  ["DELETE", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet"],
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]
 ] as const;

@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, Lightbulb, MessageSquare, Pentagon, Plus, ScrollText, Send, Shield, Swords, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, consumeSsoRedirect, getSessionToken, getSessionUserId, loadOidcConfig, loadSnapshot, loginSession, setSessionUserId, startOidcLogin, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
@@ -13,6 +13,7 @@ export function App() {
     assets: [],
     tokens: [],
     actors: [],
+    items: [],
     journals: [],
     chat: [],
     encounters: [],
@@ -46,6 +47,7 @@ export function App() {
   const selectedMapAsset = snapshot.assets.find((asset) => asset.id === selectedScene?.backgroundAssetId);
   const selectedToken = snapshot.tokens.find((token) => token.id === selectedTokenId);
   const selectedActor = snapshot.actors.find((actor) => actor.id === selectedToken?.actorId) ?? snapshot.actors[0];
+  const selectedActorItems = snapshot.items.filter((item) => item.actorId === selectedActor?.id);
   const activeCombat = snapshot.combats.find((combat) => combat.active);
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
   const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
@@ -512,7 +514,7 @@ export function App() {
               <TabButton active={tab === "ai"} icon={<Bot size={15} />} label="AI" onClick={() => setTab("ai")} />
               <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="SDK" onClick={() => setTab("plugins")} />
             </div>
-            {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} updateActorHp={updateActorHp} canUpdateActor={canUpdateSelectedActor} />}
+            {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} items={selectedActorItems} updateActorHp={updateActorHp} canUpdateActor={canUpdateSelectedActor} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
@@ -705,9 +707,12 @@ function TabButton(props: { active: boolean; icon: React.ReactNode; label: strin
   );
 }
 
-function ActorPanel(props: { actor?: Actor; token?: Token; updateActorHp(actor: Actor, current: number): void; canUpdateActor: boolean }) {
+function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; updateActorHp(actor: Actor, current: number): void; canUpdateActor: boolean }) {
   if (!props.actor) return <div className="panel-empty">No actor selected.</div>;
   const hp = props.actor.data.hp as { current?: number; max?: number } | undefined;
+  const conditions = actorConditionLabels(props.actor);
+  const inventory = props.items.filter((item) => item.type !== "spell");
+  const spells = props.items.filter((item) => item.type === "spell");
   return (
     <div className="panel-stack">
       <div className="section-title">Selected Actor</div>
@@ -722,6 +727,24 @@ function ActorPanel(props: { actor?: Actor; token?: Token; updateActorHp(actor: 
           {hp?.current ?? "?"}/{hp?.max ?? "?"}
         </strong>
       </div>
+      {conditions.length > 0 && (
+        <div className="metric-row">
+          <span>Conditions</span>
+          <strong>{conditions.join(", ")}</strong>
+        </div>
+      )}
+      {inventory.length > 0 && (
+        <div className="metric-row">
+          <span>Inventory</span>
+          <strong>{inventory.map((item) => item.name).join(", ")}</strong>
+        </div>
+      )}
+      {spells.length > 0 && (
+        <div className="metric-row">
+          <span>Spells</span>
+          <strong>{spells.map((item) => item.name).join(", ")}</strong>
+        </div>
+      )}
       <div className="sheet-row">
         <label htmlFor="actor-hp">Current HP</label>
         <input id="actor-hp" type="number" value={hp?.current ?? 0} disabled={!props.canUpdateActor} onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))} />
@@ -729,6 +752,23 @@ function ActorPanel(props: { actor?: Actor; token?: Token; updateActorHp(actor: 
       <pre>{JSON.stringify(props.actor.data, null, 2)}</pre>
     </div>
   );
+}
+
+function actorConditionLabels(actor: Actor): string[] {
+  const names: Record<string, string> = {
+    blessed: "Blessed",
+    poisoned: "Poisoned",
+    restrained: "Restrained"
+  };
+  const value = actor.data.conditions;
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((condition) => {
+      if (typeof condition === "string") return names[condition] ?? condition;
+      if (condition && typeof condition === "object" && "id" in condition && typeof condition.id === "string") return names[condition.id] ?? condition.id;
+      return undefined;
+    })
+    .filter((condition): condition is string => Boolean(condition));
 }
 
 function JournalPanel(props: { journals: JournalEntry[]; onCreate(): void; canCreate: boolean }) {

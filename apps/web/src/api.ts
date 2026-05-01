@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, Campaign, CampaignMember, ChatMessage, Combat, Encounter, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, Campaign, CampaignMember, ChatMessage, Combat, Encounter, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -139,6 +139,7 @@ export interface Snapshot {
   assets: MapAsset[];
   tokens: Token[];
   actors: Actor[];
+  items: Item[];
   vision?: VisionSnapshot;
   journals: JournalEntry[];
   chat: ChatMessage[];
@@ -282,6 +283,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       assets: [],
       tokens: [],
       actors: [],
+      items: [],
       journals: [],
       chat: [],
       encounters: [],
@@ -294,12 +296,13 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   }
   const scenes = await apiGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
   const selectedSceneId = sceneId ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
-  const [members, assets, tokens, vision, actors, journals, chat, encounters, combats, proposals, memory, plugins, systems] = await Promise.all([
+  const [members, assets, tokens, vision, actors, items, journals, chat, encounters, combats, proposals, memory, plugins, systems] = await Promise.all([
     apiGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`),
     apiGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
     selectedSceneId ? apiGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
     selectedSceneId ? apiGet<VisionSnapshot>(`/api/v1/scenes/${selectedSceneId}/vision`) : Promise.resolve(undefined),
     apiGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
+    apiGet<Item[]>(`/api/v1/campaigns/${selectedCampaignId}/items`),
     apiGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`),
     apiGet<ChatMessage[]>(`/api/v1/chat/messages?campaignId=${selectedCampaignId}`),
     apiGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
@@ -318,6 +321,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     tokens,
     vision,
     actors,
+    items,
     journals,
     chat,
     encounters,

@@ -1425,6 +1425,28 @@ describe("api", () => {
       formula: "1d20+2"
     });
 
+    const compendium = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/compendium",
+      headers: authHeaders
+    });
+    expect(compendium.statusCode).toBe(200);
+    expect(compendium.json().entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "longsword", type: "item" }),
+        expect.objectContaining({ id: "healing-word", type: "spell" }),
+        expect.objectContaining({ id: "poisoned", type: "condition" })
+      ])
+    );
+
+    const observerCondition = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/conditions",
+      headers: { "x-user-id": "usr_observer" },
+      payload: { conditionId: "blessed" }
+    });
+    expect(observerCondition.statusCode).toBe(403);
+
     const observerRoll = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll",
@@ -1442,6 +1464,65 @@ describe("api", () => {
     expect(systemRoll.statusCode).toBe(200);
     expect(systemRoll.json().quickRoll.formula).toBe("1d20+2");
     expect(store.state.chat.some((message) => message.body.includes("Charisma Check"))).toBe(true);
+
+    const learnedSpell = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/compendium",
+      headers: authHeaders,
+      payload: { entryId: "healing-word" }
+    });
+    expect(learnedSpell.statusCode).toBe(200);
+    expect(learnedSpell.json().item).toEqual(expect.objectContaining({ type: "spell", name: "Healing Word", actorId: "act_valen" }));
+    expect(learnedSpell.json().sheet.spells).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Healing Word" })]));
+
+    const blessed = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/conditions",
+      headers: authHeaders,
+      payload: { conditionId: "blessed" }
+    });
+    expect(blessed.statusCode).toBe(200);
+    expect(blessed.json().sheet.conditions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "blessed", name: "Blessed" })]));
+    expect(blessed.json().sheet.quickRolls).toContainEqual({
+      id: "ability-charisma",
+      label: "Charisma Check",
+      formula: "1d20+2+1d4"
+    });
+
+    const poisoned = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/conditions",
+      headers: authHeaders,
+      payload: { conditionId: "poisoned" }
+    });
+    expect(poisoned.statusCode).toBe(200);
+    expect(poisoned.json().sheet.quickRolls).toContainEqual({
+      id: "ability-charisma",
+      label: "Charisma Check",
+      formula: "2d20kl1+2+1d4"
+    });
+
+    const cleared = await app.inject({
+      method: "DELETE",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/conditions/poisoned",
+      headers: authHeaders
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().sheet.conditions.map((condition: { id: string }) => condition.id)).toEqual(["blessed"]);
+    expect(cleared.json().sheet.quickRolls).toContainEqual({
+      id: "ability-charisma",
+      label: "Charisma Check",
+      formula: "1d20+2+1d4"
+    });
+
+    const conditionedRoll = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll",
+      headers: authHeaders,
+      payload: { rollId: "ability-charisma" }
+    });
+    expect(conditionedRoll.statusCode).toBe(200);
+    expect(conditionedRoll.json().quickRoll.formula).toBe("1d20+2+1d4");
 
     await app.close();
   });

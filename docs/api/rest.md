@@ -76,6 +76,10 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `GET|POST /api/v1/systems`
 - `GET /api/v1/campaigns/{campaignId}/systems`
 - `POST /api/v1/campaigns/{campaignId}/systems/{systemId}/install`
+- `GET /api/v1/campaigns/{campaignId}/systems/{systemId}/compendium`
+- `POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium`
+- `POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions`
+- `DELETE /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}`
 - `GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet`
 - `POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll`
 - `GET /api/v1/campaigns/{campaignId}/export`
@@ -83,7 +87,7 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 
 Plugin runtime endpoints are campaign-scoped. `GET /api/v1/plugins` returns manifest-loaded local packages with source metadata, sandbox mode, and server-entrypoint checksums. `POST /api/v1/plugins` registers an additional package by `packagePath` under the configured plugin root. Installing a plugin creates or updates a `permissionGrants` record for `subjectType: "plugin"`; callers may grant all requested permissions or a subset for review. Command execution checks the human caller's permission and the plugin grant before the plugin can post chat or read token context, then runs the manifest-declared server command in the VM sandbox.
 
-System runtime endpoints are campaign-scoped. The generic fantasy runtime can summarize an actor sheet and produce quick-roll dice formulas from actor data, posting the resulting roll into chat.
+System runtime endpoints are campaign-scoped. The generic fantasy runtime exposes a small compendium of items, spells, and conditions; can add compendium entries to actors; can apply and remove actor conditions; can summarize actor sheets with inventory and spells; and can produce condition-aware quick-roll dice formulas, posting the resulting roll into chat.
 
 AI thread requests use the configured provider from `OTTE_AI_PROVIDER`. The default `local-echo` provider is offline and deterministic; `codex-loopback` exercises the Codex App Server provider path against a local loopback transport; `openai-responses` uses the OpenAI Responses API with `OPENAI_API_KEY`, optional `OPENAI_MODEL`, `OPENAI_BASE_URL`, `OPENAI_ORGANIZATION`, and `OPENAI_PROJECT`. Provider requests receive campaign context filtered through the caller's actual permissions, and assistant responses are persisted into chat as `public` for player-visible context or `gm_only` when the caller can read GM AI memory. Chat reads filter `gm_only` and `whisper` messages per viewer. Providers can request the `create_proposal` tool during an AI thread; the API executes it only when the caller has `ai.proposeChanges`, creates a pending proposal for GM approval, records tool lifecycle events, and blocks the same tool for players without that permission. `POST /api/v1/campaigns/{campaignId}/ai/memory/extract` runs provider-backed memory extraction from supplied or recent campaign text, requires `ai.proposeChanges`, and creates a pending memory fact for GM review.
 

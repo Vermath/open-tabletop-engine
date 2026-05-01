@@ -5,9 +5,9 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
+import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -1862,6 +1862,79 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { system, campaign };
   });
 
+  app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/compendium", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    if (!system) return notFound(reply, "System not found");
+    return {
+      systemId: system.id,
+      entries: compendiumEntriesForSystem(system.id)
+    };
+  });
+
+  app.post<{
+    Params: { campaignId: string; systemId: string; actorId: string };
+    Body: { entryId?: string };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/compendium", async (request, reply) => {
+    const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+    if (!actor) return notFound(reply, "System actor not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+    const entry = compendiumEntryForSystem(request.params.systemId, request.body.entryId ?? "");
+    if (!entry) return notFound(reply, "Compendium entry not found");
+    if (entry.type === "condition") {
+      actor.data = applyGenericFantasyCondition(actor, entry.id, nowIso());
+      actor.updatedAt = nowIso();
+      store.save();
+      broadcastActorUpdated(broadcast, actor);
+      return { entry, actor, sheet: genericFantasySheet(actor, actorItems(store, actor)) };
+    }
+    const item = createTimestamped("itm", {
+      campaignId: request.params.campaignId,
+      systemId: request.params.systemId,
+      actorId: actor.id,
+      type: entry.type,
+      name: entry.name,
+      data: { ...entry.data, compendiumId: entry.id }
+    }) satisfies Item;
+    store.state.items.push(item);
+    store.save();
+    return { entry, item, sheet: genericFantasySheet(actor, actorItems(store, actor)) };
+  });
+
+  app.post<{
+    Params: { campaignId: string; systemId: string; actorId: string };
+    Body: { conditionId?: string };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/conditions", async (request, reply) => {
+    const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+    if (!actor) return notFound(reply, "System actor not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+    const entry = compendiumEntryForSystem(request.params.systemId, request.body.conditionId ?? "");
+    if (!entry || entry.type !== "condition") return notFound(reply, "Condition not found");
+    actor.data = applyGenericFantasyCondition(actor, entry.id, nowIso());
+    actor.updatedAt = nowIso();
+    store.save();
+    broadcastActorUpdated(broadcast, actor);
+    return { entry, actor, sheet: genericFantasySheet(actor, actorItems(store, actor)) };
+  });
+
+  app.delete<{ Params: { campaignId: string; systemId: string; actorId: string; conditionId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/conditions/:conditionId", async (request, reply) => {
+    const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+    if (!actor) return notFound(reply, "System actor not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+    actor.data = removeGenericFantasyCondition(actor, request.params.conditionId);
+    actor.updatedAt = nowIso();
+    store.save();
+    broadcastActorUpdated(broadcast, actor);
+    return { actor, sheet: genericFantasySheet(actor, actorItems(store, actor)) };
+  });
+
   app.get<{
     Params: { campaignId: string; systemId: string; actorId: string };
   }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/sheet", async (request, reply) => {
@@ -1869,12 +1942,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
     if (!actor) return notFound(reply, "System actor not found");
+    const sheet = genericFantasySheet(actor, actorItems(store, actor));
     return {
-      actorId: actor.id,
       systemId: request.params.systemId,
-      summary: summarizeActor(actor),
-      data: actor.data,
-      quickRolls: genericFantasyQuickRolls(actor)
+      ...sheet
     };
   });
 
@@ -3063,6 +3134,33 @@ function reviewedPluginPermissions(plugin: LoadedPlugin, requestedPermissions?: 
 
 function findSystemActor(store: StateStore, campaignId: string, systemId: string, actorId: string): Actor | undefined {
   return store.state.actors.find((actor) => actor.id === actorId && actor.campaignId === campaignId && actor.systemId === systemId);
+}
+
+function compendiumEntriesForSystem(systemId: string) {
+  return systemId === "generic-fantasy" ? genericFantasyCompendium() : [];
+}
+
+function compendiumEntryForSystem(systemId: string, entryId: string) {
+  return systemId === "generic-fantasy" ? genericFantasyCompendiumEntry(entryId) : undefined;
+}
+
+function actorItems(store: StateStore, actor: Actor): Item[] {
+  return store.state.items.filter((item) => item.actorId === actor.id && item.campaignId === actor.campaignId);
+}
+
+function canUpdateActorForUser(store: StateStore, userId: string, actor: Actor): boolean {
+  return canCampaign(store, userId, actor.campaignId, "actor.update") || (actor.ownerUserId === userId && canCampaign(store, userId, actor.campaignId, "actor.updateOwned"));
+}
+
+function broadcastActorUpdated(broadcast: (event: EngineEvent) => void, actor: Actor): void {
+  broadcast(
+    createEvent({
+      campaignId: actor.campaignId,
+      type: "actor.updated",
+      targetId: actor.id,
+      payload: actor
+    })
+  );
 }
 
 function truthyQuery(value: string | undefined): boolean {

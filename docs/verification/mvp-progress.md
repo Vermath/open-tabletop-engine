@@ -680,6 +680,38 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/plugin-sandbox-gm.png`.
   - Browser console had no app runtime errors; it showed the existing missing `favicon.ico` 404, React DevTools info message, and an autocomplete advisory.
 
+### Rules Compendium And Conditions Slice
+
+- Implementation:
+  - Added a Generic Fantasy compendium with item, spell, and condition entries for Longsword, Healing Word, Blessed, Poisoned, and Restrained.
+  - Added system runtime helpers for applying/removing compendium-backed actor conditions and for building actor sheets with inventory, spells, active conditions, and condition-aware quick rolls.
+  - Added campaign-scoped API routes to list a system compendium, add item/spell compendium entries to an actor, apply actor conditions, and remove actor conditions.
+  - Updated the browser actor panel to load actor items and render active conditions, inventory, and spells beside the existing HP controls and raw actor data.
+  - Updated API contracts and REST/System SDK docs for the compendium and condition routes.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk test` passed with `2 passed`.
+  - `pnpm --filter @open-tabletop/system-sdk typecheck` passed.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `31 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - System SDK tests verify Blessed adds `+1d4`, Poisoned switches checks to `2d20kl1`, condition removal preserves other conditions, and sheets split inventory from spells.
+  - API tests verify compendium reads, observer condition mutation denial, Healing Word import, Blessed/Poisoned condition effects, condition removal, and conditioned rolls posted through the system roll endpoint.
+- Manual API and browser evidence:
+  - API: `http://127.0.0.1:4445`
+  - Web: `http://127.0.0.1:5191`
+  - SQLite file: `storage/manual-rules-runtime-20260501.sqlite`
+  - Bearer login returned an `ots_` token prefix.
+  - Compendium API returned ids `longsword,healing-word,blessed,poisoned,restrained`.
+  - Adding `healing-word` to Valen Ash created spell item `Healing Word` and the actor sheet listed spell `Healing Word`.
+  - Applying Blessed and Poisoned produced sheet conditions `Blessed,Poisoned` and Charisma quick-roll formula `2d20kl1+2+1d4`.
+  - Deleting Poisoned left condition `Blessed` and changed the Charisma quick-roll formula back to `1d20+2+1d4`.
+  - Posting the system roll after deletion returned roll label `Charisma Check` and formula `1d20+2+1d4`.
+  - Browser GM view loaded as `Demo GM - owner`, showed `Realtime connected`, selected actor `Valen Ash`, rendered condition `Blessed`, rendered spell `Healing Word`, and showed chat roll `Valen Ash Charisma Check: 1d20+2+1d4`.
+  - Screenshot saved at `output/playwright/rules-compendium-gm.png`.
+  - Browser console had no app runtime errors; it showed the existing missing `favicon.ico` 404, React DevTools info message, and an autocomplete advisory.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
@@ -688,5 +720,5 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, and cleanup jobs for deleted or expired object bytes. Production storage work still needs CDN edge configuration, malware/content scanning, and deployment scheduling for recurring cleanup jobs.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
-- System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
+- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
 - AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, OpenAI Responses adapter requests and function-call mapping, provider-backed memory extraction, approval/application, and deterministic recap memory. Hosted-model prompt quality and broader tool coverage remain basic.
