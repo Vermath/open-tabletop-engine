@@ -425,7 +425,9 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Worker job `job_worker_memory_smoke` of type `ai.memory.extract` succeeded and returned provider `codex-app-server`, memory text `Extracted memory: Worker smoke memory: the sapphire lens opens the vault.`, and event `message.completed`.
   - Worker job `job_worker_export_smoke` of type `campaign.export` succeeded and returned archive format `ottx`, `campaignCount: 1`, `tokenCount: 1`, and `memoryCount: 1`.
 
-## Known Remaining Gaps
+## Known Post-MVP Gaps
+
+These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
 - Auth now has MVP bearer sessions for seeded users across REST, realtime, and asset blob access, but still lacks password login, OAuth, invites, account management, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
 - Uploaded maps now support local and S3/MinIO-backed storage, including archive export/import through the active provider. Production storage work still needs lifecycle policies, migration tooling, and CDN/presigned delivery.
@@ -433,4 +435,3 @@ This document tracks verified MVP progress without treating the whole PRD as com
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
 - AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, OpenAI Responses adapter requests and function-call mapping, provider-backed memory extraction, approval/application, and deterministic recap memory. Hosted-model prompt quality and broader tool coverage remain basic.
-- Clean-checkout local dev, Docker Compose startup, and prompt-to-artifact audit are now documented and verified in `docs/verification/mvp-acceptance-audit.md`.
