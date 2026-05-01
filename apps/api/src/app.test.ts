@@ -2103,6 +2103,7 @@ describe("api", () => {
     expect(playerContext.publicSummary).toContain("Public Rumor");
     expect(playerContext.publicSummary).not.toContain("Session Hook");
     expect(playerContext.gmSecrets).toEqual([]);
+    expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["roll_dice", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 1")?.visibility).toBe("public");
 
     const gmThread = await app.inject({
@@ -2116,6 +2117,7 @@ describe("api", () => {
     const gmContext = provider.requests[1]!.context;
     expect(gmContext.publicSummary).toContain("Session Hook");
     expect(gmContext.gmSecrets.some((secret) => secret.includes("founder's oath"))).toBe(true);
+    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 2")?.visibility).toBe("gm_only");
 
     const playerChat = await app.inject({
@@ -2631,6 +2633,7 @@ describe("api", () => {
       payload: { prompt: "Try expanded tools as a player." }
     });
     expect(playerThread.statusCode).toBe(200);
+    expect(playerProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["roll_dice", "read_compendium"]);
     const playerCompleted = playerThread.json().events.filter((event: { type: string }) => event.type === "tool.completed");
     expect(playerCompleted).toEqual(
       expect.arrayContaining([

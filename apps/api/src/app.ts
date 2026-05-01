@@ -1910,6 +1910,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     store.state.aiThreads.push(thread);
     const tools = createAiThreadTools();
+    const providerTools = tools.filter((tool) => aiToolAvailableToCaller(tool, permissions));
     const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions);
     let content = "";
     const events: AiProviderEvent[] = [];
@@ -1920,7 +1921,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const providerInput: AiProviderRequest = {
       threadId: thread.id,
       messages: [{ role: "user", content: request.body.prompt }],
-      tools,
+      tools: providerTools,
       context
     };
     while (true) {
@@ -3306,6 +3307,10 @@ function toolError(error: string, details: Record<string, unknown> = {}): ToolEr
 
 function tokenForCampaign(context: AiToolContext, tokenId: string): Token | undefined {
   return context.state.tokens.find((token) => token.id === tokenId && context.state.scenes.some((scene) => scene.id === token.sceneId && scene.campaignId === context.campaignId));
+}
+
+function aiToolAvailableToCaller(tool: AiToolDefinition, permissions: PermissionName[]): boolean {
+  return tool.requiredPermissions.every((permission) => permissions.includes(permission));
 }
 
 async function executeAiTool(tools: AiToolDefinition[], toolName: string, input: unknown, context: AiToolContext): Promise<AiToolExecutionResult> {

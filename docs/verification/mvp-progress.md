@@ -973,6 +973,25 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - `GET /api/v1/campaigns/camp_demo/ai/tool-calls` showed failed tool calls for `create_proposal`, `draft_scene`, `draft_token_update`, `create_memory`, and `unknown_tool`.
   - Proposal count delta was `0` and memory count delta was `0`, confirming invalid provider inputs did not mutate campaign proposal or memory state.
 
+### AI Tool Advertisement Filtering Slice
+
+- Implementation:
+  - Filtered provider-visible AI tool definitions to only tools whose declared `requiredPermissions` are available to the human caller.
+  - Kept execution-time permission checks as the final guard when a provider emits a stale, unavailable, or malicious tool call anyway.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `42 passed`.
+  - API tests verify a player-visible provider request only receives `roll_dice` and `read_compendium`, a GM provider request receives the full tool catalog, and malicious provider-emitted mutation tools are still denied by execution-time permission checks.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4461`
+  - SQLite file: `apps/api/storage/manual-ai-tool-filtering-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_AI_PROVIDER=codex-loopback`, and `OTTE_SQLITE_PATH=apps/api/storage/manual-ai-tool-filtering-20260501.sqlite`.
+  - Player login returned an `ots_` token prefix.
+  - A player Codex loopback prompt requesting proposal, encounter, journal, scene, token, actor, memory, dice, and compendium work completed with `eventCount: 5` and `toolCallCount: 2`.
+  - The only completed tool events were `roll_dice: ok` and `read_compendium: ok`, confirming mutation tools were not advertised to the player provider request.
+  - Proposal count delta was `0` and memory count delta was `0`.
+  - Player access to `GET /api/v1/campaigns/camp_demo/ai/tool-calls` returned `403`.
+
 ### SCIM Organization Sync Slice
 
 - Implementation:
@@ -1046,4 +1065,4 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
-- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases.
