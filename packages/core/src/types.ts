@@ -16,6 +16,11 @@ export interface User extends Timestamps {
   displayName: string;
   email?: string;
   passwordHash?: string;
+  disabledAt?: string;
+  disabledByUserId?: ID;
+  disabledReason?: string;
+  passwordUpdatedAt?: string;
+  passwordResetRequired?: boolean;
 }
 
 export interface UserSession extends Timestamps {
@@ -45,6 +50,29 @@ export interface OAuthLoginState extends Timestamps {
   redirectUri: string;
   returnTo?: string;
   expiresAt: string;
+}
+
+export interface PasswordResetToken extends Timestamps {
+  id: ID;
+  userId: ID;
+  email: string;
+  tokenHash: string;
+  expiresAt: string;
+  usedAt?: string;
+  requestedByUserId?: ID;
+}
+
+export interface EmailOutboxMessage extends Timestamps {
+  id: ID;
+  to: string;
+  subject: string;
+  text: string;
+  html?: string;
+  status: "pending" | "delivered" | "failed";
+  provider: "outbox" | "webhook";
+  sentAt?: string;
+  error?: string;
+  metadata?: Record<string, string>;
 }
 
 export interface Campaign extends Timestamps {
@@ -420,6 +448,8 @@ export interface EngineState {
   sessions: UserSession[];
   identities: AuthIdentity[];
   oauthStates: OAuthLoginState[];
+  passwordResetTokens: PasswordResetToken[];
+  emailOutbox: EmailOutboxMessage[];
   invites: CampaignInvite[];
   campaigns: Campaign[];
   members: CampaignMember[];

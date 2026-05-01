@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type OAuthLoginState, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession } from "@open-tabletop/core";
+import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -51,10 +51,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get("/api/v1/openapi.json", async () => openApiSpec);
 
   app.post<{ Body: { userId?: string; email?: string; password?: string } }>("/api/v1/auth/login", async (request, reply) => {
+    const body = request.body ?? {};
     pruneExpiredSessions(store);
-    const user = findLoginUser(store, request.body);
+    const user = findLoginUser(store, body);
     if (!user) return unauthorized(reply, "Unknown login identity");
-    if (user.passwordHash && !verifyPassword(request.body.password ?? "", user.passwordHash)) return unauthorized(reply, "Invalid login credentials");
+    if (isDisabledUser(user)) return forbidden(reply, "User account is disabled");
+    if (user.passwordResetRequired) return forbidden(reply, "Password reset required");
+    if (user.passwordHash && !verifyPassword(body.password ?? "", user.passwordHash)) return unauthorized(reply, "Invalid login credentials");
     const { token, session } = createUserSession(store, user.id);
     store.save();
     return {
@@ -66,15 +69,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.post<{ Body: { email?: string; displayName?: string; password?: string } }>("/api/v1/auth/register", async (request, reply) => {
-    const email = normalizeEmail(request.body.email);
+    const body = request.body ?? {};
+    const email = normalizeEmail(body.email);
     if (!email) return badRequest(reply, "A valid email is required");
-    if (!isUsablePassword(request.body.password)) return badRequest(reply, "Password must be at least 8 characters");
+    if (!isUsablePassword(body.password)) return badRequest(reply, "Password must be at least 8 characters");
     if (store.state.users.some((user) => normalizeEmail(user.email) === email)) return conflict(reply, "Email is already registered");
-    const displayName = normalizeDisplayName(request.body.displayName) ?? email.split("@")[0] ?? "Player";
+    const displayName = normalizeDisplayName(body.displayName) ?? email.split("@")[0] ?? "Player";
     const user = createTimestamped("usr", {
       displayName,
       email,
-      passwordHash: hashPassword(request.body.password)
+      passwordHash: hashPassword(body.password)
     }) satisfies User;
     store.state.users.push(user);
     const { token, session } = createUserSession(store, user.id);
@@ -85,6 +89,159 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       user: publicUser(user),
       memberships: []
     };
+  });
+
+  app.post<{ Body: { email?: string; returnTo?: string } }>("/api/v1/auth/password-reset/request", async (request) => {
+    const body = request.body ?? {};
+    const email = normalizeEmail(body.email);
+    const user = email ? store.state.users.find((item) => normalizeEmail(item.email) === email && !isDisabledUser(item)) : undefined;
+    if (user?.email) {
+      await issuePasswordReset(store, user, undefined, body.returnTo);
+      store.save();
+    }
+    return { ok: true };
+  });
+
+  app.post<{ Body: { token?: string; password?: string } }>("/api/v1/auth/password-reset/confirm", async (request, reply) => {
+    const body = request.body ?? {};
+    if (!isUsablePassword(body.password)) return badRequest(reply, "Password must be at least 8 characters");
+    try {
+      const login = confirmPasswordReset(store, body.token, body.password);
+      store.save();
+      return {
+        token: login.token,
+        session: publicSession(login.session),
+        user: publicUser(login.user),
+        memberships: store.state.members.filter((member) => member.userId === login.user.id)
+      };
+    } catch (error) {
+      return unauthorized(reply, errorMessage(error));
+    }
+  });
+
+  app.post<{ Body: { currentPassword?: string; newPassword?: string } }>("/api/v1/auth/password/change", async (request, reply) => {
+    const body = request.body ?? {};
+    const session = sessionFromRequest(store, undefined, request.headers);
+    if (!session) return unauthorized(reply, "Bearer session required");
+    const user = store.state.users.find((item) => item.id === session.userId);
+    if (!user) return unauthorized(reply, "Unknown user session");
+    if (isDisabledUser(user)) return forbidden(reply, "User account is disabled");
+    if (!isUsablePassword(body.newPassword)) return badRequest(reply, "Password must be at least 8 characters");
+    if (user.passwordHash && !verifyPassword(body.currentPassword ?? "", user.passwordHash)) return unauthorized(reply, "Invalid current password");
+    setUserPassword(user, body.newPassword, false);
+    store.state.sessions = store.state.sessions.filter((item) => item.userId !== user.id);
+    const { token, session: nextSession } = createUserSession(store, user.id);
+    store.save();
+    return {
+      token,
+      session: publicSession(nextSession),
+      user: publicUser(user),
+      memberships: store.state.members.filter((member) => member.userId === user.id)
+    };
+  });
+
+  app.get("/api/v1/auth/sessions", async (request, reply) => {
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    pruneExpiredSessions(store);
+    store.save();
+    return store.state.sessions.filter((session) => session.userId === userId).map(publicSession);
+  });
+
+  app.delete<{ Params: { sessionId: string } }>("/api/v1/auth/sessions/:sessionId", async (request, reply) => {
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const session = store.state.sessions.find((item) => item.id === request.params.sessionId && item.userId === userId);
+    if (!session) return notFound(reply, "Session not found");
+    store.state.sessions = store.state.sessions.filter((item) => item.id !== session.id);
+    store.save();
+    return { ok: true };
+  });
+
+  app.get("/api/v1/admin/users", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    return store.state.users.map((user) => adminUserInfo(store, user));
+  });
+
+  app.patch<{ Params: { userId: string }; Body: { displayName?: string; email?: string | null; disabled?: boolean; disabledReason?: string; passwordResetRequired?: boolean } }>("/api/v1/admin/users/:userId", async (request, reply) => {
+    const body = request.body ?? {};
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const user = store.state.users.find((item) => item.id === request.params.userId);
+    if (!user) return notFound(reply, "User not found");
+    const displayName = normalizeDisplayName(body.displayName);
+    if (displayName) user.displayName = displayName;
+    if (body.email !== undefined) {
+      const email = body.email === null ? undefined : normalizeEmail(body.email);
+      if (body.email !== null && !email) return badRequest(reply, "A valid email is required");
+      if (email && store.state.users.some((item) => item.id !== user.id && normalizeEmail(item.email) === email)) return conflict(reply, "Email is already registered");
+      user.email = email;
+    }
+    if (body.passwordResetRequired !== undefined) user.passwordResetRequired = body.passwordResetRequired;
+    if (body.disabled !== undefined) {
+      if (body.disabled && user.id === adminUserId) return badRequest(reply, "Admins cannot disable their own account");
+      setUserDisabled(store, user, body.disabled, adminUserId, body.disabledReason);
+    }
+    user.updatedAt = nowIso();
+    store.save();
+    return adminUserInfo(store, user);
+  });
+
+  app.post<{ Params: { userId: string }; Body: { returnTo?: string } }>("/api/v1/admin/users/:userId/password-reset", async (request, reply) => {
+    const body = request.body ?? {};
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const user = store.state.users.find((item) => item.id === request.params.userId);
+    if (!user) return notFound(reply, "User not found");
+    if (isDisabledUser(user)) return forbidden(reply, "User account is disabled");
+    if (!user.email) return badRequest(reply, "User does not have an email address");
+    const reset = await issuePasswordReset(store, user, adminUserId, body.returnTo);
+    store.save();
+    return {
+      reset: publicPasswordResetToken(reset.reset),
+      email: publicEmailOutboxMessage(reset.email)
+    };
+  });
+
+  app.delete<{ Params: { userId: string } }>("/api/v1/admin/users/:userId/sessions", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    if (!store.state.users.some((user) => user.id === request.params.userId)) return notFound(reply, "User not found");
+    const before = store.state.sessions.length;
+    store.state.sessions = store.state.sessions.filter((session) => session.userId !== request.params.userId);
+    store.save();
+    return { revoked: before - store.state.sessions.length };
+  });
+
+  app.get("/api/v1/admin/sessions", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    pruneExpiredSessions(store);
+    store.save();
+    return store.state.sessions.map((session) => {
+      const user = store.state.users.find((item) => item.id === session.userId);
+      return {
+        ...publicSession(session),
+        user: user ? publicUser(user) : { id: session.userId, displayName: "Unknown user" }
+      };
+    });
+  });
+
+  app.delete<{ Params: { sessionId: string } }>("/api/v1/admin/sessions/:sessionId", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const session = store.state.sessions.find((item) => item.id === request.params.sessionId);
+    if (!session) return notFound(reply, "Session not found");
+    store.state.sessions = store.state.sessions.filter((item) => item.id !== session.id);
+    store.save();
+    return { ok: true };
+  });
+
+  app.get("/api/v1/admin/email-outbox", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    return store.state.emailOutbox.slice(-100).map(publicEmailOutboxMessage);
   });
 
   app.get("/api/v1/auth/oidc/config", async (request) => {
@@ -2043,6 +2200,7 @@ async function completeOidcCallback(
   const token = await exchangeOidcCode(config, discovery, oauthState, code);
   const claims = await fetchOidcUserInfo(discovery, token);
   const { user, identity } = upsertOidcUser(store, config, claims);
+  if (isDisabledUser(user)) throw new Error("User account is disabled");
   const session = createUserSession(store, user.id);
   return {
     token: session.token,
@@ -2257,6 +2415,156 @@ function resolveInviteUser(store: StateStore, headers: Record<string, string | s
   return user;
 }
 
+async function issuePasswordReset(store: StateStore, user: User, requestedByUserId: string | undefined, requestedReturnTo: string | undefined): Promise<{ reset: PasswordResetToken; email: EmailOutboxMessage; token: string }> {
+  if (!user.email) throw new Error("User does not have an email address");
+  pruneExpiredPasswordResetTokens(store);
+  const token = `opr_${randomBytes(32).toString("base64url")}`;
+  const reset = createTimestamped("reset", {
+    userId: user.id,
+    email: normalizeEmail(user.email)!,
+    tokenHash: hashSessionToken(token),
+    expiresAt: new Date(Date.now() + passwordResetTtlMs()).toISOString(),
+    requestedByUserId
+  }) satisfies PasswordResetToken;
+  store.state.passwordResetTokens.push(reset);
+
+  const resetUrl = passwordResetUrl(token, requestedReturnTo);
+  const email = createTimestamped("email", {
+    to: reset.email,
+    subject: "Reset your OpenTabletop password",
+    text: [
+      `A password reset was requested for ${user.displayName}.`,
+      resetUrl ? `Open this link to reset your password: ${resetUrl}` : `Use this reset token: ${token}`,
+      "If you did not request this, you can ignore this message."
+    ].join("\n\n"),
+    status: "pending" as const,
+    provider: emailWebhookUrl() ? "webhook" as const : "outbox" as const,
+    metadata: {
+      kind: "password_reset",
+      userId: user.id,
+      resetId: reset.id
+    }
+  }) satisfies EmailOutboxMessage;
+  store.state.emailOutbox.push(email);
+  await deliverEmailMessage(email);
+  return { reset, email, token };
+}
+
+function confirmPasswordReset(store: StateStore, token: string | undefined, password: string): { token: string; session: UserSession; user: User } {
+  if (!token) throw new Error("Missing password reset token");
+  pruneExpiredPasswordResetTokens(store);
+  const tokenHash = hashSessionToken(token);
+  const reset = store.state.passwordResetTokens.find((item) => item.tokenHash === tokenHash && !item.usedAt && Date.parse(item.expiresAt) > Date.now());
+  if (!reset) throw new Error("Unknown or expired password reset token");
+  const user = store.state.users.find((item) => item.id === reset.userId);
+  if (!user) throw new Error("Password reset user is missing");
+  if (isDisabledUser(user)) throw new Error("User account is disabled");
+  setUserPassword(user, password, false);
+  const now = nowIso();
+  reset.usedAt = now;
+  reset.updatedAt = now;
+  store.state.sessions = store.state.sessions.filter((session) => session.userId !== user.id);
+  const session = createUserSession(store, user.id);
+  return {
+    token: session.token,
+    session: session.session,
+    user
+  };
+}
+
+function setUserPassword(user: User, password: string, passwordResetRequired: boolean): void {
+  const now = nowIso();
+  user.passwordHash = hashPassword(password);
+  user.passwordUpdatedAt = now;
+  user.passwordResetRequired = passwordResetRequired;
+  user.updatedAt = now;
+}
+
+function setUserDisabled(store: StateStore, user: User, disabled: boolean, adminUserId: string, reason: string | undefined): void {
+  const now = nowIso();
+  if (disabled) {
+    user.disabledAt = user.disabledAt ?? now;
+    user.disabledByUserId = adminUserId;
+    user.disabledReason = normalizeDisplayName(reason) ?? reason?.trim().slice(0, 160);
+    store.state.sessions = store.state.sessions.filter((session) => session.userId !== user.id);
+  } else {
+    user.disabledAt = undefined;
+    user.disabledByUserId = undefined;
+    user.disabledReason = undefined;
+  }
+  user.updatedAt = now;
+}
+
+function passwordResetUrl(token: string, requestedReturnTo: string | undefined): string | undefined {
+  const configured = process.env.OTTE_PASSWORD_RESET_URL?.trim();
+  const returnTo = configured || sanitizeReturnTo(requestedReturnTo) || (process.env.OTTE_WEB_ORIGIN ? `${process.env.OTTE_WEB_ORIGIN.replace(/\/+$/, "")}/reset-password` : undefined);
+  if (!returnTo) return undefined;
+  try {
+    const url = new URL(returnTo);
+    url.searchParams.set("token", token);
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+async function deliverEmailMessage(message: EmailOutboxMessage): Promise<void> {
+  const webhookUrl = emailWebhookUrl();
+  if (!webhookUrl) return;
+  try {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    const token = process.env.OTTE_EMAIL_WEBHOOK_TOKEN;
+    if (token) headers.authorization = `Bearer ${token}`;
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(publicEmailOutboxMessage(message)),
+      signal: AbortSignal.timeout(emailWebhookTimeoutMs())
+    });
+    if (!response.ok) throw new Error(`Email webhook returned ${response.status}`);
+    message.status = "delivered";
+    message.sentAt = nowIso();
+  } catch (error) {
+    message.status = "failed";
+    message.error = errorMessage(error).slice(0, 500);
+  }
+  message.updatedAt = nowIso();
+}
+
+function emailWebhookUrl(): string | undefined {
+  return process.env.OTTE_EMAIL_WEBHOOK_URL?.trim() || undefined;
+}
+
+function emailWebhookTimeoutMs(): number {
+  const value = Number(process.env.OTTE_EMAIL_WEBHOOK_TIMEOUT_MS);
+  return Number.isFinite(value) ? Math.max(500, Math.min(30_000, value)) : 5_000;
+}
+
+function passwordResetTtlMs(): number {
+  const value = Number(process.env.OTTE_PASSWORD_RESET_TTL_MINUTES);
+  const minutes = Number.isFinite(value) ? Math.max(5, Math.min(24 * 60, value)) : 60;
+  return minutes * 60 * 1000;
+}
+
+function publicPasswordResetToken(reset: PasswordResetToken): Omit<PasswordResetToken, "tokenHash"> {
+  const { tokenHash: _tokenHash, ...safeReset } = reset;
+  return safeReset;
+}
+
+function publicEmailOutboxMessage(message: EmailOutboxMessage): EmailOutboxMessage {
+  return message;
+}
+
+function adminUserInfo(store: StateStore, user: User): Omit<User, "passwordHash"> & { disabled: boolean; membershipCount: number; identityCount: number; sessionCount: number } {
+  return {
+    ...publicUser(user),
+    disabled: isDisabledUser(user),
+    membershipCount: store.state.members.filter((member) => member.userId === user.id).length,
+    identityCount: store.state.identities.filter((identity) => identity.userId === user.id).length,
+    sessionCount: store.state.sessions.filter((session) => session.userId === user.id && Date.parse(session.expiresAt) > Date.now()).length
+  };
+}
+
 function publicUser(user: User): Omit<User, "passwordHash"> {
   const { passwordHash: _passwordHash, ...safeUser } = user;
   return safeUser;
@@ -2315,16 +2623,20 @@ function canReadChatMessage(store: StateStore, userId: string, message: ChatMess
 
 function currentUserId(store: StateStore, headers: Record<string, string | string[] | undefined>): string | undefined {
   const session = sessionFromRequest(store, undefined, headers);
-  if (session) return session.userId;
+  if (session && isActiveUserId(store, session.userId)) return session.userId;
+  if (!legacyUserHeaderEnabled()) return undefined;
   const header = headers["x-user-id"];
-  return Array.isArray(header) ? header[0] : header;
+  const userId = Array.isArray(header) ? header[0] : header;
+  return userId && isActiveUserId(store, userId) ? userId : undefined;
 }
 
 function userIdFromRequest(store: StateStore, requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): string | undefined {
   const session = sessionFromRequest(store, requestUrl, headers);
-  if (session) return session.userId;
+  if (session && isActiveUserId(store, session.userId)) return session.userId;
+  if (!legacyUserHeaderEnabled()) return undefined;
   const url = new URL(requestUrl ?? "/api/v1/realtime", "http://localhost");
-  return url.searchParams.get("userId") ?? currentUserId(store, headers);
+  const userId = url.searchParams.get("userId") ?? currentUserId(store, headers);
+  return userId && isActiveUserId(store, userId) ? userId : undefined;
 }
 
 function createUserSession(store: StateStore, userId: string): { token: string; session: UserSession } {
@@ -2389,6 +2701,11 @@ function pruneExpiredSessions(store: StateStore): void {
   store.state.sessions = store.state.sessions.filter((session) => Date.parse(session.expiresAt) > now);
 }
 
+function pruneExpiredPasswordResetTokens(store: StateStore): void {
+  const now = Date.now();
+  store.state.passwordResetTokens = store.state.passwordResetTokens.filter((reset) => !reset.usedAt && Date.parse(reset.expiresAt) > now);
+}
+
 function publicSession(session: UserSession): Pick<UserSession, "id" | "userId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {
   return {
     id: session.id,
@@ -2407,8 +2724,39 @@ function headerValue(value: string | string[] | undefined): string | undefined {
 function requireUser(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>): string | FastifyReply {
   const userId = currentUserId(store, headers);
   if (!userId) return unauthorized(reply, "Missing session token");
-  if (!store.state.users.some((user) => user.id === userId)) return unauthorized(reply, "Unknown user session");
+  const user = store.state.users.find((item) => item.id === userId);
+  if (!user) return unauthorized(reply, "Unknown user session");
+  if (isDisabledUser(user)) return forbidden(reply, "User account is disabled");
   return userId;
+}
+
+function requireServerAdmin(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>): string | FastifyReply {
+  const userId = requireUser(store, reply, headers);
+  if (typeof userId !== "string") return userId;
+  if (!serverAdminUserIds().has(userId)) return forbidden(reply, "Server admin access required");
+  return userId;
+}
+
+function serverAdminUserIds(): Set<string> {
+  return new Set(
+    (process.env.OTTE_ADMIN_USER_IDS ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean)
+  );
+}
+
+function isActiveUserId(store: StateStore, userId: string): boolean {
+  const user = store.state.users.find((item) => item.id === userId);
+  return Boolean(user && !isDisabledUser(user));
+}
+
+function isDisabledUser(user: User): boolean {
+  return Boolean(user.disabledAt);
+}
+
+function legacyUserHeaderEnabled(): boolean {
+  return process.env.OTTE_ALLOW_LEGACY_USER_HEADER === "true" || process.env.NODE_ENV === "test";
 }
 
 function requireCampaignPermission(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>, campaignId: string, permission: PermissionName): true | FastifyReply {
@@ -2553,6 +2901,8 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     sessions: 0,
     identities: 0,
     oauthStates: 0,
+    passwordResetTokens: 0,
+    emailOutbox: 0,
     invites: 0,
     campaigns: upsertRecords(state.campaigns, archive.data.campaigns),
     members: upsertRecords(state.members, archive.data.members),

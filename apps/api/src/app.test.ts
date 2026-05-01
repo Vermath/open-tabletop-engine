@@ -275,6 +275,332 @@ describe("api", () => {
     await app.close();
   });
 
+  it("requests and confirms password resets through the email delivery outbox", async () => {
+    let deliveredEmail: { text?: string; metadata?: { resetId?: string } } | undefined;
+    let webhookAuthorization: string | undefined;
+    const webhook = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+      webhookAuthorization = request.headers.authorization;
+      deliveredEmail = JSON.parse(await readRequestBody(request));
+      sendJson(response, { ok: true });
+    });
+    await new Promise<void>((resolve) => webhook.listen(0, "127.0.0.1", resolve));
+    const address = webhook.address() as AddressInfo;
+    const previousEnv = snapshotEnv(["OTTE_EMAIL_WEBHOOK_URL", "OTTE_EMAIL_WEBHOOK_TOKEN", "OTTE_PASSWORD_RESET_URL", "OTTE_PASSWORD_RESET_TTL_MINUTES"]);
+    process.env.OTTE_EMAIL_WEBHOOK_URL = `http://127.0.0.1:${address.port}/email`;
+    process.env.OTTE_EMAIL_WEBHOOK_TOKEN = "email-secret";
+    process.env.OTTE_PASSWORD_RESET_URL = "http://127.0.0.1:5186/reset-password";
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    try {
+      const unknown = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/password-reset/request",
+        payload: { email: "missing@example.test" }
+      });
+      expect(unknown.statusCode).toBe(200);
+      expect(unknown.json()).toEqual({ ok: true });
+      expect(store.state.passwordResetTokens).toHaveLength(0);
+      expect(store.state.emailOutbox).toHaveLength(0);
+
+      const requested = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/password-reset/request",
+        payload: { email: "GM@Example.Test" }
+      });
+      expect(requested.statusCode).toBe(200);
+      expect(store.state.passwordResetTokens).toHaveLength(1);
+      expect(store.state.passwordResetTokens[0]!.tokenHash).toMatch(/^sha256:/);
+      expect(store.state.emailOutbox).toHaveLength(1);
+      expect(store.state.emailOutbox[0]).toMatchObject({ to: "gm@example.test", status: "delivered", provider: "webhook" });
+      expect(webhookAuthorization).toBe("Bearer email-secret");
+      expect(deliveredEmail?.metadata?.resetId).toBe(store.state.passwordResetTokens[0]!.id);
+      const token = deliveredEmail?.text?.match(/token=(opr_[A-Za-z0-9_-]+)/)?.[1];
+      expect(token).toMatch(/^opr_/);
+
+      const confirmed = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/password-reset/confirm",
+        payload: { token, password: "new gm password" }
+      });
+      expect(confirmed.statusCode).toBe(200);
+      expect(confirmed.json().token).toMatch(/^ots_/);
+      expect(confirmed.json().user).not.toHaveProperty("passwordHash");
+      expect(store.state.passwordResetTokens[0]!.usedAt).toBeTruthy();
+      expect(store.state.users.find((user) => user.id === "usr_demo_gm")?.passwordHash).toMatch(/^scrypt:/);
+
+      const reused = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/password-reset/confirm",
+        payload: { token, password: "new gm password" }
+      });
+      expect(reused.statusCode).toBe(401);
+
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "gm@example.test", password: "new gm password" }
+      });
+      expect(login.statusCode).toBe(200);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+      await new Promise<void>((resolve) => webhook.close(() => resolve()));
+    }
+  });
+
+  it("changes passwords and lets users revoke their own sessions", async () => {
+    const app = await buildApp({ store: new MemoryStateStore() });
+    try {
+      const registered = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          email: "session.owner@example.test",
+          displayName: "Session Owner",
+          password: "original password"
+        }
+      });
+      expect(registered.statusCode).toBe(200);
+
+      const secondLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: {
+          email: "session.owner@example.test",
+          password: "original password"
+        }
+      });
+      expect(secondLogin.statusCode).toBe(200);
+
+      const badChange = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/password/change",
+        headers: { authorization: `Bearer ${registered.json().token}` },
+        payload: { currentPassword: "wrong password", newPassword: "updated password" }
+      });
+      expect(badChange.statusCode).toBe(401);
+
+      const changed = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/password/change",
+        headers: { authorization: `Bearer ${registered.json().token}` },
+        payload: { currentPassword: "original password", newPassword: "updated password" }
+      });
+      expect(changed.statusCode).toBe(200);
+      expect(changed.json().token).toMatch(/^ots_/);
+      expect(changed.json().user).not.toHaveProperty("passwordHash");
+
+      const staleSession = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/session",
+        headers: { authorization: `Bearer ${secondLogin.json().token}` }
+      });
+      expect(staleSession.statusCode).toBe(401);
+
+      const sessions = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/sessions",
+        headers: { authorization: `Bearer ${changed.json().token}` }
+      });
+      expect(sessions.statusCode).toBe(200);
+      expect(sessions.json().map((session: { id: string }) => session.id)).toEqual([changed.json().session.id]);
+
+      const deleted = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/auth/sessions/${changed.json().session.id}`,
+        headers: { authorization: `Bearer ${changed.json().token}` }
+      });
+      expect(deleted.statusCode).toBe(200);
+
+      const afterDelete = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/session",
+        headers: { authorization: `Bearer ${changed.json().token}` }
+      });
+      expect(afterDelete.statusCode).toBe(401);
+
+      const relogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: {
+          email: "session.owner@example.test",
+          password: "updated password"
+        }
+      });
+      expect(relogin.statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("lets server admins manage users and sessions", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    try {
+      const adminLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_gm" }
+      });
+      const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
+      const playerLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_player" }
+      });
+      const playerSecondLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_player" }
+      });
+      const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
+
+      const ownSessions = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/sessions",
+        headers: playerHeaders
+      });
+      expect(ownSessions.statusCode).toBe(200);
+      expect(ownSessions.json().map((session: { id: string }) => session.id)).toContain(playerLogin.json().session.id);
+      expect(ownSessions.json().map((session: { id: string }) => session.id)).toContain(playerSecondLogin.json().session.id);
+
+      const users = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/users",
+        headers: adminHeaders
+      });
+      expect(users.statusCode).toBe(200);
+      expect(users.json().find((user: { id: string }) => user.id === "usr_demo_player")).toMatchObject({ disabled: false, sessionCount: 2 });
+
+      const reset = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/users/usr_demo_player/password-reset",
+        headers: adminHeaders
+      });
+      expect(reset.statusCode).toBe(200);
+      expect(reset.json().reset).not.toHaveProperty("tokenHash");
+      expect(reset.json().email).toMatchObject({ to: "player@example.test", status: "pending", provider: "outbox" });
+
+      const adminSessions = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/sessions",
+        headers: adminHeaders
+      });
+      expect(adminSessions.statusCode).toBe(200);
+      expect(adminSessions.json().map((session: { id: string }) => session.id)).toContain(playerLogin.json().session.id);
+
+      const revokedSession = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/admin/sessions/${playerLogin.json().session.id}`,
+        headers: adminHeaders
+      });
+      expect(revokedSession.statusCode).toBe(200);
+      const playerAfterRevoke = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/session",
+        headers: playerHeaders
+      });
+      expect(playerAfterRevoke.statusCode).toBe(401);
+
+      const revokedUserSessions = await app.inject({
+        method: "DELETE",
+        url: "/api/v1/admin/users/usr_demo_player/sessions",
+        headers: adminHeaders
+      });
+      expect(revokedUserSessions.statusCode).toBe(200);
+      expect(revokedUserSessions.json()).toEqual({ revoked: 1 });
+      const playerSecondAfterRevoke = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/session",
+        headers: { authorization: `Bearer ${playerSecondLogin.json().token}` }
+      });
+      expect(playerSecondAfterRevoke.statusCode).toBe(401);
+
+      const disabled = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/admin/users/usr_demo_player",
+        headers: adminHeaders,
+        payload: { disabled: true, disabledReason: "left the table" }
+      });
+      expect(disabled.statusCode).toBe(200);
+      expect(disabled.json()).toMatchObject({ disabled: true, disabledReason: "left the table", sessionCount: 0 });
+      const disabledLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_player" }
+      });
+      expect(disabledLogin.statusCode).toBe(403);
+
+      const enabledWithReset = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/admin/users/usr_demo_player",
+        headers: adminHeaders,
+        payload: { disabled: false, passwordResetRequired: true }
+      });
+      expect(enabledWithReset.statusCode).toBe(200);
+      expect(enabledWithReset.json()).toMatchObject({ disabled: false, passwordResetRequired: true });
+      const resetRequiredLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_player" }
+      });
+      expect(resetRequiredLogin.statusCode).toBe(403);
+
+      const outbox = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/email-outbox",
+        headers: adminHeaders
+      });
+      expect(outbox.statusCode).toBe(200);
+      expect(outbox.json()).toHaveLength(1);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
+  it("hard-fences legacy x-user-id auth outside test or explicit compatibility mode", async () => {
+    const previousEnv = snapshotEnv(["NODE_ENV", "OTTE_ALLOW_LEGACY_USER_HEADER"]);
+    process.env.NODE_ENV = "production";
+    delete process.env.OTTE_ALLOW_LEGACY_USER_HEADER;
+    const app = await buildApp({ store: new MemoryStateStore() });
+    try {
+      const blocked = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: authHeaders
+      });
+      expect(blocked.statusCode).toBe(401);
+
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_gm" }
+      });
+      expect(login.statusCode).toBe(200);
+      const bearer = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: { authorization: `Bearer ${login.json().token}` }
+      });
+      expect(bearer.statusCode).toBe(200);
+
+      process.env.OTTE_ALLOW_LEGACY_USER_HEADER = "true";
+      const enabled = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: authHeaders
+      });
+      expect(enabled.statusCode).toBe(200);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("supports campaign invites for new password users", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });
@@ -520,6 +846,21 @@ describe("api", () => {
       expect(session.statusCode).toBe(200);
       expect(session.json().user).toEqual(expect.objectContaining({ email: "sso.user@example.test" }));
       expect(session.json().user).not.toHaveProperty("passwordHash");
+
+      const ssoUser = store.state.users.find((user) => user.id === fragment.get("ssoUserId"));
+      expect(ssoUser).toBeTruthy();
+      ssoUser!.disabledAt = "2026-05-01T00:00:00.000Z";
+      const disabledStart = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/oidc/start",
+        payload: { returnTo: "http://127.0.0.1:5186/" }
+      });
+      const disabledAuthorizationUrl = new URL(disabledStart.json().authorizationUrl);
+      const disabledCallback = await app.inject({
+        method: "GET",
+        url: `/api/v1/auth/oidc/callback?code=valid-code&state=${encodeURIComponent(disabledAuthorizationUrl.searchParams.get("state")!)}`
+      });
+      expect(disabledCallback.statusCode).toBe(401);
 
       const reusedState = await app.inject({
         method: "GET",

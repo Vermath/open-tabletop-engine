@@ -33,6 +33,8 @@ The API persists campaign state to SQLite at `storage/opentabletop.sqlite` by de
 
 OIDC SSO is optional. Set `OTTE_OIDC_ISSUER`, `OTTE_OIDC_CLIENT_ID`, optional `OTTE_OIDC_CLIENT_SECRET`, and an externally reachable `OTTE_OIDC_REDIRECT_URI` ending in `/api/v1/auth/oidc/callback`. Set `OTTE_WEB_ORIGIN` or `OTTE_OIDC_ALLOWED_RETURN_ORIGINS` to the browser origin that should receive the callback token.
 
+Production auth operations are API-backed. Set `OTTE_ADMIN_USER_IDS` to a comma-separated list of user ids that can call `/api/v1/admin/*`. Password reset requests create hashed `opr_` reset tokens and outbox email records; set `OTTE_PASSWORD_RESET_URL` to the browser reset form URL, and set `OTTE_EMAIL_WEBHOOK_URL` plus optional `OTTE_EMAIL_WEBHOOK_TOKEN` to deliver messages through your mail bridge. Without a webhook, reset messages remain visible to server admins through `/api/v1/admin/email-outbox`. Legacy `x-user-id` auth is disabled outside tests unless `OTTE_ALLOW_LEGACY_USER_HEADER=true` is explicitly set.
+
 The worker app can process a single JSON job from stdin against a running API:
 
 ```bash
@@ -69,6 +71,21 @@ OTTE_SESSION_TOKEN="$(curl -sS -X POST \
   http://localhost:4000/api/v1/auth/login | jq -r .token)"
 
 curl -H "Authorization: Bearer $OTTE_SESSION_TOKEN" http://localhost:4000/api/v1/campaigns
+```
+
+Admin operations require a bearer session for one of the ids in `OTTE_ADMIN_USER_IDS`:
+
+```bash
+OTTE_ADMIN_SESSION_TOKEN="$(curl -sS -X POST \
+  -H "content-type: application/json" \
+  --data '{"userId":"usr_demo_gm"}' \
+  http://localhost:4000/api/v1/auth/login | jq -r .token)"
+
+curl -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" http://localhost:4000/api/v1/admin/users
+
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  http://localhost:4000/api/v1/admin/users/usr_demo_player/password-reset
 ```
 
 Campaign archives are JSON `.ottx` files. The import endpoint upserts every archive collection, including users, members, scenes, assets, tokens, actors, journals, encounters, combats, AI memory, audit logs, and permission grants. Uploaded asset files are embedded as base64 archive `files` entries with size and `sha256` checksums; import validates and restores them through the active asset storage provider.

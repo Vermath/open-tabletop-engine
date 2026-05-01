@@ -491,11 +491,43 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/oidc-sso-gm.png`.
   - Browser console had no errors; it showed the React devtools message, an autocomplete advisory, and one expected transient websocket warning from switching sessions during the login redirect.
 
+### Production Auth Operations Slice
+
+- Implementation:
+  - Added password reset request/confirm endpoints with opaque `opr_` tokens stored only as `sha256` hashes.
+  - Added email outbox records and optional webhook delivery through `OTTE_EMAIL_WEBHOOK_URL` and `OTTE_EMAIL_WEBHOOK_TOKEN`.
+  - Added user password change and self-service session listing/revocation endpoints.
+  - Added server-admin user/session/outbox endpoints gated by `OTTE_ADMIN_USER_IDS`.
+  - Added account disable, password-reset-required flags, admin-triggered resets, all-session revocation, and disabled-user login blocking.
+  - Disabled legacy `x-user-id` authentication outside tests unless `OTTE_ALLOW_LEGACY_USER_HEADER=true` is explicitly set.
+  - Excluded password reset tokens and email outbox records from campaign archives.
+  - Added Docker Compose and `.env.example` passthrough for admin/reset/email/legacy-auth settings.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `25 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API tests cover password reset email delivery and confirmation, no account enumeration for unknown reset requests, hashed reset token storage, rejected token reuse, password change with stale-session revocation, self session deletion, admin user listing, admin-triggered reset without a JSON body, admin session listing/revocation, all-session revocation for a user, disabled-user login/OIDC blocking, password-reset-required login blocking, admin outbox reads, and the production legacy-header hard fence.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4439`
+  - Email webhook: `http://127.0.0.1:4713/email`
+  - SQLite file: `storage/manual-production-auth-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, `OTTE_EMAIL_WEBHOOK_URL=http://127.0.0.1:4713/email`, `OTTE_EMAIL_WEBHOOK_TOKEN=manual-email-secret`, and `OTTE_PASSWORD_RESET_URL=http://127.0.0.1:5186/reset-password`.
+  - `GET /api/v1/campaigns` with only `x-user-id: usr_demo_gm` returned `401`.
+  - GM password reset request returned `200`; unknown email reset request also returned `200` and created zero webhook events.
+  - The webhook received the GM reset email for `gm@example.test` with `Authorization: Bearer manual-email-secret`, provider `webhook`, and an `opr_` token in the reset URL.
+  - `POST /api/v1/auth/password-reset/confirm` returned `200` with an `ots_` session token, and login with the new GM password returned `200`.
+  - `GET /api/v1/auth/sessions` showed two GM sessions; deleting the reset-created session returned `200` and left one session.
+  - Admin-triggered player reset returned `200`, did not expose `tokenHash`, and delivered a second webhook email for `player@example.test`.
+  - Admin all-session revocation for `usr_demo_player` returned `{ "revoked": 1 }`; the revoked player bearer then returned `401`.
+  - Admin disabled `usr_demo_player`; passwordless login for that user then returned `403`.
+  - Admin email outbox returned two delivered webhook messages, one for GM and one for player.
+  - SQLite inspection showed reset tokens and session tokens stored as `sha256:` hashes, no raw reset token field on reset records, two email outbox rows, and the GM password stored as a `scrypt:` hash.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
-- Auth now has bearer sessions, password registration/login, campaign invites, and OIDC SSO, but still lacks password reset/email delivery, account administration, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
+- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, account administration, production session administration, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs first-class reset UI, MFA, SCIM/organization sync, and audit export.
 - Uploaded maps now support local and S3/MinIO-backed storage, including archive export/import through the active provider. Production storage work still needs lifecycle policies, migration tooling, and CDN/presigned delivery.
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.

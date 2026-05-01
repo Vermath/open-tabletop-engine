@@ -2,7 +2,7 @@
 
 The API is served from `apps/api` and exposes:
 
-Authenticated endpoints require a bearer session token. Create one with `POST /api/v1/auth/login` or `POST /api/v1/auth/register`, then send `Authorization: Bearer <token>` on REST requests. Password-backed users authenticate by email and password. The seeded local users are `usr_demo_gm` and `usr_demo_player`; they remain passwordless for local test compatibility. The legacy `x-user-id` header remains available for local test compatibility, but the browser client and documented flows use bearer sessions. Asset blob and realtime URLs accept `sessionToken=<token>` for contexts that cannot set an `Authorization` header.
+Authenticated endpoints require a bearer session token. Create one with `POST /api/v1/auth/login` or `POST /api/v1/auth/register`, then send `Authorization: Bearer <token>` on REST requests. Password-backed users authenticate by email and password. The seeded local users are `usr_demo_gm` and `usr_demo_player`; they remain passwordless for local test compatibility. The legacy `x-user-id` header is disabled outside tests unless `OTTE_ALLOW_LEGACY_USER_HEADER=true` is set. Asset blob and realtime URLs accept `sessionToken=<token>` for contexts that cannot set an `Authorization` header.
 
 OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. The API discovers the provider metadata, starts an authorization-code flow with PKCE/state/nonce, exchanges the callback code, reads the OIDC userinfo endpoint, links an existing user by normalized email when possible, and issues the same opaque `ots_` bearer session token used by password login. Production return origins should be set with `OTTE_WEB_ORIGIN` or `OTTE_OIDC_ALLOWED_RETURN_ORIGINS`; localhost return origins are allowed for development.
 
@@ -11,9 +11,21 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/session`
+- `POST /api/v1/auth/password-reset/request`
+- `POST /api/v1/auth/password-reset/confirm`
+- `POST /api/v1/auth/password/change`
+- `GET /api/v1/auth/sessions`
+- `DELETE /api/v1/auth/sessions/{sessionId}`
 - `GET /api/v1/auth/oidc/config`
 - `GET|POST /api/v1/auth/oidc/start`
 - `GET /api/v1/auth/oidc/callback`
+- `GET /api/v1/admin/users`
+- `PATCH /api/v1/admin/users/{userId}`
+- `POST /api/v1/admin/users/{userId}/password-reset`
+- `DELETE /api/v1/admin/users/{userId}/sessions`
+- `GET /api/v1/admin/sessions`
+- `DELETE /api/v1/admin/sessions/{sessionId}`
+- `GET /api/v1/admin/email-outbox`
 - `GET /api/v1/openapi.json`
 - `GET|POST /api/v1/campaigns`
 - `GET|PATCH|DELETE /api/v1/campaigns/{campaignId}`
@@ -87,6 +99,58 @@ curl -X POST \
   "http://localhost:4000/api/v1/auth/register"
 ```
 
+Request and confirm a password reset. The request response is always `{ "ok": true }` so callers cannot enumerate accounts by email. When `OTTE_EMAIL_WEBHOOK_URL` is set, the API posts the queued email payload to that webhook; otherwise the message stays in the admin outbox as `pending`.
+
+```bash
+curl -X POST \
+  -H "content-type: application/json" \
+  --data '{"email":"player@example.com"}' \
+  "http://localhost:4000/api/v1/auth/password-reset/request"
+
+curl -X POST \
+  -H "content-type: application/json" \
+  --data '{"token":"opr_...","password":"replace-this-password"}' \
+  "http://localhost:4000/api/v1/auth/password-reset/confirm"
+```
+
+Change the current user's password and manage their active sessions:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"currentPassword":"old-password","newPassword":"new-password"}' \
+  "http://localhost:4000/api/v1/auth/password/change"
+
+curl -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
+  "http://localhost:4000/api/v1/auth/sessions"
+
+curl -X DELETE \
+  -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
+  "http://localhost:4000/api/v1/auth/sessions/sess_..."
+```
+
+Server administrators are the user ids listed in `OTTE_ADMIN_USER_IDS`. Admin endpoints can list/update users, require password resets, disable accounts, revoke sessions, and inspect the email outbox:
+
+```bash
+curl -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  "http://localhost:4000/api/v1/admin/users"
+
+curl -X PATCH \
+  -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"disabled":true,"disabledReason":"left the table"}' \
+  "http://localhost:4000/api/v1/admin/users/usr_demo_player"
+
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  "http://localhost:4000/api/v1/admin/users/usr_demo_player/password-reset"
+
+curl -X DELETE \
+  -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \
+  "http://localhost:4000/api/v1/admin/users/usr_demo_player/sessions"
+```
+
 Invite a player and accept the invite:
 
 ```bash
@@ -102,7 +166,19 @@ curl -X POST \
   "http://localhost:4000/api/v1/invites/accept"
 ```
 
-Invite tokens are returned only once at creation and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, and user password hashes.
+Invite and password-reset tokens are returned only once and are stored hashed in engine state. Listing invites returns metadata and status without the token hash. Campaign exports omit operational sessions, OIDC identities, OAuth login states, invite records, password reset records, email outbox records, and user password hashes.
+
+Password reset and admin environment variables:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `OTTE_ADMIN_USER_IDS` | no | Comma-separated user ids allowed to call `/api/v1/admin/*`. |
+| `OTTE_PASSWORD_RESET_URL` | no | Reset form URL. The API appends `token=<opr_token>`. Falls back to `${OTTE_WEB_ORIGIN}/reset-password` when set. |
+| `OTTE_PASSWORD_RESET_TTL_MINUTES` | no | Reset token lifetime, clamped from 5 minutes to 24 hours. Defaults to 60 minutes. |
+| `OTTE_EMAIL_WEBHOOK_URL` | no | HTTP endpoint that receives queued email payloads as JSON. Without it, messages stay pending in the outbox. |
+| `OTTE_EMAIL_WEBHOOK_TOKEN` | no | Bearer token sent to the email webhook. |
+| `OTTE_EMAIL_WEBHOOK_TIMEOUT_MS` | no | Email webhook timeout, clamped from 500 ms to 30000 ms. Defaults to 5000 ms. |
+| `OTTE_ALLOW_LEGACY_USER_HEADER` | no | Set to `true` only for compatibility tooling that still needs `x-user-id` outside tests. |
 
 Start an OIDC SSO login:
 

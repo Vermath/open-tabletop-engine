@@ -26,6 +26,8 @@ const stateCollections = [
   "sessions",
   "identities",
   "oauthStates",
+  "passwordResetTokens",
+  "emailOutbox",
   "invites",
   "campaigns",
   "members",
