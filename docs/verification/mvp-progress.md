@@ -117,10 +117,35 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - Screenshot inspection showed two wall lines and the lit token area in the active scene.
     - Live API check returned `WallCount: 2`, `LightCount: 2`, last wall coordinates `x1: 300`, `y1: 224`, `x2: 900`, `y2: 224`, `blocksVision: true`, and last light coordinates `x: 325`, `y: 375`, `radius: 210`, `color: #facc15`.
 
+### GM Player Session Slice
+
+- Commit: `3db3da6 feat: add demo player session switching`
+- Evidence:
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test passed with `12 passed`.
+  - API test verifies:
+    - Seeded `usr_demo_player` has a `player` membership in `camp_demo`.
+    - Player can list the campaign and campaign members.
+    - Member permission payload includes `token.move` and excludes `scene.update`.
+    - Player can move `tok_valen`.
+    - Player can update owned actor HP for `act_valen`.
+    - Player cannot create scene walls.
+    - Player cannot read the seeded GM-only journal hook.
+  - Manual browser/API evidence on local dev servers:
+    - API: `http://127.0.0.1:4424`
+    - Web: `http://localhost:5177`
+    - Fresh SQLite state file: `storage/manual-session-20260501.sqlite`
+    - Browser session switcher showed `Demo GM - owner` and `Demo Player - player`.
+    - Switching to `Demo Player - player` disabled GM-only scene, map, token-create, combat, fog, wall, and light controls.
+    - Player browser dragged Valen Ash; live API check returned `TokenX: 590`, `TokenY: 541`.
+    - Player member API check returned role `player`, `PlayerCanMoveToken: true`, and `PlayerCanUpdateScene: false`.
+    - A separate GM browser session loaded as `Demo GM - owner` and reflected the moved Valen token; screenshot inspection showed the token at the new lower-center scene position.
+    - GM session token bounding box after the player move was approximately `x: 576.75`, `y: 496.27`, showing the second client received the updated scene state.
+
 ## Known Remaining Gaps
 
 - Auth is still a development `x-user-id` session header, not production authentication.
-- Browser role switching and a true GM/player two-user tabletop session still need richer manual coverage.
+- Browser role switching and GM/player token movement now have MVP coverage; broader multi-user workflows still need final clean-checkout audit coverage.
 - Uploaded maps now have a local binary storage path, but they are not yet backed by S3 or MinIO object storage.
 - Fog, wall, and light authoring now has MVP controls, but advanced line-of-sight enforcement and player-specific visibility remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
