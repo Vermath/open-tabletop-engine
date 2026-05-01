@@ -96,12 +96,33 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - `Approve and apply` changed the `Session Recap` proposal to `applied`.
     - Live API check returned applied proposal titles `Encounter Designer Draft` and `Session Recap`, encounter name `AI Draft Encounter`, approved memory count `1`, and session recap journal count `1`.
 
+### Fog Walls And Lighting Authoring Slice
+
+- Commit: `d2c8e6f feat: add wall and light authoring`
+- Evidence:
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test passed with `11 passed`.
+  - API test verifies:
+    - Observer role cannot create scene walls.
+    - GM can add a wall through `POST /api/v1/scenes/{sceneId}/walls`.
+    - GM can add a light through `POST /api/v1/scenes/{sceneId}/lights`.
+    - The updated scene returns the seeded wall/light plus the newly authored wall/light.
+  - Manual browser/API evidence on local dev servers:
+    - API: `http://127.0.0.1:4423`
+    - Web: `http://localhost:5175`
+    - Fresh SQLite state file: `storage/manual-vision-20260501.sqlite`
+    - Browser loaded `The Ember Vault` and exposed toolbar buttons `Add wall` and `Add light`.
+    - Clicking `Add wall` rendered a second wall line in the scene.
+    - Clicking `Add light` persisted a second light centered on the selected Valen Ash token.
+    - Screenshot inspection showed two wall lines and the lit token area in the active scene.
+    - Live API check returned `WallCount: 2`, `LightCount: 2`, last wall coordinates `x1: 300`, `y1: 224`, `x2: 900`, `y2: 224`, `blocksVision: true`, and last light coordinates `x: 325`, `y: 375`, `radius: 210`, `color: #facc15`.
+
 ## Known Remaining Gaps
 
 - Auth is still a development `x-user-id` session header, not production authentication.
 - Browser role switching and a true GM/player two-user tabletop session still need richer manual coverage.
 - Uploaded maps now have a local binary storage path, but they are not yet backed by S3 or MinIO object storage.
-- Fog, walls, and lights exist in scene state, but wall/light authoring tools are still basic.
+- Fog, wall, and light authoring now has MVP controls, but advanced line-of-sight enforcement and player-specific visibility remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
 - AI flows still need richer provider-backed tool proposal creation and memory extraction beyond the deterministic MVP flows.
