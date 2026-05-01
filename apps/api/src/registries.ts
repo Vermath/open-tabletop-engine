@@ -15,5 +15,20 @@ export const installedSystems: SystemManifest[] = [
       item: "/systems/generic-fantasy/item.schema.json"
     },
     permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
+  },
+  {
+    id: "stellar-frontiers",
+    name: "Stellar Frontiers",
+    version: "0.1.0",
+    compatibleCore: ">=0.1.0",
+    entrypoints: {
+      client: "/systems/stellar-frontiers/client.js",
+      server: "/systems/stellar-frontiers/server.js"
+    },
+    schemas: {
+      actor: "/systems/stellar-frontiers/actor.schema.json",
+      item: "/systems/stellar-frontiers/item.schema.json"
+    },
+    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
   }
 ];

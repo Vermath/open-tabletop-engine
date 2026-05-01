@@ -397,6 +397,12 @@ export function App() {
     await refresh();
   }
 
+  async function installSystem(system: SystemRuntimeInfo) {
+    await apiPost(`/api/v1/campaigns/${campaignId}/systems/${system.id}/install`, {});
+    setStatus(`${system.name} activated`);
+    await refresh();
+  }
+
   async function runPluginCommand(plugin: PluginRuntimeInfo, command: string) {
     await apiPost(`/api/v1/campaigns/${campaignId}/plugins/${plugin.id}/chat-command`, {
       command,
@@ -409,7 +415,7 @@ export function App() {
   async function rollSystemCheck() {
     if (!selectedActor) return;
     await apiPost(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
-      rollId: "ability-charisma"
+      rollId: selectedActor.systemId === "stellar-frontiers" ? "aptitude-tech" : "ability-charisma"
     });
     setStatus("System roll posted");
     await refresh();
@@ -684,7 +690,7 @@ export function App() {
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
-            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} actor={selectedActor} onInstallPlugin={installPlugin} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canRollSystem={hasPermission("dice.roll")} />}
+            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} actor={selectedActor} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canRollSystem={hasPermission("dice.roll")} />}
             {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} />}
           </aside>
         </div>
@@ -878,8 +884,9 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
   if (!props.actor) return <div className="panel-empty">No actor selected.</div>;
   const hp = props.actor.data.hp as { current?: number; max?: number } | undefined;
   const conditions = actorConditionLabels(props.actor);
-  const inventory = props.items.filter((item) => item.type !== "spell");
+  const inventory = props.items.filter((item) => item.type !== "spell" && item.type !== "talent");
   const spells = props.items.filter((item) => item.type === "spell");
+  const talents = props.items.filter((item) => item.type === "talent");
   return (
     <div className="panel-stack">
       <div className="section-title">Selected Actor</div>
@@ -912,6 +919,12 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
           <strong>{spells.map((item) => item.name).join(", ")}</strong>
         </div>
       )}
+      {talents.length > 0 && (
+        <div className="metric-row">
+          <span>Talents</span>
+          <strong>{talents.map((item) => item.name).join(", ")}</strong>
+        </div>
+      )}
       <div className="sheet-row">
         <label htmlFor="actor-hp">Current HP</label>
         <input id="actor-hp" type="number" value={hp?.current ?? 0} disabled={!props.canUpdateActor} onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))} />
@@ -925,7 +938,10 @@ function actorConditionLabels(actor: Actor): string[] {
   const names: Record<string, string> = {
     blessed: "Blessed",
     poisoned: "Poisoned",
-    restrained: "Restrained"
+    restrained: "Restrained",
+    "locked-in": "Locked In",
+    jammed: "Jammed",
+    "vacuum-exposed": "Vacuum Exposed"
   };
   const value = actor.data.conditions;
   if (!Array.isArray(value)) return [];
@@ -1315,8 +1331,9 @@ function formatDateTime(value?: string): string {
   return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; actor?: Actor; onInstallPlugin(plugin: PluginRuntimeInfo): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canRollSystem: boolean }) {
+function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; actor?: Actor; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canRollSystem: boolean }) {
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
+  const rollLabel = props.actor?.systemId === "stellar-frontiers" ? "Tech Check" : "Charisma Check";
   return (
     <div className="panel-stack">
       <div className="section-title">Runtime SDK</div>
@@ -1343,12 +1360,24 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
         <span>Active System</span>
         <strong>{activeSystem?.name ?? "No system"}</strong>
       </div>
+      {props.systems.map((system) => (
+        <article className="proposal" key={system.id}>
+          <span>{system.active ? "active system" : "available system"}</span>
+          <h3>{system.name}</h3>
+          <p>v{system.version}</p>
+          {!system.active && (
+            <button className="ghost-button" onClick={() => props.onInstallSystem(system)} disabled={!props.canInstallSystem}>
+              <Plus size={15} /> Activate
+            </button>
+          )}
+        </article>
+      ))}
       <div className="metric-row">
         <span>Sheet Actor</span>
         <strong>{props.actor?.name ?? "No actor"}</strong>
       </div>
       <button className="primary-button wide" onClick={props.onSystemRoll} disabled={!props.actor || !props.canRollSystem}>
-        <ChevronRight size={16} /> Charisma Check
+        <ChevronRight size={16} /> {rollLabel}
       </button>
     </div>
   );

@@ -898,6 +898,40 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/rules-compendium-gm.png`.
   - Browser console had no app runtime errors; it showed the existing missing `favicon.ico` 404, React DevTools info message, and an autocomplete advisory.
 
+### Second Rules System Slice
+
+- Implementation:
+  - Added a second packaged example system at `plugins/example-system-stellar-frontiers` with a manifest, actor schema, item schema, client registration, and server helper.
+  - Added a built-in Stellar Frontiers runtime with aptitude quick rolls, strain-aware sheets, gear, talents, and conditions for Locked In, Jammed, and Vacuum Exposed.
+  - Generalized system API helpers so compendium import, condition application/removal, sheet reads, rolls, and the AI `read_compendium` tool route by system id instead of assuming Generic Fantasy.
+  - Added Stellar Frontiers to the installed system catalog and browser SDK panel, including campaign activation and a Tech Check action for Stellar actors.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk test` passed with `4 passed`.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `49 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - `git diff --check` passed.
+  - System SDK tests verify Stellar Frontiers Locked In and Jammed condition effects, condition removal, gear/talent sheet surfaces, and compendium lookups.
+  - API tests verify campaign activation of Stellar Frontiers, Stellar compendium reads, actor sheet quick rolls, talent import, condition-aware aptitude formulas, GM chat-posted rolls, and observer roll denial.
+- Manual API and browser evidence:
+  - API: `http://127.0.0.1:4466`
+  - Web: `http://127.0.0.1:5192`
+  - SQLite file: `apps/api/storage/manual-stellar-frontiers-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, and `OTTE_SQLITE_PATH=apps/api/storage/manual-stellar-frontiers-20260501.sqlite`.
+  - Bearer login returned an `ots_` token prefix.
+  - Installing Stellar Frontiers changed the campaign default system to `stellar-frontiers`; a follow-up system list returned `generic-fantasy:False,stellar-frontiers:True`.
+  - Stellar Frontiers compendium returned ids `laser-carbine,med-patch,overclock,locked-in,jammed,vacuum-exposed`.
+  - Created Stellar actor `Nova Quill` with tech aptitude `3` and strain `3/6`; the initial Tech Check formula was `1d20+3`.
+  - Importing `laser-carbine` listed gear `Laser Carbine`; importing `overclock` listed talent `Overclock`.
+  - Applying Locked In changed Tech Check to `1d20+3+1d6`; applying Jammed changed it to `2d20kl1+3+1d6`.
+  - Posting the Stellar system roll returned label `Tech Check`, formula `2d20kl1+3+1d6`, and chat `Nova Quill Tech Check: 2d20kl1+3+1d6 = 12`.
+  - Browser SDK panel loaded as `Demo GM - owner`, showed `Stellar Frontiers` as the active system, showed `Generic Fantasy` as an available system with `Activate`, selected the Stellar actor `Nova Quill`, exposed `Tech Check`, and rendered the Stellar roll in chat.
+  - Screenshot saved at `output/playwright/stellar-frontiers-system.png`.
+  - Browser page errors were empty; console output only showed Vite connection/debug lines and the React DevTools info message.
+
 ### AI Tool Depth And Observability Slice
 
 - Implementation:
@@ -1175,5 +1209,5 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
-- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
+- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, system activation, conditions, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, character builders, leveling/progression, encounter math, importers, and deeper automation across more systems.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Stellar Frontiers Actor",
+  "type": "object",
+  "properties": {
+    "aptitudes": {
+      "type": "object",
+      "properties": {
+        "combat": { "type": "number" },
+        "tech": { "type": "number" },
+        "pilot": { "type": "number" },
+        "science": { "type": "number" },
+        "charm": { "type": "number" }
+      },
+      "required": ["combat", "tech", "pilot", "science", "charm"]
+    },
+    "strain": {
+      "type": "object",
+      "properties": {
+        "current": { "type": "number" },
+        "max": { "type": "number" }
+      },
+      "required": ["current", "max"]
+    },
+    "conditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "appliedAt": { "type": "string" }
+        },
+        "required": ["id"]
+      }
+    }
+  },
+  "required": ["aptitudes", "strain"]
+}

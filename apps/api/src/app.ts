@@ -7,7 +7,7 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
+import { applyGenericFantasyCondition, applyStellarFrontiersCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -2474,11 +2474,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const entry = compendiumEntryForSystem(request.params.systemId, request.body.entryId ?? "");
     if (!entry) return notFound(reply, "Compendium entry not found");
     if (entry.type === "condition") {
-      actor.data = applyGenericFantasyCondition(actor, entry.id, nowIso());
+      actor.data = applySystemCondition(actor, entry.id, nowIso());
       actor.updatedAt = nowIso();
       store.save();
       broadcastActorUpdated(broadcast, actor);
-      return { entry, actor, sheet: genericFantasySheet(actor, actorItems(store, actor)) };
+      return { entry, actor, sheet: systemSheet(actor, actorItems(store, actor)) };
     }
     const item = createTimestamped("itm", {
       campaignId: request.params.campaignId,
@@ -2490,7 +2490,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Item;
     store.state.items.push(item);
     store.save();
-    return { entry, item, sheet: genericFantasySheet(actor, actorItems(store, actor)) };
+    return { entry, item, sheet: systemSheet(actor, actorItems(store, actor)) };
   });
 
   app.post<{
@@ -2504,11 +2504,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
     const entry = compendiumEntryForSystem(request.params.systemId, request.body.conditionId ?? "");
     if (!entry || entry.type !== "condition") return notFound(reply, "Condition not found");
-    actor.data = applyGenericFantasyCondition(actor, entry.id, nowIso());
+    actor.data = applySystemCondition(actor, entry.id, nowIso());
     actor.updatedAt = nowIso();
     store.save();
     broadcastActorUpdated(broadcast, actor);
-    return { entry, actor, sheet: genericFantasySheet(actor, actorItems(store, actor)) };
+    return { entry, actor, sheet: systemSheet(actor, actorItems(store, actor)) };
   });
 
   app.delete<{ Params: { campaignId: string; systemId: string; actorId: string; conditionId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/conditions/:conditionId", async (request, reply) => {
@@ -2517,11 +2517,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
-    actor.data = removeGenericFantasyCondition(actor, request.params.conditionId);
+    actor.data = removeSystemCondition(actor, request.params.conditionId);
     actor.updatedAt = nowIso();
     store.save();
     broadcastActorUpdated(broadcast, actor);
-    return { actor, sheet: genericFantasySheet(actor, actorItems(store, actor)) };
+    return { actor, sheet: systemSheet(actor, actorItems(store, actor)) };
   });
 
   app.get<{
@@ -2531,7 +2531,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
     if (!actor) return notFound(reply, "System actor not found");
-    const sheet = genericFantasySheet(actor, actorItems(store, actor));
+    const sheet = systemSheet(actor, actorItems(store, actor));
     return {
       systemId: request.params.systemId,
       ...sheet
@@ -2554,8 +2554,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
     if (!actor) return notFound(reply, "System actor not found");
-    const quickRolls = genericFantasyQuickRolls(actor);
-    const rollDefinition = quickRolls.find((item) => item.id === request.body.rollId) ?? quickRolls.find((item) => item.id === `ability-${request.body.ability}`) ?? quickRolls[0];
+    const quickRolls = systemQuickRolls(actor);
+    const rollDefinition =
+      quickRolls.find((item) => item.id === request.body.rollId) ??
+      quickRolls.find((item) => item.id === `ability-${request.body.ability}`) ??
+      quickRolls.find((item) => item.id === `aptitude-${request.body.ability}`) ??
+      quickRolls[0];
     if (!rollDefinition) return notFound(reply, "No system roll is available for this actor");
     const rolled = rollFormula(rollDefinition.formula);
     const roll = createTimestamped("roll", {
@@ -3214,7 +3218,7 @@ function createAiThreadTools(): AiToolDefinition[] {
       parameters: {
         type: "object",
         properties: {
-          systemId: { type: "string", description: "Rules system id. Currently supports generic-fantasy." }
+          systemId: { type: "string", description: "Rules system id. Supports generic-fantasy and stellar-frontiers." }
         },
         additionalProperties: false
       },
@@ -5223,11 +5227,35 @@ function findSystemActor(store: StateStore, campaignId: string, systemId: string
 }
 
 function compendiumEntriesForSystem(systemId: string) {
-  return systemId === "generic-fantasy" ? genericFantasyCompendium() : [];
+  if (systemId === "generic-fantasy") return genericFantasyCompendium();
+  if (systemId === "stellar-frontiers") return stellarFrontiersCompendium();
+  return [];
 }
 
 function compendiumEntryForSystem(systemId: string, entryId: string) {
-  return systemId === "generic-fantasy" ? genericFantasyCompendiumEntry(entryId) : undefined;
+  if (systemId === "generic-fantasy") return genericFantasyCompendiumEntry(entryId);
+  if (systemId === "stellar-frontiers") return stellarFrontiersCompendiumEntry(entryId);
+  return undefined;
+}
+
+function systemSheet(actor: Actor, items: Item[]) {
+  if (actor.systemId === "stellar-frontiers") return stellarFrontiersSheet(actor, items);
+  return genericFantasySheet(actor, items);
+}
+
+function systemQuickRolls(actor: Actor) {
+  if (actor.systemId === "stellar-frontiers") return stellarFrontiersQuickRolls(actor);
+  return genericFantasyQuickRolls(actor);
+}
+
+function applySystemCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {
+  if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersCondition(actor, conditionId, appliedAt);
+  return applyGenericFantasyCondition(actor, conditionId, appliedAt);
+}
+
+function removeSystemCondition(actor: Actor, conditionId: string): Record<string, unknown> {
+  if (actor.systemId === "stellar-frontiers") return removeStellarFrontiersCondition(actor, conditionId);
+  return removeGenericFantasyCondition(actor, conditionId);
 }
 
 function actorItems(store: StateStore, actor: Actor): Item[] {

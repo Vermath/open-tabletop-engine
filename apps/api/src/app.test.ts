@@ -2087,6 +2087,154 @@ describe("api", () => {
     await app.close();
   });
 
+  it("supports a second rules system with its own compendium, sheet, conditions, and rolls", async () => {
+    const store = new MemoryStateStore();
+    store.state.users.push(
+      createTimestamped("usr", {
+        id: "usr_observer",
+        displayName: "Observer"
+      })
+    );
+    store.state.members.push(
+      createTimestamped("mem", {
+        campaignId: "camp_demo",
+        userId: "usr_observer",
+        role: "observer" as const
+      })
+    );
+    const app = await buildApp({ store });
+
+    try {
+      const systems = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems",
+        headers: authHeaders
+      });
+      expect(systems.statusCode).toBe(200);
+      expect(systems.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "generic-fantasy", active: true }),
+          expect.objectContaining({ id: "stellar-frontiers", active: false })
+        ])
+      );
+
+      const install = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/stellar-frontiers/install",
+        headers: authHeaders
+      });
+      expect(install.statusCode).toBe(200);
+      expect(install.json().campaign.defaultSystemId).toBe("stellar-frontiers");
+
+      const actor = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "stellar-frontiers",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: "Nova Quill",
+          data: {
+            aptitudes: { combat: 2, tech: 3, pilot: 1, science: 2, charm: 0 },
+            strain: { current: 3, max: 6 },
+            conditions: []
+          }
+        }
+      });
+      expect(actor.statusCode).toBe(200);
+      const actorId = actor.json().id;
+
+      const compendium = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/stellar-frontiers/compendium",
+        headers: authHeaders
+      });
+      expect(compendium.statusCode).toBe(200);
+      expect(compendium.json().entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "laser-carbine", type: "gear" }),
+          expect.objectContaining({ id: "overclock", type: "talent" }),
+          expect.objectContaining({ id: "jammed", type: "condition" })
+        ])
+      );
+
+      const sheet = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${actorId}/sheet`,
+        headers: authHeaders
+      });
+      expect(sheet.statusCode).toBe(200);
+      expect(sheet.json()).toMatchObject({
+        systemId: "stellar-frontiers",
+        actorId,
+        summary: expect.stringContaining("Nova Quill")
+      });
+      expect(sheet.json().quickRolls).toContainEqual({
+        id: "aptitude-tech",
+        label: "Tech Check",
+        formula: "1d20+3"
+      });
+
+      const learnedTalent = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${actorId}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "overclock" }
+      });
+      expect(learnedTalent.statusCode).toBe(200);
+      expect(learnedTalent.json().item).toEqual(expect.objectContaining({ type: "talent", name: "Overclock", actorId }));
+      expect(learnedTalent.json().sheet.talents).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Overclock" })]));
+
+      const lockedIn = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${actorId}/conditions`,
+        headers: authHeaders,
+        payload: { conditionId: "locked-in" }
+      });
+      expect(lockedIn.statusCode).toBe(200);
+      expect(lockedIn.json().sheet.conditions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "locked-in", name: "Locked In" })]));
+      expect(lockedIn.json().sheet.quickRolls).toContainEqual({
+        id: "aptitude-tech",
+        label: "Tech Check",
+        formula: "1d20+3+1d6"
+      });
+
+      const jammed = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${actorId}/conditions`,
+        headers: authHeaders,
+        payload: { conditionId: "jammed" }
+      });
+      expect(jammed.statusCode).toBe(200);
+      expect(jammed.json().sheet.quickRolls).toContainEqual({
+        id: "aptitude-tech",
+        label: "Tech Check",
+        formula: "2d20kl1+3+1d6"
+      });
+
+      const roll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "aptitude-tech" }
+      });
+      expect(roll.statusCode).toBe(200);
+      expect(roll.json().quickRoll.formula).toBe("2d20kl1+3+1d6");
+      expect(store.state.chat.some((message) => message.body.includes("Nova Quill Tech Check"))).toBe(true);
+
+      const observerRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/stellar-frontiers/actors/${actorId}/roll`,
+        headers: { "x-user-id": "usr_observer" },
+        payload: { rollId: "aptitude-tech" }
+      });
+      expect(observerRoll.statusCode).toBe(403);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("installs, upgrades, and rolls back versioned plugin packages", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-api-"));
     try {

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Stellar Frontiers Item",
+  "type": "object",
+  "properties": {
+    "description": { "type": "string" },
+    "category": { "type": "string" },
+    "damage": { "type": "string" },
+    "aptitude": { "type": "string" },
+    "strainCost": { "type": "number" }
+  },
+  "required": ["description"]
+}

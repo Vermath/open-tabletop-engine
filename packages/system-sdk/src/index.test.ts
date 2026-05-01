@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyGenericFantasyCondition, genericFantasyActorConditions, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition } from "./index.js";
+import { applyGenericFantasyCondition, applyStellarFrontiersCondition, genericFantasyActorConditions, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersCompendiumEntry, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -65,5 +65,72 @@ describe("generic fantasy rules", () => {
     const sheet = genericFantasySheet(actor, items);
     expect(sheet.inventory.map((item) => item.name)).toEqual(["Longsword"]);
     expect(sheet.spells.map((item) => item.name)).toEqual(["Healing Word"]);
+  });
+});
+
+const pilot: Actor = {
+  id: "act_pilot",
+  campaignId: "camp_demo",
+  systemId: "stellar-frontiers",
+  ownerUserId: "usr_demo_player",
+  type: "character",
+  name: "Nova Quill",
+  data: {
+    aptitudes: { combat: 2, tech: 3, pilot: 1, science: 2, charm: 0 },
+    strain: { current: 3, max: 6 },
+    conditions: []
+  },
+  permissions: {},
+  createdAt: "2026-05-01T00:00:00.000Z",
+  updatedAt: "2026-05-01T00:00:00.000Z"
+};
+
+describe("stellar frontiers rules", () => {
+  it("adds sci-fi condition effects to aptitude rolls", () => {
+    const focusedData = applyStellarFrontiersCondition(pilot, "locked-in", "2026-05-01T00:00:00.000Z");
+    const focusedPilot = { ...pilot, data: focusedData };
+
+    expect(stellarFrontiersActorConditions(focusedPilot)).toContainEqual(expect.objectContaining({ id: "locked-in", name: "Locked In" }));
+    expect(stellarFrontiersQuickRolls(focusedPilot).find((roll) => roll.id === "aptitude-tech")?.formula).toBe("1d20+3+1d6");
+
+    const jammedData = applyStellarFrontiersCondition(focusedPilot, "jammed", "2026-05-01T00:00:01.000Z");
+    const jammedPilot = { ...pilot, data: jammedData };
+    expect(stellarFrontiersQuickRolls(jammedPilot).find((roll) => roll.id === "aptitude-tech")?.formula).toBe("2d20kl1+3+1d6");
+
+    const clearedPilot = { ...pilot, data: removeStellarFrontiersCondition(jammedPilot, "jammed") };
+    expect(stellarFrontiersActorConditions(clearedPilot).map((condition) => condition.id)).toEqual(["locked-in"]);
+  });
+
+  it("builds sci-fi sheets with gear, talents, and compendium entries", () => {
+    const items: Item[] = [
+      {
+        id: "itm_carbine",
+        campaignId: "camp_demo",
+        systemId: "stellar-frontiers",
+        actorId: pilot.id,
+        type: "gear",
+        name: "Laser Carbine",
+        data: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      },
+      {
+        id: "itm_overclock",
+        campaignId: "camp_demo",
+        systemId: "stellar-frontiers",
+        actorId: pilot.id,
+        type: "talent",
+        name: "Overclock",
+        data: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      }
+    ];
+
+    expect(stellarFrontiersCompendiumEntry("laser-carbine")).toEqual(expect.objectContaining({ type: "gear", name: "Laser Carbine" }));
+    const sheet = stellarFrontiersSheet(pilot, items);
+    expect(sheet.summary).toContain("Nova Quill");
+    expect(sheet.inventory.map((item) => item.name)).toEqual(["Laser Carbine"]);
+    expect(sheet.talents.map((item) => item.name)).toEqual(["Overclock"]);
   });
 });

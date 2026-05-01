@@ -45,13 +45,23 @@ export interface QuickRoll {
 }
 
 export type GenericFantasyCompendiumType = "item" | "spell" | "condition";
+export type StellarFrontiersCompendiumType = "gear" | "talent" | "condition";
+export type RulesCompendiumType = GenericFantasyCompendiumType | StellarFrontiersCompendiumType;
 
-export interface GenericFantasyCompendiumEntry {
+export interface RulesCompendiumEntry {
   id: string;
-  type: GenericFantasyCompendiumType;
+  type: RulesCompendiumType;
   name: string;
   summary: string;
   data: Record<string, unknown>;
+}
+
+export interface GenericFantasyCompendiumEntry extends RulesCompendiumEntry {
+  type: GenericFantasyCompendiumType;
+}
+
+export interface StellarFrontiersCompendiumEntry extends RulesCompendiumEntry {
+  type: StellarFrontiersCompendiumType;
 }
 
 export interface AppliedCondition {
@@ -69,6 +79,11 @@ export interface GenericFantasySheet {
   conditions: AppliedCondition[];
   inventory: Item[];
   spells: Item[];
+}
+
+export interface StellarFrontiersSheet extends GenericFantasySheet {
+  strain?: { current?: number; max?: number };
+  talents: Item[];
 }
 
 export interface SystemRegistry {
@@ -217,6 +232,117 @@ export function applyGenericFantasyCondition(actor: Actor, conditionId: string, 
 }
 
 export function removeGenericFantasyCondition(actor: Actor, conditionId: string): Record<string, unknown> {
+  const conditions = normalizeConditionRecords(actor.data.conditions).filter((condition) => condition.id !== conditionId);
+  return { ...actor.data, conditions };
+}
+
+export function stellarFrontiersAptitudeCheck(actor: Actor, aptitude: string): QuickRoll {
+  const aptitudes = actor.data.aptitudes as Record<string, number> | undefined;
+  const modifier = aptitudes?.[aptitude] ?? 0;
+  const formattedModifier = modifier >= 0 ? `+${modifier}` : String(modifier);
+  const label = `${aptitude.charAt(0).toUpperCase()}${aptitude.slice(1)} Check`;
+  const conditions = stellarFrontiersActorConditions(actor);
+  const d20 = conditions.some((condition) => condition.id === "jammed") ? "2d20kl1" : "1d20";
+  const bonus = conditions.some((condition) => condition.id === "locked-in") ? "+1d6" : "";
+  return {
+    id: `aptitude-${aptitude}`,
+    label,
+    formula: `${d20}${formattedModifier}${bonus}`
+  };
+}
+
+export function stellarFrontiersQuickRolls(actor: Actor): QuickRoll[] {
+  const aptitudes = actor.data.aptitudes as Record<string, number> | undefined;
+  return Object.keys(aptitudes ?? { combat: 2, tech: 2, pilot: 1, science: 1, charm: 0 }).map((aptitude) => stellarFrontiersAptitudeCheck(actor, aptitude));
+}
+
+export function stellarFrontiersCompendium(): StellarFrontiersCompendiumEntry[] {
+  return [
+    {
+      id: "laser-carbine",
+      type: "gear",
+      name: "Laser Carbine",
+      summary: "Reliable medium-range energy weapon.",
+      data: { category: "weapon", damage: "1d8", aptitude: "combat", tags: ["energy", "rifle"] }
+    },
+    {
+      id: "med-patch",
+      type: "gear",
+      name: "Med Patch",
+      summary: "Single-use field treatment that restores minor harm.",
+      data: { category: "consumable", healingFormula: "1d6+2" }
+    },
+    {
+      id: "overclock",
+      type: "talent",
+      name: "Overclock",
+      summary: "Spend strain to add speed to a tech action.",
+      data: { strainCost: 1, bonusFormula: "1d6", aptitude: "tech" }
+    },
+    {
+      id: "locked-in",
+      type: "condition",
+      name: "Locked In",
+      summary: "Adds 1d6 to Stellar Frontiers aptitude checks.",
+      data: { rollBonusFormula: "1d6" }
+    },
+    {
+      id: "jammed",
+      type: "condition",
+      name: "Jammed",
+      summary: "Rolls Stellar Frontiers aptitude checks with disadvantage.",
+      data: { rollMode: "disadvantage" }
+    },
+    {
+      id: "vacuum-exposed",
+      type: "condition",
+      name: "Vacuum Exposed",
+      summary: "Marks a character exposed to hard vacuum or suit breach.",
+      data: { hazard: "vacuum" }
+    }
+  ];
+}
+
+export function stellarFrontiersCompendiumEntry(entryId: string): StellarFrontiersCompendiumEntry | undefined {
+  return stellarFrontiersCompendium().find((entry) => entry.id === entryId);
+}
+
+export function stellarFrontiersSheet(actor: Actor, items: Item[] = []): StellarFrontiersSheet {
+  const strain = actor.data.strain as { current?: number; max?: number } | undefined;
+  return {
+    actorId: actor.id,
+    summary: `${actor.name}${strain ? ` (${strain.current ?? "?"}/${strain.max ?? "?"} strain)` : ""}`,
+    data: actor.data,
+    quickRolls: stellarFrontiersQuickRolls(actor),
+    conditions: stellarFrontiersActorConditions(actor),
+    inventory: items.filter((item) => item.actorId === actor.id && item.type !== "talent" && item.type !== "spell"),
+    spells: [],
+    talents: items.filter((item) => item.actorId === actor.id && item.type === "talent")
+  };
+}
+
+export function stellarFrontiersActorConditions(actor: Actor): AppliedCondition[] {
+  const rawConditions = normalizeConditionRecords(actor.data.conditions);
+  return rawConditions.map((condition) => {
+    const entry = stellarFrontiersCompendiumEntry(condition.id);
+    return {
+      id: condition.id,
+      name: entry?.name ?? condition.id,
+      summary: entry?.summary ?? "",
+      appliedAt: condition.appliedAt
+    };
+  });
+}
+
+export function applyStellarFrontiersCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {
+  const entry = stellarFrontiersCompendiumEntry(conditionId);
+  if (!entry || entry.type !== "condition") throw new Error(`Unknown condition: ${conditionId}`);
+  const conditions = normalizeConditionRecords(actor.data.conditions);
+  if (!conditions.some((condition) => condition.id === conditionId)) conditions.push({ id: conditionId, appliedAt });
+  return { ...actor.data, conditions };
+}
+
+export function removeStellarFrontiersCondition(actor: Actor, conditionId: string): Record<string, unknown> {
   const conditions = normalizeConditionRecords(actor.data.conditions).filter((condition) => condition.id !== conditionId);
   return { ...actor.data, conditions };
 }
