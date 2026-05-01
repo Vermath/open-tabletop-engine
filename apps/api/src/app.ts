@@ -647,7 +647,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!proposal) return notFound(reply, "Proposal not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, proposal.campaignId, "ai.applyChanges");
     if (allowed !== true) return allowed;
-    store.replace(applyProposal(store.state, proposal));
+    try {
+      store.replace(applyProposal(store.state, proposal));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Proposal could not be applied";
+      return reply.code(409).send({ error: "proposal_not_ready", message });
+    }
     const applied = store.state.proposals.find((item) => item.id === request.params.proposalId);
     hub.broadcast(createEvent({ campaignId: proposal.campaignId, type: "proposal.applied", targetId: proposal.id, payload: applied }));
     return applied;

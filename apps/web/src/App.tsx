@@ -199,6 +199,13 @@ export function App() {
   async function approveAndApply(proposal: Proposal) {
     await apiPost(`/api/v1/proposals/${proposal.id}/approve`, {});
     await apiPost(`/api/v1/proposals/${proposal.id}/apply`, {});
+    setStatus("Proposal applied");
+    await refresh();
+  }
+
+  async function approveMemory(fact: AiMemoryFact) {
+    await apiPost(`/api/v1/ai/memory/${fact.id}/approve`, {});
+    setStatus("Memory approved");
     await refresh();
   }
 
@@ -354,6 +361,7 @@ export function App() {
                 proposals={snapshot.proposals}
                 memory={snapshot.memory}
                 approveAndApply={approveAndApply}
+                approveMemory={approveMemory}
               />
             )}
             {tab === "plugins" && (
@@ -592,6 +600,7 @@ function AiPanel(props: {
   proposals: Proposal[];
   memory: AiMemoryFact[];
   approveAndApply(proposal: Proposal): void;
+  approveMemory(fact: AiMemoryFact): void;
 }) {
   return (
     <div className="panel-stack">
@@ -607,6 +616,11 @@ function AiPanel(props: {
         <article className="proposal" key={fact.id}>
           <span>{fact.approvedByUserId ? "approved memory" : "pending memory"}</span>
           <p>{fact.text}</p>
+          {!fact.approvedByUserId && (
+            <button className="ghost-button" onClick={() => props.approveMemory(fact)}>
+              <Check size={15} /> Approve memory
+            </button>
+          )}
         </article>
       ))}
       {props.proposals.map((proposal) => (

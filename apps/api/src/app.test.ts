@@ -322,6 +322,100 @@ describe("api", () => {
     }
   });
 
+  it("approves and applies ai proposals and memory with permission boundaries", async () => {
+    const now = "2026-05-01T00:00:00.000Z";
+    const store = new MemoryStateStore();
+    store.state.users.push({
+      id: "usr_player",
+      displayName: "Player",
+      createdAt: now,
+      updatedAt: now
+    });
+    store.state.members.push({
+      id: "mem_player",
+      campaignId: "camp_demo",
+      userId: "usr_player",
+      role: "player",
+      createdAt: now,
+      updatedAt: now
+    });
+    const app = await buildApp({ store });
+
+    const encounterDraft = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/encounter-design",
+      headers: authHeaders,
+      payload: { prompt: "A mirror knight guarding the vault", difficulty: "hard" }
+    });
+    expect(encounterDraft.statusCode).toBe(200);
+    const proposalId = encounterDraft.json().proposal.id as string;
+
+    const blockedApply = await app.inject({
+      method: "POST",
+      url: `/api/v1/proposals/${proposalId}/apply`,
+      headers: { "x-user-id": "usr_player" }
+    });
+    expect(blockedApply.statusCode).toBe(403);
+
+    const unapprovedApply = await app.inject({
+      method: "POST",
+      url: `/api/v1/proposals/${proposalId}/apply`,
+      headers: authHeaders
+    });
+    expect(unapprovedApply.statusCode).toBe(409);
+
+    const approved = await app.inject({
+      method: "POST",
+      url: `/api/v1/proposals/${proposalId}/approve`,
+      headers: authHeaders
+    });
+    expect(approved.statusCode).toBe(200);
+    expect(approved.json().status).toBe("approved");
+    expect(approved.json().approvedByUserId).toBe("usr_demo_gm");
+
+    const applied = await app.inject({
+      method: "POST",
+      url: `/api/v1/proposals/${proposalId}/apply`,
+      headers: authHeaders
+    });
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().status).toBe("applied");
+    expect(store.state.encounters.some((encounter) => encounter.name === "AI Draft Encounter" && encounter.difficulty === "hard")).toBe(true);
+
+    const recap = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/session-recap",
+      headers: authHeaders,
+      payload: { transcript: "The party mapped the lower vault." }
+    });
+    expect(recap.statusCode).toBe(200);
+    const memoryId = recap.json().memory.id as string;
+
+    const blockedMemoryApproval = await app.inject({
+      method: "POST",
+      url: `/api/v1/ai/memory/${memoryId}/approve`,
+      headers: { "x-user-id": "usr_player" }
+    });
+    expect(blockedMemoryApproval.statusCode).toBe(403);
+
+    const approvedMemory = await app.inject({
+      method: "POST",
+      url: `/api/v1/ai/memory/${memoryId}/approve`,
+      headers: authHeaders
+    });
+    expect(approvedMemory.statusCode).toBe(200);
+    expect(approvedMemory.json().approvedByUserId).toBe("usr_demo_gm");
+
+    const memory = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/ai/memory",
+      headers: authHeaders
+    });
+    expect(memory.json().some((fact: { id: string; approvedByUserId?: string }) => fact.id === memoryId && fact.approvedByUserId === "usr_demo_gm")).toBe(true);
+
+    await app.close();
+  });
+
   it("uploads a map asset, assigns it to a scene, and serves the stored bytes", async () => {
     const directory = mkdtempSync(join(tmpdir(), "otte-assets-"));
     const app = await buildApp({ store: new MemoryStateStore(), uploadDir: directory });
