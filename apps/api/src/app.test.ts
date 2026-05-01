@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
-import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, type AssetStorageRef, type EngineState, type MapAsset, type VisionSnapshot } from "@open-tabletop/core";
+import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type AssetStorageRef, type EngineState, type MapAsset, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp } from "./app.js";
@@ -4037,6 +4037,109 @@ registerCommand("/state", (input) => {
     expect(playerStore.state.proposals.some((proposal) => proposal.title === "Encounter: Mirror Knight")).toBe(false);
     expect(playerStore.state.rolls).toHaveLength(1);
     await playerApp.close();
+  });
+
+  it("keeps ai provider tool advertisement covered by role permission invariants", async () => {
+    class ToolPolicyProvider implements AiProvider {
+      id = "tool-policy-ai";
+      label = "Tool Policy AI";
+      requests: AiProviderRequest[] = [];
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.requests.push(input);
+        yield { type: "message.completed", content: "Tool policy captured" };
+      }
+    }
+
+    const permissionSafeTools = new Set(["roll_dice", "read_compendium"]);
+    const provider = new ToolPolicyProvider();
+    const store = new MemoryStateStore();
+    store.state.users.push(
+      createTimestamped("usr", {
+        id: "usr_policy_assistant",
+        displayName: "Policy Assistant",
+        email: "policy.assistant@example.test"
+      }),
+      createTimestamped("usr", {
+        id: "usr_policy_observer",
+        displayName: "Policy Observer",
+        email: "policy.observer@example.test"
+      })
+    );
+    store.state.members.push(
+      createTimestamped("mem", {
+        id: "mem_policy_assistant",
+        campaignId: "camp_demo",
+        userId: "usr_policy_assistant",
+        role: "assistant_gm" as const
+      }),
+      createTimestamped("mem", {
+        id: "mem_policy_observer",
+        campaignId: "camp_demo",
+        userId: "usr_policy_observer",
+        role: "observer" as const
+      })
+    );
+    const app = await buildApp({ store, aiProvider: provider });
+
+    try {
+      const gmThread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: { prompt: "Capture GM tools." }
+      });
+      const assistantThread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: { "x-user-id": "usr_policy_assistant" },
+        payload: { prompt: "Capture assistant GM tools." }
+      });
+      const playerThread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { prompt: "Capture player tools." }
+      });
+      const observerThread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: { "x-user-id": "usr_policy_observer" },
+        payload: { prompt: "Observers cannot use AI." }
+      });
+
+      expect(gmThread.statusCode).toBe(200);
+      expect(assistantThread.statusCode).toBe(200);
+      expect(playerThread.statusCode).toBe(200);
+      expect(observerThread.statusCode).toBe(403);
+      expect(provider.requests).toHaveLength(3);
+
+      const gmTools = provider.requests[0]!.tools;
+      const assistantTools = provider.requests[1]!.tools;
+      const playerTools = provider.requests[2]!.tools;
+      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "read_compendium"]);
+
+      for (const tool of gmTools) {
+        expect(tool.requiredPermissions.length, `${tool.name} should declare required permissions`).toBeGreaterThan(0);
+        expect(tool.parameters?.type, `${tool.name} should expose an object schema`).toBe("object");
+        expect(tool.parameters?.additionalProperties, `${tool.name} should reject stray provider arguments`).toBe(false);
+        if (!permissionSafeTools.has(tool.name)) expect(tool.requiredPermissions, `${tool.name} should require AI proposal permission`).toContain("ai.proposeChanges");
+      }
+
+      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "read_compendium"]);
+      expect(assistantTools.map((tool) => tool.name)).not.toContain("draft_encounter");
+      for (const tool of assistantTools) {
+        expect(tool.requiredPermissions.every((permission) => permissionsForRole("assistant_gm").includes(permission))).toBe(true);
+      }
+
+      expect(playerTools.map((tool) => tool.name)).toEqual(["roll_dice", "read_compendium"]);
+      for (const tool of playerTools) {
+        expect(tool.requiredPermissions.every((permission) => permissionsForRole("player").includes(permission))).toBe(true);
+        expect(permissionSafeTools.has(tool.name)).toBe(true);
+      }
+    } finally {
+      await app.close();
+    }
   });
 
   it("requires underlying campaign permissions for ai campaign-edit proposal tools", async () => {
