@@ -106,6 +106,19 @@ Open the browser client at the configured web URL, for example `http://127.0.0.1
   - Compose API smoke returned `ots_` bearer token length `47`, campaign `camp_demo`, dice formula `1d20+5`, chat `Compose stack smoke chat`, AI provider `codex-app-server`, and memory text containing `Compose memory extraction works`.
   - Compose browser smoke showed `Realtime connected`, the scene/token UI, and the compose-created dice/chat entries.
   - Browser console had only a missing `favicon.ico` error, unrelated to the MVP workflow.
+- Role/ownership clean checkout verification:
+  - Fresh clone path: `D:\otte-clean-role-20260501`.
+  - Role audit head: `c14f83c docs: refresh asset storage audit`.
+  - `pnpm install --frozen-lockfile` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build; API tests reported `17 passed`.
+  - Local role audit servers used API `http://127.0.0.1:4434`, web `http://127.0.0.1:5185`, and SQLite file `D:\otte-clean-role-20260501\storage\role-clean-20260501.sqlite`.
+  - GM browser session loaded as `Demo GM - owner`, showed `Realtime connected`, rendered `VA`, and kept GM-only controls enabled.
+  - Player browser session switched to `Demo Player - player`, showed `Synced`, rendered `VA`, and disabled GM-only controls: `Scene`, `Map`, `Token`, `Add token`, `Start combat`, `Reveal fog`, `Add wall`, and `Add light`.
+  - Player-owned token `VA` moved in the player browser from `{ x: 644.46875, y: 417.640625 }` to `{ x: 669.671875, y: 434.421875 }`.
+  - GM browser observed the same realtime token position `{ x: 669.671875, y: 434.421875 }`.
+  - API state agreed after movement with `tok_valen` at `x: 767`, `y: 423`.
+  - A player attempt to move GM-created token `tok_momxh08h2s67kkt8` returned `403`.
+  - Screenshots were saved in the clean clone at `output/playwright/role-clean-gm.png` and `output/playwright/role-clean-player.png`.
 
 ## Prompt-To-Artifact Checklist
 
@@ -113,8 +126,8 @@ Open the browser client at the configured web URL, for example `http://127.0.0.1
 | --- | --- |
 | Durable storage, migrations, and restart-safe campaign state | `c7c3fb7 feat: add durable sqlite store and session permissions`; API restart persistence test; manual API persistence evidence in `docs/verification/mvp-progress.md`. |
 | Auth/session handling and REST/realtime/blob permissions | `3ce9a8d feat: add durable bearer sessions`; browser/API bearer evidence; API tests for login, logout, restart-safe token lookup, no-token `401`, and session-token blob/realtime access. |
-| Campaigns, scenes, maps/assets, tokens, dice, chat, actors, sheets, journals, combat, fog/walls/lights | Verified milestone evidence for uploaded maps, GM/player session switching, hidden-token filtering, fog/vision filtering, token movement ownership, fog/wall/light authoring, dice/chat/API tests, actor sheet UI, journal visibility tests, and combat UI/API in `docs/verification/mvp-progress.md`. |
-| Realtime movement across two browser sessions | `3a3e81a feat: add plugin and system runtimes` and `3db3da6 feat: add demo player session switching` manual browser evidence both verify second-client realtime token movement. |
+| Campaigns, scenes, maps/assets, tokens, dice, chat, actors, sheets, journals, combat, fog/walls/lights | Verified milestone evidence for uploaded maps, GM/player session switching, hidden-token filtering, fog/vision filtering, token movement ownership, fog/wall/light authoring, dice/chat/API tests, actor sheet UI, journal visibility tests, combat UI/API, and clean-checkout role/ownership acceptance in `docs/verification/mvp-progress.md`. |
+| Realtime movement across two browser sessions | `3a3e81a feat: add plugin and system runtimes` and `3db3da6 feat: add demo player session switching` manual browser evidence verify second-client realtime token movement; the clean role audit above confirms a player-owned drag in one browser updates the GM browser in a fresh checkout. |
 | Export/import round-trips campaign data and uploaded assets | `6d9e56c feat: round trip campaign archives`, `7b73c10 feat: archive uploaded asset files`, and `a08b7ce feat: back assets with s3 storage`; tests and manual source/target API evidence verify scenes, tokens, actors, journals, encounters, permissions, assets, local uploaded blob restoration, and S3/MinIO uploaded blob restoration. |
 | Plugin runtime behavior with permission boundaries | `3a3e81a feat: add plugin and system runtimes`; tests verify install permission, plugin grants, blocked command without grant, and `/spark` chat after permission grant; browser evidence verifies install and command execution. |
 | System runtime behavior with permission boundaries | `3a3e81a feat: add plugin and system runtimes`; tests and browser evidence verify Generic Fantasy sheet summary, system roll permission, and chat-posted roll. |

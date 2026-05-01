@@ -367,10 +367,28 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - MinIO container listing under `/data/opentabletop-assets` mentioned both the uploaded and imported object ids.
   - The isolated Compose project was torn down with volumes after acceptance.
 
+### Clean Checkout Role Switching And Ownership Slice
+
+- Audit head: `c14f83c docs: refresh asset storage audit`
+- Clean clone path: `D:\otte-clean-role-20260501`
+- Automated evidence:
+  - `pnpm install --frozen-lockfile` passed in the fresh clone.
+  - `pnpm check` passed in the fresh clone across lint, typecheck, tests, and build; API tests reported `17 passed`.
+- Manual browser/API evidence on clean-clone local dev servers:
+  - API: `http://127.0.0.1:4434`
+  - Web: `http://127.0.0.1:5185`
+  - SQLite file: `D:\otte-clean-role-20260501\storage\role-clean-20260501.sqlite`
+  - GM browser session loaded as `Demo GM - owner`, showed `Realtime connected`, rendered token marker `VA`, and had GM controls enabled, including scene editing and add-token controls.
+  - Player browser session switched to `Demo Player - player`, showed `Synced`, kept token marker `VA` visible, and disabled GM-only controls: `Scene`, `Map`, `Token`, `Add token`, `Start combat`, `Reveal fog`, `Add wall`, and `Add light`.
+  - Player-owned token movement worked in the player browser: token `VA` moved from bounding box `{ x: 644.46875, y: 417.640625, width: 26.25, height: 27 }` to `{ x: 669.671875, y: 434.421875, width: 26.25, height: 27 }`.
+  - GM browser observed the realtime update for the same token at `{ x: 669.671875, y: 434.421875, width: 26.25, height: 27 }`.
+  - API state agreed after the browser drag: `tok_valen` had `x: 767` and `y: 423`.
+  - Ownership boundary check created GM token `tok_momxh08h2s67kkt8`; a player `PATCH /api/v1/tokens/tok_momxh08h2s67kkt8` returned `403`.
+  - Manual evidence screenshots were saved in the clean clone at `output/playwright/role-clean-gm.png` and `output/playwright/role-clean-player.png`.
+
 ## Known Remaining Gaps
 
 - Auth now has MVP bearer sessions for seeded users across REST, realtime, and asset blob access, but still lacks password login, OAuth, invites, account management, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
-- Browser role switching and ownership-scoped GM/player token movement now have MVP coverage; broader multi-user workflows still need final clean-checkout audit coverage.
 - Uploaded maps now support local and S3/MinIO-backed storage, including archive export/import through the active provider. Production storage work still needs lifecycle policies, migration tooling, and CDN/presigned delivery.
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
