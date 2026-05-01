@@ -256,6 +256,14 @@ describe("api", () => {
     expect(gmTokens.statusCode).toBe(200);
     expect(gmTokens.json().map((token: { id: string }) => token.id)).toContain("tok_blocked_guard");
 
+    const blockedUnownedMove = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_visible_guard",
+      headers: playerHeaders,
+      payload: { x: 470, y: 370 }
+    });
+    expect(blockedUnownedMove.statusCode).toBe(403);
+
     const blockedMove = await app.inject({
       method: "PATCH",
       url: "/api/v1/tokens/tok_blocked_guard",

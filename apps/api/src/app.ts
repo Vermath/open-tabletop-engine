@@ -463,18 +463,19 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.patch<{ Params: { tokenId: string }; Body: Partial<Token> }>("/api/v1/tokens/:tokenId", async (request, reply) => {
     const campaignId = campaignIdForToken(store, request.params.tokenId);
     if (!campaignId) return notFound(reply, "Token not found");
-    const permission: PermissionName = request.body.x !== undefined || request.body.y !== undefined ? "token.move" : "token.update";
+    const moved = request.body.x !== undefined || request.body.y !== undefined;
+    const permission: PermissionName = moved ? "token.move" : "token.update";
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, permission);
     if (allowed !== true) return allowed;
     const token = store.state.tokens.find((item) => item.id === request.params.tokenId);
     if (!token) return notFound(reply, "Token not found");
     const userId = currentUserId(request.headers)!;
     if (!isTokenVisibleToUser(store, userId, campaignId, token)) return notFound(reply, "Token not found");
+    if (moved && !canMoveToken(store, userId, campaignId, token)) return forbidden(reply, "Missing token ownership");
     const scene = store.state.scenes.find((item) => item.id === token.sceneId);
     Object.assign(token, request.body, { updatedAt: nowIso() });
     store.save();
     if (scene) {
-      const moved = request.body.x !== undefined || request.body.y !== undefined;
       broadcast(
         createEvent({
           campaignId: scene.campaignId,
@@ -1401,6 +1402,11 @@ function visibleTokensForUser(store: StateStore, userId: string, campaignId: str
 
 function canReadHiddenTokens(store: StateStore, userId: string, campaignId: string): boolean {
   return canCampaign(store, userId, campaignId, "token.update") || canCampaign(store, userId, campaignId, "scene.update");
+}
+
+function canMoveToken(store: StateStore, userId: string, campaignId: string, token: Token): boolean {
+  if (canReadHiddenTokens(store, userId, campaignId)) return true;
+  return canCampaign(store, userId, campaignId, "token.move") && isTokenOwnedByUser(store, userId, token);
 }
 
 function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: string, token: Token, sceneTokens?: Token[]): boolean {
