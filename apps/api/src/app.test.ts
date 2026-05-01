@@ -2228,6 +2228,135 @@ describe("api", () => {
     }
   });
 
+  it("retries ai providers before events and exposes thread status", async () => {
+    const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
+    process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "1";
+
+    class FlakyProvider implements AiProvider {
+      id = "flaky-ai";
+      label = "Flaky AI";
+      attempts = 0;
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.attempts += 1;
+        if (this.attempts === 1) {
+          throw new Error("temporary upstream outage");
+        }
+        yield {
+          type: "message.completed",
+          content: "Recovered response"
+        };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const provider = new FlakyProvider();
+    const app = await buildApp({ store, aiProvider: provider });
+
+    try {
+      const thread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: { prompt: "Retry this provider" }
+      });
+
+      expect(thread.statusCode).toBe(200);
+      expect(provider.attempts).toBe(2);
+      expect(thread.json().thread).toMatchObject({
+        status: "completed",
+        retryAttempts: 1,
+        eventCount: 1,
+        toolCallCount: 0
+      });
+      expect(thread.json().thread.durationMs).toEqual(expect.any(Number));
+
+      const listed = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders
+      });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()[0]).toMatchObject({
+        id: thread.json().thread.id,
+        status: "completed",
+        provider: "flaky-ai"
+      });
+
+      const blocked = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: { "x-user-id": "usr_demo_player" }
+      });
+      expect(blocked.statusCode).toBe(403);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
+  it("persists failed ai threads when provider retries are exhausted", async () => {
+    const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
+    process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "1";
+
+    class FailingProvider implements AiProvider {
+      id = "failing-ai";
+      label = "Failing AI";
+      attempts = 0;
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.attempts += 1;
+        throw new Error("upstream unavailable");
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const provider = new FailingProvider();
+    const app = await buildApp({ store, aiProvider: provider });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: { prompt: "Fail this provider" }
+      });
+
+      expect(response.statusCode).toBe(502);
+      expect(provider.attempts).toBe(2);
+      expect(response.json()).toMatchObject({
+        error: "ai_provider_failed",
+        message: "upstream unavailable"
+      });
+      expect(response.json().thread).toMatchObject({
+        status: "failed",
+        retryAttempts: 1,
+        eventCount: 0,
+        toolCallCount: 0,
+        providerError: "upstream unavailable"
+      });
+      expect(response.json().thread.durationMs).toEqual(expect.any(Number));
+      expect(store.state.aiThreads[0]).toMatchObject({
+        status: "failed",
+        providerError: "upstream unavailable"
+      });
+
+      const listed = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders
+      });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()[0]).toMatchObject({
+        status: "failed",
+        providerError: "upstream unavailable"
+      });
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("executes ai provider proposal tools with permission boundaries", async () => {
     class ToolCallingProvider implements AiProvider {
       id = "tool-ai";
@@ -2291,6 +2420,7 @@ describe("api", () => {
     expect(proposal?.changesJson[0]?.data.id).toMatch(/^jnl_/);
     expect(proposal?.changesJson[0]?.data.createdAt).toEqual(expect.any(String));
     expect(gmStore.state.aiToolCalls.map((call) => call.status)).toEqual(expect.arrayContaining(["started", "completed"]));
+    expect(gmStore.state.aiToolCalls.find((call) => call.status === "completed")?.durationMs).toEqual(expect.any(Number));
     await gmApp.close();
 
     const playerProvider = new ToolCallingProvider();

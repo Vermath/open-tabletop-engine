@@ -171,6 +171,8 @@ const endpointSpecs = [
   ["POST", routes.dice],
   ["POST", routes.chat],
   ["GET", routes.chat],
+  ["GET", "/api/v1/campaigns/{campaignId}/ai/threads"],
+  ["POST", "/api/v1/campaigns/{campaignId}/ai/threads"],
   ["POST", "/api/v1/campaigns/{campaignId}/ai/memory/extract"],
   ["GET", "/api/v1/campaigns/{campaignId}/ai/tool-calls"],
   ["GET", routes.plugins],
@@ -190,24 +192,25 @@ const endpointSpecs = [
   ["POST", "/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]
 ] as const;
 
+const okResponse = {
+  responses: {
+    "200": {
+      description: "OK"
+    }
+  }
+};
+
+const paths = endpointSpecs.reduce<Record<string, Record<string, typeof okResponse>>>((items, [method, path]) => {
+  items[path] ??= {};
+  items[path][method.toLowerCase()] = okResponse;
+  return items;
+}, {});
+
 export const openApiSpec = {
   openapi: "3.1.0",
   info: {
     title: "OpenTabletop Engine API",
     version: "0.1.0"
   },
-  paths: Object.fromEntries(
-    endpointSpecs.map(([method, path]) => [
-      path,
-      {
-        [method.toLowerCase()]: {
-          responses: {
-            "200": {
-              description: "OK"
-            }
-          }
-        }
-      }
-    ])
-  )
+  paths
 };

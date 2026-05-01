@@ -2,10 +2,10 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
+import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -1870,16 +1870,29 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return applied;
   });
 
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/ai/threads", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
+    if (allowed !== true) return allowed;
+    return store.state.aiThreads.filter((thread) => thread.campaignId === request.params.campaignId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  });
+
   app.post<{ Params: { campaignId: string }; Body: { prompt: string } }>("/api/v1/campaigns/:campaignId/ai/threads", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.use");
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const thread = createTimestamped("thr", {
+    const startedAtMs = Date.now();
+    const startedAt = new Date(startedAtMs).toISOString();
+    const thread: AiThread = createTimestamped("thr", {
       campaignId: request.params.campaignId,
       userId,
       provider: aiProvider.id,
-      title: request.body.prompt.slice(0, 80) || "AI Thread"
+      title: request.body.prompt.slice(0, 80) || "AI Thread",
+      status: "running" as const,
+      startedAt,
+      retryAttempts: 0,
+      eventCount: 0,
+      toolCallCount: 0
     });
     store.state.aiThreads.push(thread);
     const permissions = permissionsForUser(store, userId, request.params.campaignId);
@@ -1892,50 +1905,78 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions);
     let content = "";
     const events: AiProviderEvent[] = [];
-    for await (const event of aiProvider.stream({
+    let providerEventsSeen = 0;
+    let toolCallCount = 0;
+    let retryAttempts = 0;
+    const maxRetryAttempts = aiProviderRetryAttempts();
+    const providerInput: AiProviderRequest = {
       threadId: thread.id,
       messages: [{ role: "user", content: request.body.prompt }],
       tools,
       context
-    })) {
-      events.push(event);
-      if (event.type === "message.delta") content += event.delta;
-      if (event.type === "message.completed" && !content) content = event.content;
-      if (event.type === "tool.started") {
-        store.state.aiToolCalls.push(
-          createTimestamped("tool", {
-            threadId: thread.id,
-            toolName: event.toolName,
-            input: event.input,
-            output: undefined,
-            status: "started" as const
-          })
-        );
-        const output = await executeAiTool(tools, event.toolName, event.input, toolContext);
-        const completedEvent: AiProviderEvent = { type: "tool.completed", toolName: event.toolName, output };
-        events.push(completedEvent);
-        store.state.aiToolCalls.push(
-          createTimestamped("tool", {
-            threadId: thread.id,
-            toolName: event.toolName,
-            input: undefined,
-            output,
-            status: "completed" as const
-          })
-        );
-        if (isProposalToolOutput(output)) {
-          events.push({ type: "proposal.created", proposalId: output.proposalId });
+    };
+    while (true) {
+      try {
+        for await (const event of aiProvider.stream(providerInput)) {
+          providerEventsSeen += 1;
+          events.push(event);
+          if (event.type === "message.delta") content += event.delta;
+          if (event.type === "message.completed" && !content) content = event.content;
+          if (event.type === "tool.started") {
+            toolCallCount += 1;
+            const toolStartedAtMs = Date.now();
+            store.state.aiToolCalls.push(
+              createTimestamped("tool", {
+                threadId: thread.id,
+                toolName: event.toolName,
+                input: event.input,
+                output: undefined,
+                status: "started" as const
+              })
+            );
+            const output = await executeAiTool(tools, event.toolName, event.input, toolContext);
+            const completedEvent: AiProviderEvent = { type: "tool.completed", toolName: event.toolName, output };
+            events.push(completedEvent);
+            store.state.aiToolCalls.push(
+              createTimestamped("tool", {
+                threadId: thread.id,
+                toolName: event.toolName,
+                input: undefined,
+                output,
+                status: "completed" as const,
+                durationMs: elapsedMs(toolStartedAtMs)
+              })
+            );
+            if (isProposalToolOutput(output)) {
+              events.push({ type: "proposal.created", proposalId: output.proposalId });
+            }
+          } else if (event.type === "tool.completed") {
+            store.state.aiToolCalls.push(
+              createTimestamped("tool", {
+                threadId: thread.id,
+                toolName: event.toolName,
+                input: undefined,
+                output: event.output,
+                status: "completed" as const
+              })
+            );
+          }
         }
-      } else if (event.type === "tool.completed") {
-        store.state.aiToolCalls.push(
-          createTimestamped("tool", {
-            threadId: thread.id,
-            toolName: event.toolName,
-            input: undefined,
-            output: event.output,
-            status: "completed" as const
-          })
-        );
+        completeAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount);
+        break;
+      } catch (error) {
+        if (providerEventsSeen === 0 && retryAttempts < maxRetryAttempts) {
+          retryAttempts += 1;
+          continue;
+        }
+        failAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount, error);
+        store.save();
+        return reply.code(502).send({
+          error: "ai_provider_failed",
+          message: thread.providerError,
+          thread,
+          events
+        });
       }
     }
     if (content.trim()) {
@@ -2578,6 +2619,46 @@ function createConfiguredAiProvider(): AiProvider {
     });
   }
   return new EchoAiProvider();
+}
+
+function aiProviderRetryAttempts(): number {
+  const parsed = Number(process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(0, Math.min(3, Math.floor(parsed)));
+}
+
+function elapsedMs(startedAtMs: number): number {
+  return Math.max(0, Date.now() - startedAtMs);
+}
+
+function completeAiThread(thread: AiThread, startedAtMs: number, retryAttempts: number, eventCount: number, toolCallCount: number): void {
+  const completedAt = nowIso();
+  thread.status = "completed";
+  thread.completedAt = completedAt;
+  thread.failedAt = undefined;
+  thread.durationMs = elapsedMs(startedAtMs);
+  thread.retryAttempts = retryAttempts;
+  thread.eventCount = eventCount;
+  thread.toolCallCount = toolCallCount;
+  thread.providerError = undefined;
+  thread.updatedAt = completedAt;
+}
+
+function failAiThread(thread: AiThread, startedAtMs: number, retryAttempts: number, eventCount: number, toolCallCount: number, error: unknown): void {
+  const failedAt = nowIso();
+  thread.status = "failed";
+  thread.failedAt = failedAt;
+  thread.durationMs = elapsedMs(startedAtMs);
+  thread.retryAttempts = retryAttempts;
+  thread.eventCount = eventCount;
+  thread.toolCallCount = toolCallCount;
+  thread.providerError = aiProviderErrorMessage(error);
+  thread.updatedAt = failedAt;
+}
+
+function aiProviderErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "AI provider failed";
+  return message.slice(0, 500) || "AI provider failed";
 }
 
 function defaultMemoryExtractionSource(store: StateStore, campaignId: string): string {

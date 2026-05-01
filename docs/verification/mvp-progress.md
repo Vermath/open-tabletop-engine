@@ -847,6 +847,31 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Player AI thread returned missing-permission outputs `draft_encounter:ai.proposeChanges,create_memory:ai.proposeChanges`.
   - Player `GET /api/v1/campaigns/camp_demo/ai/tool-calls` returned `403`.
 
+### AI Integration Reliability Slice
+
+- Implementation:
+  - Added persisted AI thread operational status fields: `running`, `completed`, `failed`, start/completion/failure timestamps, `durationMs`, retry attempts, event count, tool-call count, and provider error text.
+  - Added `GET /api/v1/campaigns/{campaignId}/ai/threads` so GMs can inspect campaign AI thread status history.
+  - Added a configurable pre-event provider retry budget through `OTTE_AI_PROVIDER_RETRY_ATTEMPTS`, defaulting to `1` and clamped from `0` to `3`.
+  - Failed provider calls now persist the failed thread and return `502 ai_provider_failed` with the thread and any already-emitted events.
+  - Completed tool-call records now include `durationMs` for integration observability.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api-contracts typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `39 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - `git diff --check` passed.
+  - API tests verify pre-event provider retry, failed-thread persistence after retry exhaustion, `502 ai_provider_failed`, GM thread-status listing, player denial for the thread-status endpoint, and per-tool completion duration recording.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4456`
+  - SQLite file: `apps/api/storage/manual-ai-reliability-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_AI_PROVIDER=codex-loopback`, `OTTE_AI_PROVIDER_RETRY_ATTEMPTS=1`, and `OTTE_SQLITE_PATH=storage/manual-ai-reliability-20260501.sqlite`.
+  - GM login returned an `ots_` token length `47`.
+  - GM AI thread returned provider `codex-app-server`, status `completed`, retry attempts `0`, event count `1`, tool-call count `0`, and numeric `durationMs`.
+  - GM `GET /api/v1/campaigns/camp_demo/ai/threads` returned the same thread with status `completed`.
+  - Player `GET /api/v1/campaigns/camp_demo/ai/threads` returned `403`.
+
 ### SCIM Organization Sync Slice
 
 - Implementation:
@@ -920,4 +945,4 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
-- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/memory/dice/compendium tools, tool-call observability, provider-backed memory extraction, approval/application, and deterministic recap memory. Remaining Codex integration work is broader campaign-edit tool coverage, permission-regression coverage, failure and retry handling, cost/latency metrics, and operational dashboards.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/memory/dice/compendium tools, provider retry/failure handling, thread status history, tool-call observability, provider-backed memory extraction, approval/application, and deterministic recap memory. Remaining Codex integration work is broader campaign-edit tool coverage, deeper permission-regression breadth, cost/usage metrics, and richer operator dashboards.

@@ -442,6 +442,15 @@ export interface AiThread extends Timestamps {
   userId: ID;
   provider: string;
   title: string;
+  status?: "running" | "completed" | "failed";
+  startedAt?: string;
+  completedAt?: string;
+  failedAt?: string;
+  durationMs?: number;
+  retryAttempts?: number;
+  eventCount?: number;
+  toolCallCount?: number;
+  providerError?: string;
 }
 
 export interface AiMemoryFact extends Timestamps {
@@ -460,6 +469,7 @@ export interface AiToolCall extends Timestamps {
   input: unknown;
   output: unknown;
   status: "started" | "completed" | "failed";
+  durationMs?: number;
 }
 
 export interface AuditLog extends Timestamps {
