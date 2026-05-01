@@ -39,6 +39,18 @@ export interface AiToolContext {
   createProposal(input: { title: string; summary: string; changes: ProposalChange[] }): Promise<string>;
   createMemory(input: { text: string; visibility: Visibility; sourceIds: string[] }): Promise<string>;
   rollDice(input: { formula: string; label?: string; visibility: "public" | "gm_only" | "whisper" }): Promise<{ rollId: string; formula: string; label?: string; total: number; visibility: string }>;
+  useActorAction(input: { actorId: string; actionRollId?: string; actionName?: string; visibility: "public" | "gm_only" | "whisper" }): Promise<{
+    actorId: string;
+    systemId: string;
+    actionRollId: string;
+    rollId: string;
+    formula: string;
+    label: string;
+    total: number;
+    visibility: string;
+    consumed: Array<{ type: string; key: string; label: string; amount: number; remaining: number }>;
+    updatedItems: Array<{ id: string; name: string; quantity?: number }>;
+  } | { error: string; permission?: PermissionName; [key: string]: unknown }>;
 }
 
 export interface AiProvider {
@@ -67,7 +79,14 @@ export interface PermissionFilteredContext {
   publicSummary: string;
   gmSecrets: string[];
   memory: Array<{ text: string; visibility: Visibility; sourceIds: string[] }>;
-  actors?: Array<{ id: string; name: string; type: string; summary: string }>;
+  actors?: Array<{
+    id: string;
+    name: string;
+    type: string;
+    summary: string;
+    systemId?: string;
+    actions?: Array<{ rollId: string; label: string; formula: string }>;
+  }>;
   scenes?: Array<{ id: string; name: string; active: boolean }>;
   encounters?: Array<{ id: string; name: string; summary: string; difficulty?: string }>;
 }

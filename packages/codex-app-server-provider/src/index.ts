@@ -172,6 +172,16 @@ export class LoopbackCodexTransport implements JsonRpcTransport {
           }
         });
       }
+      if (shouldRequestActorActionTool(params)) {
+        events.push({
+          type: "tool.started",
+          toolName: "use_actor_action",
+          input: {
+            actorId: "act_valen",
+            actionName: "Healing Word Healing"
+          }
+        });
+      }
       if (shouldRequestCompendiumTool(params)) {
         events.push({
           type: "tool.started",
@@ -234,6 +244,10 @@ function shouldRequestMemoryTool(params: unknown): boolean {
 
 function shouldRequestRollTool(params: unknown): boolean {
   return hasTool(params, "roll_dice") && /\broll\b|\bdice\b/i.test(promptFromParams(params));
+}
+
+function shouldRequestActorActionTool(params: unknown): boolean {
+  return hasTool(params, "use_actor_action") && /\buse\b|\baction\b|\bcast\b|\bspell\b/i.test(promptFromParams(params));
 }
 
 function shouldRequestCompendiumTool(params: unknown): boolean {

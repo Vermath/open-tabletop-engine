@@ -3875,7 +3875,7 @@ registerCommand("/state", (input) => {
     const gmContext = provider.requests[1]!.context;
     expect(gmContext.publicSummary).toContain("Session Hook");
     expect(gmContext.gmSecrets.some((secret) => secret.includes("founder's oath"))).toBe(true);
-    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "read_compendium"]);
+    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 2")?.visibility).toBe("gm_only");
 
     const playerChat = await app.inject({
@@ -4439,6 +4439,7 @@ registerCommand("/state", (input) => {
         yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: 220, y: 240, disposition: "friendly" } };
         yield { type: "tool.started", toolName: "draft_actor_update", input: { actorId: "act_valen", data: { resources: { focus: 4 } } } };
         yield { type: "tool.started", toolName: "roll_dice", input: { formula: "1d20+5", label: "AI Perception" } };
+        yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: "act_valen", actionName: "Healing Word Healing" } };
         yield { type: "tool.started", toolName: "unknown_tool", input: {} };
         yield { type: "message.completed", content: "Expanded tools requested" };
       }
@@ -4446,6 +4447,19 @@ registerCommand("/state", (input) => {
 
     const gmProvider = new ExpandedToolProvider();
     const gmStore = new MemoryStateStore();
+    const gmActor = gmStore.state.actors.find((actor) => actor.id === "act_valen")!;
+    gmActor.data = { ...gmActor.data, spellSlots: { level1: { current: 1, max: 1, recovery: "long" } } };
+    gmStore.state.items.push(
+      createTimestamped("item", {
+        id: "item_ai_healing_word",
+        campaignId: "camp_demo",
+        systemId: "generic-fantasy",
+        actorId: "act_valen",
+        type: "spell",
+        name: "Healing Word",
+        data: { level: 1, healingFormula: "1d4+@attributes.wisdom", compendiumId: "healing-word" }
+      })
+    );
     const gmApp = await buildApp({ store: gmStore, aiProvider: gmProvider });
     const gmThread = await gmApp.inject({
       method: "POST",
@@ -4454,10 +4468,13 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Read the compendium, remember a key, draft an encounter, and roll dice." }
     });
     expect(gmThread.statusCode).toBe(200);
-    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "read_compendium"]);
+    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_encounter")?.parameters?.required).toEqual(["name", "summary"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_token_update")?.requiredPermissions).toEqual(["ai.proposeChanges", "token.update"]);
     expect(gmProvider.requests[0]!.context.actors?.map((actor) => actor.name)).toContain("Valen Ash");
+    expect(gmProvider.requests[0]!.context.actors?.find((actor) => actor.id === "act_valen")?.actions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ rollId: "spell-item_ai_healing_word-healing", label: "Healing Word Healing" })])
+    );
     expect(gmProvider.requests[0]!.context.scenes?.map((scene) => scene.name)).toContain("Vault Entry");
     expect(gmThread.json().events).toEqual(
       expect.arrayContaining([
@@ -4469,6 +4486,15 @@ registerCommand("/state", (input) => {
         expect.objectContaining({ type: "tool.completed", toolName: "draft_token_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_actor_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "roll_dice", output: expect.objectContaining({ rollId: expect.any(String), formula: "1d20+5", label: "AI Perception" }) }),
+        expect.objectContaining({
+          type: "tool.completed",
+          toolName: "use_actor_action",
+          output: expect.objectContaining({
+            actorId: "act_valen",
+            actionRollId: "spell-item_ai_healing_word-healing",
+            consumed: [{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }]
+          })
+        }),
         expect.objectContaining({ type: "tool.completed", toolName: "unknown_tool", output: { error: "unknown_tool", toolName: "unknown_tool" } })
       ])
     );
@@ -4479,8 +4505,10 @@ registerCommand("/state", (input) => {
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Scene: Mirror Annex")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "scene", action: "create" }));
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Token: Valen Ash")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "token", action: "update", id: "tok_valen", data: expect.objectContaining({ x: 220, y: 240 }) }));
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Actor: Valen Ash")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "actor", action: "update", id: "act_valen" }));
-    expect(gmStore.state.rolls).toHaveLength(1);
+    expect(gmStore.state.rolls).toHaveLength(2);
     expect(gmStore.state.chat.some((message) => message.body.includes("AI Perception: 1d20+5"))).toBe(true);
+    expect(gmStore.state.chat.some((message) => message.body.includes("Valen Ash Healing Word Healing"))).toBe(true);
+    expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.spellSlots).toEqual({ level1: { current: 0, max: 1, recovery: "long" } });
 
     const observedToolCalls = await gmApp.inject({
       method: "GET",
@@ -4489,7 +4517,7 @@ registerCommand("/state", (input) => {
     });
     expect(observedToolCalls.statusCode).toBe(200);
     expect(observedToolCalls.json().map((call: { toolName: string }) => call.toolName)).toEqual(
-      expect.arrayContaining(["read_compendium", "create_memory", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "roll_dice", "unknown_tool"])
+      expect.arrayContaining(["read_compendium", "create_memory", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "roll_dice", "use_actor_action", "unknown_tool"])
     );
     expect(gmStore.state.aiToolCalls.find((call) => call.toolName === "unknown_tool" && call.status === "failed")?.output).toEqual({
       error: "unknown_tool",
@@ -4525,6 +4553,7 @@ registerCommand("/state", (input) => {
         expect.objectContaining({ toolName: "draft_scene", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "draft_token_update", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "draft_actor_update", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "use_actor_action", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "read_compendium", output: expect.objectContaining({ systemId: "generic-fantasy" }) }),
         expect.objectContaining({ toolName: "roll_dice", output: expect.objectContaining({ formula: "1d20+5" }) })
       ])
@@ -4613,7 +4642,7 @@ registerCommand("/state", (input) => {
       const gmTools = provider.requests[0]!.tools;
       const assistantTools = provider.requests[1]!.tools;
       const playerTools = provider.requests[2]!.tools;
-      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "read_compendium"]);
+      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "use_actor_action", "read_compendium"]);
 
       for (const tool of gmTools) {
         expect(tool.requiredPermissions.length, `${tool.name} should declare required permissions`).toBeGreaterThan(0);
@@ -4622,7 +4651,7 @@ registerCommand("/state", (input) => {
         if (!permissionSafeTools.has(tool.name)) expect(tool.requiredPermissions, `${tool.name} should require AI proposal permission`).toContain("ai.proposeChanges");
       }
 
-      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "read_compendium"]);
+      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "use_actor_action", "read_compendium"]);
       expect(assistantTools.map((tool) => tool.name)).not.toContain("draft_encounter");
       for (const tool of assistantTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("assistant_gm").includes(permission))).toBe(true);

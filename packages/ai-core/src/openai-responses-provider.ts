@@ -110,7 +110,13 @@ export class OpenAiResponsesProvider implements AiProvider {
 function instructionsFromContext(context: PermissionFilteredContext): string {
   const memory = context.memory.map((item) => `- [${item.visibility}] ${item.text}`).join("\n") || "- No stored memory visible to this user.";
   const gmSecrets = context.gmSecrets.map((secret) => `- ${secret}`).join("\n") || "- No GM-only secrets are visible to this user.";
-  const actors = context.actors?.map((actor) => `- ${actor.summary} (${actor.type})`).join("\n") || "- No actors are visible to this caller.";
+  const actors =
+    context.actors
+      ?.map((actor) => {
+        const actions = actor.actions?.length ? ` actions: ${actor.actions.map((action) => `${action.label} [${action.rollId}] ${action.formula}`).join("; ")}` : "";
+        return `- ${actor.summary} (${actor.type}${actor.systemId ? `, ${actor.systemId}` : ""})${actions}`;
+      })
+      .join("\n") || "- No actors are visible to this caller.";
   const scenes = context.scenes?.map((scene) => `- ${scene.name}${scene.active ? " (active)" : ""}`).join("\n") || "- No scenes are visible to this caller.";
   const encounters = context.encounters?.map((encounter) => `- ${encounter.name}: ${encounter.summary}${encounter.difficulty ? ` [${encounter.difficulty}]` : ""}`).join("\n") || "- No encounters are visible to this caller.";
   return [

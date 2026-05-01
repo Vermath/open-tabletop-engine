@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema } from "@open-tabletop/ai-core";
+import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
@@ -2219,11 +2219,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const permissions = permissionsForUser(store, userId, request.params.campaignId);
-    const context = buildPermissionFilteredContext({
-      state: store.state,
-      campaignId: request.params.campaignId,
-      permissions
-    });
+    const context = enrichAiContextWithSystemActions(
+      buildPermissionFilteredContext({
+        state: store.state,
+        campaignId: request.params.campaignId,
+        permissions
+      }),
+      store
+    );
     const thread: AiThread = createTimestamped("thr", {
       campaignId: request.params.campaignId,
       userId,
@@ -3838,6 +3841,30 @@ function createAiThreadTools(): AiToolDefinition[] {
       }
     },
     {
+      name: "use_actor_action",
+      description: "Use a visible actor's system quick action, consume any required rules resources, and add the action roll to chat.",
+      requiredPermissions: ["ai.proposeChanges", "actor.read", "actor.update", "dice.roll"],
+      parameters: {
+        type: "object",
+        properties: {
+          actorId: { type: "string", description: "Actor id that owns the action." },
+          actionRollId: { type: "string", description: "Exact system action roll id from visible actor context." },
+          actionName: { type: "string", description: "Optional action label to resolve when an exact roll id is not available." },
+          visibility: { type: "string", description: "Chat visibility for the action roll.", enum: ["public", "gm_only", "whisper"] }
+        },
+        required: ["actorId"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext) {
+        const request = isRecord(input) ? input : {};
+        const actorId = stringFromRecord(request, "actorId") ?? "";
+        const actionRollId = stringFromRecord(request, "actionRollId");
+        const actionName = stringFromRecord(request, "actionName");
+        const visibility = rollVisibilityFromRecord(request, "visibility", "public");
+        return context.useActorAction({ actorId, actionRollId, actionName, visibility });
+      }
+    },
+    {
       name: "read_compendium",
       description: "Read a permission-safe rules compendium summary for a supported system.",
       requiredPermissions: ["actor.read"],
@@ -3941,8 +3968,117 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       }) satisfies ChatMessage;
       store.state.chat.push(message);
       return { rollId: roll.id, formula: roll.formula, label: roll.label, total: roll.total, visibility: roll.visibility };
+    },
+    useActorAction: async ({ actorId, actionRollId, actionName, visibility }) => {
+      const actor = store.state.actors.find((item) => item.id === actorId && item.campaignId === campaignId);
+      if (!actor) return toolError("not_found", { entity: "actor", id: actorId });
+      if (!canUpdateActorForUser(store, userId, actor)) return missingPermissionToolOutput("actor.update");
+      const items = actorItems(store, actor);
+      const quickRolls = systemQuickRolls(actor, items);
+      const action = resolveSystemActionRoll(quickRolls, actionRollId, actionName);
+      if (!action) {
+        return toolError("not_found", {
+          entity: "actor_action",
+          id: actionRollId ?? actionName ?? "",
+          availableActions: quickRolls.map((item) => ({ rollId: item.id, label: item.label, formula: item.formula }))
+        });
+      }
+      let usage: SystemActionUseResult;
+      try {
+        usage = useSystemAction(actor, items, action.id);
+      } catch (error) {
+        return toolError("conflict", { message: error instanceof Error ? error.message : "System action resources are unavailable" });
+      }
+      if (usage.consumed.length > 0 || usage.items.length > 0) {
+        const updatedAt = nowIso();
+        actor.data = usage.data;
+        actor.updatedAt = updatedAt;
+        for (const updatedItem of usage.items) {
+          const storedItem = store.state.items.find((item) => item.id === updatedItem.id && item.campaignId === actor.campaignId);
+          if (storedItem) {
+            storedItem.data = updatedItem.data;
+            storedItem.updatedAt = updatedAt;
+          }
+        }
+      }
+      const rolled = rollFormula(action.formula);
+      const roll = createTimestamped("roll", {
+        campaignId,
+        userId,
+        actorId: actor.id,
+        formula: action.formula,
+        label: `${actor.name} ${action.label}`,
+        visibility,
+        terms: rolled.terms,
+        total: rolled.total
+      }) satisfies DiceRoll;
+      store.state.rolls.push(roll);
+      const message = createTimestamped("msg", {
+        campaignId,
+        userId,
+        type: "roll" as const,
+        body: `${actor.name} ${action.label}: ${action.formula} = ${roll.total}`,
+        visibility,
+        recipientUserIds: [],
+        rollId: roll.id
+      }) satisfies ChatMessage;
+      store.state.chat.push(message);
+      return {
+        actorId: actor.id,
+        systemId: actor.systemId,
+        actionRollId: action.id,
+        rollId: roll.id,
+        formula: roll.formula,
+        label: action.label,
+        total: roll.total,
+        visibility: roll.visibility,
+        consumed: usage.consumed,
+        updatedItems: usage.items.map((item) => {
+          const data = isRecord(item.data) ? item.data : {};
+          return {
+            id: item.id,
+            name: item.name,
+            quantity: typeof data.quantity === "number" ? data.quantity : undefined
+          };
+        })
+      };
     }
   };
+}
+
+function enrichAiContextWithSystemActions(context: PermissionFilteredContext, store: StateStore): PermissionFilteredContext {
+  if (!context.actors) return context;
+  return {
+    ...context,
+    actors: context.actors.map((summary) => {
+      const actor = store.state.actors.find((item) => item.id === summary.id && item.campaignId === context.campaignId);
+      if (!actor) return summary;
+      return {
+        ...summary,
+        systemId: actor.systemId,
+        actions: systemQuickRolls(actor, actorItems(store, actor)).map((action) => ({
+          rollId: action.id,
+          label: action.label,
+          formula: action.formula
+        }))
+      };
+    })
+  };
+}
+
+function resolveSystemActionRoll(
+  quickRolls: Array<{ id: string; label: string; formula: string }>,
+  actionRollId: string | undefined,
+  actionName: string | undefined
+): { id: string; label: string; formula: string } | undefined {
+  if (actionRollId) return quickRolls.find((action) => action.id === actionRollId);
+  if (!actionName) return undefined;
+  const normalized = normalizeActionLookup(actionName);
+  return quickRolls.find((action) => normalizeActionLookup(action.label) === normalized || normalizeActionLookup(action.id) === normalized);
+}
+
+function normalizeActionLookup(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function normalizeProposalChanges(changes: ProposalChange[], campaignId: string, userId: string): ProposalChange[] {
