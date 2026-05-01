@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -1409,15 +1409,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{
     Params: { sceneId: string };
-    Body: { x?: number; y?: number; radius?: number; hidden?: boolean; shape?: FogShape; mode?: FogMode; points?: VisionPoint[] };
+    Body: { x?: number; y?: number; radius?: number; brushRadius?: number; hidden?: boolean; shape?: FogShape | "brush"; mode?: FogMode; points?: VisionPoint[] };
   }>("/api/v1/scenes/:sceneId/fog", async (request, reply) => {
+    const body = request.body ?? {};
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
-    const fogRegion = normalizeFogRegion(request.body, scene);
+    const fogRegion = normalizeFogRegion(body, scene);
     if (!fogRegion) return badRequest(reply, "Invalid fog region");
     const region: FogRegion = { id: createId("fog"), ...fogRegion };
     scene.fog.push(region);
@@ -4210,10 +4211,24 @@ function normalizeFogPresetName(name: string | undefined, scene: Scene): string 
   return normalized || `${scene.name} fog preset`;
 }
 
-function normalizeFogRegion(body: { x?: number; y?: number; radius?: number; hidden?: boolean; shape?: FogShape; mode?: FogMode; points?: VisionPoint[] }, scene: Scene): Omit<FogRegion, "id"> | undefined {
+function normalizeFogRegion(body: { x?: number; y?: number; radius?: number; brushRadius?: number; hidden?: boolean; shape?: FogShape | "brush"; mode?: FogMode; points?: VisionPoint[] }, scene: Scene): Omit<FogRegion, "id"> | undefined {
   const rawPoints = Array.isArray(body.points) ? body.points : undefined;
-  const shape: FogShape = body.shape === "polygon" || rawPoints?.length ? "polygon" : "circle";
   const mode: FogMode = body.mode === "hide" ? "hide" : "reveal";
+  if (body.shape === "brush") {
+    const brush = rawPoints ? buildSmoothFogBrushPolygon(scene, rawPoints, { radius: body.brushRadius ?? body.radius }) : undefined;
+    if (!brush) return undefined;
+    const center = polygonCenter(brush.points);
+    return {
+      x: center.x,
+      y: center.y,
+      radius: brush.radius,
+      hidden: body.hidden ?? false,
+      shape: "polygon",
+      mode,
+      points: brush.points
+    };
+  }
+  const shape: FogShape = body.shape === "polygon" || rawPoints?.length ? "polygon" : "circle";
   if (shape === "polygon") {
     const points = normalizeFogPoints(rawPoints, scene);
     if (!points) return undefined;

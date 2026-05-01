@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approveProposal, applyProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, hasPermission, isPointInsideVisionPolygon, seedState, tokenCenter } from "./index.js";
+import { approveProposal, applyProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, hasPermission, isPointInsideVisionPolygon, seedState, tokenCenter } from "./index.js";
 
 describe("core permissions", () => {
   it("gives owners full campaign authority and keeps observers read-only", () => {
@@ -112,5 +112,22 @@ describe("vision polygons", () => {
     expect(hideBrush.mode).toBe("hide");
     expect(isPointInsideVisionPolygon({ x: 720, y: 320 }, revealPolygon)).toBe(true);
     expect(isPointInsideVisionPolygon({ x: 780, y: 340 }, hideBrush)).toBe(true);
+  });
+
+  it("smooths noisy freehand fog brush strokes into bounded polygons", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const rawStroke = Array.from({ length: 90 }, (_, index) => ({
+      x: 120 + index * 10,
+      y: 250 + Math.sin(index / 2) * 18 + (index % 2 === 0 ? 9 : -9)
+    }));
+
+    const brush = buildSmoothFogBrushPolygon(scene, rawStroke, { radius: 42 })!;
+
+    expect(brush.radius).toBe(42);
+    expect(brush.points.length).toBeGreaterThan(8);
+    expect(brush.points.length).toBeLessThanOrEqual(64);
+    expect(brush.points.every((point) => point.x >= 0 && point.x <= scene.width && point.y >= 0 && point.y <= scene.height)).toBe(true);
+    expect(isPointInsideVisionPolygon({ x: 530, y: 250 }, brush.points)).toBe(true);
   });
 });

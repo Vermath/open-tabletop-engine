@@ -1,5 +1,5 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Encounter, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
-import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MessageSquare, Pentagon, Plus, RefreshCw, RotateCcw, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles } from "lucide-react";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Encounter, FogMode, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPoint, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MessageSquare, Paintbrush, Pentagon, Plus, RefreshCw, RotateCcw, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
@@ -45,6 +45,7 @@ export function App() {
   const [campaignId, setCampaignId] = useState("camp_demo");
   const [sceneId, setSceneId] = useState("scn_vault_entry");
   const [selectedTokenId, setSelectedTokenId] = useState("tok_valen");
+  const [fogBrushMode, setFogBrushMode] = useState<FogMode | null>(null);
   const [tab, setTab] = useState<"actors" | "journal" | "combat" | "ai" | "plugins" | "admin">("actors");
   const [status, setStatus] = useState("Loading campaign");
   const [diceFormula, setDiceFormula] = useState("1d20+5");
@@ -275,6 +276,31 @@ export function App() {
       ]
     });
     setStatus("Fog polygon revealed");
+    await refresh();
+  }
+
+  function toggleFogBrush(mode: FogMode) {
+    setFogBrushMode((current) => {
+      const next = current === mode ? null : mode;
+      setStatus(next ? `${next === "hide" ? "Hide" : "Reveal"} smooth fog brush active` : "Fog brush inactive");
+      return next;
+    });
+  }
+
+  function selectCanvasTool() {
+    setFogBrushMode(null);
+    setStatus("Select tool active");
+  }
+
+  async function paintFogStroke(mode: FogMode, points: VisionPoint[]) {
+    if (!selectedScene || points.length === 0) return;
+    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
+      shape: "brush",
+      mode,
+      brushRadius: Math.max(28, Math.min(110, selectedScene.gridSize * 1.35)),
+      points
+    });
+    setStatus(`${mode === "hide" ? "Hide" : "Reveal"} fog brush applied`);
     await refresh();
   }
 
@@ -789,8 +815,8 @@ export function App() {
 
         <div className="table-grid">
           <section className="table-area">
-            <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onUndoFog={undoFog} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onAddWall={addWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} />
-            {selectedScene ? <SceneCanvas scene={selectedScene} backgroundAsset={selectedMapAsset} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} onSelect={setSelectedTokenId} onMoved={refresh} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+            <Toolbar onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onUndoFog={undoFog} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onAddWall={addWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} />
+            {selectedScene ? <SceneCanvas scene={selectedScene} backgroundAsset={selectedMapAsset} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} onSelect={setSelectedTokenId} onMoved={refresh} onFogStroke={paintFogStroke} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
           <aside className="inspector">
@@ -840,8 +866,16 @@ export function App() {
   );
 }
 
-function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; onSelect(id: string): void; onMoved(): Promise<void> }) {
+interface FogStrokeDraft {
+  pointerId: number;
+  mode: FogMode;
+  points: VisionPoint[];
+}
+
+function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; fogBrushMode: FogMode | null; onSelect(id: string): void; onMoved(): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void> }) {
   const [dragging, setDragging] = useState<string | null>(null);
+  const [fogStroke, setFogStroke] = useState<FogStrokeDraft | null>(null);
+  const fogStrokeRef = useRef<FogStrokeDraft | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const tokens = useMemo(() => props.tokens.filter((token) => token.sceneId === props.scene.id), [props.tokens, props.scene.id]);
   const vision = props.vision?.sceneId === props.scene.id ? props.vision : undefined;
@@ -859,17 +893,73 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
     await props.onMoved();
   }
 
+  function boardPoint(clientX: number, clientY: number): VisionPoint | undefined {
+    const rect = boardRef.current?.getBoundingClientRect();
+    if (!rect) return undefined;
+    return {
+      x: Math.max(0, Math.min(props.scene.width, Math.round(((clientX - rect.left) / rect.width) * props.scene.width))),
+      y: Math.max(0, Math.min(props.scene.height, Math.round(((clientY - rect.top) / rect.height) * props.scene.height)))
+    };
+  }
+
+  function appendFogStrokePoint(clientX: number, clientY: number, pointerId: number) {
+    const point = boardPoint(clientX, clientY);
+    if (!point) return;
+    const current = fogStrokeRef.current;
+    if (!current || current.pointerId !== pointerId) return;
+    const next = { ...current, points: appendStrokePoint(current.points, point, props.scene.gridSize) };
+    fogStrokeRef.current = next;
+    setFogStroke(next);
+  }
+
+  function finishFogStroke(pointerId: number, clientX: number, clientY: number) {
+    const current = fogStrokeRef.current;
+    if (!current || current.pointerId !== pointerId) return;
+    const point = boardPoint(clientX, clientY);
+    const points = point ? appendStrokePoint(current.points, point, props.scene.gridSize) : current.points;
+    fogStrokeRef.current = null;
+    setFogStroke(null);
+    props.onFogStroke(current.mode, points).catch(console.error);
+  }
+
   return (
     <div
       ref={boardRef}
-      className="scene-board"
+      className={`scene-board ${props.fogBrushMode ? "brush-mode" : ""}`}
       style={{ aspectRatio: `${props.scene.width} / ${props.scene.height}` }}
+      onPointerDown={(event) => {
+        if (!props.fogBrushMode) return;
+        const point = boardPoint(event.clientX, event.clientY);
+        if (!point) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        setDragging(null);
+        const next = { pointerId: event.pointerId, mode: props.fogBrushMode, points: [point] };
+        fogStrokeRef.current = next;
+        setFogStroke(next);
+      }}
       onPointerMove={(event) => {
+        if (fogStrokeRef.current?.pointerId === event.pointerId) {
+          appendFogStrokePoint(event.clientX, event.clientY, event.pointerId);
+          return;
+        }
         if (!dragging) return;
         const token = tokens.find((item) => item.id === dragging);
         if (token) moveToken(token, event.clientX, event.clientY).catch(console.error);
       }}
-      onPointerUp={() => setDragging(null)}
+      onPointerUp={(event) => {
+        if (fogStrokeRef.current?.pointerId === event.pointerId) {
+          finishFogStroke(event.pointerId, event.clientX, event.clientY);
+          return;
+        }
+        setDragging(null);
+      }}
+      onPointerCancel={(event) => {
+        if (fogStrokeRef.current?.pointerId === event.pointerId) {
+          fogStrokeRef.current = null;
+          setFogStroke(null);
+        }
+        setDragging(null);
+      }}
     >
       {props.backgroundAsset && <img className="scene-map" src={assetBlobUrl(props.backgroundAsset)} alt="" draggable={false} />}
       <div
@@ -925,6 +1015,11 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
           ))}
         </svg>
       )}
+      {fogStroke && (
+        <svg className="fog-brush-preview" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-hidden="true">
+          <polyline className={fogStroke.mode} points={fogStroke.points.map((point) => `${point.x},${point.y}`).join(" ")} />
+        </svg>
+      )}
       {tokens.map((token) => (
         <button
           key={token.id}
@@ -936,6 +1031,7 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
             aspectRatio: `${token.width} / ${token.height}`
           }}
           onPointerDown={(event) => {
+            if (props.fogBrushMode) return;
             props.onSelect(token.id);
             setDragging(token.id);
             event.currentTarget.setPointerCapture(event.pointerId);
@@ -948,6 +1044,12 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
   );
 }
 
+function appendStrokePoint(points: VisionPoint[], point: VisionPoint, gridSize: number): VisionPoint[] {
+  const previous = points.at(-1);
+  if (previous && Math.hypot(previous.x - point.x, previous.y - point.y) < Math.max(6, gridSize / 8)) return points;
+  return [...points, point];
+}
+
 function polygonPoints(polygon: VisionPolygon): string {
   return polygon.points.map((point) => `${point.x},${point.y}`).join(" ");
 }
@@ -956,10 +1058,10 @@ function tokenCenter(token: Token): { x: number; y: number } {
   return { x: token.x + token.width / 2, y: token.y + token.height / 2 };
 }
 
-function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onHideFog(): void; onRevealFogPolygon(): void; onUndoFog(): void; onSaveFogPreset(): void; onApplyFogPreset(): void; onAddWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; hasFogPresets: boolean; canUpdateScene: boolean }) {
+function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onHideFog(): void; onRevealFogPolygon(): void; onToggleFogBrush(mode: FogMode): void; onUndoFog(): void; onSaveFogPreset(): void; onApplyFogPreset(): void; onAddWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; activeFogBrushMode: FogMode | null; hasFogPresets: boolean; canUpdateScene: boolean }) {
   return (
     <div className="toolbar">
-      <button className="tool active" title="Select">
+      <button className={`tool ${props.activeFogBrushMode ? "" : "active"}`} title="Select" onClick={props.onSelectTool}>
         <Hand size={17} />
       </button>
       <button className="tool" title="Add token" onClick={props.onCreateToken} disabled={!props.canCreateToken}>
@@ -976,6 +1078,12 @@ function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onReveal
       </button>
       <button className="tool" title="Reveal polygon fog" onClick={props.onRevealFogPolygon} disabled={!props.canRevealFog}>
         <Pentagon size={17} />
+      </button>
+      <button className={`tool ${props.activeFogBrushMode === "reveal" ? "active" : ""}`} title="Smooth reveal brush" onClick={() => props.onToggleFogBrush("reveal")} disabled={!props.canRevealFog}>
+        <Paintbrush size={17} />
+      </button>
+      <button className={`tool ${props.activeFogBrushMode === "hide" ? "active" : ""}`} title="Smooth hide brush" onClick={() => props.onToggleFogBrush("hide")} disabled={!props.canRevealFog}>
+        <Eraser size={17} />
       </button>
       <button className="tool" title="Undo fog change" onClick={props.onUndoFog} disabled={!props.canRevealFog}>
         <RotateCcw size={17} />

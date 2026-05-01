@@ -915,6 +915,44 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - GM deleted the preset and a final list returned `remainingPresets: 0`.
   - After shutdown, no listener remained on port `55161`.
 
+### Fog Freehand Brush Smoothing Slice
+
+- Implementation:
+  - Added `buildSmoothFogBrushPolygon` in the shared core vision engine to sanitize raw pointer strokes, clamp them to scene bounds, compact noisy input, smooth the centerline, resample the result, and persist a bounded polygon with at most `64` points.
+  - Added `shape: "brush"` fog creation to the API with optional `brushRadius`; brush input is normalized into regular polygon fog regions and remains behind the existing `token.reveal` permission boundary, fog history, audit logging, and player vision filtering.
+  - Added GM toolbar controls titled `Smooth reveal brush` and `Smooth hide brush`, a crosshair board mode, pointer-stroke preview rendering, and drag submission to the brush endpoint.
+  - Updated REST documentation to describe freehand brush input and persisted polygon output.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/core test` passed with `6 passed`.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `2 passed` and `62 passed` across the API suites.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - Core tests verify noisy freehand strokes are smoothed into bounded polygons with configured brush radius, scene-bound points, at most `64` persisted points, and interior coverage for the stroke path.
+  - API tests verify the fog route accepts `shape: "brush"`, compacts raw freehand points into a persisted polygon hide/reveal region, preserves the brush radius, keeps fewer persisted points than raw stroke input, covers the target path, and appends fog history.
+- Manual API evidence:
+  - API: `http://127.0.0.1:55163`
+  - SQLite file: `apps/api/storage/manual-fog-brush-final-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `PORT=55163`, `HOST=127.0.0.1`, `OTTE_SQLITE_PATH=apps/api/storage/manual-fog-brush-final-20260501.sqlite`, and `OTTE_ADMIN_USER_IDS=usr_demo_gm`.
+  - The server was the built API entrypoint `node apps/api/dist/server.js`; health returned `true` and GM login returned `serverAdmin: true`.
+  - GM reset `scn_vault_entry` to `0` fog regions and `0` fog history entries.
+  - Player brush create returned `403`, confirming the existing `token.reveal` permission boundary.
+  - GM posted a `90` point `shape: "brush"` reveal stroke with `brushRadius: 52`; the returned fog region `fog_mongr771zu8fcp57` was `shape: "polygon"`, `mode: "reveal"`, `radius: 52`, `pointCount: 64`, and contained probe point `{ x: 470, y: 280 }`.
+  - GM posted an `84` point hide brush with `brushRadius: 44`; the returned fog region `fog_mongr77agrjvnajt` was `shape: "polygon"`, `mode: "hide"`, `radius: 44`, and `pointCount: 64`.
+  - Fog history actions were `create,create`.
+  - Player vision returned `fogActive: true` with fog modes `hide,reveal`.
+  - Admin audit export for `scene.fog.create` returned `2` rows.
+- Manual browser evidence:
+  - Web: `http://127.0.0.1:5192/` pointed at the same API on `55163`.
+  - Browser snapshot showed GM toolbar controls titled `Smooth reveal brush` and `Smooth hide brush`.
+  - Clicking `Smooth reveal brush` switched the board into `scene-board brush-mode`; a real mouse drag across the board posted another brush stroke through the UI.
+  - The scene then had `3` fog regions: the two API-created brush polygons plus UI-created reveal polygon `fog_mongspuh16exkrwu` with `radius: 67.5`, `points: 64`, and fog history `create,create,create`.
+  - Screenshot saved at `output/playwright/fog-brush-smoothing.png`.
+  - Browser console had no application runtime errors; the only error was the existing missing `favicon.ico` 404.
+  - After shutdown, no listener remained on ports `55163` or `5192`.
+
 ### Packaged Plugin Runtime Slice
 
 - Implementation:
@@ -1578,7 +1616,7 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, built-in upload security scanning, and external AV/trust scanner webhooks before storage writes. Higher-assurance hosting may still need provider-specific compliance artifacts and operational certifications outside the app.
-- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, fog region deletion, fog undo/history, and multi-scene fog presets now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing.
+- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, smoothed freehand reveal/hide brushes, fog region deletion, fog undo/history, and multi-scene fog presets now have verified controls and permission filtering. No fog-specific item remains in the current acceptance checklist.
 - Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, campaign-scoped JSON storage APIs, command-returned storage mutations, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, server-admin marketplace review surfaces, optional approval-required review policy, storage/review audit logs, and browser/API acceptance evidence. Remaining plugin ecosystem work is external marketplace operations beyond the self-hosted review and registry workflow.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

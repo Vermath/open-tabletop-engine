@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
-import { createTimestamped, emptyState, isPointInsideVisionPolygons, type AssetStorageRef, type EngineState, type MapAsset, type VisionSnapshot } from "@open-tabletop/core";
+import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, type AssetStorageRef, type EngineState, type MapAsset, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp } from "./app.js";
@@ -1873,6 +1873,41 @@ describe("api", () => {
     expect(store.state.auditLogs.some((entry) => entry.action === "scene.fogPreset.create" && entry.targetId === preset.json().id)).toBe(true);
     expect(store.state.auditLogs.some((entry) => entry.action === "scene.fogPreset.apply" && entry.targetId === preset.json().id)).toBe(true);
     expect(store.state.auditLogs.some((entry) => entry.action === "scene.fogPreset.delete" && entry.targetId === preset.json().id)).toBe(true);
+
+    await app.close();
+  });
+
+  it("smooths freehand fog brush strokes through the fog route", async () => {
+    const store = new MemoryStateStore();
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.fog = [];
+    scene.fogHistory = [];
+    const app = await buildApp({ store });
+    const rawStroke = Array.from({ length: 86 }, (_, index) => ({
+      x: 140 + index * 9,
+      y: 300 + Math.cos(index / 2) * 16 + (index % 2 === 0 ? 8 : -8)
+    }));
+
+    const brushed = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/fog",
+      headers: authHeaders,
+      payload: {
+        shape: "brush",
+        mode: "hide",
+        brushRadius: 46,
+        points: rawStroke
+      }
+    });
+
+    expect(brushed.statusCode).toBe(200);
+    const region = brushed.json().fog.at(-1) as { shape: string; mode: string; radius: number; points: Array<{ x: number; y: number }> };
+    expect(region).toEqual(expect.objectContaining({ shape: "polygon", mode: "hide", radius: 46 }));
+    expect(region.points.length).toBeGreaterThan(8);
+    expect(region.points.length).toBeLessThanOrEqual(64);
+    expect(region.points.length).toBeLessThan(rawStroke.length);
+    expect(isPointInsideVisionPolygon({ x: 480, y: 300 }, region.points)).toBe(true);
+    expect(brushed.json().fogHistory.at(-1)).toEqual(expect.objectContaining({ action: "create" }));
 
     await app.close();
   });
