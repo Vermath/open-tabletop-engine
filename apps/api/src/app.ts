@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -460,6 +460,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       filters: options.filters,
       auditLogs
     };
+  });
+
+  app.get("/api/v1/admin/ai/operations", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const operations = adminAiOperations(store, aiProvider);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.aiOperations.inspect",
+      targetType: "ai_operations",
+      after: {
+        provider: operations.provider.id,
+        threadCount: operations.totals.threadCount,
+        failedThreadCount: operations.totals.failedThreadCount,
+        toolCallCount: operations.totals.toolCallCount
+      }
+    });
+    store.save();
+    return operations;
   });
 
   app.get("/api/v1/admin/scim/group-role-mappings", async (request, reply) => {
@@ -2750,6 +2768,85 @@ function summarizeAiUsage(campaignId: string, threads: AiThread[]) {
       }))
       .sort((a, b) => a.provider.localeCompare(b.provider))
   };
+}
+
+function adminAiOperations(store: StateStore, aiProvider: AiProvider) {
+  const threadById = new Map(store.state.aiThreads.map((thread) => [thread.id, thread]));
+  const campaigns = store.state.campaigns
+    .map((campaign) => {
+      const threads = store.state.aiThreads.filter((thread) => thread.campaignId === campaign.id);
+      return {
+        campaignId: campaign.id,
+        campaignName: campaign.name,
+        ...summarizeAiThreads(threads)
+      };
+    })
+    .filter((campaign) => campaign.threadCount > 0)
+    .sort((a, b) => b.threadCount - a.threadCount || a.campaignName.localeCompare(b.campaignName));
+
+  return {
+    provider: {
+      id: aiProvider.id,
+      label: aiProvider.label
+    },
+    runtime: aiProviderRuntimeConfig(aiProvider),
+    totals: summarizeAiThreads(store.state.aiThreads),
+    campaigns,
+    recentThreads: store.state.aiThreads.slice().sort(sortTimestampsDesc).slice(0, 20),
+    recentToolCalls: store.state.aiToolCalls
+      .slice()
+      .sort(sortTimestampsDesc)
+      .slice(0, 50)
+      .map((call) => adminAiToolCallInfo(call, threadById, store.state.campaigns))
+  };
+}
+
+function adminAiToolCallInfo(call: AiToolCall, threadById: Map<string, AiThread>, campaigns: Campaign[]) {
+  const thread = threadById.get(call.threadId);
+  const campaign = thread ? campaigns.find((item) => item.id === thread.campaignId) : undefined;
+  return {
+    ...call,
+    campaignId: thread?.campaignId,
+    campaignName: campaign?.name,
+    provider: thread?.provider,
+    threadTitle: thread?.title,
+    threadStatus: thread?.status
+  };
+}
+
+function aiProviderRuntimeConfig(aiProvider: AiProvider) {
+  const selectedProvider = process.env.OTTE_AI_PROVIDER?.trim() || "local-echo";
+  const openAiSelected = aiProvider.id === "openai-responses" || selectedProvider === "openai" || selectedProvider === "openai-responses";
+  const codexSelected = aiProvider.id === "codex-app-server" || selectedProvider === "codex-loopback";
+  return {
+    selectedProvider,
+    activeProvider: aiProvider.id,
+    retryAttempts: aiProviderRetryAttempts(),
+    costRatesConfigured: {
+      inputTokens: envNumber("OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K") !== undefined,
+      outputTokens: envNumber("OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K") !== undefined
+    },
+    openai: openAiSelected
+      ? {
+          apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
+          model: process.env.OPENAI_MODEL?.trim() || "gpt-5-mini",
+          baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
+          organizationConfigured: Boolean((process.env.OPENAI_ORGANIZATION ?? process.env.OPENAI_ORG_ID)?.trim()),
+          projectConfigured: Boolean((process.env.OPENAI_PROJECT ?? process.env.OPENAI_PROJECT_ID)?.trim())
+        }
+      : undefined,
+    codex: codexSelected
+      ? {
+          adapter: "codex-app-server",
+          transport: selectedProvider === "codex-loopback" ? "loopback" : "configured",
+          approvalMode: "proposal"
+        }
+      : undefined
+  };
+}
+
+function sortTimestampsDesc(left: { createdAt: string }, right: { createdAt: string }): number {
+  return right.createdAt.localeCompare(left.createdAt);
 }
 
 function summarizeAiThreads(threads: AiThread[]) {

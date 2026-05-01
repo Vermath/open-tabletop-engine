@@ -994,6 +994,7 @@ function AdminPanel(props: { admin?: AdminSnapshot; currentUserId: string; statu
   const sessions = props.admin?.sessions ?? [];
   const emails = props.admin?.emailOutbox.slice().reverse() ?? [];
   const auditLogs = props.admin?.audit.auditLogs ?? [];
+  const aiOperations = props.admin?.aiOperations;
   return (
     <div className="panel-stack admin-panel">
       <div className="panel-heading">
@@ -1047,6 +1048,54 @@ function AdminPanel(props: { admin?: AdminSnapshot; currentUserId: string; statu
               </div>
             </article>
           ))
+        )}
+      </section>
+
+      <section className="admin-section" aria-label="Admin AI operations">
+        <div className="operator-heading">
+          <div className="section-title">AI Operations</div>
+          <strong>{aiOperations?.provider.id ?? "not loaded"}</strong>
+        </div>
+        {!aiOperations ? (
+          <div className="empty-state compact">No AI operations loaded.</div>
+        ) : (
+          <>
+            <div className="operator-item admin-item">
+              <div className="operator-row">
+                <span>{aiOperations.provider.label}</span>
+                <strong>{aiOperations.runtime.selectedProvider}</strong>
+              </div>
+              <p>active {aiOperations.runtime.activeProvider} - retry budget {aiOperations.runtime.retryAttempts}</p>
+              <div className="admin-meta">
+                {aiOperations.runtime.codex && <span>{aiOperations.runtime.codex.transport} Codex transport</span>}
+                {aiOperations.runtime.openai && <span>{aiOperations.runtime.openai.apiKeyConfigured ? "OpenAI key configured" : "OpenAI key missing"}</span>}
+                <span>{aiOperations.runtime.costRatesConfigured.inputTokens && aiOperations.runtime.costRatesConfigured.outputTokens ? "cost rates configured" : "cost rates not configured"}</span>
+              </div>
+            </div>
+            <div className="metric-grid">
+              <MetricTile label="Threads" value={formatNumber(aiOperations.totals.threadCount)} />
+              <MetricTile label="Failures" value={formatNumber(aiOperations.totals.failedThreadCount)} />
+              <MetricTile label="Retries" value={formatNumber(aiOperations.totals.retryAttempts)} />
+              <MetricTile label="Tokens" value={formatNumber(aiOperations.totals.usage.totalTokens)} />
+              <MetricTile label="Cost" value={formatCost(aiOperations.totals.usage.estimatedCostUsd)} />
+              <MetricTile label="Tools" value={formatNumber(aiOperations.totals.toolCallCount)} />
+            </div>
+            {aiOperations.campaigns.slice(0, 4).map((campaign) => (
+              <article className="operator-item admin-item" key={campaign.campaignId}>
+                <div className="operator-row">
+                  <span>{campaign.campaignName}</span>
+                  <strong>{formatNumber(campaign.threadCount)} threads</strong>
+                </div>
+                <p>{formatNumber(campaign.failedThreadCount)} failures - {formatNumber(campaign.toolCallCount)} tool calls - {formatDuration(campaign.durationMs)}</p>
+              </article>
+            ))}
+            {aiOperations.recentToolCalls.slice(0, 5).map((toolCall) => (
+              <div className="operator-row tool-call-row" key={toolCall.id}>
+                <span>{toolCall.toolName}</span>
+                <strong>{toolCall.status} - {toolCall.campaignName ?? "unknown"}</strong>
+              </div>
+            ))}
+          </>
         )}
       </section>
 

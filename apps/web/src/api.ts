@@ -320,6 +320,46 @@ export interface AiUsageSummary extends AiUsageRollup {
   providers: Array<AiUsageRollup & { provider: string }>;
 }
 
+export interface AdminAiOperations {
+  provider: {
+    id: string;
+    label: string;
+  };
+  runtime: {
+    selectedProvider: string;
+    activeProvider: string;
+    retryAttempts: number;
+    costRatesConfigured: {
+      inputTokens: boolean;
+      outputTokens: boolean;
+    };
+    openai?: {
+      apiKeyConfigured: boolean;
+      model: string;
+      baseUrl: string;
+      organizationConfigured: boolean;
+      projectConfigured: boolean;
+    };
+    codex?: {
+      adapter: string;
+      transport: string;
+      approvalMode: string;
+    };
+  };
+  totals: AiUsageRollup;
+  campaigns: Array<AiUsageRollup & { campaignId: string; campaignName: string }>;
+  recentThreads: AiThread[];
+  recentToolCalls: Array<
+    AiToolCall & {
+      campaignId?: string;
+      campaignName?: string;
+      provider?: string;
+      threadTitle?: string;
+      threadStatus?: AiThread["status"];
+    }
+  >;
+}
+
 export interface AdminUserInfo extends Omit<User, "passwordHash" | "mfa"> {
   disabled: boolean;
   membershipCount: number;
@@ -357,16 +397,18 @@ export interface AdminSnapshot {
   sessions: AdminSessionInfo[];
   emailOutbox: EmailOutboxMessage[];
   audit: AdminAuditLogExport;
+  aiOperations: AdminAiOperations;
 }
 
 export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
-  const [users, sessions, emailOutbox, audit] = await Promise.all([
+  const [users, sessions, emailOutbox, audit, aiOperations] = await Promise.all([
     apiGet<AdminUserInfo[]>("/api/v1/admin/users"),
     apiGet<AdminSessionInfo[]>("/api/v1/admin/sessions"),
     apiGet<EmailOutboxMessage[]>("/api/v1/admin/email-outbox"),
-    apiGet<AdminAuditLogExport>("/api/v1/admin/audit-logs?limit=12")
+    apiGet<AdminAuditLogExport>("/api/v1/admin/audit-logs?limit=12"),
+    apiGet<AdminAiOperations>("/api/v1/admin/ai/operations")
   ]);
-  return { users, sessions, emailOutbox, audit };
+  return { users, sessions, emailOutbox, audit, aiOperations };
 }
 
 export function assetBlobUrl(asset: MapAsset): string {

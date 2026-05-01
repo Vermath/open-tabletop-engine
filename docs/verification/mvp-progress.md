@@ -1142,6 +1142,31 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - `DELETE /api/v1/admin/scim/group-role-mappings/scimmap_mon6c5cvfu234ver` returned `{ removedMemberships: 1 }`, and a final member list check confirmed the provisioned user was no longer a `camp_demo` member.
   - Admin audit exports for `admin.scim.groupRoleMapping.create` and `admin.scim.groupRoleMapping.delete` each returned `count: 1`.
 
+### Server Admin AI Operations Slice
+
+- Implementation:
+  - Added `GET /api/v1/admin/ai/operations` for server admins to inspect redacted AI/Codex provider runtime settings, retry budget, configured cost-rate flags, aggregate usage, campaign rollups, recent threads, and recent tool calls across campaigns.
+  - Added an AI Operations section to the browser Admin tab so server admins can verify the active provider, Codex/OpenAI configuration state, failures, tokens, estimated cost, and recent tool activity without using a campaign GM panel.
+  - Added `.env.example` entries for AI retry and cost-rate settings.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `48 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - API tests verify server-admin-only access, redacted runtime metadata, aggregate usage totals, campaign rollups, recent tool-call enrichment, audit logging for `admin.aiOperations.inspect`, and non-admin denial.
+- Manual browser evidence:
+  - API: `http://127.0.0.1:4465`
+  - Web: `http://localhost:5175`
+  - SQLite file: `apps/api/storage/manual-ai-admin-ops-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_AI_PROVIDER=codex-loopback`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, `OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K=0.01`, and `OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K=0.02`.
+  - A GM bearer login returned an `ots_` token prefix.
+  - A Codex loopback thread created through `POST /api/v1/campaigns/camp_demo/ai/threads` completed with provider `codex-app-server`, `toolCallCount: 8`, and `eventCount: 22`.
+  - `GET /api/v1/admin/ai/operations` returned provider `codex-app-server`, Codex transport `loopback`, `adminThreads: 1`, `adminTools: 8`, campaign `The Ember Vault`, and recent tool names including `roll_dice`, `read_compendium`, `draft_actor_update`, `create_memory`, and `draft_encounter`.
+  - Browser Admin tab showed the AI Operations section with `codex-app-server`, `codex-loopback`, `loopback Codex transport`, cost rates configured, `Threads: 1`, `Failures: 0`, `Tools: 8`, campaign rollup for `The Ember Vault`, recent tool-call rows, and an `admin.aiOperations.inspect` audit row.
+  - Switching the browser session to Demo Player removed the Admin tab and kept AI mutation/approval controls disabled.
+  - Screenshot saved at `output/playwright/admin-ai-operations.png`.
+  - Browser console showed no application runtime errors; the only console error was the missing `favicon.ico` 404.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
@@ -1151,4 +1176,4 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
-- AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

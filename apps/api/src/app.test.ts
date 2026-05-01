@@ -2647,6 +2647,125 @@ describe("api", () => {
     }
   });
 
+  it("lets server admins inspect redacted ai operations across campaigns", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS", "OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K", "OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    process.env.OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K = "0.01";
+    process.env.OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K = "0.02";
+
+    class OperationsProvider implements AiProvider {
+      id = "codex-ops-test";
+      label = "Codex Ops Test";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield {
+          type: "usage.reported",
+          usage: {
+            inputTokens: 120,
+            outputTokens: 30,
+            totalTokens: 150
+          }
+        };
+        yield {
+          type: "tool.started",
+          toolName: "roll_dice",
+          input: {
+            formula: "1d20+2",
+            label: "Ops Check"
+          }
+        };
+        yield {
+          type: "message.completed",
+          content: "Operations telemetry recorded"
+        };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new OperationsProvider() });
+
+    try {
+      const adminLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_gm" }
+      });
+      const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
+
+      const thread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: adminHeaders,
+        payload: { prompt: "Record a Codex operations smoke test." }
+      });
+      expect(thread.statusCode).toBe(200);
+
+      const operations = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/ai/operations",
+        headers: adminHeaders
+      });
+      expect(operations.statusCode).toBe(200);
+      expect(operations.json()).toMatchObject({
+        provider: {
+          id: "codex-ops-test",
+          label: "Codex Ops Test"
+        },
+        runtime: {
+          selectedProvider: "local-echo",
+          activeProvider: "codex-ops-test",
+          costRatesConfigured: {
+            inputTokens: true,
+            outputTokens: true
+          }
+        },
+        totals: {
+          threadCount: 1,
+          completedThreadCount: 1,
+          failedThreadCount: 0,
+          toolCallCount: 1,
+          usage: {
+            inputTokens: 120,
+            outputTokens: 30,
+            totalTokens: 150
+          }
+        }
+      });
+      expect(operations.json().campaigns).toEqual([expect.objectContaining({ campaignId: "camp_demo", campaignName: "The Ember Vault", threadCount: 1 })]);
+      expect(operations.json().recentThreads[0]).toMatchObject({ provider: "codex-ops-test", status: "completed" });
+      expect(operations.json().recentToolCalls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            campaignId: "camp_demo",
+            campaignName: "The Ember Vault",
+            provider: "codex-ops-test",
+            toolName: "roll_dice",
+            status: "completed"
+          }),
+          expect.objectContaining({
+            campaignId: "camp_demo",
+            campaignName: "The Ember Vault",
+            provider: "codex-ops-test",
+            toolName: "roll_dice",
+            status: "started"
+          })
+        ])
+      );
+      expect(JSON.stringify(operations.json())).not.toContain("OPENAI_API_KEY");
+      expect(store.state.auditLogs.map((log) => log.action)).toContain("admin.aiOperations.inspect");
+
+      const blocked = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/ai/operations",
+        headers: { "x-user-id": "usr_demo_player" }
+      });
+      expect(blocked.statusCode).toBe(403);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("executes ai provider proposal tools with permission boundaries", async () => {
     class ToolCallingProvider implements AiProvider {
       id = "tool-ai";
