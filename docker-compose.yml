@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-opentabletop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opentabletop}
+      POSTGRES_DB: ${POSTGRES_DB:-opentabletop}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  minio:
+    image: minio/minio:RELEASE.2026-03-18T02-15-24Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-opentabletop}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-opentabletop-dev}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/api.Dockerfile
+    environment:
+      PORT: 4000
+      HOST: 0.0.0.0
+    ports:
+      - "4000:4000"
+    volumes:
+      - api-storage:/app/storage
+    depends_on:
+      - postgres
+      - redis
+      - minio
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+      args:
+        VITE_API_URL: http://localhost:4000
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  minio-data:
+  api-storage:

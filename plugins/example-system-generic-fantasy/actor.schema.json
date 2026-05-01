@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Generic Fantasy Actor",
+  "type": "object",
+  "properties": {
+    "attributes": {
+      "type": "object",
+      "properties": {
+        "strength": { "type": "number" },
+        "dexterity": { "type": "number" },
+        "constitution": { "type": "number" },
+        "intelligence": { "type": "number" },
+        "wisdom": { "type": "number" },
+        "charisma": { "type": "number" }
+      },
+      "required": ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+    },
+    "hp": {
+      "type": "object",
+      "properties": {
+        "current": { "type": "number" },
+        "max": { "type": "number" }
+      },
+      "required": ["current", "max"]
+    }
+  },
+  "required": ["attributes", "hp"]
+}

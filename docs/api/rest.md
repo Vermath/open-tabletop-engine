@@ -1,0 +1,35 @@
+# REST API
+
+The API is served from `apps/api` and exposes:
+
+- `GET /api/v1/health`
+- `GET /api/v1/openapi.json`
+- `GET|POST /api/v1/campaigns`
+- `GET|PATCH|DELETE /api/v1/campaigns/{campaignId}`
+- `GET|POST /api/v1/campaigns/{campaignId}/scenes`
+- `GET|PATCH|DELETE /api/v1/scenes/{sceneId}`
+- `GET|POST /api/v1/scenes/{sceneId}/tokens`
+- `PATCH|DELETE /api/v1/tokens/{tokenId}`
+- `GET|POST /api/v1/campaigns/{campaignId}/actors`
+- `PATCH /api/v1/actors/{actorId}`
+- `GET|POST /api/v1/campaigns/{campaignId}/items`
+- `GET|POST /api/v1/campaigns/{campaignId}/journal`
+- `PATCH /api/v1/journal/{entryId}`
+- `POST /api/v1/dice/roll`
+- `GET|POST /api/v1/chat/messages`
+- `GET|POST /api/v1/campaigns/{campaignId}/encounters`
+- `GET|POST /api/v1/campaigns/{campaignId}/combats`
+- `GET|POST /api/v1/campaigns/{campaignId}/proposals`
+- `POST /api/v1/proposals/{proposalId}/approve`
+- `POST /api/v1/proposals/{proposalId}/apply`
+- `POST /api/v1/campaigns/{campaignId}/ai/threads`
+- `GET|POST /api/v1/plugins`
+- `GET|POST /api/v1/systems`
+- `GET /api/v1/campaigns/{campaignId}/export`
+- `POST /api/v1/import/campaign`
+
+Realtime clients connect to:
+
+```text
+ws://localhost:4000/api/v1/realtime?campaignId=camp_demo
+```

@@ -1,0 +1,35 @@
+{
+  "format": "ottx",
+  "version": "0.1.0",
+  "exportedAt": "2026-05-01T00:00:00.000Z",
+  "manifest": {
+    "campaignId": "camp_fixture",
+    "name": "Fixture Campaign",
+    "schemaVersion": "0.1.0",
+    "assetCount": 0
+  },
+  "data": {
+    "users": [],
+    "campaigns": [],
+    "members": [],
+    "worlds": [],
+    "scenes": [],
+    "assets": [],
+    "tokens": [],
+    "actors": [],
+    "items": [],
+    "journals": [],
+    "handouts": [],
+    "chat": [],
+    "rolls": [],
+    "encounters": [],
+    "combats": [],
+    "compendia": [],
+    "proposals": [],
+    "aiThreads": [],
+    "aiMemory": [],
+    "aiToolCalls": [],
+    "auditLogs": [],
+    "permissionGrants": []
+  }
+}

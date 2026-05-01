@@ -226,6 +226,18 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
 
+  plugins/example-macro-plugin:
+    dependencies:
+      '@open-tabletop/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+
+  plugins/example-system-generic-fantasy:
+    dependencies:
+      '@open-tabletop/system-sdk':
+        specifier: workspace:*
+        version: link:../../packages/system-sdk
+
 packages:
 
   /@babel/code-frame@7.29.0:
