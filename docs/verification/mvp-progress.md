@@ -647,6 +647,39 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/dynamic-fog-player.png`.
   - Browser console had no errors or warnings after reload; it only showed the React DevTools info message and an autocomplete advisory.
 
+### Packaged Plugin Runtime Slice
+
+- Implementation:
+  - Replaced the API's static plugin catalog and hard-coded `/spark` command branch with a manifest loader for local packages under `plugins/*/plugin.manifest.json`.
+  - Added plugin manifest validation for semver-like versions, compatible core ranges, relative entrypoints, declared chat commands, and requested permissions from the plugin allowlist.
+  - Added package path containment checks, server entrypoint SHA-256 checksums, source metadata, and `vm` sandbox metadata to the plugin catalog.
+  - Added a VM-backed server command runner that exposes only a constrained `registerCommand` API, disables string and WASM code generation, times out module load and command execution, and passes token context only when the plugin grant includes `token.read`.
+  - Added permission review on campaign plugin install so GMs can grant all requested permissions or an explicit subset; command execution remains blocked until both the human caller and plugin grant allow the operation.
+  - Moved `example-macro-plugin` command behavior into `plugins/example-macro-plugin/server.sandbox.js`.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/plugin-sdk build` passed.
+  - `pnpm --filter @open-tabletop/plugin-sdk typecheck` passed.
+  - `pnpm --filter @open-tabletop/plugin-sdk test` passed with no test files.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `31 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - Plugin runtime tests verify package discovery, server-entrypoint metadata and checksums, sandbox command execution, hidden `process`, blocked `eval`, and rejection of entrypoints that escape the plugin package.
+  - API tests verify observer install denial, invalid permission rejection, partial grant review, blocked command execution without `chat.write`, full grant review, and sandbox-produced `/spark` chat output with token context.
+- Manual API and browser evidence:
+  - API: `http://127.0.0.1:4444`
+  - Web: `http://127.0.0.1:5190`
+  - SQLite file: `storage/manual-plugin-runtime-20260501.sqlite`
+  - Plugin catalog returned `example-macro-plugin` with package `example-macro-plugin`, sandbox `vm`, server entrypoint `example-macro-plugin/server.sandbox.js`, and checksum prefix `sha256:2573ee86bee2`.
+  - Campaign plugin read initially returned `installed: false`.
+  - Partial install granted `token.read`, returned missing permission `chat.write`, and `/spark` command execution returned `403`.
+  - Full install granted `chat.write,token.read`, returned no missing permissions, and `/spark` produced plugin chat body `Spark macro: manual flare near Valen Ash.` from the sandboxed server entrypoint.
+  - Global package registration rejected traversal package path `../outside` with `400`.
+  - Browser SDK panel loaded as `usr_demo_gm`, showed `Realtime connected`, rendered `installed plugin`, `example-macro-plugin - vm sandbox - v0.1.0`, and exposed the `/spark` command button.
+  - Browser chat included `plugin Spark macro: manual flare near Valen Ash.`.
+  - Screenshot saved at `output/playwright/plugin-sandbox-gm.png`.
+  - Browser console had no app runtime errors; it showed the existing missing `favicon.ico` 404, React DevTools info message, and an autocomplete advisory.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
@@ -654,6 +687,6 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, account administration, production session administration, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs first-class reset UI, MFA, SCIM/organization sync, and audit export.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, and cleanup jobs for deleted or expired object bytes. Production storage work still needs CDN edge configuration, malware/content scanning, and deployment scheduling for recurring cleanup jobs.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
-- Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
+- Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
 - AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, OpenAI Responses adapter requests and function-call mapping, provider-backed memory extraction, approval/application, and deterministic recap memory. Hosted-model prompt quality and broader tool coverage remain basic.

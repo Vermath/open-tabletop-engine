@@ -10,7 +10,8 @@ import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
-import { installedPlugins, installedSystems } from "./registries.js";
+import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
+import { installedSystems } from "./registries.js";
 import { RealtimeHub } from "./realtime.js";
 import { FileStateStore, type StateStore } from "./store.js";
 
@@ -20,6 +21,8 @@ export interface BuildAppOptions {
   assetStorage?: AssetStorage;
   maxAssetBytes?: number;
   aiProvider?: AiProvider;
+  pluginRegistry?: PluginRuntimeRegistry;
+  pluginRoot?: string;
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -30,6 +33,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const hub = new RealtimeHub();
   const broadcast = (event: EngineEvent) => hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId));
   const aiProvider = options.aiProvider ?? createConfiguredAiProvider();
+  const pluginRegistry = options.pluginRegistry ?? loadPluginRegistry({ pluginRoot: options.pluginRoot });
   const app = Fastify({ logger: true });
 
   app.addContentTypeParser(/^image\/(png|jpeg|webp|gif|svg\+xml)$/i, { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
@@ -1670,30 +1674,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get("/api/v1/plugins", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    return installedPlugins;
+    return pluginRegistry.list();
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/plugins", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return installedPlugins.map((plugin) => {
-      const grant = findPluginGrant(store, request.params.campaignId, plugin.id);
-      return {
-        ...plugin,
-        installed: Boolean(grant),
-        grantedPermissions: grant?.permissions ?? [],
-        missingPermissions: plugin.permissions.filter((permission) => !grant?.permissions.includes(permission))
-      };
-    });
+    return pluginRegistry.list().map((plugin) => pluginCampaignInfo(store, request.params.campaignId, plugin));
   });
 
-  app.post<{ Params: { campaignId: string; pluginId: string } }>("/api/v1/campaigns/:campaignId/plugins/:pluginId/install", async (request, reply) => {
+  app.post<{
+    Params: { campaignId: string; pluginId: string };
+    Body: { permissions?: PermissionName[] };
+  }>("/api/v1/campaigns/:campaignId/plugins/:pluginId/install", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "plugin.install");
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const plugin = installedPlugins.find((item) => item.id === request.params.pluginId);
+    const plugin = pluginRegistry.find(request.params.pluginId);
     if (!plugin) return notFound(reply, "Plugin not found");
+    const permissions = reviewedPluginPermissions(plugin, request.body?.permissions);
+    if (!permissions) return badRequest(reply, "Plugin grant permissions must be a subset of the plugin manifest permissions");
     const existing = findPluginGrant(store, request.params.campaignId, plugin.id);
     const grant =
       existing ??
@@ -1701,9 +1702,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         subjectType: "plugin" as const,
         subjectId: plugin.id,
         campaignId: request.params.campaignId,
-        permissions: plugin.permissions
+        permissions
       }) satisfies PermissionGrant);
-    grant.permissions = plugin.permissions;
+    grant.permissions = permissions;
     grant.updatedAt = nowIso();
     if (!existing) store.state.permissionGrants.push(grant);
     store.state.auditLogs.push(
@@ -1714,11 +1715,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         action: "plugin.install",
         targetType: "plugin",
         targetId: plugin.id,
-        after: { permissions: plugin.permissions }
+        after: {
+          requestedPermissions: plugin.permissions,
+          grantedPermissions: grant.permissions,
+          missingPermissions: plugin.permissions.filter((permission) => !grant.permissions.includes(permission)),
+          packageId: plugin.source.packageId,
+          sandbox: plugin.source.sandbox
+        }
       })
     );
     store.save();
-    return { plugin, grant };
+    return {
+      plugin: pluginCampaignInfo(store, request.params.campaignId, plugin),
+      grant,
+      permissionReview: {
+        requestedPermissions: plugin.permissions,
+        grantedPermissions: grant.permissions,
+        missingPermissions: plugin.permissions.filter((permission) => !grant.permissions.includes(permission))
+      }
+    };
   });
 
   app.post<{
@@ -1729,7 +1744,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const plugin = installedPlugins.find((item) => item.id === request.params.pluginId);
+    const plugin = pluginRegistry.find(request.params.pluginId);
     if (!plugin) return notFound(reply, "Plugin not found");
     const command = request.body.command.startsWith("/") ? request.body.command : `/${request.body.command}`;
     if (!plugin.chatCommands?.some((item) => item.command === command)) return notFound(reply, "Plugin command not found");
@@ -1738,13 +1753,30 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const canReadTokens = pluginCan(store, request.params.campaignId, plugin.id, "token.read");
     const sceneIds = campaignSceneIds(store, request.params.campaignId);
-    const tokenNames = canReadTokens ? store.state.tokens.filter((token) => sceneIds.includes(token.sceneId)).map((token) => token.name) : [];
+    const tokens: PluginCommandTokenContext[] = canReadTokens ? store.state.tokens.filter((token) => sceneIds.includes(token.sceneId)).map((token) => ({ id: token.id, name: token.name, sceneId: token.sceneId })) : [];
+    let commandResult: PluginChatCommandResult;
+    try {
+      commandResult = pluginRegistry.executeChatCommand(plugin.id, {
+        campaignId: request.params.campaignId,
+        pluginId: plugin.id,
+        userId,
+        command,
+        args: request.body.args?.trim() ?? "",
+        permissions: findPluginGrant(store, request.params.campaignId, plugin.id)?.permissions ?? [],
+        tokens
+      });
+    } catch (error) {
+      return reply.code(500).send({
+        error: "plugin_runtime_error",
+        message: "Plugin command failed"
+      });
+    }
     const message = createTimestamped("msg", {
       campaignId: request.params.campaignId,
       userId: plugin.id,
       type: "plugin" as const,
-      body: command === "/spark" ? `Spark macro: ${request.body.args?.trim() || "arcane sparks flare across the scene"}${tokenNames.length ? ` near ${tokenNames.join(", ")}` : ""}.` : `${plugin.name} ran ${command}.`,
-      visibility: "public" as const,
+      body: commandResult.body,
+      visibility: commandResult.visibility,
       recipientUserIds: []
     }) satisfies ChatMessage;
     store.state.chat.push(message);
@@ -1756,7 +1788,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         action: "plugin.chatCommand",
         targetType: "chat",
         targetId: message.id,
-        after: { pluginId: plugin.id, command }
+        after: { pluginId: plugin.id, command, sandbox: plugin.source.sandbox, packageId: plugin.source.packageId }
       })
     );
     store.save();
@@ -1773,15 +1805,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.post<{
-    Body: (typeof installedPlugins)[number] & { campaignId?: string };
+    Body: { campaignId?: string; packagePath?: string };
   }>("/api/v1/plugins/install", async (request, reply) => {
-    const campaignId = request.body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(store, request.headers))?.campaignId;
+    const body = request.body ?? {};
+    const campaignId = body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(store, request.headers))?.campaignId;
     if (!campaignId) return forbidden(reply, "Plugin installation requires a campaign context");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "plugin.install");
     if (allowed !== true) return allowed;
-    const plugin = request.body as (typeof installedPlugins)[number];
-    installedPlugins.push(plugin);
-    return plugin;
+    if (!body.packagePath) return badRequest(reply, "Plugin packagePath is required");
+    try {
+      return pluginRegistry.registerPackage(body.packagePath);
+    } catch (error) {
+      if (error instanceof PluginPackageError) return badRequest(reply, error.loadErrors.join("; "));
+      throw error;
+    }
   });
   app.get("/api/v1/systems", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
@@ -3005,6 +3042,23 @@ function findPluginGrant(store: StateStore, campaignId: string, pluginId: string
 
 function pluginCan(store: StateStore, campaignId: string, pluginId: string, permission: PermissionName): boolean {
   return findPluginGrant(store, campaignId, pluginId)?.permissions.includes(permission) ?? false;
+}
+
+function pluginCampaignInfo(store: StateStore, campaignId: string, plugin: LoadedPlugin): LoadedPlugin & { installed: boolean; grantedPermissions: PermissionName[]; missingPermissions: PermissionName[] } {
+  const grant = findPluginGrant(store, campaignId, plugin.id);
+  return {
+    ...plugin,
+    installed: Boolean(grant),
+    grantedPermissions: grant?.permissions ?? [],
+    missingPermissions: plugin.permissions.filter((permission) => !grant?.permissions.includes(permission))
+  };
+}
+
+function reviewedPluginPermissions(plugin: LoadedPlugin, requestedPermissions?: PermissionName[]): PermissionName[] | undefined {
+  if (!requestedPermissions) return [...plugin.permissions];
+  const uniquePermissions = [...new Set(requestedPermissions)];
+  if (uniquePermissions.some((permission) => !plugin.permissions.includes(permission))) return undefined;
+  return uniquePermissions;
 }
 
 function findSystemActor(store: StateStore, campaignId: string, systemId: string, actorId: string): Actor | undefined {

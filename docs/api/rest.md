@@ -81,7 +81,7 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `GET /api/v1/campaigns/{campaignId}/export`
 - `POST /api/v1/import/campaign`
 
-Plugin runtime endpoints are campaign-scoped. Installing a plugin creates a `permissionGrants` record for `subjectType: "plugin"`; command execution checks the human caller's permission and the plugin grant before the plugin can post chat or read token context.
+Plugin runtime endpoints are campaign-scoped. `GET /api/v1/plugins` returns manifest-loaded local packages with source metadata, sandbox mode, and server-entrypoint checksums. `POST /api/v1/plugins` registers an additional package by `packagePath` under the configured plugin root. Installing a plugin creates or updates a `permissionGrants` record for `subjectType: "plugin"`; callers may grant all requested permissions or a subset for review. Command execution checks the human caller's permission and the plugin grant before the plugin can post chat or read token context, then runs the manifest-declared server command in the VM sandbox.
 
 System runtime endpoints are campaign-scoped. The generic fantasy runtime can summarize an actor sheet and produce quick-roll dice formulas from actor data, posting the resulting roll into chat.
 

@@ -6,7 +6,9 @@ export const plugin: OpenTabletopPlugin = {
     name: "Example Macro Plugin",
     version: "0.1.0",
     compatibleCore: ">=0.1.0",
-    entrypoints: { client: "./src/index.ts" },
+    package: { publisher: "OpenTabletop", license: "MIT" },
+    entrypoints: { client: "./src/index.ts", server: "./server.sandbox.js" },
+    runtime: { apiVersion: "0.1", sandbox: "vm" },
     permissions: ["chat.write", "token.read"],
     ui: { panels: [{ id: "macro-pad", title: "Macro Pad", icon: "wand" }] },
     chatCommands: [{ command: "/spark", description: "Posts a sample magical effect." }]

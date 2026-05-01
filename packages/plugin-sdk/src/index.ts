@@ -5,9 +5,19 @@ export interface PluginManifest {
   name: string;
   version: string;
   compatibleCore: string;
+  package?: {
+    publisher?: string;
+    license?: string;
+    homepage?: string;
+    repository?: string;
+  };
   entrypoints: {
     client?: string;
     server?: string;
+  };
+  runtime?: {
+    apiVersion?: string;
+    sandbox?: "vm";
   };
   permissions: PermissionName[];
   ui?: {
@@ -15,6 +25,8 @@ export interface PluginManifest {
   };
   chatCommands?: Array<{ command: string; description: string }>;
 }
+
+export const PLUGIN_PERMISSION_ALLOWLIST: PermissionName[] = ["campaign.read", "scene.read", "token.read", "actor.read", "journal.read", "chat.read", "chat.write", "plugin.configure", "dice.roll", "ai.proposeChanges"];
 
 export interface PluginContext {
   pluginId: string;
@@ -32,12 +44,24 @@ export interface OpenTabletopPlugin {
 
 export function validatePluginManifest(manifest: PluginManifest): string[] {
   const errors: string[] = [];
-  if (!manifest.id) errors.push("Plugin id is required");
+  if (!manifest || typeof manifest !== "object") return ["Plugin manifest must be an object"];
+  if (!/^[a-z0-9][a-z0-9-]{1,63}$/.test(manifest.id ?? "")) errors.push("Plugin id must be lowercase kebab-case");
   if (!manifest.name) errors.push("Plugin name is required");
-  if (!manifest.version) errors.push("Plugin version is required");
-  if (!manifest.entrypoints.client && !manifest.entrypoints.server) {
+  if (!/^\d+\.\d+\.\d+(-[a-z0-9.-]+)?$/i.test(manifest.version ?? "")) errors.push("Plugin version must be semver-like");
+  if (!manifest.compatibleCore) errors.push("Compatible core range is required");
+  if (!manifest.entrypoints?.client && !manifest.entrypoints?.server) {
     errors.push("At least one plugin entrypoint is required");
   }
-  if (!Array.isArray(manifest.permissions)) errors.push("Permissions must be an array");
+  if (manifest.runtime?.sandbox && manifest.runtime.sandbox !== "vm") errors.push("Unsupported plugin sandbox");
+  if (!Array.isArray(manifest.permissions)) {
+    errors.push("Permissions must be an array");
+  } else {
+    const unknownPermissions = manifest.permissions.filter((permission) => !PLUGIN_PERMISSION_ALLOWLIST.includes(permission));
+    if (unknownPermissions.length) errors.push(`Unsupported plugin permissions: ${unknownPermissions.join(", ")}`);
+  }
+  for (const command of manifest.chatCommands ?? []) {
+    if (!command.command.startsWith("/")) errors.push(`Plugin command must start with /: ${command.command}`);
+    if (!command.description) errors.push(`Plugin command description is required: ${command.command}`);
+  }
   return errors;
 }

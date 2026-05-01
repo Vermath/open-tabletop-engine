@@ -833,6 +833,7 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
           <span>{plugin.installed ? "installed plugin" : "available plugin"}</span>
           <h3>{plugin.name}</h3>
           <p>{plugin.permissions.join(", ")}</p>
+          <p>{plugin.source ? `${plugin.source.packageId} - ${plugin.source.sandbox} sandbox - v${plugin.version}` : `v${plugin.version}`}</p>
           {!plugin.installed ? (
             <button className="ghost-button" onClick={() => props.onInstallPlugin(plugin)} disabled={!props.canInstall}>
               <Plus size={15} /> Install

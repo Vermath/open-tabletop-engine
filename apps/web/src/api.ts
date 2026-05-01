@@ -226,6 +226,16 @@ export interface PluginRuntimeInfo {
   installed: boolean;
   grantedPermissions: string[];
   missingPermissions: string[];
+  source?: {
+    type: string;
+    packageId: string;
+    sandbox: string;
+    checksum?: string;
+  };
+  permissionReview?: {
+    requestedPermissions: string[];
+    grantRequired: boolean;
+  };
   chatCommands?: Array<{ command: string; description: string }>;
 }
 

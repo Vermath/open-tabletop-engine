@@ -1360,17 +1360,31 @@ describe("api", () => {
     });
     expect(observerInstall.statusCode).toBe(403);
 
+    const invalidPermissionInstall = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install",
+      headers: authHeaders,
+      payload: { permissions: ["campaign.delete"] }
+    });
+    expect(invalidPermissionInstall.statusCode).toBe(400);
+
     const pluginInstall = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install",
-      headers: authHeaders
+      headers: authHeaders,
+      payload: { permissions: ["token.read"] }
     });
     expect(pluginInstall.statusCode).toBe(200);
-    expect(pluginInstall.json().grant.permissions).toEqual(["chat.write", "token.read"]);
+    expect(pluginInstall.json().plugin.source).toEqual(expect.objectContaining({ packageId: "example-macro-plugin", sandbox: "vm" }));
+    expect(pluginInstall.json().grant.permissions).toEqual(["token.read"]);
+    expect(pluginInstall.json().permissionReview).toEqual({
+      requestedPermissions: ["chat.write", "token.read"],
+      grantedPermissions: ["token.read"],
+      missingPermissions: ["chat.write"]
+    });
 
     const grant = store.state.permissionGrants.find((item) => item.subjectType === "plugin" && item.subjectId === "example-macro-plugin");
     expect(grant).toBeTruthy();
-    grant!.permissions = ["token.read"];
     const blockedCommand = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/chat-command",
@@ -1379,7 +1393,15 @@ describe("api", () => {
     });
     expect(blockedCommand.statusCode).toBe(403);
 
-    grant!.permissions = ["chat.write", "token.read"];
+    const reviewedInstall = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install",
+      headers: authHeaders,
+      payload: { permissions: ["chat.write", "token.read"] }
+    });
+    expect(reviewedInstall.statusCode).toBe(200);
+    expect(reviewedInstall.json().permissionReview.missingPermissions).toEqual([]);
+
     const command = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/chat-command",
