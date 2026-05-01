@@ -2360,7 +2360,8 @@ describe("api", () => {
       expect(systems.json()).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: "generic-fantasy", active: true }),
-          expect.objectContaining({ id: "stellar-frontiers", active: false })
+          expect.objectContaining({ id: "stellar-frontiers", active: false }),
+          expect.objectContaining({ id: "mystic-noir", active: false })
         ])
       );
 
@@ -2523,6 +2524,176 @@ describe("api", () => {
     }
   });
 
+  it("supports a third rules system with investigation compendium, sheets, conditions, and rolls", async () => {
+    const store = new MemoryStateStore();
+    store.state.users.push(
+      createTimestamped("usr", {
+        id: "usr_observer",
+        displayName: "Observer"
+      })
+    );
+    store.state.members.push(
+      createTimestamped("mem", {
+        campaignId: "camp_demo",
+        userId: "usr_observer",
+        role: "observer" as const
+      })
+    );
+    const app = await buildApp({ store });
+
+    try {
+      const install = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/mystic-noir/install",
+        headers: authHeaders
+      });
+      expect(install.statusCode).toBe(200);
+      expect(install.json().campaign.defaultSystemId).toBe("mystic-noir");
+
+      const actor = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "mystic-noir",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: "Mara Vale",
+          data: {
+            rank: 1,
+            archetype: "Field Investigator",
+            skills: { investigation: 3, resolve: 2, influence: 1, stealth: 2, occult: 1 },
+            composure: { current: 4, max: 6 },
+            conditions: []
+          }
+        }
+      });
+      expect(actor.statusCode).toBe(200);
+      const actorId = actor.json().id;
+
+      const compendium = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/mystic-noir/compendium",
+        headers: authHeaders
+      });
+      expect(compendium.statusCode).toBe(200);
+      expect(compendium.json().entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "case-notebook", type: "clue" }),
+          expect.objectContaining({ id: "warding-rite", type: "ritual" }),
+          expect.objectContaining({ id: "shaken", type: "condition" })
+        ])
+      );
+
+      const sheet = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/camp_demo/systems/mystic-noir/actors/${actorId}/sheet`,
+        headers: authHeaders
+      });
+      expect(sheet.statusCode).toBe(200);
+      expect(sheet.json()).toMatchObject({
+        systemId: "mystic-noir",
+        actorId,
+        summary: expect.stringContaining("Mara Vale")
+      });
+      expect(sheet.json().quickRolls).toContainEqual({
+        id: "skill-investigation",
+        label: "Investigation Check",
+        formula: "1d20+3"
+      });
+
+      const notebook = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/mystic-noir/actors/${actorId}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "case-notebook" }
+      });
+      expect(notebook.statusCode).toBe(200);
+      expect(notebook.json().item).toEqual(expect.objectContaining({ type: "clue", name: "Case Notebook", actorId }));
+      expect(notebook.json().sheet.clues).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Case Notebook" })]));
+      const notebookRollId = `clue-${notebook.json().item.id}-insight`;
+      expect(notebook.json().sheet.quickRolls).toContainEqual({
+        id: notebookRollId,
+        label: "Case Notebook Insight",
+        formula: "1d4+3"
+      });
+
+      const rite = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/mystic-noir/actors/${actorId}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "warding-rite" }
+      });
+      expect(rite.statusCode).toBe(200);
+      expect(rite.json().item).toEqual(expect.objectContaining({ type: "ritual", name: "Warding Rite", actorId }));
+      expect(rite.json().sheet.rituals).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Warding Rite" })]));
+      const riteRollId = `ritual-${rite.json().item.id}-ward`;
+      expect(rite.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          { id: notebookRollId, label: "Case Notebook Insight", formula: "1d4+3" },
+          { id: riteRollId, label: "Warding Rite Ward", formula: "1d6+2" }
+        ])
+      );
+
+      const actionRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/mystic-noir/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: notebookRollId }
+      });
+      expect(actionRoll.statusCode).toBe(200);
+      expect(actionRoll.json().quickRoll).toEqual({ id: notebookRollId, label: "Case Notebook Insight", formula: "1d4+3" });
+      expect(store.state.chat.some((message) => message.body.includes("Mara Vale Case Notebook Insight"))).toBe(true);
+
+      const focused = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/mystic-noir/actors/${actorId}/conditions`,
+        headers: authHeaders,
+        payload: { conditionId: "focused" }
+      });
+      expect(focused.statusCode).toBe(200);
+      expect(focused.json().sheet.conditions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "focused", name: "Focused" })]));
+      expect(focused.json().sheet.quickRolls).toContainEqual({
+        id: "skill-investigation",
+        label: "Investigation Check",
+        formula: "1d20+3+1d4"
+      });
+
+      const shaken = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/mystic-noir/actors/${actorId}/conditions`,
+        headers: authHeaders,
+        payload: { conditionId: "shaken" }
+      });
+      expect(shaken.statusCode).toBe(200);
+      expect(shaken.json().sheet.quickRolls).toContainEqual({
+        id: "skill-investigation",
+        label: "Investigation Check",
+        formula: "2d20kl1+3+1d4"
+      });
+
+      const roll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/mystic-noir/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "skill-investigation" }
+      });
+      expect(roll.statusCode).toBe(200);
+      expect(roll.json().quickRoll.formula).toBe("2d20kl1+3+1d4");
+      expect(store.state.chat.some((message) => message.body.includes("Mara Vale Investigation Check"))).toBe(true);
+
+      const observerRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/mystic-noir/actors/${actorId}/roll`,
+        headers: { "x-user-id": "usr_observer" },
+        payload: { rollId: "skill-investigation" }
+      });
+      expect(observerRoll.statusCode).toBe(403);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("builds and advances characters from system templates", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });
@@ -2614,6 +2785,35 @@ describe("api", () => {
       expect(promoted.json().actor.data.rank).toBe(2);
       expect(promoted.json().actor.data.strain).toEqual({ current: 4, max: 7 });
       expect(promoted.json().actor.data.milestones).toEqual(expect.arrayContaining(["Rank 2 Field Promotion"]));
+
+      const mysticTemplates = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/mystic-noir/character-templates",
+        headers: authHeaders
+      });
+      expect(mysticTemplates.statusCode).toBe(200);
+      expect(mysticTemplates.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "field-investigator", name: "Field Investigator" })]));
+
+      const investigator = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/mystic-noir/characters",
+        headers: authHeaders,
+        payload: { templateId: "field-investigator", name: "Mara Vale", ownerUserId: "usr_demo_player" }
+      });
+      expect(investigator.statusCode).toBe(200);
+      expect(investigator.json().items.map((item: { name: string }) => item.name)).toEqual(["Case Notebook"]);
+      expect(investigator.json().sheet.clues).toEqual([expect.objectContaining({ name: "Case Notebook" })]);
+
+      const breakthrough = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/mystic-noir/actors/${investigator.json().actor.id}/advance`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { optionId: "case-breakthrough" }
+      });
+      expect(breakthrough.statusCode).toBe(200);
+      expect(breakthrough.json().actor.data.rank).toBe(2);
+      expect(breakthrough.json().actor.data.composure).toEqual({ current: 5, max: 7 });
+      expect(breakthrough.json().actor.data.breakthroughs).toEqual(expect.arrayContaining(["Case 2 Breakthrough"]));
     } finally {
       await app.close();
     }
@@ -2691,6 +2891,35 @@ describe("api", () => {
       expect(stellar.json().sheet.inventory).toEqual([expect.objectContaining({ name: "Laser Carbine" })]);
       expect(stellar.json().sheet.talents).toEqual([expect.objectContaining({ name: "Overclock" })]);
       expect(store.state.actors.some((actor) => actor.name === "Imported Ace")).toBe(true);
+
+      const mystic = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/mystic-noir/characters/import",
+        headers: authHeaders,
+        payload: {
+          name: "Imported Investigator",
+          data: {
+            rank: 3,
+            archetype: "Occult Scholar",
+            skills: { investigation: 2, resolve: 3, influence: 1, stealth: 1, occult: 4 },
+            composure: { current: 4, max: 7 },
+            breakthroughs: ["Solved the First Case"],
+            conditions: ["focused"],
+            items: ["case-notebook", "warding-rite", "marked"]
+          }
+        }
+      });
+      expect(mystic.statusCode).toBe(200);
+      expect(mystic.json().actor.data).toEqual(
+        expect.objectContaining({
+          rank: 3,
+          archetype: "Occult Scholar",
+          conditions: [{ id: "focused" }, { id: "marked" }]
+        })
+      );
+      expect(mystic.json().sheet.clues).toEqual([expect.objectContaining({ name: "Case Notebook" })]);
+      expect(mystic.json().sheet.rituals).toEqual([expect.objectContaining({ name: "Warding Rite" })]);
+      expect(store.state.actors.some((actor) => actor.name === "Imported Investigator")).toBe(true);
     } finally {
       await app.close();
     }
@@ -2800,6 +3029,39 @@ describe("api", () => {
         partyRating: 90,
         threatBudget: 160,
         difficulty: "deadly"
+      });
+
+      const mysticThreats = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/mystic-noir/encounter-threats",
+        headers: authHeaders
+      });
+      expect(mysticThreats.statusCode).toBe(200);
+      expect(mysticThreats.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "masked-agent", budget: 60 })]));
+
+      const investigator = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/mystic-noir/characters",
+        headers: authHeaders,
+        payload: { templateId: "field-investigator", name: "Budget Investigator", ownerUserId: "usr_demo_player" }
+      });
+      expect(investigator.statusCode).toBe(200);
+
+      const mysticPlan = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/mystic-noir/encounter-plan",
+        headers: authHeaders,
+        payload: {
+          partyActorIds: [investigator.json().actor.id],
+          threats: [{ id: "masked-agent", count: 1 }]
+        }
+      });
+      expect(mysticPlan.statusCode).toBe(200);
+      expect(mysticPlan.json().plan).toMatchObject({
+        systemId: "mystic-noir",
+        partyRating: 80,
+        threatBudget: 60,
+        difficulty: "standard"
       });
     } finally {
       await app.close();

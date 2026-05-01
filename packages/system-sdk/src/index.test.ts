@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyMysticNoirAdvancement, applyMysticNoirCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -258,5 +258,138 @@ describe("stellar frontiers rules", () => {
       items: [{ entryId: "laser-carbine" }, { entryId: "overclock" }]
     });
     expect(imported.warnings).toEqual([]);
+  });
+});
+
+const investigator: Actor = {
+  id: "act_investigator",
+  campaignId: "camp_demo",
+  systemId: "mystic-noir",
+  ownerUserId: "usr_demo_player",
+  type: "character",
+  name: "Mara Vale",
+  data: {
+    rank: 1,
+    archetype: "Field Investigator",
+    skills: { investigation: 3, resolve: 2, influence: 1, stealth: 2, occult: 1 },
+    composure: { current: 4, max: 6 },
+    conditions: []
+  },
+  permissions: {},
+  createdAt: "2026-05-01T00:00:00.000Z",
+  updatedAt: "2026-05-01T00:00:00.000Z"
+};
+
+describe("mystic noir rules", () => {
+  it("adds investigation condition effects to skill rolls", () => {
+    const focusedData = applyMysticNoirCondition(investigator, "focused", "2026-05-01T00:00:00.000Z");
+    const focusedInvestigator = { ...investigator, data: focusedData };
+
+    expect(mysticNoirActorConditions(focusedInvestigator)).toContainEqual(expect.objectContaining({ id: "focused", name: "Focused" }));
+    expect(mysticNoirQuickRolls(focusedInvestigator).find((roll) => roll.id === "skill-investigation")?.formula).toBe("1d20+3+1d4");
+
+    const shakenData = applyMysticNoirCondition(focusedInvestigator, "shaken", "2026-05-01T00:00:01.000Z");
+    const shakenInvestigator = { ...investigator, data: shakenData };
+    expect(mysticNoirQuickRolls(shakenInvestigator).find((roll) => roll.id === "skill-investigation")?.formula).toBe("2d20kl1+3+1d4");
+
+    const clearedInvestigator = { ...investigator, data: removeMysticNoirCondition(shakenInvestigator, "shaken") };
+    expect(mysticNoirActorConditions(clearedInvestigator).map((condition) => condition.id)).toEqual(["focused"]);
+  });
+
+  it("builds investigation sheets with clues, rituals, and compendium entries", () => {
+    const items: Item[] = [
+      {
+        id: "itm_notebook",
+        campaignId: "camp_demo",
+        systemId: "mystic-noir",
+        actorId: investigator.id,
+        type: "clue",
+        name: "Case Notebook",
+        data: { bonusFormula: "1d4", skill: "investigation", compendiumId: "case-notebook" },
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      },
+      {
+        id: "itm_warding_rite",
+        campaignId: "camp_demo",
+        systemId: "mystic-noir",
+        actorId: investigator.id,
+        type: "ritual",
+        name: "Warding Rite",
+        data: { protectionFormula: "1d6", skill: "resolve", compendiumId: "warding-rite" },
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      }
+    ];
+
+    expect(mysticNoirCompendiumEntry("case-notebook")).toEqual(expect.objectContaining({ type: "clue", name: "Case Notebook" }));
+    const sheet = mysticNoirSheet(investigator, items);
+    expect(sheet.summary).toContain("Mara Vale");
+    expect(sheet.clues.map((item) => item.name)).toEqual(["Case Notebook"]);
+    expect(sheet.rituals.map((item) => item.name)).toEqual(["Warding Rite"]);
+    expect(sheet.quickRolls).toEqual(
+      expect.arrayContaining([
+        { id: "clue-itm_notebook-insight", label: "Case Notebook Insight", formula: "1d4+3" },
+        { id: "ritual-itm_warding_rite-ward", label: "Warding Rite Ward", formula: "1d6+2" }
+      ])
+    );
+  });
+
+  it("provides guided investigation templates and case advancement", () => {
+    const fieldInvestigator = mysticNoirCharacterTemplate("field-investigator");
+    expect(fieldInvestigator).toEqual(expect.objectContaining({ name: "Field Investigator", actorType: "character" }));
+    expect(fieldInvestigator?.items).toEqual([{ entryId: "case-notebook" }]);
+
+    const builtInvestigator = { ...investigator, data: fieldInvestigator!.data };
+    expect(mysticNoirAdvancementOptions(builtInvestigator)).toContainEqual(expect.objectContaining({ id: "case-breakthrough", nextValue: 2 }));
+    const advancedData = applyMysticNoirAdvancement(builtInvestigator, "case-breakthrough");
+    expect(advancedData.rank).toBe(2);
+    expect(advancedData.composure).toEqual({ current: 5, max: 7 });
+    expect((advancedData.skills as Record<string, number>).investigation).toBe(4);
+    expect(advancedData.breakthroughs).toEqual(expect.arrayContaining(["Case 2 Breakthrough"]));
+  });
+
+  it("calculates investigation encounter budgets from threat selections", () => {
+    expect(mysticNoirEncounterThreats().map((threat) => threat.id)).toContain("masked-agent");
+    const plan = mysticNoirEncounterPlan([{ ...investigator, data: { ...investigator.data, rank: 2 } }], [
+      { id: "arcane-ward", count: 2 },
+      { id: "masked-agent", count: 1 }
+    ]);
+    expect(plan).toMatchObject({
+      systemId: "mystic-noir",
+      partyRating: 160,
+      threatBudget: 140,
+      difficulty: "standard"
+    });
+    expect(plan.summary).toContain("2x Arcane Ward");
+  });
+
+  it("normalizes imported investigation characters", () => {
+    const imported = mysticNoirCharacterImport({
+      name: "Imported Investigator",
+      data: {
+        rank: 3,
+        archetype: "Occult Scholar",
+        skills: { investigation: 2, resolve: 3, influence: 1, stealth: 1, occult: 4 },
+        composure: { current: 4, max: 7 },
+        breakthroughs: ["Solved the First Case"],
+        conditions: ["focused", "missing-condition"],
+        items: ["case-notebook", "warding-rite", "marked", "missing-item"]
+      }
+    });
+
+    expect(imported).toMatchObject({
+      systemId: "mystic-noir",
+      actorType: "character",
+      name: "Imported Investigator",
+      data: {
+        rank: 3,
+        archetype: "Occult Scholar",
+        composure: { current: 4, max: 7 },
+        conditions: [{ id: "focused" }, { id: "marked" }]
+      },
+      items: [{ entryId: "case-notebook" }, { entryId: "warding-rite" }]
+    });
+    expect(imported.warnings).toEqual(["Unknown condition skipped: missing-condition", "Unknown compendium entry skipped: missing-item"]);
   });
 });

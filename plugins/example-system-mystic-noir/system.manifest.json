@@ -1,0 +1,15 @@
+{
+  "id": "mystic-noir",
+  "name": "Mystic Noir",
+  "version": "0.1.0",
+  "compatibleCore": ">=0.1.0",
+  "entrypoints": {
+    "client": "./src/client.ts",
+    "server": "./src/server.ts"
+  },
+  "schemas": {
+    "actor": "./actor.schema.json",
+    "item": "./item.schema.json"
+  },
+  "permissions": ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
+}

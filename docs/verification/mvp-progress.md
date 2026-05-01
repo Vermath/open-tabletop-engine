@@ -1341,6 +1341,34 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/rules-action-automation.png`.
   - Browser page errors had no application runtime failures; console output was limited to the React DevTools info message, a missing `favicon.ico` 404, and an autocomplete hint.
 
+### Third Rules System Slice
+
+- Implementation:
+  - Added the built-in `mystic-noir` rules runtime alongside Generic Fantasy and Stellar Frontiers.
+  - Added Mystic Noir compendium entries for clues, rituals, and conditions; Field Investigator and Occult Scholar character templates; case-breakthrough advancement; character import normalization; composure-aware sheets; skill quick rolls; condition-aware Focused/Shaken roll automation; compendium-backed Case Notebook and Warding Rite action formulas; and case-scene encounter budget planning.
+  - Added `plugins/example-system-mystic-noir` with a manifest, actor schema, item schema, client registration, and server helper so the third system is represented in the installable example-system pattern.
+  - Updated API system dispatch, the installed system registry, the AI `read_compendium` tool description, the browser SDK panel helpers, actor-panel clue/ritual surfaces, REST docs, and System SDK docs for the third rules system.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk test -- --run` passed with `15 passed`.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "supports a third rules system"` passed with `1 passed, 56 skipped`.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts` passed with `57 passed`.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - System SDK tests verify Mystic Noir condition effects, sheet clue/ritual surfaces, action formulas, templates, advancement, importer normalization, and encounter budgets.
+  - API tests verify Mystic Noir campaign activation, compendium listing, actor sheets, clue/ritual attachment, action rolls, Focused/Shaken condition automation, player roll permission, observer denial, template creation, advancement, importer normalization, and encounter planning.
+- Manual API evidence:
+  - Manual smoke used the built API modules from `apps/api/dist` with `MemoryStateStore` and `OTTE_ALLOW_LEGACY_USER_HEADER=true` for local compatibility headers.
+  - Activating Mystic Noir returned `200`; the campaign system list reported `generic-fantasy:false,stellar-frontiers:false,mystic-noir:true`.
+  - Character templates returned `field-investigator` and `occult-scholar`.
+  - Creating `Manual Investigator` from the Field Investigator template returned `200`, produced actor `act_moni2zeu35ru1lcg`, and sheet clues included `Case Notebook`.
+  - Applying Focused changed the `skill-investigation` formula to `1d20+3+1d4`; applying Shaken changed it to `2d20kl1+3+1d4`.
+  - Player-owned roll for `skill-investigation` returned `200` with formula `2d20kl1+3+1d4`.
+  - Case Notebook action roll returned `200` with formula `1d4+3`.
+  - Encounter planning returned `200` with summary `standard encounter: 1x Masked Agent (60/80 budget)` and persisted encounter `Manual Mystic Case`.
+  - Importing `Manual Imported Investigator` returned `200`, normalized conditions `focused,marked`, clues `Case Notebook`, and rituals `Warding Rite`.
+  - The smoke left `2` chat roll messages for `Manual Investigator`.
+
 ### AI Tool Depth And Observability Slice
 
 - Implementation:
@@ -1690,5 +1718,5 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, built-in upload security scanning, and external AV/trust scanner webhooks before storage writes. Higher-assurance hosting may still need provider-specific compliance artifacts and operational certifications outside the app.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, smoothed freehand reveal/hide brushes, fog region deletion, fog undo/history, and multi-scene fog presets now have verified controls and permission filtering. No fog-specific item remains in the current acceptance checklist.
 - Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, campaign-scoped JSON storage APIs, command-returned storage mutations, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, server-admin marketplace review surfaces, optional approval-required review policy, storage/review audit logs, and browser/API acceptance evidence. Remaining plugin ecosystem work is external marketplace operations beyond the self-hosted review and registry workflow.
-- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.
+- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Mystic Noir adds a third verified rules system with clues, rituals, composure-aware sheets, skill rolls, clue/ritual action formulas, campaign activation, conditions, templates, guided case-breakthrough advancement, character import normalization, encounter threat budgets, API tests, browser build coverage, and manual API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and deeper automation/content breadth inside each supported system.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, provider request timeouts, cross-role tool-advertisement permission regression, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is broader production provider edge cases and future-tool hardening as new tool classes are added. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

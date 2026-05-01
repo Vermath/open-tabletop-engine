@@ -117,7 +117,8 @@ export interface EncounterPlan {
 
 export type GenericFantasyCompendiumType = "item" | "spell" | "condition";
 export type StellarFrontiersCompendiumType = "gear" | "talent" | "condition";
-export type RulesCompendiumType = GenericFantasyCompendiumType | StellarFrontiersCompendiumType;
+export type MysticNoirCompendiumType = "clue" | "ritual" | "condition";
+export type RulesCompendiumType = GenericFantasyCompendiumType | StellarFrontiersCompendiumType | MysticNoirCompendiumType;
 
 export interface RulesCompendiumEntry {
   id: string;
@@ -133,6 +134,10 @@ export interface GenericFantasyCompendiumEntry extends RulesCompendiumEntry {
 
 export interface StellarFrontiersCompendiumEntry extends RulesCompendiumEntry {
   type: StellarFrontiersCompendiumType;
+}
+
+export interface MysticNoirCompendiumEntry extends RulesCompendiumEntry {
+  type: MysticNoirCompendiumType;
 }
 
 export interface AppliedCondition {
@@ -155,6 +160,12 @@ export interface GenericFantasySheet {
 export interface StellarFrontiersSheet extends GenericFantasySheet {
   strain?: { current?: number; max?: number };
   talents: Item[];
+}
+
+export interface MysticNoirSheet extends GenericFantasySheet {
+  composure?: { current?: number; max?: number };
+  clues: Item[];
+  rituals: Item[];
 }
 
 export interface SystemRegistry {
@@ -784,6 +795,279 @@ export function removeStellarFrontiersCondition(actor: Actor, conditionId: strin
   return { ...actor.data, conditions };
 }
 
+export function mysticNoirSkillCheck(actor: Actor, skill: string): QuickRoll {
+  const modifier = mysticNoirSkillModifier(actor, skill);
+  const label = `${skill.charAt(0).toUpperCase()}${skill.slice(1)} Check`;
+  const conditions = mysticNoirActorConditions(actor);
+  const d20 = conditions.some((condition) => condition.id === "shaken") ? "2d20kl1" : "1d20";
+  const bonus = conditions.some((condition) => condition.id === "focused") ? "+1d4" : "";
+  return {
+    id: `skill-${skill}`,
+    label,
+    formula: `${d20}${formatSignedNumber(modifier)}${bonus}`
+  };
+}
+
+export function mysticNoirActionRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
+  return items.filter((item) => itemBelongsToActor(actor, item)).flatMap((item) => {
+    const data = recordValue(item.data);
+    const rolls: QuickRoll[] = [];
+    const prefix = item.type === "ritual" ? "ritual" : "clue";
+    const skill = stringValue(data.skill);
+    const bonusFormula = stringValue(data.bonusFormula);
+    if (bonusFormula) {
+      rolls.push({
+        id: `${prefix}-${item.id}-insight`,
+        label: `${item.name} Insight`,
+        formula: skill ? appendFormulaBonus(bonusFormula, mysticNoirSkillModifier(actor, skill)) : bonusFormula
+      });
+    }
+    const protectionFormula = stringValue(data.protectionFormula);
+    if (protectionFormula) {
+      rolls.push({
+        id: `${prefix}-${item.id}-ward`,
+        label: `${item.name} Ward`,
+        formula: skill ? appendFormulaBonus(protectionFormula, mysticNoirSkillModifier(actor, skill)) : protectionFormula
+      });
+    }
+    return rolls;
+  });
+}
+
+export function mysticNoirQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
+  const skills = actor.data.skills as Record<string, number> | undefined;
+  return [
+    ...Object.keys(skills ?? { investigation: 1, resolve: 1, influence: 1, stealth: 1, occult: 1 }).map((skill) => mysticNoirSkillCheck(actor, skill)),
+    ...mysticNoirActionRolls(actor, items)
+  ];
+}
+
+export function mysticNoirCompendium(): MysticNoirCompendiumEntry[] {
+  return [
+    {
+      id: "case-notebook",
+      type: "clue",
+      name: "Case Notebook",
+      summary: "Organized leads that sharpen an investigation roll.",
+      data: { category: "casework", bonusFormula: "1d4", skill: "investigation", tags: ["notes", "lead"] }
+    },
+    {
+      id: "warding-rite",
+      type: "ritual",
+      name: "Warding Rite",
+      summary: "A protective ritual that reinforces resolve under pressure.",
+      data: { category: "protection", protectionFormula: "1d6", skill: "resolve", tags: ["ward", "ritual"] }
+    },
+    {
+      id: "focused",
+      type: "condition",
+      name: "Focused",
+      summary: "Adds 1d4 to Mystic Noir skill checks.",
+      data: { rollBonusFormula: "1d4" }
+    },
+    {
+      id: "shaken",
+      type: "condition",
+      name: "Shaken",
+      summary: "Rolls Mystic Noir skill checks with disadvantage.",
+      data: { rollMode: "disadvantage" }
+    },
+    {
+      id: "marked",
+      type: "condition",
+      name: "Marked",
+      summary: "Marks a character as watched by a rival faction.",
+      data: { factionPressure: true }
+    }
+  ];
+}
+
+export function mysticNoirCompendiumEntry(entryId: string): MysticNoirCompendiumEntry | undefined {
+  return mysticNoirCompendium().find((entry) => entry.id === entryId);
+}
+
+export function mysticNoirCharacterTemplates(): CharacterTemplate[] {
+  return [
+    {
+      id: "field-investigator",
+      systemId: "mystic-noir",
+      name: "Field Investigator",
+      summary: "Case-first operator with strong leads and steady instincts.",
+      actorType: "character",
+      data: {
+        rank: 1,
+        archetype: "Field Investigator",
+        skills: { investigation: 3, resolve: 2, influence: 1, stealth: 2, occult: 1 },
+        composure: { current: 4, max: 6 },
+        conditions: [],
+        breakthroughs: ["First Lead"]
+      },
+      items: [{ entryId: "case-notebook" }]
+    },
+    {
+      id: "occult-scholar",
+      systemId: "mystic-noir",
+      name: "Occult Scholar",
+      summary: "Ritual specialist with careful research and defensive wards.",
+      actorType: "character",
+      data: {
+        rank: 1,
+        archetype: "Occult Scholar",
+        skills: { investigation: 2, resolve: 2, influence: 1, stealth: 1, occult: 3 },
+        composure: { current: 3, max: 5 },
+        conditions: [],
+        breakthroughs: ["Catalogued Omen"]
+      },
+      items: [{ entryId: "warding-rite" }]
+    }
+  ];
+}
+
+export function mysticNoirCharacterTemplate(templateId: string): CharacterTemplate | undefined {
+  return mysticNoirCharacterTemplates().find((template) => template.id === templateId);
+}
+
+export function mysticNoirCharacterImport(input: CharacterImportInput): CharacterImportResult {
+  const source = importSource(input);
+  const rank = clampInteger(source.rank, 1, 12, 1);
+  const skills = normalizeNumberRecord(source.skills, { investigation: 1, resolve: 1, influence: 1, stealth: 1, occult: 1 });
+  const composure = normalizePool(source.composure, 5 + rank);
+  const warnings: string[] = [];
+  const conditions = normalizeImportConditions(source.conditions ?? input.conditions, mysticNoirCompendiumEntry, warnings);
+  const items = normalizeImportItems(source.items ?? input.items, mysticNoirCompendiumEntry, warnings, conditions);
+  return {
+    systemId: "mystic-noir",
+    actorType: "character",
+    name: stringValue(input.name) || stringValue(source.name) || "Imported Investigator",
+    data: {
+      rank,
+      archetype: stringValue(source.archetype) || "Independent Investigator",
+      skills,
+      composure,
+      conditions: conditions.map((id) => ({ id })),
+      breakthroughs: normalizeStringArray(source.breakthroughs)
+    },
+    items,
+    warnings
+  };
+}
+
+export function mysticNoirEncounterThreats(): EncounterThreat[] {
+  return [
+    {
+      id: "arcane-ward",
+      systemId: "mystic-noir",
+      name: "Arcane Ward",
+      summary: "Static pressure that complicates movement and investigation.",
+      role: "hazard",
+      budget: 40
+    },
+    {
+      id: "masked-agent",
+      systemId: "mystic-noir",
+      name: "Masked Agent",
+      summary: "Skilled rival who pushes the crew into costly choices.",
+      role: "rival",
+      budget: 60
+    },
+    {
+      id: "rift-echo",
+      systemId: "mystic-noir",
+      name: "Rift Echo",
+      summary: "Major supernatural pressure for a climactic case scene.",
+      role: "elite",
+      budget: 150
+    }
+  ];
+}
+
+export function mysticNoirEncounterPlan(party: Actor[], selections: EncounterThreatSelection[]): EncounterPlan {
+  return buildEncounterPlan({
+    systemId: "mystic-noir",
+    partyRating: party.reduce((total, actor) => total + numericValue(actor.data.rank, 1) * 80, 0) || 80,
+    threats: mysticNoirEncounterThreats(),
+    selections
+  });
+}
+
+export function mysticNoirAdvancementOptions(actor: Actor): AdvancementOption[] {
+  const rank = numericValue(actor.data.rank, 1);
+  if (rank >= 12) return [];
+  return [
+    {
+      id: "case-breakthrough",
+      systemId: "mystic-noir",
+      name: `Case Breakthrough ${rank + 1}`,
+      summary: "Increase rank, composure capacity, and the character's core investigative skill.",
+      nextValue: rank + 1
+    }
+  ];
+}
+
+export function applyMysticNoirAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
+  const option = mysticNoirAdvancementOptions(actor).find((item) => item.id === optionId);
+  if (!option) throw new Error(`Unknown advancement: ${optionId}`);
+  const skills = { ...((actor.data.skills as Record<string, number> | undefined) ?? {}) };
+  const archetype = typeof actor.data.archetype === "string" ? actor.data.archetype : "";
+  const primarySkill = archetype === "Occult Scholar" ? "occult" : "investigation";
+  skills[primarySkill] = numericValue(skills[primarySkill], 1) + 1;
+  const composure = actor.data.composure as { current?: number; max?: number } | undefined;
+  const breakthroughs = normalizeStringArray(actor.data.breakthroughs);
+  const breakthrough = `Case ${option.nextValue} Breakthrough`;
+  if (!breakthroughs.includes(breakthrough)) breakthroughs.push(breakthrough);
+  return {
+    ...actor.data,
+    rank: option.nextValue,
+    skills,
+    composure: {
+      current: numericValue(composure?.current, numericValue(composure?.max, 5)) + 1,
+      max: numericValue(composure?.max, 5) + 1
+    },
+    breakthroughs
+  };
+}
+
+export function mysticNoirSheet(actor: Actor, items: Item[] = []): MysticNoirSheet {
+  const composure = actor.data.composure as { current?: number; max?: number } | undefined;
+  return {
+    actorId: actor.id,
+    summary: `${actor.name}${composure ? ` (${composure.current ?? "?"}/${composure.max ?? "?"} composure)` : ""}`,
+    data: actor.data,
+    quickRolls: mysticNoirQuickRolls(actor, items),
+    conditions: mysticNoirActorConditions(actor),
+    inventory: items.filter((item) => item.actorId === actor.id && item.type !== "clue" && item.type !== "ritual" && item.type !== "spell" && item.type !== "talent"),
+    spells: [],
+    clues: items.filter((item) => item.actorId === actor.id && item.type === "clue"),
+    rituals: items.filter((item) => item.actorId === actor.id && item.type === "ritual")
+  };
+}
+
+export function mysticNoirActorConditions(actor: Actor): AppliedCondition[] {
+  const rawConditions = normalizeConditionRecords(actor.data.conditions);
+  return rawConditions.map((condition) => {
+    const entry = mysticNoirCompendiumEntry(condition.id);
+    return {
+      id: condition.id,
+      name: entry?.name ?? condition.id,
+      summary: entry?.summary ?? "",
+      appliedAt: condition.appliedAt
+    };
+  });
+}
+
+export function applyMysticNoirCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {
+  const entry = mysticNoirCompendiumEntry(conditionId);
+  if (!entry || entry.type !== "condition") throw new Error(`Unknown condition: ${conditionId}`);
+  const conditions = normalizeConditionRecords(actor.data.conditions);
+  if (!conditions.some((condition) => condition.id === conditionId)) conditions.push({ id: conditionId, appliedAt });
+  return { ...actor.data, conditions };
+}
+
+export function removeMysticNoirCondition(actor: Actor, conditionId: string): Record<string, unknown> {
+  const conditions = normalizeConditionRecords(actor.data.conditions).filter((condition) => condition.id !== conditionId);
+  return { ...actor.data, conditions };
+}
+
 function normalizeConditionRecords(value: unknown): Array<{ id: string; appliedAt?: string }> {
   if (!Array.isArray(value)) return [];
   return value
@@ -805,6 +1089,11 @@ function genericFantasyAttributeModifier(actor: Actor, ability: string): number 
 function stellarFrontiersAptitudeModifier(actor: Actor, aptitude: string): number {
   const aptitudes = actor.data.aptitudes as Record<string, number> | undefined;
   return numericValue(aptitudes?.[aptitude], 0);
+}
+
+function mysticNoirSkillModifier(actor: Actor, skill: string): number {
+  const skills = actor.data.skills as Record<string, number> | undefined;
+  return numericValue(skills?.[skill], 1);
 }
 
 function resolveGenericFantasyFormulaTokens(formula: string, actor: Actor): string {

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Mystic Noir Item",
+  "type": "object",
+  "properties": {
+    "description": { "type": "string" },
+    "category": { "type": "string" },
+    "skill": { "type": "string" },
+    "bonusFormula": { "type": "string" },
+    "protectionFormula": { "type": "string" }
+  },
+  "required": ["description"]
+}

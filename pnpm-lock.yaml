@@ -272,6 +272,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/system-sdk
 
+  plugins/example-system-mystic-noir:
+    dependencies:
+      '@open-tabletop/system-sdk':
+        specifier: workspace:*
+        version: link:../../packages/system-sdk
+
   plugins/example-system-stellar-frontiers:
     dependencies:
       '@open-tabletop/system-sdk':

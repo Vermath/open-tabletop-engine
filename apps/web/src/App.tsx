@@ -477,7 +477,7 @@ export function App() {
   async function rollSystemCheck() {
     if (!selectedActor) return;
     await apiPost(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
-      rollId: selectedActor.systemId === "stellar-frontiers" ? "aptitude-tech" : "ability-charisma"
+      rollId: systemRollId(selectedActor.systemId)
     });
     setStatus("System roll posted");
     await refresh();
@@ -496,34 +496,7 @@ export function App() {
   async function importSystemCharacter() {
     const system = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
     if (!system) return;
-    const payload =
-      system.id === "stellar-frontiers"
-        ? {
-            name: "Imported Ace",
-            ownerUserId: currentUserId,
-            data: {
-              rank: 4,
-              background: "Corsair Defector",
-              aptitudes: { combat: 3, tech: 2, pilot: 4, science: 1, charm: 1 },
-              strain: { current: 5, max: 8 },
-              milestones: ["Defected at Dawn"],
-              conditions: ["locked-in"],
-              items: ["laser-carbine", "overclock"]
-            }
-          }
-        : {
-            name: "Imported Mender",
-            ownerUserId: currentUserId,
-            data: {
-              level: 3,
-              class: "Mender",
-              hp: { current: 14, max: 18 },
-              attributes: { strength: 8, dexterity: 12, constitution: 13, intelligence: 13, wisdom: 16, charisma: 14 },
-              features: ["Field Prayer"],
-              conditions: ["blessed"],
-              items: ["healing-word", "longsword"]
-            }
-          };
+    const payload = systemImportPayload(system.id, currentUserId);
     const imported = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${system.id}/characters/import`, payload);
     setImportedActor(imported.actor);
     setStatus(`${imported.actor.name} imported`);
@@ -532,7 +505,7 @@ export function App() {
 
   async function advanceSelectedActor() {
     if (!selectedActor) return;
-    const optionId = selectedActor.systemId === "stellar-frontiers" ? "rank-up" : "level-up";
+    const optionId = systemAdvancementOptionId(selectedActor.systemId);
     const advanced = await apiPost<{ advancement: { name: string } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advance`, {
       optionId
     });
@@ -543,7 +516,7 @@ export function App() {
   async function planSystemEncounter() {
     const system = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
     if (!system) return;
-    const threatId = system.id === "stellar-frontiers" ? "void-raider" : "skeletal-guard";
+    const threatId = systemEncounterThreatId(system.id);
     const planned = await apiPost<{ plan: EncounterPlanInfo; encounter?: Encounter }>(`/api/v1/campaigns/${campaignId}/systems/${system.id}/encounter-plan`, {
       threats: [{ id: threatId, count: 2 }],
       createEncounter: true
@@ -1127,13 +1100,91 @@ function TabButton(props: { active: boolean; icon: React.ReactNode; label: strin
   );
 }
 
+function systemRollId(systemId: string): string {
+  if (systemId === "stellar-frontiers") return "aptitude-tech";
+  if (systemId === "mystic-noir") return "skill-investigation";
+  return "ability-charisma";
+}
+
+function systemRollLabel(systemId?: string): string {
+  if (systemId === "stellar-frontiers") return "Tech Check";
+  if (systemId === "mystic-noir") return "Investigation Check";
+  return "Charisma Check";
+}
+
+function systemAdvancementOptionId(systemId: string): string {
+  if (systemId === "stellar-frontiers") return "rank-up";
+  if (systemId === "mystic-noir") return "case-breakthrough";
+  return "level-up";
+}
+
+function systemAdvancementLabel(systemId?: string): string {
+  if (systemId === "stellar-frontiers") return "Advance Rank";
+  if (systemId === "mystic-noir") return "Case Breakthrough";
+  return "Level Up";
+}
+
+function systemEncounterThreatId(systemId: string): string {
+  if (systemId === "stellar-frontiers") return "void-raider";
+  if (systemId === "mystic-noir") return "masked-agent";
+  return "skeletal-guard";
+}
+
+function systemImportPayload(systemId: string, ownerUserId: string): Record<string, unknown> {
+  if (systemId === "stellar-frontiers") {
+    return {
+      name: "Imported Ace",
+      ownerUserId,
+      data: {
+        rank: 4,
+        background: "Corsair Defector",
+        aptitudes: { combat: 3, tech: 2, pilot: 4, science: 1, charm: 1 },
+        strain: { current: 5, max: 8 },
+        milestones: ["Defected at Dawn"],
+        conditions: ["locked-in"],
+        items: ["laser-carbine", "overclock"]
+      }
+    };
+  }
+  if (systemId === "mystic-noir") {
+    return {
+      name: "Imported Investigator",
+      ownerUserId,
+      data: {
+        rank: 3,
+        archetype: "Occult Scholar",
+        skills: { investigation: 2, resolve: 3, influence: 1, stealth: 1, occult: 4 },
+        composure: { current: 4, max: 7 },
+        breakthroughs: ["Solved the First Case"],
+        conditions: ["focused"],
+        items: ["case-notebook", "warding-rite", "marked"]
+      }
+    };
+  }
+  return {
+    name: "Imported Mender",
+    ownerUserId,
+    data: {
+      level: 3,
+      class: "Mender",
+      hp: { current: 14, max: 18 },
+      attributes: { strength: 8, dexterity: 12, constitution: 13, intelligence: 13, wisdom: 16, charisma: 14 },
+      features: ["Field Prayer"],
+      conditions: ["blessed"],
+      items: ["healing-word", "longsword"]
+    }
+  };
+}
+
 function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; updateActorHp(actor: Actor, current: number): void; canUpdateActor: boolean }) {
   if (!props.actor) return <div className="panel-empty">No actor selected.</div>;
   const hp = props.actor.data.hp as { current?: number; max?: number } | undefined;
   const conditions = actorConditionLabels(props.actor);
-  const inventory = props.items.filter((item) => item.type !== "spell" && item.type !== "talent");
+  const inventory = props.items.filter((item) => item.type !== "spell" && item.type !== "talent" && item.type !== "clue" && item.type !== "ritual");
   const spells = props.items.filter((item) => item.type === "spell");
   const talents = props.items.filter((item) => item.type === "talent");
+  const clues = props.items.filter((item) => item.type === "clue");
+  const rituals = props.items.filter((item) => item.type === "ritual");
   const actionLabels = actorActionLabels(props.actor, props.items);
   return (
     <div className="panel-stack">
@@ -1173,6 +1224,18 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
           <strong>{talents.map((item) => item.name).join(", ")}</strong>
         </div>
       )}
+      {clues.length > 0 && (
+        <div className="metric-row">
+          <span>Clues</span>
+          <strong>{clues.map((item) => item.name).join(", ")}</strong>
+        </div>
+      )}
+      {rituals.length > 0 && (
+        <div className="metric-row">
+          <span>Rituals</span>
+          <strong>{rituals.map((item) => item.name).join(", ")}</strong>
+        </div>
+      )}
       {actionLabels.length > 0 && (
         <div className="metric-row">
           <span>Actions</span>
@@ -1195,7 +1258,10 @@ function actorConditionLabels(actor: Actor): string[] {
     restrained: "Restrained",
     "locked-in": "Locked In",
     jammed: "Jammed",
-    "vacuum-exposed": "Vacuum Exposed"
+    "vacuum-exposed": "Vacuum Exposed",
+    focused: "Focused",
+    shaken: "Shaken",
+    marked: "Marked"
   };
   const value = actor.data.conditions;
   if (!Array.isArray(value)) return [];
@@ -1210,6 +1276,7 @@ function actorConditionLabels(actor: Actor): string[] {
 
 function actorActionLabels(actor: Actor, items: Item[]): string[] {
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersActionLabels(actor, items);
+  if (actor.systemId === "mystic-noir") return mysticNoirActionLabels(actor, items);
   return genericFantasyActionLabels(actor, items);
 }
 
@@ -1243,6 +1310,19 @@ function stellarFrontiersActionLabels(actor: Actor, items: Item[]): string[] {
   });
 }
 
+function mysticNoirActionLabels(actor: Actor, items: Item[]): string[] {
+  return items.filter((item) => item.actorId === actor.id).flatMap((item) => {
+    const data = recordValue(item.data);
+    const labels: string[] = [];
+    const skill = stringValue(data.skill);
+    const bonusFormula = stringValue(data.bonusFormula);
+    if (bonusFormula) labels.push(`${item.name} Insight: ${skill ? appendActionFormulaBonus(bonusFormula, mysticNoirSkillModifier(actor, skill)) : bonusFormula}`);
+    const protectionFormula = stringValue(data.protectionFormula);
+    if (protectionFormula) labels.push(`${item.name} Ward: ${skill ? appendActionFormulaBonus(protectionFormula, mysticNoirSkillModifier(actor, skill)) : protectionFormula}`);
+    return labels;
+  });
+}
+
 function genericFantasyAttributeModifier(actor: Actor, ability: string): number {
   const attributes = recordValue(actor.data.attributes);
   return Math.floor((numericValue(attributes[ability], 10) - 10) / 2);
@@ -1251,6 +1331,11 @@ function genericFantasyAttributeModifier(actor: Actor, ability: string): number 
 function stellarFrontiersAptitudeModifier(actor: Actor, aptitude: string): number {
   const aptitudes = recordValue(actor.data.aptitudes);
   return numericValue(aptitudes[aptitude], 0);
+}
+
+function mysticNoirSkillModifier(actor: Actor, skill: string): number {
+  const skills = recordValue(actor.data.skills);
+  return numericValue(skills[skill], 1);
 }
 
 function resolveGenericFantasyActionFormula(formula: string, actor: Actor): string {
@@ -1826,8 +1911,8 @@ function formatDateTime(value?: string): string {
 
 function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; importedActor?: Actor; encounterPlan?: EncounterPlanInfo; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onAdvanceActor(): void; onPlanEncounter(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canPlanEncounter: boolean; canRollSystem: boolean }) {
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
-  const rollLabel = props.actor?.systemId === "stellar-frontiers" ? "Tech Check" : "Charisma Check";
-  const advancementLabel = props.actor?.systemId === "stellar-frontiers" ? "Advance Rank" : "Level Up";
+  const rollLabel = systemRollLabel(props.actor?.systemId);
+  const advancementLabel = systemAdvancementLabel(props.actor?.systemId);
   return (
     <div className="panel-stack">
       <div className="section-title">Runtime SDK</div>

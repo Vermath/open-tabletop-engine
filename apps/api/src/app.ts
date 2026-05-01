@@ -7,7 +7,7 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection } from "@open-tabletop/system-sdk";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyMysticNoirAdvancement, applyMysticNoirCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -3802,7 +3802,7 @@ function createAiThreadTools(): AiToolDefinition[] {
       parameters: {
         type: "object",
         properties: {
-          systemId: { type: "string", description: "Rules system id. Supports generic-fantasy and stellar-frontiers." }
+          systemId: { type: "string", description: "Rules system id. Supports generic-fantasy, stellar-frontiers, and mystic-noir." }
         },
         additionalProperties: false
       },
@@ -6163,18 +6163,21 @@ function findSystemActor(store: StateStore, campaignId: string, systemId: string
 function compendiumEntriesForSystem(systemId: string) {
   if (systemId === "generic-fantasy") return genericFantasyCompendium();
   if (systemId === "stellar-frontiers") return stellarFrontiersCompendium();
+  if (systemId === "mystic-noir") return mysticNoirCompendium();
   return [];
 }
 
 function compendiumEntryForSystem(systemId: string, entryId: string) {
   if (systemId === "generic-fantasy") return genericFantasyCompendiumEntry(entryId);
   if (systemId === "stellar-frontiers") return stellarFrontiersCompendiumEntry(entryId);
+  if (systemId === "mystic-noir") return mysticNoirCompendiumEntry(entryId);
   return undefined;
 }
 
 function characterTemplatesForSystem(systemId: string): CharacterTemplate[] {
   if (systemId === "generic-fantasy") return genericFantasyCharacterTemplates();
   if (systemId === "stellar-frontiers") return stellarFrontiersCharacterTemplates();
+  if (systemId === "mystic-noir") return mysticNoirCharacterTemplates();
   return [];
 }
 
@@ -6197,6 +6200,7 @@ function createTemplateItems(campaignId: string, actor: Actor, template: Charact
 
 function characterImportForSystem(systemId: string, input: CharacterImportInput): CharacterImportResult {
   if (systemId === "stellar-frontiers") return stellarFrontiersCharacterImport(input);
+  if (systemId === "mystic-noir") return mysticNoirCharacterImport(input);
   return genericFantasyCharacterImport(input);
 }
 
@@ -6219,42 +6223,50 @@ function createImportedItems(campaignId: string, actor: Actor, imported: Charact
 
 function systemSheet(actor: Actor, items: Item[]) {
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersSheet(actor, items);
+  if (actor.systemId === "mystic-noir") return mysticNoirSheet(actor, items);
   return genericFantasySheet(actor, items);
 }
 
 function systemQuickRolls(actor: Actor, items: Item[] = []) {
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersQuickRolls(actor, items);
+  if (actor.systemId === "mystic-noir") return mysticNoirQuickRolls(actor, items);
   return genericFantasyQuickRolls(actor, items);
 }
 
 function applySystemCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {
   if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersCondition(actor, conditionId, appliedAt);
+  if (actor.systemId === "mystic-noir") return applyMysticNoirCondition(actor, conditionId, appliedAt);
   return applyGenericFantasyCondition(actor, conditionId, appliedAt);
 }
 
 function removeSystemCondition(actor: Actor, conditionId: string): Record<string, unknown> {
   if (actor.systemId === "stellar-frontiers") return removeStellarFrontiersCondition(actor, conditionId);
+  if (actor.systemId === "mystic-noir") return removeMysticNoirCondition(actor, conditionId);
   return removeGenericFantasyCondition(actor, conditionId);
 }
 
 function advancementOptionsForActor(actor: Actor) {
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersAdvancementOptions(actor);
+  if (actor.systemId === "mystic-noir") return mysticNoirAdvancementOptions(actor);
   return genericFantasyAdvancementOptions(actor);
 }
 
 function applySystemAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
   if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersAdvancement(actor, optionId);
+  if (actor.systemId === "mystic-noir") return applyMysticNoirAdvancement(actor, optionId);
   return applyGenericFantasyAdvancement(actor, optionId);
 }
 
 function encounterThreatsForSystem(systemId: string) {
   if (systemId === "stellar-frontiers") return stellarFrontiersEncounterThreats();
+  if (systemId === "mystic-noir") return mysticNoirEncounterThreats();
   if (systemId === "generic-fantasy") return genericFantasyEncounterThreats();
   return [];
 }
 
 function encounterPlanForSystem(systemId: string, party: Actor[], threats: EncounterThreatSelection[]): EncounterPlan {
   if (systemId === "stellar-frontiers") return stellarFrontiersEncounterPlan(party, threats);
+  if (systemId === "mystic-noir") return mysticNoirEncounterPlan(party, threats);
   return genericFantasyEncounterPlan(party, threats);
 }
 

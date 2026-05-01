@@ -30,5 +30,20 @@ export const installedSystems: SystemManifest[] = [
       item: "/systems/stellar-frontiers/item.schema.json"
     },
     permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
+  },
+  {
+    id: "mystic-noir",
+    name: "Mystic Noir",
+    version: "0.1.0",
+    compatibleCore: ">=0.1.0",
+    entrypoints: {
+      client: "/systems/mystic-noir/client.js",
+      server: "/systems/mystic-noir/server.js"
+    },
+    schemas: {
+      actor: "/systems/mystic-noir/actor.schema.json",
+      item: "/systems/mystic-noir/item.schema.json"
+    },
+    permissions: ["actor.read", "actor.updateOwned", "dice.roll", "chat.write"]
   }
 ];

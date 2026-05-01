@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Mystic Noir Actor",
+  "type": "object",
+  "properties": {
+    "rank": { "type": "number" },
+    "archetype": { "type": "string" },
+    "skills": {
+      "type": "object",
+      "properties": {
+        "investigation": { "type": "number" },
+        "resolve": { "type": "number" },
+        "influence": { "type": "number" },
+        "stealth": { "type": "number" },
+        "occult": { "type": "number" }
+      },
+      "required": ["investigation", "resolve", "influence", "stealth", "occult"]
+    },
+    "composure": {
+      "type": "object",
+      "properties": {
+        "current": { "type": "number" },
+        "max": { "type": "number" }
+      },
+      "required": ["current", "max"]
+    },
+    "conditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "appliedAt": { "type": "string" }
+        },
+        "required": ["id"]
+      }
+    }
+  },
+  "required": ["rank", "archetype", "skills", "composure"]
+}
