@@ -9,7 +9,17 @@ const baseRequest: AiProviderRequest = {
     campaignId: "camp_demo",
     publicSummary: "The Ember Vault: Public Rumor",
     gmSecrets: ["The door password is ember."],
-    memory: [{ text: "Valen distrusts the west stairs.", visibility: "gm_only", sourceIds: ["msg_1"] }]
+    memory: [{ text: "Valen distrusts the west stairs.", visibility: "gm_only", sourceIds: ["msg_1"] }],
+    actors: [
+      {
+        id: "act_valen",
+        name: "Valen Ash",
+        type: "character",
+        summary: "Valen Ash (18/22 HP)",
+        systemId: "generic-fantasy",
+        actions: [{ rollId: "spell-item_healing_word-healing", label: "Healing Word Healing", formula: "1d4+0" }]
+      }
+    ]
   },
   tools: [
     {
@@ -84,6 +94,7 @@ describe("OpenAiResponsesProvider", () => {
     expect(body.input).toContain("Propose a vault encounter note.");
     expect(body.instructions).toContain("The Ember Vault");
     expect(body.instructions).toContain("The door password is ember.");
+    expect(body.instructions).toContain("Healing Word Healing [spell-item_healing_word-healing] 1d4+0");
     expect(body.tools).toEqual([
       expect.objectContaining({
         type: "function",
