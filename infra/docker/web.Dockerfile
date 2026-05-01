@@ -11,7 +11,7 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS build
 ARG VITE_API_URL=http://localhost:4000
 ENV VITE_API_URL=$VITE_API_URL
-RUN pnpm --filter @open-tabletop/web build
+RUN pnpm build
 
 FROM nginx:1.27-alpine
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
