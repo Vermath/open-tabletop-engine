@@ -115,6 +115,65 @@ describe("api", () => {
     await app.close();
   });
 
+  it("filters hidden tokens from player reads and mutations", async () => {
+    const store = new MemoryStateStore();
+    store.state.tokens.push({
+      id: "tok_hidden_sentinel",
+      sceneId: "scn_vault_entry",
+      name: "Hidden Sentinel",
+      x: 700,
+      y: 260,
+      width: 50,
+      height: 50,
+      rotation: 0,
+      hidden: true,
+      locked: false,
+      visionEnabled: false,
+      visionRadius: 0,
+      disposition: "hostile",
+      metadata: {},
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    const playerTokens = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: playerHeaders
+    });
+    expect(playerTokens.statusCode).toBe(200);
+    expect(playerTokens.json().map((token: { id: string }) => token.id)).toEqual(["tok_valen"]);
+
+    const gmTokens = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: authHeaders
+    });
+    expect(gmTokens.statusCode).toBe(200);
+    expect(gmTokens.json().map((token: { id: string }) => token.id)).toContain("tok_hidden_sentinel");
+
+    const blockedMove = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_hidden_sentinel",
+      headers: playerHeaders,
+      payload: { x: 760, y: 300 }
+    });
+    expect(blockedMove.statusCode).toBe(404);
+
+    const gmMove = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_hidden_sentinel",
+      headers: authHeaders,
+      payload: { x: 760, y: 300 }
+    });
+    expect(gmMove.statusCode).toBe(200);
+    expect(gmMove.json()).toEqual(expect.objectContaining({ hidden: true, x: 760, y: 300 }));
+
+    await app.close();
+  });
+
   it("covers auth, assets, fog, encounter design, and session memory", async () => {
     const app = await buildApp({ store: new MemoryStateStore() });
 

@@ -6,7 +6,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type Scene, type Token, type User } from "@open-tabletop/core";
+import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type Scene, type Token, type User } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -26,6 +26,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const uploadDir = resolve(options.uploadDir ?? process.env.OTTE_UPLOAD_DIR ?? "uploads");
   const maxAssetBytes = options.maxAssetBytes ?? 25 * 1024 * 1024;
   const hub = new RealtimeHub();
+  const broadcast = (event: EngineEvent) => hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId));
   const aiProvider = options.aiProvider ?? createConfiguredAiProvider();
   const app = Fastify({ logger: true });
 
@@ -67,6 +68,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const client = {
       campaignId,
+      userId,
       send: (data: string) => socket.send(data)
     };
     hub.add(client);
@@ -97,7 +99,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.campaigns.push(campaign);
     store.state.members.push(member);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: campaign.id,
         type: "campaign.member.joined",
@@ -169,7 +171,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Scene;
     store.state.scenes.push(scene);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: scene.campaignId,
         type: "scene.created",
@@ -249,7 +251,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
     store.save();
     if (scene)
-      hub.broadcast(
+      broadcast(
         createEvent({
           campaignId: scene.campaignId,
           type: "scene.updated",
@@ -288,7 +290,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     Object.assign(scene, request.body, { updatedAt: nowIso() });
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: scene.campaignId,
         type: scene.active ? "scene.activated" : "scene.updated",
@@ -317,7 +319,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     scene.updatedAt = nowIso();
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: scene.campaignId,
         type: "scene.updated",
@@ -353,7 +355,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     scene.updatedAt = nowIso();
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: scene.campaignId,
         type: "scene.updated",
@@ -382,7 +384,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     scene.updatedAt = nowIso();
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: scene.campaignId,
         type: "scene.updated",
@@ -402,7 +404,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (index < 0) return notFound(reply, "Scene not found");
     const deleted = store.state.scenes.splice(index, 1)[0]!;
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: deleted.campaignId,
         type: "scene.deleted",
@@ -418,7 +420,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.read");
     if (allowed !== true) return allowed;
-    return store.state.tokens.filter((item) => item.sceneId === request.params.sceneId);
+    const userId = currentUserId(request.headers)!;
+    return visibleTokensForUser(store, userId, campaignId, store.state.tokens.filter((item) => item.sceneId === request.params.sceneId));
   });
 
   app.post<{ Params: { sceneId: string }; Body: Partial<Token> }>("/api/v1/scenes/:sceneId/tokens", async (request, reply) => {
@@ -446,7 +449,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Token;
     store.state.tokens.push(token);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: scene.campaignId,
         type: "token.created",
@@ -465,12 +468,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const token = store.state.tokens.find((item) => item.id === request.params.tokenId);
     if (!token) return notFound(reply, "Token not found");
+    const userId = currentUserId(request.headers)!;
+    if (token.hidden && !canReadHiddenTokens(store, userId, campaignId)) return notFound(reply, "Token not found");
     const scene = store.state.scenes.find((item) => item.id === token.sceneId);
     Object.assign(token, request.body, { updatedAt: nowIso() });
     store.save();
     if (scene) {
       const moved = request.body.x !== undefined || request.body.y !== undefined;
-      hub.broadcast(
+      broadcast(
         createEvent({
           campaignId: scene.campaignId,
           type: moved ? "token.moved" : "token.updated",
@@ -489,11 +494,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const index = store.state.tokens.findIndex((item) => item.id === request.params.tokenId);
     if (index < 0) return notFound(reply, "Token not found");
+    const userId = currentUserId(request.headers)!;
+    if (store.state.tokens[index]!.hidden && !canReadHiddenTokens(store, userId, campaignId)) return notFound(reply, "Token not found");
     const deleted = store.state.tokens.splice(index, 1)[0]!;
     store.save();
     const scene = store.state.scenes.find((item) => item.id === deleted.sceneId);
     if (scene)
-      hub.broadcast(
+      broadcast(
         createEvent({
           campaignId: scene.campaignId,
           type: "token.deleted",
@@ -528,7 +535,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Actor;
     store.state.actors.push(actor);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: actor.campaignId,
         type: "actor.created",
@@ -549,7 +556,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!canUpdate && !canUpdateOwned) return forbidden(reply, "Missing permission: actor.update");
     Object.assign(actor, request.body, { updatedAt: nowIso() });
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: actor.campaignId,
         type: "actor.updated",
@@ -609,7 +616,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies JournalEntry;
     store.state.journals.push(entry);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: entry.campaignId,
         type: "journal.created",
@@ -632,7 +639,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       updatedBy: userId
     });
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: entry.campaignId,
         type: "journal.updated",
@@ -676,7 +683,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     store.state.chat.push(message);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: roll.campaignId,
         type: "dice.roll.created",
@@ -685,7 +692,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: roll
       })
     );
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: roll.campaignId,
         type: "chat.message.created",
@@ -727,7 +734,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies ChatMessage;
     store.state.chat.push(message);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: message.campaignId,
         type: "chat.message.created",
@@ -779,7 +786,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Combat;
     store.state.combats.push(combat);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: combat.campaignId,
         type: "combat.started",
@@ -817,7 +824,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Proposal;
     store.state.proposals.push(proposal);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: proposal.campaignId,
         type: "proposal.created",
@@ -838,7 +845,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const approved = approveProposal(proposal, userId);
     Object.assign(proposal, approved);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: proposal.campaignId,
         type: "proposal.approved",
@@ -861,7 +868,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return reply.code(409).send({ error: "proposal_not_ready", message });
     }
     const applied = store.state.proposals.find((item) => item.id === request.params.proposalId);
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: proposal.campaignId,
         type: "proposal.applied",
@@ -923,7 +930,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         recipientUserIds: []
       }) satisfies ChatMessage;
       store.state.chat.push(message);
-      hub.broadcast(
+      broadcast(
         createEvent({
           campaignId: message.campaignId,
           type: "chat.message.created",
@@ -934,7 +941,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       );
     }
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: thread.campaignId,
         type: "ai.thread.started",
@@ -1033,7 +1040,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.proposals.push(proposal);
     store.state.aiMemory.push(memory);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: proposal.campaignId,
         type: "ai.proposal.created",
@@ -1079,7 +1086,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies Proposal;
     store.state.proposals.push(proposal);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: proposal.campaignId,
         type: "ai.proposal.created",
@@ -1183,7 +1190,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: message.campaignId,
         type: "chat.message.created",
@@ -1305,7 +1312,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.rolls.push(roll);
     store.state.chat.push(message);
     store.save();
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: roll.campaignId,
         type: "dice.roll.created",
@@ -1314,7 +1321,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: roll
       })
     );
-    hub.broadcast(
+    broadcast(
       createEvent({
         campaignId: message.campaignId,
         type: "chat.message.created",
@@ -1385,6 +1392,29 @@ function createConfiguredAiProvider(): AiProvider {
 
 function permissionsForUser(store: StateStore, userId: string, campaignId: string): PermissionName[] {
   return ALL_PERMISSIONS.filter((permission) => canCampaign(store, userId, campaignId, permission));
+}
+
+function visibleTokensForUser(store: StateStore, userId: string, campaignId: string, tokens: Token[]): Token[] {
+  if (canReadHiddenTokens(store, userId, campaignId)) return tokens;
+  return tokens.filter((token) => !token.hidden);
+}
+
+function canReadHiddenTokens(store: StateStore, userId: string, campaignId: string): boolean {
+  return canCampaign(store, userId, campaignId, "token.update") || canCampaign(store, userId, campaignId, "scene.update");
+}
+
+function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined): EngineEvent | undefined {
+  if (!userId || !event.type.startsWith("token.")) return event;
+  const token = event.payload as Partial<Token> | undefined;
+  if (!token?.hidden || !token.sceneId) return event;
+  const campaignId = campaignIdForScene(store, token.sceneId) ?? event.campaignId;
+  if (canReadHiddenTokens(store, userId, campaignId)) return event;
+  return {
+    ...event,
+    type: "scene.updated",
+    targetId: token.sceneId,
+    payload: { id: token.sceneId, redacted: true }
+  };
 }
 
 function memberSessionInfo(
