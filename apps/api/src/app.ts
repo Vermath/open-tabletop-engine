@@ -1,12 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createReadStream, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, extname, resolve, sep } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type Scene, type Token, type User, type UserSession } from "@open-tabletop/core";
+import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type Scene, type Token, type User, type UserSession } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -249,7 +249,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       });
     const mimeType = normalizeAssetMimeType(request.headers["content-type"]);
     const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
-    const checksum = `sha256:${createHash("sha256").update(body).digest("hex")}`;
+    const checksum = checksumForBuffer(body);
     const scene = shouldSetBackground ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId) : undefined;
     if (shouldSetBackground && !scene) return notFound(reply, "Scene not found");
     const asset = createTimestamped("asset", {
@@ -1373,7 +1373,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/export", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return makeArchive(store.state, request.params.campaignId);
+    return withArchivedAssetFiles(makeArchive(store.state, request.params.campaignId), uploadDir);
   });
 
   app.post<{
@@ -1391,12 +1391,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return reply.code(409).send({ error: "import_conflict", conflicts });
     }
 
+    const restoredAssetFiles = restoreArchivedAssetFiles(uploadDir, archive);
     const counts = mergeArchive(store.state, archive);
     store.save();
     return {
       importedCampaignIds: archive.data.campaigns.map((item) => item.id),
       counts,
-      conflicts
+      conflicts,
+      assetFiles: restoredAssetFiles
     };
   });
 
@@ -1694,6 +1696,63 @@ function extensionForMimeType(mimeType: string): string {
     default:
       return ".bin";
   }
+}
+
+function withArchivedAssetFiles(archive: CampaignArchive, uploadDir: string): CampaignArchive {
+  const files = archive.data.assets
+    .map((asset) => archiveAssetFile(uploadDir, asset))
+    .filter((file): file is CampaignArchiveFile => Boolean(file));
+  return {
+    ...archive,
+    manifest: {
+      ...archive.manifest,
+      assetFileCount: files.length
+    },
+    files
+  };
+}
+
+function archiveAssetFile(uploadDir: string, asset: MapAsset): CampaignArchiveFile | undefined {
+  if (!asset.url.startsWith("/api/v1/assets/")) return undefined;
+  const filePath = localAssetPath(uploadDir, asset.campaignId, asset);
+  if (!existsSync(filePath)) return undefined;
+  const body = readFileSync(filePath);
+  return {
+    assetId: asset.id,
+    name: asset.name,
+    mimeType: asset.mimeType,
+    sizeBytes: body.length,
+    checksum: checksumForBuffer(body),
+    encoding: "base64",
+    data: body.toString("base64")
+  };
+}
+
+function restoreArchivedAssetFiles(uploadDir: string, archive: CampaignArchive): number {
+  const files = archive.files ?? [];
+  const assetsById = new Map(archive.data.assets.map((asset) => [asset.id, asset]));
+
+  for (const file of files) {
+    const asset = assetsById.get(file.assetId);
+    if (!asset) throw new Error(`Archive file does not match an asset: ${file.assetId}`);
+    if (file.encoding !== "base64") throw new Error(`Unsupported archive file encoding: ${file.encoding}`);
+    const body = Buffer.from(file.data, "base64");
+    const checksum = checksumForBuffer(body);
+    if (body.length !== file.sizeBytes) throw new Error(`Archive file size mismatch: ${file.assetId}`);
+    if (checksum !== file.checksum) throw new Error(`Archive file checksum mismatch: ${file.assetId}`);
+    if (asset.checksum && checksum !== asset.checksum) throw new Error(`Asset metadata checksum mismatch: ${file.assetId}`);
+
+    mkdirSync(resolve(uploadDir, asset.campaignId), {
+      recursive: true
+    });
+    writeFileSync(localAssetPath(uploadDir, asset.campaignId, asset), body);
+  }
+
+  return files.length;
+}
+
+function checksumForBuffer(body: Buffer): string {
+  return `sha256:${createHash("sha256").update(body).digest("hex")}`;
 }
 
 function localAssetPath(uploadDir: string, campaignId: string, asset: MapAsset): string {

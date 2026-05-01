@@ -888,6 +888,8 @@ describe("api", () => {
   });
 
   it("round-trips a campaign archive into a fresh instance with all MVP collections", async () => {
+    const sourceUploadDir = mkdtempSync(join(tmpdir(), "otte-archive-source-"));
+    const targetUploadDir = mkdtempSync(join(tmpdir(), "otte-archive-target-"));
     const sourceStore = new MemoryStateStore();
     sourceStore.state.permissionGrants.push({
       id: "grant_player_token_move",
@@ -898,19 +900,20 @@ describe("api", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     });
-    const sourceApp = await buildApp({ store: sourceStore });
-    await sourceApp.inject({
+    const sourceApp = await buildApp({ store: sourceStore, uploadDir: sourceUploadDir });
+    const assetBytes = Buffer.from("archive-image-bytes");
+    const uploadedAsset = await sourceApp.inject({
       method: "POST",
-      url: "/api/v1/campaigns/camp_demo/assets",
-      headers: authHeaders,
-      payload: {
-        id: "asset_roundtrip",
-        name: "Roundtrip Map",
-        url: "map://roundtrip",
-        mimeType: "image/png",
-        checksum: "sha256:test"
-      }
+      url: "/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true",
+      headers: {
+        ...authHeaders,
+        "content-type": "image/png",
+        "x-asset-name": encodeURIComponent("Roundtrip Map.png")
+      },
+      payload: assetBytes
     });
+    expect(uploadedAsset.statusCode).toBe(200);
+    const uploadedAssetId = uploadedAsset.json().asset.id as string;
     await sourceApp.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/encounters",
@@ -929,6 +932,16 @@ describe("api", () => {
     });
     expect(exported.statusCode).toBe(200);
     const archive = exported.json();
+    expect(archive.manifest.assetFileCount).toBe(1);
+    expect(archive.files).toHaveLength(1);
+    expect(archive.files[0]).toMatchObject({
+      assetId: uploadedAssetId,
+      name: "Roundtrip Map.png",
+      mimeType: "image/png",
+      sizeBytes: assetBytes.length,
+      encoding: "base64"
+    });
+    expect(archive.files[0].data).toBe(assetBytes.toString("base64"));
     await sourceApp.close();
 
     const freshState: EngineState = emptyState();
@@ -939,7 +952,7 @@ describe("api", () => {
       updatedAt: "2026-05-01T00:00:00.000Z"
     });
     const targetStore = new MemoryStateStore(freshState);
-    const targetApp = await buildApp({ store: targetStore });
+    const targetApp = await buildApp({ store: targetStore, uploadDir: targetUploadDir });
     const imported = await targetApp.inject({
       method: "POST",
       url: "/api/v1/import/campaign",
@@ -948,6 +961,7 @@ describe("api", () => {
     });
     expect(imported.statusCode).toBe(200);
     expect(imported.json().importedCampaignIds).toEqual(["camp_demo"]);
+    expect(imported.json().assetFiles).toBe(1);
 
     const importedScenes = await targetApp.inject({
       method: "GET",
@@ -981,13 +995,25 @@ describe("api", () => {
     });
 
     expect(importedScenes.json().map((scene: { id: string }) => scene.id)).toContain("scn_vault_entry");
+    expect(importedScenes.json().find((scene: { id: string }) => scene.id === "scn_vault_entry").backgroundAssetId).toBe(uploadedAssetId);
     expect(importedTokens.json().map((token: { id: string }) => token.id)).toContain("tok_valen");
     expect(importedActors.json().map((actor: { id: string }) => actor.id)).toContain("act_valen");
     expect(importedJournals.json().map((journal: { id: string }) => journal.id)).toContain("jnl_hook");
-    expect(importedAssets.json().map((asset: { name: string }) => asset.name)).toContain("Roundtrip Map");
+    expect(importedAssets.json().map((asset: { name: string }) => asset.name)).toContain("Roundtrip Map.png");
     expect(importedEncounters.json().map((encounter: { name: string }) => encounter.name)).toContain("Roundtrip Encounter");
     expect(targetStore.state.permissionGrants.map((grant) => grant.id)).toContain("grant_player_token_move");
 
+    const importedBlob = await targetApp.inject({
+      method: "GET",
+      url: `/api/v1/assets/${uploadedAssetId}/blob?userId=usr_demo_gm`
+    });
+    expect(importedBlob.statusCode).toBe(200);
+    expect(importedBlob.headers["content-type"]).toContain("image/png");
+    expect(importedBlob.body).toBe("archive-image-bytes");
+    expect(existsSync(join(targetUploadDir, "camp_demo", `${uploadedAssetId}.png`))).toBe(true);
+
     await targetApp.close();
+    rmSync(sourceUploadDir, { recursive: true, force: true });
+    rmSync(targetUploadDir, { recursive: true, force: true });
   });
 });

@@ -357,8 +357,20 @@ export interface CampaignArchive {
     name: string;
     schemaVersion: string;
     assetCount: number;
+    assetFileCount?: number;
   };
   data: EngineState;
+  files?: CampaignArchiveFile[];
+}
+
+export interface CampaignArchiveFile {
+  assetId: ID;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  checksum: string;
+  encoding: "base64";
+  data: string;
 }
 
 export interface EngineState {
