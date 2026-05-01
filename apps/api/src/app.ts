@@ -1032,6 +1032,56 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return fact;
   });
 
+  app.post<{
+    Params: { campaignId: string };
+    Body: { sourceText?: string; visibility?: "public" | "gm_only" };
+  }>("/api/v1/campaigns/:campaignId/ai/memory/extract", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const sourceText = request.body.sourceText?.trim() || defaultMemoryExtractionSource(store, request.params.campaignId);
+    const thread = createTimestamped("thr", {
+      campaignId: request.params.campaignId,
+      userId,
+      provider: aiProvider.id,
+      title: "Memory Extraction"
+    });
+    store.state.aiThreads.push(thread);
+    const permissions = permissionsForUser(store, userId, request.params.campaignId);
+    const context = buildPermissionFilteredContext({
+      state: store.state,
+      campaignId: request.params.campaignId,
+      permissions
+    });
+    let providerOutput = "";
+    const events: AiProviderEvent[] = [];
+    for await (const event of aiProvider.stream({
+      threadId: thread.id,
+      messages: [
+        {
+          role: "user",
+          content: `Extract durable campaign memory from this source text:\n${sourceText}`
+        }
+      ],
+      tools: [],
+      context
+    })) {
+      events.push(event);
+      if (event.type === "message.delta") providerOutput += event.delta;
+      if (event.type === "message.completed" && !providerOutput) providerOutput = event.content;
+    }
+    const memory = createTimestamped("mem", {
+      campaignId: request.params.campaignId,
+      text: extractedMemoryText(providerOutput, sourceText),
+      visibility: request.body.visibility ?? "gm_only",
+      sourceIds: [thread.id]
+    }) satisfies AiMemoryFact;
+    store.state.aiMemory.push(memory);
+    store.save();
+    return { thread, memory, providerOutput, events };
+  });
+
   app.post<{ Params: { factId: string } }>("/api/v1/ai/memory/:factId/approve", async (request, reply) => {
     const fact = store.state.aiMemory.find((item) => item.id === request.params.factId);
     if (!fact) return notFound(reply, "Memory fact not found");
@@ -1442,6 +1492,24 @@ function createConfiguredAiProvider(): AiProvider {
     });
   }
   return new EchoAiProvider();
+}
+
+function defaultMemoryExtractionSource(store: StateStore, campaignId: string): string {
+  const chat = store.state.chat
+    .filter((message) => message.campaignId === campaignId)
+    .slice(-8)
+    .map((message) => `${message.type}: ${message.body}`);
+  const journals = store.state.journals
+    .filter((journal) => journal.campaignId === campaignId)
+    .slice(-4)
+    .map((journal) => `${journal.title}: ${journal.body}`);
+  const source = [...journals, ...chat].join("\n").trim();
+  return source || "No recent campaign text was available for extraction.";
+}
+
+function extractedMemoryText(providerOutput: string, sourceText: string): string {
+  const text = providerOutput.trim() || `Extracted memory: ${sourceText}`;
+  return text.slice(0, 500);
 }
 
 function createAiThreadTools(): AiToolDefinition[] {

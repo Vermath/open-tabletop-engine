@@ -712,6 +712,30 @@ describe("api", () => {
       expect(toolThread.statusCode).toBe(200);
       expect(toolThread.json().events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "proposal.created" })]));
       expect(store.state.proposals.some((proposal) => proposal.title === "Codex Loopback Proposal")).toBe(true);
+
+      const extracted = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/memory/extract",
+        headers: authHeaders,
+        payload: {
+          sourceText: "The party learned that the silver door opens at moonrise."
+        }
+      });
+      expect(extracted.statusCode).toBe(200);
+      expect(extracted.json().thread.provider).toBe("codex-app-server");
+      expect(extracted.json().memory.text).toContain("silver door opens at moonrise");
+      expect(extracted.json().memory.sourceIds).toContain(extracted.json().thread.id);
+      expect(store.state.aiMemory.some((fact) => fact.text.includes("silver door opens at moonrise"))).toBe(true);
+
+      const blockedExtraction = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/memory/extract",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: {
+          sourceText: "Players cannot queue campaign memory."
+        }
+      });
+      expect(blockedExtraction.statusCode).toBe(403);
     } finally {
       await app?.close();
       if (previousProvider === undefined) {

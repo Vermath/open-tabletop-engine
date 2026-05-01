@@ -220,6 +220,14 @@ export function App() {
     await refresh();
   }
 
+  async function extractMemory() {
+    await apiPost(`/api/v1/campaigns/${campaignId}/ai/memory/extract`, {
+      sourceText: aiPrompt.trim() || undefined
+    });
+    setStatus("Memory extraction queued");
+    await refresh();
+  }
+
   async function approveAndApply(proposal: Proposal) {
     await apiPost(`/api/v1/proposals/${proposal.id}/approve`, {});
     await apiPost(`/api/v1/proposals/${proposal.id}/apply`, {});
@@ -381,7 +389,7 @@ export function App() {
             {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} updateActorHp={updateActorHp} canUpdateActor={canUpdateSelectedActor} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
-            {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} proposals={snapshot.proposals} memory={snapshot.memory} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
+            {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} actor={selectedActor} onInstallPlugin={installPlugin} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
         </div>
@@ -600,7 +608,7 @@ function CombatPanel(props: { combat?: Combat; onStart(): void; canManage: boole
   );
 }
 
-function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; recapSession(): void; proposals: Proposal[]; memory: AiMemoryFact[]; approveAndApply(proposal: Proposal): void; approveMemory(fact: AiMemoryFact): void; canPropose: boolean; canApply: boolean }) {
+function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; recapSession(): void; extractMemory(): void; proposals: Proposal[]; memory: AiMemoryFact[]; approveAndApply(proposal: Proposal): void; approveMemory(fact: AiMemoryFact): void; canPropose: boolean; canApply: boolean }) {
   return (
     <div className="panel-stack">
       <div className="section-title">Permissioned AI</div>
@@ -610,6 +618,9 @@ function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(
       </button>
       <button className="ghost-button wide" onClick={props.recapSession} disabled={!props.canPropose}>
         <ScrollText size={16} /> Recap Session
+      </button>
+      <button className="ghost-button wide" onClick={props.extractMemory} disabled={!props.canPropose}>
+        <FileText size={16} /> Extract Memory
       </button>
       {props.memory.map((fact) => (
         <article className="proposal" key={fact.id}>

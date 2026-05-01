@@ -72,7 +72,7 @@ export class LoopbackCodexTransport implements JsonRpcTransport {
       }
       events.push({
         type: "message.completed",
-        content: `Codex loopback handled ${method} with ${JSON.stringify(params).slice(0, 160)}`
+        content: memoryExtractionContent(params) ?? `Codex loopback handled ${method} with ${JSON.stringify(params).slice(0, 160)}`
       });
       return { events } as TResponse;
     }
@@ -91,13 +91,25 @@ function shouldRequestProposalTool(params: unknown): boolean {
   if (!isRecord(params)) return false;
   const hasProposalTool = Array.isArray(params.tools) && params.tools.some((tool) => isRecord(tool) && tool.name === "create_proposal");
   if (!hasProposalTool) return false;
-  const prompt = Array.isArray(params.messages)
-    ? params.messages
-        .filter(isRecord)
-        .map((message) => (typeof message.content === "string" ? message.content : ""))
-        .join(" ")
-    : "";
+  const prompt = promptFromParams(params);
   return /\bproposal\b|\bpropose\b|\bprep\b/i.test(prompt);
+}
+
+function memoryExtractionContent(params: unknown): string | undefined {
+  const prompt = promptFromParams(params);
+  const marker = "Extract durable campaign memory from this source text:";
+  if (!prompt.includes(marker)) return undefined;
+  const sourceText = prompt.slice(prompt.indexOf(marker) + marker.length).trim();
+  if (!sourceText) return "Extracted memory: No source text was provided.";
+  return `Extracted memory: ${sourceText.slice(0, 240)}`;
+}
+
+function promptFromParams(params: unknown): string {
+  if (!isRecord(params) || !Array.isArray(params.messages)) return "";
+  return params.messages
+    .filter(isRecord)
+    .map((message) => (typeof message.content === "string" ? message.content : ""))
+    .join(" ");
 }
 
 function campaignIdFromParams(params: unknown): string {
