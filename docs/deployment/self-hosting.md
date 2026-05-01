@@ -8,6 +8,19 @@ pnpm install
 docker compose up --build
 ```
 
+If the default host ports are already in use, override them before starting Compose:
+
+```bash
+API_PORT=4480 \
+WEB_PORT=5183 \
+POSTGRES_PORT=55432 \
+REDIS_PORT=56379 \
+MINIO_API_PORT=9900 \
+MINIO_CONSOLE_PORT=9901 \
+VITE_API_URL=http://localhost:4480 \
+docker compose up --build
+```
+
 Services:
 
 - Web: `http://localhost:5173`

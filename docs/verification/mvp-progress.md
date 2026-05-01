@@ -324,6 +324,25 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - Target blob request with `sessionToken=<token>` returned `200`, `image/svg+xml`, and contained `Archive Roundtrip Asset`.
     - Source and target restored files both existed at `apps/api/uploads/manual-archive-*/camp_demo/asset_momf20w7s3tv41hg.svg`.
 
+### Clean Checkout And Compose Runbook Slice
+
+- Commit: `0babc83 fix: make compose stack runnable`
+- Evidence:
+  - Fresh clone of `https://github.com/Vermath/open-tabletop-engine.git` into `D:\otte-clean-check-20260501` landed on `5587210 docs: add ai memory extraction evidence`.
+  - `pnpm install --frozen-lockfile` passed in the fresh clone.
+  - `pnpm check` passed in the fresh clone across lint, typecheck, tests, and build; API tests reported `16 passed`.
+  - Local dev clean-run API `http://127.0.0.1:4433` and web `http://127.0.0.1:5182` started from the fresh clone.
+  - Clean-run API smoke returned an `ots_` bearer token length `47`, campaign `camp_demo`, one scene, token `Valen Ash`, dice formula `1d20+5`, chat `Clean checkout smoke chat`, AI provider `codex-app-server`, extracted memory containing `Clean checkout memory extraction works`, and confirmed the SQLite file existed.
+  - Clean-run browser smoke showed `Realtime connected`, `The Ember Vault`, token marker `VA`, actor sheet `Valen Ash`, and the API-created dice/chat entries.
+  - `docker compose -p otte_clean_20260501 config --quiet` passed with alternate host ports.
+  - The first compose run exposed a broken MinIO tag and missing `apps/api/node_modules` runtime copy; both were fixed before acceptance.
+  - Final `docker compose -p otte_clean_20260501 up --build -d` built API and web images and started Postgres, Redis, MinIO, API, and web containers.
+  - Compose `GET http://127.0.0.1:4480/api/v1/health` returned `{ "ok": true, "version": "0.1.0", "service": "open-tabletop-api" }`.
+  - Compose API smoke returned an `ots_` bearer token length `47`, campaign `camp_demo`, dice formula `1d20+5`, chat `Compose stack smoke chat`, AI provider `codex-app-server`, and extracted memory containing `Compose memory extraction works`.
+  - Compose browser smoke on `http://127.0.0.1:5183` showed `Realtime connected`, the scene/token UI, and the compose-created dice/chat entries.
+  - Browser console had only a missing `favicon.ico` error, unrelated to the MVP workflow.
+  - Added `docs/verification/mvp-acceptance-audit.md` to map every explicit MVP goal to concrete evidence.
+
 ## Known Remaining Gaps
 
 - Auth now has MVP bearer sessions for seeded users across REST, realtime, and asset blob access, but still lacks password login, OAuth, invites, account management, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
@@ -333,4 +352,4 @@ This document tracks verified MVP progress without treating the whole PRD as com
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
 - AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, provider-backed memory extraction, approval/application, and deterministic recap memory. Real-provider prompt quality and broader tool coverage remain basic.
-- Full MVP completion still requires a clean-checkout runbook and a final prompt-to-artifact audit covering every PRD requirement.
+- Clean-checkout local dev, Docker Compose startup, and prompt-to-artifact audit are now documented and verified in `docs/verification/mvp-acceptance-audit.md`.
