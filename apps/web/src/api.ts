@@ -62,6 +62,28 @@ export async function registerSession(input: { email: string; displayName: strin
   return login;
 }
 
+export async function requestPasswordReset(email: string): Promise<{ ok: boolean }> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/password-reset/request`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email })
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<{ ok: boolean }>;
+}
+
+export async function confirmPasswordResetSession(input: { token: string; password: string }): Promise<SessionLoginInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/password-reset/confirm`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const login = (await response.json()) as SessionLoginInfo;
+  storeSession(login);
+  return login;
+}
+
 export async function acceptInviteSession(input: { token: string; email: string; displayName: string; password: string }): Promise<InviteAcceptInfo> {
   const response = await fetch(`${baseUrl}/api/v1/invites/accept`, {
     method: "POST",

@@ -1,9 +1,22 @@
 import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
-import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, Lightbulb, MessageSquare, Pentagon, Plus, ScrollText, Send, Shield, Swords, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
+import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, Lightbulb, LockKeyhole, MessageSquare, Pentagon, Plus, ScrollText, Send, Shield, Swords, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, consumeSsoRedirect, getSessionToken, getSessionUserId, loadOidcConfig, loadSnapshot, loginSession, setSessionUserId, startOidcLogin, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
+
+function initialResetToken(): string {
+  return new URLSearchParams(window.location.search).get("token") ?? "";
+}
+
+function initialResetMode(): boolean {
+  return window.location.pathname.endsWith("/reset-password") || initialResetToken().startsWith("opr_");
+}
+
+function clearResetUrl(): void {
+  const nextPath = window.location.pathname.endsWith("/reset-password") ? "/" : window.location.pathname;
+  window.history.replaceState(null, "", nextPath || "/");
+}
 
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
@@ -41,6 +54,12 @@ export function App() {
   const [joinName, setJoinName] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
   const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [resetMode, setResetMode] = useState(initialResetMode());
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetToken, setResetToken] = useState(initialResetToken());
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
+  const [resetStatus, setResetStatus] = useState("Ready");
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const selectedScene = snapshot.scenes.find((scene) => scene.id === sceneId);
@@ -65,6 +84,7 @@ export function App() {
   }
 
   useEffect(() => {
+    if (resetMode) return;
     const ssoUserId = consumeSsoRedirect();
     if (ssoUserId) {
       setCurrentUserId(ssoUserId);
@@ -74,7 +94,7 @@ export function App() {
       .then((config) => setSsoEnabled(config.enabled))
       .catch(() => setSsoEnabled(false));
     refresh().catch((error) => setStatus(`API offline: ${error instanceof Error ? error.message : String(error)}`));
-  }, []);
+  }, [resetMode]);
 
   useEffect(() => {
     if (!campaignId || !sessionToken) return;
@@ -100,6 +120,31 @@ export function App() {
   async function startSso() {
     const login = await startOidcLogin();
     window.location.href = login.authorizationUrl;
+  }
+
+  async function submitResetRequest() {
+    await requestPasswordReset(resetEmail.trim());
+    setResetStatus("Reset email queued");
+  }
+
+  async function submitResetConfirm() {
+    if (resetPassword !== resetPasswordConfirm) {
+      setResetStatus("Passwords do not match");
+      return;
+    }
+    const login = await confirmPasswordResetSession({
+      token: resetToken.trim(),
+      password: resetPassword
+    });
+    setCurrentUserId(login.user.id);
+    setSessionToken(login.token);
+    setResetToken("");
+    setResetPassword("");
+    setResetPasswordConfirm("");
+    setResetMode(false);
+    clearResetUrl();
+    setStatus("Password reset complete");
+    await refresh();
   }
 
   async function createInvite() {
@@ -361,6 +406,61 @@ export function App() {
     anchor.download = `${selectedCampaign?.name ?? "campaign"}.ottx.json`;
     anchor.click();
     URL.revokeObjectURL(url);
+  }
+
+  if (resetMode) {
+    return (
+      <main className="auth-shell">
+        <section className="reset-panel" aria-labelledby="reset-title">
+          <div className="reset-mark">
+            <LockKeyhole size={22} />
+          </div>
+          <div>
+            <div className="eyebrow">Account</div>
+            <h1 id="reset-title">Reset Password</h1>
+          </div>
+          <form
+            className="reset-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitResetRequest().catch((error) => setResetStatus(error instanceof Error ? error.message : String(error)));
+            }}
+          >
+            <label>
+              <span>Email</span>
+              <input aria-label="Reset email" type="email" autoComplete="email" required value={resetEmail} placeholder="player@example.com" onChange={(event) => setResetEmail(event.target.value)} />
+            </label>
+            <button className="ghost-button wide" type="submit" disabled={!resetEmail.trim()}>
+              <Send size={16} /> Send
+            </button>
+          </form>
+          <form
+            className="reset-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitResetConfirm().catch((error) => setResetStatus(error instanceof Error ? error.message : String(error)));
+            }}
+          >
+            <label>
+              <span>Token</span>
+              <input aria-label="Reset token" autoComplete="one-time-code" required value={resetToken} placeholder="opr_..." onChange={(event) => setResetToken(event.target.value)} />
+            </label>
+            <label>
+              <span>New Password</span>
+              <input aria-label="New password" type="password" autoComplete="new-password" minLength={8} required value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} />
+            </label>
+            <label>
+              <span>Confirm Password</span>
+              <input aria-label="Confirm password" type="password" autoComplete="new-password" minLength={8} required value={resetPasswordConfirm} onChange={(event) => setResetPasswordConfirm(event.target.value)} />
+            </label>
+            <button className="primary-button wide" type="submit" disabled={!resetToken.trim() || resetPassword.length < 8 || !resetPasswordConfirm}>
+              <Check size={16} /> Reset
+            </button>
+          </form>
+          <div className="status reset-status">{resetStatus}</div>
+        </section>
+      </main>
+    );
   }
 
   return (

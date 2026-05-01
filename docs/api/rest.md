@@ -115,7 +115,7 @@ curl -X POST \
   "http://localhost:4000/api/v1/auth/register"
 ```
 
-Request and confirm a password reset. The request response is always `{ "ok": true }` so callers cannot enumerate accounts by email. When `OTTE_EMAIL_WEBHOOK_URL` is set, the API posts the queued email payload to that webhook; otherwise the message stays in the admin outbox as `pending`.
+Request and confirm a password reset. The request response is always `{ "ok": true }` so callers cannot enumerate accounts by email. When `OTTE_EMAIL_WEBHOOK_URL` is set, the API posts the queued email payload to that webhook; otherwise the message stays in the admin outbox as `pending`. The browser client includes the matching reset screen at `/reset-password?token=opr_...`.
 
 ```bash
 curl -X POST \
@@ -196,7 +196,7 @@ Password reset and admin environment variables:
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `OTTE_ADMIN_USER_IDS` | no | Comma-separated user ids allowed to call `/api/v1/admin/*`. |
-| `OTTE_PASSWORD_RESET_URL` | no | Reset form URL. The API appends `token=<opr_token>`. Falls back to `${OTTE_WEB_ORIGIN}/reset-password` when set. |
+| `OTTE_PASSWORD_RESET_URL` | no | Browser reset form URL, usually `https://your-web-origin/reset-password`. The API appends `token=<opr_token>`. Falls back to `${OTTE_WEB_ORIGIN}/reset-password` when set. |
 | `OTTE_PASSWORD_RESET_TTL_MINUTES` | no | Reset token lifetime, clamped from 5 minutes to 24 hours. Defaults to 60 minutes. |
 | `OTTE_EMAIL_WEBHOOK_URL` | no | HTTP endpoint that receives queued email payloads as JSON. Without it, messages stay pending in the outbox. |
 | `OTTE_EMAIL_WEBHOOK_TOKEN` | no | Bearer token sent to the email webhook. |

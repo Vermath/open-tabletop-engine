@@ -548,6 +548,28 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - NDJSON export for `format=ndjson`, `targetType=user`, and `actorUserId=usr_demo_gm` returned `content-type: application/x-ndjson`, an `opentabletop-audit-...ndjson` attachment filename, one line, and action `admin.user.update`.
   - Invalid date filter `since=not-a-date` returned `400`.
 
+### Password Reset UI Slice
+
+- Implementation:
+  - Added a browser reset screen at `/reset-password` that can request a reset email and confirm an `opr_` token with a new password.
+  - The reset screen reads `token=opr_...` from the URL, pre-fills the token field, submits the confirm request, stores the returned `ots_` bearer session, clears the reset URL, and reloads the authenticated workspace.
+  - Added web API helpers for password reset request and confirmation.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+- Manual browser evidence:
+  - API: `http://127.0.0.1:4450`
+  - Web: `http://127.0.0.1:5175/reset-password`
+  - SQLite file: `apps/api/storage/manual-reset-ui-20260501b.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, `OTTE_SQLITE_PATH=storage/manual-reset-ui-20260501b.sqlite`, and `OTTE_PASSWORD_RESET_URL=http://127.0.0.1:5175/reset-password`.
+  - Playwright opened the reset screen, submitted `gm@example.test`, and the page showed `Reset email queued`.
+  - Admin outbox returned a pending reset email to `gm@example.test` with a reset link at `http://127.0.0.1:5175/reset-password?token=opr_...`.
+  - Opening the reset link pre-filled the `opr_` token, submitting a matching new password returned to `/`, loaded the authenticated workspace, and showed the synced GM campaign view.
+  - Browser localStorage held an `ots_` session token and `otte:sessionTokenUser=usr_demo_gm`.
+  - Screenshot saved at `output/playwright/reset-password-ui.png`.
+  - Browser console had no errors or warnings after the password-field autocomplete fix.
+
 ### Production Asset Delivery Slice
 
 - Implementation:
@@ -803,9 +825,9 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
-- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, account administration, production session administration, server-admin audit export, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs first-class reset UI, MFA, and SCIM/organization sync.
+- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, account administration, production session administration, server-admin audit export, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs MFA and SCIM/organization sync.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
-- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/memory/dice/compendium tools, tool-call observability, provider-backed memory extraction, approval/application, and deterministic recap memory. Remaining AI product work is hosted-model quality evaluation, production prompt iteration, broader campaign-edit tools, safety eval suites, cost/latency metrics, and operational dashboards.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/memory/dice/compendium tools, tool-call observability, provider-backed memory extraction, approval/application, and deterministic recap memory. Remaining Codex integration work is broader campaign-edit tool coverage, permission-regression coverage, failure and retry handling, cost/latency metrics, and operational dashboards.
