@@ -12,9 +12,14 @@ import type {
 } from "@open-tabletop/core";
 
 const baseUrl = import.meta.env.VITE_API_URL ?? "";
+export const sessionUserId = localStorage.getItem("otte:userId") ?? "usr_demo_gm";
+
+const sessionHeaders = {
+  "x-user-id": sessionUserId
+};
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`);
+  const response = await fetch(`${baseUrl}${path}`, { headers: sessionHeaders });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
 }
@@ -22,7 +27,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...sessionHeaders },
     body: JSON.stringify(body)
   });
   if (!response.ok) throw new Error(await response.text());
@@ -32,7 +37,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "PATCH",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...sessionHeaders },
     body: JSON.stringify(body)
   });
   if (!response.ok) throw new Error(await response.text());

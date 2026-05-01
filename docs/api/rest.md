@@ -2,6 +2,8 @@
 
 The API is served from `apps/api` and exposes:
 
+Authenticated endpoints require an `x-user-id` session header. The seeded local GM user is `usr_demo_gm`.
+
 - `GET /api/v1/health`
 - `GET /api/v1/auth/session`
 - `GET /api/v1/openapi.json`

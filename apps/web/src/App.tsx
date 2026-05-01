@@ -19,7 +19,7 @@ import {
   WandSparkles
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiGet, apiPatch, apiPost, loadSnapshot, type Snapshot } from "./api.js";
+import { apiGet, apiPatch, apiPost, loadSnapshot, sessionUserId, type Snapshot } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -67,7 +67,9 @@ export function App() {
 
   useEffect(() => {
     if (!campaignId) return;
-    const wsUrl = `${apiBase || window.location.origin}`.replace(/^http/, "ws") + `/api/v1/realtime?campaignId=${campaignId}`;
+    const wsUrl =
+      `${apiBase || window.location.origin}`.replace(/^http/, "ws") +
+      `/api/v1/realtime?campaignId=${campaignId}&userId=${encodeURIComponent(sessionUserId)}`;
     const socket = new WebSocket(wsUrl);
     socket.onopen = () => setStatus("Realtime connected");
     socket.onmessage = () => {
