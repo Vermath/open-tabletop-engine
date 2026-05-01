@@ -617,13 +617,43 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/vision-polygons-player.png`.
   - Browser console had no errors or warnings after reload; it only showed the React DevTools info message and an autocomplete advisory.
 
+### Dynamic Fog Tooling Slice
+
+- Implementation:
+  - Added fog region shapes and modes so scenes can store circle or polygon fog with `mode: "reveal" | "hide"`.
+  - Extended the shared vision polygon output so hide/erase fog regions are returned alongside reveal regions and rendered as subtractive mask regions in the browser.
+  - Added server-side visibility filtering where hide/erase fog overrides revealed fog and owned-token vision before player token reads are returned.
+  - Added GM-only polygon reveal and hide brush authoring from the scene toolbar, plus a delete route for individual fog regions.
+  - Rendered hide fog outlines separately so manual acceptance can distinguish revealed and erased regions in the player view.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/core test` passed with `5 passed`.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `28 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - Core tests verify polygon fog regions and hide fog modes in shared vision polygon computation.
+  - API tests verify players cannot author fog, GMs can create polygon reveal and circle hide regions, hide regions mask visible tokens, vision output returns reveal and hide modes, and GMs can delete fog regions.
+- Manual API and browser evidence:
+  - API: `http://127.0.0.1:4443`
+  - Web: `http://127.0.0.1:5189`
+  - SQLite file: `storage/manual-dynamic-fog-20260501.sqlite`
+  - Configured `scn_vault_entry` with one polygon reveal region and one hide brush region.
+  - Player token read returned `Valen Ash,Polygon Scout`; GM token read returned `Valen Ash,Polygon Scout,Erased Scout`; `PlayerSeesErased: 0`.
+  - Player vision endpoint returned fog modes `{ "hide": 1, "reveal": 1 }` before browser toolbar interaction, with polygon point counts `4,72`.
+  - Browser GM view exposed toolbar controls titled `Hide fog` and `Reveal polygon fog`; both controls were clicked successfully against the running API.
+  - Browser loaded as `Demo Player - player`, showed `Realtime connected`, rendered token markers `VA` and `PO`, and did not render the erased `ER` marker.
+  - Browser DOM verification found one `.vision-mask-layer`, two hide outlines, two reveal fog outlines, and toolbar titles for `Reveal fog`, `Hide fog`, and `Reveal polygon fog`.
+  - Screenshot saved at `output/playwright/dynamic-fog-player.png`.
+  - Browser console had no errors or warnings after reload; it only showed the React DevTools info message and an autocomplete advisory.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, account administration, production session administration, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs first-class reset UI, MFA, SCIM/organization sync, and audit export.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, and cleanup jobs for deleted or expired object bytes. Production storage work still needs CDN edge configuration, malware/content scanning, and deployment scheduling for recurring cleanup jobs.
-- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, and browser vision masks now have verified controls and permission filtering. Dynamic fog editing is still limited to simple reveal circles rather than brush/polygon tools.
+- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
 - AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, OpenAI Responses adapter requests and function-call mapping, provider-backed memory extraction, approval/application, and deterministic recap memory. Hosted-model prompt quality and broader tool coverage remain basic.

@@ -43,12 +43,15 @@ export function computeLightVisionPolygon(scene: Pick<Scene, "width" | "height" 
 
 export function computeFogRevealPolygon(scene: Pick<Scene, "width" | "height">, fog: FogRegion): VisionPolygon | undefined {
   if (fog.hidden) return undefined;
+  const points = fog.shape === "polygon" && fog.points?.length ? computePolygonRegion(scene, fog.points) : computeCirclePolygon(scene, { x: fog.x, y: fog.y }, fog.radius);
+  if (points.length < 3) return undefined;
   return {
     id: `fog_${fog.id}`,
     source: "fog",
     sourceId: fog.id,
+    mode: fog.mode ?? "reveal",
     radius: fog.radius,
-    points: computeCirclePolygon(scene, { x: fog.x, y: fog.y }, fog.radius)
+    points
   };
 }
 
@@ -98,6 +101,10 @@ function computeCirclePolygon(scene: Pick<Scene, "width" | "height">, center: Vi
     );
   }
   return compactPolygon(points);
+}
+
+function computePolygonRegion(scene: Pick<Scene, "width" | "height">, points: VisionPoint[]): VisionPoint[] {
+  return compactPolygon(points.map((point) => clampPoint(point, scene.width, scene.height)));
 }
 
 function candidateAngles(origin: VisionPoint, radius: number, segments: Segment[]): number[] {

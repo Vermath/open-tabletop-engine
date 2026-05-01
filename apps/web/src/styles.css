@@ -351,6 +351,11 @@ input:disabled {
   stroke-dasharray: 14 10;
 }
 
+.vision-outline.hide {
+  stroke: rgba(248, 113, 113, 0.58);
+  stroke-dasharray: 5 8;
+}
+
 .token {
   position: absolute;
   z-index: 4;

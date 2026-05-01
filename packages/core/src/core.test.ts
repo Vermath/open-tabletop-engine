@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { approveProposal, applyProposal, computeLightVisionPolygon, computeTokenVisionPolygon, hasPermission, isPointInsideVisionPolygon, seedState, tokenCenter } from "./index.js";
+import { approveProposal, applyProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, hasPermission, isPointInsideVisionPolygon, seedState, tokenCenter } from "./index.js";
 
 describe("core permissions", () => {
   it("gives owners full campaign authority and keeps observers read-only", () => {
@@ -85,5 +85,32 @@ describe("vision polygons", () => {
     expect(polygon.opacity).toBe(0.42);
     expect(isPointInsideVisionPolygon({ x: 325, y: 225 }, polygon)).toBe(false);
     expect(isPointInsideVisionPolygon({ x: 475, y: 375 }, polygon)).toBe(true);
+  });
+
+  it("supports polygon fog regions and hide fog modes", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+
+    const revealPolygon = computeFogRevealPolygon(scene, {
+      id: "fog_polygon",
+      x: 0,
+      y: 0,
+      radius: 0,
+      hidden: false,
+      shape: "polygon",
+      mode: "reveal",
+      points: [
+        { x: 700, y: 260 },
+        { x: 860, y: 260 },
+        { x: 860, y: 420 },
+        { x: 700, y: 420 }
+      ]
+    })!;
+    const hideBrush = computeFogRevealPolygon(scene, { id: "fog_hide", x: 780, y: 340, radius: 40, hidden: false, mode: "hide" })!;
+
+    expect(revealPolygon.mode).toBe("reveal");
+    expect(hideBrush.mode).toBe("hide");
+    expect(isPointInsideVisionPolygon({ x: 720, y: 320 }, revealPolygon)).toBe(true);
+    expect(isPointInsideVisionPolygon({ x: 780, y: 340 }, hideBrush)).toBe(true);
   });
 });

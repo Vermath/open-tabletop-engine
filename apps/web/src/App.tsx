@@ -1,5 +1,5 @@
 import type { Actor, AiMemoryFact, Campaign, ChatMessage, Combat, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
-import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eye, FileText, Hand, Lightbulb, MessageSquare, Plus, ScrollText, Send, Shield, Swords, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
+import { Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, Lightbulb, MessageSquare, Pentagon, Plus, ScrollText, Send, Shield, Swords, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, consumeSsoRedirect, getSessionToken, getSessionUserId, loadOidcConfig, loadSnapshot, loginSession, setSessionUserId, startOidcLogin, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
@@ -162,13 +162,47 @@ export function App() {
 
   async function revealFog() {
     if (!selectedScene) return;
+    const center = selectedToken ? tokenCenter(selectedToken) : { x: selectedScene.width / 2, y: selectedScene.height / 2 };
     await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
-      x: selectedToken?.x ?? selectedScene.width / 2,
-      y: selectedToken?.y ?? selectedScene.height / 2,
+      x: center.x,
+      y: center.y,
       radius: 160,
+      mode: "reveal",
       hidden: false
     });
     setStatus("Fog updated");
+    await refresh();
+  }
+
+  async function hideFog() {
+    if (!selectedScene) return;
+    const center = selectedToken ? tokenCenter(selectedToken) : { x: selectedScene.width / 2, y: selectedScene.height / 2 };
+    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
+      x: center.x,
+      y: center.y,
+      radius: 95,
+      mode: "hide",
+      hidden: false
+    });
+    setStatus("Fog hidden");
+    await refresh();
+  }
+
+  async function revealFogPolygon() {
+    if (!selectedScene) return;
+    const center = selectedToken ? tokenCenter(selectedToken) : { x: selectedScene.width / 2, y: selectedScene.height / 2 };
+    const radius = selectedScene.gridSize * 3;
+    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
+      shape: "polygon",
+      mode: "reveal",
+      points: [
+        { x: center.x, y: center.y - radius },
+        { x: center.x + radius, y: center.y },
+        { x: center.x, y: center.y + radius },
+        { x: center.x - radius, y: center.y }
+      ]
+    });
+    setStatus("Fog polygon revealed");
     await refresh();
   }
 
@@ -466,7 +500,7 @@ export function App() {
 
         <div className="table-grid">
           <section className="table-area">
-            <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onAddWall={addWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canUpdateScene={hasPermission("scene.update")} />
+            <Toolbar onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onAddWall={addWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canUpdateScene={hasPermission("scene.update")} />
             {selectedScene ? <SceneCanvas scene={selectedScene} backgroundAsset={selectedMapAsset} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} onSelect={setSelectedTokenId} onMoved={refresh} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
@@ -521,7 +555,8 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
   const tokens = useMemo(() => props.tokens.filter((token) => token.sceneId === props.scene.id), [props.tokens, props.scene.id]);
   const vision = props.vision?.sceneId === props.scene.id ? props.vision : undefined;
   const lightPolygons = useMemo(() => vision?.polygons.filter((polygon) => polygon.source === "light" && polygon.points.length > 2) ?? [], [vision]);
-  const revealedPolygons = useMemo(() => (vision?.fogActive ? vision.polygons.filter((polygon) => polygon.source !== "light" && polygon.points.length > 2) : []), [vision]);
+  const revealedPolygons = useMemo(() => (vision?.fogActive ? vision.polygons.filter((polygon) => polygon.source !== "light" && polygon.mode !== "hide" && polygon.points.length > 2) : []), [vision]);
+  const hiddenPolygons = useMemo(() => (vision?.fogActive ? vision.polygons.filter((polygon) => polygon.source === "fog" && polygon.mode === "hide" && polygon.points.length > 2) : []), [vision]);
   const maskId = `vision-mask-${props.scene.id}`;
 
   async function moveToken(token: Token, clientX: number, clientY: number) {
@@ -585,11 +620,17 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
               {revealedPolygons.map((polygon) => (
                 <polygon key={polygon.id} points={polygonPoints(polygon)} fill="black" />
               ))}
+              {hiddenPolygons.map((polygon) => (
+                <polygon key={polygon.id} points={polygonPoints(polygon)} fill="white" />
+              ))}
             </mask>
           </defs>
           <rect className="vision-dim" width={props.scene.width} height={props.scene.height} mask={`url(#${maskId})`} />
           {revealedPolygons.map((polygon) => (
             <polygon key={`${polygon.id}-outline`} className={`vision-outline ${polygon.source}`} points={polygonPoints(polygon)} />
+          ))}
+          {hiddenPolygons.map((polygon) => (
+            <polygon key={`${polygon.id}-outline`} className="vision-outline hide" points={polygonPoints(polygon)} />
           ))}
         </svg>
       )}
@@ -620,7 +661,11 @@ function polygonPoints(polygon: VisionPolygon): string {
   return polygon.points.map((point) => `${point.x},${point.y}`).join(" ");
 }
 
-function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onAddWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; canUpdateScene: boolean }) {
+function tokenCenter(token: Token): { x: number; y: number } {
+  return { x: token.x + token.width / 2, y: token.y + token.height / 2 };
+}
+
+function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onHideFog(): void; onRevealFogPolygon(): void; onAddWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; canUpdateScene: boolean }) {
   return (
     <div className="toolbar">
       <button className="tool active" title="Select">
@@ -634,6 +679,12 @@ function Toolbar(props: { onCreateToken(): void; onStartCombat(): void; onReveal
       </button>
       <button className="tool" title="Reveal fog" onClick={props.onRevealFog} disabled={!props.canRevealFog}>
         <Eye size={17} />
+      </button>
+      <button className="tool" title="Hide fog" onClick={props.onHideFog} disabled={!props.canRevealFog}>
+        <Eraser size={17} />
+      </button>
+      <button className="tool" title="Reveal polygon fog" onClick={props.onRevealFogPolygon} disabled={!props.canRevealFog}>
+        <Pentagon size={17} />
       </button>
       <button className="tool" title="Add wall" onClick={props.onAddWall} disabled={!props.canUpdateScene}>
         <BrickWall size={17} />

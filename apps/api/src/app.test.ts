@@ -1052,6 +1052,103 @@ describe("api", () => {
     await app.close();
   });
 
+  it("supports polygon reveal and hide brush fog operations", async () => {
+    const store = new MemoryStateStore();
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.fog = [];
+    const valen = store.state.tokens.find((item) => item.id === "tok_valen")!;
+    valen.visionRadius = 120;
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    const blockedPlayerFog = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/fog",
+      headers: playerHeaders,
+      payload: {
+        shape: "polygon",
+        points: [
+          { x: 700, y: 250 },
+          { x: 900, y: 250 },
+          { x: 900, y: 430 },
+          { x: 700, y: 430 }
+        ]
+      }
+    });
+    expect(blockedPlayerFog.statusCode).toBe(403);
+
+    const revealed = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/fog",
+      headers: authHeaders,
+      payload: {
+        shape: "polygon",
+        mode: "reveal",
+        points: [
+          { x: 700, y: 250 },
+          { x: 900, y: 250 },
+          { x: 900, y: 430 },
+          { x: 700, y: 430 }
+        ]
+      }
+    });
+    expect(revealed.statusCode).toBe(200);
+    expect(revealed.json().fog.at(-1)).toEqual(expect.objectContaining({ shape: "polygon", mode: "reveal", x: 800, y: 340 }));
+
+    const hidden = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/fog",
+      headers: authHeaders,
+      payload: { x: 825, y: 335, radius: 70, mode: "hide" }
+    });
+    expect(hidden.statusCode).toBe(200);
+    expect(hidden.json().fog.at(-1)).toEqual(expect.objectContaining({ shape: "circle", mode: "hide", radius: 70 }));
+
+    const polygonScout = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: authHeaders,
+      payload: { name: "Polygon Scout", x: 715, y: 310, disposition: "neutral" }
+    });
+    expect(polygonScout.statusCode).toBe(200);
+
+    const erasedScout = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: authHeaders,
+      payload: { name: "Erased Scout", x: 800, y: 310, disposition: "hostile" }
+    });
+    expect(erasedScout.statusCode).toBe(200);
+
+    const playerTokens = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: playerHeaders
+    });
+    expect(playerTokens.statusCode).toBe(200);
+    expect(playerTokens.json().map((token: { name: string }) => token.name)).toEqual(["Valen Ash", "Polygon Scout"]);
+
+    const playerVision = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_vault_entry/vision",
+      headers: playerHeaders
+    });
+    expect(playerVision.statusCode).toBe(200);
+    const vision = playerVision.json() as VisionSnapshot;
+    expect(vision.polygons.some((polygon) => polygon.source === "fog" && polygon.mode === "reveal")).toBe(true);
+    expect(vision.polygons.some((polygon) => polygon.source === "fog" && polygon.mode === "hide")).toBe(true);
+
+    const deletedFog = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/scenes/scn_vault_entry/fog/${hidden.json().fog.at(-1).id}`,
+      headers: authHeaders
+    });
+    expect(deletedFog.statusCode).toBe(200);
+    expect(deletedFog.json().fog.some((region: { mode?: string }) => region.mode === "hide")).toBe(false);
+
+    await app.close();
+  });
+
   it("covers auth, assets, fog, encounter design, and session memory", async () => {
     const app = await buildApp({ store: new MemoryStateStore() });
 

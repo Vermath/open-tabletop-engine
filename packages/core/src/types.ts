@@ -134,7 +134,13 @@ export interface FogRegion {
   y: number;
   radius: number;
   hidden: boolean;
+  shape?: FogShape;
+  mode?: FogMode;
+  points?: VisionPoint[];
 }
+
+export type FogShape = "circle" | "polygon";
+export type FogMode = "reveal" | "hide";
 
 export type WallKind = "wall" | "terrain";
 
@@ -173,6 +179,7 @@ export interface VisionPolygon {
   radius?: number;
   color?: string;
   opacity?: number;
+  mode?: FogMode;
 }
 
 export interface VisionSnapshot {

@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserRole, type UserSession, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -771,20 +771,38 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{
     Params: { sceneId: string };
-    Body: { x: number; y: number; radius?: number; hidden?: boolean };
+    Body: { x?: number; y?: number; radius?: number; hidden?: boolean; shape?: FogShape; mode?: FogMode; points?: VisionPoint[] };
   }>("/api/v1/scenes/:sceneId/fog", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.reveal");
     if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
-    scene.fog.push({
-      id: createId("fog"),
-      x: request.body.x,
-      y: request.body.y,
-      radius: request.body.radius ?? 120,
-      hidden: request.body.hidden ?? false
-    });
+    const fogRegion = normalizeFogRegion(request.body, scene);
+    if (!fogRegion) return badRequest(reply, "Invalid fog region");
+    scene.fog.push({ id: createId("fog"), ...fogRegion });
+    scene.updatedAt = nowIso();
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        targetId: scene.id,
+        payload: scene
+      })
+    );
+    return scene;
+  });
+
+  app.delete<{ Params: { sceneId: string; fogId: string } }>("/api/v1/scenes/:sceneId/fog/:fogId", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.reveal");
+    if (allowed !== true) return allowed;
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const index = scene.fog.findIndex((region) => region.id === request.params.fogId);
+    if (index < 0) return notFound(reply, "Fog region not found");
+    scene.fog.splice(index, 1);
     scene.updatedAt = nowIso();
     store.save();
     broadcast(
@@ -2110,6 +2128,63 @@ function stringFromRecord(record: Record<string, unknown>, key: string): string 
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function normalizeFogRegion(body: { x?: number; y?: number; radius?: number; hidden?: boolean; shape?: FogShape; mode?: FogMode; points?: VisionPoint[] }, scene: Scene): Omit<FogRegion, "id"> | undefined {
+  const rawPoints = Array.isArray(body.points) ? body.points : undefined;
+  const shape: FogShape = body.shape === "polygon" || rawPoints?.length ? "polygon" : "circle";
+  const mode: FogMode = body.mode === "hide" ? "hide" : "reveal";
+  if (shape === "polygon") {
+    const points = normalizeFogPoints(rawPoints, scene);
+    if (!points) return undefined;
+    const center = polygonCenter(points);
+    return {
+      x: center.x,
+      y: center.y,
+      radius: 0,
+      hidden: body.hidden ?? false,
+      shape,
+      mode,
+      points
+    };
+  }
+  const x = clampNumber(body.x ?? scene.width / 2, 0, scene.width);
+  const y = clampNumber(body.y ?? scene.height / 2, 0, scene.height);
+  const radius = clampNumber(body.radius ?? 120, 1, Math.max(scene.width, scene.height));
+  if (x === undefined || y === undefined || radius === undefined) return undefined;
+  return {
+    x,
+    y,
+    radius,
+    hidden: body.hidden ?? false,
+    shape,
+    mode
+  };
+}
+
+function normalizeFogPoints(points: unknown[] | undefined, scene: Scene): VisionPoint[] | undefined {
+  if (!points || points.length < 3 || points.length > 64) return undefined;
+  const normalized = points
+    .map((point) => {
+      if (!isRecord(point)) return undefined;
+      const x = typeof point.x === "number" ? clampNumber(point.x, 0, scene.width) : undefined;
+      const y = typeof point.y === "number" ? clampNumber(point.y, 0, scene.height) : undefined;
+      return x === undefined || y === undefined ? undefined : { x, y };
+    })
+    .filter((point): point is VisionPoint => Boolean(point));
+  return normalized.length >= 3 ? normalized : undefined;
+}
+
+function polygonCenter(points: VisionPoint[]): VisionPoint {
+  return {
+    x: Math.round(points.reduce((sum, point) => sum + point.x, 0) / points.length),
+    y: Math.round(points.reduce((sum, point) => sum + point.y, 0) / points.length)
+  };
+}
+
+function clampNumber(value: number, min: number, max: number): number | undefined {
+  if (!Number.isFinite(value)) return undefined;
+  return Math.max(min, Math.min(max, value));
+}
+
 function clampLightIntensity(value: number): number {
   return Math.max(0.05, Math.min(1, value));
 }
@@ -2146,7 +2221,10 @@ function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: str
   if (activeFog.length === 0) return true;
   const center = centerOfToken(token);
   const fogPolygons = activeFog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
-  if (isPointInsideVisionPolygons(center, fogPolygons)) return true;
+  const hidePolygons = fogPolygons.filter((polygon) => polygon.mode === "hide");
+  if (isPointInsideVisionPolygons(center, hidePolygons)) return false;
+  const revealPolygons = fogPolygons.filter((polygon) => polygon.mode !== "hide");
+  if (isPointInsideVisionPolygons(center, revealPolygons)) return true;
   return isPointInsideVisionPolygons(center, ownedVisionPolygonsForUser(store, userId, scene, sceneTokens));
 }
 
