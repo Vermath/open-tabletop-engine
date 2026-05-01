@@ -29,7 +29,19 @@ Services:
 - PostgreSQL: `localhost:5432`
 - Redis: `localhost:6379`
 
-The API persists campaign state to SQLite at `storage/opentabletop.sqlite` by default. Uploaded map assets are stored under `uploads` by default. AI threads use `OTTE_AI_PROVIDER=local-echo` unless configured otherwise; `OTTE_AI_PROVIDER=codex-loopback` is available as a deterministic local Codex App Server adapter smoke test. In Docker Compose these paths live in the `api-storage` and `api-uploads` volumes. The API still starts PostgreSQL, Redis, and MinIO because those services are part of the target architecture and remain available for later storage, queue, and object-store work.
+The API persists campaign state to SQLite at `storage/opentabletop.sqlite` by default. Local non-Docker API runs store uploaded map assets under `OTTE_UPLOAD_DIR` unless `OTTE_ASSET_STORAGE=s3` is configured. Docker Compose defaults uploaded assets to MinIO with bucket `opentabletop-assets`, endpoint `http://minio:9000`, and path-style S3 access. The SQLite file lives in the `api-storage` volume; the `api-uploads` volume remains available for local-storage fallback. AI threads use `OTTE_AI_PROVIDER=local-echo` unless configured otherwise; `OTTE_AI_PROVIDER=codex-loopback` is available as a deterministic local Codex App Server adapter smoke test.
+
+Asset storage configuration:
+
+```bash
+OTTE_ASSET_STORAGE=s3
+OTTE_S3_ENDPOINT=http://minio:9000
+OTTE_S3_BUCKET=opentabletop-assets
+OTTE_S3_REGION=us-east-1
+OTTE_S3_ACCESS_KEY_ID=opentabletop
+OTTE_S3_SECRET_ACCESS_KEY=opentabletop-dev
+OTTE_S3_FORCE_PATH_STYLE=true
+```
 
 For local development without Docker:
 
@@ -49,7 +61,7 @@ OTTE_SESSION_TOKEN="$(curl -sS -X POST \
 curl -H "Authorization: Bearer $OTTE_SESSION_TOKEN" http://localhost:4000/api/v1/campaigns
 ```
 
-Campaign archives are JSON `.ottx` files. The import endpoint upserts every archive collection, including users, members, scenes, assets, tokens, actors, journals, encounters, combats, AI memory, audit logs, and permission grants. Uploaded local asset files are embedded as base64 archive `files` entries with size and `sha256` checksums; import validates and restores them under `OTTE_UPLOAD_DIR`.
+Campaign archives are JSON `.ottx` files. The import endpoint upserts every archive collection, including users, members, scenes, assets, tokens, actors, journals, encounters, combats, AI memory, audit logs, and permission grants. Uploaded asset files are embedded as base64 archive `files` entries with size and `sha256` checksums; import validates and restores them through the active asset storage provider.
 
 Raw image uploads can be assigned directly to a scene background:
 

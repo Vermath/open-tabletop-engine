@@ -2,13 +2,33 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
-import { emptyState, type EngineState } from "@open-tabletop/core";
+import { emptyState, type AssetStorageRef, type EngineState, type MapAsset } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
+import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp } from "./app.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 import { MemoryStateStore } from "./store.js";
 
 const authHeaders = { "x-user-id": "usr_demo_gm" };
+
+class MemoryAssetStorage implements AssetStorage {
+  readonly provider = "s3" as const;
+  readonly objects = new Map<string, Buffer>();
+
+  constructor(private readonly bucket = "test-assets") {}
+
+  async put(asset: MapAsset, body: Buffer): Promise<AssetStorageRef> {
+    const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
+    this.objects.set(key, Buffer.from(body));
+    return { provider: "s3", bucket: this.bucket, key };
+  }
+
+  async read(asset: MapAsset): Promise<Buffer | undefined> {
+    const key = asset.storage?.provider === "s3" ? asset.storage.key : assetStorageKey(asset);
+    const body = this.objects.get(key);
+    return body ? Buffer.from(body) : undefined;
+  }
+}
 
 describe("api", () => {
   it("serves campaigns, rolls dice, and exports campaign data", async () => {
@@ -949,6 +969,10 @@ describe("api", () => {
     expect(uploaded.json().asset.name).toBe("Vault Upload.png");
     expect(uploaded.json().asset.sizeBytes).toBe(bytes.length);
     expect(uploaded.json().asset.checksum).toMatch(/^sha256:/);
+    expect(uploaded.json().asset.storage).toMatchObject({
+      provider: "local",
+      key: expect.stringMatching(/^camp_demo\/asset_.+\.png$/)
+    });
     expect(uploaded.json().scene.backgroundAssetId).toBe(uploaded.json().asset.id);
 
     const assetId = uploaded.json().asset.id as string;
@@ -970,6 +994,104 @@ describe("api", () => {
 
     await app.close();
     rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("stores uploaded assets through S3-compatible storage and archives them from that backend", async () => {
+    const sourceUploadDir = mkdtempSync(join(tmpdir(), "otte-s3-source-"));
+    const targetUploadDir = mkdtempSync(join(tmpdir(), "otte-s3-target-"));
+    const sourceStorage = new MemoryAssetStorage("source-assets");
+    const targetStorage = new MemoryAssetStorage("target-assets");
+    const sourceApp = await buildApp({
+      store: new MemoryStateStore(),
+      uploadDir: sourceUploadDir,
+      assetStorage: sourceStorage
+    });
+    const assetBytes = Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"><text>storage-backed</text></svg>");
+
+    const uploaded = await sourceApp.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true",
+      headers: {
+        ...authHeaders,
+        "content-type": "image/svg+xml",
+        "x-asset-name": encodeURIComponent("Storage Map.svg")
+      },
+      payload: assetBytes
+    });
+    expect(uploaded.statusCode).toBe(200);
+    const asset = uploaded.json().asset as MapAsset;
+    const expectedKey = `camp_demo/${asset.id}.svg`;
+    expect(asset.storage).toEqual({ provider: "s3", bucket: "source-assets", key: expectedKey });
+    expect(sourceStorage.objects.get(expectedKey)?.toString()).toBe(assetBytes.toString());
+    expect(existsSync(join(sourceUploadDir, "camp_demo", `${asset.id}.svg`))).toBe(false);
+
+    const blob = await sourceApp.inject({
+      method: "GET",
+      url: `/api/v1/assets/${asset.id}/blob?userId=usr_demo_gm`
+    });
+    expect(blob.statusCode).toBe(200);
+    expect(blob.headers["content-type"]).toContain("image/svg+xml");
+    expect(blob.body).toBe(assetBytes.toString());
+
+    const exported = await sourceApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export",
+      headers: authHeaders
+    });
+    expect(exported.statusCode).toBe(200);
+    const archive = exported.json();
+    expect(archive.manifest.assetFileCount).toBe(1);
+    expect(archive.files[0]).toMatchObject({
+      assetId: asset.id,
+      mimeType: "image/svg+xml",
+      sizeBytes: assetBytes.length,
+      encoding: "base64",
+      data: assetBytes.toString("base64")
+    });
+    await sourceApp.close();
+
+    const freshState: EngineState = emptyState();
+    freshState.users.push({
+      id: "usr_demo_gm",
+      displayName: "Import Admin",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    const targetStore = new MemoryStateStore(freshState);
+    const targetApp = await buildApp({
+      store: targetStore,
+      uploadDir: targetUploadDir,
+      assetStorage: targetStorage
+    });
+    const imported = await targetApp.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    expect(imported.statusCode).toBe(200);
+    expect(imported.json().assetFiles).toBe(1);
+    expect(targetStorage.objects.get(expectedKey)?.toString()).toBe(assetBytes.toString());
+
+    const importedAssets = await targetApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/assets",
+      headers: authHeaders
+    });
+    expect(importedAssets.statusCode).toBe(200);
+    const importedAsset = importedAssets.json().find((item: MapAsset) => item.id === asset.id);
+    expect(importedAsset.storage).toEqual({ provider: "s3", bucket: "target-assets", key: expectedKey });
+
+    const importedBlob = await targetApp.inject({
+      method: "GET",
+      url: `/api/v1/assets/${asset.id}/blob?userId=usr_demo_gm`
+    });
+    expect(importedBlob.statusCode).toBe(200);
+    expect(importedBlob.body).toBe(assetBytes.toString());
+
+    await targetApp.close();
+    rmSync(sourceUploadDir, { recursive: true, force: true });
+    rmSync(targetUploadDir, { recursive: true, force: true });
   });
 
   it("persists campaign state across sqlite-backed store restarts", async () => {

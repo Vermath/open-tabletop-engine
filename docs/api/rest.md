@@ -80,7 +80,7 @@ curl -X POST \
   "http://localhost:4000/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true"
 ```
 
-Uploaded assets are stored under `OTTE_UPLOAD_DIR`, checksummed as `sha256`, recorded as `MapAsset` rows, and served through `GET /api/v1/assets/{assetId}/blob?sessionToken=<token>`.
+Uploaded assets are checksummed as `sha256`, recorded as `MapAsset` rows with a `storage.provider` of `local` or `s3`, and served through `GET /api/v1/assets/{assetId}/blob?sessionToken=<token>`. Local development stores bytes under `OTTE_UPLOAD_DIR`; Docker Compose stores them in the configured MinIO/S3 bucket by default.
 
 Scene layer authoring is split into focused endpoints. Fog reveal uses `token.reveal`; wall and light creation use `scene.update` and return the updated scene for realtime rebroadcast.
 
@@ -95,7 +95,7 @@ Scene layer authoring is split into focused endpoints. Fog reveal uses `token.re
 
 The default `upsert` mode replaces records with matching ids and inserts missing records, which supports round-tripping a campaign into a fresh instance or refreshing an existing imported campaign. Use `reject_conflicts` to return `409` when imported ids already exist.
 
-Archives include uploaded local asset files in a top-level `files` array. Each entry stores base64 data plus size and `sha256` checksum metadata. Import validates the asset id, size, and checksum before restoring the file under `OTTE_UPLOAD_DIR`, so uploaded map backgrounds can round-trip into a fresh instance.
+Archives include uploaded asset files in a top-level `files` array, regardless of whether the active backend is local disk or S3-compatible object storage. Each entry stores base64 data plus size and `sha256` checksum metadata. Import validates the asset id, size, and checksum before restoring the file through the configured asset storage provider, so uploaded map backgrounds can round-trip into a fresh instance.
 
 Realtime clients connect to:
 

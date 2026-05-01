@@ -98,6 +98,13 @@ export interface MapAsset extends Timestamps {
   mimeType: string;
   sizeBytes: number;
   checksum?: string;
+  storage?: AssetStorageRef;
+}
+
+export interface AssetStorageRef {
+  provider: "local" | "s3";
+  key: string;
+  bucket?: string;
 }
 
 export interface Token extends Timestamps {

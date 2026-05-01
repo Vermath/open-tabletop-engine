@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, extname, resolve, sep } from "node:path";
+import { basename, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
@@ -10,6 +9,7 @@ import { applyProposal, approveProposal, createEvent, createId, createTimestampe
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
+import { createAssetStorage, type AssetStorage } from "./asset-storage.js";
 import { installedPlugins, installedSystems } from "./registries.js";
 import { RealtimeHub } from "./realtime.js";
 import { FileStateStore, type StateStore } from "./store.js";
@@ -17,6 +17,7 @@ import { FileStateStore, type StateStore } from "./store.js";
 export interface BuildAppOptions {
   store?: StateStore;
   uploadDir?: string;
+  assetStorage?: AssetStorage;
   maxAssetBytes?: number;
   aiProvider?: AiProvider;
 }
@@ -24,6 +25,7 @@ export interface BuildAppOptions {
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const store = options.store ?? new FileStateStore();
   const uploadDir = resolve(options.uploadDir ?? process.env.OTTE_UPLOAD_DIR ?? "uploads");
+  const assetStorage = options.assetStorage ?? createAssetStorage({ uploadDir });
   const maxAssetBytes = options.maxAssetBytes ?? 25 * 1024 * 1024;
   const hub = new RealtimeHub();
   const broadcast = (event: EngineEvent) => hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId));
@@ -252,19 +254,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const checksum = checksumForBuffer(body);
     const scene = shouldSetBackground ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId) : undefined;
     if (shouldSetBackground && !scene) return notFound(reply, "Scene not found");
-    const asset = createTimestamped("asset", {
+    const asset: MapAsset = createTimestamped("asset", {
       campaignId: request.params.campaignId,
       name: sourceName,
       url: "",
       mimeType,
       sizeBytes: body.length,
       checksum
-    }) satisfies MapAsset;
-    const filePath = localAssetPath(uploadDir, request.params.campaignId, asset);
-    mkdirSync(resolve(uploadDir, request.params.campaignId), {
-      recursive: true
     });
-    writeFileSync(filePath, body);
+    asset.storage = await assetStorage.put(asset, body);
     asset.url = `/api/v1/assets/${asset.id}/blob`;
     store.state.assets.push(asset);
 
@@ -292,9 +290,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = userIdFromRequest(store, request.url, request.headers);
     if (!userId) return unauthorized(reply, "Missing asset session");
     if (!canCampaign(store, userId, asset.campaignId, "scene.read")) return forbidden(reply, "Missing permission: scene.read");
-    const filePath = localAssetPath(uploadDir, asset.campaignId, asset);
-    if (!existsSync(filePath)) return notFound(reply, "Asset file not found");
-    return reply.header("content-type", asset.mimeType).header("cache-control", "private, max-age=60").send(createReadStream(filePath));
+    const stream = await assetStorage.stream?.(asset);
+    if (stream) return reply.header("content-type", asset.mimeType).header("cache-control", "private, max-age=60").send(stream);
+    const body = await assetStorage.read(asset);
+    if (!body) return notFound(reply, "Asset file not found");
+    return reply.header("content-type", asset.mimeType).header("cache-control", "private, max-age=60").send(body);
   });
 
   app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId", async (request, reply) => {
@@ -1450,7 +1450,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/export", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return withArchivedAssetFiles(makeArchive(store.state, request.params.campaignId), uploadDir);
+    return await withArchivedAssetFiles(makeArchive(store.state, request.params.campaignId), assetStorage);
   });
 
   app.post<{
@@ -1468,7 +1468,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return reply.code(409).send({ error: "import_conflict", conflicts });
     }
 
-    const restoredAssetFiles = restoreArchivedAssetFiles(uploadDir, archive);
+    const restoredAssetFiles = await restoreArchivedAssetFiles(assetStorage, archive);
     const counts = mergeArchive(store.state, archive);
     store.save();
     return {
@@ -1919,27 +1919,14 @@ function safeDecodeURIComponent(value: string): string {
   }
 }
 
-function extensionForMimeType(mimeType: string): string {
-  switch (mimeType) {
-    case "image/png":
-      return ".png";
-    case "image/jpeg":
-      return ".jpg";
-    case "image/webp":
-      return ".webp";
-    case "image/gif":
-      return ".gif";
-    case "image/svg+xml":
-      return ".svg";
-    default:
-      return ".bin";
-  }
-}
-
-function withArchivedAssetFiles(archive: CampaignArchive, uploadDir: string): CampaignArchive {
-  const files = archive.data.assets
-    .map((asset) => archiveAssetFile(uploadDir, asset))
-    .filter((file): file is CampaignArchiveFile => Boolean(file));
+async function withArchivedAssetFiles(archive: CampaignArchive, assetStorage: AssetStorage): Promise<CampaignArchive> {
+  const files = (
+    await Promise.all(
+      archive.data.assets.map((asset) => {
+        return archiveAssetFile(assetStorage, asset);
+      })
+    )
+  ).filter((file): file is CampaignArchiveFile => Boolean(file));
   return {
     ...archive,
     manifest: {
@@ -1950,11 +1937,10 @@ function withArchivedAssetFiles(archive: CampaignArchive, uploadDir: string): Ca
   };
 }
 
-function archiveAssetFile(uploadDir: string, asset: MapAsset): CampaignArchiveFile | undefined {
+async function archiveAssetFile(assetStorage: AssetStorage, asset: MapAsset): Promise<CampaignArchiveFile | undefined> {
   if (!asset.url.startsWith("/api/v1/assets/")) return undefined;
-  const filePath = localAssetPath(uploadDir, asset.campaignId, asset);
-  if (!existsSync(filePath)) return undefined;
-  const body = readFileSync(filePath);
+  const body = await assetStorage.read(asset);
+  if (!body) return undefined;
   return {
     assetId: asset.id,
     name: asset.name,
@@ -1966,7 +1952,7 @@ function archiveAssetFile(uploadDir: string, asset: MapAsset): CampaignArchiveFi
   };
 }
 
-function restoreArchivedAssetFiles(uploadDir: string, archive: CampaignArchive): number {
+async function restoreArchivedAssetFiles(assetStorage: AssetStorage, archive: CampaignArchive): Promise<number> {
   const files = archive.files ?? [];
   const assetsById = new Map(archive.data.assets.map((asset) => [asset.id, asset]));
 
@@ -1980,10 +1966,9 @@ function restoreArchivedAssetFiles(uploadDir: string, archive: CampaignArchive):
     if (checksum !== file.checksum) throw new Error(`Archive file checksum mismatch: ${file.assetId}`);
     if (asset.checksum && checksum !== asset.checksum) throw new Error(`Asset metadata checksum mismatch: ${file.assetId}`);
 
-    mkdirSync(resolve(uploadDir, asset.campaignId), {
-      recursive: true
-    });
-    writeFileSync(localAssetPath(uploadDir, asset.campaignId, asset), body);
+    asset.url = `/api/v1/assets/${asset.id}/blob`;
+    asset.storage = undefined;
+    asset.storage = await assetStorage.put(asset, body);
   }
 
   return files.length;
@@ -1991,22 +1976,6 @@ function restoreArchivedAssetFiles(uploadDir: string, archive: CampaignArchive):
 
 function checksumForBuffer(body: Buffer): string {
   return `sha256:${createHash("sha256").update(body).digest("hex")}`;
-}
-
-function localAssetPath(uploadDir: string, campaignId: string, asset: MapAsset): string {
-  const root = resolve(uploadDir);
-  const campaignDir = resolve(root, campaignId);
-  const extension = extname(asset.url) || extensionForMimeType(asset.mimeType);
-  const filePath = resolve(campaignDir, `${asset.id}${extension}`);
-  if (!isWithinPath(root, campaignDir) || !isWithinPath(campaignDir, filePath)) {
-    throw new Error("Invalid upload path");
-  }
-  return filePath;
-}
-
-function isWithinPath(parent: string, child: string): boolean {
-  const normalizedParent = parent.endsWith(sep) ? parent : `${parent}${sep}`;
-  return child === parent || child.startsWith(normalizedParent);
 }
 
 function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyof EngineState, number> {

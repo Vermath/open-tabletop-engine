@@ -343,11 +343,35 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Browser console had only a missing `favicon.ico` error, unrelated to the MVP workflow.
   - Added `docs/verification/mvp-acceptance-audit.md` to map every explicit MVP goal to concrete evidence.
 
+### S3/MinIO Asset Storage Slice
+
+- Implementation:
+  - Added an API asset storage abstraction with local disk and S3-compatible providers.
+  - Docker Compose now defaults uploaded assets to the MinIO-backed `opentabletop-assets` bucket while non-Docker API development can keep local `OTTE_UPLOAD_DIR` storage.
+  - Campaign archive export reads uploaded asset bytes through the active storage provider.
+  - Campaign archive import validates embedded file size and `sha256`, then restores files through the active storage provider and refreshes the asset storage ref.
+- Automated evidence:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `17 passed`, including S3-compatible upload/blob/export/import coverage and local storage coverage.
+  - `pnpm check` passed across lint, typecheck, tests, and production builds after the final import-key edge fix.
+- Manual Compose acceptance:
+  - `docker compose -p otte_s3_assets_20260501 config --quiet` passed with alternate ports.
+  - `docker compose -p otte_s3_assets_20260501 up --build -d` rebuilt API and web images and started Postgres, Redis, MinIO, API, and web containers.
+  - Compose API health on `http://127.0.0.1:4481` returned `healthOk: true`.
+  - Login returned an `ots_` bearer token length `47`.
+  - Uploading `Manual-MinIO-Smoke.svg` returned asset `asset_momx3zeogeo262c8` with `storage.provider: s3`, bucket `opentabletop-assets`, and key `camp_demo/asset_momx3zeogeo262c8.svg`.
+  - Authenticated blob fetch returned `200` and contained `Manual MinIO asset smoke`.
+  - Export returned `assetFileCount: 1`, `encoding: base64`, and file data matching the uploaded SVG bytes.
+  - Import restored the embedded asset as `asset_manual_s3_import` with `storage.provider: s3`, bucket `opentabletop-assets`, and key `camp_demo/asset_manual_s3_import.svg`.
+  - Imported blob fetch returned `200` and contained `Manual MinIO asset smoke`.
+  - MinIO container listing under `/data/opentabletop-assets` mentioned both the uploaded and imported object ids.
+  - The isolated Compose project was torn down with volumes after acceptance.
+
 ## Known Remaining Gaps
 
 - Auth now has MVP bearer sessions for seeded users across REST, realtime, and asset blob access, but still lacks password login, OAuth, invites, account management, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
 - Browser role switching and ownership-scoped GM/player token movement now have MVP coverage; broader multi-user workflows still need final clean-checkout audit coverage.
-- Uploaded maps now have a local binary storage path, but they are not yet backed by S3 or MinIO object storage.
+- Uploaded maps now support local and S3/MinIO-backed storage, including archive export/import through the active provider. Production storage work still needs lifecycle policies, migration tooling, and CDN/presigned delivery.
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
