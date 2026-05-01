@@ -763,6 +763,34 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - HTML upload returned `422` with finding code `disallowed_asset_type`.
   - Final campaign asset count remained `1`, confirming blocked uploads did not create asset records.
 
+### External Asset Trust Scanner Slice
+
+- Implementation:
+  - Added optional `OTTE_ASSET_TRUST_WEBHOOK_URL` upload scanning after the built-in scanner passes and before quota checks, asset record creation, or local/S3 storage writes.
+  - The API posts `name`, `mimeType`, `sizeBytes`, `checksum`, and `contentBase64` to the scanner, with optional bearer auth from `OTTE_ASSET_TRUST_WEBHOOK_TOKEN`.
+  - Scanner responses support `status: "clean"` or `status: "blocked"` plus optional scanner names and findings; blocked responses and high-severity findings reject the upload with `422 asset_security_blocked`.
+  - Scanner HTTP errors, invalid responses, and timeouts fail closed by default through `OTTE_ASSET_TRUST_FAIL_CLOSED=true`; deployments can explicitly opt into fail-open behavior.
+  - Clean external findings are persisted on `MapAsset.security` alongside the built-in scanner metadata, using a combined scanner label such as `builtin-asset-scanner+manual-trust-scanner`.
+  - Added `.env.example`, REST API, and self-hosting docs for the webhook contract and environment variables.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `56 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - `git diff --check` passed with only LF-to-CRLF warnings.
+  - API tests verify clean uploads call the external scanner with bearer auth and upload metadata, scanner findings persist on the asset security record, scanner-blocked uploads create no asset records or stored bytes, and scanner failures fail closed before storage writes.
+- Manual API evidence:
+  - API: `http://127.0.0.1:53093`
+  - Scanner webhook: `http://127.0.0.1:53092/scan`
+  - SQLite file: `apps/api/storage/manual-asset-trust-20260501.sqlite`
+  - Upload directory: `apps/api/storage/manual-asset-trust-uploads-20260501`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ASSET_STORAGE=local`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, `OTTE_ASSET_TRUST_WEBHOOK_URL=http://127.0.0.1:53092/scan`, `OTTE_ASSET_TRUST_WEBHOOK_TOKEN=manual-trust-token`, `OTTE_ASSET_TRUST_TIMEOUT_MS=2000`, and `OTTE_ASSET_TRUST_FAIL_CLOSED=true`.
+  - GM bearer login returned `200`.
+  - Clean upload `Manual Trust.png` created `asset_monddc20nbx57hyo` with `security.status: clean`, scanner `builtin-asset-scanner+manual-trust-scanner`, and finding `manual_trust_clean`.
+  - Stored object existed at `apps/api/storage/manual-asset-trust-uploads-20260501/camp_demo/asset_monddc20nbx57hyo.png`.
+  - The scanner received `Authorization: Bearer manual-trust-token`, `mimeType: image/png`, `sizeBytes: 18`, checksum `sha256:266bccd7ad98ad8563559e6c0801a9a33d3dfd3a370fca02145d62d41ce309a0`, and decoded content `manual-clean-asset`.
+  - Blocked upload `Manual Blocked.png` returned `422 asset_security_blocked` with scanner `manual-trust-scanner` and finding `manual_trust_blocked`.
+  - Final upload directory contained only `asset_monddc20nbx57hyo.png`, confirming the blocked upload did not write object bytes.
+
 ### Advanced Vision Rendering Slice
 
 - Implementation:
@@ -1387,7 +1415,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
-- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs third-party AV/trust integrations for higher-assurance hosting.
+- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, built-in upload security scanning, and external AV/trust scanner webhooks before storage writes. Higher-assurance hosting may still need provider-specific compliance artifacts and operational certifications outside the app.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.

@@ -1120,7 +1120,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       });
     const mimeType = normalizeAssetMimeType(request.headers["content-type"]);
     const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
-    const scan = scanUploadedAsset(body, mimeType, sourceName);
+    const scan = await scanUploadedAsset(body, mimeType, sourceName);
     if (scan.blocked) return assetSecurityBlocked(reply, scan);
     const quotaExceeded = assetQuotaExceeded(store, request.params.campaignId, body.length);
     if (quotaExceeded) return reply.code(413).send(quotaExceeded);
@@ -5532,6 +5532,7 @@ function displayNameFromHeader(value: string | string[] | undefined): string | u
 }
 
 const assetSecurityScanner = "builtin-asset-scanner";
+const externalAssetSecurityScanner = "external-asset-scanner";
 const eicarSignature = "EICAR-STANDARD-ANTIVIRUS-TEST-FILE";
 const disallowedAssetMimeTypes = new Set([
   "text/html",
@@ -5554,7 +5555,32 @@ interface AssetSecurityScanResult {
   security?: AssetSecurityScan;
 }
 
-function scanUploadedAsset(body: Buffer, mimeType: string, sourceName: string): AssetSecurityScanResult {
+interface ExternalAssetScannerResponse {
+  status?: string;
+  scanner?: string;
+  findings?: unknown[];
+}
+
+async function scanUploadedAsset(body: Buffer, mimeType: string, sourceName: string): Promise<AssetSecurityScanResult> {
+  const builtin = scanUploadedAssetBuiltIn(body, mimeType, sourceName);
+  if (builtin.blocked) return builtin;
+  const external = await scanUploadedAssetExternal(body, mimeType, sourceName);
+  if (!external) return builtin;
+  if (external.blocked) return external;
+  return {
+    scanner: combinedAssetSecurityScanner(builtin.scanner, external.scanner),
+    findings: [...builtin.findings, ...external.findings],
+    blocked: false,
+    security: {
+      status: "clean",
+      scanner: combinedAssetSecurityScanner(builtin.scanner, external.scanner),
+      scannedAt: nowIso(),
+      findings: [...builtin.findings, ...external.findings]
+    }
+  };
+}
+
+function scanUploadedAssetBuiltIn(body: Buffer, mimeType: string, sourceName: string): AssetSecurityScanResult {
   const findings: AssetSecurityFinding[] = [];
   const extension = extname(sourceName).toLowerCase();
   const text = body.toString("utf8");
@@ -5599,6 +5625,123 @@ function scanUploadedAsset(body: Buffer, mimeType: string, sourceName: string): 
       findings: []
     }
   };
+}
+
+async function scanUploadedAssetExternal(body: Buffer, mimeType: string, sourceName: string): Promise<AssetSecurityScanResult | undefined> {
+  const url = process.env.OTTE_ASSET_TRUST_WEBHOOK_URL?.trim();
+  if (!url) return undefined;
+  const scanner = process.env.OTTE_ASSET_TRUST_SCANNER_NAME?.trim() || externalAssetSecurityScanner;
+  try {
+    const response = await postExternalAssetScan(url, body, mimeType, sourceName);
+    return externalAssetScanResult(response, scanner);
+  } catch (error) {
+    const finding: AssetSecurityFinding = {
+      code: "external_scanner_unavailable",
+      severity: "high",
+      message: `External asset scanner failed: ${errorMessage(error)}`
+    };
+    if (assetTrustFailClosed()) {
+      return {
+        scanner,
+        findings: [finding],
+        blocked: true
+      };
+    }
+    return {
+      scanner,
+      findings: [{ ...finding, severity: "medium" }],
+      blocked: false,
+      security: {
+        status: "clean",
+        scanner,
+        scannedAt: nowIso(),
+        findings: [{ ...finding, severity: "medium" }]
+      }
+    };
+  }
+}
+
+async function postExternalAssetScan(url: string, body: Buffer, mimeType: string, sourceName: string): Promise<ExternalAssetScannerResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), assetTrustWebhookTimeoutMs());
+  try {
+    const headers: Record<string, string> = {
+      "content-type": "application/json"
+    };
+    const token = process.env.OTTE_ASSET_TRUST_WEBHOOK_TOKEN?.trim();
+    if (token) headers.authorization = `Bearer ${token}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        name: sourceName,
+        mimeType,
+        sizeBytes: body.length,
+        checksum: checksumForBuffer(body),
+        contentBase64: body.toString("base64")
+      })
+    });
+    if (!response.ok) throw new Error(`scanner_http_${response.status}`);
+    return (await response.json()) as ExternalAssetScannerResponse;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function externalAssetScanResult(response: ExternalAssetScannerResponse, fallbackScanner: string): AssetSecurityScanResult {
+  const scanner = typeof response.scanner === "string" && response.scanner.trim() ? response.scanner.trim().slice(0, 80) : fallbackScanner;
+  const findings = normalizeExternalAssetFindings(response.findings);
+  const status = response.status?.trim().toLowerCase();
+  if (status !== "clean" && status !== "blocked") throw new Error("scanner_invalid_status");
+  if (status === "blocked" || findings.some((finding) => finding.severity === "high")) {
+    return {
+      scanner,
+      findings: findings.length > 0 ? findings : [{ code: "external_scanner_blocked", severity: "high", message: "External asset scanner blocked upload" }],
+      blocked: true
+    };
+  }
+  return {
+    scanner,
+    findings,
+    blocked: false,
+    security: {
+      status: "clean",
+      scanner,
+      scannedAt: nowIso(),
+      findings
+    }
+  };
+}
+
+function normalizeExternalAssetFindings(value: unknown[] | undefined): AssetSecurityFinding[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).map((item): AssetSecurityFinding | undefined => {
+    if (!item || typeof item !== "object") return undefined;
+    const record = item as Record<string, unknown>;
+    const severity = normalizeAssetSecuritySeverity(record.severity);
+    const code = typeof record.code === "string" && record.code.trim() ? record.code.trim().slice(0, 80) : "external_scanner_finding";
+    const message = typeof record.message === "string" && record.message.trim() ? record.message.trim().slice(0, 240) : "External asset scanner finding";
+    return { code, severity, message };
+  }).filter((finding): finding is AssetSecurityFinding => Boolean(finding));
+}
+
+function normalizeAssetSecuritySeverity(value: unknown): AssetSecurityFinding["severity"] {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return normalized === "low" || normalized === "medium" || normalized === "high" ? normalized : "high";
+}
+
+function combinedAssetSecurityScanner(left: string, right: string): string {
+  return left === right ? left : `${left}+${right}`;
+}
+
+function assetTrustWebhookTimeoutMs(): number {
+  const configured = Number(process.env.OTTE_ASSET_TRUST_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? Math.min(Math.floor(configured), 30_000) : 5_000;
+}
+
+function assetTrustFailClosed(): boolean {
+  return envBoolean("OTTE_ASSET_TRUST_FAIL_CLOSED", true);
 }
 
 function assetSecurityBlocked(reply: FastifyReply, result: AssetSecurityScanResult): FastifyReply {

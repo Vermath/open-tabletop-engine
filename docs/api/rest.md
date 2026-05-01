@@ -316,7 +316,7 @@ curl -X POST \
   "http://localhost:4000/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true"
 ```
 
-Uploaded assets are scanned by `builtin-asset-scanner` before storage writes. EICAR test signatures, active SVG content, executable/script uploads, and HTML uploads return `422 asset_security_blocked` with scanner findings and do not create an asset record. Clean uploads store scan metadata on `MapAsset.security`, are checksummed as `sha256`, recorded as `MapAsset` rows with a `storage.provider` of `local` or `s3`, and served through `GET /api/v1/assets/{assetId}/blob?sessionToken=<token>`. Local development stores bytes under `OTTE_UPLOAD_DIR`; Docker Compose stores them in the configured MinIO/S3 bucket by default. `OTTE_ASSET_QUOTA_BYTES` enforces a per-campaign byte quota for active or archived assets.
+Uploaded assets are scanned by `builtin-asset-scanner` before storage writes. EICAR test signatures, active SVG content, executable/script uploads, and HTML uploads return `422 asset_security_blocked` with scanner findings and do not create an asset record. When `OTTE_ASSET_TRUST_WEBHOOK_URL` is configured, clean built-in results are also sent to an external AV/trust scanner before quota checks, asset record creation, or local/S3 object writes. The webhook receives JSON with `name`, `mimeType`, `sizeBytes`, `checksum`, and `contentBase64`; optional `OTTE_ASSET_TRUST_WEBHOOK_TOKEN` is sent as a bearer token. Responses use `status: "clean"` or `status: "blocked"` with optional `scanner` and `findings`. Blocked responses, high-severity findings, invalid responses, HTTP failures, or timeouts fail closed by default and return `422 asset_security_blocked`; set `OTTE_ASSET_TRUST_FAIL_CLOSED=false` only when fail-open behavior is intentional. Clean uploads store scan metadata on `MapAsset.security`, are checksummed as `sha256`, recorded as `MapAsset` rows with a `storage.provider` of `local` or `s3`, and served through `GET /api/v1/assets/{assetId}/blob?sessionToken=<token>`. Local development stores bytes under `OTTE_UPLOAD_DIR`; Docker Compose stores them in the configured MinIO/S3 bucket by default. `OTTE_ASSET_QUOTA_BYTES` enforces a per-campaign byte quota for active or archived assets.
 
 For CDN or browser contexts that should not carry a bearer token, request a signed delivery URL. The signed URL targets the same blob route, expires automatically, and uses `OTTE_ASSET_CDN_BASE_URL` when configured. `apps/asset-edge` contains a Cloudflare Worker that validates those signatures at the edge, strips browser credentials before origin fetch, and bounds edge cache TTL by the signed URL expiry:
 
@@ -369,6 +369,11 @@ Asset delivery environment variables:
 | `OTTE_ASSET_URL_SIGNING_SECRET` | production | HMAC secret for signed asset URLs. Required when `NODE_ENV=production`. |
 | `OTTE_ASSET_URL_TTL_SECONDS` | no | Default signed URL lifetime. Defaults to 300 seconds. |
 | `OTTE_ASSET_URL_MAX_TTL_SECONDS` | no | Maximum caller-requested signed URL lifetime. Defaults to 3600 seconds. |
+| `OTTE_ASSET_TRUST_WEBHOOK_URL` | no | Optional external AV/trust scanner webhook called before storage writes. |
+| `OTTE_ASSET_TRUST_WEBHOOK_TOKEN` | no | Optional bearer token sent to the external asset scanner webhook. |
+| `OTTE_ASSET_TRUST_TIMEOUT_MS` | no | External scanner timeout in milliseconds. Defaults to 5000 and caps at 30000. |
+| `OTTE_ASSET_TRUST_FAIL_CLOSED` | no | Controls scanner outage behavior. Defaults to `true`, which blocks uploads if the scanner fails. |
+| `OTTE_ASSET_TRUST_SCANNER_NAME` | no | Fallback scanner label used when the webhook response does not provide one. |
 | `OTTE_ASSET_CLEANUP_GRACE_DAYS` | no | Default grace period before admin cleanup jobs physically remove deleted or expired asset bytes. Defaults to 0 for API calls and 7 in Docker Compose. |
 | `OTTE_ASSET_CLEANUP_INTERVAL_SECONDS` | no | Enables recurring API-hosted cleanup when set to a positive number. Unset or `0` disables interval cleanup. |
 | `OTTE_ASSET_CLEANUP_RUN_ON_START` | no | Runs one cleanup pass when the API process starts. Defaults to `false`. |

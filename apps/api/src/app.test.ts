@@ -3832,6 +3832,161 @@ describe("api", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("runs clean uploads through an external asset trust scanner before storage writes", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ASSET_TRUST_WEBHOOK_URL", "OTTE_ASSET_TRUST_WEBHOOK_TOKEN", "OTTE_ASSET_TRUST_TIMEOUT_MS", "OTTE_ASSET_TRUST_FAIL_CLOSED", "OTTE_ASSET_TRUST_SCANNER_NAME"]);
+    const directory = mkdtempSync(join(tmpdir(), "otte-asset-trust-clean-"));
+    const store = new MemoryStateStore();
+    let scannerRequest: { authorization?: string; body?: Record<string, unknown> } = {};
+    const scanner = createServer(async (request, response) => {
+      scannerRequest = {
+        authorization: request.headers.authorization,
+        body: JSON.parse(await readRequestBody(request)) as Record<string, unknown>
+      };
+      sendJson(response, {
+        status: "clean",
+        scanner: "manual-av",
+        findings: [{ code: "third_party_av_clean", severity: "low", message: "External scanner accepted upload" }]
+      });
+    });
+    await new Promise<void>((resolve) => scanner.listen(0, "127.0.0.1", resolve));
+    const address = scanner.address() as AddressInfo;
+    process.env.OTTE_ASSET_TRUST_WEBHOOK_URL = `http://127.0.0.1:${address.port}/scan`;
+    process.env.OTTE_ASSET_TRUST_WEBHOOK_TOKEN = "trust-token";
+    process.env.OTTE_ASSET_TRUST_TIMEOUT_MS = "1000";
+    const app = await buildApp({
+      store,
+      uploadDir: directory
+    });
+    try {
+      const bytes = Buffer.from("trusted-image-bytes");
+      const uploaded = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/assets/upload",
+        headers: {
+          ...authHeaders,
+          "content-type": "image/png",
+          "x-asset-name": encodeURIComponent("Trusted.png")
+        },
+        payload: bytes
+      });
+
+      expect(uploaded.statusCode).toBe(200);
+      const asset = uploaded.json().asset as MapAsset;
+      expect(scannerRequest.authorization).toBe("Bearer trust-token");
+      expect(scannerRequest.body).toMatchObject({
+        name: "Trusted.png",
+        mimeType: "image/png",
+        sizeBytes: bytes.length,
+        checksum: asset.checksum,
+        contentBase64: bytes.toString("base64")
+      });
+      expect(asset.security).toMatchObject({
+        status: "clean",
+        scanner: "builtin-asset-scanner+manual-av",
+        findings: [{ code: "third_party_av_clean", severity: "low" }]
+      });
+      expect(existsSync(join(directory, "camp_demo", `${asset.id}.png`))).toBe(true);
+    } finally {
+      await app.close();
+      await new Promise<void>((resolve, reject) => scanner.close((error) => (error ? reject(error) : resolve())));
+      restoreEnv(previousEnv);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks external asset trust scanner rejections before writing records or bytes", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ASSET_TRUST_WEBHOOK_URL", "OTTE_ASSET_TRUST_WEBHOOK_TOKEN", "OTTE_ASSET_TRUST_TIMEOUT_MS", "OTTE_ASSET_TRUST_FAIL_CLOSED", "OTTE_ASSET_TRUST_SCANNER_NAME"]);
+    const directory = mkdtempSync(join(tmpdir(), "otte-asset-trust-blocked-"));
+    const store = new MemoryStateStore();
+    const scanner = createServer(async (_request, response) => {
+      sendJson(response, {
+        status: "blocked",
+        scanner: "manual-av",
+        findings: [{ code: "third_party_malware", severity: "high", message: "External scanner blocked upload" }]
+      });
+    });
+    await new Promise<void>((resolve) => scanner.listen(0, "127.0.0.1", resolve));
+    const address = scanner.address() as AddressInfo;
+    process.env.OTTE_ASSET_TRUST_WEBHOOK_URL = `http://127.0.0.1:${address.port}/scan`;
+    process.env.OTTE_ASSET_TRUST_TIMEOUT_MS = "1000";
+    process.env.OTTE_ASSET_TRUST_FAIL_CLOSED = "true";
+    process.env.OTTE_ASSET_TRUST_SCANNER_NAME = "external-asset-scanner";
+    const app = await buildApp({
+      store,
+      uploadDir: directory
+    });
+    try {
+      const blocked = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/assets/upload",
+        headers: {
+          ...authHeaders,
+          "content-type": "image/png",
+          "x-asset-name": encodeURIComponent("Blocked.png")
+        },
+        payload: Buffer.from("blocked-image-bytes")
+      });
+
+      expect(blocked.statusCode).toBe(422);
+      expect(blocked.json()).toMatchObject({
+        error: "asset_security_blocked",
+        scanner: "manual-av",
+        findings: [{ code: "third_party_malware", severity: "high" }]
+      });
+      expect(store.state.assets).toHaveLength(0);
+      expect(existsSync(join(directory, "camp_demo"))).toBe(false);
+    } finally {
+      await app.close();
+      await new Promise<void>((resolve, reject) => scanner.close((error) => (error ? reject(error) : resolve())));
+      restoreEnv(previousEnv);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when a configured external asset trust scanner errors", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ASSET_TRUST_WEBHOOK_URL", "OTTE_ASSET_TRUST_WEBHOOK_TOKEN", "OTTE_ASSET_TRUST_TIMEOUT_MS", "OTTE_ASSET_TRUST_FAIL_CLOSED", "OTTE_ASSET_TRUST_SCANNER_NAME"]);
+    const directory = mkdtempSync(join(tmpdir(), "otte-asset-trust-error-"));
+    const store = new MemoryStateStore();
+    const scanner = createServer((_request, response) => {
+      response.writeHead(503, { "content-type": "application/json" }).end(JSON.stringify({ error: "scanner_down" }));
+    });
+    await new Promise<void>((resolve) => scanner.listen(0, "127.0.0.1", resolve));
+    const address = scanner.address() as AddressInfo;
+    process.env.OTTE_ASSET_TRUST_WEBHOOK_URL = `http://127.0.0.1:${address.port}/scan`;
+    process.env.OTTE_ASSET_TRUST_TIMEOUT_MS = "1000";
+    process.env.OTTE_ASSET_TRUST_FAIL_CLOSED = "true";
+    process.env.OTTE_ASSET_TRUST_SCANNER_NAME = "external-asset-scanner";
+    const app = await buildApp({
+      store,
+      uploadDir: directory
+    });
+    try {
+      const blocked = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/assets/upload",
+        headers: {
+          ...authHeaders,
+          "content-type": "image/png",
+          "x-asset-name": encodeURIComponent("Scanner Error.png")
+        },
+        payload: Buffer.from("scanner-error-bytes")
+      });
+
+      expect(blocked.statusCode).toBe(422);
+      expect(blocked.json()).toMatchObject({
+        error: "asset_security_blocked",
+        scanner: "external-asset-scanner",
+        findings: [{ code: "external_scanner_unavailable", severity: "high" }]
+      });
+      expect(store.state.assets).toHaveLength(0);
+    } finally {
+      await app.close();
+      await new Promise<void>((resolve, reject) => scanner.close((error) => (error ? reject(error) : resolve())));
+      restoreEnv(previousEnv);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("issues signed CDN asset URLs, enforces quotas, and tracks lifecycle storage stats", async () => {
     const previousEnv = snapshotEnv([
       "OTTE_ADMIN_USER_IDS",
