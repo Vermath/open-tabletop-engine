@@ -26,6 +26,7 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `GET /api/v1/admin/sessions`
 - `DELETE /api/v1/admin/sessions/{sessionId}`
 - `GET /api/v1/admin/email-outbox`
+- `GET /api/v1/admin/assets/storage`
 - `GET /api/v1/openapi.json`
 - `GET|POST /api/v1/campaigns`
 - `GET|PATCH|DELETE /api/v1/campaigns/{campaignId}`
@@ -35,8 +36,11 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `POST /api/v1/invites/{inviteId}/revoke`
 - `GET|POST /api/v1/campaigns/{campaignId}/scenes`
 - `GET|POST /api/v1/campaigns/{campaignId}/assets`
+- `GET /api/v1/campaigns/{campaignId}/assets/storage`
 - `POST /api/v1/campaigns/{campaignId}/assets/upload`
 - `GET /api/v1/assets/{assetId}/blob`
+- `POST /api/v1/assets/{assetId}/delivery-url`
+- `PATCH /api/v1/assets/{assetId}/lifecycle`
 - `GET|PATCH|DELETE /api/v1/scenes/{sceneId}`
 - `POST /api/v1/scenes/{sceneId}/fog`
 - `POST /api/v1/scenes/{sceneId}/walls`
@@ -216,7 +220,43 @@ curl -X POST \
   "http://localhost:4000/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true"
 ```
 
-Uploaded assets are checksummed as `sha256`, recorded as `MapAsset` rows with a `storage.provider` of `local` or `s3`, and served through `GET /api/v1/assets/{assetId}/blob?sessionToken=<token>`. Local development stores bytes under `OTTE_UPLOAD_DIR`; Docker Compose stores them in the configured MinIO/S3 bucket by default.
+Uploaded assets are checksummed as `sha256`, recorded as `MapAsset` rows with a `storage.provider` of `local` or `s3`, and served through `GET /api/v1/assets/{assetId}/blob?sessionToken=<token>`. Local development stores bytes under `OTTE_UPLOAD_DIR`; Docker Compose stores them in the configured MinIO/S3 bucket by default. `OTTE_ASSET_QUOTA_BYTES` enforces a per-campaign byte quota for active or archived assets.
+
+For CDN or browser contexts that should not carry a bearer token, request a signed delivery URL. The signed URL targets the same blob route, expires automatically, and uses `OTTE_ASSET_CDN_BASE_URL` when configured:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"expiresInSeconds":300,"disposition":"inline"}' \
+  "http://localhost:4000/api/v1/assets/asset_.../delivery-url"
+```
+
+Inspect campaign storage usage and update asset lifecycle state:
+
+```bash
+curl -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
+  "http://localhost:4000/api/v1/campaigns/camp_demo/assets/storage"
+
+curl -X PATCH \
+  -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"status":"deleted","reason":"cleanup"}' \
+  "http://localhost:4000/api/v1/assets/asset_.../lifecycle"
+```
+
+Lifecycle status is `active`, `archived`, or `deleted`. Deleted and expired assets return `410` from blob delivery but remain represented in storage stats and archives for operational audit. Server admins can inspect global asset storage with `GET /api/v1/admin/assets/storage`.
+
+Asset delivery environment variables:
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `OTTE_ASSET_QUOTA_BYTES` | no | Per-campaign quota for active and archived asset bytes. |
+| `OTTE_ASSET_RETENTION_DAYS` | no | Optional default expiry assigned to newly created assets. |
+| `OTTE_ASSET_CDN_BASE_URL` | no | Base URL used when generating signed asset delivery URLs, usually the CDN origin. |
+| `OTTE_ASSET_URL_SIGNING_SECRET` | production | HMAC secret for signed asset URLs. Required when `NODE_ENV=production`. |
+| `OTTE_ASSET_URL_TTL_SECONDS` | no | Default signed URL lifetime. Defaults to 300 seconds. |
+| `OTTE_ASSET_URL_MAX_TTL_SECONDS` | no | Maximum caller-requested signed URL lifetime. Defaults to 3600 seconds. |
 
 Scene layer authoring is split into focused endpoints. Fog reveal uses `token.reveal`; wall and light creation use `scene.update` and return the updated scene for realtime rebroadcast.
 

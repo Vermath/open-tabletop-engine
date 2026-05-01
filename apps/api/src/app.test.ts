@@ -1714,6 +1714,165 @@ describe("api", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("issues signed CDN asset URLs, enforces quotas, and tracks lifecycle storage stats", async () => {
+    const previousEnv = snapshotEnv([
+      "OTTE_ADMIN_USER_IDS",
+      "OTTE_ASSET_CDN_BASE_URL",
+      "OTTE_ASSET_QUOTA_BYTES",
+      "OTTE_ASSET_RETENTION_DAYS",
+      "OTTE_ASSET_URL_SIGNING_SECRET",
+      "OTTE_ASSET_URL_TTL_SECONDS",
+      "OTTE_ASSET_URL_MAX_TTL_SECONDS"
+    ]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    process.env.OTTE_ASSET_CDN_BASE_URL = "https://cdn.example.test/otte";
+    process.env.OTTE_ASSET_QUOTA_BYTES = "20";
+    process.env.OTTE_ASSET_RETENTION_DAYS = "7";
+    process.env.OTTE_ASSET_URL_SIGNING_SECRET = "test-asset-signing-secret";
+    process.env.OTTE_ASSET_URL_TTL_SECONDS = "120";
+    process.env.OTTE_ASSET_URL_MAX_TTL_SECONDS = "600";
+
+    const directory = mkdtempSync(join(tmpdir(), "otte-delivery-"));
+    const store = new MemoryStateStore();
+    const app = await buildApp({
+      store,
+      uploadDir: directory
+    });
+    try {
+      const bytes = Buffer.from("signed-asset");
+      const uploaded = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true",
+        headers: {
+          ...authHeaders,
+          "content-type": "image/png",
+          "x-asset-name": encodeURIComponent("Signed Delivery.png")
+        },
+        payload: bytes
+      });
+      expect(uploaded.statusCode).toBe(200);
+      const asset = uploaded.json().asset as MapAsset;
+      expect(asset.lifecycle?.status).toBe("active");
+      expect(asset.lifecycle?.expiresAt).toBeTruthy();
+
+      const invalidMetadataAsset = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/assets",
+        headers: authHeaders,
+        payload: { name: "Invalid Metadata Asset", sizeBytes: -1 }
+      });
+      expect(invalidMetadataAsset.statusCode).toBe(400);
+
+      const overQuota = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/assets/upload",
+        headers: {
+          ...authHeaders,
+          "content-type": "image/png",
+          "x-asset-name": encodeURIComponent("Too Big.png")
+        },
+        payload: Buffer.from("over-quota")
+      });
+      expect(overQuota.statusCode).toBe(413);
+      expect(overQuota.json()).toMatchObject({ error: "asset_quota_exceeded", quotaBytes: 20, usedBytes: bytes.length });
+
+      const storage = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/assets/storage",
+        headers: authHeaders
+      });
+      expect(storage.statusCode).toBe(200);
+      expect(storage.json()).toMatchObject({
+        campaignId: "camp_demo",
+        assetCount: 1,
+        activeAssetCount: 1,
+        usedBytes: bytes.length,
+        quotaBytes: 20,
+        remainingBytes: 20 - bytes.length,
+        lifecycleCounts: { active: 1 },
+        providerCounts: { local: 1 }
+      });
+
+      const delivery = await app.inject({
+        method: "POST",
+        url: `/api/v1/assets/${asset.id}/delivery-url`,
+        headers: authHeaders,
+        payload: { expiresInSeconds: 180, disposition: "attachment" }
+      });
+      expect(delivery.statusCode).toBe(200);
+      expect(delivery.json()).toMatchObject({ assetId: asset.id, ttlSeconds: 180, delivery: "cdn" });
+      const signedUrl = new URL(delivery.json().url);
+      expect(`${signedUrl.origin}${signedUrl.pathname}`).toBe(`https://cdn.example.test/otte/api/v1/assets/${asset.id}/blob`);
+      expect(signedUrl.searchParams.get("signature")).toBeTruthy();
+      expect(signedUrl.searchParams.get("expiresAt")).toBeTruthy();
+      const signedApiPath = signedUrl.pathname.replace(/^\/otte/, "");
+
+      const signedBlob = await app.inject({
+        method: "GET",
+        url: `${signedApiPath}${signedUrl.search}`
+      });
+      expect(signedBlob.statusCode).toBe(200);
+      expect(signedBlob.headers["cache-control"]).toContain("public");
+      expect(signedBlob.headers["content-disposition"]).toContain("attachment");
+      expect(signedBlob.body).toBe(bytes.toString());
+
+      signedUrl.searchParams.set("signature", "tampered");
+      const tampered = await app.inject({
+        method: "GET",
+        url: `${signedApiPath}${signedUrl.search}`
+      });
+      expect(tampered.statusCode).toBe(401);
+
+      const deleted = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/assets/${asset.id}/lifecycle`,
+        headers: authHeaders,
+        payload: { status: "deleted", reason: "manual cleanup" }
+      });
+      expect(deleted.statusCode).toBe(200);
+      expect(deleted.json().lifecycle).toMatchObject({ status: "deleted", updatedByUserId: "usr_demo_gm", reason: "manual cleanup" });
+
+      const afterDelete = await app.inject({
+        method: "GET",
+        url: `${signedApiPath}${new URL(delivery.json().url).search}`
+      });
+      expect(afterDelete.statusCode).toBe(410);
+
+      const postDeleteStorage = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/assets/storage",
+        headers: authHeaders
+      });
+      expect(postDeleteStorage.statusCode).toBe(200);
+      expect(postDeleteStorage.json()).toMatchObject({
+        assetCount: 1,
+        activeAssetCount: 0,
+        usedBytes: 0,
+        allBytes: bytes.length,
+        lifecycleCounts: { deleted: 1 }
+      });
+
+      const adminStorage = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/assets/storage",
+        headers: authHeaders
+      });
+      expect(adminStorage.statusCode).toBe(200);
+      expect(adminStorage.json()).toMatchObject({
+        assetCount: 1,
+        activeAssetCount: 0,
+        usedBytes: 0,
+        allBytes: bytes.length,
+        lifecycleCounts: { deleted: 1 },
+        providerCounts: { local: 1 }
+      });
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("stores uploaded assets through S3-compatible storage and archives them from that backend", async () => {
     const sourceUploadDir = mkdtempSync(join(tmpdir(), "otte-s3-source-"));
     const targetUploadDir = mkdtempSync(join(tmpdir(), "otte-s3-target-"));

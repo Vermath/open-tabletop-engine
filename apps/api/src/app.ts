@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { basename, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
@@ -550,16 +550,28 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return store.state.assets.filter((item) => item.campaignId === request.params.campaignId);
   });
 
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/assets/storage", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.read");
+    if (allowed !== true) return allowed;
+    return campaignAssetStorageInfo(store, request.params.campaignId);
+  });
+
   app.post<{ Params: { campaignId: string }; Body: Partial<MapAsset> }>("/api/v1/campaigns/:campaignId/assets", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
     if (allowed !== true) return allowed;
+    const body = request.body ?? {};
+    const sizeBytes = normalizeAssetSizeBytes(body.sizeBytes);
+    if (sizeBytes === undefined) return badRequest(reply, "Asset sizeBytes must be a non-negative finite number");
+    const quotaExceeded = assetQuotaExceeded(store, request.params.campaignId, sizeBytes);
+    if (quotaExceeded) return reply.code(413).send(quotaExceeded);
     const asset = createTimestamped("asset", {
       campaignId: request.params.campaignId,
-      name: request.body.name ?? "Map Asset",
-      url: request.body.url ?? "",
-      mimeType: request.body.mimeType ?? "image/png",
-      sizeBytes: request.body.sizeBytes ?? 0,
-      checksum: request.body.checksum
+      name: body.name ?? "Map Asset",
+      url: body.url ?? "",
+      mimeType: body.mimeType ?? "image/png",
+      sizeBytes,
+      checksum: body.checksum,
+      lifecycle: defaultAssetLifecycle()
     }) satisfies MapAsset;
     store.state.assets.push(asset);
     store.save();
@@ -585,6 +597,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         error: "asset_too_large",
         message: `Asset exceeds ${maxAssetBytes} bytes`
       });
+    const quotaExceeded = assetQuotaExceeded(store, request.params.campaignId, body.length);
+    if (quotaExceeded) return reply.code(413).send(quotaExceeded);
     const mimeType = normalizeAssetMimeType(request.headers["content-type"]);
     const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
     const checksum = checksumForBuffer(body);
@@ -596,7 +610,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       url: "",
       mimeType,
       sizeBytes: body.length,
-      checksum
+      checksum,
+      lifecycle: defaultAssetLifecycle()
     });
     asset.storage = await assetStorage.put(asset, body);
     asset.url = `/api/v1/assets/${asset.id}/blob`;
@@ -620,17 +635,67 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { asset, scene };
   });
 
-  app.get<{ Params: { assetId: string }; Querystring: { userId?: string } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
+  app.post<{ Params: { assetId: string }; Body: { expiresInSeconds?: number; disposition?: "inline" | "attachment" } }>("/api/v1/assets/:assetId/delivery-url", async (request, reply) => {
+    const body = request.body ?? {};
     const asset = store.state.assets.find((item) => item.id === request.params.assetId);
     if (!asset) return notFound(reply, "Asset not found");
-    const userId = userIdFromRequest(store, request.url, request.headers);
-    if (!userId) return unauthorized(reply, "Missing asset session");
-    if (!canCampaign(store, userId, asset.campaignId, "scene.read")) return forbidden(reply, "Missing permission: scene.read");
+    if (!isAssetDeliverable(asset)) return assetUnavailable(reply, asset);
+    const allowed = requireCampaignPermission(store, reply, request.headers, asset.campaignId, "scene.read");
+    if (allowed !== true) return allowed;
+    try {
+      return signedAssetDelivery(asset, request.headers, body.expiresInSeconds, body.disposition);
+    } catch (error) {
+      return reply.code(500).send({ error: "asset_signing_unavailable", message: errorMessage(error) });
+    }
+  });
+
+  app.patch<{ Params: { assetId: string }; Body: { status?: "active" | "archived" | "deleted"; expiresAt?: string | null; reason?: string } }>("/api/v1/assets/:assetId/lifecycle", async (request, reply) => {
+    const body = request.body ?? {};
+    const asset = store.state.assets.find((item) => item.id === request.params.assetId);
+    if (!asset) return notFound(reply, "Asset not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, asset.campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const status = normalizeAssetLifecycleStatus(body.status);
+    if (!status) return badRequest(reply, "Asset lifecycle status must be active, archived, or deleted");
+    const expiresAt = normalizeOptionalIsoDate(body.expiresAt);
+    if (body.expiresAt !== undefined && body.expiresAt !== null && !expiresAt) return badRequest(reply, "expiresAt must be an ISO date");
+    asset.lifecycle = {
+      status,
+      expiresAt,
+      updatedAt: nowIso(),
+      updatedByUserId: userId,
+      reason: body.reason?.trim().slice(0, 160)
+    };
+    asset.updatedAt = nowIso();
+    store.save();
+    return asset;
+  });
+
+  app.get<{ Params: { assetId: string }; Querystring: { userId?: string; expiresAt?: string; signature?: string; disposition?: "inline" | "attachment" } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
+    const asset = store.state.assets.find((item) => item.id === request.params.assetId);
+    if (!asset) return notFound(reply, "Asset not found");
+    if (!isAssetDeliverable(asset)) return assetUnavailable(reply, asset);
+    const signedAccess = isValidAssetSignature(asset.id, request.query.expiresAt, request.query.signature, request.query.disposition);
+    if (!signedAccess) {
+      const userId = userIdFromRequest(store, request.url, request.headers);
+      if (!userId) return unauthorized(reply, "Missing asset session");
+      if (!canCampaign(store, userId, asset.campaignId, "scene.read")) return forbidden(reply, "Missing permission: scene.read");
+    }
+    const cacheControl = signedAccess ? signedAssetCacheControl(request.query.expiresAt) : "private, max-age=60";
+    const contentDisposition = request.query.disposition === "attachment" ? `attachment; filename="${safeDownloadFileName(asset.name)}"` : undefined;
     const stream = await assetStorage.stream?.(asset);
-    if (stream) return reply.header("content-type", asset.mimeType).header("cache-control", "private, max-age=60").send(stream);
+    if (contentDisposition) reply.header("content-disposition", contentDisposition);
+    if (stream) return reply.header("content-type", asset.mimeType).header("cache-control", cacheControl).send(stream);
     const body = await assetStorage.read(asset);
     if (!body) return notFound(reply, "Asset file not found");
-    return reply.header("content-type", asset.mimeType).header("cache-control", "private, max-age=60").send(body);
+    return reply.header("content-type", asset.mimeType).header("cache-control", cacheControl).send(body);
+  });
+
+  app.get("/api/v1/admin/assets/storage", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    return globalAssetStorageInfo(store);
   });
 
   app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId", async (request, reply) => {
@@ -2826,6 +2891,198 @@ function displayNameFromHeader(value: string | string[] | undefined): string | u
   if (!raw) return undefined;
   const decoded = safeDecodeURIComponent(raw);
   return basename(decoded).trim() || undefined;
+}
+
+function defaultAssetLifecycle(): NonNullable<MapAsset["lifecycle"]> {
+  return {
+    status: "active",
+    expiresAt: assetRetentionExpiresAt()
+  };
+}
+
+function assetRetentionExpiresAt(): string | undefined {
+  const value = Number(process.env.OTTE_ASSET_RETENTION_DAYS);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  return new Date(Date.now() + Math.min(value, 3650) * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function normalizeAssetLifecycleStatus(value: string | undefined): NonNullable<MapAsset["lifecycle"]>["status"] | undefined {
+  return value === "active" || value === "archived" || value === "deleted" ? value : undefined;
+}
+
+function normalizeOptionalIsoDate(value: string | null | undefined): string | undefined {
+  if (value === undefined || value === null || value.trim() === "") return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
+function normalizeAssetSizeBytes(value: number | undefined): number | undefined {
+  if (value === undefined) return 0;
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : undefined;
+}
+
+function isAssetDeliverable(asset: MapAsset): boolean {
+  if (asset.lifecycle?.status === "deleted") return false;
+  return !asset.lifecycle?.expiresAt || Date.parse(asset.lifecycle.expiresAt) > Date.now();
+}
+
+function assetUnavailable(reply: FastifyReply, asset: MapAsset): FastifyReply {
+  const deleted = asset.lifecycle?.status === "deleted";
+  return reply.code(410).send({
+    error: deleted ? "asset_deleted" : "asset_expired",
+    message: deleted ? "Asset has been deleted" : "Asset has expired"
+  });
+}
+
+function assetQuotaExceeded(store: StateStore, campaignId: string, incomingBytes: number): { error: string; message: string; quotaBytes: number; usedBytes: number; incomingBytes: number } | undefined {
+  const quotaBytes = assetQuotaBytes();
+  if (!quotaBytes) return undefined;
+  const usedBytes = campaignAssetBytes(store, campaignId);
+  if (usedBytes + incomingBytes <= quotaBytes) return undefined;
+  return {
+    error: "asset_quota_exceeded",
+    message: `Campaign asset quota of ${quotaBytes} bytes would be exceeded`,
+    quotaBytes,
+    usedBytes,
+    incomingBytes
+  };
+}
+
+function assetQuotaBytes(): number | undefined {
+  const value = Number(process.env.OTTE_ASSET_QUOTA_BYTES);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function campaignAssetBytes(store: StateStore, campaignId: string): number {
+  return store.state.assets.filter((asset) => asset.campaignId === campaignId && asset.lifecycle?.status !== "deleted").reduce((total, asset) => total + asset.sizeBytes, 0);
+}
+
+function campaignAssetStorageInfo(store: StateStore, campaignId: string): Record<string, unknown> {
+  const assets = store.state.assets.filter((asset) => asset.campaignId === campaignId);
+  const quotaBytes = assetQuotaBytes();
+  const usedBytes = campaignAssetBytes(store, campaignId);
+  const lifecycleCounts = countBy(assets, (asset) => asset.lifecycle?.status ?? "active");
+  const providerCounts = countBy(assets, (asset) => asset.storage?.provider ?? "external");
+  return {
+    campaignId,
+    assetCount: assets.length,
+    activeAssetCount: assets.filter((asset) => asset.lifecycle?.status !== "deleted").length,
+    usedBytes,
+    allBytes: assets.reduce((total, asset) => total + asset.sizeBytes, 0),
+    quotaBytes,
+    remainingBytes: quotaBytes === undefined ? undefined : Math.max(0, quotaBytes - usedBytes),
+    lifecycleCounts,
+    providerCounts,
+    largestAssets: assets
+      .slice()
+      .sort((left, right) => right.sizeBytes - left.sizeBytes)
+      .slice(0, 10)
+      .map((asset) => ({
+        id: asset.id,
+        campaignId: asset.campaignId,
+        name: asset.name,
+        sizeBytes: asset.sizeBytes,
+        provider: asset.storage?.provider ?? "external",
+        lifecycleStatus: asset.lifecycle?.status ?? "active",
+        expiresAt: asset.lifecycle?.expiresAt
+      }))
+  };
+}
+
+function globalAssetStorageInfo(store: StateStore): Record<string, unknown> {
+  const campaignIds = [...new Set(store.state.assets.map((asset) => asset.campaignId))].sort();
+  const campaigns = campaignIds.map((campaignId) => campaignAssetStorageInfo(store, campaignId));
+  const usedBytes = store.state.assets.filter((asset) => asset.lifecycle?.status !== "deleted").reduce((total, asset) => total + asset.sizeBytes, 0);
+  return {
+    assetCount: store.state.assets.length,
+    activeAssetCount: store.state.assets.filter((asset) => asset.lifecycle?.status !== "deleted").length,
+    usedBytes,
+    allBytes: store.state.assets.reduce((total, asset) => total + asset.sizeBytes, 0),
+    providerCounts: countBy(store.state.assets, (asset) => asset.storage?.provider ?? "external"),
+    lifecycleCounts: countBy(store.state.assets, (asset) => asset.lifecycle?.status ?? "active"),
+    campaigns
+  };
+}
+
+function countBy<T>(items: T[], keyForItem: (item: T) => string): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of items) {
+    const key = keyForItem(item);
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function signedAssetDelivery(asset: MapAsset, headers: Record<string, string | string[] | undefined>, requestedTtlSeconds: number | undefined, disposition: "inline" | "attachment" | undefined): Record<string, string | number | undefined> {
+  const ttlSeconds = assetUrlTtlSeconds(requestedTtlSeconds);
+  const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+  const safeDisposition = disposition ?? "inline";
+  const signature = signAssetUrl(asset.id, expiresAt, safeDisposition);
+  const url = new URL(`${assetDeliveryBase(headers)}/api/v1/assets/${asset.id}/blob`);
+  url.searchParams.set("expiresAt", expiresAt);
+  url.searchParams.set("signature", signature);
+  if (safeDisposition !== "inline") url.searchParams.set("disposition", safeDisposition);
+  return {
+    assetId: asset.id,
+    url: url.toString(),
+    expiresAt,
+    ttlSeconds,
+    cacheControl: signedAssetCacheControl(expiresAt),
+    delivery: process.env.OTTE_ASSET_CDN_BASE_URL?.trim() ? "cdn" : "signed_blob"
+  };
+}
+
+function assetDeliveryBase(headers: Record<string, string | string[] | undefined>): string {
+  const configured = process.env.OTTE_ASSET_CDN_BASE_URL?.trim() || process.env.OTTE_PUBLIC_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  const protocol = headerValue(headers["x-forwarded-proto"]) ?? "http";
+  const host = headerValue(headers.host) ?? "localhost";
+  return `${protocol}://${host}`;
+}
+
+function assetUrlTtlSeconds(requested: number | undefined): number {
+  const defaultValue = Number(process.env.OTTE_ASSET_URL_TTL_SECONDS);
+  const maxValue = Number(process.env.OTTE_ASSET_URL_MAX_TTL_SECONDS);
+  const fallback = Number.isFinite(defaultValue) && defaultValue > 0 ? defaultValue : 300;
+  const max = Number.isFinite(maxValue) && maxValue > 0 ? maxValue : 3600;
+  const value = Number.isFinite(requested) && requested! > 0 ? requested! : fallback;
+  return Math.max(30, Math.min(Math.floor(value), Math.min(max, 24 * 60 * 60)));
+}
+
+function signAssetUrl(assetId: string, expiresAt: string, disposition: string): string {
+  return createHmac("sha256", assetSigningSecret()).update(assetSignaturePayload(assetId, expiresAt, disposition)).digest("base64url");
+}
+
+function isValidAssetSignature(assetId: string, expiresAt: string | undefined, signature: string | undefined, disposition: string | undefined): boolean {
+  if (!expiresAt || !signature || Date.parse(expiresAt) <= Date.now()) return false;
+  try {
+    const expected = signAssetUrl(assetId, expiresAt, disposition ?? "inline");
+    const expectedBytes = Buffer.from(expected);
+    const actualBytes = Buffer.from(signature);
+    return expectedBytes.length === actualBytes.length && timingSafeEqual(expectedBytes, actualBytes);
+  } catch {
+    return false;
+  }
+}
+
+function assetSignaturePayload(assetId: string, expiresAt: string, disposition: string): string {
+  return `${assetId}:${expiresAt}:${disposition}`;
+}
+
+function assetSigningSecret(): string {
+  const configured = process.env.OTTE_ASSET_URL_SIGNING_SECRET?.trim();
+  if (configured) return configured;
+  if (process.env.NODE_ENV === "production") throw new Error("OTTE_ASSET_URL_SIGNING_SECRET is required for signed asset URLs in production");
+  return "development-asset-signing-secret";
+}
+
+function signedAssetCacheControl(expiresAt: string | undefined): string {
+  const remainingSeconds = expiresAt ? Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000)) : 0;
+  return `public, max-age=${Math.min(remainingSeconds, 3600)}`;
+}
+
+function safeDownloadFileName(name: string): string {
+  return basename(name).replace(/["\r\n]/g, "_") || "asset.bin";
 }
 
 function safeDecodeURIComponent(value: string): string {

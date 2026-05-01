@@ -53,7 +53,15 @@ OTTE_S3_REGION=us-east-1
 OTTE_S3_ACCESS_KEY_ID=opentabletop
 OTTE_S3_SECRET_ACCESS_KEY=opentabletop-dev
 OTTE_S3_FORCE_PATH_STYLE=true
+OTTE_ASSET_QUOTA_BYTES=1073741824
+OTTE_ASSET_RETENTION_DAYS=30
+OTTE_ASSET_CDN_BASE_URL=https://assets.example.com
+OTTE_ASSET_URL_SIGNING_SECRET=replace-with-random-secret
+OTTE_ASSET_URL_TTL_SECONDS=300
+OTTE_ASSET_URL_MAX_TTL_SECONDS=3600
 ```
+
+`OTTE_ASSET_QUOTA_BYTES` applies per campaign to active and archived assets. `OTTE_ASSET_RETENTION_DAYS` assigns a default asset expiry when new assets are created. Set `OTTE_ASSET_CDN_BASE_URL` when a CDN fronts the API blob route; signed delivery URLs use that base URL and require `OTTE_ASSET_URL_SIGNING_SECRET` in production. Campaign owners can inspect campaign usage at `/api/v1/campaigns/{campaignId}/assets/storage`, request signed delivery at `/api/v1/assets/{assetId}/delivery-url`, and archive or delete assets through `/api/v1/assets/{assetId}/lifecycle`. Server admins can inspect global usage at `/api/v1/admin/assets/storage`.
 
 For local development without Docker:
 
@@ -99,4 +107,14 @@ curl -X POST \
   -H "x-asset-name: vault.png" \
   --data-binary @vault.png \
   "http://localhost:4000/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true"
+```
+
+Signed asset delivery for CDN or browser contexts:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"expiresInSeconds":300,"disposition":"inline"}' \
+  "http://localhost:4000/api/v1/assets/asset_.../delivery-url"
 ```

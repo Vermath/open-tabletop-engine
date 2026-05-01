@@ -523,12 +523,42 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Admin email outbox returned two delivered webhook messages, one for GM and one for player.
   - SQLite inspection showed reset tokens and session tokens stored as `sha256:` hashes, no raw reset token field on reset records, two email outbox rows, and the GM password stored as a `scrypt:` hash.
 
+### Production Asset Delivery Slice
+
+- Implementation:
+  - Added per-campaign asset quota enforcement through `OTTE_ASSET_QUOTA_BYTES`.
+  - Added asset lifecycle metadata with `active`, `archived`, and `deleted` states, optional default retention through `OTTE_ASSET_RETENTION_DAYS`, and `410` blob responses for deleted or expired assets.
+  - Added signed asset delivery URLs for bearer-free CDN/browser fetches, with configurable CDN base URL, HMAC secret, default TTL, and max TTL.
+  - Added campaign storage stats and server-admin global storage stats, including used bytes, all bytes, provider counts, and lifecycle counts.
+  - Added Docker Compose and `.env.example` passthrough for quota, retention, CDN base URL, signing secret, and signed URL TTL settings.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api-contracts build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `26 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API tests cover signed CDN URL generation with path-prefix preservation, unauthenticated signed blob fetches, attachment delivery headers, invalid metadata rejection, invalid signature rejection, campaign quota rejection, lifecycle deletion, deleted-asset blob `410`, campaign storage stats, and admin global storage stats.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4440`
+  - SQLite file: `storage/manual-asset-delivery-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, `OTTE_ASSET_CDN_BASE_URL=http://127.0.0.1:4440`, `OTTE_ASSET_URL_SIGNING_SECRET=manual-asset-secret`, `OTTE_ASSET_QUOTA_BYTES=64`, `OTTE_ASSET_RETENTION_DAYS=14`, `OTTE_ASSET_URL_TTL_SECONDS=120`, and `OTTE_ASSET_URL_MAX_TTL_SECONDS=600`.
+  - GM bearer login returned `200`.
+  - Asset upload created `asset_mon0yupf3nbwtmcc` with 21 bytes, lifecycle `active`, and a retention expiry.
+  - Campaign storage stats returned `usedBytes: 21`, `quotaBytes: 64`, `lifecycleCounts.active: 1`, and `providerCounts.local: 1`.
+  - Signed delivery URL generation returned `delivery: cdn`, host `127.0.0.1:4440`, and `ttlSeconds: 180`.
+  - Fetching the signed blob without bearer auth returned `200`, body `manual-asset-delivery`, public cache headers, and attachment disposition.
+  - A tampered signature returned `401`.
+  - A second upload that would exceed the 64-byte quota returned `413` with `asset_quota_exceeded`.
+  - Lifecycle deletion returned `200`, recorded `updatedByUserId: usr_demo_gm`, and the original signed blob URL then returned `410`.
+  - Post-delete campaign and admin storage stats both returned `usedBytes: 0`, `allBytes: 21`, `lifecycleCounts.deleted: 1`, and `providerCounts.local: 1`.
+  - SQLite inspection of `engine_records` showed the asset lifecycle persisted with `status: deleted` and reason `manual acceptance cleanup`.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, account administration, production session administration, and a disabled-by-default legacy `x-user-id` fallback. Broader production identity work still needs first-class reset UI, MFA, SCIM/organization sync, and audit export.
-- Uploaded maps now support local and S3/MinIO-backed storage, including archive export/import through the active provider. Production storage work still needs lifecycle policies, migration tooling, and CDN/presigned delivery.
+- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, and storage stats. Production storage work still needs migration tooling, automated object cleanup jobs, CDN edge configuration, and malware/content scanning.
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.

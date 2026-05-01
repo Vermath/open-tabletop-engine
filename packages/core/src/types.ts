@@ -162,12 +162,21 @@ export interface MapAsset extends Timestamps {
   sizeBytes: number;
   checksum?: string;
   storage?: AssetStorageRef;
+  lifecycle?: AssetLifecycle;
 }
 
 export interface AssetStorageRef {
   provider: "local" | "s3";
   key: string;
   bucket?: string;
+}
+
+export interface AssetLifecycle {
+  status: "active" | "archived" | "deleted";
+  expiresAt?: string;
+  updatedAt?: string;
+  updatedByUserId?: ID;
+  reason?: string;
 }
 
 export interface Token extends Timestamps {
