@@ -115,7 +115,7 @@ Open the browser client at the configured web URL, for example `http://127.0.0.1
 | Auth/session handling and REST/realtime/blob permissions | `3ce9a8d feat: add durable bearer sessions`; browser/API bearer evidence; API tests for login, logout, restart-safe token lookup, no-token `401`, and session-token blob/realtime access. |
 | Campaigns, scenes, maps/assets, tokens, dice, chat, actors, sheets, journals, combat, fog/walls/lights | Verified milestone evidence for uploaded maps, GM/player session switching, hidden-token filtering, fog/vision filtering, token movement ownership, fog/wall/light authoring, dice/chat/API tests, actor sheet UI, journal visibility tests, and combat UI/API in `docs/verification/mvp-progress.md`. |
 | Realtime movement across two browser sessions | `3a3e81a feat: add plugin and system runtimes` and `3db3da6 feat: add demo player session switching` manual browser evidence both verify second-client realtime token movement. |
-| Export/import round-trips campaign data and uploaded assets | `6d9e56c feat: round trip campaign archives` and `7b73c10 feat: archive uploaded asset files`; tests and manual source/target API evidence verify scenes, tokens, actors, journals, encounters, permissions, assets, and uploaded blob restoration. |
+| Export/import round-trips campaign data and uploaded assets | `6d9e56c feat: round trip campaign archives`, `7b73c10 feat: archive uploaded asset files`, and `a08b7ce feat: back assets with s3 storage`; tests and manual source/target API evidence verify scenes, tokens, actors, journals, encounters, permissions, assets, local uploaded blob restoration, and S3/MinIO uploaded blob restoration. |
 | Plugin runtime behavior with permission boundaries | `3a3e81a feat: add plugin and system runtimes`; tests verify install permission, plugin grants, blocked command without grant, and `/spark` chat after permission grant; browser evidence verifies install and command execution. |
 | System runtime behavior with permission boundaries | `3a3e81a feat: add plugin and system runtimes`; tests and browser evidence verify Generic Fantasy sheet summary, system roll permission, and chat-posted roll. |
 | AI provider config, Codex adapter behavior, encounter designer, recap, memory extraction, approval queue, and proposal application | `e37b252`, `df807e8`, `d86ed8b`, and `5eb9aae`; tests and manual evidence cover provider selection, permission-filtered context, Codex loopback proposal tool, encounter/recap proposal approval and application, queued memory approval, and provider-backed memory extraction. |
@@ -127,7 +127,7 @@ Open the browser client at the configured web URL, for example `http://127.0.0.1
 These are intentionally not counted as blockers for the current PRD MVP acceptance:
 
 - Password login, OAuth, invites, account administration, and production session administration.
-- S3/MinIO-backed asset persistence in the API; the MVP uses durable local upload files and archives them.
+- Asset storage lifecycle policies, migration tooling, CDN delivery, and presigned URL flows beyond the verified local and S3/MinIO storage backends.
 - Advanced polygon line-of-sight, dynamic fog tools, colored lighting, terrain walls, and production-grade vision rendering.
 - Sandboxed third-party plugin module loading; the MVP verifies a permissioned sample plugin runtime path.
 - A complete rules engine for every game system; the MVP verifies a Generic Fantasy system module with sheets and rolls.
