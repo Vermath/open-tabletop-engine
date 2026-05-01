@@ -15,6 +15,10 @@ export interface LoadedPlugin extends PluginManifest {
     sandbox: "vm" | "manifest-only";
     checksum?: string;
   };
+  distribution: {
+    availableVersions: string[];
+    latestVersion: string;
+  };
   permissionReview: {
     requestedPermissions: PermissionName[];
     grantRequired: boolean;
@@ -79,7 +83,7 @@ export class PluginPackageError extends Error {
 export class PluginRuntimeRegistry {
   readonly pluginRoot: string;
   readonly errors: PluginLoadError[] = [];
-  private readonly plugins = new Map<string, RuntimePlugin>();
+  private readonly plugins = new Map<string, RuntimePlugin[]>();
   private readonly runtimes = new Map<string, SandboxedPluginRuntime>();
 
   constructor(pluginRoot = defaultPluginRoot()) {
@@ -92,18 +96,20 @@ export class PluginRuntimeRegistry {
       if (!entry.isDirectory()) continue;
       if (!existsSync(resolve(this.pluginRoot, entry.name, "plugin.manifest.json"))) continue;
       const result = loadPluginPackage(this.pluginRoot, resolve(this.pluginRoot, entry.name));
-      if (result.plugin) this.plugins.set(result.plugin.id, result.plugin);
+      if (result.plugin) this.upsertPlugin(result.plugin);
       if (result.error) this.errors.push(result.error);
     }
   }
 
   list(): LoadedPlugin[] {
-    return [...this.plugins.values()].map(publicPlugin);
+    return [...this.plugins.values()].map((versions) => publicPlugin(latestPluginVersion(versions), versions));
   }
 
-  find(pluginId: string): LoadedPlugin | undefined {
-    const plugin = this.plugins.get(pluginId);
-    return plugin ? publicPlugin(plugin) : undefined;
+  find(pluginId: string, version?: string): LoadedPlugin | undefined {
+    const versions = this.plugins.get(pluginId);
+    if (!versions?.length) return undefined;
+    const plugin = version ? versions.find((item) => item.version === version) : latestPluginVersion(versions);
+    return plugin ? publicPlugin(plugin, versions) : undefined;
   }
 
   registerPackage(packagePath: string): LoadedPlugin {
@@ -113,13 +119,14 @@ export class PluginRuntimeRegistry {
       throw new PluginPackageError(`Invalid plugin package: ${packagePath}`, result.error.errors);
     }
     const plugin = result.plugin!;
-    this.plugins.set(plugin.id, plugin);
-    this.runtimes.delete(plugin.id);
-    return publicPlugin(plugin);
+    this.upsertPlugin(plugin);
+    this.runtimes.delete(runtimeKey(plugin.id, plugin.version));
+    return publicPlugin(plugin, this.plugins.get(plugin.id) ?? [plugin]);
   }
 
-  executeChatCommand(pluginId: string, input: PluginChatCommandInput): PluginChatCommandResult {
-    const plugin = this.plugins.get(pluginId);
+  executeChatCommand(pluginId: string, input: PluginChatCommandInput, version?: string): PluginChatCommandResult {
+    const versions = this.plugins.get(pluginId);
+    const plugin = version ? versions?.find((item) => item.version === version) : versions ? latestPluginVersion(versions) : undefined;
     if (!plugin) throw new PluginPackageError("Plugin not found", ["Plugin not found"]);
     if (!plugin.resolvedServerEntrypoint) {
       return {
@@ -131,11 +138,21 @@ export class PluginRuntimeRegistry {
     return runtime.execute(input.command, input);
   }
 
+  private upsertPlugin(plugin: RuntimePlugin): void {
+    const versions = this.plugins.get(plugin.id) ?? [];
+    const existingIndex = versions.findIndex((item) => item.version === plugin.version);
+    if (existingIndex >= 0) versions[existingIndex] = plugin;
+    else versions.push(plugin);
+    versions.sort(comparePluginsByVersion);
+    this.plugins.set(plugin.id, versions);
+  }
+
   private runtimeFor(plugin: RuntimePlugin): SandboxedPluginRuntime {
-    const existing = this.runtimes.get(plugin.id);
+    const key = runtimeKey(plugin.id, plugin.version);
+    const existing = this.runtimes.get(key);
     if (existing) return existing;
     const runtime = new SandboxedPluginRuntime(plugin);
-    this.runtimes.set(plugin.id, runtime);
+    this.runtimes.set(key, runtime);
     return runtime;
   }
 }
@@ -179,6 +196,10 @@ function loadPluginPackage(pluginRoot: string, packagePath: string): PluginPacka
       serverEntrypoint: serverEntrypoint ? normalizePublicPath(pluginRoot, serverEntrypoint) : undefined,
       sandbox: serverEntrypoint ? "vm" : "manifest-only",
       checksum: source ? `sha256:${createHash("sha256").update(source).digest("hex")}` : undefined
+    },
+    distribution: {
+      availableVersions: [manifest.version],
+      latestVersion: manifest.version
     },
     permissionReview: {
       requestedPermissions: [...manifest.permissions],
@@ -285,7 +306,8 @@ function isPathInside(parent: string, child: string): boolean {
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
 }
 
-function publicPlugin(plugin: RuntimePlugin): LoadedPlugin {
+function publicPlugin(plugin: RuntimePlugin, versions: RuntimePlugin[]): LoadedPlugin {
+  const availableVersions = versions.map((item) => item.version).sort(compareSemverDescending);
   return {
     id: plugin.id,
     name: plugin.name,
@@ -298,11 +320,42 @@ function publicPlugin(plugin: RuntimePlugin): LoadedPlugin {
     ui: plugin.ui,
     chatCommands: plugin.chatCommands,
     source: { ...plugin.source },
+    distribution: {
+      availableVersions,
+      latestVersion: availableVersions[0] ?? plugin.version
+    },
     permissionReview: {
       requestedPermissions: [...plugin.permissionReview.requestedPermissions],
       grantRequired: plugin.permissionReview.grantRequired
     }
   };
+}
+
+function latestPluginVersion(versions: RuntimePlugin[]): RuntimePlugin {
+  return versions[0]!;
+}
+
+function comparePluginsByVersion(left: RuntimePlugin, right: RuntimePlugin): number {
+  return compareSemverDescending(left.version, right.version);
+}
+
+function compareSemverDescending(left: string, right: string): number {
+  const leftParts = semverParts(left);
+  const rightParts = semverParts(right);
+  for (let index = 0; index < 3; index++) {
+    const diff = rightParts[index]! - leftParts[index]!;
+    if (diff !== 0) return diff;
+  }
+  return right.localeCompare(left);
+}
+
+function semverParts(version: string): [number, number, number] {
+  const [major = "0", minor = "0", patch = "0"] = version.split(".", 3);
+  return [Number.parseInt(major, 10) || 0, Number.parseInt(minor, 10) || 0, Number.parseInt(patch, 10) || 0];
+}
+
+function runtimeKey(pluginId: string, version: string): string {
+  return `${pluginId}@${version}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

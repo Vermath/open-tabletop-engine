@@ -42,6 +42,25 @@ function sendJson(response: ServerResponse, body: unknown): void {
   response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
 }
 
+function writeVersionedPluginPackage(pluginRoot: string, packageId: string, pluginId: string, version: string, body: string): void {
+  const packagePath = join(pluginRoot, packageId);
+  mkdirSync(packagePath);
+  writeFileSync(
+    join(packagePath, "plugin.manifest.json"),
+    JSON.stringify({
+      id: pluginId,
+      name: "Versioned Plugin",
+      version,
+      compatibleCore: ">=0.1.0",
+      entrypoints: { server: "./server.js" },
+      runtime: { apiVersion: "0.1", sandbox: "vm" },
+      permissions: ["chat.write"],
+      chatCommands: [{ command: "/version", description: "Report the installed plugin version" }]
+    })
+  );
+  writeFileSync(join(packagePath, "server.js"), `registerCommand("/version", () => ({ body: ${JSON.stringify(body)}, visibility: "public" }));`);
+}
+
 async function readRequestBody(request: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -2040,6 +2059,92 @@ describe("api", () => {
     expect(conditionedRoll.json().quickRoll.formula).toBe("1d20+2+1d4");
 
     await app.close();
+  });
+
+  it("installs, upgrades, and rolls back versioned plugin packages", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-api-"));
+    try {
+      writeVersionedPluginPackage(pluginRoot, "versioned-plugin-1", "versioned-plugin", "1.0.0", "Version 1 macro");
+      writeVersionedPluginPackage(pluginRoot, "versioned-plugin-2", "versioned-plugin", "2.0.0", "Version 2 macro");
+      const store = new MemoryStateStore();
+      const app = await buildApp({ store, pluginRoot });
+
+      const catalog = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins",
+        headers: authHeaders
+      });
+      expect(catalog.statusCode).toBe(200);
+      expect(catalog.json()).toEqual([
+        expect.objectContaining({
+          id: "versioned-plugin",
+          version: "2.0.0",
+          installed: false,
+          distribution: { availableVersions: ["2.0.0", "1.0.0"], latestVersion: "2.0.0" }
+        })
+      ]);
+
+      const installOld = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/install",
+        headers: authHeaders,
+        payload: { version: "1.0.0", permissions: ["chat.write"] }
+      });
+      expect(installOld.statusCode).toBe(200);
+      expect(installOld.json().plugin).toEqual(expect.objectContaining({ version: "1.0.0", installedVersion: "1.0.0", updateAvailable: true, rollbackVersions: ["2.0.0"] }));
+      expect(store.state.permissionGrants.find((grant) => grant.subjectId === "versioned-plugin")?.metadata).toEqual(
+        expect.objectContaining({ packageId: "versioned-plugin-1", version: "1.0.0", checksum: expect.stringMatching(/^sha256:/) })
+      );
+
+      const oldCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(oldCommand.statusCode).toBe(200);
+      expect(oldCommand.json().chat.body).toBe("Version 1 macro");
+
+      const installLatest = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/install",
+        headers: authHeaders,
+        payload: { version: "2.0.0", permissions: ["chat.write"] }
+      });
+      expect(installLatest.statusCode).toBe(200);
+      expect(installLatest.json().plugin).toEqual(expect.objectContaining({ version: "2.0.0", installedVersion: "2.0.0", updateAvailable: false, rollbackVersions: ["1.0.0"] }));
+
+      const latestCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(latestCommand.statusCode).toBe(200);
+      expect(latestCommand.json().chat.body).toBe("Version 2 macro");
+
+      const rollback = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/install",
+        headers: authHeaders,
+        payload: { version: "1.0.0", permissions: ["chat.write"] }
+      });
+      expect(rollback.statusCode).toBe(200);
+      expect(rollback.json().plugin).toEqual(expect.objectContaining({ version: "1.0.0", installedVersion: "1.0.0", updateAvailable: true, rollbackVersions: ["2.0.0"] }));
+
+      const rolledBackCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(rolledBackCommand.statusCode).toBe(200);
+      expect(rolledBackCommand.json().chat.body).toBe("Version 1 macro");
+
+      await app.close();
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
   });
 
   it("passes only caller-visible campaign context to ai providers", async () => {

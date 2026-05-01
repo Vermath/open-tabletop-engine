@@ -780,6 +780,36 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/plugin-sandbox-gm.png`.
   - Browser console had no app runtime errors; it showed the existing missing `favicon.ico` 404, React DevTools info message, and an autocomplete advisory.
 
+### Plugin Version Distribution Slice
+
+- Implementation:
+  - Extended the plugin runtime registry to keep multiple installed package versions for one plugin id and return the latest version by default.
+  - Added catalog distribution metadata with `availableVersions` and `latestVersion` so clients can present upgrade and rollback options.
+  - Added install-time version selection through `POST /api/v1/campaigns/:campaignId/plugins/:pluginId/install`.
+  - Persisted installed plugin package id, version, checksum, and install timestamp in permission grant metadata.
+  - Changed chat-command execution to run the installed grant version, so upgrading or rolling back a campaign changes the sandbox code that executes.
+  - Exposed `installedVersion`, `updateAvailable`, and `rollbackVersions` in campaign plugin responses and web API types.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/core typecheck` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `44 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - Plugin runtime tests verify two package directories with one manifest id are exposed as one plugin with versions `2.0.0` and `1.0.0`, and that explicit command execution can run either version.
+  - API tests verify catalog distribution metadata, install of version `1.0.0`, command output from version `1.0.0`, upgrade to `2.0.0`, command output from version `2.0.0`, rollback to `1.0.0`, and command output from the rolled-back package.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4462`
+  - SQLite file: `apps/api/storage/manual-plugin-versioning-20260501.sqlite`
+  - Plugin root: `apps/api/storage/manual-plugin-versioning-plugins-20260501`
+  - Catalog returned one `versioned-plugin` entry at version `2.0.0`, `installed: false`, `availableVersions: ["2.0.0","1.0.0"]`, and `latestVersion: "2.0.0"`.
+  - Installing version `1.0.0` returned `installedVersion: "1.0.0"`, `updateAvailable: true`, `rollbackVersions: ["2.0.0"]`, grant metadata package `versioned-plugin-1`, version `1.0.0`, and a `sha256:` checksum.
+  - `/version` produced chat body `Manual Version 1 macro`.
+  - Upgrading to version `2.0.0` returned `installedVersion: "2.0.0"`, `updateAvailable: false`, `rollbackVersions: ["1.0.0"]`, grant metadata package `versioned-plugin-2`, version `2.0.0`, and a different `sha256:` checksum.
+  - `/version` produced chat body `Manual Version 2 macro`.
+  - Rolling back to version `1.0.0` restored grant metadata package `versioned-plugin-1` and `/version` again produced `Manual Version 1 macro`.
+  - API server on port `4462` was stopped after evidence capture; no listener remained.
+
 ### Rules Compendium And Conditions Slice
 
 - Implementation:
@@ -1063,6 +1093,6 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
-- Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
+- Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
-- AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

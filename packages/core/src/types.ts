@@ -541,6 +541,7 @@ export interface PermissionGrant extends Timestamps {
   campaignId: ID;
   permissions: PermissionName[];
   expiresAt?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface CampaignArchive {

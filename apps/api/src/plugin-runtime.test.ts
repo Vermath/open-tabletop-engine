@@ -69,6 +69,42 @@ registerCommand("/probe", () => {
     }
   });
 
+  it("tracks multiple package versions and executes the requested installed version", () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(pluginRoot, "versioned-plugin-1", `registerCommand("/version", () => ({ body: "Version 1", visibility: "public" }));`, {
+        manifestId: "versioned-plugin",
+        version: "1.0.0",
+        command: "/version"
+      });
+      writePluginPackage(pluginRoot, "versioned-plugin-2", `registerCommand("/version", () => ({ body: "Version 2", visibility: "public" }));`, {
+        manifestId: "versioned-plugin",
+        version: "2.0.0",
+        command: "/version"
+      });
+
+      const registry = loadPluginRegistry({ pluginRoot });
+      const latest = registry.find("versioned-plugin");
+      const older = registry.find("versioned-plugin", "1.0.0");
+
+      expect(registry.errors).toEqual([]);
+      expect(registry.list().map((plugin) => plugin.id)).toEqual(["versioned-plugin"]);
+      expect(latest).toEqual(
+        expect.objectContaining({
+          id: "versioned-plugin",
+          version: "2.0.0",
+          source: expect.objectContaining({ packageId: "versioned-plugin-2" }),
+          distribution: { availableVersions: ["2.0.0", "1.0.0"], latestVersion: "2.0.0" }
+        })
+      );
+      expect(older).toEqual(expect.objectContaining({ version: "1.0.0", source: expect.objectContaining({ packageId: "versioned-plugin-1" }) }));
+      expect(registry.executeChatCommand("versioned-plugin", { ...sandboxInput(), pluginId: "versioned-plugin", command: "/version" }, "1.0.0").body).toBe("Version 1");
+      expect(registry.executeChatCommand("versioned-plugin", { ...sandboxInput(), pluginId: "versioned-plugin", command: "/version" }, "2.0.0").body).toBe("Version 2");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("rejects server entrypoints that escape the plugin package", () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
     try {
@@ -100,20 +136,26 @@ registerCommand("/probe", () => {
   });
 });
 
-function writePluginPackage(pluginRoot: string, pluginId: string, serverSource: string): void {
-  const packagePath = resolve(pluginRoot, pluginId);
+function writePluginPackage(
+  pluginRoot: string,
+  packageId: string,
+  serverSource: string,
+  options: { manifestId?: string; version?: string; command?: string } = {}
+): void {
+  const packagePath = resolve(pluginRoot, packageId);
+  const command = options.command ?? "/probe";
   mkdirSync(packagePath);
   writeFileSync(
     join(packagePath, "plugin.manifest.json"),
     JSON.stringify({
-      id: pluginId,
+      id: options.manifestId ?? packageId,
       name: "Sandbox Probe",
-      version: "1.0.0",
+      version: options.version ?? "1.0.0",
       compatibleCore: ">=0.1.0",
       entrypoints: { server: "./server.js" },
       runtime: { apiVersion: "0.1", sandbox: "vm" },
       permissions: ["chat.write"],
-      chatCommands: [{ command: "/probe", description: "Probe sandbox behavior" }]
+      chatCommands: [{ command, description: "Probe sandbox behavior" }]
     })
   );
   writeFileSync(join(packagePath, "server.js"), serverSource);

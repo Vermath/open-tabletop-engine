@@ -252,11 +252,18 @@ export interface PluginRuntimeInfo {
   installed: boolean;
   grantedPermissions: string[];
   missingPermissions: string[];
+  installedVersion?: string;
+  updateAvailable: boolean;
+  rollbackVersions: string[];
   source?: {
     type: string;
     packageId: string;
     sandbox: string;
     checksum?: string;
+  };
+  distribution: {
+    availableVersions: string[];
+    latestVersion: string;
   };
   permissionReview?: {
     requestedPermissions: string[];

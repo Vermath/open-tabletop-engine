@@ -2237,31 +2237,32 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/plugins", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return pluginRegistry.list().map((plugin) => pluginCampaignInfo(store, request.params.campaignId, plugin));
+    return pluginRegistry.list().map((plugin) => pluginCampaignInfo(store, pluginRegistry, request.params.campaignId, plugin));
   });
 
   app.post<{
     Params: { campaignId: string; pluginId: string };
-    Body: { permissions?: PermissionName[] };
+    Body: { permissions?: PermissionName[]; version?: string };
   }>("/api/v1/campaigns/:campaignId/plugins/:pluginId/install", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "plugin.install");
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const plugin = pluginRegistry.find(request.params.pluginId);
+    const plugin = pluginRegistry.find(request.params.pluginId, request.body?.version);
     if (!plugin) return notFound(reply, "Plugin not found");
     const permissions = reviewedPluginPermissions(plugin, request.body?.permissions);
     if (!permissions) return badRequest(reply, "Plugin grant permissions must be a subset of the plugin manifest permissions");
     const existing = findPluginGrant(store, request.params.campaignId, plugin.id);
-    const grant =
+    const grant: PermissionGrant =
       existing ??
-      (createTimestamped("grant", {
+      createTimestamped("grant", {
         subjectType: "plugin" as const,
         subjectId: plugin.id,
         campaignId: request.params.campaignId,
         permissions
-      }) satisfies PermissionGrant);
+      });
     grant.permissions = permissions;
+    grant.metadata = pluginInstallMetadata(plugin);
     grant.updatedAt = nowIso();
     if (!existing) store.state.permissionGrants.push(grant);
     store.state.auditLogs.push(
@@ -2277,13 +2278,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           grantedPermissions: grant.permissions,
           missingPermissions: plugin.permissions.filter((permission) => !grant.permissions.includes(permission)),
           packageId: plugin.source.packageId,
-          sandbox: plugin.source.sandbox
+          sandbox: plugin.source.sandbox,
+          version: plugin.version,
+          checksum: plugin.source.checksum
         }
       })
     );
     store.save();
     return {
-      plugin: pluginCampaignInfo(store, request.params.campaignId, plugin),
+      plugin: pluginCampaignInfo(store, pluginRegistry, request.params.campaignId, plugin),
       grant,
       permissionReview: {
         requestedPermissions: plugin.permissions,
@@ -2301,7 +2304,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const plugin = pluginRegistry.find(request.params.pluginId);
+    const pluginGrant = findPluginGrant(store, request.params.campaignId, request.params.pluginId);
+    const plugin = pluginRegistry.find(request.params.pluginId, pluginVersionFromGrant(pluginGrant));
     if (!plugin) return notFound(reply, "Plugin not found");
     const command = request.body.command.startsWith("/") ? request.body.command : `/${request.body.command}`;
     if (!plugin.chatCommands?.some((item) => item.command === command)) return notFound(reply, "Plugin command not found");
@@ -2319,9 +2323,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         userId,
         command,
         args: request.body.args?.trim() ?? "",
-        permissions: findPluginGrant(store, request.params.campaignId, plugin.id)?.permissions ?? [],
+        permissions: pluginGrant?.permissions ?? [],
         tokens
-      });
+      }, plugin.version);
     } catch (error) {
       return reply.code(500).send({
         error: "plugin_runtime_error",
@@ -2345,7 +2349,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         action: "plugin.chatCommand",
         targetType: "chat",
         targetId: message.id,
-        after: { pluginId: plugin.id, command, sandbox: plugin.source.sandbox, packageId: plugin.source.packageId }
+        after: { pluginId: plugin.id, command, sandbox: plugin.source.sandbox, packageId: plugin.source.packageId, version: plugin.version, checksum: plugin.source.checksum }
       })
     );
     store.save();
@@ -5051,13 +5055,27 @@ function pluginCan(store: StateStore, campaignId: string, pluginId: string, perm
   return findPluginGrant(store, campaignId, pluginId)?.permissions.includes(permission) ?? false;
 }
 
-function pluginCampaignInfo(store: StateStore, campaignId: string, plugin: LoadedPlugin): LoadedPlugin & { installed: boolean; grantedPermissions: PermissionName[]; missingPermissions: PermissionName[] } {
+function pluginCampaignInfo(
+  store: StateStore,
+  pluginRegistry: PluginRuntimeRegistry,
+  campaignId: string,
+  plugin: LoadedPlugin
+): LoadedPlugin & { installed: boolean; grantedPermissions: PermissionName[]; missingPermissions: PermissionName[]; installedVersion?: string; updateAvailable: boolean; rollbackVersions: string[] } {
   const grant = findPluginGrant(store, campaignId, plugin.id);
+  const installedVersion = pluginVersionFromGrant(grant);
+  const installedPlugin = installedVersion ? pluginRegistry.find(plugin.id, installedVersion) : undefined;
+  const displayPlugin = installedPlugin ?? plugin;
+  const latestVersion = plugin.distribution.latestVersion;
+  const availableVersions = plugin.distribution.availableVersions;
   return {
-    ...plugin,
+    ...displayPlugin,
+    distribution: plugin.distribution,
     installed: Boolean(grant),
     grantedPermissions: grant?.permissions ?? [],
-    missingPermissions: plugin.permissions.filter((permission) => !grant?.permissions.includes(permission))
+    missingPermissions: displayPlugin.permissions.filter((permission) => !grant?.permissions.includes(permission)),
+    installedVersion,
+    updateAvailable: Boolean(grant && installedVersion && installedVersion !== latestVersion),
+    rollbackVersions: grant ? availableVersions.filter((version) => version !== installedVersion) : []
   };
 }
 
@@ -5066,6 +5084,21 @@ function reviewedPluginPermissions(plugin: LoadedPlugin, requestedPermissions?: 
   const uniquePermissions = [...new Set(requestedPermissions)];
   if (uniquePermissions.some((permission) => !plugin.permissions.includes(permission))) return undefined;
   return uniquePermissions;
+}
+
+function pluginInstallMetadata(plugin: LoadedPlugin): Record<string, unknown> {
+  return {
+    packageId: plugin.source.packageId,
+    version: plugin.version,
+    checksum: plugin.source.checksum,
+    installedAt: nowIso()
+  };
+}
+
+function pluginVersionFromGrant(grant: PermissionGrant | undefined): string | undefined {
+  const metadata = grant?.metadata;
+  if (!isRecord(metadata)) return undefined;
+  return typeof metadata.version === "string" ? metadata.version : undefined;
 }
 
 function findSystemActor(store: StateStore, campaignId: string, systemId: string, actorId: string): Actor | undefined {
