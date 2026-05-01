@@ -942,6 +942,38 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Running `signed-plugin` `/version` produced chat body `Signed trust macro`.
   - API server on port `4463` was stopped after evidence capture; no listener remained.
 
+### Remote Plugin Registry Sync Slice
+
+- Implementation:
+  - Added `OTTE_PLUGIN_REGISTRY_URLS` as a comma-separated allowlist of remote plugin registry catalog URLs and `OTTE_PLUGIN_REGISTRY_TIMEOUT_MS` for registry fetch timeouts.
+  - Added `POST /api/v1/plugins/registry/sync` so GMs with `plugin.install` can sync an allowlisted registry into the configured plugin root.
+  - Registry catalogs contain plugin package entries with `packageId`, `packageUrl` or `downloadUrl`, and optional `sha256:` package checksum; downloaded package documents contain a `files` object with `plugin.manifest.json`, entrypoints, and optional `plugin.signature.json`.
+  - Synced packages are written under the configured plugin root with traversal-safe package ids and file paths, mirrored registry provenance in `plugin.registry.json`, and loaded through the existing manifest validation, path containment, versioning, VM sandbox, permission review, and trust-policy checks.
+  - Registry sync refuses to overwrite existing local plugin package directories that do not already carry matching registry provenance.
+  - Plugin catalog source metadata now distinguishes local packages from registry-synced packages and exposes registry URL, package URL, package checksum, and sync timestamp.
+  - Registry sync writes a `plugin.registrySync` audit log containing imported plugin versions and per-registry errors.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `58 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - `git diff --check` passed with only LF-to-CRLF warnings.
+  - API tests verify allowlisted registry sync, remote package checksum verification, registry source metadata, registry-synced catalog visibility, install metadata, command execution through the sandboxed server entrypoint, and registry sync audit logs.
+  - Plugin runtime tests verify remote registry sync refuses to overwrite an existing local package without registry provenance.
+- Manual API evidence:
+  - API: `http://127.0.0.1:55132`
+  - Registry catalog: `http://127.0.0.1:55131/catalog.json`
+  - SQLite file: `apps/api/storage/manual-plugin-registry-20260501.sqlite`
+  - Plugin root: `apps/api/storage/manual-plugin-registry-plugins-20260501`
+  - Runtime env included `NODE_ENV=production`, `OTTE_PLUGIN_DIR=apps/api/storage/manual-plugin-registry-plugins-20260501`, `OTTE_PLUGIN_REGISTRY_URLS=http://127.0.0.1:55131/catalog.json`, `OTTE_PLUGIN_REGISTRY_TIMEOUT_MS=2000`, and `OTTE_ADMIN_USER_IDS=usr_demo_gm`.
+  - GM bearer login returned `200`.
+  - Registry sync returned `200`, imported `manual-remote-plugin@1.0.0`, reported source `type: registry`, package `manual-remote-plugin-1`, registry URL, package URL, package checksum `sha256:6ffcca1a6eb46d0966da92615d055e2e9b4f288fb4a464871f3c95240bb9d9e4`, manifest checksum, server checksum, and no errors.
+  - Campaign plugin catalog returned `manual-remote-plugin` with `installed: false`, `source.type: registry`, `distribution.latestVersion: "1.0.0"`, and `trust.status: unsigned` with `installable: true` under `allow_unsigned`.
+  - Installing the synced plugin returned `200`, `installedVersion: "1.0.0"`, and grant metadata package `manual-remote-plugin-1`.
+  - Running `/remote` returned plugin chat body `Manual remote registry macro`.
+  - The mirrored package directory contained `plugin.manifest.json`, `server.js`, and `plugin.registry.json`; registry metadata persisted the registry URL, package URL, package checksum, and sync timestamp.
+  - SQLite inspection of `auditLogs` showed `plugin.registrySync` with imported `manual-remote-plugin@1.0.0` and no registry errors.
+  - API server on port `55132` and registry server on port `55131` were stopped after evidence capture; no listeners remained.
+
 ### Rules Compendium And Conditions Slice
 
 - Implementation:
@@ -1417,6 +1449,6 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, built-in upload security scanning, and external AV/trust scanner webhooks before storage writes. Higher-assurance hosting may still need provider-specific compliance artifacts and operational certifications outside the app.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
-- Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
+- Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, and browser/API acceptance evidence. Remaining plugin-platform work is richer storage APIs and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, item/spell action formulas, character templates, guided level advancement, character import normalization, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, gear/talent action formulas, system activation, conditions, character templates, guided rank advancement, character import normalization, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, and broader SRD-scale automation across more systems.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

@@ -2443,6 +2443,49 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       throw error;
     }
   });
+
+  app.post<{
+    Body: { campaignId?: string; registryUrl?: string };
+  }>("/api/v1/plugins/registry/sync", async (request, reply) => {
+    const body = request.body ?? {};
+    const configuredRegistries = configuredPluginRegistryUrls();
+    if (!configuredRegistries.length) return badRequest(reply, "No plugin registries are configured");
+    const requestedRegistry = body.registryUrl ? normalizeConfiguredPluginRegistryUrl(body.registryUrl) : undefined;
+    if (body.registryUrl && !requestedRegistry) return badRequest(reply, "Plugin registryUrl must be a valid http or https URL");
+    if (requestedRegistry && !configuredRegistries.includes(requestedRegistry)) return forbidden(reply, "Plugin registryUrl is not configured for this server");
+    const campaignId = body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(store, request.headers))?.campaignId;
+    if (!campaignId) return forbidden(reply, "Plugin registry sync requires a campaign context");
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "plugin.install");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const registryUrls = requestedRegistry ? [requestedRegistry] : configuredRegistries;
+    const registries = [];
+    for (const registryUrl of registryUrls) registries.push(await pluginRegistry.syncRemoteRegistry(registryUrl));
+    const imported = registries.flatMap((registry) => registry.imported);
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "plugin.registrySync",
+        targetType: "plugin",
+        after: {
+          registries: registries.map((registry) => ({
+            registryUrl: registry.registryUrl,
+            imported: registry.imported.map((plugin) => `${plugin.id}@${plugin.version}`),
+            errors: registry.errors
+          }))
+        }
+      })
+    );
+    store.save();
+    return {
+      syncedAt: nowIso(),
+      registries,
+      plugins: imported
+    };
+  });
   app.get("/api/v1/systems", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
@@ -5367,6 +5410,26 @@ function pluginInstallMetadata(plugin: LoadedPlugin): Record<string, unknown> {
     trust: plugin.trust,
     installedAt: nowIso()
   };
+}
+
+function configuredPluginRegistryUrls(): string[] {
+  const urls = (process.env.OTTE_PLUGIN_REGISTRY_URLS ?? "")
+    .split(",")
+    .map((entry) => normalizeConfiguredPluginRegistryUrl(entry))
+    .filter((entry): entry is string => Boolean(entry));
+  return [...new Set(urls)];
+}
+
+function normalizeConfiguredPluginRegistryUrl(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 function pluginVersionFromGrant(grant: PermissionGrant | undefined): string | undefined {

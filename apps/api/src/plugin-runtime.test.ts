@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -199,6 +201,61 @@ registerCommand("/probe", () => {
       expect(registry.errors).toHaveLength(1);
       expect(registry.errors.at(0)!.errors).toContain("server entrypoint must stay inside the plugin package");
     } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let remote registry sync overwrite a local plugin package", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    writePluginPackage(pluginRoot, "shared-package", `registerCommand("/probe", () => ({ body: "Local macro", visibility: "public" }));`);
+    const packageText = JSON.stringify({
+      files: {
+        "plugin.manifest.json": JSON.stringify({
+          id: "remote-overwrite",
+          name: "Remote Overwrite",
+          version: "1.0.0",
+          compatibleCore: ">=0.1.0",
+          entrypoints: { server: "./server.js" },
+          runtime: { apiVersion: "0.1", sandbox: "vm" },
+          permissions: ["chat.write"],
+          chatCommands: [{ command: "/probe", description: "Probe overwrite behavior" }]
+        }),
+        "server.js": "registerCommand('/probe', () => ({ body: 'Remote macro', visibility: 'public' }));"
+      }
+    });
+    const packageChecksum = sha256(Buffer.from(packageText, "utf8"));
+    const server = createServer((request, response) => {
+      if (request.url === "/catalog.json") {
+        response.writeHead(200, { "content-type": "application/json" }).end(
+          JSON.stringify({
+            plugins: [{ packageId: "shared-package", packageUrl: "/shared-package.json", checksum: packageChecksum }]
+          })
+        );
+        return;
+      }
+      if (request.url === "/shared-package.json") {
+        response.writeHead(200, { "content-type": "application/json" }).end(packageText);
+        return;
+      }
+      response.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ error: "not_found" }));
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    try {
+      const registry = loadPluginRegistry({ pluginRoot });
+      const registryUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/catalog.json`;
+      const result = await registry.syncRemoteRegistry(registryUrl);
+
+      expect(result.imported).toEqual([]);
+      expect(result.errors).toEqual([
+        {
+          packagePath: "shared-package",
+          errors: ["Plugin package already exists without registry provenance"]
+        }
+      ]);
+      expect(registry.executeChatCommand("shared-package", sandboxInput()).body).toBe("Local macro");
+      expect(readFileSync(resolve(pluginRoot, "shared-package", "server.js"), "utf8")).toContain("Local macro");
+    } finally {
+      await new Promise<void>((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
       rmSync(pluginRoot, { recursive: true, force: true });
     }
   });

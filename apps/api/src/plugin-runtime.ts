@@ -1,13 +1,13 @@
 import { createHash, createHmac } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, isAbsolute, relative, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { Script, createContext, type Context } from "node:vm";
 import type { PermissionName } from "@open-tabletop/core";
 import { validatePluginManifest, type PluginManifest } from "@open-tabletop/plugin-sdk";
 
 export interface LoadedPlugin extends PluginManifest {
   source: {
-    type: "local";
+    type: "local" | "registry";
     packageId: string;
     manifestPath: string;
     manifestChecksum: string;
@@ -15,6 +15,10 @@ export interface LoadedPlugin extends PluginManifest {
     serverEntrypoint?: string;
     sandbox: "vm" | "manifest-only";
     checksum?: string;
+    registryUrl?: string;
+    packageUrl?: string;
+    packageChecksum?: string;
+    syncedAt?: string;
   };
   distribution: {
     availableVersions: string[];
@@ -54,6 +58,12 @@ export interface PluginLoadError {
   errors: string[];
 }
 
+export interface PluginRegistrySyncResult {
+  registryUrl: string;
+  imported: LoadedPlugin[];
+  errors: PluginLoadError[];
+}
+
 export interface PluginCommandTokenContext {
   id: string;
   name: string;
@@ -90,6 +100,19 @@ interface PluginSignatureFile {
   keyId?: string;
   algorithm?: string;
   signature?: string;
+}
+
+interface PluginRegistryEntry {
+  packageId: string;
+  packageUrl: string;
+  checksum?: string;
+}
+
+interface PluginRegistryPackageMetadata {
+  registryUrl?: string;
+  packageUrl?: string;
+  packageChecksum?: string;
+  syncedAt?: string;
 }
 
 interface SandboxGlobals {
@@ -156,6 +179,30 @@ export class PluginRuntimeRegistry {
     return publicPlugin(plugin, this.plugins.get(plugin.id) ?? [plugin]);
   }
 
+  async syncRemoteRegistry(registryUrl: string): Promise<PluginRegistrySyncResult> {
+    const resolvedRegistryUrl = normalizeHttpUrl(registryUrl, "Plugin registry URL");
+    const catalog = normalizePluginRegistryCatalog(await fetchJson(resolvedRegistryUrl), resolvedRegistryUrl);
+    const imported: LoadedPlugin[] = [];
+    const errors: PluginLoadError[] = [];
+
+    for (const entry of catalog) {
+      try {
+        imported.push(await this.importRegistryEntry(resolvedRegistryUrl, entry));
+      } catch (error) {
+        errors.push({
+          packagePath: entry.packageId,
+          errors: pluginErrorMessages(error)
+        });
+      }
+    }
+
+    return {
+      registryUrl: resolvedRegistryUrl.toString(),
+      imported,
+      errors
+    };
+  }
+
   executeChatCommand(pluginId: string, input: PluginChatCommandInput, version?: string): PluginChatCommandResult {
     const versions = this.plugins.get(pluginId);
     const plugin = version ? versions?.find((item) => item.version === version) : versions ? latestPluginVersion(versions) : undefined;
@@ -177,6 +224,23 @@ export class PluginRuntimeRegistry {
     else versions.push(plugin);
     versions.sort(comparePluginsByVersion);
     this.plugins.set(plugin.id, versions);
+  }
+
+  private async importRegistryEntry(registryUrl: URL, entry: PluginRegistryEntry): Promise<LoadedPlugin> {
+    const packageId = validateRegistryPackageId(entry.packageId);
+    const packageUrl = normalizeHttpUrl(entry.packageUrl, "Plugin package URL", registryUrl);
+    const packageText = await fetchText(packageUrl);
+    const packageChecksum = sha256(Buffer.from(packageText, "utf8"));
+    if (entry.checksum && entry.checksum !== packageChecksum) throw new PluginPackageError(`Invalid plugin package checksum: ${packageId}`, [`Expected ${entry.checksum} but received ${packageChecksum}`]);
+    const packageDocument = JSON.parse(stripBom(packageText)) as unknown;
+    const files = normalizeRegistryPackageFiles(packageDocument);
+    writeRegistryPackage(this.pluginRoot, packageId, files, {
+      registryUrl: registryUrl.toString(),
+      packageUrl: packageUrl.toString(),
+      packageChecksum,
+      syncedAt: new Date().toISOString()
+    });
+    return this.registerPackage(packageId);
   }
 
   private runtimeFor(plugin: RuntimePlugin): SandboxedPluginRuntime {
@@ -222,6 +286,7 @@ function loadPluginPackage(pluginRoot: string, packagePath: string, trustPolicy:
   const source = serverEntrypoint ? readFileSync(serverEntrypoint) : undefined;
   const manifestChecksum = sha256(Buffer.from(manifestSource, "utf8"));
   const sourceChecksum = source ? sha256(source) : undefined;
+  const registryMetadata = readPluginRegistryMetadata(pluginRoot, resolvedPackagePath);
   const trust = evaluatePluginTrust({
     pluginRoot,
     packagePath: resolvedPackagePath,
@@ -233,14 +298,15 @@ function loadPluginPackage(pluginRoot: string, packagePath: string, trustPolicy:
   const plugin: RuntimePlugin = {
     ...manifest,
     source: {
-      type: "local",
+      type: registryMetadata?.registryUrl ? "registry" : "local",
       packageId: basename(resolvedPackagePath),
       manifestPath: normalizePublicPath(pluginRoot, manifestPath),
       manifestChecksum,
       clientEntrypoint: clientEntrypoint ? normalizePublicPath(pluginRoot, clientEntrypoint) : undefined,
       serverEntrypoint: serverEntrypoint ? normalizePublicPath(pluginRoot, serverEntrypoint) : undefined,
       sandbox: serverEntrypoint ? "vm" : "manifest-only",
-      checksum: sourceChecksum
+      checksum: sourceChecksum,
+      ...registryMetadata
     },
     distribution: {
       availableVersions: [manifest.version],
@@ -497,6 +563,140 @@ function parsePluginTrustKeys(value: string | undefined): Record<string, string>
       })
       .filter(([keyId, secret]) => keyId && secret)
   );
+}
+
+function normalizePluginRegistryCatalog(value: unknown, registryUrl: URL): PluginRegistryEntry[] {
+  if (!isRecord(value)) throw new Error("Plugin registry catalog must be a JSON object");
+  const items = Array.isArray(value.plugins) ? value.plugins : Array.isArray(value.packages) ? value.packages : undefined;
+  if (!items) throw new Error("Plugin registry catalog must include a plugins array");
+  return items.slice(0, 50).map((item, index) => normalizePluginRegistryEntry(item, registryUrl, index));
+}
+
+function normalizePluginRegistryEntry(value: unknown, registryUrl: URL, index: number): PluginRegistryEntry {
+  if (!isRecord(value)) throw new Error(`Plugin registry entry ${index + 1} must be an object`);
+  const packageId = typeof value.packageId === "string" ? validateRegistryPackageId(value.packageId) : "";
+  const packageUrl = typeof value.packageUrl === "string" ? value.packageUrl : typeof value.downloadUrl === "string" ? value.downloadUrl : "";
+  if (!packageId) throw new Error(`Plugin registry entry ${index + 1} packageId is required`);
+  if (!packageUrl.trim()) throw new Error(`Plugin registry entry ${index + 1} packageUrl is required`);
+  const resolvedPackageUrl = normalizeHttpUrl(packageUrl, `Plugin registry entry ${index + 1} packageUrl`, registryUrl).toString();
+  const checksum = typeof value.checksum === "string" && value.checksum.trim() ? value.checksum.trim() : undefined;
+  if (checksum && !/^sha256:[a-f0-9]{64}$/i.test(checksum)) throw new Error(`Plugin registry entry ${index + 1} checksum must be a sha256 digest`);
+  return {
+    packageId,
+    packageUrl: resolvedPackageUrl,
+    checksum
+  };
+}
+
+function validateRegistryPackageId(value: string): string {
+  const packageId = value.trim();
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$/.test(packageId)) throw new Error("Plugin registry packageId must be 1-80 characters of letters, numbers, dot, underscore, or dash");
+  return packageId;
+}
+
+function normalizeRegistryPackageFiles(value: unknown): Record<string, string> {
+  if (!isRecord(value) || !isRecord(value.files)) throw new Error("Plugin registry package must include a files object");
+  const entries = Object.entries(value.files);
+  if (entries.length === 0 || entries.length > 20) throw new Error("Plugin registry package must include 1-20 files");
+  const files: Record<string, string> = {};
+  for (const [path, content] of entries) {
+    const normalizedPath = normalizeRegistryFilePath(path);
+    if (typeof content !== "string") throw new Error(`Plugin registry package file must be a string: ${normalizedPath}`);
+    if (Buffer.byteLength(content, "utf8") > 512 * 1024) throw new Error(`Plugin registry package file is too large: ${normalizedPath}`);
+    files[normalizedPath] = content;
+  }
+  if (!files["plugin.manifest.json"]) throw new Error("Plugin registry package must include plugin.manifest.json");
+  return files;
+}
+
+function normalizeRegistryFilePath(value: string): string {
+  const normalized = value.replace(/\\/g, "/").trim();
+  const parts = normalized.split("/");
+  if (!normalized || isAbsolute(normalized) || normalized === "plugin.registry.json" || parts.some((part) => !part || part === "." || part === "..")) {
+    throw new Error(`Invalid plugin registry package file path: ${value}`);
+  }
+  if (parts.length > 5 || normalized.length > 160) throw new Error(`Plugin registry package file path is too deep or long: ${value}`);
+  return normalized;
+}
+
+function writeRegistryPackage(pluginRoot: string, packageId: string, files: Record<string, string>, metadata: PluginRegistryPackageMetadata): void {
+  const packagePath = resolve(pluginRoot, packageId);
+  if (!isPathInside(pluginRoot, packagePath)) throw new PluginPackageError(`Invalid plugin package path: ${packageId}`, ["Plugin package must stay inside the configured plugin root"]);
+  if (existsSync(packagePath)) {
+    const existingMetadata = readPluginRegistryMetadata(pluginRoot, packagePath);
+    if (existingMetadata?.registryUrl !== metadata.registryUrl) {
+      throw new PluginPackageError(`Refusing to overwrite plugin package: ${packageId}`, [
+        existingMetadata?.registryUrl ? "Plugin package was synced from a different registry" : "Plugin package already exists without registry provenance"
+      ]);
+    }
+  }
+  rmSync(packagePath, { recursive: true, force: true });
+  mkdirSync(packagePath, { recursive: true });
+  for (const [path, content] of Object.entries(files)) {
+    const filePath = resolve(packagePath, path);
+    if (!isPathInside(packagePath, filePath)) throw new Error(`Plugin registry file must stay inside the plugin package: ${path}`);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, content);
+  }
+  writeFileSync(resolve(packagePath, "plugin.registry.json"), JSON.stringify(metadata, null, 2));
+}
+
+function readPluginRegistryMetadata(pluginRoot: string, packagePath: string): PluginRegistryPackageMetadata | undefined {
+  const metadataPath = resolve(packagePath, "plugin.registry.json");
+  if (!existsSync(metadataPath)) return undefined;
+  try {
+    const parsed = JSON.parse(stripBom(readFileSync(metadataPath, "utf8"))) as unknown;
+    if (!isRecord(parsed)) return undefined;
+    const metadata: PluginRegistryPackageMetadata = {};
+    if (typeof parsed.registryUrl === "string") metadata.registryUrl = parsed.registryUrl;
+    if (typeof parsed.packageUrl === "string") metadata.packageUrl = parsed.packageUrl;
+    if (typeof parsed.packageChecksum === "string") metadata.packageChecksum = parsed.packageChecksum;
+    if (typeof parsed.syncedAt === "string") metadata.syncedAt = parsed.syncedAt;
+    return metadata.registryUrl && isPathInside(pluginRoot, metadataPath) ? metadata : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchJson(url: URL): Promise<unknown> {
+  return JSON.parse(stripBom(await fetchText(url))) as unknown;
+}
+
+async function fetchText(url: URL): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), pluginRegistryFetchTimeoutMs());
+  try {
+    const response = await fetch(url, {
+      headers: { accept: "application/json" },
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`registry_http_${response.status}`);
+    return await response.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function normalizeHttpUrl(value: string, label: string, base?: URL): URL {
+  let url: URL;
+  try {
+    url = new URL(value.trim(), base);
+  } catch {
+    throw new Error(`${label} must be a valid URL`);
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error(`${label} must use http or https`);
+  return url;
+}
+
+function pluginRegistryFetchTimeoutMs(): number {
+  const configured = Number(process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? Math.min(Math.floor(configured), 30_000) : 5_000;
+}
+
+function pluginErrorMessages(error: unknown): string[] {
+  if (error instanceof PluginPackageError) return error.loadErrors;
+  if (error instanceof Error) return [error.message];
+  return ["Unknown plugin registry error"];
 }
 
 function sha256(body: Buffer): string {

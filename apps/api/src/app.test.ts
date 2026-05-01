@@ -2758,6 +2758,124 @@ describe("api", () => {
     }
   });
 
+  it("syncs an allowlisted remote plugin registry into the runtime catalog", async () => {
+    const previousEnv = snapshotEnv(["OTTE_PLUGIN_REGISTRY_URLS", "OTTE_PLUGIN_REGISTRY_TIMEOUT_MS"]);
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-registry-"));
+    const manifest = JSON.stringify({
+      id: "remote-plugin",
+      name: "Remote Plugin",
+      version: "1.0.0",
+      compatibleCore: ">=0.1.0",
+      entrypoints: { server: "./server.js" },
+      runtime: { apiVersion: "0.1", sandbox: "vm" },
+      permissions: ["chat.write"],
+      chatCommands: [{ command: "/remote", description: "Run remote registry macro" }]
+    });
+    const packageText = JSON.stringify({
+      files: {
+        "plugin.manifest.json": manifest,
+        "server.js": "registerCommand('/remote', () => ({ body: 'Remote registry macro', visibility: 'public' }));"
+      }
+    });
+    const packageChecksum = `sha256:${createHash("sha256").update(Buffer.from(packageText, "utf8")).digest("hex")}`;
+    const registry = createServer((request, response) => {
+      if (request.url === "/catalog.json") {
+        sendJson(response, {
+          plugins: [{ packageId: "remote-plugin-1", packageUrl: "/remote-plugin-1.json", checksum: packageChecksum }]
+        });
+        return;
+      }
+      if (request.url === "/remote-plugin-1.json") {
+        response.writeHead(200, { "content-type": "application/json" }).end(packageText);
+        return;
+      }
+      response.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ error: "not_found" }));
+    });
+    await new Promise<void>((resolve) => registry.listen(0, "127.0.0.1", resolve));
+    const registryPort = (registry.address() as AddressInfo).port;
+    const registryUrl = `http://127.0.0.1:${registryPort}/catalog.json`;
+    process.env.OTTE_PLUGIN_REGISTRY_URLS = registryUrl;
+    process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS = "1000";
+    const store = new MemoryStateStore();
+    const pluginRegistry = loadPluginRegistry({ pluginRoot });
+    const app = await buildApp({ store, pluginRegistry });
+    try {
+      const sync = await app.inject({
+        method: "POST",
+        url: "/api/v1/plugins/registry/sync",
+        headers: authHeaders,
+        payload: { campaignId: "camp_demo", registryUrl }
+      });
+      expect(sync.statusCode).toBe(200);
+      expect(sync.json().registries[0]).toEqual(
+        expect.objectContaining({
+          registryUrl,
+          imported: [
+            expect.objectContaining({
+              id: "remote-plugin",
+              version: "1.0.0",
+              source: expect.objectContaining({
+                type: "registry",
+                packageId: "remote-plugin-1",
+                registryUrl,
+                packageUrl: `http://127.0.0.1:${registryPort}/remote-plugin-1.json`,
+                packageChecksum
+              })
+            })
+          ],
+          errors: []
+        })
+      );
+
+      const catalog = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins",
+        headers: authHeaders
+      });
+      expect(catalog.statusCode).toBe(200);
+      expect(catalog.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "remote-plugin",
+            installed: false,
+            source: expect.objectContaining({ type: "registry", packageId: "remote-plugin-1" })
+          })
+        ])
+      );
+
+      const install = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/remote-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(install.statusCode).toBe(200);
+      expect(install.json().grant.metadata).toEqual(expect.objectContaining({ packageId: "remote-plugin-1", version: "1.0.0" }));
+
+      const command = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/remote-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/remote" }
+      });
+      expect(command.statusCode).toBe(200);
+      expect(command.json().chat.body).toBe("Remote registry macro");
+      expect(store.state.auditLogs.find((log) => log.action === "plugin.registrySync")).toEqual(
+        expect.objectContaining({
+          targetType: "plugin",
+          after: expect.objectContaining({
+            registries: [expect.objectContaining({ imported: ["remote-plugin@1.0.0"] })]
+          })
+        })
+      );
+    } finally {
+      await app.close();
+      await new Promise<void>((resolve, reject) => registry.close((error) => (error ? reject(error) : resolve())));
+      restoreEnv(previousEnv);
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("passes only caller-visible campaign context to ai providers", async () => {
     class CapturingAiProvider implements AiProvider {
       id = "test-ai";
