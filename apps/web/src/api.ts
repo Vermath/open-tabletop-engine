@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, Campaign, CampaignMember, ChatMessage, Combat, Encounter, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, EmailOutboxMessage, Encounter, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -153,6 +153,15 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function apiDelete<T>(path: string): Promise<T> {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "DELETE",
+    headers: await sessionHeaders()
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<T>;
+}
+
 export interface Snapshot {
   session?: SessionInfo;
   campaigns: Campaign[];
@@ -180,6 +189,7 @@ export interface SessionInfo {
   user: User;
   session?: PublicSession;
   memberships: CampaignMember[];
+  serverAdmin?: boolean;
 }
 
 export interface PublicSession extends Pick<UserSession, "id" | "userId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {}
@@ -308,6 +318,55 @@ export interface AiUsageRollup {
 export interface AiUsageSummary extends AiUsageRollup {
   campaignId: string;
   providers: Array<AiUsageRollup & { provider: string }>;
+}
+
+export interface AdminUserInfo extends Omit<User, "passwordHash" | "mfa"> {
+  disabled: boolean;
+  membershipCount: number;
+  identityCount: number;
+  sessionCount: number;
+}
+
+export interface AdminSessionInfo extends PublicSession {
+  user: Pick<User, "id" | "displayName" | "email">;
+}
+
+export interface AdminPasswordResetInfo {
+  reset: Omit<{
+    id: string;
+    userId: string;
+    email: string;
+    expiresAt: string;
+    usedAt?: string;
+    requestedByUserId?: string;
+    createdAt: string;
+    updatedAt: string;
+  }, "tokenHash">;
+  email: EmailOutboxMessage;
+}
+
+export interface AdminAuditLogExport {
+  exportedAt: string;
+  count: number;
+  filters: Record<string, string>;
+  auditLogs: AuditLog[];
+}
+
+export interface AdminSnapshot {
+  users: AdminUserInfo[];
+  sessions: AdminSessionInfo[];
+  emailOutbox: EmailOutboxMessage[];
+  audit: AdminAuditLogExport;
+}
+
+export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
+  const [users, sessions, emailOutbox, audit] = await Promise.all([
+    apiGet<AdminUserInfo[]>("/api/v1/admin/users"),
+    apiGet<AdminSessionInfo[]>("/api/v1/admin/sessions"),
+    apiGet<EmailOutboxMessage[]>("/api/v1/admin/email-outbox"),
+    apiGet<AdminAuditLogExport>("/api/v1/admin/audit-logs?limit=12")
+  ]);
+  return { users, sessions, emailOutbox, audit };
 }
 
 export function assetBlobUrl(asset: MapAsset): string {

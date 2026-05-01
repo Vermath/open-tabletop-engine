@@ -1,7 +1,7 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
-import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, Lightbulb, LockKeyhole, MessageSquare, Pentagon, Plus, ScrollText, Send, Shield, Swords, Timer, Upload, UserPlus, Users, WandSparkles } from "lucide-react";
+import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MessageSquare, Pentagon, Plus, RefreshCw, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AiUsageSummary, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -43,7 +43,7 @@ export function App() {
   const [campaignId, setCampaignId] = useState("camp_demo");
   const [sceneId, setSceneId] = useState("scn_vault_entry");
   const [selectedTokenId, setSelectedTokenId] = useState("tok_valen");
-  const [tab, setTab] = useState<"actors" | "journal" | "combat" | "ai" | "plugins">("actors");
+  const [tab, setTab] = useState<"actors" | "journal" | "combat" | "ai" | "plugins" | "admin">("actors");
   const [status, setStatus] = useState("Loading campaign");
   const [diceFormula, setDiceFormula] = useState("1d20+5");
   const [chatBody, setChatBody] = useState("");
@@ -62,6 +62,8 @@ export function App() {
   const [resetPassword, setResetPassword] = useState("");
   const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
   const [resetStatus, setResetStatus] = useState("Ready");
+  const [adminSnapshot, setAdminSnapshot] = useState<AdminSnapshot>();
+  const [adminStatus, setAdminStatus] = useState("Admin idle");
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const selectedScene = snapshot.scenes.find((scene) => scene.id === sceneId);
@@ -83,6 +85,13 @@ export function App() {
     if (campaign) setCampaignId(campaign.id);
     if (scene) setSceneId(scene.id);
     setStatus("Synced");
+  }
+
+  async function refreshAdmin() {
+    setAdminStatus("Loading admin operations");
+    const next = await loadAdminSnapshot();
+    setAdminSnapshot(next);
+    setAdminStatus("Admin operations synced");
   }
 
   useEffect(() => {
@@ -109,6 +118,15 @@ export function App() {
     socket.onerror = () => setStatus("Realtime unavailable");
     return () => socket.close();
   }, [campaignId, sceneId, sessionToken]);
+
+  useEffect(() => {
+    if (tab !== "admin" || !snapshot.session?.serverAdmin) return;
+    refreshAdmin().catch((error) => setAdminStatus(error instanceof Error ? error.message : String(error)));
+  }, [tab, snapshot.session?.serverAdmin]);
+
+  useEffect(() => {
+    if (tab === "admin" && snapshot.session && !snapshot.session.serverAdmin) setTab("ai");
+  }, [tab, snapshot.session?.serverAdmin, snapshot.session?.user.id]);
 
   async function switchSession(userId: string) {
     setSessionUserId(userId);
@@ -397,6 +415,51 @@ export function App() {
     await refresh();
   }
 
+  async function disableAdminUser(user: AdminUserInfo) {
+    await apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, {
+      disabled: true,
+      disabledReason: "Disabled from admin console"
+    });
+    setAdminStatus(`${user.displayName} disabled`);
+    await refreshAdmin();
+  }
+
+  async function enableAdminUser(user: AdminUserInfo) {
+    await apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, {
+      disabled: false
+    });
+    setAdminStatus(`${user.displayName} enabled`);
+    await refreshAdmin();
+  }
+
+  async function requireAdminPasswordReset(user: AdminUserInfo) {
+    await apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, {
+      passwordResetRequired: true
+    });
+    setAdminStatus(`${user.displayName} must reset password`);
+    await refreshAdmin();
+  }
+
+  async function issueAdminPasswordReset(user: AdminUserInfo) {
+    const reset = await apiPost<AdminPasswordResetInfo>(`/api/v1/admin/users/${user.id}/password-reset`, {
+      returnTo: `${window.location.origin}/reset-password`
+    });
+    setAdminStatus(`Queued ${reset.email.status} reset email for ${reset.email.to}`);
+    await refreshAdmin();
+  }
+
+  async function revokeAdminUserSessions(user: AdminUserInfo) {
+    const result = await apiDelete<{ revoked: number }>(`/api/v1/admin/users/${user.id}/sessions`);
+    setAdminStatus(`Revoked ${result.revoked} sessions for ${user.displayName}`);
+    await refreshAdmin();
+  }
+
+  async function revokeAdminSession(session: AdminSessionInfo) {
+    await apiDelete<{ ok: boolean }>(`/api/v1/admin/sessions/${session.id}`);
+    setAdminStatus(`Revoked session for ${session.user.displayName}`);
+    await refreshAdmin();
+  }
+
   async function exportCampaign() {
     const archive = await apiGet<object>(`/api/v1/campaigns/${campaignId}/export`);
     const blob = new Blob([JSON.stringify(archive, null, 2)], {
@@ -615,12 +678,14 @@ export function App() {
               <TabButton active={tab === "combat"} icon={<Swords size={15} />} label="Combat" onClick={() => setTab("combat")} />
               <TabButton active={tab === "ai"} icon={<Bot size={15} />} label="AI" onClick={() => setTab("ai")} />
               <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="SDK" onClick={() => setTab("plugins")} />
+              {snapshot.session?.serverAdmin && <TabButton active={tab === "admin"} icon={<UserCog size={15} />} label="Admin" onClick={() => setTab("admin")} />}
             </div>
             {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} items={selectedActorItems} updateActorHp={updateActorHp} canUpdateActor={canUpdateSelectedActor} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} actor={selectedActor} onInstallPlugin={installPlugin} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canRollSystem={hasPermission("dice.roll")} />}
+            {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} />}
           </aside>
         </div>
 
@@ -924,6 +989,134 @@ function CombatPanel(props: { combat?: Combat; onStart(): void; canManage: boole
   );
 }
 
+function AdminPanel(props: { admin?: AdminSnapshot; currentUserId: string; status: string; onRefresh(): Promise<void>; onDisableUser(user: AdminUserInfo): Promise<void>; onEnableUser(user: AdminUserInfo): Promise<void>; onRequireReset(user: AdminUserInfo): Promise<void>; onIssueReset(user: AdminUserInfo): Promise<void>; onRevokeUserSessions(user: AdminUserInfo): Promise<void>; onRevokeSession(session: AdminSessionInfo): Promise<void> }) {
+  const users = props.admin?.users ?? [];
+  const sessions = props.admin?.sessions ?? [];
+  const emails = props.admin?.emailOutbox.slice().reverse() ?? [];
+  const auditLogs = props.admin?.audit.auditLogs ?? [];
+  return (
+    <div className="panel-stack admin-panel">
+      <div className="panel-heading">
+        <div className="section-title">Server Admin</div>
+        <button className="icon-button" title="Refresh admin operations" onClick={() => props.onRefresh().catch(console.error)}>
+          <RefreshCw size={16} />
+        </button>
+      </div>
+      <div className="admin-status">{props.status}</div>
+
+      <section className="admin-section" aria-label="Admin users">
+        <div className="operator-heading">
+          <div className="section-title">Users</div>
+          <strong>{users.length}</strong>
+        </div>
+        {users.length === 0 ? (
+          <div className="empty-state compact">No admin user data loaded.</div>
+        ) : (
+          users.map((user) => (
+            <article className="operator-item admin-item" key={user.id}>
+              <div className="operator-row">
+                <span className={`status-pill ${user.disabled ? "failed" : "completed"}`}>{user.disabled ? "disabled" : "active"}</span>
+                <strong>{user.sessionCount} sessions</strong>
+              </div>
+              <h3>{user.displayName}</h3>
+              <p>{user.email ?? "No email"} - {user.id}</p>
+              <div className="admin-meta">
+                <span>{user.membershipCount} memberships</span>
+                <span>{user.identityCount} identities</span>
+                <span>{user.passwordResetRequired ? "reset required" : "password current"}</span>
+              </div>
+              <div className="admin-actions">
+                <button className="ghost-button" title="Issue password reset email" onClick={() => props.onIssueReset(user).catch(console.error)} disabled={!user.email || user.disabled}>
+                  <Mail size={14} /> Reset
+                </button>
+                <button className="ghost-button" title="Require password reset at next login" onClick={() => props.onRequireReset(user).catch(console.error)} disabled={user.disabled}>
+                  <KeyRound size={14} /> Require
+                </button>
+                {user.disabled ? (
+                  <button className="ghost-button" title="Enable account" onClick={() => props.onEnableUser(user).catch(console.error)}>
+                    <Check size={14} /> Enable
+                  </button>
+                ) : (
+                  <button className="ghost-button" title={user.id === props.currentUserId ? "Admins cannot disable their current account" : "Disable account"} onClick={() => props.onDisableUser(user).catch(console.error)} disabled={user.id === props.currentUserId}>
+                    <UserX size={14} /> Disable
+                  </button>
+                )}
+                <button className="ghost-button" title="Revoke all user sessions" onClick={() => props.onRevokeUserSessions(user).catch(console.error)} disabled={user.sessionCount === 0}>
+                  <RefreshCw size={14} /> Revoke
+                </button>
+              </div>
+            </article>
+          ))
+        )}
+      </section>
+
+      <section className="admin-section" aria-label="Active sessions">
+        <div className="operator-heading">
+          <div className="section-title">Sessions</div>
+          <strong>{sessions.length}</strong>
+        </div>
+        {sessions.length === 0 ? (
+          <div className="empty-state compact">No active sessions.</div>
+        ) : (
+          sessions.slice(0, 8).map((session) => (
+            <article className="operator-item admin-item" key={session.id}>
+              <div className="operator-row">
+                <span>{session.user.displayName}</span>
+                <strong>{formatDateTime(session.lastSeenAt)}</strong>
+              </div>
+              <p>{session.id} - expires {formatDateTime(session.expiresAt)}</p>
+              <button className="ghost-button" title="Revoke session" onClick={() => props.onRevokeSession(session).catch(console.error)}>
+                <UserX size={14} /> Revoke session
+              </button>
+            </article>
+          ))
+        )}
+      </section>
+
+      <section className="admin-section" aria-label="Email outbox">
+        <div className="operator-heading">
+          <div className="section-title">Email Outbox</div>
+          <strong>{emails.length}</strong>
+        </div>
+        {emails.length === 0 ? (
+          <div className="empty-state compact">No queued emails.</div>
+        ) : (
+          emails.slice(0, 5).map((email) => (
+            <article className="operator-item admin-item" key={email.id}>
+              <div className="operator-row">
+                <span className={`status-pill ${email.status === "failed" ? "failed" : email.status === "delivered" ? "completed" : "running"}`}>{email.status}</span>
+                <strong>{email.provider}</strong>
+              </div>
+              <h3>{email.subject}</h3>
+              <p>{email.to} - {formatDateTime(email.createdAt)}</p>
+            </article>
+          ))
+        )}
+      </section>
+
+      <section className="admin-section" aria-label="Audit log">
+        <div className="operator-heading">
+          <div className="section-title">Audit</div>
+          <strong>{props.admin?.audit.count ?? 0}</strong>
+        </div>
+        {auditLogs.length === 0 ? (
+          <div className="empty-state compact">No audit entries loaded.</div>
+        ) : (
+          auditLogs.slice(0, 6).map((entry) => (
+            <article className="operator-item admin-item" key={entry.id}>
+              <div className="operator-row">
+                <span>{entry.action}</span>
+                <strong>{formatDateTime(entry.createdAt)}</strong>
+              </div>
+              <p>{entry.actorUserId ?? entry.actorType} - {entry.targetType}{entry.targetId ? `/${entry.targetId}` : ""}</p>
+            </article>
+          ))
+        )}
+      </section>
+    </div>
+  );
+}
+
 function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; recapSession(): void; extractMemory(): void; proposals: Proposal[]; memory: AiMemoryFact[]; aiThreads: AiThread[]; aiUsage?: AiUsageSummary; aiToolCalls: AiToolCall[]; approveAndApply(proposal: Proposal): void; approveMemory(fact: AiMemoryFact): void; canPropose: boolean; canApply: boolean }) {
   return (
     <div className="panel-stack">
@@ -1064,6 +1257,13 @@ function formatTime(value?: string): string {
   const time = new Date(value);
   if (Number.isNaN(time.getTime())) return value;
   return time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) return "";
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) return value;
+  return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; actor?: Actor; onInstallPlugin(plugin: PluginRuntimeInfo): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canRollSystem: boolean }) {

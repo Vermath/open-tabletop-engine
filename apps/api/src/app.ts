@@ -120,7 +120,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       token,
       session: publicSession(session),
       user: publicUser(user),
-      memberships: store.state.members.filter((member) => member.userId === user.id)
+      memberships: store.state.members.filter((member) => member.userId === user.id),
+      serverAdmin: isServerAdminUserId(user.id)
     };
   });
 
@@ -143,7 +144,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       token,
       session: publicSession(session),
       user: publicUser(user),
-      memberships: []
+      memberships: [],
+      serverAdmin: isServerAdminUserId(user.id)
     };
   });
 
@@ -168,7 +170,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         token: login.token,
         session: publicSession(login.session),
         user: publicUser(login.user),
-        memberships: store.state.members.filter((member) => member.userId === login.user.id)
+        memberships: store.state.members.filter((member) => member.userId === login.user.id),
+        serverAdmin: isServerAdminUserId(login.user.id)
       };
     } catch (error) {
       return unauthorized(reply, errorMessage(error));
@@ -192,7 +195,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       token,
       session: publicSession(nextSession),
       user: publicUser(user),
-      memberships: store.state.members.filter((member) => member.userId === user.id)
+      memberships: store.state.members.filter((member) => member.userId === user.id),
+      serverAdmin: isServerAdminUserId(user.id)
     };
   });
 
@@ -787,6 +791,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         session: publicSession(login.session),
         user: publicUser(login.user),
         memberships: store.state.members.filter((member) => member.userId === login.user.id),
+        serverAdmin: isServerAdminUserId(login.user.id),
         identity: publicIdentity(login.identity)
       };
     } catch (error) {
@@ -811,7 +816,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return {
       user: publicUser(user),
       session: session ? publicSession(session) : undefined,
-      memberships: store.state.members.filter((member) => member.userId === userId)
+      memberships: store.state.members.filter((member) => member.userId === userId),
+      serverAdmin: isServerAdminUserId(userId)
     };
   });
 
@@ -976,6 +982,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       token: sessionToken,
       session: publicSession(session),
       user: publicUser(user),
+      serverAdmin: isServerAdminUserId(user.id),
       invite: publicInvite(invite),
       membership: memberSessionInfo(store, member),
       campaign
@@ -4984,8 +4991,12 @@ function requireSessionUser(store: StateStore, reply: FastifyReply, headers: Rec
 function requireServerAdmin(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>): string | FastifyReply {
   const userId = requireUser(store, reply, headers);
   if (typeof userId !== "string") return userId;
-  if (!serverAdminUserIds().has(userId)) return forbidden(reply, "Server admin access required");
+  if (!isServerAdminUserId(userId)) return forbidden(reply, "Server admin access required");
   return userId;
+}
+
+function isServerAdminUserId(userId: string): boolean {
+  return serverAdminUserIds().has(userId);
 }
 
 function serverAdminUserIds(): Set<string> {

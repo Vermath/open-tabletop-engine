@@ -934,6 +934,14 @@ describe("api", () => {
       });
       const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
 
+      const adminSession = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/session",
+        headers: adminHeaders
+      });
+      expect(adminSession.statusCode).toBe(200);
+      expect(adminSession.json()).toMatchObject({ serverAdmin: true });
+
       const ownSessions = await app.inject({
         method: "GET",
         url: "/api/v1/auth/sessions",

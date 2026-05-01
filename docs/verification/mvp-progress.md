@@ -570,6 +570,34 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/reset-password-ui.png`.
   - Browser console had no errors or warnings after the password-field autocomplete fix.
 
+### Server Admin Console Slice
+
+- Implementation:
+  - `GET /api/v1/auth/session` now returns `serverAdmin: true` for users listed in `OTTE_ADMIN_USER_IDS`.
+  - Added a browser Admin tab gated by that session flag.
+  - The Admin tab lists users, active sessions, email outbox messages, and recent audit records.
+  - Admins can issue password reset emails, require password reset on next login, disable or enable accounts, revoke all sessions for a user, and revoke individual sessions from the browser.
+  - Added typed web API helpers for admin snapshots and DELETE requests.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `47 passed`.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+- Manual browser evidence:
+  - API: `http://127.0.0.1:4464`
+  - Web: `http://localhost:5175/`
+  - SQLite file: `apps/api/storage/manual-admin-console-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, `OTTE_SQLITE_PATH=apps/api/storage/manual-admin-console-20260501.sqlite`, and `VITE_API_URL=http://127.0.0.1:4464`.
+  - Playwright loaded the GM session and showed the Admin tab because `/api/v1/auth/session` returned server-admin status for `usr_demo_gm`.
+  - The Admin tab loaded two users, one active GM session, an empty email outbox, and recent audit records.
+  - Clicking the player Reset action queued a pending password-reset email for `player@example.test`; the outbox count changed to `1`, and the audit list showed `admin.user.passwordReset`.
+  - Clicking Disable on `usr_demo_player` changed the user row to `disabled`, disabled reset/require actions, exposed Enable, and added `admin.user.update` to the audit list.
+  - Clicking Enable restored the player row to active.
+  - Switching to the Demo Player session removed the Admin tab while leaving the non-admin player workspace synced and GM-only controls disabled.
+  - Screenshot saved at `output/playwright/admin-console.png`.
+  - Browser console had no application runtime errors; the only error was a missing dev favicon.
+
 ### Production Auth MFA Slice
 
 - Implementation:

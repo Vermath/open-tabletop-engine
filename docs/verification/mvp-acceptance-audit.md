@@ -139,7 +139,7 @@ Open the browser client at the configured web URL, for example `http://127.0.0.1
 
 These are intentionally not counted as blockers for the current PRD MVP acceptance:
 
-- Enterprise IdP certification and organization-admin UI beyond the verified SCIM user/group provisioning, SCIM group role mapping, API-backed account/session operations, first-class password reset screen, local TOTP MFA, and server-admin audit export.
+- Enterprise IdP certification and organization-admin workflows beyond the verified SCIM user/group provisioning, SCIM group role mapping, API-backed account/session operations, first-class password reset screen, local TOTP MFA, browser server-admin console, and server-admin audit export.
 - CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations beyond the verified local and S3/MinIO storage backends plus signed delivery, quotas, lifecycle state, storage stats, migration tooling, cleanup jobs, and built-in upload security scanning.
 - Advanced fog UX polish such as freehand brush smoothing, undo/history, and multi-scene fog presets; polygon reveal, hide/erase brush regions, and fog deletion are now verified.
 - Remote plugin registry distribution, richer plugin storage APIs, and marketplace review surfaces; local manifest-packaged VM-sandboxed plugin modules, permission review, path containment, versioned installs, upgrade/rollback workflows, and signed package trust policy are now verified.

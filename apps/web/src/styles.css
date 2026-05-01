@@ -606,6 +606,57 @@ input:disabled {
   font-size: 14px;
 }
 
+.admin-panel {
+  padding-bottom: 26px;
+}
+
+.admin-status {
+  padding: 9px 10px;
+  border: 1px solid #463b2a;
+  border-radius: 7px;
+  color: var(--muted);
+  background: #15130f;
+  font-size: 12px;
+}
+
+.admin-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.admin-section > .operator-heading strong {
+  color: var(--brass);
+  font-size: 13px;
+}
+
+.admin-item {
+  gap: 8px;
+}
+
+.admin-meta,
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.admin-meta span {
+  min-height: 22px;
+  padding: 3px 7px;
+  border: 1px solid #463b2a;
+  border-radius: 999px;
+  color: var(--muted);
+  background: #15130f;
+  font-size: 11px;
+}
+
+.admin-actions .ghost-button {
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
