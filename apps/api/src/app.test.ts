@@ -689,7 +689,8 @@ describe("api", () => {
     let app: Awaited<ReturnType<typeof buildApp>> | undefined;
 
     try {
-      app = await buildApp({ store: new MemoryStateStore() });
+      const store = new MemoryStateStore();
+      app = await buildApp({ store });
       const thread = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/ai/threads",
@@ -701,6 +702,16 @@ describe("api", () => {
       expect(thread.json().thread.provider).toBe("codex-app-server");
       expect(thread.json().assistantMessage).toContain("Codex loopback handled turn/start");
       expect(thread.json().events).toContainEqual(expect.objectContaining({ type: "message.completed" }));
+
+      const toolThread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: { prompt: "Create a prep proposal for the vault" }
+      });
+      expect(toolThread.statusCode).toBe(200);
+      expect(toolThread.json().events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "proposal.created" })]));
+      expect(store.state.proposals.some((proposal) => proposal.title === "Codex Loopback Proposal")).toBe(true);
     } finally {
       await app?.close();
       if (previousProvider === undefined) {
@@ -709,6 +720,90 @@ describe("api", () => {
         process.env.OTTE_AI_PROVIDER = previousProvider;
       }
     }
+  });
+
+  it("executes ai provider proposal tools with permission boundaries", async () => {
+    class ToolCallingProvider implements AiProvider {
+      id = "tool-ai";
+      label = "Tool AI";
+      requests: AiProviderRequest[] = [];
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.requests.push(input);
+        yield {
+          type: "tool.started",
+          toolName: "create_proposal",
+          input: {
+            title: "Tool Journal Proposal",
+            summary: "Create a journal note from the provider tool call.",
+            changes: [
+              {
+                entity: "journal",
+                action: "create",
+                data: {
+                  campaignId: "camp_demo",
+                  title: "Tool Created Note",
+                  body: "The provider proposed this note.",
+                  visibility: "gm_only",
+                  visibleToUserIds: [],
+                  visibleToActorIds: [],
+                  tags: ["ai", "tool"],
+                  createdBy: "usr_demo_gm",
+                  updatedBy: "usr_demo_gm"
+                }
+              }
+            ]
+          }
+        };
+        yield {
+          type: "message.completed",
+          content: "Tool proposal requested"
+        };
+      }
+    }
+
+    const gmProvider = new ToolCallingProvider();
+    const gmStore = new MemoryStateStore();
+    const gmApp = await buildApp({ store: gmStore, aiProvider: gmProvider });
+    const gmThread = await gmApp.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Use a tool to propose prep" }
+    });
+    expect(gmThread.statusCode).toBe(200);
+    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toContain("create_proposal");
+    expect(gmThread.json().events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool.completed", toolName: "create_proposal" }),
+        expect.objectContaining({ type: "proposal.created" })
+      ])
+    );
+    const proposal = gmStore.state.proposals.find((item) => item.title === "Tool Journal Proposal");
+    expect(proposal).toEqual(expect.objectContaining({ status: "pending", createdByType: "ai" }));
+    expect(proposal?.changesJson[0]?.entity).toBe("journal");
+    expect(proposal?.changesJson[0]?.data.id).toMatch(/^jnl_/);
+    expect(proposal?.changesJson[0]?.data.createdAt).toEqual(expect.any(String));
+    expect(gmStore.state.aiToolCalls.map((call) => call.status)).toEqual(expect.arrayContaining(["started", "completed"]));
+    await gmApp.close();
+
+    const playerProvider = new ToolCallingProvider();
+    const playerStore = new MemoryStateStore();
+    const playerApp = await buildApp({ store: playerStore, aiProvider: playerProvider });
+    const playerThread = await playerApp.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { prompt: "Try to create a proposal" }
+    });
+    expect(playerThread.statusCode).toBe(200);
+    const playerToolCompleted = playerThread.json().events.find((event: { type: string }) => event.type === "tool.completed");
+    expect(playerToolCompleted.output).toEqual({
+      error: "missing_permission",
+      permission: "ai.proposeChanges"
+    });
+    expect(playerStore.state.proposals.some((item) => item.title === "Tool Journal Proposal")).toBe(false);
+    await playerApp.close();
   });
 
   it("approves and applies ai proposals and memory with permission boundaries", async () => {

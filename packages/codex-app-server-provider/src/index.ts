@@ -41,6 +41,41 @@ export class CodexAppServerProvider implements AiProvider {
 export class LoopbackCodexTransport implements JsonRpcTransport {
   async request<TResponse>(method: string, params: unknown): Promise<TResponse> {
     if (method === "initialize") return { sessionId: "codex_loopback" } as TResponse;
+    if (method === "turn/start") {
+      const events: AiProviderEvent[] = [];
+      if (shouldRequestProposalTool(params)) {
+        events.push({
+          type: "tool.started",
+          toolName: "create_proposal",
+          input: {
+            title: "Codex Loopback Proposal",
+            summary: "Codex loopback requested a GM-approved prep proposal.",
+            changes: [
+              {
+                entity: "journal",
+                action: "create",
+                data: {
+                  campaignId: campaignIdFromParams(params),
+                  title: "Codex Loopback Prep",
+                  body: "The loopback provider proposed this prep note.",
+                  visibility: "gm_only",
+                  visibleToUserIds: [],
+                  visibleToActorIds: [],
+                  tags: ["ai", "codex-loopback"],
+                  createdBy: "codex-app-server",
+                  updatedBy: "codex-app-server"
+                }
+              }
+            ]
+          }
+        });
+      }
+      events.push({
+        type: "message.completed",
+        content: `Codex loopback handled ${method} with ${JSON.stringify(params).slice(0, 160)}`
+      });
+      return { events } as TResponse;
+    }
     return {
       events: [
         {
@@ -50,4 +85,26 @@ export class LoopbackCodexTransport implements JsonRpcTransport {
       ]
     } as TResponse;
   }
+}
+
+function shouldRequestProposalTool(params: unknown): boolean {
+  if (!isRecord(params)) return false;
+  const hasProposalTool = Array.isArray(params.tools) && params.tools.some((tool) => isRecord(tool) && tool.name === "create_proposal");
+  if (!hasProposalTool) return false;
+  const prompt = Array.isArray(params.messages)
+    ? params.messages
+        .filter(isRecord)
+        .map((message) => (typeof message.content === "string" ? message.content : ""))
+        .join(" ")
+    : "";
+  return /\bproposal\b|\bpropose\b|\bprep\b/i.test(prompt);
+}
+
+function campaignIdFromParams(params: unknown): string {
+  if (!isRecord(params) || !isRecord(params.context) || typeof params.context.campaignId !== "string") return "unknown_campaign";
+  return params.context.campaignId;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

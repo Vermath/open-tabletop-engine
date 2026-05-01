@@ -3,10 +3,10 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } 
 import { basename, extname, resolve, sep } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent } from "@open-tabletop/ai-core";
+import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type Scene, type Token, type User, type UserSession } from "@open-tabletop/core";
+import { applyProposal, approveProposal, createEvent, createId, createTimestamped, hasPermission, makeArchive, nowIso, permissionsForRole, type Actor, type AiMemoryFact, type Campaign, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type Encounter, type EngineEvent, type EngineState, type JournalEntry, type MapAsset, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type UserSession } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { genericFantasyQuickRolls, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -922,25 +922,52 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       campaignId: request.params.campaignId,
       permissions
     });
+    const tools = createAiThreadTools();
+    const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions);
     let content = "";
     const events: AiProviderEvent[] = [];
     for await (const event of aiProvider.stream({
       threadId: thread.id,
       messages: [{ role: "user", content: request.body.prompt }],
-      tools: [],
+      tools,
       context
     })) {
       events.push(event);
       if (event.type === "message.delta") content += event.delta;
       if (event.type === "message.completed" && !content) content = event.content;
-      if (event.type === "tool.started" || event.type === "tool.completed") {
+      if (event.type === "tool.started") {
         store.state.aiToolCalls.push(
           createTimestamped("tool", {
             threadId: thread.id,
             toolName: event.toolName,
-            input: event.type === "tool.started" ? event.input : undefined,
-            output: event.type === "tool.completed" ? event.output : undefined,
-            status: event.type === "tool.started" ? ("started" as const) : ("completed" as const)
+            input: event.input,
+            output: undefined,
+            status: "started" as const
+          })
+        );
+        const output = await executeAiTool(tools, event.toolName, event.input, toolContext);
+        const completedEvent: AiProviderEvent = { type: "tool.completed", toolName: event.toolName, output };
+        events.push(completedEvent);
+        store.state.aiToolCalls.push(
+          createTimestamped("tool", {
+            threadId: thread.id,
+            toolName: event.toolName,
+            input: undefined,
+            output,
+            status: "completed" as const
+          })
+        );
+        if (isProposalToolOutput(output)) {
+          events.push({ type: "proposal.created", proposalId: output.proposalId });
+        }
+      } else if (event.type === "tool.completed") {
+        store.state.aiToolCalls.push(
+          createTimestamped("tool", {
+            threadId: thread.id,
+            toolName: event.toolName,
+            input: undefined,
+            output: event.output,
+            status: "completed" as const
           })
         );
       }
@@ -1415,6 +1442,149 @@ function createConfiguredAiProvider(): AiProvider {
     });
   }
   return new EchoAiProvider();
+}
+
+function createAiThreadTools(): AiToolDefinition[] {
+  return [
+    {
+      name: "create_proposal",
+      description: "Create a pending OpenTabletop proposal for GM approval.",
+      requiredPermissions: ["ai.proposeChanges"],
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput> {
+        const request = isRecord(input) ? input : {};
+        const title = stringFromRecord(request, "title") ?? "AI Tool Proposal";
+        const summary = stringFromRecord(request, "summary") ?? title;
+        const changes = Array.isArray(request.changes) ? request.changes.filter(isProposalChange) : [];
+        const proposalId = await context.createProposal({ title, summary, changes });
+        return {
+          proposalId,
+          title,
+          changeCount: changes.length
+        };
+      }
+    }
+  ];
+}
+
+interface ProposalToolOutput {
+  proposalId: string;
+  title: string;
+  changeCount: number;
+}
+
+function createAiToolContext(store: StateStore, campaignId: string, userId: string, permissions: PermissionName[]): AiToolContext {
+  return {
+    campaignId,
+    userId,
+    permissions,
+    state: store.state,
+    createProposal: async ({ title, summary, changes }) => {
+      const proposal = createTimestamped("prop", {
+        campaignId,
+        createdByUserId: userId,
+        createdByType: "ai" as const,
+        title,
+        summary,
+        status: "pending" as const,
+        changesJson: normalizeProposalChanges(changes, campaignId, userId),
+        diffJson: {
+          source: "ai_tool"
+        },
+        approvalRequired: true
+      }) satisfies Proposal;
+      store.state.proposals.push(proposal);
+      return proposal.id;
+    }
+  };
+}
+
+function normalizeProposalChanges(changes: ProposalChange[], campaignId: string, userId: string): ProposalChange[] {
+  return changes.map((change) => {
+    if (change.action !== "create") return change;
+    const data = {
+      ...change.data
+    };
+    if (typeof data.id !== "string") data.id = createId(prefixForProposalEntity(change.entity));
+    if (change.entity !== "token" && typeof data.campaignId !== "string") data.campaignId = campaignId;
+    if (typeof data.createdAt !== "string") data.createdAt = nowIso();
+    if (typeof data.updatedAt !== "string") data.updatedAt = data.createdAt;
+
+    if (change.entity === "journal") {
+      if (typeof data.visibility !== "string") data.visibility = "gm_only";
+      if (!Array.isArray(data.visibleToUserIds)) data.visibleToUserIds = [];
+      if (!Array.isArray(data.visibleToActorIds)) data.visibleToActorIds = [];
+      if (!Array.isArray(data.tags)) data.tags = ["ai"];
+      if (typeof data.createdBy !== "string") data.createdBy = userId;
+      if (typeof data.updatedBy !== "string") data.updatedBy = userId;
+    }
+
+    return {
+      ...change,
+      data
+    };
+  });
+}
+
+function prefixForProposalEntity(entity: ProposalChange["entity"]): string {
+  switch (entity) {
+    case "campaign":
+      return "camp";
+    case "scene":
+      return "scn";
+    case "token":
+      return "tok";
+    case "actor":
+      return "act";
+    case "item":
+      return "item";
+    case "journal":
+      return "jnl";
+    case "chat":
+      return "msg";
+    case "encounter":
+      return "enc";
+    case "combat":
+      return "cmb";
+  }
+}
+
+async function executeAiTool(tools: AiToolDefinition[], toolName: string, input: unknown, context: AiToolContext): Promise<unknown> {
+  const tool = tools.find((item) => item.name === toolName);
+  if (!tool) return { error: "unknown_tool", toolName };
+
+  const missingPermission = tool.requiredPermissions.find((permission) => !context.permissions.includes(permission));
+  if (missingPermission) {
+    return {
+      error: "missing_permission",
+      permission: missingPermission
+    };
+  }
+
+  return tool.execute(input, context);
+}
+
+function isProposalToolOutput(value: unknown): value is ProposalToolOutput {
+  return isRecord(value) && typeof value.proposalId === "string";
+}
+
+function isProposalChange(value: unknown): value is ProposalChange {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.entity === "string" &&
+    typeof value.action === "string" &&
+    isRecord(value.data) &&
+    ["campaign", "scene", "token", "actor", "item", "journal", "chat", "encounter", "combat"].includes(value.entity) &&
+    ["create", "update", "delete"].includes(value.action)
+  );
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function permissionsForUser(store: StateStore, userId: string, campaignId: string): PermissionName[] {
