@@ -232,7 +232,7 @@ curl -X DELETE \
   "http://localhost:4000/api/v1/admin/scim/group-role-mappings/scimmap_..."
 ```
 
-Server administrators are the user ids listed in `OTTE_ADMIN_USER_IDS`. `GET /api/v1/auth/session` returns `serverAdmin: true` for those users, and the browser app exposes an Admin tab for the same account, session, email outbox, AI operations, and audit operations. Admin endpoints can list/update users, require password resets, disable accounts, revoke sessions, inspect the email outbox, inspect redacted AI/Codex operations, manage SCIM group role mappings, and export redacted audit logs for account/session operations:
+Server administrators are the user ids listed in `OTTE_ADMIN_USER_IDS`. `GET /api/v1/auth/session` returns `serverAdmin: true` for those users, and the browser app exposes an Admin tab for the same account, session, email outbox, SCIM group role mapping, AI operations, and audit operations. Admin endpoints can list/update users, require password resets, disable accounts, revoke sessions, inspect the email outbox, inspect redacted AI/Codex operations, manage SCIM group role mappings, and export redacted audit logs for account/session operations:
 
 ```bash
 curl -H "Authorization: Bearer $OTTE_ADMIN_SESSION_TOKEN" \

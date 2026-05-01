@@ -665,6 +665,29 @@ input:disabled {
   gap: 8px;
 }
 
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.admin-form-grid label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.admin-form-grid input,
+.admin-form-grid select {
+  width: 100%;
+  min-height: 32px;
+  border-color: #463b2a;
+  background: #15130f;
+}
+
 .admin-meta,
 .admin-actions {
   display: flex;

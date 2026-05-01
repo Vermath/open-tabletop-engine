@@ -1,7 +1,7 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Encounter, FogMode, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPoint, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Encounter, FogMode, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, ScimAssignableRole, Token, UserRole, VisionPoint, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MessageSquare, Paintbrush, Pentagon, Plus, RefreshCw, RotateCcw, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -608,6 +608,20 @@ export function App() {
     await refresh();
   }
 
+  async function createScimGroupRoleMapping(input: AdminScimGroupRoleMappingInput) {
+    const result = await apiPost<AdminScimGroupRoleMappingResult>("/api/v1/admin/scim/group-role-mappings", input);
+    setAdminStatus(`Mapped ${scimMappingLabel(result.mapping)} with ${result.sync.createdMemberships} created, ${result.sync.updatedMemberships} updated`);
+    await refreshAdmin();
+    await refresh(input.campaignId);
+  }
+
+  async function deleteScimGroupRoleMapping(mapping: AdminScimGroupRoleMapping) {
+    const result = await apiDelete<{ removedMemberships: number }>(`/api/v1/admin/scim/group-role-mappings/${mapping.id}`);
+    setAdminStatus(`Removed ${scimMappingLabel(mapping)} and ${result.removedMemberships} sourced memberships`);
+    await refreshAdmin();
+    await refresh(mapping.campaignId);
+  }
+
   async function exportCampaign() {
     const archive = await apiGet<object>(`/api/v1/campaigns/${campaignId}/export`);
     const blob = new Blob([JSON.stringify(archive, null, 2)], {
@@ -833,7 +847,7 @@ export function App() {
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} importedActor={importedActor} encounterPlan={encounterPlan} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onAdvanceActor={advanceSelectedActor} onPlanEncounter={planSystemEncounter} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canPlanEncounter={hasPermission("combat.manage")} canRollSystem={hasPermission("dice.roll")} />}
-            {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onUpdatePluginReview={updatePluginReview} />}
+            {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} campaigns={snapshot.campaigns} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onUpdatePluginReview={updatePluginReview} onCreateScimMapping={createScimGroupRoleMapping} onDeleteScimMapping={deleteScimGroupRoleMapping} />}
           </aside>
         </div>
 
@@ -1318,13 +1332,25 @@ function CombatPanel(props: { combat?: Combat; onStart(): void; canManage: boole
   );
 }
 
-function AdminPanel(props: { admin?: AdminSnapshot; currentUserId: string; status: string; onRefresh(): Promise<void>; onDisableUser(user: AdminUserInfo): Promise<void>; onEnableUser(user: AdminUserInfo): Promise<void>; onRequireReset(user: AdminUserInfo): Promise<void>; onIssueReset(user: AdminUserInfo): Promise<void>; onRevokeUserSessions(user: AdminUserInfo): Promise<void>; onRevokeSession(session: AdminSessionInfo): Promise<void>; onUpdatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus): Promise<void> }) {
+function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]; currentUserId: string; status: string; onRefresh(): Promise<void>; onDisableUser(user: AdminUserInfo): Promise<void>; onEnableUser(user: AdminUserInfo): Promise<void>; onRequireReset(user: AdminUserInfo): Promise<void>; onIssueReset(user: AdminUserInfo): Promise<void>; onRevokeUserSessions(user: AdminUserInfo): Promise<void>; onRevokeSession(session: AdminSessionInfo): Promise<void>; onUpdatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus): Promise<void>; onCreateScimMapping(input: AdminScimGroupRoleMappingInput): Promise<void>; onDeleteScimMapping(mapping: AdminScimGroupRoleMapping): Promise<void> }) {
   const users = props.admin?.users ?? [];
   const sessions = props.admin?.sessions ?? [];
   const emails = props.admin?.emailOutbox.slice().reverse() ?? [];
   const auditLogs = props.admin?.audit.auditLogs ?? [];
   const aiOperations = props.admin?.aiOperations;
   const pluginReviews = props.admin?.pluginReviews;
+  const scimMappings = props.admin?.scimGroupRoleMappings ?? [];
+  const defaultScimCampaignId = props.campaigns[0]?.id ?? "";
+  const [scimCampaignId, setScimCampaignId] = useState(defaultScimCampaignId);
+  const [scimRole, setScimRole] = useState<ScimAssignableRole>("player");
+  const [scimMatchType, setScimMatchType] = useState<"groupDisplayName" | "groupExternalId" | "groupId">("groupDisplayName");
+  const [scimGroupValue, setScimGroupValue] = useState("");
+  const selectedScimCampaignId = scimCampaignId || defaultScimCampaignId;
+
+  useEffect(() => {
+    if (!scimCampaignId && defaultScimCampaignId) setScimCampaignId(defaultScimCampaignId);
+  }, [defaultScimCampaignId, scimCampaignId]);
+
   return (
     <div className="panel-stack admin-panel">
       <div className="panel-heading">
@@ -1374,6 +1400,89 @@ function AdminPanel(props: { admin?: AdminSnapshot; currentUserId: string; statu
                 )}
                 <button className="ghost-button" title="Revoke all user sessions" onClick={() => props.onRevokeUserSessions(user).catch(console.error)} disabled={user.sessionCount === 0}>
                   <RefreshCw size={14} /> Revoke
+                </button>
+              </div>
+            </article>
+          ))
+        )}
+      </section>
+
+      <section className="admin-section" aria-label="Organization access">
+        <div className="operator-heading">
+          <div className="section-title">Organization Access</div>
+          <strong>{scimMappings.length} mappings</strong>
+        </div>
+        <form
+          className="operator-item admin-item admin-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const groupValue = scimGroupValue.trim();
+            if (!selectedScimCampaignId || !groupValue) return;
+            const input: AdminScimGroupRoleMappingInput = { campaignId: selectedScimCampaignId, role: scimRole };
+            input[scimMatchType] = groupValue;
+            props.onCreateScimMapping(input).then(() => setScimGroupValue("")).catch(console.error);
+          }}
+        >
+          <div className="operator-row">
+            <span>SCIM group mapping</span>
+            <strong>{props.campaigns.length} campaigns</strong>
+          </div>
+          <div className="admin-form-grid">
+            <label>
+              <span>Campaign</span>
+              <select aria-label="Mapping campaign" value={selectedScimCampaignId} onChange={(event) => setScimCampaignId(event.target.value)}>
+                {props.campaigns.map((campaign) => (
+                  <option key={campaign.id} value={campaign.id}>{campaign.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Role</span>
+              <select aria-label="Mapping role" value={scimRole} onChange={(event) => setScimRole(event.target.value as ScimAssignableRole)}>
+                <option value="player">Player</option>
+                <option value="observer">Observer</option>
+                <option value="assistant_gm">Assistant GM</option>
+                <option value="gm">GM</option>
+              </select>
+            </label>
+            <label>
+              <span>Match</span>
+              <select aria-label="SCIM group match" value={scimMatchType} onChange={(event) => setScimMatchType(event.target.value as "groupDisplayName" | "groupExternalId" | "groupId")}>
+                <option value="groupDisplayName">Display name</option>
+                <option value="groupExternalId">External id</option>
+                <option value="groupId">Group id</option>
+              </select>
+            </label>
+            <label>
+              <span>Group</span>
+              <input aria-label="SCIM group identifier" value={scimGroupValue} placeholder={scimMatchType === "groupId" ? "scimg_..." : "External group name"} onChange={(event) => setScimGroupValue(event.target.value)} />
+            </label>
+          </div>
+          <button className="ghost-button wide" type="submit" disabled={!selectedScimCampaignId || !scimGroupValue.trim()}>
+            <UserPlus size={14} /> Add mapping
+          </button>
+        </form>
+        {!props.admin ? (
+          <div className="empty-state compact">No organization data loaded.</div>
+        ) : scimMappings.length === 0 ? (
+          <div className="empty-state compact">No SCIM group role mappings.</div>
+        ) : (
+          scimMappings.slice(0, 8).map((mapping) => (
+            <article className="operator-item admin-item" key={mapping.id}>
+              <div className="operator-row">
+                <span className={`status-pill ${mapping.group ? "completed" : "running"}`}>{mapping.group ? "matched" : "pending"}</span>
+                <strong>{mapping.role}</strong>
+              </div>
+              <h3>{scimMappingLabel(mapping)}</h3>
+              <p>{campaignName(props.campaigns, mapping.campaignId)} - {mapping.id}</p>
+              <div className="admin-meta">
+                <span>{mapping.group?.memberUserIds.length ?? 0} SCIM members</span>
+                <span>{scimMappingIdentity(mapping)}</span>
+                <span>{formatDateTime(mapping.updatedAt)}</span>
+              </div>
+              <div className="admin-actions">
+                <button className="ghost-button" title="Delete SCIM group role mapping" onClick={() => props.onDeleteScimMapping(mapping).catch(console.error)}>
+                  <UserX size={14} /> Delete mapping
                 </button>
               </div>
             </article>
@@ -1549,6 +1658,20 @@ function AdminPanel(props: { admin?: AdminSnapshot; currentUserId: string; statu
       </section>
     </div>
   );
+}
+
+function campaignName(campaigns: Campaign[], campaignId: string): string {
+  return campaigns.find((campaign) => campaign.id === campaignId)?.name ?? campaignId;
+}
+
+function scimMappingLabel(mapping: AdminScimGroupRoleMapping): string {
+  return mapping.group?.displayName ?? mapping.groupDisplayName ?? mapping.groupExternalId ?? mapping.groupId ?? "Unmatched SCIM group";
+}
+
+function scimMappingIdentity(mapping: AdminScimGroupRoleMapping): string {
+  if (mapping.groupId) return `group id ${mapping.groupId}`;
+  if (mapping.groupExternalId) return `external id ${mapping.groupExternalId}`;
+  return `display name ${mapping.groupDisplayName ?? "unknown"}`;
 }
 
 function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; recapSession(): void; extractMemory(): void; proposals: Proposal[]; memory: AiMemoryFact[]; aiThreads: AiThread[]; aiUsage?: AiUsageSummary; aiToolCalls: AiToolCall[]; approveAndApply(proposal: Proposal): void; approveMemory(fact: AiMemoryFact): void; canPropose: boolean; canApply: boolean }) {

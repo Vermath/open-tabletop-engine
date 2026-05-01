@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, EmailOutboxMessage, Encounter, FogPreset, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, EmailOutboxMessage, Encounter, FogPreset, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -442,6 +442,29 @@ export interface AdminPluginReviewSnapshot {
   plugins: AdminPluginReviewInfo[];
 }
 
+export interface AdminScimGroupRoleMapping extends ScimGroupRoleMapping {
+  group?: Pick<ScimGroup, "id" | "displayName" | "externalId" | "memberUserIds">;
+}
+
+export interface AdminScimGroupRoleMappingInput {
+  campaignId: string;
+  role: ScimAssignableRole;
+  groupId?: string;
+  groupExternalId?: string;
+  groupDisplayName?: string;
+}
+
+export interface AdminScimGroupRoleMappingResult {
+  mapping: AdminScimGroupRoleMapping;
+  sync: {
+    matchedGroups: number;
+    createdMemberships: number;
+    updatedMemberships: number;
+    removedMemberships: number;
+    preservedManualMemberships: number;
+  };
+}
+
 export interface AdminUserInfo extends Omit<User, "passwordHash" | "mfa"> {
   disabled: boolean;
   membershipCount: number;
@@ -481,18 +504,20 @@ export interface AdminSnapshot {
   audit: AdminAuditLogExport;
   aiOperations: AdminAiOperations;
   pluginReviews: AdminPluginReviewSnapshot;
+  scimGroupRoleMappings: AdminScimGroupRoleMapping[];
 }
 
 export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
-  const [users, sessions, emailOutbox, audit, aiOperations, pluginReviews] = await Promise.all([
+  const [users, sessions, emailOutbox, audit, aiOperations, pluginReviews, scimGroupRoleMappings] = await Promise.all([
     apiGet<AdminUserInfo[]>("/api/v1/admin/users"),
     apiGet<AdminSessionInfo[]>("/api/v1/admin/sessions"),
     apiGet<EmailOutboxMessage[]>("/api/v1/admin/email-outbox"),
     apiGet<AdminAuditLogExport>("/api/v1/admin/audit-logs?limit=12"),
     apiGet<AdminAiOperations>("/api/v1/admin/ai/operations"),
-    apiGet<AdminPluginReviewSnapshot>("/api/v1/admin/plugins/reviews")
+    apiGet<AdminPluginReviewSnapshot>("/api/v1/admin/plugins/reviews"),
+    apiGet<AdminScimGroupRoleMapping[]>("/api/v1/admin/scim/group-role-mappings")
   ]);
-  return { users, sessions, emailOutbox, audit, aiOperations, pluginReviews };
+  return { users, sessions, emailOutbox, audit, aiOperations, pluginReviews, scimGroupRoleMappings };
 }
 
 export function assetBlobUrl(asset: MapAsset): string {

@@ -1585,6 +1585,31 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - `DELETE /api/v1/admin/scim/group-role-mappings/scimmap_mon6c5cvfu234ver` returned `{ removedMemberships: 1 }`, and a final member list check confirmed the provisioned user was no longer a `camp_demo` member.
   - Admin audit exports for `admin.scim.groupRoleMapping.create` and `admin.scim.groupRoleMapping.delete` each returned `count: 1`.
 
+### Organization Admin Access UI Slice
+
+- Implementation:
+  - Added SCIM group role mappings to the browser admin snapshot so server admins can inspect organization access state from the Admin tab.
+  - Added an `Organization Access` Admin tab section for creating SCIM group-to-campaign role mappings by group display name, external id, or group id.
+  - Added matched mapping cards showing campaign, role, SCIM member count, group identity, and delete controls.
+  - Wired create/delete UI actions to the existing audit-backed `/api/v1/admin/scim/group-role-mappings` routes and refreshed campaign/admin state after each mutation.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+- Manual browser/API evidence:
+  - API: `http://127.0.0.1:55164`
+  - Web: `http://127.0.0.1:5193/`
+  - SQLite file: `apps/api/storage/manual-org-admin-ui-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `PORT=55164`, `HOST=127.0.0.1`, `OTTE_SQLITE_PATH=apps/api/storage/manual-org-admin-ui-20260501.sqlite`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, and `OTTE_SCIM_BEARER_TOKEN=manual-org-admin-secret`.
+  - The server was the built API entrypoint `node apps/api/dist/server.js`; health returned `true` and GM login returned `serverAdmin: true`.
+  - SCIM API setup created user `usr_monh0e2ibbhdd605` for `manual.org.admin@example.test` and group `scimg_monh0e2pcol7xxxo` named `Manual Org Observers` with external id `manual-org-observers-20260501`.
+  - Browser Admin tab displayed the `Organization Access` section with mapping campaign, role, match, group identifier, and `Add mapping` controls.
+  - Creating a display-name mapping from the browser produced `scimmap_monh1i3zyjqjdvvy`, matched `Manual Org Observers`, assigned role `observer`, showed `1 SCIM members`, and added the provisioned user to the session switcher as `Manual Org Admin Member - observer`.
+  - API verification after browser create returned member role `observer` with source `{ type: "scim_group", groupId: "scimg_monh0e2pcol7xxxo", mappingId: "scimmap_monh1i3zyjqjdvvy" }` and `admin.scim.groupRoleMapping.create` audit count `1`.
+  - Screenshot saved at `output/playwright/org-admin-scim-mapping.png`.
+  - Clicking browser `Delete mapping` removed the mapping; API verification returned `remainingMappings: 0`, `provisionedMemberStillInCampaign: false`, `admin.scim.groupRoleMapping.create` count `1`, and `admin.scim.groupRoleMapping.delete` count `1`.
+  - Browser console had no application runtime errors; the only error was the existing missing `favicon.ico` 404.
+  - After shutdown, no listener remained on ports `55164` or `5193`.
+
 ### Server Admin AI Operations Slice
 
 - Implementation:
@@ -1614,7 +1639,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
-- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification and an organization-admin UI.
+- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, browser organization access administration, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification.
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, built-in upload security scanning, and external AV/trust scanner webhooks before storage writes. Higher-assurance hosting may still need provider-specific compliance artifacts and operational certifications outside the app.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, smoothed freehand reveal/hide brushes, fog region deletion, fog undo/history, and multi-scene fog presets now have verified controls and permission filtering. No fog-specific item remains in the current acceptance checklist.
 - Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, campaign-scoped JSON storage APIs, command-returned storage mutations, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, server-admin marketplace review surfaces, optional approval-required review policy, storage/review audit logs, and browser/API acceptance evidence. Remaining plugin ecosystem work is external marketplace operations beyond the self-hosted review and registry workflow.
