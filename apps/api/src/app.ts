@@ -2821,11 +2821,13 @@ function createAiThreadTools(): AiToolDefinition[] {
         required: ["title", "summary"],
         additionalProperties: false
       },
-      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput> {
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
         const request = isRecord(input) ? input : {};
         const title = stringFromRecord(request, "title") ?? "AI Tool Proposal";
         const summary = stringFromRecord(request, "summary") ?? title;
         const changes = Array.isArray(request.changes) ? request.changes.filter(isProposalChange) : [];
+        const missingPermission = missingProposalChangePermission(changes, context.permissions);
+        if (missingPermission) return missingPermissionToolOutput(missingPermission);
         const proposalId = await context.createProposal({ title, summary, changes });
         return {
           proposalId,
@@ -2837,7 +2839,7 @@ function createAiThreadTools(): AiToolDefinition[] {
     {
       name: "draft_encounter",
       description: "Draft a pending encounter proposal for GM approval.",
-      requiredPermissions: ["ai.proposeChanges"],
+      requiredPermissions: ["ai.proposeChanges", "campaign.update"],
       parameters: {
         type: "object",
         properties: {
@@ -2868,6 +2870,181 @@ function createAiThreadTools(): AiToolDefinition[] {
         return {
           proposalId,
           title: `Encounter: ${name}`,
+          changeCount: 1
+        };
+      }
+    },
+    {
+      name: "draft_journal_entry",
+      description: "Draft a pending journal-entry proposal for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "journal.create"],
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Journal entry title." },
+          body: { type: "string", description: "Journal entry body." },
+          visibility: { type: "string", description: "Who can read the journal entry after approval.", enum: ["public", "gm_only"] },
+          tags: { type: "array", description: "Optional journal tags.", items: { type: "string" } }
+        },
+        required: ["title", "body"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput> {
+        const request = isRecord(input) ? input : {};
+        const title = stringFromRecord(request, "title") ?? "AI Draft Journal";
+        const body = stringFromRecord(request, "body") ?? "AI drafted journal entry.";
+        const visibility = visibilityFromRecord(request, "visibility", "gm_only");
+        const tags = stringArrayFromRecord(request, "tags");
+        const journal = createTimestamped("jnl", {
+          campaignId: context.campaignId,
+          title,
+          body,
+          visibility,
+          visibleToUserIds: [],
+          visibleToActorIds: [],
+          tags: tags.length > 0 ? tags : ["ai"],
+          createdBy: context.userId,
+          updatedBy: context.userId
+        }) satisfies JournalEntry;
+        const proposalId = await context.createProposal({
+          title: `Journal: ${title}`,
+          summary: body.slice(0, 240),
+          changes: [{ entity: "journal", action: "create", data: journal }]
+        });
+        return {
+          proposalId,
+          title: `Journal: ${title}`,
+          changeCount: 1
+        };
+      }
+    },
+    {
+      name: "draft_scene",
+      description: "Draft a pending scene proposal for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "scene.create"],
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Scene name." },
+          width: { type: "number", description: "Scene width in tabletop units." },
+          height: { type: "number", description: "Scene height in tabletop units." },
+          gridSize: { type: "number", description: "Grid size in tabletop units." }
+        },
+        required: ["name"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput> {
+        const request = isRecord(input) ? input : {};
+        const name = stringFromRecord(request, "name") ?? "AI Draft Scene";
+        const width = numberFromRecord(request, "width", 100, 10000) ?? 1200;
+        const height = numberFromRecord(request, "height", 100, 10000) ?? 800;
+        const gridSize = numberFromRecord(request, "gridSize", 10, 200) ?? 50;
+        const scene = createTimestamped("scn", {
+          campaignId: context.campaignId,
+          name,
+          width,
+          height,
+          gridType: "square" as const,
+          gridSize,
+          active: false,
+          sortOrder: context.state.scenes.filter((item) => item.campaignId === context.campaignId).length,
+          fog: [],
+          walls: [],
+          lights: [],
+          metadata: { source: "ai_tool" }
+        }) satisfies Scene;
+        const proposalId = await context.createProposal({
+          title: `Scene: ${name}`,
+          summary: `Create scene ${name}.`,
+          changes: [{ entity: "scene", action: "create", data: scene }]
+        });
+        return {
+          proposalId,
+          title: `Scene: ${name}`,
+          changeCount: 1
+        };
+      }
+    },
+    {
+      name: "draft_token_update",
+      description: "Draft a pending token update proposal for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "token.update"],
+      parameters: {
+        type: "object",
+        properties: {
+          tokenId: { type: "string", description: "Token id to update." },
+          name: { type: "string", description: "Optional new token name." },
+          x: { type: "number", description: "Optional x position." },
+          y: { type: "number", description: "Optional y position." },
+          hidden: { type: "boolean", description: "Optional hidden flag." },
+          disposition: { type: "string", description: "Optional token disposition.", enum: ["friendly", "neutral", "hostile"] }
+        },
+        required: ["tokenId"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const tokenId = stringFromRecord(request, "tokenId");
+        const token = tokenId ? tokenForCampaign(context, tokenId) : undefined;
+        if (!tokenId || !token) return toolError("not_found", { entity: "token", id: tokenId ?? "" });
+        const scene = context.state.scenes.find((item) => item.id === token.sceneId);
+        const data: Record<string, unknown> = {};
+        const name = stringFromRecord(request, "name");
+        if (name) data.name = name;
+        const x = numberFromRecord(request, "x", 0, scene?.width ?? 10000);
+        const y = numberFromRecord(request, "y", 0, scene?.height ?? 10000);
+        if (x !== undefined) data.x = x;
+        if (y !== undefined) data.y = y;
+        const hidden = booleanFromRecord(request, "hidden");
+        if (hidden !== undefined) data.hidden = hidden;
+        const disposition = enumStringFromRecord(request, "disposition", ["friendly", "neutral", "hostile"]);
+        if (disposition) data.disposition = disposition;
+        if (Object.keys(data).length === 0) return toolError("empty_change", { entity: "token", id: token.id });
+        const proposalId = await context.createProposal({
+          title: `Token: ${token.name}`,
+          summary: `Update token ${token.name}.`,
+          changes: [{ entity: "token", action: "update", id: token.id, data }]
+        });
+        return {
+          proposalId,
+          title: `Token: ${token.name}`,
+          changeCount: 1
+        };
+      }
+    },
+    {
+      name: "draft_actor_update",
+      description: "Draft a pending actor update proposal for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "actor.update"],
+      parameters: {
+        type: "object",
+        properties: {
+          actorId: { type: "string", description: "Actor id to update." },
+          name: { type: "string", description: "Optional new actor name." },
+          data: { type: "object", description: "Optional actor data patch.", additionalProperties: true }
+        },
+        required: ["actorId"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const actorId = stringFromRecord(request, "actorId");
+        const actor = actorId ? context.state.actors.find((item) => item.id === actorId && item.campaignId === context.campaignId) : undefined;
+        if (!actorId || !actor) return toolError("not_found", { entity: "actor", id: actorId ?? "" });
+        const data: Record<string, unknown> = {};
+        const name = stringFromRecord(request, "name");
+        if (name) data.name = name;
+        const actorData = recordFromRecord(request, "data");
+        if (actorData) data.data = { ...actor.data, ...actorData };
+        if (Object.keys(data).length === 0) return toolError("empty_change", { entity: "actor", id: actor.id });
+        const proposalId = await context.createProposal({
+          title: `Actor: ${actor.name}`,
+          summary: `Update actor ${actor.name}.`,
+          changes: [{ entity: "actor", action: "update", id: actor.id, data }]
+        });
+        return {
+          proposalId,
+          title: `Actor: ${actor.name}`,
           changeCount: 1
         };
       }
@@ -2942,6 +3119,12 @@ interface ProposalToolOutput {
   proposalId: string;
   title: string;
   changeCount: number;
+}
+
+interface ToolErrorOutput {
+  error: string;
+  permission?: PermissionName;
+  [key: string]: unknown;
 }
 
 interface MemoryToolOutput {
@@ -3064,6 +3247,61 @@ function prefixForProposalEntity(entity: ProposalChange["entity"]): string {
   }
 }
 
+function missingProposalChangePermission(changes: ProposalChange[], permissions: PermissionName[]): PermissionName | undefined {
+  for (const change of changes) {
+    const permission = permissionForProposalChange(change);
+    if (permission && !permissions.includes(permission)) return permission;
+  }
+  return undefined;
+}
+
+function permissionForProposalChange(change: ProposalChange): PermissionName | undefined {
+  if (change.entity === "campaign") return "campaign.update";
+  if (change.entity === "scene") {
+    if (change.action === "create") return "scene.create";
+    if (change.action === "delete") return "scene.delete";
+    return "scene.update";
+  }
+  if (change.entity === "token") {
+    if (change.action === "create") return "token.create";
+    if (change.action === "delete") return "token.delete";
+    return "token.update";
+  }
+  if (change.entity === "actor") {
+    if (change.action === "create") return "actor.create";
+    if (change.action === "delete") return "actor.delete";
+    return "actor.update";
+  }
+  if (change.entity === "journal") {
+    if (change.action === "create") return "journal.create";
+    if (change.action === "delete") return "journal.delete";
+    return "journal.update";
+  }
+  if (change.entity === "chat") return change.action === "create" ? "chat.write" : "chat.moderate";
+  if (change.entity === "combat") return "combat.manage";
+  if (change.entity === "encounter") return "campaign.update";
+  if (change.entity === "item") return "actor.update";
+  return undefined;
+}
+
+function missingPermissionToolOutput(permission: PermissionName): ToolErrorOutput {
+  return {
+    error: "missing_permission",
+    permission
+  };
+}
+
+function toolError(error: string, details: Record<string, unknown> = {}): ToolErrorOutput {
+  return {
+    error,
+    ...details
+  };
+}
+
+function tokenForCampaign(context: AiToolContext, tokenId: string): Token | undefined {
+  return context.state.tokens.find((token) => token.id === tokenId && context.state.scenes.some((scene) => scene.id === token.sceneId && scene.campaignId === context.campaignId));
+}
+
 async function executeAiTool(tools: AiToolDefinition[], toolName: string, input: unknown, context: AiToolContext): Promise<unknown> {
   const tool = tools.find((item) => item.name === toolName);
   if (!tool) return { error: "unknown_tool", toolName };
@@ -3104,6 +3342,21 @@ function isProposalChange(value: unknown): value is ProposalChange {
 function stringFromRecord(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberFromRecord(record: Record<string, unknown>, key: string, min: number, max: number): number | undefined {
+  const value = record[key];
+  return typeof value === "number" ? clampNumber(value, min, max) : undefined;
+}
+
+function booleanFromRecord(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function recordFromRecord(record: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+  const value = record[key];
+  return isRecord(value) ? value : undefined;
 }
 
 function enumStringFromRecord<T extends string>(record: Record<string, unknown>, key: string, allowed: readonly T[]): T | undefined {

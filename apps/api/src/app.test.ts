@@ -2550,6 +2550,10 @@ describe("api", () => {
         yield { type: "tool.started", toolName: "read_compendium", input: { systemId: "generic-fantasy" } };
         yield { type: "tool.started", toolName: "create_memory", input: { text: "The moon key opens the observatory.", visibility: "gm_only" } };
         yield { type: "tool.started", toolName: "draft_encounter", input: { name: "Mirror Knight", summary: "A reflective guardian blocks the vault.", difficulty: "hard" } };
+        yield { type: "tool.started", toolName: "draft_journal_entry", input: { title: "Mirror Clue", body: "The western mirror answers to moonlight.", visibility: "gm_only", tags: ["ai", "clue"] } };
+        yield { type: "tool.started", toolName: "draft_scene", input: { name: "Mirror Annex", width: 900, height: 700, gridSize: 50 } };
+        yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: 220, y: 240, disposition: "friendly" } };
+        yield { type: "tool.started", toolName: "draft_actor_update", input: { actorId: "act_valen", data: { resources: { focus: 4 } } } };
         yield { type: "tool.started", toolName: "roll_dice", input: { formula: "1d20+5", label: "AI Perception" } };
         yield { type: "tool.started", toolName: "unknown_tool", input: {} };
         yield { type: "message.completed", content: "Expanded tools requested" };
@@ -2566,8 +2570,9 @@ describe("api", () => {
       payload: { prompt: "Read the compendium, remember a key, draft an encounter, and roll dice." }
     });
     expect(gmThread.statusCode).toBe(200);
-    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "create_memory", "roll_dice", "read_compendium"]);
+    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "roll_dice", "read_compendium"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_encounter")?.parameters?.required).toEqual(["name", "summary"]);
+    expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_token_update")?.requiredPermissions).toEqual(["ai.proposeChanges", "token.update"]);
     expect(gmProvider.requests[0]!.context.actors?.map((actor) => actor.name)).toContain("Valen Ash");
     expect(gmProvider.requests[0]!.context.scenes?.map((scene) => scene.name)).toContain("Vault Entry");
     expect(gmThread.json().events).toEqual(
@@ -2575,6 +2580,10 @@ describe("api", () => {
         expect.objectContaining({ type: "tool.completed", toolName: "read_compendium", output: expect.objectContaining({ entries: expect.arrayContaining([expect.objectContaining({ id: "healing-word" })]) }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "create_memory", output: expect.objectContaining({ memoryId: expect.any(String), visibility: "gm_only" }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_encounter", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "draft_journal_entry", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "draft_scene", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "draft_token_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "draft_actor_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "roll_dice", output: expect.objectContaining({ rollId: expect.any(String), formula: "1d20+5", label: "AI Perception" }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "unknown_tool", output: { error: "unknown_tool", toolName: "unknown_tool" } })
       ])
@@ -2582,6 +2591,10 @@ describe("api", () => {
     expect(gmStore.state.aiMemory.some((fact) => fact.text === "The moon key opens the observatory.")).toBe(true);
     const encounterProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Encounter: Mirror Knight");
     expect(encounterProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "encounter", action: "create" }));
+    expect(gmStore.state.proposals.find((proposal) => proposal.title === "Journal: Mirror Clue")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "journal", action: "create" }));
+    expect(gmStore.state.proposals.find((proposal) => proposal.title === "Scene: Mirror Annex")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "scene", action: "create" }));
+    expect(gmStore.state.proposals.find((proposal) => proposal.title === "Token: Valen Ash")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "token", action: "update", id: "tok_valen", data: expect.objectContaining({ x: 220, y: 240 }) }));
+    expect(gmStore.state.proposals.find((proposal) => proposal.title === "Actor: Valen Ash")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "actor", action: "update", id: "act_valen" }));
     expect(gmStore.state.rolls).toHaveLength(1);
     expect(gmStore.state.chat.some((message) => message.body.includes("AI Perception: 1d20+5"))).toBe(true);
 
@@ -2592,7 +2605,7 @@ describe("api", () => {
     });
     expect(observedToolCalls.statusCode).toBe(200);
     expect(observedToolCalls.json().map((call: { toolName: string }) => call.toolName)).toEqual(
-      expect.arrayContaining(["read_compendium", "create_memory", "draft_encounter", "roll_dice", "unknown_tool"])
+      expect.arrayContaining(["read_compendium", "create_memory", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "roll_dice", "unknown_tool"])
     );
 
     const blockedToolCalls = await gmApp.inject({
@@ -2618,6 +2631,10 @@ describe("api", () => {
       expect.arrayContaining([
         expect.objectContaining({ toolName: "create_memory", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "draft_encounter", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "draft_journal_entry", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "draft_scene", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "draft_token_update", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "draft_actor_update", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "read_compendium", output: expect.objectContaining({ systemId: "generic-fantasy" }) }),
         expect.objectContaining({ toolName: "roll_dice", output: expect.objectContaining({ formula: "1d20+5" }) })
       ])
@@ -2626,6 +2643,73 @@ describe("api", () => {
     expect(playerStore.state.proposals.some((proposal) => proposal.title === "Encounter: Mirror Knight")).toBe(false);
     expect(playerStore.state.rolls).toHaveLength(1);
     await playerApp.close();
+  });
+
+  it("requires underlying campaign permissions for ai campaign-edit proposal tools", async () => {
+    class RestrictedEditProvider implements AiProvider {
+      id = "restricted-edit-ai";
+      label = "Restricted Edit AI";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield {
+          type: "tool.started",
+          toolName: "create_proposal",
+          input: {
+            title: "Restricted Journal Proposal",
+            summary: "A generic proposal should still honor the underlying journal permission.",
+            changes: [
+              {
+                entity: "journal",
+                action: "create",
+                data: {
+                  title: "Restricted Note",
+                  body: "This should not be proposed by a user without journal.create."
+                }
+              }
+            ]
+          }
+        };
+        yield { type: "tool.started", toolName: "draft_encounter", input: { name: "Restricted Encounter", summary: "Requires campaign update." } };
+        yield { type: "tool.started", toolName: "draft_journal_entry", input: { title: "Restricted Note", body: "Requires journal create." } };
+        yield { type: "tool.started", toolName: "draft_scene", input: { name: "Restricted Scene" } };
+        yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: 300 } };
+        yield { type: "tool.started", toolName: "draft_actor_update", input: { actorId: "act_valen", data: { hp: { current: 1 } } } };
+        yield { type: "message.completed", content: "Restricted edits requested" };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.proposeChanges"]
+      })
+    );
+    const app = await buildApp({ store, aiProvider: new RestrictedEditProvider() });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { prompt: "Try to propose edits without the underlying edit permissions." }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const completed = response.json().events.filter((event: { type: string }) => event.type === "tool.completed");
+    expect(completed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ toolName: "create_proposal", output: { error: "missing_permission", permission: "journal.create" } }),
+        expect.objectContaining({ toolName: "draft_encounter", output: { error: "missing_permission", permission: "campaign.update" } }),
+        expect.objectContaining({ toolName: "draft_journal_entry", output: { error: "missing_permission", permission: "journal.create" } }),
+        expect.objectContaining({ toolName: "draft_scene", output: { error: "missing_permission", permission: "scene.create" } }),
+        expect.objectContaining({ toolName: "draft_token_update", output: { error: "missing_permission", permission: "token.update" } }),
+        expect.objectContaining({ toolName: "draft_actor_update", output: { error: "missing_permission", permission: "actor.update" } })
+      ])
+    );
+    expect(store.state.proposals.some((proposal) => proposal.title.startsWith("Restricted"))).toBe(false);
+    await app.close();
   });
 
   it("approves and applies ai proposals and memory with permission boundaries", async () => {

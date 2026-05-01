@@ -30,8 +30,12 @@ AI thread tools currently include:
 
 - `create_proposal` for generic GM-approved campaign changes.
 - `draft_encounter` for encounter proposal drafts.
+- `draft_journal_entry` for journal-entry proposal drafts.
+- `draft_scene` for scene proposal drafts.
+- `draft_token_update` for token update proposal drafts.
+- `draft_actor_update` for actor update proposal drafts.
 - `create_memory` for queued memory facts.
 - `roll_dice` for campaign dice rolls posted to chat.
 - `read_compendium` for permission-safe rules compendium lookups.
 
-Every tool is checked against the human caller's campaign permissions before execution. Started and completed tool calls are persisted with completion durations, and GMs can inspect them through `GET /api/v1/campaigns/{campaignId}/ai/tool-calls`. Threads persist operational status fields including `running`, `completed`, or `failed`, start/end timestamps, duration, retry attempts, event count, tool-call count, prompt/context/response character counts, provider token usage, estimated cost when rates are configured, and provider error text when a provider call fails.
+Every tool is checked against the human caller's campaign permissions before execution. Proposal-backed campaign edit tools require `ai.proposeChanges` plus the underlying edit permission, and the generic `create_proposal` tool rejects proposal changes whose underlying edit permission is missing. Started and completed tool calls are persisted with completion durations, and GMs can inspect them through `GET /api/v1/campaigns/{campaignId}/ai/tool-calls`. Threads persist operational status fields including `running`, `completed`, or `failed`, start/end timestamps, duration, retry attempts, event count, tool-call count, prompt/context/response character counts, provider token usage, estimated cost when rates are configured, and provider error text when a provider call fails.

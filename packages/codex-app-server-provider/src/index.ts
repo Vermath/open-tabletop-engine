@@ -82,6 +82,56 @@ export class LoopbackCodexTransport implements JsonRpcTransport {
           }
         });
       }
+      if (shouldRequestJournalTool(params)) {
+        events.push({
+          type: "tool.started",
+          toolName: "draft_journal_entry",
+          input: {
+            title: "Loopback Journal Lead",
+            body: "The loopback provider drafted this journal clue.",
+            visibility: "gm_only",
+            tags: ["ai", "codex-loopback"]
+          }
+        });
+      }
+      if (shouldRequestSceneTool(params)) {
+        events.push({
+          type: "tool.started",
+          toolName: "draft_scene",
+          input: {
+            name: "Loopback Test Chamber",
+            width: 900,
+            height: 700,
+            gridSize: 50
+          }
+        });
+      }
+      if (shouldRequestTokenTool(params)) {
+        events.push({
+          type: "tool.started",
+          toolName: "draft_token_update",
+          input: {
+            tokenId: "tok_valen",
+            x: 220,
+            y: 240,
+            disposition: "friendly"
+          }
+        });
+      }
+      if (shouldRequestActorTool(params)) {
+        events.push({
+          type: "tool.started",
+          toolName: "draft_actor_update",
+          input: {
+            actorId: "act_valen",
+            data: {
+              resources: {
+                focus: 4
+              }
+            }
+          }
+        });
+      }
       if (shouldRequestMemoryTool(params)) {
         events.push({
           type: "tool.started",
@@ -136,6 +186,22 @@ function shouldRequestProposalTool(params: unknown): boolean {
 
 function shouldRequestEncounterTool(params: unknown): boolean {
   return hasTool(params, "draft_encounter") && /\bencounter\b/i.test(promptFromParams(params));
+}
+
+function shouldRequestJournalTool(params: unknown): boolean {
+  return hasTool(params, "draft_journal_entry") && /\bjournal\b|\bnote\b|\bclue\b/i.test(promptFromParams(params));
+}
+
+function shouldRequestSceneTool(params: unknown): boolean {
+  return hasTool(params, "draft_scene") && /\bscene\b|\bmap\b|\bchamber\b/i.test(promptFromParams(params));
+}
+
+function shouldRequestTokenTool(params: unknown): boolean {
+  return hasTool(params, "draft_token_update") && /\btoken\b|\bposition\b|\bmove\b/i.test(promptFromParams(params));
+}
+
+function shouldRequestActorTool(params: unknown): boolean {
+  return hasTool(params, "draft_actor_update") && /\bactor\b|\bsheet\b|\bcharacter\b/i.test(promptFromParams(params));
 }
 
 function shouldRequestMemoryTool(params: unknown): boolean {
