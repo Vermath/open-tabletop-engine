@@ -1,3 +1,4 @@
+import type { AiUsageMetrics } from "@open-tabletop/core";
 import type { AiProvider, AiProviderEvent, AiProviderRequest, AiToolDefinition, AiToolParameterSchema, PermissionFilteredContext } from "./index";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -137,6 +138,8 @@ function toOpenAiToolDefinition(tool: AiToolDefinition): OpenAiToolDefinition {
 function eventsFromOpenAiResponse(payload: unknown): AiProviderEvent[] {
   const events: AiProviderEvent[] = [];
   const textParts: string[] = [];
+  const usage = usageFromOpenAiResponse(payload);
+  if (usage) events.push({ type: "usage.reported", usage });
 
   if (isRecord(payload) && Array.isArray(payload.output)) {
     for (const item of payload.output) {
@@ -160,6 +163,19 @@ function eventsFromOpenAiResponse(payload: unknown): AiProviderEvent[] {
   const content = textParts.join("").trim();
   if (content) events.push({ type: "message.completed", content });
   return events;
+}
+
+function usageFromOpenAiResponse(payload: unknown): AiUsageMetrics | undefined {
+  if (!isRecord(payload) || !isRecord(payload.usage)) return undefined;
+  const usage: AiUsageMetrics = {};
+  const inputTokens = numberFromRecord(payload.usage, "input_tokens");
+  const outputTokens = numberFromRecord(payload.usage, "output_tokens");
+  const totalTokens = numberFromRecord(payload.usage, "total_tokens");
+  if (inputTokens !== undefined) usage.inputTokens = inputTokens;
+  if (outputTokens !== undefined) usage.outputTokens = outputTokens;
+  if (totalTokens !== undefined) usage.totalTokens = totalTokens;
+  if (usage.inputTokens === undefined && usage.outputTokens === undefined && usage.totalTokens === undefined) return undefined;
+  return usage;
 }
 
 function textFromContentPart(part: unknown): string | undefined {
@@ -186,4 +202,9 @@ function openAiResponsesEndpoint(baseUrl: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function numberFromRecord(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }

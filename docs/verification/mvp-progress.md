@@ -872,6 +872,38 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - GM `GET /api/v1/campaigns/camp_demo/ai/threads` returned the same thread with status `completed`.
   - Player `GET /api/v1/campaigns/camp_demo/ai/threads` returned `403`.
 
+### AI Usage Metrics Slice
+
+- Implementation:
+  - Added provider usage events to the AI provider interface.
+  - Mapped OpenAI Responses `usage` payloads into provider usage events.
+  - Persisted per-thread prompt, context, and response character counts.
+  - Persisted provider-reported input, output, and total token counts on AI threads.
+  - Added optional estimated cost calculation from `OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K` and `OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K`.
+  - Added `GET /api/v1/campaigns/{campaignId}/ai/usage` for GM-facing campaign and provider aggregate usage.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/ai-core typecheck` passed.
+  - `pnpm --filter @open-tabletop/ai-core build` passed.
+  - `pnpm --filter @open-tabletop/ai-core test` passed with `3 passed`.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api-contracts typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `40 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - `git diff --check` passed.
+  - AI core tests verify OpenAI Responses usage mapping.
+  - API tests verify thread usage persistence, estimated cost calculation, aggregate usage by provider, and player denial for the usage endpoint.
+- Manual API evidence:
+  - API: `http://127.0.0.1:4457`
+  - Fake OpenAI-compatible endpoint: `http://127.0.0.1:4714/v1/responses`
+  - SQLite file: `apps/api/storage/manual-ai-usage-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_AI_PROVIDER=openai-responses`, `OPENAI_API_KEY=sk-local-smoke`, `OPENAI_BASE_URL=http://127.0.0.1:4714/v1`, `OPENAI_MODEL=gpt-local-usage-smoke`, `OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K=0.01`, and `OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K=0.02`.
+  - GM login returned an `ots_` token length `47`.
+  - GM AI thread returned provider `openai-responses`, status `completed`, assistant message `Usage smoke completed.`, input tokens `1234`, output tokens `321`, total tokens `1555`, and estimated cost `0.01876`.
+  - GM `GET /api/v1/campaigns/camp_demo/ai/usage` returned thread count `1`, input tokens `1234`, output tokens `321`, estimated cost `0.01876`, and provider summary `openai-responses`.
+  - GM `GET /api/v1/campaigns/camp_demo/ai/threads` listed the same thread.
+  - Player `GET /api/v1/campaigns/camp_demo/ai/usage` returned `403`.
+
 ### SCIM Organization Sync Slice
 
 - Implementation:
@@ -945,4 +977,4 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, signing/trust policy, upgrade/rollback workflows, richer storage APIs, and marketplace review surfaces.
 - Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is multiple full systems, complete SRD-style content, character builders, leveling, encounter math, importers, and deeper automation.
-- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/memory/dice/compendium tools, provider retry/failure handling, thread status history, tool-call observability, provider-backed memory extraction, approval/application, and deterministic recap memory. Remaining Codex integration work is broader campaign-edit tool coverage, deeper permission-regression breadth, cost/usage metrics, and richer operator dashboards.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/memory/dice/compendium tools, provider retry/failure handling, thread status history, tool-call observability, provider-backed memory extraction, usage and estimated-cost metrics, approval/application, and deterministic recap memory. Remaining Codex integration work is broader campaign-edit tool coverage, deeper permission-regression breadth, and richer front-end operator dashboards.

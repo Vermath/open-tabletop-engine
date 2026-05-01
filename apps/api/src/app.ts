@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { applyGenericFantasyCondition, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, summarizeActor } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -1876,6 +1876,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return store.state.aiThreads.filter((thread) => thread.campaignId === request.params.campaignId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   });
 
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/ai/usage", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
+    if (allowed !== true) return allowed;
+    const threads = store.state.aiThreads.filter((thread) => thread.campaignId === request.params.campaignId);
+    return summarizeAiUsage(request.params.campaignId, threads);
+  });
+
   app.post<{ Params: { campaignId: string }; Body: { prompt: string } }>("/api/v1/campaigns/:campaignId/ai/threads", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.use");
     if (allowed !== true) return allowed;
@@ -1883,6 +1890,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
+    const permissions = permissionsForUser(store, userId, request.params.campaignId);
+    const context = buildPermissionFilteredContext({
+      state: store.state,
+      campaignId: request.params.campaignId,
+      permissions
+    });
     const thread: AiThread = createTimestamped("thr", {
       campaignId: request.params.campaignId,
       userId,
@@ -1892,15 +1905,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       startedAt,
       retryAttempts: 0,
       eventCount: 0,
-      toolCallCount: 0
+      toolCallCount: 0,
+      usage: createInitialAiUsage(request.body.prompt, context)
     });
     store.state.aiThreads.push(thread);
-    const permissions = permissionsForUser(store, userId, request.params.campaignId);
-    const context = buildPermissionFilteredContext({
-      state: store.state,
-      campaignId: request.params.campaignId,
-      permissions
-    });
     const tools = createAiThreadTools();
     const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions);
     let content = "";
@@ -1920,6 +1928,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         for await (const event of aiProvider.stream(providerInput)) {
           providerEventsSeen += 1;
           events.push(event);
+          if (event.type === "usage.reported") {
+            mergeAiUsage(thread, event.usage);
+          }
           if (event.type === "message.delta") content += event.delta;
           if (event.type === "message.completed" && !content) content = event.content;
           if (event.type === "tool.started") {
@@ -1962,6 +1973,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
             );
           }
         }
+        recordAiResponseUsage(thread, content);
         completeAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount);
         break;
       } catch (error) {
@@ -1969,6 +1981,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           retryAttempts += 1;
           continue;
         }
+        recordAiResponseUsage(thread, content);
         failAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount, error);
         store.save();
         return reply.code(502).send({
@@ -2641,6 +2654,7 @@ function completeAiThread(thread: AiThread, startedAtMs: number, retryAttempts: 
   thread.eventCount = eventCount;
   thread.toolCallCount = toolCallCount;
   thread.providerError = undefined;
+  finalizeAiUsage(thread);
   thread.updatedAt = completedAt;
 }
 
@@ -2653,12 +2667,124 @@ function failAiThread(thread: AiThread, startedAtMs: number, retryAttempts: numb
   thread.eventCount = eventCount;
   thread.toolCallCount = toolCallCount;
   thread.providerError = aiProviderErrorMessage(error);
+  finalizeAiUsage(thread);
   thread.updatedAt = failedAt;
 }
 
 function aiProviderErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "AI provider failed";
   return message.slice(0, 500) || "AI provider failed";
+}
+
+function createInitialAiUsage(prompt: string, context: unknown): AiUsageMetrics {
+  return {
+    promptCharacters: prompt.length,
+    contextCharacters: jsonCharacterLength(context)
+  };
+}
+
+function recordAiResponseUsage(thread: AiThread, content: string): void {
+  mergeAiUsage(thread, { responseCharacters: content.length });
+}
+
+function mergeAiUsage(thread: AiThread, usage: AiUsageMetrics): void {
+  thread.usage = normalizeAiUsage({
+    ...(thread.usage ?? {}),
+    ...usage
+  });
+}
+
+function finalizeAiUsage(thread: AiThread): void {
+  if (!thread.usage) return;
+  thread.usage = normalizeAiUsage(thread.usage);
+}
+
+function normalizeAiUsage(usage: AiUsageMetrics): AiUsageMetrics {
+  const normalized = { ...usage };
+  if (normalized.totalTokens === undefined && normalized.inputTokens !== undefined && normalized.outputTokens !== undefined) {
+    normalized.totalTokens = normalized.inputTokens + normalized.outputTokens;
+  }
+  const estimatedCostUsd = estimateAiCostUsd(normalized);
+  if (estimatedCostUsd !== undefined) normalized.estimatedCostUsd = estimatedCostUsd;
+  return normalized;
+}
+
+function estimateAiCostUsd(usage: AiUsageMetrics): number | undefined {
+  if (usage.inputTokens === undefined || usage.outputTokens === undefined) return usage.estimatedCostUsd;
+  const inputRate = envNumber("OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K");
+  const outputRate = envNumber("OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K");
+  if (inputRate === undefined || outputRate === undefined) return usage.estimatedCostUsd;
+  return roundCurrency((usage.inputTokens / 1000) * inputRate + (usage.outputTokens / 1000) * outputRate);
+}
+
+function summarizeAiUsage(campaignId: string, threads: AiThread[]) {
+  const providers = new Map<string, AiThread[]>();
+  for (const thread of threads) {
+    const providerThreads = providers.get(thread.provider) ?? [];
+    providerThreads.push(thread);
+    providers.set(thread.provider, providerThreads);
+  }
+  return {
+    campaignId,
+    ...summarizeAiThreads(threads),
+    providers: Array.from(providers.entries())
+      .map(([provider, providerThreads]) => ({
+        provider,
+        ...summarizeAiThreads(providerThreads)
+      }))
+      .sort((a, b) => a.provider.localeCompare(b.provider))
+  };
+}
+
+function summarizeAiThreads(threads: AiThread[]) {
+  return {
+    threadCount: threads.length,
+    completedThreadCount: threads.filter((thread) => thread.status === "completed").length,
+    failedThreadCount: threads.filter((thread) => thread.status === "failed").length,
+    runningThreadCount: threads.filter((thread) => thread.status === "running").length,
+    retryAttempts: sumNumbers(threads.map((thread) => thread.retryAttempts)),
+    eventCount: sumNumbers(threads.map((thread) => thread.eventCount)),
+    toolCallCount: sumNumbers(threads.map((thread) => thread.toolCallCount)),
+    durationMs: sumNumbers(threads.map((thread) => thread.durationMs)),
+    usage: aggregateAiUsage(threads.map((thread) => thread.usage))
+  };
+}
+
+function aggregateAiUsage(usages: Array<AiUsageMetrics | undefined>): AiUsageMetrics {
+  return normalizeAiUsage({
+    promptCharacters: sumNumbers(usages.map((usage) => usage?.promptCharacters)),
+    contextCharacters: sumNumbers(usages.map((usage) => usage?.contextCharacters)),
+    responseCharacters: sumNumbers(usages.map((usage) => usage?.responseCharacters)),
+    inputTokens: sumNumbers(usages.map((usage) => usage?.inputTokens)),
+    outputTokens: sumNumbers(usages.map((usage) => usage?.outputTokens)),
+    totalTokens: sumNumbers(usages.map((usage) => usage?.totalTokens)),
+    estimatedCostUsd: roundCurrency(sumNumbers(usages.map((usage) => usage?.estimatedCostUsd)))
+  });
+}
+
+function sumNumbers(values: Array<number | undefined>): number {
+  let total = 0;
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) total += value;
+  }
+  return total;
+}
+
+function jsonCharacterLength(value: unknown): number {
+  try {
+    return JSON.stringify(value).length;
+  } catch {
+    return 0;
+  }
+}
+
+function envNumber(name: string): number | undefined {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function roundCurrency(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
 }
 
 function defaultMemoryExtractionSource(store: StateStore, campaignId: string): string {

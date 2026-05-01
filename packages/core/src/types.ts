@@ -451,6 +451,17 @@ export interface AiThread extends Timestamps {
   eventCount?: number;
   toolCallCount?: number;
   providerError?: string;
+  usage?: AiUsageMetrics;
+}
+
+export interface AiUsageMetrics {
+  promptCharacters?: number;
+  contextCharacters?: number;
+  responseCharacters?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  estimatedCostUsd?: number;
 }
 
 export interface AiMemoryFact extends Timestamps {

@@ -9,11 +9,12 @@ The AI layer is provider-agnostic. `packages/ai-core` defines:
 - local echo provider for development
 - OpenAI Responses API provider adapter
 
-The API endpoint `POST /api/v1/campaigns/{campaignId}/ai/threads` creates a thread and returns an assistant response. `GET /api/v1/campaigns/{campaignId}/ai/threads` gives GMs the campaign's AI thread status history. The web client wraps assistant output in a reviewable proposal before applying campaign changes.
+The API endpoint `POST /api/v1/campaigns/{campaignId}/ai/threads` creates a thread and returns an assistant response. `GET /api/v1/campaigns/{campaignId}/ai/threads` gives GMs the campaign's AI thread status history, and `GET /api/v1/campaigns/{campaignId}/ai/usage` aggregates operational usage by provider. The web client wraps assistant output in a reviewable proposal before applying campaign changes.
 
 AI MVP endpoints also include:
 
 - `GET /api/v1/campaigns/{campaignId}/ai/threads`
+- `GET /api/v1/campaigns/{campaignId}/ai/usage`
 - `POST /api/v1/campaigns/{campaignId}/ai/encounter-design`
 - `POST /api/v1/campaigns/{campaignId}/ai/session-recap`
 - `GET|POST /api/v1/campaigns/{campaignId}/ai/memory`
@@ -23,7 +24,7 @@ AI MVP endpoints also include:
 
 Provider packages include the local echo provider, the OpenAI Responses API adapter, and `@open-tabletop/codex-app-server-provider`, which defines the Codex App Server JSON-RPC transport bridge and maps Codex events into OpenTabletop AI provider events.
 
-Configure `OTTE_AI_PROVIDER=openai-responses` to use the OpenAI adapter. It reads `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-5-mini`), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`), `OPENAI_ORGANIZATION`, and `OPENAI_PROJECT`. The adapter sends permission-filtered campaign context in the Responses request instructions, maps typed OpenTabletop AI tools to function tools, and maps returned function calls back to OpenTabletop tool events. Provider calls retry once before any event is emitted by default; set `OTTE_AI_PROVIDER_RETRY_ATTEMPTS` from `0` to `3` to adjust that pre-event retry budget.
+Configure `OTTE_AI_PROVIDER=openai-responses` to use the OpenAI adapter. It reads `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-5-mini`), `OPENAI_BASE_URL` (default `https://api.openai.com/v1`), `OPENAI_ORGANIZATION`, and `OPENAI_PROJECT`. The adapter sends permission-filtered campaign context in the Responses request instructions, maps typed OpenTabletop AI tools to function tools, maps returned function calls back to OpenTabletop tool events, and maps provider-reported token usage into thread usage metrics. Provider calls retry once before any event is emitted by default; set `OTTE_AI_PROVIDER_RETRY_ATTEMPTS` from `0` to `3` to adjust that pre-event retry budget. Set `OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K` and `OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K` to calculate estimated costs from provider-reported token usage.
 
 AI thread tools currently include:
 
@@ -33,4 +34,4 @@ AI thread tools currently include:
 - `roll_dice` for campaign dice rolls posted to chat.
 - `read_compendium` for permission-safe rules compendium lookups.
 
-Every tool is checked against the human caller's campaign permissions before execution. Started and completed tool calls are persisted with completion durations, and GMs can inspect them through `GET /api/v1/campaigns/{campaignId}/ai/tool-calls`. Threads persist operational status fields including `running`, `completed`, or `failed`, start/end timestamps, duration, retry attempts, event count, tool-call count, and provider error text when a provider call fails.
+Every tool is checked against the human caller's campaign permissions before execution. Started and completed tool calls are persisted with completion durations, and GMs can inspect them through `GET /api/v1/campaigns/{campaignId}/ai/tool-calls`. Threads persist operational status fields including `running`, `completed`, or `failed`, start/end timestamps, duration, retry attempts, event count, tool-call count, prompt/context/response character counts, provider token usage, estimated cost when rates are configured, and provider error text when a provider call fails.

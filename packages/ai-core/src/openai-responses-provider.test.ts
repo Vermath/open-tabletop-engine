@@ -39,6 +39,11 @@ describe("OpenAiResponsesProvider", () => {
       calls.push({ url, init });
       return new Response(
         JSON.stringify({
+          usage: {
+            input_tokens: 120,
+            output_tokens: 35,
+            total_tokens: 155
+          },
           output: [
             {
               type: "function_call",
@@ -95,6 +100,7 @@ describe("OpenAiResponsesProvider", () => {
       })
     ]);
     expect(events).toEqual([
+      { type: "usage.reported", usage: { inputTokens: 120, outputTokens: 35, totalTokens: 155 } },
       { type: "tool.started", toolName: "create_proposal", input: { title: "Vault Encounter", changes: [] } },
       { type: "message.completed", content: "I drafted a proposal for GM review." }
     ]);

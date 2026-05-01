@@ -2357,6 +2357,103 @@ describe("api", () => {
     }
   });
 
+  it("records ai usage metrics and exposes aggregate operator usage", async () => {
+    const previousEnv = snapshotEnv(["OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K", "OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K"]);
+    process.env.OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K = "0.01";
+    process.env.OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K = "0.02";
+
+    class UsageProvider implements AiProvider {
+      id = "usage-ai";
+      label = "Usage AI";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield {
+          type: "usage.reported",
+          usage: {
+            inputTokens: 1000,
+            outputTokens: 500,
+            totalTokens: 1500
+          }
+        };
+        yield {
+          type: "message.completed",
+          content: "Usage recorded"
+        };
+      }
+    }
+
+    const app = await buildApp({ store: new MemoryStateStore(), aiProvider: new UsageProvider() });
+
+    try {
+      const thread = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: { prompt: "Track usage for this provider" }
+      });
+      expect(thread.statusCode).toBe(200);
+      expect(thread.json().events).toContainEqual({
+        type: "usage.reported",
+        usage: {
+          inputTokens: 1000,
+          outputTokens: 500,
+          totalTokens: 1500
+        }
+      });
+      expect(thread.json().thread.usage).toEqual(
+        expect.objectContaining({
+          promptCharacters: "Track usage for this provider".length,
+          contextCharacters: expect.any(Number),
+          responseCharacters: "Usage recorded".length,
+          inputTokens: 1000,
+          outputTokens: 500,
+          totalTokens: 1500,
+          estimatedCostUsd: 0.02
+        })
+      );
+
+      const usage = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/ai/usage",
+        headers: authHeaders
+      });
+      expect(usage.statusCode).toBe(200);
+      expect(usage.json()).toMatchObject({
+        campaignId: "camp_demo",
+        threadCount: 1,
+        completedThreadCount: 1,
+        failedThreadCount: 0,
+        usage: {
+          inputTokens: 1000,
+          outputTokens: 500,
+          totalTokens: 1500,
+          estimatedCostUsd: 0.02
+        },
+        providers: [
+          expect.objectContaining({
+            provider: "usage-ai",
+            threadCount: 1,
+            usage: expect.objectContaining({
+              inputTokens: 1000,
+              outputTokens: 500,
+              estimatedCostUsd: 0.02
+            })
+          })
+        ]
+      });
+
+      const blocked = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/ai/usage",
+        headers: { "x-user-id": "usr_demo_player" }
+      });
+      expect(blocked.statusCode).toBe(403);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("executes ai provider proposal tools with permission boundaries", async () => {
     class ToolCallingProvider implements AiProvider {
       id = "tool-ai";

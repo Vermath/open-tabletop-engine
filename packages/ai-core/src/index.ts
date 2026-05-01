@@ -1,4 +1,4 @@
-import type { EngineState, PermissionName, ProposalChange, Visibility } from "@open-tabletop/core";
+import type { AiUsageMetrics, EngineState, PermissionName, ProposalChange, Visibility } from "@open-tabletop/core";
 export { OpenAiResponsesProvider, type OpenAiResponsesProviderOptions } from "./openai-responses-provider";
 
 export interface AiMessage {
@@ -59,7 +59,8 @@ export type AiProviderEvent =
   | { type: "message.completed"; content: string }
   | { type: "tool.started"; toolName: string; input: unknown }
   | { type: "tool.completed"; toolName: string; output: unknown }
-  | { type: "proposal.created"; proposalId: string };
+  | { type: "proposal.created"; proposalId: string }
+  | { type: "usage.reported"; usage: AiUsageMetrics };
 
 export interface PermissionFilteredContext {
   campaignId: string;
