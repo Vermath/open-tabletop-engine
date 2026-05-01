@@ -7,7 +7,7 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogMode, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterTemplate } from "@open-tabletop/system-sdk";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyAdvancementOptions, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -1781,6 +1781,39 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.encounters.push(encounter);
     store.save();
     return encounter;
+  });
+
+  app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/encounter-threats", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    if (!system) return notFound(reply, "System not found");
+    return encounterThreatsForSystem(system.id);
+  });
+
+  app.post<{
+    Params: { campaignId: string; systemId: string };
+    Body: { partyActorIds?: string[]; threats?: EncounterThreatSelection[]; createEncounter?: boolean; name?: string };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/encounter-plan", async (request, reply) => {
+    const body = request.body ?? {};
+    const permission: PermissionName = body.createEncounter ? "combat.manage" : "campaign.read";
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, permission);
+    if (allowed !== true) return allowed;
+    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    if (!system) return notFound(reply, "System not found");
+    const party = partyActorsForSystem(store, request.params.campaignId, system.id, body.partyActorIds);
+    const plan = encounterPlanForSystem(system.id, party, body.threats ?? []);
+    if (!body.createEncounter) return { plan };
+    const encounter = createTimestamped("enc", {
+      campaignId: request.params.campaignId,
+      name: body.name?.trim() || `${system.name} ${titleCase(plan.difficulty)} Encounter`,
+      summary: plan.summary,
+      tokenIds: [],
+      difficulty: plan.difficulty
+    }) satisfies Encounter;
+    store.state.encounters.push(encounter);
+    store.save();
+    return { plan, encounter };
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/combats", async (request, reply) => {
@@ -5362,8 +5395,28 @@ function applySystemAdvancement(actor: Actor, optionId: string): Record<string, 
   return applyGenericFantasyAdvancement(actor, optionId);
 }
 
+function encounterThreatsForSystem(systemId: string) {
+  if (systemId === "stellar-frontiers") return stellarFrontiersEncounterThreats();
+  if (systemId === "generic-fantasy") return genericFantasyEncounterThreats();
+  return [];
+}
+
+function encounterPlanForSystem(systemId: string, party: Actor[], threats: EncounterThreatSelection[]): EncounterPlan {
+  if (systemId === "stellar-frontiers") return stellarFrontiersEncounterPlan(party, threats);
+  return genericFantasyEncounterPlan(party, threats);
+}
+
+function partyActorsForSystem(store: StateStore, campaignId: string, systemId: string, actorIds?: string[]): Actor[] {
+  const selectedIds = new Set(actorIds ?? []);
+  return store.state.actors.filter((actor) => actor.campaignId === campaignId && actor.systemId === systemId && actor.type === "character" && (selectedIds.size === 0 || selectedIds.has(actor.id)));
+}
+
 function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+function titleCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function actorItems(store: StateStore, actor: Actor): Item[] {

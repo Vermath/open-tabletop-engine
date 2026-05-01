@@ -2331,6 +2331,116 @@ describe("api", () => {
     }
   });
 
+  it("plans system encounters with threat budgets and permission boundaries", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const threats = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/encounter-threats",
+        headers: authHeaders
+      });
+      expect(threats.statusCode).toBe(200);
+      expect(threats.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "skeletal-guard", budget: 75 })]));
+
+      const guardian = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters",
+        headers: authHeaders,
+        payload: { templateId: "guardian", name: "Budget Guardian", ownerUserId: "usr_demo_player" }
+      });
+      expect(guardian.statusCode).toBe(200);
+
+      const plan = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/encounter-plan",
+        headers: authHeaders,
+        payload: {
+          partyActorIds: [guardian.json().actor.id],
+          threats: [{ id: "skeletal-guard", count: 2 }]
+        }
+      });
+      expect(plan.statusCode).toBe(200);
+      expect(plan.json().plan).toMatchObject({
+        systemId: "generic-fantasy",
+        partyRating: 100,
+        threatBudget: 150,
+        difficulty: "hard"
+      });
+
+      const playerCreate = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/encounter-plan",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: {
+          threats: [{ id: "skeletal-guard", count: 2 }],
+          createEncounter: true
+        }
+      });
+      expect(playerCreate.statusCode).toBe(403);
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/encounter-plan",
+        headers: authHeaders,
+        payload: {
+          partyActorIds: [guardian.json().actor.id],
+          threats: [{ id: "skeletal-guard", count: 2 }],
+          createEncounter: true,
+          name: "Budgeted Crypt Guards"
+        }
+      });
+      expect(created.statusCode).toBe(200);
+      expect(created.json().encounter).toEqual(
+        expect.objectContaining({
+          name: "Budgeted Crypt Guards",
+          difficulty: "hard",
+          summary: expect.stringContaining("2x Skeletal Guard")
+        })
+      );
+      expect(store.state.encounters.some((encounter) => encounter.name === "Budgeted Crypt Guards")).toBe(true);
+
+      const stellarThreats = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/stellar-frontiers/encounter-threats",
+        headers: authHeaders
+      });
+      expect(stellarThreats.statusCode).toBe(200);
+      expect(stellarThreats.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "void-raider", budget: 70 })]));
+
+      const tech = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/stellar-frontiers/characters",
+        headers: authHeaders,
+        payload: { templateId: "ship-tech", name: "Budget Tech", ownerUserId: "usr_demo_player" }
+      });
+      expect(tech.statusCode).toBe(200);
+
+      const stellarPlan = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/stellar-frontiers/encounter-plan",
+        headers: authHeaders,
+        payload: {
+          partyActorIds: [tech.json().actor.id],
+          threats: [
+            { id: "boarding-drone", count: 2 },
+            { id: "void-raider", count: 1 }
+          ]
+        }
+      });
+      expect(stellarPlan.statusCode).toBe(200);
+      expect(stellarPlan.json().plan).toMatchObject({
+        systemId: "stellar-frontiers",
+        partyRating: 90,
+        threatBudget: 160,
+        difficulty: "deadly"
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("installs, upgrades, and rolls back versioned plugin packages", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-api-"));
     try {

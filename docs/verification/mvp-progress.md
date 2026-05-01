@@ -968,6 +968,41 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Screenshot saved at `output/playwright/rules-character-builder.png`.
   - Browser page errors were empty; console output only showed Vite connection/debug lines and the React DevTools info message.
 
+### Rules Encounter Math Slice
+
+- Implementation:
+  - Added Generic Fantasy and Stellar Frontiers threat catalogs with per-threat budget values and roles.
+  - Added system SDK encounter planners that calculate party rating, selected threat budget, difficulty, and a readable encounter summary.
+  - Added campaign-scoped API routes to list encounter threats and to plan encounters, with optional persisted encounter creation.
+  - Kept permission boundaries split: read-only planning requires `campaign.read`, while creating a stored encounter requires `combat.manage`.
+  - Added browser SDK-panel support for creating a planned encounter from the active system and displaying the resulting budget metric.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk test` passed with `8 passed`.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `51 passed`.
+  - `pnpm --filter @open-tabletop/api-contracts build` passed.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - System SDK tests verify Generic Fantasy and Stellar Frontiers budget calculations and summaries.
+  - API tests verify both system threat catalogs, planned difficulty math, GM persisted encounter creation, and player denial when trying to create a planned encounter.
+- Manual API and browser evidence:
+  - API: `http://127.0.0.1:4468`
+  - Web: `http://127.0.0.1:5194`
+  - SQLite file: `apps/api/storage/manual-encounter-math-20260501.sqlite`
+  - Runtime env included `NODE_ENV=production`, `OTTE_ADMIN_USER_IDS=usr_demo_gm`, and `OTTE_SQLITE_PATH=apps/api/storage/manual-encounter-math-20260501.sqlite`.
+  - GM and player bearer logins each returned an `ots_` token prefix.
+  - Generic Fantasy threat listing returned `goblin-cutpurse:50`, `skeletal-guard:75`, and `ogre-brute:200`.
+  - A Guardian party member against two Skeletal Guards planned a `hard` encounter with party rating `100`, threat budget `150`, and summary `hard encounter: 2x Skeletal Guard (150/100 budget)`.
+  - Player persisted encounter creation returned `403`, confirming `combat.manage` is required for `createEncounter`.
+  - GM persisted `Manual Budgeted Guards` with difficulty `hard`.
+  - Stellar Frontiers threat listing returned `boarding-drone:45`, `void-raider:70`, and `corsair-ace:180`.
+  - A Ship Tech party member against two Boarding Drones and one Void Raider planned a `deadly` encounter with party rating `90`, threat budget `160`, and summary `deadly encounter: 2x Boarding Drone, 1x Void Raider (160/90 budget)`.
+  - GM persisted `Manual Void Boarding`; the stored encounter list included `Manual Budgeted Guards` and `Manual Void Boarding`.
+  - Browser SDK panel loaded with `Stellar Frontiers` active, clicked `Plan Encounter`, issued `POST /api/v1/campaigns/camp_demo/systems/stellar-frontiers/encounter-plan`, and rendered the resulting `hard encounter` metric `140/90`.
+  - Screenshot saved at `output/playwright/rules-encounter-math.png`.
+  - Browser page errors were empty; console output only showed Vite connection/debug lines and the React DevTools info message.
+
 ### AI Tool Depth And Observability Slice
 
 - Implementation:
@@ -1245,5 +1280,5 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, storage stats, migration tooling, cleanup jobs for deleted or expired object bytes, and built-in upload security scanning before storage writes. Production storage work still needs CDN edge configuration, deployed recurring cleanup scheduling, and third-party AV/trust integrations for higher-assurance hosting.
 - Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, and fog region deletion now have verified controls and permission filtering. Remaining fog work is production UX depth such as freehand stroke smoothing, undo/history, and multi-scene fog presets.
 - Plugin runtime now supports local manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, and browser/API acceptance evidence. Remaining plugin-platform work is distribution depth such as remote registries, richer storage APIs, and marketplace review surfaces.
-- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, character templates, guided level advancement, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, system activation, conditions, character templates, guided rank advancement, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, encounter math, importers, and deeper automation across more systems.
+- Generic Fantasy now has compendium-backed items, spells, conditions, actor inventory/spell sheet surfaces, condition-aware rolls, character templates, guided level advancement, encounter threat budgets, persisted planned encounters, API tests, and browser/API acceptance evidence. Stellar Frontiers adds a second verified rules system with gear, talents, strain-aware sheets, aptitude rolls, system activation, conditions, character templates, guided rank advancement, encounter threat budgets, API tests, and browser/API acceptance evidence. Remaining rules ecosystem work is full SRD-scale content, richer build choices, importers, and deeper automation across more systems.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool execution, encounter/journal/scene/token/actor/memory/dice/compendium tools, provider retry/failure handling, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is deeper permission-regression breadth across future tools and production provider edge cases. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

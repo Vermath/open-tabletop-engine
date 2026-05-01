@@ -313,6 +313,22 @@ export interface CharacterTemplateInfo {
   items: Array<{ entryId: string; quantity?: number }>;
 }
 
+export interface EncounterPlanInfo {
+  systemId: string;
+  partyRating: number;
+  threatBudget: number;
+  difficulty: "trivial" | "easy" | "standard" | "hard" | "deadly";
+  summary: string;
+  threats: Array<{
+    id: string;
+    name: string;
+    role: string;
+    count: number;
+    budgetEach: number;
+    budgetTotal: number;
+  }>;
+}
+
 export interface AiUsageRollup {
   threadCount: number;
   completedThreadCount: number;

@@ -67,6 +67,38 @@ export interface AdvancementOption {
   nextValue: number;
 }
 
+export interface EncounterThreat {
+  id: string;
+  systemId: string;
+  name: string;
+  summary: string;
+  role: string;
+  budget: number;
+}
+
+export interface EncounterThreatSelection {
+  id: string;
+  count?: number;
+}
+
+export interface EncounterPlanThreat {
+  id: string;
+  name: string;
+  role: string;
+  count: number;
+  budgetEach: number;
+  budgetTotal: number;
+}
+
+export interface EncounterPlan {
+  systemId: string;
+  partyRating: number;
+  threatBudget: number;
+  difficulty: "trivial" | "easy" | "standard" | "hard" | "deadly";
+  summary: string;
+  threats: EncounterPlanThreat[];
+}
+
 export type GenericFantasyCompendiumType = "item" | "spell" | "condition";
 export type StellarFrontiersCompendiumType = "gear" | "talent" | "condition";
 export type RulesCompendiumType = GenericFantasyCompendiumType | StellarFrontiersCompendiumType;
@@ -262,6 +294,44 @@ export function genericFantasyCharacterTemplate(templateId: string): CharacterTe
   return genericFantasyCharacterTemplates().find((template) => template.id === templateId);
 }
 
+export function genericFantasyEncounterThreats(): EncounterThreat[] {
+  return [
+    {
+      id: "goblin-cutpurse",
+      systemId: "generic-fantasy",
+      name: "Goblin Cutpurse",
+      summary: "Skirmisher that pressures fragile characters.",
+      role: "skirmisher",
+      budget: 50
+    },
+    {
+      id: "skeletal-guard",
+      systemId: "generic-fantasy",
+      name: "Skeletal Guard",
+      summary: "Durable front-line blocker for crypt or vault scenes.",
+      role: "brute",
+      budget: 75
+    },
+    {
+      id: "ogre-brute",
+      systemId: "generic-fantasy",
+      name: "Ogre Brute",
+      summary: "Heavy striker that makes a small party spend resources.",
+      role: "elite",
+      budget: 200
+    }
+  ];
+}
+
+export function genericFantasyEncounterPlan(party: Actor[], selections: EncounterThreatSelection[]): EncounterPlan {
+  return buildEncounterPlan({
+    systemId: "generic-fantasy",
+    partyRating: party.reduce((total, actor) => total + numericValue(actor.data.level, 1) * 100, 0) || 100,
+    threats: genericFantasyEncounterThreats(),
+    selections
+  });
+}
+
 export function genericFantasyAdvancementOptions(actor: Actor): AdvancementOption[] {
   const level = numericValue(actor.data.level, 1);
   if (level >= 20) return [];
@@ -450,6 +520,44 @@ export function stellarFrontiersCharacterTemplate(templateId: string): Character
   return stellarFrontiersCharacterTemplates().find((template) => template.id === templateId);
 }
 
+export function stellarFrontiersEncounterThreats(): EncounterThreat[] {
+  return [
+    {
+      id: "boarding-drone",
+      systemId: "stellar-frontiers",
+      name: "Boarding Drone",
+      summary: "Automated pressure unit with short-range suppression.",
+      role: "skirmisher",
+      budget: 45
+    },
+    {
+      id: "void-raider",
+      systemId: "stellar-frontiers",
+      name: "Void Raider",
+      summary: "Armed raider suited for corridors and cargo holds.",
+      role: "soldier",
+      budget: 70
+    },
+    {
+      id: "corsair-ace",
+      systemId: "stellar-frontiers",
+      name: "Corsair Ace",
+      summary: "Elite rival pilot or boarding captain.",
+      role: "elite",
+      budget: 180
+    }
+  ];
+}
+
+export function stellarFrontiersEncounterPlan(party: Actor[], selections: EncounterThreatSelection[]): EncounterPlan {
+  return buildEncounterPlan({
+    systemId: "stellar-frontiers",
+    partyRating: party.reduce((total, actor) => total + numericValue(actor.data.rank, 1) * 90, 0) || 90,
+    threats: stellarFrontiersEncounterThreats(),
+    selections
+  });
+}
+
 export function stellarFrontiersAdvancementOptions(actor: Actor): AdvancementOption[] {
   const rank = numericValue(actor.data.rank, 1);
   if (rank >= 10) return [];
@@ -546,4 +654,42 @@ function numericValue(value: unknown, fallback: number): number {
 
 function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function buildEncounterPlan(input: { systemId: string; partyRating: number; threats: EncounterThreat[]; selections: EncounterThreatSelection[] }): EncounterPlan {
+  const requested = input.selections.length > 0 ? input.selections : [{ id: input.threats[0]?.id ?? "", count: 1 }];
+  const threats = requested.flatMap((selection) => {
+    const threat = input.threats.find((item) => item.id === selection.id);
+    if (!threat) return [];
+    const count = Math.max(1, Math.floor(numericValue(selection.count, 1)));
+    return [
+      {
+        id: threat.id,
+        name: threat.name,
+        role: threat.role,
+        count,
+        budgetEach: threat.budget,
+        budgetTotal: threat.budget * count
+      }
+    ];
+  });
+  const threatBudget = threats.reduce((total, threat) => total + threat.budgetTotal, 0);
+  const ratio = input.partyRating > 0 ? threatBudget / input.partyRating : 99;
+  const difficulty = encounterDifficulty(ratio);
+  return {
+    systemId: input.systemId,
+    partyRating: input.partyRating,
+    threatBudget,
+    difficulty,
+    threats,
+    summary: `${difficulty} encounter: ${threats.map((threat) => `${threat.count}x ${threat.name}`).join(", ") || "no threats"} (${threatBudget}/${input.partyRating} budget)`
+  };
+}
+
+function encounterDifficulty(ratio: number): EncounterPlan["difficulty"] {
+  if (ratio <= 0.25) return "trivial";
+  if (ratio <= 0.6) return "easy";
+  if (ratio <= 1.1) return "standard";
+  if (ratio <= 1.6) return "hard";
+  return "deadly";
 }

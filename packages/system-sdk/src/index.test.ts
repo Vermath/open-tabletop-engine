@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
+import { applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, removeGenericFantasyCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -79,6 +79,18 @@ describe("generic fantasy rules", () => {
     expect(advancedData.hp).toEqual({ current: 17, max: 17 });
     expect((advancedData.attributes as Record<string, number>).strength).toBe(17);
     expect(advancedData.features).toEqual(expect.arrayContaining(["Guardian Level 2"]));
+  });
+
+  it("calculates encounter budgets from threat selections", () => {
+    expect(genericFantasyEncounterThreats().map((threat) => threat.id)).toContain("skeletal-guard");
+    const plan = genericFantasyEncounterPlan([{ ...actor, data: { ...actor.data, level: 2 } }], [{ id: "skeletal-guard", count: 2 }]);
+    expect(plan).toMatchObject({
+      systemId: "generic-fantasy",
+      partyRating: 200,
+      threatBudget: 150,
+      difficulty: "standard"
+    });
+    expect(plan.summary).toContain("2x Skeletal Guard");
   });
 });
 
@@ -160,5 +172,20 @@ describe("stellar frontiers rules", () => {
     expect(advancedData.strain).toEqual({ current: 4, max: 7 });
     expect((advancedData.aptitudes as Record<string, number>).tech).toBe(4);
     expect(advancedData.milestones).toEqual(expect.arrayContaining(["Rank 2 Field Promotion"]));
+  });
+
+  it("calculates sci-fi encounter budgets from threat selections", () => {
+    expect(stellarFrontiersEncounterThreats().map((threat) => threat.id)).toContain("void-raider");
+    const plan = stellarFrontiersEncounterPlan([{ ...pilot, data: { ...pilot.data, rank: 2 } }], [
+      { id: "boarding-drone", count: 2 },
+      { id: "void-raider", count: 1 }
+    ]);
+    expect(plan).toMatchObject({
+      systemId: "stellar-frontiers",
+      partyRating: 180,
+      threatBudget: 160,
+      difficulty: "standard"
+    });
+    expect(plan.summary).toContain("2x Boarding Drone");
   });
 });

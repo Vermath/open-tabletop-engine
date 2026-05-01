@@ -1,7 +1,7 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, Encounter, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, Token, UserRole, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MessageSquare, Pentagon, Plus, RefreshCw, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type CharacterTemplateInfo, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminPasswordResetInfo, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 
@@ -65,6 +65,7 @@ export function App() {
   const [resetStatus, setResetStatus] = useState("Ready");
   const [adminSnapshot, setAdminSnapshot] = useState<AdminSnapshot>();
   const [adminStatus, setAdminStatus] = useState("Admin idle");
+  const [encounterPlan, setEncounterPlan] = useState<EncounterPlanInfo>();
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const selectedScene = snapshot.scenes.find((scene) => scene.id === sceneId);
@@ -443,6 +444,19 @@ export function App() {
     await refresh();
   }
 
+  async function planSystemEncounter() {
+    const system = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
+    if (!system) return;
+    const threatId = system.id === "stellar-frontiers" ? "void-raider" : "skeletal-guard";
+    const planned = await apiPost<{ plan: EncounterPlanInfo; encounter?: Encounter }>(`/api/v1/campaigns/${campaignId}/systems/${system.id}/encounter-plan`, {
+      threats: [{ id: threatId, count: 2 }],
+      createEncounter: true
+    });
+    setEncounterPlan(planned.plan);
+    setStatus(planned.encounter ? `${planned.encounter.name} planned` : `${planned.plan.difficulty} encounter planned`);
+    await refresh();
+  }
+
   async function disableAdminUser(user: AdminUserInfo) {
     await apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, {
       disabled: true,
@@ -712,7 +726,7 @@ export function App() {
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
-            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onAdvanceActor={advanceSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
+            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} encounterPlan={encounterPlan} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onAdvanceActor={advanceSelectedActor} onPlanEncounter={planSystemEncounter} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canPlanEncounter={hasPermission("combat.manage")} canRollSystem={hasPermission("dice.roll")} />}
             {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} />}
           </aside>
         </div>
@@ -1353,7 +1367,7 @@ function formatDateTime(value?: string): string {
   return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onAdvanceActor(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canAdvanceActor: boolean; canRollSystem: boolean }) {
+function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; encounterPlan?: EncounterPlanInfo; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onAdvanceActor(): void; onPlanEncounter(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canAdvanceActor: boolean; canPlanEncounter: boolean; canRollSystem: boolean }) {
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   const rollLabel = props.actor?.systemId === "stellar-frontiers" ? "Tech Check" : "Charisma Check";
   const advancementLabel = props.actor?.systemId === "stellar-frontiers" ? "Advance Rank" : "Level Up";
@@ -1412,6 +1426,17 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
       <button className="ghost-button wide" onClick={props.onAdvanceActor} disabled={!props.actor || !props.canAdvanceActor}>
         <RefreshCw size={16} /> {advancementLabel}
       </button>
+      <button className="ghost-button wide" onClick={props.onPlanEncounter} disabled={!activeSystem || !props.canPlanEncounter}>
+        <Swords size={16} /> Plan Encounter
+      </button>
+      {props.encounterPlan && (
+        <div className="metric-row">
+          <span>{props.encounterPlan.difficulty} encounter</span>
+          <strong>
+            {props.encounterPlan.threatBudget}/{props.encounterPlan.partyRating}
+          </strong>
+        </div>
+      )}
       <button className="primary-button wide" onClick={props.onSystemRoll} disabled={!props.actor || !props.canRollSystem}>
         <ChevronRight size={16} /> {rollLabel}
       </button>
