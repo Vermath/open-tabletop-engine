@@ -207,9 +207,34 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - Player move of owned `tok_valen` returned `200` with `PlayerOwnedTokenX: 420` and `PlayerOwnedTokenY: 380`.
     - GM move of `Visible Stranger` returned `200` with `GmMovedTokenX: 520` and `GmMovedTokenY: 360`.
 
+### Durable Session Token Slice
+
+- Commit: `3ce9a8d feat: add durable bearer sessions`
+- Evidence:
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `15 passed`.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test verifies:
+    - `POST /api/v1/auth/login` issues an opaque `ots_` bearer token for a seeded user.
+    - Bearer `GET /api/v1/campaigns` resolves the session and returns `camp_demo`.
+    - The same bearer token still resolves after closing and reopening the SQLite store.
+    - `POST /api/v1/auth/logout` removes the session.
+    - Reusing the logged-out token returns `401`.
+  - Manual browser/API evidence on local dev servers:
+    - API: `http://127.0.0.1:4428`
+    - Web: `http://localhost:5180`
+    - Fresh SQLite state file: `storage/manual-session-token-20260501.sqlite`
+    - Browser loaded as `Demo GM - owner`, showed `Realtime connected`, and stored an `ots_` token of length `47` for `usr_demo_gm`.
+    - Switching to `Demo Player - player` stored an `ots_` token of length `47` for `usr_demo_player` and disabled GM-only scene, map, token-create, combat, fog, wall, and light controls.
+    - Direct API login for `usr_demo_player` returned an `ots_` token of length `47`; bearer `GET /api/v1/auth/session` resolved `usr_demo_player`; bearer `GET /api/v1/campaigns` returned `camp_demo`; no-token `GET /api/v1/campaigns` returned `401`.
+    - Asset upload with a GM bearer token created `asset_momewntpyovw4hl4`.
+    - Blob request without a token returned `401`.
+    - Blob request with `sessionToken=<token>` returned `200`, `image/svg+xml`, and contained `Session Asset`.
+
 ## Known Remaining Gaps
 
-- Auth is still a development `x-user-id` session header, not production authentication.
+- Auth now has MVP bearer sessions for seeded users across REST, realtime, and asset blob access, but still lacks password login, OAuth, invites, account management, and production session administration. The legacy `x-user-id` path remains for local test compatibility.
 - Browser role switching and ownership-scoped GM/player token movement now have MVP coverage; broader multi-user workflows still need final clean-checkout audit coverage.
 - Uploaded maps now have a local binary storage path, but they are not yet backed by S3 or MinIO object storage.
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.

@@ -2,9 +2,11 @@
 
 The API is served from `apps/api` and exposes:
 
-Authenticated endpoints require an `x-user-id` session header. The seeded local users are `usr_demo_gm` and `usr_demo_player`.
+Authenticated endpoints require a bearer session token. Create one with `POST /api/v1/auth/login`, then send `Authorization: Bearer <token>` on REST requests. The seeded local users are `usr_demo_gm` and `usr_demo_player`. The legacy `x-user-id` header remains available for local test compatibility, but the browser client and documented flows use bearer sessions. Asset blob and realtime URLs accept `sessionToken=<token>` for contexts that cannot set an `Authorization` header.
 
 - `GET /api/v1/health`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/session`
 - `GET /api/v1/openapi.json`
 - `GET|POST /api/v1/campaigns`
@@ -57,18 +59,27 @@ AI thread requests use the configured provider from `OTTE_AI_PROVIDER`. The defa
 
 Proposal approval is a two-step flow: `POST /api/v1/proposals/{proposalId}/approve` marks a pending proposal as approved, and `POST /api/v1/proposals/{proposalId}/apply` mutates campaign state only after approval. Applying a pending proposal returns `409`. `POST /api/v1/ai/memory/{factId}/approve` marks queued AI memory as approved.
 
-Map upload accepts raw image bytes with the authenticated `x-user-id` header:
+Create a session token:
 
 ```bash
 curl -X POST \
-  -H "x-user-id: usr_demo_gm" \
+  -H "content-type: application/json" \
+  --data '{"userId":"usr_demo_gm"}' \
+  "http://localhost:4000/api/v1/auth/login"
+```
+
+Map upload accepts raw image bytes with an authenticated bearer token:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $OTTE_SESSION_TOKEN" \
   -H "content-type: image/png" \
   -H "x-asset-name: vault.png" \
   --data-binary @vault.png \
   "http://localhost:4000/api/v1/campaigns/camp_demo/assets/upload?sceneId=scn_vault_entry&setAsBackground=true"
 ```
 
-Uploaded assets are stored under `OTTE_UPLOAD_DIR`, checksummed as `sha256`, recorded as `MapAsset` rows, and served through `GET /api/v1/assets/{assetId}/blob?userId=usr_demo_gm`.
+Uploaded assets are stored under `OTTE_UPLOAD_DIR`, checksummed as `sha256`, recorded as `MapAsset` rows, and served through `GET /api/v1/assets/{assetId}/blob?sessionToken=<token>`.
 
 Scene layer authoring is split into focused endpoints. Fog reveal uses `token.reveal`; wall and light creation use `scene.update` and return the updated scene for realtime rebroadcast.
 
@@ -86,5 +97,5 @@ The default `upsert` mode replaces records with matching ids and inserts missing
 Realtime clients connect to:
 
 ```text
-ws://localhost:4000/api/v1/realtime?campaignId=camp_demo
+ws://localhost:4000/api/v1/realtime?campaignId=camp_demo&sessionToken=<token>
 ```
