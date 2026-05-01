@@ -125,6 +125,42 @@ This document tracks verified MVP progress without treating the whole PRD as com
     - Player AI thread returned provider `codex-app-server`, tool error `missing_permission`, and permission `ai.proposeChanges`.
     - Final `Codex Loopback Proposal` count remained `1`, proving the player tool request did not create a second proposal.
 
+### AI Provider Memory Extraction Slice
+
+- Commit: `5eb9aae feat: extract ai memory through provider`
+- Evidence:
+  - `pnpm --filter @open-tabletop/codex-app-server-provider build` passed.
+  - `pnpm --filter @open-tabletop/api-contracts build` passed.
+  - `pnpm --filter @open-tabletop/api typecheck` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `16 passed`.
+  - `pnpm --filter @open-tabletop/web typecheck` passed.
+  - `pnpm check` passed across lint, typecheck, tests, and build.
+  - API test verifies:
+    - `codex-loopback` provider memory extraction returns provider `codex-app-server`.
+    - Extracted memory text includes the supplied source text.
+    - Created memory source ids include the AI thread id.
+    - Created memory is persisted into campaign state.
+    - Player-owned extraction is blocked with `403`.
+  - Manual API evidence on local dev server:
+    - API: `http://127.0.0.1:4432`
+    - `OTTE_AI_PROVIDER=codex-loopback`
+    - Fresh SQLite state file: `storage/manual-ai-memory-extract-20260501.sqlite`
+    - GM login returned an `ots_` bearer token with length `47`.
+    - GM extraction returned provider `codex-app-server` and event type `message.completed`.
+    - Created memory `mem_momfi5jxuqab18kr` contained `silver door opens at moonrise`.
+    - Created memory source ids included the extraction thread id.
+    - Memory was visible to the GM before approval but had no `approvedByUserId`.
+    - Player extraction returned `403`.
+    - GM approval set `approvedByUserId` to `usr_demo_gm`.
+  - Manual browser evidence on local dev servers:
+    - API: `http://127.0.0.1:4432`
+    - Web: `http://localhost:5175`
+    - Opened the `AI` panel as Demo GM and saw the `Extract Memory` control.
+    - Entered `The obsidian key is hidden under the fountain.` and clicked `Extract Memory`.
+    - Browser rendered a pending memory card containing that extracted text.
+    - Clicking `Approve memory` changed that memory card to `approved memory`.
+    - Browser console had only a missing `favicon.ico` error, unrelated to this workflow.
+
 ### Fog Walls And Lighting Authoring Slice
 
 - Commit: `d2c8e6f feat: add wall and light authoring`
@@ -296,5 +332,5 @@ This document tracks verified MVP progress without treating the whole PRD as com
 - Fog, wall, light authoring, hidden-token visibility, and basic player fog/vision filtering now have MVP controls and permission filtering, but advanced polygon line-of-sight, dynamic fog tools, and production-grade vision rendering remain basic.
 - Plugin runtime is bounded to the sample command path; it is not a sandboxed third-party module loader.
 - System runtime covers generic fantasy sheet summary and quick rolls, not a complete rules engine.
-- AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, approval/application, and deterministic recap memory. Richer provider-backed memory extraction remains basic.
+- AI flows now cover provider-configured threads, Codex loopback proposal-tool execution, provider-backed memory extraction, approval/application, and deterministic recap memory. Real-provider prompt quality and broader tool coverage remain basic.
 - Full MVP completion still requires a clean-checkout runbook and a final prompt-to-artifact audit covering every PRD requirement.

@@ -38,6 +38,7 @@ Authenticated endpoints require a bearer session token. Create one with `POST /a
 - `POST /api/v1/campaigns/{campaignId}/ai/encounter-design`
 - `POST /api/v1/campaigns/{campaignId}/ai/session-recap`
 - `GET|POST /api/v1/campaigns/{campaignId}/ai/memory`
+- `POST /api/v1/campaigns/{campaignId}/ai/memory/extract`
 - `POST /api/v1/ai/memory/{factId}/approve`
 - `GET|POST /api/v1/plugins`
 - `GET /api/v1/campaigns/{campaignId}/plugins`
@@ -55,7 +56,7 @@ Plugin runtime endpoints are campaign-scoped. Installing a plugin creates a `per
 
 System runtime endpoints are campaign-scoped. The generic fantasy runtime can summarize an actor sheet and produce quick-roll dice formulas from actor data, posting the resulting roll into chat.
 
-AI thread requests use the configured provider from `OTTE_AI_PROVIDER`. The default `local-echo` provider is offline and deterministic; `codex-loopback` exercises the Codex App Server provider path against a local loopback transport. Provider requests receive campaign context filtered through the caller's actual permissions, and assistant responses are persisted into chat as `public` for player-visible context or `gm_only` when the caller can read GM AI memory. Chat reads filter `gm_only` and `whisper` messages per viewer. Providers can request the `create_proposal` tool during an AI thread; the API executes it only when the caller has `ai.proposeChanges`, creates a pending proposal for GM approval, records tool lifecycle events, and blocks the same tool for players without that permission.
+AI thread requests use the configured provider from `OTTE_AI_PROVIDER`. The default `local-echo` provider is offline and deterministic; `codex-loopback` exercises the Codex App Server provider path against a local loopback transport. Provider requests receive campaign context filtered through the caller's actual permissions, and assistant responses are persisted into chat as `public` for player-visible context or `gm_only` when the caller can read GM AI memory. Chat reads filter `gm_only` and `whisper` messages per viewer. Providers can request the `create_proposal` tool during an AI thread; the API executes it only when the caller has `ai.proposeChanges`, creates a pending proposal for GM approval, records tool lifecycle events, and blocks the same tool for players without that permission. `POST /api/v1/campaigns/{campaignId}/ai/memory/extract` runs provider-backed memory extraction from supplied or recent campaign text, requires `ai.proposeChanges`, and creates a pending memory fact for GM review.
 
 Proposal approval is a two-step flow: `POST /api/v1/proposals/{proposalId}/approve` marks a pending proposal as approved, and `POST /api/v1/proposals/{proposalId}/apply` mutates campaign state only after approval. Applying a pending proposal returns `409`. `POST /api/v1/ai/memory/{factId}/approve` marks queued AI memory as approved.
 
