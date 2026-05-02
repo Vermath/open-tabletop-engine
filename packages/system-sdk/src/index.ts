@@ -1055,6 +1055,206 @@ export function genericFantasyCompendiumEntry(entryId: string): GenericFantasyCo
   return genericFantasyCompendium().find((entry) => entry.id === entryId);
 }
 
+interface Dnd5eSrdToolEntrySeed {
+  id: string;
+  name: string;
+  ability: string;
+  costGp: number;
+  weightLb: number;
+  summary?: string;
+  toolId?: string;
+  toolGroup?: string;
+  variantOf?: string;
+}
+
+interface Dnd5eSrdGearEntrySeed {
+  id: string;
+  name: string;
+  costGp: number;
+  weightLb: number;
+  summary?: string;
+  data?: Record<string, unknown>;
+}
+
+function dnd5eSrdToolEntry(seed: Dnd5eSrdToolEntrySeed): GenericFantasyCompendiumEntry {
+  return {
+    id: seed.id,
+    type: "item",
+    name: seed.name,
+    summary: seed.summary ?? "SRD tool entry for proficiency, inventory, and equipment purchasing.",
+    data: {
+      category: "tool",
+      equipmentCategory: "tool",
+      toolId: seed.toolId ?? seed.id,
+      ability: seed.ability,
+      costGp: seed.costGp,
+      weightLb: seed.weightLb,
+      ...(seed.toolGroup ? { toolGroup: seed.toolGroup } : {}),
+      ...(seed.variantOf ? { variantOf: seed.variantOf } : {}),
+      source: DND_5E_SRD_VERSION
+    }
+  };
+}
+
+function dnd5eSrdGearEntry(seed: Dnd5eSrdGearEntrySeed): GenericFantasyCompendiumEntry {
+  return {
+    id: seed.id,
+    type: "item",
+    name: seed.name,
+    summary: seed.summary ?? "SRD adventuring gear with purchase cost and carried weight.",
+    data: {
+      category: "adventuring-gear",
+      equipmentCategory: "gear",
+      costGp: seed.costGp,
+      weightLb: seed.weightLb,
+      ...seed.data,
+      source: DND_5E_SRD_VERSION
+    }
+  };
+}
+
+function dnd5eSrdToolCompendiumEntries(): GenericFantasyCompendiumEntry[] {
+  const tools: Dnd5eSrdToolEntrySeed[] = [
+    { id: "alchemists-supplies", name: "Alchemist's Supplies", ability: "intelligence", costGp: 50, weightLb: 8 },
+    { id: "brewers-supplies", name: "Brewer's Supplies", ability: "intelligence", costGp: 20, weightLb: 9 },
+    { id: "carpenters-tools", name: "Carpenter's Tools", ability: "strength", costGp: 8, weightLb: 6 },
+    { id: "cartographers-tools", name: "Cartographer's Tools", ability: "wisdom", costGp: 15, weightLb: 6 },
+    { id: "cobblers-tools", name: "Cobbler's Tools", ability: "dexterity", costGp: 5, weightLb: 5 },
+    { id: "cooks-utensils", name: "Cook's Utensils", ability: "wisdom", costGp: 1, weightLb: 8 },
+    { id: "glassblowers-tools", name: "Glassblower's Tools", ability: "intelligence", costGp: 30, weightLb: 5 },
+    { id: "jewelers-tools", name: "Jeweler's Tools", ability: "intelligence", costGp: 25, weightLb: 2 },
+    { id: "leatherworkers-tools", name: "Leatherworker's Tools", ability: "dexterity", costGp: 5, weightLb: 5 },
+    { id: "masons-tools", name: "Mason's Tools", ability: "strength", costGp: 10, weightLb: 8 },
+    { id: "painters-supplies", name: "Painter's Supplies", ability: "wisdom", costGp: 10, weightLb: 5 },
+    { id: "potters-tools", name: "Potter's Tools", ability: "intelligence", costGp: 10, weightLb: 3 },
+    { id: "smiths-tools", name: "Smith's Tools", ability: "strength", costGp: 20, weightLb: 8 },
+    { id: "tinkers-tools", name: "Tinker's Tools", ability: "dexterity", costGp: 50, weightLb: 10 },
+    { id: "weavers-tools", name: "Weaver's Tools", ability: "dexterity", costGp: 1, weightLb: 5 },
+    { id: "woodcarvers-tools", name: "Woodcarver's Tools", ability: "dexterity", costGp: 1, weightLb: 5 },
+    { id: "disguise-kit", name: "Disguise Kit", ability: "charisma", costGp: 25, weightLb: 3 },
+    { id: "forgery-kit", name: "Forgery Kit", ability: "dexterity", costGp: 15, weightLb: 5 },
+    { id: "gaming-set", name: "Gaming Set", ability: "wisdom", costGp: 0.1, weightLb: 0 },
+    { id: "dice-set", name: "Dice Set", ability: "wisdom", costGp: 0.1, weightLb: 0, toolId: "dice-set", toolGroup: "gaming-set", variantOf: "gaming-set" },
+    { id: "dragonchess-set", name: "Dragonchess Set", ability: "wisdom", costGp: 1, weightLb: 0, toolId: "dragonchess-set", toolGroup: "gaming-set", variantOf: "gaming-set" },
+    { id: "playing-cards", name: "Playing Cards", ability: "wisdom", costGp: 0.5, weightLb: 0, toolId: "playing-cards", toolGroup: "gaming-set", variantOf: "gaming-set" },
+    { id: "three-dragon-ante-set", name: "Three-Dragon Ante Set", ability: "wisdom", costGp: 1, weightLb: 0, toolId: "three-dragon-ante-set", toolGroup: "gaming-set", variantOf: "gaming-set" },
+    { id: "herbalism-kit", name: "Herbalism Kit", ability: "intelligence", costGp: 5, weightLb: 3 },
+    { id: "bagpipes", name: "Bagpipes", ability: "charisma", costGp: 30, weightLb: 6, toolId: "bagpipes", toolGroup: "musical-instrument", variantOf: "musical-instrument" },
+    { id: "drum", name: "Drum", ability: "charisma", costGp: 6, weightLb: 3, toolId: "drum", toolGroup: "musical-instrument", variantOf: "musical-instrument" },
+    { id: "dulcimer", name: "Dulcimer", ability: "charisma", costGp: 25, weightLb: 10, toolId: "dulcimer", toolGroup: "musical-instrument", variantOf: "musical-instrument" },
+    { id: "flute", name: "Flute", ability: "charisma", costGp: 2, weightLb: 1, toolId: "flute", toolGroup: "musical-instrument", variantOf: "musical-instrument" },
+    { id: "horn", name: "Horn", ability: "charisma", costGp: 3, weightLb: 2, toolId: "horn", toolGroup: "musical-instrument", variantOf: "musical-instrument" },
+    { id: "lute", name: "Lute", ability: "charisma", costGp: 35, weightLb: 2, toolId: "lute", toolGroup: "musical-instrument", variantOf: "musical-instrument" },
+    { id: "lyre", name: "Lyre", ability: "charisma", costGp: 30, weightLb: 2, toolId: "lyre", toolGroup: "musical-instrument", variantOf: "musical-instrument" },
+    { id: "pan-flute", name: "Pan Flute", ability: "charisma", costGp: 12, weightLb: 2, toolId: "pan-flute", toolGroup: "musical-instrument", variantOf: "musical-instrument" },
+    { id: "shawm", name: "Shawm", ability: "charisma", costGp: 2, weightLb: 1, toolId: "shawm", toolGroup: "musical-instrument", variantOf: "musical-instrument" },
+    { id: "viol", name: "Viol", ability: "charisma", costGp: 30, weightLb: 1, toolId: "viol", toolGroup: "musical-instrument", variantOf: "musical-instrument" },
+    { id: "navigators-tools", name: "Navigator's Tools", ability: "wisdom", costGp: 25, weightLb: 2 },
+    { id: "poisoners-kit", name: "Poisoner's Kit", ability: "intelligence", costGp: 50, weightLb: 2 }
+  ];
+  return tools.map(dnd5eSrdToolEntry);
+}
+
+function dnd5eSrdAdventuringGearCompendiumEntries(): GenericFantasyCompendiumEntry[] {
+  const gear: Dnd5eSrdGearEntrySeed[] = [
+    { id: "acid", name: "Acid", costGp: 25, weightLb: 1, data: { consumable: true, thrownRange: "20", damageFormula: "2d6", damageType: "acid", save: { ability: "dexterity" } } },
+    { id: "alchemists-fire", name: "Alchemist's Fire", costGp: 50, weightLb: 1, data: { consumable: true, thrownRange: "20", damageFormula: "1d4", damageType: "fire", save: { ability: "dexterity" }, condition: "burning" } },
+    { id: "antitoxin", name: "Antitoxin", costGp: 50, weightLb: 0, data: { consumable: true, action: "bonus", grantsAdvantageAgainst: "poisoned", duration: "1 hour" } },
+    { id: "arrows", name: "Arrows", costGp: 1, weightLb: 1, data: { ammunition: "arrow", amountPerPurchase: 20, storage: "quiver" } },
+    { id: "crossbow-bolts", name: "Crossbow Bolts", costGp: 1, weightLb: 1.5, data: { ammunition: "bolt", amountPerPurchase: 20, storage: "crossbow-bolt-case" } },
+    { id: "firearm-bullets", name: "Firearm Bullets", costGp: 3, weightLb: 2, data: { ammunition: "bullet", amountPerPurchase: 10, storage: "pouch" } },
+    { id: "sling-bullets", name: "Sling Bullets", costGp: 0.04, weightLb: 1.5, data: { ammunition: "bullet", amountPerPurchase: 20, storage: "pouch" } },
+    { id: "blowgun-needles", name: "Blowgun Needles", costGp: 1, weightLb: 1, data: { ammunition: "needle", amountPerPurchase: 50, storage: "pouch" } },
+    { id: "arcane-focus-crystal", name: "Arcane Focus, Crystal", costGp: 10, weightLb: 1, data: { focusType: "arcane", focusForm: "crystal", classes: ["sorcerer", "warlock", "wizard"] } },
+    { id: "arcane-focus-orb", name: "Arcane Focus, Orb", costGp: 20, weightLb: 3, data: { focusType: "arcane", focusForm: "orb", classes: ["sorcerer", "warlock", "wizard"] } },
+    { id: "arcane-focus-rod", name: "Arcane Focus, Rod", costGp: 10, weightLb: 2, data: { focusType: "arcane", focusForm: "rod", classes: ["sorcerer", "warlock", "wizard"] } },
+    { id: "arcane-focus-staff", name: "Arcane Focus, Staff", costGp: 5, weightLb: 4, data: { focusType: "arcane", focusForm: "staff", alsoWeaponId: "quarterstaff", classes: ["sorcerer", "warlock", "wizard"] } },
+    { id: "arcane-focus-wand", name: "Arcane Focus, Wand", costGp: 10, weightLb: 1, data: { focusType: "arcane", focusForm: "wand", classes: ["sorcerer", "warlock", "wizard"] } },
+    { id: "backpack", name: "Backpack", costGp: 2, weightLb: 5, data: { capacityLb: 30, capacityCubicFt: 1 } },
+    { id: "ball-bearings", name: "Ball Bearings", costGp: 1, weightLb: 2, data: { action: "utilize", area: "10-foot square", saveDc: 10, save: { ability: "dexterity" }, condition: "prone" } },
+    { id: "barrel", name: "Barrel", costGp: 2, weightLb: 70, data: { liquidCapacityGallons: 40, dryCapacityCubicFt: 4 } },
+    { id: "basket", name: "Basket", costGp: 0.4, weightLb: 2, data: { capacityLb: 40, capacityCubicFt: 2 } },
+    { id: "bedroll", name: "Bedroll", costGp: 1, weightLb: 7 },
+    { id: "bell", name: "Bell", costGp: 1, weightLb: 0, data: { audibleRangeFt: 60 } },
+    { id: "blanket", name: "Blanket", costGp: 0.5, weightLb: 3 },
+    { id: "block-and-tackle", name: "Block and Tackle", costGp: 1, weightLb: 5, data: { liftMultiplier: 4 } },
+    { id: "book", name: "Book", costGp: 25, weightLb: 5, data: { knowledgeCheckBonus: 5 } },
+    { id: "glass-bottle", name: "Bottle, Glass", costGp: 2, weightLb: 2, data: { capacityPints: 1.5 } },
+    { id: "bucket", name: "Bucket", costGp: 0.05, weightLb: 2, data: { capacityCubicFt: 0.5 } },
+    { id: "burglars-pack", name: "Burglar's Pack", costGp: 16, weightLb: 42, data: { pack: true, contents: ["backpack", "ball-bearings", "bell", "candle", "crowbar", "hooded-lantern", "oil", "rations", "rope", "tinderbox", "waterskin"] } },
+    { id: "caltrops", name: "Caltrops", costGp: 1, weightLb: 2, data: { action: "utilize", area: "5-foot square", saveDc: 15, save: { ability: "dexterity" }, damage: "1", damageType: "piercing", speedEffect: "reduced to 0 until start of next turn" } },
+    { id: "candle", name: "Candle", costGp: 0.01, weightLb: 0, data: { light: { brightFt: 5, dimFt: 5, durationHours: 1 } } },
+    { id: "crossbow-bolt-case", name: "Case, Crossbow Bolt", costGp: 1, weightLb: 1, data: { capacityAmmunition: 20, ammunition: "bolt" } },
+    { id: "map-or-scroll-case", name: "Case, Map or Scroll", costGp: 1, weightLb: 1, data: { capacity: { paper: 10, parchment: 5 } } },
+    { id: "chain", name: "Chain", costGp: 5, weightLb: 10, data: { action: "utilize", escapeDc: 18, burstDc: 20, condition: "restrained" } },
+    { id: "chest", name: "Chest", costGp: 5, weightLb: 25, data: { capacityCubicFt: 12 } },
+    { id: "climbers-kit", name: "Climber's Kit", costGp: 25, weightLb: 12, data: { action: "utilize", anchoredMaxFallFt: 25 } },
+    { id: "fine-clothes", name: "Clothes, Fine", costGp: 15, weightLb: 6 },
+    { id: "travelers-clothes", name: "Clothes, Traveler's", costGp: 2, weightLb: 4 },
+    { id: "component-pouch", name: "Component Pouch", costGp: 25, weightLb: 2, data: { componentStorage: true } },
+    { id: "costume", name: "Costume", costGp: 5, weightLb: 4, data: { impersonationAdvantage: true } },
+    { id: "crowbar", name: "Crowbar", costGp: 2, weightLb: 5, data: { leverageAdvantage: true } },
+    { id: "diplomats-pack", name: "Diplomat's Pack", costGp: 39, weightLb: 39, data: { pack: true, contents: ["chest", "fine-clothes", "ink", "ink-pen", "lamp", "map-or-scroll-case", "oil", "paper", "parchment", "perfume", "tinderbox"] } },
+    { id: "druidic-focus-sprig-of-mistletoe", name: "Druidic Focus, Sprig of Mistletoe", costGp: 1, weightLb: 0, data: { focusType: "druidic", focusForm: "sprig-of-mistletoe", classes: ["druid", "ranger"] } },
+    { id: "druidic-focus-wooden-staff", name: "Druidic Focus, Wooden Staff", costGp: 5, weightLb: 4, data: { focusType: "druidic", focusForm: "wooden-staff", alsoWeaponId: "quarterstaff", classes: ["druid", "ranger"] } },
+    { id: "druidic-focus-yew-wand", name: "Druidic Focus, Yew Wand", costGp: 10, weightLb: 1, data: { focusType: "druidic", focusForm: "yew-wand", classes: ["druid", "ranger"] } },
+    { id: "dungeoneers-pack", name: "Dungeoneer's Pack", costGp: 12, weightLb: 55, data: { pack: true, contents: ["backpack", "caltrops", "crowbar", "oil", "rations", "rope", "tinderbox", "torch", "waterskin"] } },
+    { id: "entertainers-pack", name: "Entertainer's Pack", costGp: 40, weightLb: 58.5, data: { pack: true, contents: ["backpack", "bedroll", "bell", "bullseye-lantern", "costume", "mirror", "oil", "rations", "tinderbox", "waterskin"] } },
+    { id: "explorers-pack", name: "Explorer's Pack", costGp: 10, weightLb: 55, data: { pack: true, contents: ["backpack", "bedroll", "oil", "rations", "rope", "tinderbox", "torch", "waterskin"] } },
+    { id: "flask", name: "Flask", costGp: 0.02, weightLb: 1, data: { capacityPints: 1 } },
+    { id: "grappling-hook", name: "Grappling Hook", costGp: 2, weightLb: 4, data: { action: "utilize", rangeFt: 50, checkDc: 13, check: "dexterity-acrobatics" } },
+    { id: "healers-kit", name: "Healer's Kit", costGp: 5, weightLb: 3, data: { uses: 10, action: "utilize", stabilizesAtZeroHp: true } },
+    { id: "holy-symbol-amulet", name: "Holy Symbol, Amulet", costGp: 5, weightLb: 1, data: { focusType: "holy", focusForm: "amulet", classes: ["cleric", "paladin"] } },
+    { id: "holy-symbol-emblem", name: "Holy Symbol, Emblem", costGp: 5, weightLb: 0, data: { focusType: "holy", focusForm: "emblem", classes: ["cleric", "paladin"] } },
+    { id: "holy-symbol-reliquary", name: "Holy Symbol, Reliquary", costGp: 5, weightLb: 2, data: { focusType: "holy", focusForm: "reliquary", classes: ["cleric", "paladin"] } },
+    { id: "holy-water", name: "Holy Water", costGp: 25, weightLb: 1, data: { consumable: true, thrownRange: "20", damageFormula: "2d8", damageType: "radiant", affectsCreatureTypes: ["fiend", "undead"], save: { ability: "dexterity" } } },
+    { id: "hunting-trap", name: "Hunting Trap", costGp: 5, weightLb: 25, data: { action: "utilize", saveDc: 13, save: { ability: "dexterity" }, damage: "1d4", damageType: "piercing", speedEffect: "reduced to 0 until start of next turn" } },
+    { id: "ink", name: "Ink", costGp: 10, weightLb: 0, data: { capacityPages: 500 } },
+    { id: "ink-pen", name: "Ink Pen", costGp: 0.02, weightLb: 0 },
+    { id: "jug", name: "Jug", costGp: 0.02, weightLb: 4, data: { capacityGallons: 1 } },
+    { id: "ladder", name: "Ladder", costGp: 0.1, weightLb: 25, data: { lengthFt: 10 } },
+    { id: "lamp", name: "Lamp", costGp: 0.5, weightLb: 1, data: { light: { brightFt: 15, dimFt: 30 }, fuel: "oil" } },
+    { id: "bullseye-lantern", name: "Lantern, Bullseye", costGp: 10, weightLb: 2, data: { light: { brightFt: 60, dimFt: 60, shape: "cone" }, fuel: "oil" } },
+    { id: "hooded-lantern", name: "Lantern, Hooded", costGp: 5, weightLb: 2, data: { light: { brightFt: 30, dimFt: 30, hoodedDimFt: 5 }, fuel: "oil" } },
+    { id: "lock", name: "Lock", costGp: 10, weightLb: 1, data: { pickDc: 15, tool: "thieves-tools" } },
+    { id: "magnifying-glass", name: "Magnifying Glass", costGp: 100, weightLb: 0, data: { inspectAdvantage: true } },
+    { id: "manacles", name: "Manacles", costGp: 2, weightLb: 6, data: { action: "utilize", escapeDc: 20, burstDc: 25, pickDc: 15, condition: "restrained" } },
+    { id: "map", name: "Map", costGp: 1, weightLb: 0, data: { survivalCheckBonus: 5 } },
+    { id: "mirror", name: "Mirror", costGp: 5, weightLb: 0.5 },
+    { id: "net", name: "Net", costGp: 1, weightLb: 3, data: { action: "attack-replacement", rangeFt: 15, save: { ability: "dexterity" }, condition: "restrained", escapeDc: 10 } },
+    { id: "oil", name: "Oil", costGp: 0.1, weightLb: 1, data: { consumable: true, thrownRange: "20", extraFireDamage: 5, fuelHours: 6 } },
+    { id: "paper", name: "Paper", costGp: 0.2, weightLb: 0, data: { capacityWords: 250 } },
+    { id: "parchment", name: "Parchment", costGp: 0.1, weightLb: 0, data: { capacityWords: 250 } },
+    { id: "perfume", name: "Perfume", costGp: 5, weightLb: 0, data: { persuasionAdvantage: true, duration: "1 hour" } },
+    { id: "basic-poison", name: "Poison, Basic", costGp: 100, weightLb: 0, data: { consumable: true, action: "bonus", bonusDamageFormula: "1d4", damageType: "poison", appliesTo: ["piercing", "slashing"] } },
+    { id: "pole", name: "Pole", costGp: 0.05, weightLb: 7, data: { lengthFt: 10, jumpCheckAdvantage: true } },
+    { id: "iron-pot", name: "Pot, Iron", costGp: 2, weightLb: 10, data: { capacityGallons: 1 } },
+    { id: "potion-of-healing", name: "Potion of Healing", costGp: 50, weightLb: 0.5, data: { magicItem: true, consumable: true, action: "bonus", healingFormula: "2d4+2" } },
+    { id: "pouch", name: "Pouch", costGp: 0.5, weightLb: 1, data: { capacityLb: 6, capacityCubicFt: 0.2 } },
+    { id: "priests-pack", name: "Priest's Pack", costGp: 33, weightLb: 29, data: { pack: true, contents: ["backpack", "blanket", "holy-water", "lamp", "rations", "robe", "tinderbox"] } },
+    { id: "quiver", name: "Quiver", costGp: 1, weightLb: 1, data: { capacityAmmunition: 20, ammunition: "arrow" } },
+    { id: "portable-ram", name: "Ram, Portable", costGp: 4, weightLb: 35, data: { doorBreakCheckBonus: 4 } },
+    { id: "rations", name: "Rations", costGp: 0.5, weightLb: 2 },
+    { id: "robe", name: "Robe", costGp: 1, weightLb: 4 },
+    { id: "rope", name: "Rope", costGp: 1, weightLb: 5, data: { lengthFt: 50, knotDc: 10, burstDc: 20, escapeDc: 15 } },
+    { id: "sack", name: "Sack", costGp: 0.01, weightLb: 0.5, data: { capacityLb: 30, capacityCubicFt: 1 } },
+    { id: "scholars-pack", name: "Scholar's Pack", costGp: 40, weightLb: 22, data: { pack: true, contents: ["backpack", "book", "ink", "ink-pen", "lamp", "oil", "parchment", "tinderbox"] } },
+    { id: "shovel", name: "Shovel", costGp: 2, weightLb: 5 },
+    { id: "signal-whistle", name: "Signal Whistle", costGp: 0.05, weightLb: 0, data: { audibleRangeFt: 600 } },
+    { id: "spell-scroll-cantrip", name: "Spell Scroll, Cantrip", costGp: 30, weightLb: 0, data: { magicItem: true, consumable: true, scrollLevel: 0, spellSaveDc: 13, spellAttackBonus: 5 } },
+    { id: "spell-scroll-level-1", name: "Spell Scroll, Level 1", costGp: 50, weightLb: 0, data: { magicItem: true, consumable: true, scrollLevel: 1, spellSaveDc: 13, spellAttackBonus: 5 } },
+    { id: "iron-spikes", name: "Spikes, Iron", costGp: 1, weightLb: 5, data: { amountPerPurchase: 10 } },
+    { id: "spyglass", name: "Spyglass", costGp: 1000, weightLb: 1, data: { magnification: 2 } },
+    { id: "string", name: "String", costGp: 0.1, weightLb: 0, data: { lengthFt: 10 } },
+    { id: "tent", name: "Tent", costGp: 2, weightLb: 20, data: { capacityCreatures: 2 } },
+    { id: "tinderbox", name: "Tinderbox", costGp: 0.5, weightLb: 1 },
+    { id: "torch", name: "Torch", costGp: 0.01, weightLb: 1, data: { light: { brightFt: 20, dimFt: 20, durationHours: 1 }, improvisedDamage: "1 fire" } },
+    { id: "vial", name: "Vial", costGp: 1, weightLb: 0, data: { capacityOunces: 4 } },
+    { id: "waterskin", name: "Waterskin", costGp: 0.2, weightLb: 5, data: { capacityPints: 4, weightWhenFull: true } }
+  ];
+  return gear.map(dnd5eSrdGearEntry);
+}
+
 export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
   return [
     ...genericFantasyCompendium().map((entry) => {
@@ -1711,7 +1911,9 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       name: "Thieves' Tools",
       summary: "A kit for lock work, trap disarming, and other delicate criminal tasks.",
       data: { category: "tool", equipmentCategory: "tool", toolId: "thieves-tools", ability: "dexterity", costGp: 25, weightLb: 1, source: DND_5E_SRD_VERSION }
-    }
+    },
+    ...dnd5eSrdToolCompendiumEntries(),
+    ...dnd5eSrdAdventuringGearCompendiumEntries()
   ];
 }
 
@@ -4157,9 +4359,44 @@ function dnd5eSrdSkillDefinition(skillId: string): { id: string; label: string; 
 
 function dnd5eSrdTools(): Array<{ id: string; label: string; ability: string }> {
   return [
+    { id: "alchemists-supplies", label: "Alchemist's Supplies", ability: "intelligence" },
+    { id: "brewers-supplies", label: "Brewer's Supplies", ability: "intelligence" },
     { id: "calligraphers-supplies", label: "Calligrapher's Supplies", ability: "dexterity" },
+    { id: "carpenters-tools", label: "Carpenter's Tools", ability: "strength" },
+    { id: "cartographers-tools", label: "Cartographer's Tools", ability: "wisdom" },
+    { id: "cobblers-tools", label: "Cobbler's Tools", ability: "dexterity" },
+    { id: "cooks-utensils", label: "Cook's Utensils", ability: "wisdom" },
+    { id: "glassblowers-tools", label: "Glassblower's Tools", ability: "intelligence" },
+    { id: "jewelers-tools", label: "Jeweler's Tools", ability: "intelligence" },
+    { id: "leatherworkers-tools", label: "Leatherworker's Tools", ability: "dexterity" },
+    { id: "masons-tools", label: "Mason's Tools", ability: "strength" },
+    { id: "painters-supplies", label: "Painter's Supplies", ability: "wisdom" },
+    { id: "potters-tools", label: "Potter's Tools", ability: "intelligence" },
+    { id: "smiths-tools", label: "Smith's Tools", ability: "strength" },
+    { id: "tinkers-tools", label: "Tinker's Tools", ability: "dexterity" },
+    { id: "weavers-tools", label: "Weaver's Tools", ability: "dexterity" },
+    { id: "woodcarvers-tools", label: "Woodcarver's Tools", ability: "dexterity" },
+    { id: "disguise-kit", label: "Disguise Kit", ability: "charisma" },
+    { id: "forgery-kit", label: "Forgery Kit", ability: "dexterity" },
     { id: "gaming-set", label: "Gaming Set", ability: "wisdom" },
+    { id: "dice-set", label: "Dice Set", ability: "wisdom" },
+    { id: "dragonchess-set", label: "Dragonchess Set", ability: "wisdom" },
+    { id: "playing-cards", label: "Playing Cards", ability: "wisdom" },
+    { id: "three-dragon-ante-set", label: "Three-Dragon Ante Set", ability: "wisdom" },
+    { id: "herbalism-kit", label: "Herbalism Kit", ability: "intelligence" },
     { id: "musical-instrument", label: "Musical Instrument", ability: "charisma" },
+    { id: "bagpipes", label: "Bagpipes", ability: "charisma" },
+    { id: "drum", label: "Drum", ability: "charisma" },
+    { id: "dulcimer", label: "Dulcimer", ability: "charisma" },
+    { id: "flute", label: "Flute", ability: "charisma" },
+    { id: "horn", label: "Horn", ability: "charisma" },
+    { id: "lute", label: "Lute", ability: "charisma" },
+    { id: "lyre", label: "Lyre", ability: "charisma" },
+    { id: "pan-flute", label: "Pan Flute", ability: "charisma" },
+    { id: "shawm", label: "Shawm", ability: "charisma" },
+    { id: "viol", label: "Viol", ability: "charisma" },
+    { id: "navigators-tools", label: "Navigator's Tools", ability: "wisdom" },
+    { id: "poisoners-kit", label: "Poisoner's Kit", ability: "intelligence" },
     { id: "thieves-tools", label: "Thieves' Tools", ability: "dexterity" }
   ];
 }

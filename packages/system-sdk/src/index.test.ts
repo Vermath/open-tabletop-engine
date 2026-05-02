@@ -403,6 +403,150 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("pistol")?.data).toEqual(expect.objectContaining({ damage: "1d10", costGp: 250, range: "30/90", mastery: "vex" }));
     expect(dnd5eSrdCompendiumEntry("musical-instrument")?.data).toEqual(expect.objectContaining({ toolId: "musical-instrument", costGp: 2 }));
     expect(dnd5eSrdCompendiumEntry("arcane-focus")?.data).toEqual(expect.objectContaining({ focusType: "arcane", costGp: 10 }));
+    const srdToolEntryIds = [
+      "alchemists-supplies",
+      "brewers-supplies",
+      "carpenters-tools",
+      "cartographers-tools",
+      "cobblers-tools",
+      "cooks-utensils",
+      "glassblowers-tools",
+      "jewelers-tools",
+      "leatherworkers-tools",
+      "masons-tools",
+      "painters-supplies",
+      "potters-tools",
+      "smiths-tools",
+      "tinkers-tools",
+      "weavers-tools",
+      "woodcarvers-tools",
+      "disguise-kit",
+      "forgery-kit",
+      "gaming-set",
+      "dice-set",
+      "dragonchess-set",
+      "playing-cards",
+      "three-dragon-ante-set",
+      "herbalism-kit",
+      "bagpipes",
+      "drum",
+      "dulcimer",
+      "flute",
+      "horn",
+      "lute",
+      "lyre",
+      "pan-flute",
+      "shawm",
+      "viol",
+      "navigators-tools",
+      "poisoners-kit"
+    ];
+    const srdAdventuringGearEntryIds = [
+      "acid",
+      "alchemists-fire",
+      "antitoxin",
+      "arrows",
+      "crossbow-bolts",
+      "firearm-bullets",
+      "sling-bullets",
+      "blowgun-needles",
+      "arcane-focus-crystal",
+      "arcane-focus-orb",
+      "arcane-focus-rod",
+      "arcane-focus-staff",
+      "arcane-focus-wand",
+      "backpack",
+      "ball-bearings",
+      "barrel",
+      "basket",
+      "bedroll",
+      "bell",
+      "blanket",
+      "block-and-tackle",
+      "book",
+      "glass-bottle",
+      "bucket",
+      "burglars-pack",
+      "caltrops",
+      "candle",
+      "crossbow-bolt-case",
+      "map-or-scroll-case",
+      "chain",
+      "chest",
+      "climbers-kit",
+      "fine-clothes",
+      "travelers-clothes",
+      "component-pouch",
+      "costume",
+      "crowbar",
+      "diplomats-pack",
+      "druidic-focus-sprig-of-mistletoe",
+      "druidic-focus-wooden-staff",
+      "druidic-focus-yew-wand",
+      "dungeoneers-pack",
+      "entertainers-pack",
+      "explorers-pack",
+      "flask",
+      "grappling-hook",
+      "healers-kit",
+      "holy-symbol-amulet",
+      "holy-symbol-emblem",
+      "holy-symbol-reliquary",
+      "holy-water",
+      "hunting-trap",
+      "ink",
+      "ink-pen",
+      "jug",
+      "ladder",
+      "lamp",
+      "bullseye-lantern",
+      "hooded-lantern",
+      "lock",
+      "magnifying-glass",
+      "manacles",
+      "map",
+      "mirror",
+      "net",
+      "oil",
+      "paper",
+      "parchment",
+      "perfume",
+      "basic-poison",
+      "pole",
+      "iron-pot",
+      "potion-of-healing",
+      "pouch",
+      "priests-pack",
+      "quiver",
+      "portable-ram",
+      "rations",
+      "robe",
+      "rope",
+      "sack",
+      "scholars-pack",
+      "shovel",
+      "signal-whistle",
+      "spell-scroll-cantrip",
+      "spell-scroll-level-1",
+      "iron-spikes",
+      "spyglass",
+      "string",
+      "tent",
+      "tinderbox",
+      "torch",
+      "vial",
+      "waterskin"
+    ];
+    expect([...srdToolEntryIds, ...srdAdventuringGearEntryIds].filter((entryId) => !dnd5eSrdCompendiumEntry(entryId))).toEqual([]);
+    expect(dnd5eSrdCompendiumEntry("alchemists-supplies")?.data).toEqual(expect.objectContaining({ category: "tool", toolId: "alchemists-supplies", ability: "intelligence", costGp: 50, weightLb: 8 }));
+    expect(dnd5eSrdCompendiumEntry("dice-set")?.data).toEqual(expect.objectContaining({ toolGroup: "gaming-set", variantOf: "gaming-set", costGp: 0.1, weightLb: 0 }));
+    expect(dnd5eSrdCompendiumEntry("flute")?.data).toEqual(expect.objectContaining({ toolGroup: "musical-instrument", variantOf: "musical-instrument", costGp: 2, weightLb: 1 }));
+    expect(dnd5eSrdCompendiumEntry("navigators-tools")?.data).toEqual(expect.objectContaining({ toolId: "navigators-tools", ability: "wisdom", costGp: 25, weightLb: 2 }));
+    expect(dnd5eSrdCompendiumEntry("arrows")?.data).toEqual(expect.objectContaining({ ammunition: "arrow", amountPerPurchase: 20, storage: "quiver", costGp: 1 }));
+    expect(dnd5eSrdCompendiumEntry("burglars-pack")?.data).toEqual(expect.objectContaining({ pack: true, costGp: 16, weightLb: 42, contents: expect.arrayContaining(["backpack", "crowbar", "hooded-lantern"]) }));
+    expect(dnd5eSrdCompendiumEntry("healers-kit")?.data).toEqual(expect.objectContaining({ uses: 10, action: "utilize", stabilizesAtZeroHp: true, costGp: 5 }));
+    expect(dnd5eSrdCompendiumEntry("potion-of-healing")?.data).toEqual(expect.objectContaining({ magicItem: true, healingFormula: "2d4+2", costGp: 50 }));
+    expect(dnd5eSrdCompendiumEntry("spell-scroll-level-1")?.data).toEqual(expect.objectContaining({ magicItem: true, scrollLevel: 1, spellSaveDc: 13, spellAttackBonus: 5 }));
 
     const spell: Item = {
       id: "itm_healing_word",
@@ -1212,6 +1356,17 @@ describe("dnd 5.5e srd rules", () => {
     const poisonedActor = { ...srdActor, data: { ...srdActor.data, conditions: [{ id: "poisoned" }] } };
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "skill-medicine")?.formula).toBe("2d20kl1+5");
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "tool-calligraphers-supplies")?.formula).toBe("2d20kl1+3");
+    const toolSpecialistActor: Actor = {
+      ...srdActor,
+      data: { ...srdActor.data, toolProficiencies: ["herbalism-kit", "flute", "navigators-tools"], toolExpertise: ["navigators-tools"] }
+    };
+    expect(dnd5eSrdQuickRolls(toolSpecialistActor, [])).toEqual(
+      expect.arrayContaining([
+        { id: "tool-herbalism-kit", label: "Herbalism Kit Check", formula: "1d20+2" },
+        { id: "tool-flute", label: "Flute Check", formula: "1d20+2" },
+        { id: "tool-navigators-tools", label: "Navigator's Tools Check", formula: "1d20+7" }
+      ])
+    );
     expect(dnd5eSrdActionFormula(srdActor, [spell], "spell-itm_healing_word-healing", { spellSlotLevel: 2 })).toBe("1d4+3+2d4");
     expect(dnd5eSrdActionFormula(srdActor, [acidArrow], "spell-itm_acid_arrow-damage", { spellSlotLevel: 3 })).toBe("4d4+1d4");
     expect(dnd5eSrdActionFormula(srdActor, [acidArrow], "spell-itm_acid_arrow-secondary-damage", { spellSlotLevel: 3 })).toBe("2d4+1d4");
@@ -1248,6 +1403,12 @@ describe("dnd 5.5e srd rules", () => {
     const purchasedHandaxes = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("handaxe")!, 2);
     expect(purchasedHandaxes).toEqual(expect.objectContaining({ entryId: "handaxe", quantity: 2, unitCostGp: 5, totalCostGp: 10, currency: { gp: 40, sp: 0, cp: 0 } }));
     expect(purchasedHandaxes.itemData).toEqual(expect.objectContaining({ compendiumId: "handaxe", quantity: 2, purchasedForGp: 10, damage: "1d6", mastery: "vex" }));
+    const purchasedHealersKit = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("healers-kit")!, 1);
+    expect(purchasedHealersKit).toEqual(expect.objectContaining({ entryId: "healers-kit", quantity: 1, unitCostGp: 5, totalCostGp: 5, currency: { gp: 45, sp: 0, cp: 0 } }));
+    expect(purchasedHealersKit.itemData).toEqual(expect.objectContaining({ compendiumId: "healers-kit", quantity: 1, purchasedForGp: 5, uses: 10, stabilizesAtZeroHp: true }));
+    const purchasedArrows = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("arrows")!, 2);
+    expect(purchasedArrows).toEqual(expect.objectContaining({ entryId: "arrows", quantity: 2, unitCostGp: 1, totalCostGp: 2, currency: { gp: 48, sp: 0, cp: 0 } }));
+    expect(purchasedArrows.itemData).toEqual(expect.objectContaining({ compendiumId: "arrows", quantity: 2, purchasedForGp: 2, ammunition: "arrow", amountPerPurchase: 20, storage: "quiver" }));
     expect(() => dnd5eSrdEquipmentPurchase({ ...srdActor, data: { ...srdActor.data, currency: { gp: 1 } } }, dnd5eSrdCompendiumEntry("longsword")!, 1)).toThrow("Insufficient currency");
     expect(() => dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("magic-initiate")!, 1)).toThrow("not purchasable");
   });

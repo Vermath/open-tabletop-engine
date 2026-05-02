@@ -4111,7 +4111,21 @@ describe("api", () => {
           expect.objectContaining({ id: "heavy-crossbow", name: "Heavy Crossbow", data: expect.objectContaining({ costGp: 50, damage: "1d10", range: "100/400", mastery: "push" }) }),
           expect.objectContaining({ id: "musket", name: "Musket", data: expect.objectContaining({ costGp: 500, damage: "1d12", range: "40/120", mastery: "slow" }) }),
           expect.objectContaining({ id: "musical-instrument", name: "Musical Instrument", data: expect.objectContaining({ toolId: "musical-instrument", costGp: 2 }) }),
-          expect.objectContaining({ id: "arcane-focus", name: "Arcane Focus", data: expect.objectContaining({ focusType: "arcane", costGp: 10 }) })
+          expect.objectContaining({ id: "arcane-focus", name: "Arcane Focus", data: expect.objectContaining({ focusType: "arcane", costGp: 10 }) }),
+          expect.objectContaining({ id: "alchemists-supplies", name: "Alchemist's Supplies", data: expect.objectContaining({ category: "tool", toolId: "alchemists-supplies", costGp: 50 }) }),
+          expect.objectContaining({ id: "dice-set", name: "Dice Set", data: expect.objectContaining({ toolGroup: "gaming-set", costGp: 0.1 }) }),
+          expect.objectContaining({ id: "flute", name: "Flute", data: expect.objectContaining({ toolGroup: "musical-instrument", costGp: 2 }) }),
+          expect.objectContaining({ id: "navigators-tools", name: "Navigator's Tools", data: expect.objectContaining({ ability: "wisdom", costGp: 25 }) }),
+          expect.objectContaining({ id: "arrows", name: "Arrows", data: expect.objectContaining({ ammunition: "arrow", amountPerPurchase: 20, costGp: 1 }) }),
+          expect.objectContaining({ id: "burglars-pack", name: "Burglar's Pack", data: expect.objectContaining({ pack: true, costGp: 16, contents: expect.arrayContaining(["backpack", "crowbar"]) }) }),
+          expect.objectContaining({ id: "climbers-kit", name: "Climber's Kit", data: expect.objectContaining({ anchoredMaxFallFt: 25, costGp: 25 }) }),
+          expect.objectContaining({ id: "component-pouch", name: "Component Pouch", data: expect.objectContaining({ componentStorage: true, costGp: 25 }) }),
+          expect.objectContaining({ id: "druidic-focus-yew-wand", name: "Druidic Focus, Yew Wand", data: expect.objectContaining({ focusType: "druidic", costGp: 10 }) }),
+          expect.objectContaining({ id: "holy-symbol-amulet", name: "Holy Symbol, Amulet", data: expect.objectContaining({ focusType: "holy", costGp: 5 }) }),
+          expect.objectContaining({ id: "healers-kit", name: "Healer's Kit", data: expect.objectContaining({ uses: 10, costGp: 5 }) }),
+          expect.objectContaining({ id: "potion-of-healing", name: "Potion of Healing", data: expect.objectContaining({ magicItem: true, healingFormula: "2d4+2", costGp: 50 }) }),
+          expect.objectContaining({ id: "spell-scroll-level-1", name: "Spell Scroll, Level 1", data: expect.objectContaining({ scrollLevel: 1, spellSaveDc: 13, costGp: 50 }) }),
+          expect.objectContaining({ id: "torch", name: "Torch", data: expect.objectContaining({ costGp: 0.01, light: expect.objectContaining({ brightFt: 20 }) }) })
         ])
       );
 
@@ -4267,6 +4281,32 @@ describe("api", () => {
       expect(handaxePurchase.json().purchase).toEqual(expect.objectContaining({ entryId: "handaxe", quantity: 2, unitCostGp: 5, totalCostGp: 10, currency: { gp: 0, sp: 0, cp: 0 } }));
       expect(handaxePurchase.json().item).toEqual(expect.objectContaining({ name: "Handaxe", data: expect.objectContaining({ quantity: 2, purchasedForGp: 10, damage: "1d6", mastery: "vex" }) }));
       expect(handaxePurchase.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: `item-${handaxePurchase.json().item.id}-damage`, label: "Handaxe Damage", formula: "1d6+0" })]));
+
+      const gearBuyer = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "SRD Gear Buyer", ownerUserId: "usr_demo_player" }
+      });
+      expect(gearBuyer.statusCode).toBe(200);
+      const healersKitPurchase = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${gearBuyer.json().actor.id}/purchase`,
+        headers: authHeaders,
+        payload: { entryId: "healers-kit", quantity: 1 }
+      });
+      expect(healersKitPurchase.statusCode).toBe(200);
+      expect(healersKitPurchase.json().purchase).toEqual(expect.objectContaining({ entryId: "healers-kit", quantity: 1, unitCostGp: 5, totalCostGp: 5, currency: { gp: 45, sp: 0, cp: 0 } }));
+      expect(healersKitPurchase.json().item).toEqual(expect.objectContaining({ name: "Healer's Kit", data: expect.objectContaining({ uses: 10, stabilizesAtZeroHp: true, purchasedForGp: 5 }) }));
+      const arrowsPurchase = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${gearBuyer.json().actor.id}/purchase`,
+        headers: authHeaders,
+        payload: { entryId: "arrows", quantity: 2 }
+      });
+      expect(arrowsPurchase.statusCode).toBe(200);
+      expect(arrowsPurchase.json().purchase).toEqual(expect.objectContaining({ entryId: "arrows", quantity: 2, unitCostGp: 1, totalCostGp: 2, currency: { gp: 43, sp: 0, cp: 0 } }));
+      expect(arrowsPurchase.json().item).toEqual(expect.objectContaining({ name: "Arrows", data: expect.objectContaining({ quantity: 2, purchasedForGp: 2, ammunition: "arrow", amountPerPurchase: 20, storage: "quiver" }) }));
 
       const target = await app.inject({
         method: "POST",
