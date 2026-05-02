@@ -227,6 +227,7 @@ describe("dnd 5.5e srd rules", () => {
   it("exposes first-class SRD templates, compendium entries, and quick rolls", () => {
     const cleric = dnd5eSrdCharacterTemplate("cleric");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
+    expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
     expect(cleric?.items.map((item) => item.entryId)).toEqual(["healing-word", "cure-wounds"]);
     expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
 
@@ -242,7 +243,15 @@ describe("dnd 5.5e srd rules", () => {
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
     expect(dnd5eSrdSheet(srdActor, [spell]).spells.map((item) => item.name)).toEqual(["Healing Word"]);
-    expect(dnd5eSrdQuickRolls(srdActor, [spell])).toEqual(expect.arrayContaining([{ id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3" }]));
+    expect(dnd5eSrdQuickRolls(srdActor, [spell])).toEqual(
+      expect.arrayContaining([
+        { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },
+        { id: "save-charisma", label: "Charisma Save", formula: "1d20+2" },
+        { id: "save-strength", label: "Strength Save", formula: "1d20+0" },
+        { id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3" }
+      ])
+    );
+    expect(dnd5eSrdSheet(srdActor, [spell]).quickRolls).toEqual(expect.arrayContaining([{ id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" }]));
     expect(dnd5eSrdActionFormula(srdActor, [spell], "spell-itm_healing_word-healing", { spellSlotLevel: 2 })).toBe("1d4+3+2d4");
   });
 
@@ -296,7 +305,15 @@ describe("dnd 5.5e srd rules", () => {
     expect(imported).toMatchObject({
       systemId: "dnd-5e-srd",
       name: "Imported SRD Cleric",
-      data: { ruleset: "SRD 5.2.1", class: "Cleric", species: "Human", background: "Sage", conditions: [{ id: "magic-initiate" }], spellSlots: { level1: { current: 4, max: 4, recovery: "long" }, level2: { current: 2, max: 2, recovery: "long" } } },
+      data: {
+        ruleset: "SRD 5.2.1",
+        class: "Cleric",
+        species: "Human",
+        background: "Sage",
+        conditions: [{ id: "magic-initiate" }],
+        saveProficiencies: ["wisdom", "charisma"],
+        spellSlots: { level1: { current: 4, max: 4, recovery: "long" }, level2: { current: 2, max: 2, recovery: "long" } }
+      },
       items: [{ entryId: "healing-word" }, { entryId: "longsword" }]
     });
     expect(imported.warnings).toEqual(["Unknown condition skipped: missing-condition", "Unknown compendium entry skipped: missing-item"]);

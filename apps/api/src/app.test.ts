@@ -3207,7 +3207,9 @@ describe("api", () => {
       });
       expect(cleric.statusCode).toBe(200);
       expect(cleric.json().actor).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "SRD Cleric" }));
+      expect(cleric.json().actor.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
       expect(cleric.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Healing Word", "Cure Wounds"]);
+      expect(cleric.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" })]));
       const storedCleric = store.state.actors.find((actor) => actor.id === cleric.json().actor.id)!;
       storedCleric.data = {
         ...storedCleric.data,
@@ -3250,6 +3252,16 @@ describe("api", () => {
         }
       });
       expect(target.statusCode).toBe(200);
+
+      const saveRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "save-wisdom" }
+      });
+      expect(saveRoll.statusCode).toBe(200);
+      expect(saveRoll.json().quickRoll).toEqual(expect.objectContaining({ id: "save-wisdom", formula: "1d20+5" }));
+      expect(saveRoll.json().chat.body).toContain("Wisdom Save: 1d20+5");
 
       const roll = await app.inject({
         method: "POST",

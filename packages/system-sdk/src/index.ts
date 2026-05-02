@@ -335,7 +335,24 @@ export function genericFantasyQuickRolls(actor: Actor, items: Item[] = []): Quic
 }
 
 export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
-  return genericFantasyQuickRolls(actor, items);
+  const abilities = dnd5eSrdAbilityKeys(actor);
+  return [
+    ...abilities.map((ability) => genericFantasyAbilityCheck(actor, ability)),
+    ...abilities.map((ability) => dnd5eSrdSavingThrow(actor, ability)),
+    ...genericFantasyActionRolls(actor, items)
+  ];
+}
+
+export function dnd5eSrdSavingThrow(actor: Actor, ability: string): QuickRoll {
+  const modifier = genericFantasyAttributeModifier(actor, ability);
+  const proficiencyBonus = dnd5eSrdSaveProficiencies(actor).includes(ability) ? dnd5eSrdProficiencyBonus(actor) : 0;
+  const bonus = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "blessed") ? "+1d4" : "";
+  const label = `${ability.charAt(0).toUpperCase()}${ability.slice(1)} Save`;
+  return {
+    id: `save-${ability}`,
+    label,
+    formula: `1d20${formatSignedNumber(modifier + proficiencyBonus)}${bonus}`
+  };
 }
 
 export function genericFantasyCompendium(): GenericFantasyCompendiumEntry[] {
@@ -500,6 +517,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         hp: { current: 12, max: 12 },
         attributes: { strength: 16, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 10, charisma: 12 },
         hitDice: { current: 1, max: 1, size: "d10" },
+        saveProficiencies: ["strength", "constitution"],
         resources: { secondWind: { current: 1, max: 1, recovery: "short" } },
         spellSlots: {},
         conditions: [],
@@ -524,6 +542,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         hp: { current: 9, max: 9 },
         attributes: { strength: 10, dexterity: 12, constitution: 12, intelligence: 13, wisdom: 16, charisma: 10 },
         hitDice: { current: 1, max: 1, size: "d8" },
+        saveProficiencies: ["wisdom", "charisma"],
         resources: {},
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
@@ -548,6 +567,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         hp: { current: 8, max: 8 },
         attributes: { strength: 8, dexterity: 14, constitution: 14, intelligence: 16, wisdom: 12, charisma: 10 },
         hitDice: { current: 1, max: 1, size: "d6" },
+        saveProficiencies: ["intelligence", "wisdom"],
         resources: {},
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
@@ -619,7 +639,9 @@ export function dnd5eSrdCharacterImport(input: CharacterImportInput): CharacterI
       class: className,
       species: stringValue(source.species) || "Human",
       background: stringValue(source.background) || "Soldier",
+      proficiencyBonus: dnd5eSrdProficiencyBonusForLevel(level, source.proficiencyBonus),
       hitDice: { ...recordValue(imported.data.hitDice), size: stringValue(sourceHitDice.size) ?? dnd5eSrdHitDieSize(className) },
+      saveProficiencies: dnd5eSrdSaveProficienciesForClass(className, source.saveProficiencies),
       resources: normalizeResourcePools(source.resources, defaultDnd5eSrdResources(className)),
       spellSlots: normalizeResourcePools(source.spellSlots, defaultDnd5eSrdSpellSlots(className, level)),
       conditions: conditions.map((id) => ({ id }))
@@ -858,6 +880,7 @@ export function genericFantasySheet(actor: Actor, items: Item[] = []): GenericFa
 export function dnd5eSrdSheet(actor: Actor, items: Item[] = []): GenericFantasySheet {
   return {
     ...genericFantasySheet(actor, items),
+    quickRolls: dnd5eSrdQuickRolls(actor, items),
     conditions: dnd5eSrdActorConditions(actor)
   };
 }
@@ -1624,6 +1647,36 @@ function normalizeConditionRecords(value: unknown): Array<{ id: string; appliedA
 function genericFantasyAttributeModifier(actor: Actor, ability: string): number {
   const attributes = actor.data.attributes as Record<string, number> | undefined;
   return abilityModifier(numericValue(attributes?.[ability], 10));
+}
+
+function dnd5eSrdAbilityKeys(actor: Actor): string[] {
+  return Object.keys(defaultDnd5eSrdAttributes());
+}
+
+function defaultDnd5eSrdAttributes(): Record<string, number> {
+  return { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 };
+}
+
+function dnd5eSrdProficiencyBonus(actor: Actor): number {
+  return dnd5eSrdProficiencyBonusForLevel(numericValue(actor.data.level, 1), actor.data.proficiencyBonus);
+}
+
+function dnd5eSrdProficiencyBonusForLevel(level: number, explicit: unknown): number {
+  return Math.max(2, Math.floor(numericValue(explicit, 2 + Math.floor((Math.max(1, level) - 1) / 4))));
+}
+
+function dnd5eSrdSaveProficiencies(actor: Actor): string[] {
+  return dnd5eSrdSaveProficienciesForClass(stringValue(actor.data.class) || "Fighter", actor.data.saveProficiencies);
+}
+
+function dnd5eSrdSaveProficienciesForClass(className: string, explicit: unknown): string[] {
+  const defaultAttributes = defaultDnd5eSrdAttributes();
+  const explicitProficiencies = normalizeStringArray(explicit).map((ability) => ability.toLowerCase()).filter((ability) => ability in defaultAttributes);
+  if (explicitProficiencies.length > 0) return explicitProficiencies;
+  const normalizedClass = className.toLowerCase();
+  if (normalizedClass === "cleric") return ["wisdom", "charisma"];
+  if (normalizedClass === "wizard") return ["intelligence", "wisdom"];
+  return ["strength", "constitution"];
 }
 
 function stellarFrontiersAptitudeModifier(actor: Actor, aptitude: string): number {
