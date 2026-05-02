@@ -3197,7 +3197,7 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(templates.statusCode).toBe(200);
-      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "cleric", "wizard"]);
+      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "cleric", "wizard", "rogue"]);
 
       const origins = await app.inject({
         method: "GET",
@@ -3303,6 +3303,61 @@ describe("api", () => {
       expect(wizardLongRest.statusCode).toBe(200);
       expect(wizardLongRest.json().actor.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
       expect(wizardLongRest.json().actor.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
+
+      const rogue = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "rogue", name: "SRD Rogue", ownerUserId: "usr_demo_player" }
+      });
+      expect(rogue.statusCode).toBe(200);
+      expect(rogue.json().actor.data).toEqual(
+        expect.objectContaining({
+          features: ["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"],
+          saveProficiencies: ["dexterity", "intelligence"],
+          skillExpertise: ["stealth", "sleight-of-hand"],
+          toolProficiencies: ["thieves-tools"]
+        })
+      );
+      expect(rogue.json().sheet.inventory.map((item: { name: string }) => item.name)).toEqual(["Dagger", "Shortbow"]);
+      expect(rogue.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "save-dexterity", formula: "1d20+5" }),
+          expect.objectContaining({ id: "skill-stealth", formula: "1d20+7" }),
+          expect.objectContaining({ id: "tool-thieves-tools", formula: "1d20+5" }),
+          expect.objectContaining({ id: "feature-sneak-attack-damage", formula: "1d6", metadata: expect.objectContaining({ limit: "once per turn" }) })
+        ])
+      );
+
+      const levelFiveRogue = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "rogue", name: "SRD Level Five Rogue", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFiveRogue.statusCode).toBe(200);
+      let levelFiveRogueAdvance = levelFiveRogue;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFiveRogueAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRogue.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFiveRogueAdvance.statusCode).toBe(200);
+      }
+      expect(levelFiveRogueAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Cunning Action", "Steady Aim", "Cunning Strike", "Uncanny Dodge"])
+        })
+      );
+      expect(levelFiveRogueAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-sneak-attack-damage", formula: "3d6", metadata: expect.objectContaining({ cunningStrike: expect.objectContaining({ saveDc: 16, reducedSneakAttackFormula: "2d6" }) }) }),
+          expect.objectContaining({ id: "feature-cunning-strike", formula: "0", metadata: expect.objectContaining({ saveDc: 16, sneakAttackDice: 3 }) })
+        ])
+      );
 
       const cleric = await app.inject({
         method: "POST",
@@ -3619,6 +3674,47 @@ describe("api", () => {
         }
       });
       expect(searUndeadTarget.statusCode).toBe(200);
+
+      const rogueTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_gm",
+          type: "character",
+          name: "SRD Rogue Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: { current: 10, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(rogueTarget.statusCode).toBe(200);
+
+      const sneakAttack = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRogue.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "feature-sneak-attack-damage", applyEffect: true, targetActorId: rogueTarget.json().id }
+      });
+      expect(sneakAttack.statusCode).toBe(200);
+      expect(sneakAttack.json().roll.formula).toBe("3d6");
+      expect(sneakAttack.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-sneak-attack-damage", formula: "3d6", metadata: expect.objectContaining({ cunningStrike: expect.objectContaining({ saveDc: 16 }) }) }));
+      expect(sneakAttack.json().effect).toEqual(expect.objectContaining({ type: "damage", targetActorId: rogueTarget.json().id, pool: "hp", before: 10, max: 12 }));
+      expect(store.state.actors.find((actor) => actor.id === rogueTarget.json().id)?.data.hp).toEqual({ current: sneakAttack.json().effect.after, max: 12 });
+
+      const cunningStrike = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRogue.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-cunning-strike" }
+      });
+      expect(cunningStrike.statusCode).toBe(200);
+      expect(cunningStrike.json().roll.formula).toBe("0");
+      expect(cunningStrike.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-cunning-strike", formula: "0", metadata: expect.objectContaining({ saveDc: 16, sneakAttackDice: 3 }) }));
 
       const searTurnUndead = await app.inject({
         method: "POST",

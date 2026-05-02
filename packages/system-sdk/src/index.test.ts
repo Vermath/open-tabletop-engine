@@ -231,6 +231,7 @@ describe("dnd 5.5e srd rules", () => {
     const cleric = dnd5eSrdCharacterTemplate("cleric");
     const fighter = dnd5eSrdCharacterTemplate("fighter");
     const wizard = dnd5eSrdCharacterTemplate("wizard");
+    const rogue = dnd5eSrdCharacterTemplate("rogue");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
     expect(cleric?.data.skillProficiencies).toEqual(["medicine", "religion"]);
@@ -241,6 +242,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(fighter?.data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
     expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
     expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
+    expect(rogue?.data.features).toEqual(["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"]);
+    expect(rogue?.data.saveProficiencies).toEqual(["dexterity", "intelligence"]);
+    expect(rogue?.data.skillExpertise).toEqual(["stealth", "sleight-of-hand"]);
+    expect(rogue?.items.map((item) => item.entryId)).toEqual(["dagger", "shortbow"]);
     expect(cleric?.items.map((item) => item.entryId)).toEqual(["healing-word", "cure-wounds"]);
     expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
     expect(dnd5eSrdCompendiumEntry("longsword")?.data).toEqual(expect.objectContaining({ costGp: 15, weightLb: 3 }));
@@ -441,6 +446,41 @@ describe("dnd 5.5e srd rules", () => {
         })
       ])
     );
+    const rogueActor: Actor = { ...srdActor, data: { ...rogue!.data } };
+    const rogueDagger: Item = {
+      id: "itm_rogue_dagger",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: rogueActor.id,
+      type: "item",
+      name: "Dagger",
+      data: { ...dnd5eSrdCompendiumEntry("dagger")!.data, compendiumId: "dagger" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(dnd5eSrdQuickRolls(rogueActor, [rogueDagger])).toEqual(
+      expect.arrayContaining([
+        { id: "save-dexterity", label: "Dexterity Save", formula: "1d20+5" },
+        { id: "skill-stealth", label: "Stealth Check", formula: "1d20+7" },
+        { id: "tool-thieves-tools", label: "Thieves' Tools Check", formula: "1d20+5" },
+        expect.objectContaining({ id: "feature-sneak-attack-damage", label: "Sneak Attack Damage", formula: "1d6", metadata: expect.objectContaining({ limit: "once per turn" }) }),
+        { id: "item-itm_rogue_dagger-damage", label: "Dagger Damage", formula: "1d4+3" }
+      ])
+    );
+    expect(dnd5eSrdActionFormula(rogueActor, [], "feature-sneak-attack-damage")).toBe("1d6");
+    let levelFiveRogueData = rogueActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveRogueData = applyDnd5eSrdAdvancement({ ...rogueActor, data: levelFiveRogueData }, "level-up");
+    }
+    const levelFiveRogueActor: Actor = { ...rogueActor, data: levelFiveRogueData };
+    expect(levelFiveRogueData.features).toEqual(expect.arrayContaining(["Cunning Action", "Steady Aim", "Cunning Strike", "Uncanny Dodge"]));
+    expect(dnd5eSrdQuickRolls(levelFiveRogueActor, [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-sneak-attack-damage", formula: "3d6", metadata: expect.objectContaining({ cunningStrike: expect.objectContaining({ saveDc: 16, reducedSneakAttackFormula: "2d6" }) }) }),
+        expect.objectContaining({ id: "feature-cunning-strike", label: "Cunning Strike", formula: "0", metadata: expect.objectContaining({ saveDc: 16, sneakAttackDice: 3 }) })
+      ])
+    );
+    expect(dnd5eSrdActionFormula(levelFiveRogueActor, [], "feature-cunning-strike")).toBe("0");
     expect(dnd5eSrdSheet(srdActor, [spell]).quickRolls).toEqual(
       expect.arrayContaining([
         { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },
@@ -617,6 +657,25 @@ describe("dnd 5.5e srd rules", () => {
       expect.objectContaining({
         resources: { arcaneRecovery: { current: 1, max: 1, recovery: "long" } },
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } }
+      })
+    );
+    const rogueActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("rogue")!.data } };
+    expect(useDnd5eSrdAction(rogueActor, [], "feature-sneak-attack-damage")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [],
+        data: expect.objectContaining({ features: expect.arrayContaining(["Sneak Attack"]) })
+      })
+    );
+    let levelFiveRogueData = rogueActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveRogueData = applyDnd5eSrdAdvancement({ ...rogueActor, data: levelFiveRogueData }, "level-up");
+    }
+    expect(useDnd5eSrdAction({ ...rogueActor, data: levelFiveRogueData }, [], "feature-cunning-strike")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [],
+        data: expect.objectContaining({ features: expect.arrayContaining(["Cunning Strike"]) })
       })
     );
     const fighterActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("fighter")!.data } };

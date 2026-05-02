@@ -186,6 +186,8 @@ export const DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID = "feature-divine-spark-hea
 export const DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID = "feature-divine-spark-damage";
 export const DND_5E_SRD_TURN_UNDEAD_ROLL_ID = "feature-turn-undead";
 export const DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID = "feature-sear-undead-damage";
+export const DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID = "feature-sneak-attack-damage";
+export const DND_5E_SRD_CUNNING_STRIKE_ROLL_ID = "feature-cunning-strike";
 
 export interface Dnd5eSrdArmorClassDetails {
   value: number;
@@ -548,6 +550,22 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       label: "Sear Undead Damage",
       formula: dnd5eSrdSearUndeadFormula(actor),
       metadata: { trigger: "Turn Undead failed save", target: "Undead", damageType: "Radiant" }
+    });
+  }
+  if (dnd5eSrdHasSneakAttack(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID,
+      label: "Sneak Attack Damage",
+      formula: dnd5eSrdSneakAttackFormula(actor),
+      metadata: dnd5eSrdSneakAttackMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasCunningStrike(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_CUNNING_STRIKE_ROLL_ID,
+      label: "Cunning Strike",
+      formula: "0",
+      metadata: dnd5eSrdCunningStrikeMetadata(actor)
     });
   }
   return rolls;
@@ -1069,6 +1087,35 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         feats: []
       },
       items: [{ entryId: "fire-bolt" }, { entryId: "shield" }]
+    },
+    {
+      id: "rogue",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Rogue",
+      summary: "SRD 5.2.1 skill expert with Sneak Attack and mobile weapon damage.",
+      actorType: "character",
+      data: {
+        ruleset: DND_5E_SRD_VERSION,
+        level: 1,
+        class: "Rogue",
+        species: "Human",
+        background: "Criminal",
+        proficiencyBonus: 2,
+        hp: { current: 10, max: 10 },
+        attributes: { strength: 10, dexterity: 16, constitution: 14, intelligence: 12, wisdom: 12, charisma: 10 },
+        hitDice: { current: 1, max: 1, size: "d8" },
+        saveProficiencies: ["dexterity", "intelligence"],
+        skillProficiencies: ["acrobatics", "sleight-of-hand", "stealth", "perception"],
+        skillExpertise: ["stealth", "sleight-of-hand"],
+        toolProficiencies: ["thieves-tools"],
+        currency: { gp: 50, sp: 0, cp: 0 },
+        resources: {},
+        spellSlots: {},
+        conditions: [],
+        features: ["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"],
+        feats: ["Alert"]
+      },
+      items: [{ entryId: "dagger" }, { entryId: "shortbow" }]
     }
   ];
 }
@@ -1698,6 +1745,8 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId === DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID || rollId === DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID) return dnd5eSrdDivineSparkFormula(actor);
   if (rollId === DND_5E_SRD_TURN_UNDEAD_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID) return dnd5eSrdSearUndeadFormula(actor);
+  if (rollId === DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID) return dnd5eSrdSneakAttackFormula(actor);
+  if (rollId === DND_5E_SRD_CUNNING_STRIKE_ROLL_ID) return "0";
   return genericFantasyActionFormula(actor, items, rollId, options);
 }
 
@@ -1772,6 +1821,9 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
     };
   }
   if (rollId === DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID) {
+    return { systemId: DND_5E_SRD_SYSTEM_ID, actorId: actor.id, rollId, consumed: [], data: { ...actor.data }, items: [] };
+  }
+  if (rollId === DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID || rollId === DND_5E_SRD_CUNNING_STRIKE_ROLL_ID) {
     return { systemId: DND_5E_SRD_SYSTEM_ID, actorId: actor.id, rollId, consumed: [], data: { ...actor.data }, items: [] };
   }
   return { ...useGenericFantasyAction(actor, items, rollId, options), systemId: DND_5E_SRD_SYSTEM_ID };
@@ -2822,10 +2874,21 @@ function dnd5eSrdHasSearUndead(actor: Actor): boolean {
   return normalizeStringArray(actor.data.features).includes("Sear Undead");
 }
 
+function dnd5eSrdHasSneakAttack(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Rogue") return true;
+  return normalizeStringArray(actor.data.features).includes("Sneak Attack");
+}
+
+function dnd5eSrdHasCunningStrike(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Rogue" && Math.floor(numericValue(actor.data.level, 1)) >= 5) return true;
+  return normalizeStringArray(actor.data.features).includes("Cunning Strike");
+}
+
 function dnd5eSrdApplyClassFeatures(features: string[], className: string, level: number): string[] {
   if (className === "Fighter") return [...new Set([...features, ...dnd5eSrdFighterFeaturesForLevel(level)])];
   if (className === "Cleric") return [...new Set([...features, ...dnd5eSrdClericFeaturesForLevel(level)])];
   if (className === "Wizard") return [...new Set([...features, ...dnd5eSrdWizardFeaturesForLevel(level)])];
+  if (className === "Rogue") return [...new Set([...features, ...dnd5eSrdRogueFeaturesForLevel(level)])];
   return features;
 }
 
@@ -2860,6 +2923,15 @@ function dnd5eSrdWizardFeaturesForLevel(level: number): string[] {
   return features;
 }
 
+function dnd5eSrdRogueFeaturesForLevel(level: number): string[] {
+  const features = ["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"];
+  if (level >= 2) features.push("Cunning Action");
+  if (level >= 3) features.push("Rogue Subclass", "Steady Aim");
+  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 5) features.push("Cunning Strike", "Uncanny Dodge");
+  return features;
+}
+
 function dnd5eSrdSecondWindFormula(actor: Actor): string {
   const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return appendFormulaTerm("1d10", String(fighterLevel));
@@ -2879,6 +2951,45 @@ function dnd5eSrdDivineSparkDice(actor: Actor): number {
 
 function dnd5eSrdSearUndeadFormula(actor: Actor): string {
   return `${Math.max(1, genericFantasyAttributeModifier(actor, "wisdom"))}d8`;
+}
+
+function dnd5eSrdSneakAttackFormula(actor: Actor): string {
+  return `${dnd5eSrdSneakAttackDice(actor)}d6`;
+}
+
+function dnd5eSrdSneakAttackDice(actor: Actor): number {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  return Math.ceil(level / 2);
+}
+
+function dnd5eSrdSneakAttackMetadata(actor: Actor): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {
+    trigger: "one eligible weapon attack hit per turn",
+    damageType: "Weapon",
+    requirements: ["Finesse or Ranged weapon", "Advantage or qualifying adjacent enemy", "No Disadvantage"],
+    limit: "once per turn"
+  };
+  if (dnd5eSrdHasCunningStrike(actor)) metadata.cunningStrike = dnd5eSrdCunningStrikeMetadata(actor);
+  return metadata;
+}
+
+function dnd5eSrdCunningStrikeMetadata(actor: Actor): Record<string, unknown> {
+  const dice = dnd5eSrdSneakAttackDice(actor);
+  return {
+    trigger: "after dealing Sneak Attack damage",
+    saveDc: dnd5eSrdRogueSaveDc(actor),
+    sneakAttackDice: dice,
+    options: [
+      { id: "poison", name: "Poison", costDice: 1, save: { ability: "constitution", dc: dnd5eSrdRogueSaveDc(actor) }, condition: "Poisoned" },
+      { id: "trip", name: "Trip", costDice: 1, save: { ability: "dexterity", dc: dnd5eSrdRogueSaveDc(actor) }, condition: "Prone" },
+      { id: "withdraw", name: "Withdraw", costDice: 1, movementFt: Math.floor(numericValue(actor.data.speed, 30) / 2), opportunityAttacks: false }
+    ],
+    reducedSneakAttackFormula: `${Math.max(0, dice - 1)}d6`
+  };
+}
+
+function dnd5eSrdRogueSaveDc(actor: Actor): number {
+  return 8 + dnd5eSrdProficiencyBonus(actor) + genericFantasyAttributeModifier(actor, "dexterity");
 }
 
 function dnd5eSrdSpellSaveDc(actor: Actor): number {
@@ -3160,12 +3271,14 @@ function defaultGenericFantasySpellSlots(className: string, level: number): Reco
 function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Cleric") return "wisdom";
   if (className === "Wizard") return "intelligence";
+  if (className === "Rogue") return "dexterity";
   return "strength";
 }
 
 function dnd5eSrdHitDieSize(className: string): string {
   if (className === "Wizard") return "d6";
   if (className === "Cleric") return "d8";
+  if (className === "Rogue") return "d8";
   return "d10";
 }
 

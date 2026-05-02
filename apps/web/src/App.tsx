@@ -1425,6 +1425,13 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
   if (dnd5eSrdHasSearUndead(actor)) {
     options.push({ rollId: "feature-sear-undead-damage", label: "Sear Undead", description: `Sear Undead Damage: ${dnd5eSrdSearUndeadFormula(actor)} radiant` });
   }
+  if (dnd5eSrdHasSneakAttack(actor)) {
+    const cunningStrike = dnd5eSrdHasCunningStrike(actor) ? `; Cunning Strike DC ${dnd5eSrdRogueSaveDc(actor)}` : "";
+    options.push({ rollId: "feature-sneak-attack-damage", label: "Sneak Attack", description: `Sneak Attack Damage: ${dnd5eSrdSneakAttackFormula(actor)}${cunningStrike}` });
+  }
+  if (dnd5eSrdHasCunningStrike(actor)) {
+    options.push({ rollId: "feature-cunning-strike", label: "Cunning Strike", description: `Cunning Strike: spend Sneak Attack dice for Poison, Trip, or Withdraw; DC ${dnd5eSrdRogueSaveDc(actor)}` });
+  }
   return options;
 }
 
@@ -1458,6 +1465,16 @@ function dnd5eSrdHasSearUndead(actor: Actor): boolean {
   return (stringValue(actor.data.class) === "Cleric" && numericValue(actor.data.level, 1) >= 5) || features.includes("Sear Undead");
 }
 
+function dnd5eSrdHasSneakAttack(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return stringValue(actor.data.class) === "Rogue" || features.includes("Sneak Attack");
+}
+
+function dnd5eSrdHasCunningStrike(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Rogue" && numericValue(actor.data.level, 1) >= 5) || features.includes("Cunning Strike");
+}
+
 function dnd5eSrdSecondWindFormula(actor: Actor): string {
   const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return `1d10+${fighterLevel}`;
@@ -1477,6 +1494,15 @@ function dnd5eSrdDivineSparkDice(actor: Actor): number {
 
 function dnd5eSrdSearUndeadFormula(actor: Actor): string {
   return `${Math.max(1, genericFantasyAttributeModifier(actor, "wisdom"))}d8`;
+}
+
+function dnd5eSrdSneakAttackFormula(actor: Actor): string {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  return `${Math.ceil(level / 2)}d6`;
+}
+
+function dnd5eSrdRogueSaveDc(actor: Actor): number {
+  return 8 + dnd5eSrdProficiencyBonus(actor) + genericFantasyAttributeModifier(actor, "dexterity");
 }
 
 function dnd5eSrdArcaneRecoverySelection(actor: Actor): Record<string, number> | undefined {
@@ -1512,6 +1538,7 @@ function dnd5eSrdProficiencyBonus(actor: Actor): number {
 function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Cleric") return "wisdom";
   if (className === "Wizard") return "intelligence";
+  if (className === "Rogue") return "dexterity";
   return "strength";
 }
 
