@@ -3288,9 +3288,30 @@ describe("api", () => {
         expect.arrayContaining([
           expect.objectContaining({ id: "healing-word", name: "Healing Word", data: expect.objectContaining({ healingFormula: "1d4+@attributes.wisdom", upcastFormula: "2d4" }) }),
           expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" }),
-          expect.objectContaining({ id: "shield-armor", name: "Shield", data: expect.objectContaining({ costGp: 10, armorBonus: 2 }) })
+          expect.objectContaining({ id: "chromatic-orb", name: "Chromatic Orb", data: expect.objectContaining({ damageFormula: "3d8", upcastFormula: "1d8" }) }),
+          expect.objectContaining({ id: "ice-knife", name: "Ice Knife", data: expect.objectContaining({ damageFormula: "1d10", secondaryDamageFormula: "2d6" }) }),
+          expect.objectContaining({ id: "shield-armor", name: "Shield", data: expect.objectContaining({ costGp: 10, armorBonus: 2 }) }),
+          expect.objectContaining({ id: "shortbow", name: "Shortbow", data: expect.objectContaining({ costGp: 25, damage: "1d6" }) })
         ])
       );
+
+      const chromaticSpell = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "chromatic-orb" }
+      });
+      expect(chromaticSpell.statusCode).toBe(200);
+      expect(chromaticSpell.json().item).toEqual(expect.objectContaining({ name: "Chromatic Orb", data: expect.objectContaining({ damageFormula: "3d8", upcastFormula: "1d8" }) }));
+      expect(chromaticSpell.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: `spell-${chromaticSpell.json().item.id}-damage`, label: "Chromatic Orb Damage", formula: "3d8" })])
+      );
+      const storedCriminalOrc = store.state.actors.find((actor) => actor.id === criminalOrc.json().actor.id)!;
+      storedCriminalOrc.data = {
+        ...storedCriminalOrc.data,
+        spellSlots: { ...(storedCriminalOrc.data.spellSlots as Record<string, unknown>), level2: { current: 1, max: 1, recovery: "long" } }
+      };
+      const chromaticRollId = `spell-${chromaticSpell.json().item.id}-damage`;
 
       const dndThreats = await app.inject({
         method: "GET",
@@ -3403,6 +3424,25 @@ describe("api", () => {
       });
       expect(monsterTarget.statusCode).toBe(200);
 
+      const spellTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_gm",
+          type: "character",
+          name: "SRD Spell Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: { current: 10, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(spellTarget.statusCode).toBe(200);
+
       const monsterAttack = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${monster.json().actor.id}/roll`,
@@ -3453,6 +3493,23 @@ describe("api", () => {
       expect(toolRoll.statusCode).toBe(200);
       expect(toolRoll.json().quickRoll).toEqual(expect.objectContaining({ id: "tool-calligraphers-supplies", formula: "1d20+3" }));
       expect(toolRoll.json().chat.body).toContain("Calligrapher's Supplies Check: 1d20+3");
+
+      const chromaticRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: chromaticRollId, spellSlotLevel: 2, consumeResources: true, applyEffect: true, targetActorId: spellTarget.json().id }
+      });
+      expect(chromaticRoll.statusCode).toBe(200);
+      expect(chromaticRoll.json().roll.formula).toBe("3d8+1d8");
+      expect(chromaticRoll.json().quickRoll).toEqual(expect.objectContaining({ id: chromaticRollId, formula: "3d8+1d8" }));
+      expect(chromaticRoll.json().usage).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", slotLevel: 2 }));
+      expect(chromaticRoll.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 0 }]);
+      expect(chromaticRoll.json().effect).toEqual(expect.objectContaining({ type: "damage", targetActorId: spellTarget.json().id, pool: "hp", before: 10, max: 12 }));
+      expect(store.state.actors.find((actor) => actor.id === spellTarget.json().id)?.data.hp).toEqual({ current: chromaticRoll.json().effect.after, max: 12 });
+      expect(store.state.actors.find((actor) => actor.id === criminalOrc.json().actor.id)?.data.spellSlots).toEqual(
+        expect.objectContaining({ level2: { current: 0, max: 1, recovery: "long" } })
+      );
 
       const roll = await app.inject({
         method: "POST",

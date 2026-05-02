@@ -1362,6 +1362,10 @@ function genericFantasyActionOptions(actor: Actor, items: Item[]): ActorActionOp
     const ability = stringValue(data.ability);
     const damage = stringValue(data.damage);
     if (damage && ability) options.push({ rollId: `${prefix}-${item.id}-damage`, label: `${item.name} Damage`, description: `${item.name} Damage: ${appendActionFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability))}` });
+    const damageFormula = stringValue(data.damageFormula);
+    if (damageFormula) options.push({ rollId: `${prefix}-${item.id}-damage`, label: `${item.name} Damage`, description: `${item.name} Damage: ${resolveGenericFantasyActionFormula(damageFormula, actor)}` });
+    const secondaryDamageFormula = stringValue(data.secondaryDamageFormula);
+    if (secondaryDamageFormula) options.push({ rollId: `${prefix}-${item.id}-secondary-damage`, label: `${item.name} Secondary Damage`, description: `${item.name} Secondary Damage: ${resolveGenericFantasyActionFormula(secondaryDamageFormula, actor)}` });
     const versatileDamage = stringValue(data.versatileDamage);
     if (versatileDamage && ability) options.push({ rollId: `${prefix}-${item.id}-versatile-damage`, label: `${item.name} Versatile`, description: `${item.name} Versatile: ${appendActionFormulaBonus(versatileDamage, genericFantasyAttributeModifier(actor, ability))}` });
     const healingFormula = stringValue(data.healingFormula);

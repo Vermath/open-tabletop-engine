@@ -393,6 +393,22 @@ export function genericFantasyActionRolls(actor: Actor, items: Item[] = []): Qui
         formula: appendFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability))
       });
     }
+    const damageFormula = stringValue(data.damageFormula);
+    if (damageFormula) {
+      rolls.push({
+        id: `${prefix}-${item.id}-damage`,
+        label: `${item.name} Damage`,
+        formula: genericFantasyDamageFormula(actor, data)
+      });
+    }
+    const secondaryDamageFormula = stringValue(data.secondaryDamageFormula);
+    if (secondaryDamageFormula) {
+      rolls.push({
+        id: `${prefix}-${item.id}-secondary-damage`,
+        label: `${item.name} Secondary Damage`,
+        formula: genericFantasyDamageFormula(actor, data, undefined, "secondaryDamageFormula", "secondaryUpcastFormula")
+      });
+    }
     const versatileDamage = stringValue(data.versatileDamage);
     if (versatileDamage && ability) {
       rolls.push({
@@ -622,6 +638,27 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { source: DND_5E_SRD_VERSION }
     },
     {
+      id: "chromatic-orb",
+      type: "spell",
+      name: "Chromatic Orb",
+      summary: "Level 1 evocation spell that deals selectable elemental damage and scales when upcast.",
+      data: { level: 1, school: "evocation", action: "action", range: "90 ft", damageFormula: "3d8", upcastFormula: "1d8", damageType: "choice", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "ice-knife",
+      type: "spell",
+      name: "Ice Knife",
+      summary: "Level 1 conjuration spell with an initial piercing hit and a secondary cold burst.",
+      data: { level: 1, school: "conjuration", action: "action", range: "60 ft", damageFormula: "1d10", damageType: "piercing", secondaryDamageFormula: "2d6", secondaryUpcastFormula: "1d6", secondaryDamageType: "cold", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "ray-of-sickness",
+      type: "spell",
+      name: "Ray of Sickness",
+      summary: "Level 1 necromancy spell that deals poison damage and scales when upcast.",
+      data: { level: 1, school: "necromancy", action: "action", range: "60 ft", damageFormula: "2d8", upcastFormula: "1d8", damageType: "poison", source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "alert",
       type: "condition",
       name: "Alert",
@@ -641,6 +678,34 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       name: "Shield",
       summary: "Defensive gear that improves armor class while wielded.",
       data: { category: "armor", equipmentCategory: "armor", armorBonus: 2, costGp: 10, weightLb: 6, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "dagger",
+      type: "item",
+      name: "Dagger",
+      summary: "Simple finesse weapon with light and thrown properties.",
+      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d4", damageType: "piercing", ability: "dexterity", properties: ["finesse", "light", "thrown"], costGp: 2, weightLb: 1, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "quarterstaff",
+      type: "item",
+      name: "Quarterstaff",
+      summary: "Simple versatile melee weapon.",
+      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", versatileDamage: "1d8", damageType: "bludgeoning", ability: "strength", properties: ["versatile"], costGp: 0.2, weightLb: 4, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "shortbow",
+      type: "item",
+      name: "Shortbow",
+      summary: "Simple ranged weapon for short-range archery.",
+      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "two-handed"], costGp: 25, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "spear",
+      type: "item",
+      name: "Spear",
+      summary: "Simple thrown melee weapon with versatile handling.",
+      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", versatileDamage: "1d8", damageType: "piercing", ability: "strength", properties: ["thrown", "versatile"], costGp: 1, weightLb: 3, source: DND_5E_SRD_VERSION }
     },
     {
       id: "calligraphers-supplies",
@@ -1427,6 +1492,12 @@ export function genericFantasyActionFormula(actor: Actor, items: Item[] = [], ro
   if (!item) return undefined;
   const data = recordValue(item.data);
   const prefix = item.type === "spell" ? "spell" : "item";
+  if (rollId === `${prefix}-${item.id}-damage` && stringValue(data.damageFormula)) {
+    return genericFantasyDamageFormula(actor, data, options.spellSlotLevel);
+  }
+  if (rollId === `${prefix}-${item.id}-secondary-damage` && stringValue(data.secondaryDamageFormula)) {
+    return genericFantasyDamageFormula(actor, data, options.spellSlotLevel, "secondaryDamageFormula", "secondaryUpcastFormula");
+  }
   if (rollId === `${prefix}-${item.id}-healing` && stringValue(data.healingFormula)) {
     return genericFantasyHealingFormula(actor, data, options.spellSlotLevel);
   }
@@ -2457,6 +2528,15 @@ function genericFantasyHealingFormula(actor: Actor, data: Record<string, unknown
   const spellLevel = Math.floor(numericValue(data.level, 0));
   const slotLevel = spellActionSlotLevel(spellLevel, spellSlotLevel);
   const upcastFormula = stringValue(data.upcastFormula);
+  if (spellLevel <= 0 || slotLevel <= spellLevel || !upcastFormula) return baseFormula;
+  return appendFormulaTerm(baseFormula, scaleDiceFormula(resolveGenericFantasyFormulaTokens(upcastFormula, actor), slotLevel - spellLevel));
+}
+
+function genericFantasyDamageFormula(actor: Actor, data: Record<string, unknown>, spellSlotLevel?: number, formulaKey = "damageFormula", upcastKey = "upcastFormula"): string {
+  const baseFormula = resolveGenericFantasyFormulaTokens(stringValue(data[formulaKey]) ?? "0", actor);
+  const spellLevel = Math.floor(numericValue(data.level, 0));
+  const slotLevel = spellActionSlotLevel(spellLevel, spellSlotLevel);
+  const upcastFormula = stringValue(data[upcastKey]);
   if (spellLevel <= 0 || slotLevel <= spellLevel || !upcastFormula) return baseFormula;
   return appendFormulaTerm(baseFormula, scaleDiceFormula(resolveGenericFantasyFormulaTokens(upcastFormula, actor), slotLevel - spellLevel));
 }

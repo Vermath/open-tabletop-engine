@@ -239,6 +239,13 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
     expect(dnd5eSrdCompendiumEntry("longsword")?.data).toEqual(expect.objectContaining({ costGp: 15, weightLb: 3 }));
     expect(dnd5eSrdCompendiumEntry("shield-armor")?.data).toEqual(expect.objectContaining({ costGp: 10, armorBonus: 2 }));
+    expect(dnd5eSrdCompendiumEntry("chromatic-orb")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "3d8", upcastFormula: "1d8" }));
+    expect(dnd5eSrdCompendiumEntry("ice-knife")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d10", secondaryDamageFormula: "2d6", secondaryUpcastFormula: "1d6" }));
+    expect(dnd5eSrdCompendiumEntry("ray-of-sickness")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8" }));
+    expect(dnd5eSrdCompendiumEntry("dagger")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, damageType: "piercing" }));
+    expect(dnd5eSrdCompendiumEntry("quarterstaff")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 0.2 }));
+    expect(dnd5eSrdCompendiumEntry("shortbow")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 25, damageType: "piercing" }));
+    expect(dnd5eSrdCompendiumEntry("spear")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 1 }));
 
     const spell: Item = {
       id: "itm_healing_word",
@@ -251,8 +258,41 @@ describe("dnd 5.5e srd rules", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
+    const chromaticOrb: Item = {
+      id: "itm_chromatic_orb",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Chromatic Orb",
+      data: { ...dnd5eSrdCompendiumEntry("chromatic-orb")!.data, compendiumId: "chromatic-orb" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const iceKnife: Item = {
+      id: "itm_ice_knife",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Ice Knife",
+      data: { ...dnd5eSrdCompendiumEntry("ice-knife")!.data, compendiumId: "ice-knife" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const shortbow: Item = {
+      id: "itm_shortbow",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Shortbow",
+      data: { ...dnd5eSrdCompendiumEntry("shortbow")!.data, compendiumId: "shortbow" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
     expect(dnd5eSrdSheet(srdActor, [spell]).spells.map((item) => item.name)).toEqual(["Healing Word"]);
-    expect(dnd5eSrdQuickRolls(srdActor, [spell])).toEqual(
+    expect(dnd5eSrdQuickRolls(srdActor, [spell, chromaticOrb, iceKnife, shortbow])).toEqual(
       expect.arrayContaining([
         { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },
         { id: "save-charisma", label: "Charisma Save", formula: "1d20+2" },
@@ -261,7 +301,11 @@ describe("dnd 5.5e srd rules", () => {
         { id: "skill-religion", label: "Religion Check", formula: "1d20+2" },
         { id: "skill-perception", label: "Perception Check", formula: "1d20+3" },
         { id: "tool-calligraphers-supplies", label: "Calligrapher's Supplies Check", formula: "1d20+3" },
-        { id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3" }
+        { id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3" },
+        { id: "spell-itm_chromatic_orb-damage", label: "Chromatic Orb Damage", formula: "3d8" },
+        { id: "spell-itm_ice_knife-damage", label: "Ice Knife Damage", formula: "1d10" },
+        { id: "spell-itm_ice_knife-secondary-damage", label: "Ice Knife Secondary Damage", formula: "2d6" },
+        { id: "item-itm_shortbow-damage", label: "Shortbow Damage", formula: "1d6+1" }
       ])
     );
     expect(dnd5eSrdSheet(srdActor, [spell]).quickRolls).toEqual(
@@ -275,10 +319,15 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "skill-medicine")?.formula).toBe("2d20kl1+5");
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "tool-calligraphers-supplies")?.formula).toBe("2d20kl1+3");
     expect(dnd5eSrdActionFormula(srdActor, [spell], "spell-itm_healing_word-healing", { spellSlotLevel: 2 })).toBe("1d4+3+2d4");
+    expect(dnd5eSrdActionFormula(srdActor, [chromaticOrb], "spell-itm_chromatic_orb-damage", { spellSlotLevel: 2 })).toBe("3d8+1d8");
+    expect(dnd5eSrdActionFormula(srdActor, [iceKnife], "spell-itm_ice_knife-secondary-damage", { spellSlotLevel: 2 })).toBe("2d6+1d6");
 
     const purchased = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("longsword")!, 2);
     expect(purchased).toEqual(expect.objectContaining({ entryId: "longsword", quantity: 2, unitCostGp: 15, totalCostGp: 30, currency: { gp: 20, sp: 0, cp: 0 } }));
     expect(purchased.itemData).toEqual(expect.objectContaining({ compendiumId: "longsword", quantity: 2, purchasedForGp: 30 }));
+    const purchasedShortbow = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("shortbow")!, 1);
+    expect(purchasedShortbow).toEqual(expect.objectContaining({ entryId: "shortbow", quantity: 1, unitCostGp: 25, totalCostGp: 25, currency: { gp: 25, sp: 0, cp: 0 } }));
+    expect(purchasedShortbow.itemData).toEqual(expect.objectContaining({ compendiumId: "shortbow", quantity: 1, purchasedForGp: 25, damage: "1d6" }));
     expect(() => dnd5eSrdEquipmentPurchase({ ...srdActor, data: { ...srdActor.data, currency: { gp: 1 } } }, dnd5eSrdCompendiumEntry("longsword")!, 1)).toThrow("Insufficient currency");
     expect(() => dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("magic-initiate")!, 1)).toThrow("not purchasable");
   });
