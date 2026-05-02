@@ -1388,7 +1388,33 @@ type ActorActionOption = { rollId: string; label: string; description: string };
 function actorActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
   if (actor.systemId === "stellar-frontiers") return stellarFrontiersActionOptions(actor, items);
   if (actor.systemId === "mystic-noir") return mysticNoirActionOptions(actor, items);
+  if (actor.systemId === "dnd-5e-srd") return dnd5eSrdActionOptions(actor, items);
   return genericFantasyActionOptions(actor, items);
+}
+
+function dnd5eSrdActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
+  return [...dnd5eSrdClassFeatureActionOptions(actor), ...genericFantasyActionOptions(actor, items)];
+}
+
+function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
+  if (!dnd5eSrdHasSecondWind(actor)) return [];
+  return [
+    {
+      rollId: "feature-second-wind-healing",
+      label: "Second Wind",
+      description: `Second Wind Healing: ${dnd5eSrdSecondWindFormula(actor)}`
+    }
+  ];
+}
+
+function dnd5eSrdHasSecondWind(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return stringValue(actor.data.class) === "Fighter" || features.includes("Second Wind") || "secondWind" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdSecondWindFormula(actor: Actor): string {
+  const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  return `1d10+${fighterLevel}`;
 }
 
 function genericFantasyActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {

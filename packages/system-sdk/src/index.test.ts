@@ -229,12 +229,14 @@ describe("dnd 5.5e srd rules", () => {
 
   it("exposes first-class SRD templates, compendium entries, and quick rolls", () => {
     const cleric = dnd5eSrdCharacterTemplate("cleric");
+    const fighter = dnd5eSrdCharacterTemplate("fighter");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
     expect(cleric?.data.skillProficiencies).toEqual(["medicine", "religion"]);
     expect(cleric?.data.toolProficiencies).toEqual(["calligraphers-supplies"]);
     expect(cleric?.data.currency).toEqual({ gp: 50, sp: 0, cp: 0 });
     expect(dnd5eSrdCharacterTemplate("fighter")?.data.toolProficiencies).toEqual(["gaming-set"]);
+    expect(fighter?.data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
     expect(cleric?.items.map((item) => item.entryId)).toEqual(["healing-word", "cure-wounds"]);
     expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
     expect(dnd5eSrdCompendiumEntry("longsword")?.data).toEqual(expect.objectContaining({ costGp: 15, weightLb: 3 }));
@@ -355,6 +357,11 @@ describe("dnd 5.5e srd rules", () => {
         { id: "item-itm_shortbow-damage", label: "Shortbow Damage", formula: "1d6+1" }
       ])
     );
+    const fighterActor: Actor = { ...srdActor, data: { ...fighter!.data } };
+    expect(dnd5eSrdQuickRolls(fighterActor, [])).toEqual(
+      expect.arrayContaining([{ id: "feature-second-wind-healing", label: "Second Wind Healing", formula: "1d10+1" }])
+    );
+    expect(dnd5eSrdActionFormula({ ...fighterActor, data: { ...fighterActor.data, level: 3 } }, [], "feature-second-wind-healing")).toBe("1d10+3");
     expect(dnd5eSrdSheet(srdActor, [spell]).quickRolls).toEqual(
       expect.arrayContaining([
         { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },
@@ -482,6 +489,23 @@ describe("dnd 5.5e srd rules", () => {
         consumed: [{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 0 }]
       })
     );
+    const fighterActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("fighter")!.data } };
+    expect(useDnd5eSrdAction(fighterActor, [], "feature-second-wind-healing")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({ resources: { secondWind: { current: 1, max: 2, recovery: "short" } } })
+      })
+    );
+    expect(() => useDnd5eSrdAction({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 2, recovery: "short" } } } }, [], "feature-second-wind-healing")).toThrow("Insufficient second wind");
+    expect(applyDnd5eSrdRest({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 2, recovery: "short" } } } }, "short")).toEqual(
+      expect.objectContaining({
+        recovered: expect.objectContaining({ resources: expect.objectContaining({ secondWind: 1 }) }),
+        data: expect.objectContaining({ resources: { secondWind: { current: 1, max: 2, recovery: "short" } } })
+      })
+    );
+    expect(applyDnd5eSrdRest({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 2, recovery: "short" } } } }, "long").data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
+    expect(applyDnd5eSrdRest({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 1, recovery: "short" } } } }, "long").data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
 
     const conditioned = applyDnd5eSrdCondition(srdActor, "magic-initiate", "2026-05-01T00:00:00.000Z");
     expect(dnd5eSrdSheet({ ...srdActor, data: conditioned }, []).conditions).toContainEqual(expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" }));

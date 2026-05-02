@@ -3278,6 +3278,18 @@ describe("api", () => {
       const healingWord = cleric.json().items.find((item: { name: string }) => item.name === "Healing Word");
       const healingRollId = `spell-${healingWord.id}-healing`;
 
+      const fighter = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "SRD Fighter", ownerUserId: "usr_demo_player" }
+      });
+      expect(fighter.statusCode).toBe(200);
+      expect(fighter.json().actor.data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
+      expect(fighter.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "feature-second-wind-healing", label: "Second Wind Healing", formula: "1d10+1" })]));
+      const storedFighter = store.state.actors.find((actor) => actor.id === fighter.json().actor.id)!;
+      storedFighter.data = { ...storedFighter.data, hp: { current: 4, max: 12 } };
+
       const compendium = await app.inject({
         method: "GET",
         url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/compendium",
@@ -3510,6 +3522,58 @@ describe("api", () => {
       expect(toolRoll.statusCode).toBe(200);
       expect(toolRoll.json().quickRoll).toEqual(expect.objectContaining({ id: "tool-calligraphers-supplies", formula: "1d20+3" }));
       expect(toolRoll.json().chat.body).toContain("Calligrapher's Supplies Check: 1d20+3");
+
+      const secondWind = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${fighter.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-second-wind-healing", consumeResources: true, applyEffect: true }
+      });
+      expect(secondWind.statusCode).toBe(200);
+      expect(secondWind.json().roll.formula).toBe("1d10+1");
+      expect(secondWind.json().usage).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd" }));
+      expect(secondWind.json().usage.consumed).toEqual([{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }]);
+      expect(secondWind.json().effect).toEqual(expect.objectContaining({ type: "healing", targetActorId: fighter.json().actor.id, pool: "hp", before: 4, max: 12 }));
+      expect(store.state.actors.find((actor) => actor.id === fighter.json().actor.id)?.data.resources).toEqual({ secondWind: { current: 1, max: 2, recovery: "short" } });
+
+      const secondWindAgain = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${fighter.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-second-wind-healing", consumeResources: true }
+      });
+      expect(secondWindAgain.statusCode).toBe(200);
+      expect(secondWindAgain.json().usage.consumed).toEqual([{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 0 }]);
+
+      const depletedSecondWind = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${fighter.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-second-wind-healing", consumeResources: true }
+      });
+      expect(depletedSecondWind.statusCode).toBe(409);
+      expect(depletedSecondWind.json().message).toBe("Insufficient second wind");
+
+      const shortRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${fighter.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short" }
+      });
+      expect(shortRest.statusCode).toBe(200);
+      expect(shortRest.json().actor.data.resources).toEqual({ secondWind: { current: 1, max: 2, recovery: "short" } });
+      expect(shortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ secondWind: 1 }));
+
+      const storedFighterAfterShortRest = store.state.actors.find((actor) => actor.id === fighter.json().actor.id)!;
+      storedFighterAfterShortRest.data = { ...storedFighterAfterShortRest.data, resources: { secondWind: { current: 0, max: 2, recovery: "short" } } };
+      const longRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${fighter.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "long" }
+      });
+      expect(longRest.statusCode).toBe(200);
+      expect(longRest.json().actor.data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
 
       const chromaticRoll = await app.inject({
         method: "POST",

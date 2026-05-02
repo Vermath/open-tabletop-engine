@@ -174,6 +174,8 @@ export interface Dnd5eSrdEquipmentPurchaseResult {
   itemData: Record<string, unknown>;
 }
 
+export const DND_5E_SRD_SECOND_WIND_ROLL_ID = "feature-second-wind-healing";
+
 export interface Dnd5eSrdArmorClassDetails {
   value: number;
   base: number;
@@ -468,8 +470,20 @@ export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[
     ...abilities.map((ability) => dnd5eSrdSavingThrow(actor, ability)),
     ...dnd5eSrdSkills().map((skill) => dnd5eSrdSkillCheck(actor, skill.id)),
     ...dnd5eSrdToolProficiencies(actor, "toolProficiencies").map((toolId) => dnd5eSrdToolCheck(actor, toolId)),
+    ...dnd5eSrdClassFeatureRolls(actor),
     ...dnd5eSrdMonsterActionRolls(actor),
     ...genericFantasyActionRolls(actor, items)
+  ];
+}
+
+export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
+  if (!dnd5eSrdHasSecondWind(actor)) return [];
+  return [
+    {
+      id: DND_5E_SRD_SECOND_WIND_ROLL_ID,
+      label: "Second Wind Healing",
+      formula: dnd5eSrdSecondWindFormula(actor)
+    }
   ];
 }
 
@@ -918,7 +932,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         skillProficiencies: ["athletics", "intimidation"],
         toolProficiencies: ["gaming-set"],
         currency: { gp: 50, sp: 0, cp: 0 },
-        resources: { secondWind: { current: 1, max: 1, recovery: "short" } },
+        resources: { secondWind: { current: 2, max: 2, recovery: "short" } },
         spellSlots: {},
         conditions: [],
         features: ["Fighting Style", "Second Wind"],
@@ -1487,10 +1501,19 @@ export function applyGenericFantasyRest(actor: Actor, restType: SystemRestType):
 
 export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType): SystemRestResult {
   const rest = applyGenericFantasyRest(actor, restType);
+  const className = stringValue(actor.data.class) || "Fighter";
+  const dataWithDefaults = {
+    ...rest.data,
+    resources: normalizeResourcePools(rest.data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true })
+  };
+  const data = restType === "short" ? dnd5eSrdApplyShortRestResourceLimits(actor, dataWithDefaults) : dnd5eSrdApplyLongRestResourceLimits(actor, dataWithDefaults);
+  const recovered = dnd5eSrdRestRecovered(actor, data, rest.recovered);
   return {
     ...rest,
     systemId: DND_5E_SRD_SYSTEM_ID,
-    summary: `${actor.name} completed a ${restType} rest using ${DND_5E_SRD_VERSION}`
+    summary: `${actor.name} completed a ${restType} rest using ${DND_5E_SRD_VERSION}`,
+    recovered,
+    data
   };
 }
 
@@ -1587,6 +1610,7 @@ export function genericFantasyActionFormula(actor: Actor, items: Item[] = [], ro
 }
 
 export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): string | undefined {
+  if (rollId === DND_5E_SRD_SECOND_WIND_ROLL_ID) return dnd5eSrdSecondWindFormula(actor);
   return genericFantasyActionFormula(actor, items, rollId, options);
 }
 
@@ -1608,6 +1632,19 @@ export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId
 }
 
 export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): SystemActionUseResult {
+  if (rollId === DND_5E_SRD_SECOND_WIND_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Fighter";
+    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className));
+    const result = consumeResourcePool(resources, "secondWind", 1, "Second Wind", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
   return { ...useGenericFantasyAction(actor, items, rollId, options), systemId: DND_5E_SRD_SYSTEM_ID };
 }
 
@@ -2623,6 +2660,63 @@ function genericFantasyDamageFormula(actor: Actor, data: Record<string, unknown>
   return appendFormulaTerm(baseFormula, scaleDiceFormula(resolveGenericFantasyFormulaTokens(upcastFormula, actor), slotLevel - spellLevel));
 }
 
+function dnd5eSrdHasSecondWind(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Fighter") return true;
+  if (normalizeStringArray(actor.data.features).includes("Second Wind")) return true;
+  return "secondWind" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdSecondWindFormula(actor: Actor): string {
+  const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  return appendFormulaTerm("1d10", String(fighterLevel));
+}
+
+function dnd5eSrdApplyShortRestResourceLimits(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {
+  if (!dnd5eSrdHasSecondWind(actor) && !("secondWind" in recordValue(data.resources))) return data;
+  const className = stringValue(actor.data.class) || "Fighter";
+  const beforeResources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true });
+  const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true });
+  const before = beforeResources.secondWind;
+  const after = afterResources.secondWind;
+  if (!before || !after) return data;
+  const recovered = Math.min(1, Math.max(0, before.max - before.current));
+  return {
+    ...data,
+    resources: {
+      ...afterResources,
+      secondWind: { ...after, current: Math.min(after.max, before.current + recovered) }
+    }
+  };
+}
+
+function dnd5eSrdApplyLongRestResourceLimits(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {
+  if (!dnd5eSrdHasSecondWind(actor) && !("secondWind" in recordValue(data.resources))) return data;
+  const className = stringValue(actor.data.class) || "Fighter";
+  const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true });
+  const after = afterResources.secondWind;
+  if (!after) return data;
+  return {
+    ...data,
+    resources: {
+      ...afterResources,
+      secondWind: { ...after, current: after.max }
+    }
+  };
+}
+
+function dnd5eSrdRestRecovered(actor: Actor, data: Record<string, unknown>, recovered: Record<string, unknown>): Record<string, unknown> {
+  if (!dnd5eSrdHasSecondWind(actor) && !("secondWind" in recordValue(data.resources))) return recovered;
+  const className = stringValue(actor.data.class) || "Fighter";
+  const before = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true }).secondWind;
+  const after = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true }).secondWind;
+  if (!before || !after) return recovered;
+  const resourcesRecovered = { ...recordValue(recovered.resources) };
+  const amount = Math.max(0, after.current - before.current);
+  if (amount > 0) resourcesRecovered.secondWind = amount;
+  else delete resourcesRecovered.secondWind;
+  return { ...recovered, resources: resourcesRecovered };
+}
+
 function spellActionSlotLevel(spellLevel: number, requestedSlotLevel: number | undefined): number {
   const requested = typeof requestedSlotLevel === "number" && Number.isFinite(requestedSlotLevel) ? Math.floor(requestedSlotLevel) : spellLevel;
   return Math.max(spellLevel, requested);
@@ -2770,7 +2864,7 @@ function dnd5eSrdHitDieSize(className: string): string {
 }
 
 function defaultDnd5eSrdResources(className: string): Record<string, Record<string, unknown>> {
-  if (className === "Fighter") return { secondWind: { current: 1, max: 1, recovery: "short" } };
+  if (className === "Fighter") return { secondWind: { current: 2, max: 2, recovery: "short" } };
   return {};
 }
 
