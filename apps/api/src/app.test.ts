@@ -4056,6 +4056,27 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(compendium.statusCode).toBe(200);
+      const dndCompendiumEntries = compendium.json().entries as Array<{ id: string; type: string; data: Record<string, unknown> }>;
+      const officialSrdConditionIds = [
+        "blinded",
+        "charmed",
+        "deafened",
+        "exhaustion",
+        "frightened",
+        "grappled",
+        "incapacitated",
+        "invisible",
+        "paralyzed",
+        "petrified",
+        "poisoned",
+        "prone",
+        "restrained",
+        "stunned",
+        "unconscious"
+      ];
+      expect(dndCompendiumEntries.filter((entry) => entry.type === "condition").map((entry) => entry.id)).toEqual(expect.arrayContaining([...officialSrdConditionIds, "magic-initiate"]));
+      expect(dndCompendiumEntries.find((entry) => entry.id === "paralyzed")?.data).toEqual(expect.objectContaining({ includes: ["incapacitated"], savingThrowsFail: ["strength", "dexterity"], closeHitsCritical: true }));
+      expect(dndCompendiumEntries.find((entry) => entry.id === "unconscious")?.data).toEqual(expect.objectContaining({ includes: ["incapacitated", "prone"], dropsHeldItems: true, unaware: true }));
       expect(compendium.json().entries).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: "healing-word", name: "Healing Word", data: expect.objectContaining({ healingFormula: "1d4+@spellcasting", upcastFormula: "2d4" }) }),
@@ -4140,6 +4161,44 @@ describe("api", () => {
           expect.objectContaining({ id: "torch", name: "Torch", data: expect.objectContaining({ costGp: 0.01, light: expect.objectContaining({ brightFt: 20 }) }) })
         ])
       );
+
+      const paralyzedCondition = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/conditions`,
+        headers: authHeaders,
+        payload: { conditionId: "paralyzed" }
+      });
+      expect(paralyzedCondition.statusCode).toBe(200);
+      expect(paralyzedCondition.json().entry).toEqual(expect.objectContaining({ id: "paralyzed", name: "Paralyzed", data: expect.objectContaining({ closeHitsCritical: true }) }));
+      expect(paralyzedCondition.json().sheet.conditions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "paralyzed", name: "Paralyzed" })]));
+      const unconsciousCondition = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/conditions`,
+        headers: authHeaders,
+        payload: { conditionId: "unconscious" }
+      });
+      expect(unconsciousCondition.statusCode).toBe(200);
+      expect(unconsciousCondition.json().entry).toEqual(expect.objectContaining({ id: "unconscious", name: "Unconscious", data: expect.objectContaining({ dropsHeldItems: true }) }));
+      expect(unconsciousCondition.json().sheet.conditions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "paralyzed", name: "Paralyzed" }),
+          expect.objectContaining({ id: "unconscious", name: "Unconscious" })
+        ])
+      );
+      const clearedParalyzedCondition = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/conditions/paralyzed`,
+        headers: authHeaders
+      });
+      expect(clearedParalyzedCondition.statusCode).toBe(200);
+      expect(clearedParalyzedCondition.json().sheet.conditions.map((condition: { id: string }) => condition.id)).toEqual(["unconscious"]);
+      const clearedUnconsciousCondition = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/conditions/unconscious`,
+        headers: authHeaders
+      });
+      expect(clearedUnconsciousCondition.statusCode).toBe(200);
+      expect(clearedUnconsciousCondition.json().sheet.conditions).toEqual([]);
 
       const chromaticSpell = await app.inject({
         method: "POST",

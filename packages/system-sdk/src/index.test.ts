@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplate, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
+import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplate, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -316,6 +316,30 @@ describe("dnd 5.5e srd rules", () => {
     expect(rogue?.data.skillExpertise).toEqual(["stealth", "sleight-of-hand"]);
     expect(rogue?.items.map((item) => item.entryId)).toEqual(["dagger", "shortbow"]);
     expect(cleric?.items.map((item) => item.entryId)).toEqual(["healing-word", "cure-wounds"]);
+    const officialSrdConditionIds = [
+      "blinded",
+      "charmed",
+      "deafened",
+      "exhaustion",
+      "frightened",
+      "grappled",
+      "incapacitated",
+      "invisible",
+      "paralyzed",
+      "petrified",
+      "poisoned",
+      "prone",
+      "restrained",
+      "stunned",
+      "unconscious"
+    ];
+    expect(dnd5eSrdCompendium().filter((entry) => entry.type === "condition").map((entry) => entry.id)).toEqual(expect.arrayContaining([...officialSrdConditionIds, "blessed", "magic-initiate"]));
+    expect(dnd5eSrdCompendiumEntry("blinded")?.data).toEqual(expect.objectContaining({ sightBlocked: true, sightChecksFail: true, attacksAgainst: "advantage" }));
+    expect(dnd5eSrdCompendiumEntry("exhaustion")?.data).toEqual(expect.objectContaining({ stackable: true, maxLevel: 6, d20TestPenaltyPerLevel: 2, speedPenaltyFtPerLevel: 5 }));
+    expect(dnd5eSrdCompendiumEntry("paralyzed")?.data).toEqual(expect.objectContaining({ includes: ["incapacitated"], savingThrowsFail: ["strength", "dexterity"], closeHitsCritical: true }));
+    expect(dnd5eSrdCompendiumEntry("poisoned")?.data).toEqual(expect.objectContaining({ attackRolls: "disadvantage", abilityChecks: "disadvantage" }));
+    expect(dnd5eSrdCompendiumEntry("restrained")?.data).toEqual(expect.objectContaining({ speedSetTo: 0, attacksAgainst: "advantage", savingThrowsDisadvantage: ["dexterity"] }));
+    expect(dnd5eSrdCompendiumEntry("unconscious")?.data).toEqual(expect.objectContaining({ includes: ["incapacitated", "prone"], dropsHeldItems: true, unaware: true }));
     expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
     expect(dnd5eSrdCompendiumEntry("longsword")?.data).toEqual(expect.objectContaining({ costGp: 15, weightLb: 3, weaponCategory: "martial", weaponKind: "melee", mastery: "sap" }));
     expect(dnd5eSrdCompendiumEntry("shield-armor")?.data).toEqual(expect.objectContaining({ costGp: 10, armorBonus: 2 }));
@@ -2529,6 +2553,15 @@ describe("dnd 5.5e srd rules", () => {
 
     const conditioned = applyDnd5eSrdCondition(srdActor, "magic-initiate", "2026-05-01T00:00:00.000Z");
     expect(dnd5eSrdSheet({ ...srdActor, data: conditioned }, []).conditions).toContainEqual(expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" }));
+    const paralyzedConditioned = applyDnd5eSrdCondition({ ...srdActor, data: conditioned }, "paralyzed", "2026-05-02T00:00:00.000Z");
+    expect(dnd5eSrdSheet({ ...srdActor, data: paralyzedConditioned }, []).conditions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" }),
+        expect.objectContaining({ id: "paralyzed", name: "Paralyzed", summary: expect.stringContaining("Strength and Dexterity saves") })
+      ])
+    );
+    const duplicateParalyzed = applyDnd5eSrdCondition({ ...srdActor, data: paralyzedConditioned }, "paralyzed", "2026-05-02T00:01:00.000Z");
+    expect((duplicateParalyzed["conditions"] as Array<{ id: string }>).filter((condition) => condition.id === "paralyzed")).toHaveLength(1);
 
     const imported = dnd5eSrdCharacterImport({
       name: "Imported SRD Cleric",
@@ -2537,7 +2570,7 @@ describe("dnd 5.5e srd rules", () => {
         class: "Cleric",
         species: "Human",
         background: "Sage",
-        conditions: ["magic-initiate", "missing-condition"],
+        conditions: ["magic-initiate", "paralyzed", "unconscious", "missing-condition"],
         items: ["healing-word", "longsword", "missing-item"]
       }
     });
@@ -2549,7 +2582,7 @@ describe("dnd 5.5e srd rules", () => {
         class: "Cleric",
         species: "Human",
         background: "Sage",
-        conditions: [{ id: "magic-initiate" }],
+        conditions: [{ id: "magic-initiate" }, { id: "paralyzed" }, { id: "unconscious" }],
         saveProficiencies: ["wisdom", "charisma"],
         skillProficiencies: ["medicine", "religion"],
         toolProficiencies: ["calligraphers-supplies"],

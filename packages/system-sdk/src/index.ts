@@ -1396,9 +1396,118 @@ function dnd5eSrdMagicItemCompendiumEntries(): GenericFantasyCompendiumEntry[] {
   return magicItems.map(dnd5eSrdMagicItemEntry);
 }
 
+const DND_5E_SRD_CONDITION_ENTRIES: GenericFantasyCompendiumEntry[] = [
+  {
+    id: "blinded",
+    type: "condition",
+    name: "Blinded",
+    summary: "Prevents sight, fails sight-based checks, worsens attacks made by and against the actor.",
+    data: { sightBlocked: true, sightChecksFail: true, attackRolls: "disadvantage", attacksAgainst: "advantage", source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "charmed",
+    type: "condition",
+    name: "Charmed",
+    summary: "Prevents harming the charmer and gives the charmer advantage on social checks.",
+    data: { cannotAttackCharmer: true, socialChecksByCharmer: "advantage", source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "deafened",
+    type: "condition",
+    name: "Deafened",
+    summary: "Prevents hearing and fails hearing-based checks.",
+    data: { hearingBlocked: true, hearingChecksFail: true, source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "exhaustion",
+    type: "condition",
+    name: "Exhaustion",
+    summary: "Tracks cumulative exhaustion levels that penalize D20 Tests and speed.",
+    data: { stackable: true, maxLevel: 6, d20TestPenaltyPerLevel: 2, speedPenaltyFtPerLevel: 5, deathAtLevel: 6, longRestReducesLevelBy: 1, source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "frightened",
+    type: "condition",
+    name: "Frightened",
+    summary: "Imposes disadvantage while the fear source is visible and prevents moving closer to it.",
+    data: { abilityChecksWhileSourceVisible: "disadvantage", attackRollsWhileSourceVisible: "disadvantage", cannotMoveCloserToSource: true, source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "grappled",
+    type: "condition",
+    name: "Grappled",
+    summary: "Sets speed to 0, limits attacks away from the grappler, and allows the grappler to move the target.",
+    data: { speedSetTo: 0, cannotIncreaseSpeed: true, attacksAgainstNonGrappler: "disadvantage", movableByGrappler: true, source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "incapacitated",
+    type: "condition",
+    name: "Incapacitated",
+    summary: "Prevents actions, bonus actions, reactions, concentration, and speech.",
+    data: { actions: false, bonusActions: false, reactions: false, concentrationEnds: true, speech: false, initiativeDisadvantage: true, source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "invisible",
+    type: "condition",
+    name: "Invisible",
+    summary: "Conceals the actor, improves initiative and attacks, and hinders attacks against them.",
+    data: { initiative: "advantage", concealed: true, attackRolls: "advantage", attacksAgainst: "disadvantage", seenCreaturesIgnoreAttackEffect: true, source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "paralyzed",
+    type: "condition",
+    name: "Paralyzed",
+    summary: "Includes incapacitation, sets speed to 0, fails Strength and Dexterity saves, and enables close critical hits.",
+    data: { includes: ["incapacitated"], speedSetTo: 0, cannotIncreaseSpeed: true, savingThrowsFail: ["strength", "dexterity"], attacksAgainst: "advantage", closeHitsCritical: true, source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "petrified",
+    type: "condition",
+    name: "Petrified",
+    summary: "Turns the actor into an inanimate substance with incapacitation, speed 0, broad resistance, and poison immunity.",
+    data: { transformedIntoInanimateSubstance: true, includes: ["incapacitated"], speedSetTo: 0, cannotIncreaseSpeed: true, attacksAgainst: "advantage", savingThrowsFail: ["strength", "dexterity"], resistance: ["all"], conditionImmunity: ["poisoned"], source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "poisoned",
+    type: "condition",
+    name: "Poisoned",
+    summary: "Imposes disadvantage on SRD attack rolls and ability checks.",
+    data: { attackRolls: "disadvantage", abilityChecks: "disadvantage", skillChecks: "disadvantage", toolChecks: "disadvantage", rollMode: "disadvantage", longRestClears: false, source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "prone",
+    type: "condition",
+    name: "Prone",
+    summary: "Restricts movement, imposes attack disadvantage, and changes attacks against the actor by range.",
+    data: { movement: "crawl-or-stand", standCost: "half-speed", attackRolls: "disadvantage", meleeAttacksAgainst: "advantage", rangedAttacksAgainst: "disadvantage", cannotStandIfSpeedZero: true, source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "restrained",
+    type: "condition",
+    name: "Restrained",
+    summary: "Sets speed to 0, worsens attacks made by and against the actor, and hinders Dexterity saves.",
+    data: { speedSetTo: 0, speedMultiplier: 0, cannotIncreaseSpeed: true, attackRolls: "disadvantage", attacksAgainst: "advantage", savingThrowsDisadvantage: ["dexterity"], shortRestClears: false, source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "stunned",
+    type: "condition",
+    name: "Stunned",
+    summary: "Includes incapacitation, fails Strength and Dexterity saves, and gives attacks against the actor advantage.",
+    data: { includes: ["incapacitated"], savingThrowsFail: ["strength", "dexterity"], attacksAgainst: "advantage", source: DND_5E_SRD_VERSION }
+  },
+  {
+    id: "unconscious",
+    type: "condition",
+    name: "Unconscious",
+    summary: "Includes incapacitated and prone, drops held items, sets speed to 0, and enables close critical hits.",
+    data: { includes: ["incapacitated", "prone"], dropsHeldItems: true, remainsProneAfterEnding: true, speedSetTo: 0, cannotIncreaseSpeed: true, attacksAgainst: "advantage", savingThrowsFail: ["strength", "dexterity"], closeHitsCritical: true, unaware: true, source: DND_5E_SRD_VERSION }
+  }
+];
+
 export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
   return [
     ...genericFantasyCompendium().map((entry) => {
+      const dndConditionOverride = DND_5E_SRD_CONDITION_ENTRIES.find((condition) => condition.id === entry.id);
       const dndDataOverrides =
         entry.id === "healing-word"
           ? { healingFormula: "1d4+@spellcasting", upcastFormula: "2d4" }
@@ -1412,17 +1521,17 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
                   ? { costGp: 15, weightLb: 3, damageType: "slashing", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", properties: ["versatile"], versatileDamage: "1d10", mastery: "sap" }
                   : {};
       const dndSummaryOverride =
-        entry.id === "blessed"
+        dndConditionOverride?.summary ??
+        (entry.id === "blessed"
           ? "Adds 1d4 to SRD attack rolls and saving throws."
-          : entry.id === "poisoned"
-            ? "Rolls SRD ability and skill checks with disadvantage."
-            : undefined;
+          : undefined);
       return {
         ...entry,
         summary: dndSummaryOverride ?? entry.summary.replace("Generic Fantasy runtime", "D&D 5.5e SRD runtime"),
-        data: { ...entry.data, ...dndDataOverrides, source: DND_5E_SRD_VERSION }
+        data: { ...entry.data, ...dndDataOverrides, ...(dndConditionOverride?.data ?? {}), source: DND_5E_SRD_VERSION }
       };
     }),
+    ...DND_5E_SRD_CONDITION_ENTRIES.filter((entry) => entry.id !== "poisoned" && entry.id !== "restrained"),
     {
       id: "magic-initiate",
       type: "condition",
