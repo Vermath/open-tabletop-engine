@@ -1576,6 +1576,22 @@ describe("dnd 5.5e srd rules", () => {
     const poisonedActor = { ...srdActor, data: { ...srdActor.data, conditions: [{ id: "poisoned" }] } };
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "skill-medicine")?.formula).toBe("2d20kl1+5");
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "tool-calligraphers-supplies")?.formula).toBe("2d20kl1+3");
+    const exhaustedPoisonedActor = { ...srdActor, data: { ...srdActor.data, conditions: [{ id: "poisoned" }, { id: "exhaustion", level: 2 }] } };
+    expect(dnd5eSrdQuickRolls(exhaustedPoisonedActor, [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "ability-wisdom", formula: "2d20kl1-1", metadata: expect.objectContaining({ conditionRollMode: "disadvantage", exhaustionLevel: 2, conditionPenalty: -4 }) }),
+        expect.objectContaining({ id: "skill-medicine", formula: "2d20kl1+1", metadata: expect.objectContaining({ conditionSources: ["poisoned", "exhaustion"] }) }),
+        expect.objectContaining({ id: "tool-calligraphers-supplies", formula: "2d20kl1-1" })
+      ])
+    );
+    const restrainedActor = { ...srdActor, data: { ...srdActor.data, conditions: [{ id: "restrained" }] } };
+    expect(dnd5eSrdQuickRolls(restrainedActor, []).find((roll) => roll.id === "save-dexterity")).toEqual(
+      expect.objectContaining({ formula: "2d20kl1+1", metadata: expect.objectContaining({ conditionRollMode: "disadvantage", conditionSources: ["restrained"] }) })
+    );
+    const paralyzedActor = { ...srdActor, data: { ...srdActor.data, conditions: [{ id: "paralyzed" }] } };
+    expect(dnd5eSrdQuickRolls(paralyzedActor, []).find((roll) => roll.id === "save-dexterity")).toEqual(
+      expect.objectContaining({ formula: "0", metadata: expect.objectContaining({ automaticFailure: true, conditionSources: ["paralyzed"] }) })
+    );
     const toolSpecialistActor: Actor = {
       ...srdActor,
       data: { ...srdActor.data, toolProficiencies: ["herbalism-kit", "flute", "navigators-tools"], toolExpertise: ["navigators-tools"] }
@@ -1886,6 +1902,16 @@ describe("dnd 5.5e srd rules", () => {
         { id: "monster-shortbow-attack", label: "Shortbow Attack", formula: "1d20+4" },
         { id: "monster-shortbow-damage", label: "Shortbow Damage", formula: "1d6+2" }
       ])
+    );
+    const poisonedGoblinBossActor: Actor = { ...goblinBossActor, data: { ...goblinBossActor.data, conditions: [{ id: "poisoned" }] } };
+    expect(dnd5eSrdSheet(poisonedGoblinBossActor, []).quickRolls).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "monster-scimitar-attack", formula: "2d20kl1+4", metadata: expect.objectContaining({ conditionRollMode: "disadvantage", conditionSources: ["poisoned"] }) })])
+    );
+    const invisibleGoblinBossActor: Actor = { ...goblinBossActor, data: { ...goblinBossActor.data, conditions: [{ id: "invisible" }] } };
+    expect(dnd5eSrdSheet(invisibleGoblinBossActor, []).quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "monster-scimitar-attack", formula: "2d20kh1+4" })]));
+    const contestedGoblinBossActor: Actor = { ...goblinBossActor, data: { ...goblinBossActor.data, conditions: [{ id: "poisoned" }, { id: "invisible" }] } };
+    expect(dnd5eSrdSheet(contestedGoblinBossActor, []).quickRolls).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "monster-scimitar-attack", formula: "1d20+4", metadata: expect.objectContaining({ conditionRollMode: "normal", conditionSources: ["invisible", "poisoned"] }) })])
     );
     const banditCaptainActor: Actor = {
       ...srdActor,
@@ -2562,6 +2588,10 @@ describe("dnd 5.5e srd rules", () => {
     );
     const duplicateParalyzed = applyDnd5eSrdCondition({ ...srdActor, data: paralyzedConditioned }, "paralyzed", "2026-05-02T00:01:00.000Z");
     expect((duplicateParalyzed["conditions"] as Array<{ id: string }>).filter((condition) => condition.id === "paralyzed")).toHaveLength(1);
+    const exhausted = applyDnd5eSrdCondition(srdActor, "exhaustion", "2026-05-02T00:02:00.000Z", { level: 2 });
+    expect(dnd5eSrdSheet({ ...srdActor, data: exhausted }, []).conditions).toContainEqual(expect.objectContaining({ id: "exhaustion", level: 2 }));
+    const exhaustedAgain = applyDnd5eSrdCondition({ ...srdActor, data: exhausted }, "exhaustion", "2026-05-02T00:03:00.000Z");
+    expect(exhaustedAgain.conditions).toEqual([{ id: "exhaustion", appliedAt: "2026-05-02T00:03:00.000Z", level: 3 }]);
 
     const imported = dnd5eSrdCharacterImport({
       name: "Imported SRD Cleric",

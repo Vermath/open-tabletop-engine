@@ -349,6 +349,17 @@ export interface AppliedCondition {
   name: string;
   summary: string;
   appliedAt?: string;
+  level?: number;
+}
+
+interface NormalizedConditionRecord {
+  id: string;
+  appliedAt?: string;
+  level?: number;
+}
+
+export interface Dnd5eSrdConditionApplyOptions {
+  level?: unknown;
 }
 
 export interface GenericFantasySheet {
@@ -913,6 +924,7 @@ export function dnd5eSrdMonsterActionRolls(actor: Actor): QuickRoll[] {
   const statBlock = dnd5eSrdMonsterStatBlockFromActor(actor);
   if (!statBlock) return [];
   const actions = Array.isArray(statBlock.actions) ? statBlock.actions.flatMap((action) => [recordValue(action)]) : [];
+  const conditionRoll = dnd5eSrdD20Automation(actor, "attack-roll");
   return actions.flatMap((action) => {
     const name = stringValue(action.name);
     if (!name) return [];
@@ -923,7 +935,8 @@ export function dnd5eSrdMonsterActionRolls(actor: Actor): QuickRoll[] {
       rolls.push({
         id: `monster-${id}-attack`,
         label: `${name} Attack`,
-        formula: `1d20${formatSignedNumber(attackBonus)}`
+        formula: `${conditionRoll.d20}${formatSignedNumber(attackBonus + conditionRoll.modifier)}`,
+        ...(conditionRoll.metadata ? { metadata: conditionRoll.metadata } : {})
       });
     }
     const damageFormula = stringValue(action.damageFormula);
@@ -944,14 +957,100 @@ function dnd5eSrdMonsterStatBlockFromActor(actor: Actor): Record<string, unknown
   return Array.isArray(statBlock.actions) ? statBlock : undefined;
 }
 
+type Dnd5eSrdD20Context = "ability-check" | "skill-check" | "tool-check" | "saving-throw" | "attack-roll";
+
+interface Dnd5eSrdConditionEffect {
+  id: string;
+  sourceId: string;
+  data: Record<string, unknown>;
+}
+
+interface Dnd5eSrdD20Automation {
+  d20: string;
+  modifier: number;
+  automaticFailure: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+function dnd5eSrdD20Automation(actor: Actor, context: Dnd5eSrdD20Context, ability?: string): Dnd5eSrdD20Automation {
+  const conditions = normalizeConditionRecords(actor.data.conditions);
+  const effects = dnd5eSrdConditionEffects(conditions);
+  const advantageSources = dnd5eSrdD20RollModeSources(effects, context, ability, "advantage");
+  const disadvantageSources = dnd5eSrdD20RollModeSources(effects, context, ability, "disadvantage");
+  const automaticFailureSources =
+    context === "saving-throw" && ability
+      ? effects.filter((effect) => normalizeStringArray(effect.data.savingThrowsFail).includes(ability)).map((effect) => effect.sourceId)
+      : [];
+  const mode = advantageSources.length > 0 && disadvantageSources.length === 0 ? "advantage" : disadvantageSources.length > 0 && advantageSources.length === 0 ? "disadvantage" : "normal";
+  const d20 = mode === "advantage" ? "2d20kh1" : mode === "disadvantage" ? "2d20kl1" : "1d20";
+  const exhaustionLevel = dnd5eSrdExhaustionLevel(conditions);
+  const modifier = exhaustionLevel > 0 ? exhaustionLevel * -2 : 0;
+  const metadata: Record<string, unknown> = {};
+  const conditionSources = uniqueStrings([...advantageSources, ...disadvantageSources, ...automaticFailureSources, ...(exhaustionLevel > 0 ? ["exhaustion"] : [])]);
+  if (advantageSources.length > 0 || disadvantageSources.length > 0) metadata.conditionRollMode = mode;
+  if (conditionSources.length > 0) metadata.conditionSources = conditionSources;
+  if (automaticFailureSources.length > 0) metadata.automaticFailure = true;
+  if (exhaustionLevel > 0) {
+    metadata.exhaustionLevel = exhaustionLevel;
+    metadata.conditionPenalty = modifier;
+  }
+  return {
+    d20,
+    modifier,
+    automaticFailure: automaticFailureSources.length > 0,
+    ...(Object.keys(metadata).length > 0 ? { metadata } : {})
+  };
+}
+
+function dnd5eSrdD20RollModeSources(effects: Dnd5eSrdConditionEffect[], context: Dnd5eSrdD20Context, ability: string | undefined, mode: "advantage" | "disadvantage"): string[] {
+  return uniqueStrings(
+    effects
+      .filter((effect) => {
+        if (context === "attack-roll") return effect.data.attackRolls === mode;
+        if (context === "ability-check") return effect.data.abilityChecks === mode;
+        if (context === "skill-check") return effect.data.skillChecks === mode || effect.data.abilityChecks === mode;
+        if (context === "tool-check") return effect.data.toolChecks === mode || effect.data.abilityChecks === mode;
+        if (context === "saving-throw" && ability) {
+          const key = mode === "advantage" ? "savingThrowsAdvantage" : "savingThrowsDisadvantage";
+          return normalizeStringArray(effect.data[key]).includes(ability);
+        }
+        return false;
+      })
+      .map((effect) => effect.sourceId)
+  );
+}
+
+function dnd5eSrdConditionEffects(conditions: NormalizedConditionRecord[]): Dnd5eSrdConditionEffect[] {
+  const effects: Dnd5eSrdConditionEffect[] = [];
+  const visited = new Set<string>();
+  const visit = (id: string, sourceId: string) => {
+    const key = `${sourceId}:${id}`;
+    if (visited.has(key)) return;
+    visited.add(key);
+    const entry = dnd5eSrdCompendiumEntry(id);
+    if (!entry || entry.type !== "condition") return;
+    const data = recordValue(entry.data);
+    effects.push({ id, sourceId, data });
+    for (const included of normalizeStringArray(data.includes)) visit(included, sourceId);
+  };
+  for (const condition of conditions) visit(condition.id, condition.id);
+  return effects;
+}
+
+function dnd5eSrdExhaustionLevel(conditions: NormalizedConditionRecord[]): number {
+  const exhaustion = conditions.find((condition) => condition.id === "exhaustion");
+  return exhaustion ? clampInteger(exhaustion.level, 1, 6, 1) : 0;
+}
+
 export function dnd5eSrdAbilityCheck(actor: Actor, ability: string): QuickRoll {
   const modifier = genericFantasyAttributeModifier(actor, ability);
   const label = `${ability.charAt(0).toUpperCase()}${ability.slice(1)} Check`;
-  const d20 = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "poisoned") ? "2d20kl1" : "1d20";
+  const conditionRoll = dnd5eSrdD20Automation(actor, "ability-check", ability);
   return {
     id: `ability-${ability}`,
     label,
-    formula: `${d20}${formatSignedNumber(modifier)}`
+    formula: `${conditionRoll.d20}${formatSignedNumber(modifier + conditionRoll.modifier)}`,
+    ...(conditionRoll.metadata ? { metadata: conditionRoll.metadata } : {})
   };
 }
 
@@ -962,11 +1061,12 @@ export function dnd5eSrdSavingThrow(actor: Actor, ability: string, items: Item[]
   const bonus = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "blessed") ? "+1d4" : "";
   const label = `${ability.charAt(0).toUpperCase()}${ability.slice(1)} Save`;
   const dangerSense = ability === "dexterity" && dnd5eSrdHasDangerSense(actor) ? { advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] } : {};
-  const metadata = Object.keys(dangerSense).length > 0 || itemBonus > 0 ? { ...dangerSense, ...(itemBonus > 0 ? { itemBonus } : {}) } : undefined;
+  const conditionRoll = dnd5eSrdD20Automation(actor, "saving-throw", ability);
+  const metadata = Object.keys(dangerSense).length > 0 || itemBonus > 0 || conditionRoll.metadata ? { ...dangerSense, ...(itemBonus > 0 ? { itemBonus } : {}), ...conditionRoll.metadata } : undefined;
   return {
     id: `save-${ability}`,
     label,
-    formula: `1d20${formatSignedNumber(modifier + proficiencyBonus + itemBonus)}${bonus}`,
+    formula: conditionRoll.automaticFailure ? "0" : `${conditionRoll.d20}${formatSignedNumber(modifier + proficiencyBonus + itemBonus + conditionRoll.modifier)}${bonus}`,
     ...(metadata ? { metadata } : {})
   };
 }
@@ -976,12 +1076,13 @@ export function dnd5eSrdSkillCheck(actor: Actor, skillId: string): QuickRoll {
   const modifier = genericFantasyAttributeModifier(actor, skill.ability);
   const proficiencyMultiplier = dnd5eSrdSkillProficiencyMultiplier(actor, skill.id);
   const jackOfAllTradesBonus = proficiencyMultiplier === 0 && dnd5eSrdHasJackOfAllTrades(actor) ? Math.floor(dnd5eSrdProficiencyBonus(actor) / 2) : 0;
-  const d20 = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "poisoned") ? "2d20kl1" : "1d20";
+  const conditionRoll = dnd5eSrdD20Automation(actor, "skill-check", skill.ability);
+  const metadata = conditionRoll.metadata || jackOfAllTradesBonus > 0 ? { ...conditionRoll.metadata, ...(jackOfAllTradesBonus > 0 ? { feature: "Jack of All Trades", bonus: jackOfAllTradesBonus } : {}) } : undefined;
   return {
     id: `skill-${skill.id}`,
     label: `${skill.label} Check`,
-    formula: `${d20}${formatSignedNumber(modifier + proficiencyMultiplier * dnd5eSrdProficiencyBonus(actor) + jackOfAllTradesBonus)}`,
-    ...(jackOfAllTradesBonus > 0 ? { metadata: { feature: "Jack of All Trades", bonus: jackOfAllTradesBonus } } : {})
+    formula: `${conditionRoll.d20}${formatSignedNumber(modifier + proficiencyMultiplier * dnd5eSrdProficiencyBonus(actor) + jackOfAllTradesBonus + conditionRoll.modifier)}`,
+    ...(metadata ? { metadata } : {})
   };
 }
 
@@ -989,11 +1090,12 @@ export function dnd5eSrdToolCheck(actor: Actor, toolId: string): QuickRoll {
   const tool = dnd5eSrdToolDefinition(toolId);
   const modifier = genericFantasyAttributeModifier(actor, tool.ability);
   const proficiencyMultiplier = dnd5eSrdToolProficiencyMultiplier(actor, tool.id);
-  const d20 = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "poisoned") ? "2d20kl1" : "1d20";
+  const conditionRoll = dnd5eSrdD20Automation(actor, "tool-check", tool.ability);
   return {
     id: `tool-${tool.id}`,
     label: `${tool.label} Check`,
-    formula: `${d20}${formatSignedNumber(modifier + proficiencyMultiplier * dnd5eSrdProficiencyBonus(actor))}`
+    formula: `${conditionRoll.d20}${formatSignedNumber(modifier + proficiencyMultiplier * dnd5eSrdProficiencyBonus(actor) + conditionRoll.modifier)}`,
+    ...(conditionRoll.metadata ? { metadata: conditionRoll.metadata } : {})
   };
 }
 
@@ -4403,7 +4505,8 @@ export function genericFantasyActorConditions(actor: Actor): AppliedCondition[] 
       id: condition.id,
       name: entry?.name ?? condition.id,
       summary: entry?.summary ?? "",
-      appliedAt: condition.appliedAt
+      appliedAt: condition.appliedAt,
+      ...(condition.level ? { level: condition.level } : {})
     };
   });
 }
@@ -4416,7 +4519,8 @@ export function dnd5eSrdActorConditions(actor: Actor): AppliedCondition[] {
       id: condition.id,
       name: entry?.name ?? condition.id,
       summary: entry?.summary ?? "",
-      appliedAt: condition.appliedAt
+      appliedAt: condition.appliedAt,
+      ...(condition.level ? { level: condition.level } : {})
     };
   });
 }
@@ -4429,11 +4533,23 @@ export function applyGenericFantasyCondition(actor: Actor, conditionId: string, 
   return { ...actor.data, conditions };
 }
 
-export function applyDnd5eSrdCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {
+export function applyDnd5eSrdCondition(actor: Actor, conditionId: string, appliedAt?: string, options: Dnd5eSrdConditionApplyOptions = {}): Record<string, unknown> {
   const entry = dnd5eSrdCompendiumEntry(conditionId);
   if (!entry || entry.type !== "condition") throw new Error(`Unknown condition: ${conditionId}`);
   const conditions = normalizeConditionRecords(actor.data.conditions);
-  if (!conditions.some((condition) => condition.id === conditionId)) conditions.push({ id: conditionId, appliedAt });
+  if (conditionId === "exhaustion") {
+    const existing = conditions.find((condition) => condition.id === conditionId);
+    const currentLevel = existing ? clampInteger(existing.level, 1, 6, 1) : 0;
+    const nextLevel = clampInteger(options.level, 1, 6, currentLevel + 1);
+    if (existing) {
+      existing.level = nextLevel;
+      existing.appliedAt = appliedAt ?? existing.appliedAt;
+    } else {
+      conditions.push({ id: conditionId, appliedAt, level: nextLevel });
+    }
+  } else if (!conditions.some((condition) => condition.id === conditionId)) {
+    conditions.push({ id: conditionId, appliedAt });
+  }
   return { ...actor.data, conditions };
 }
 
@@ -5105,17 +5221,23 @@ export function removeMysticNoirCondition(actor: Actor, conditionId: string): Re
   return { ...actor.data, conditions };
 }
 
-function normalizeConditionRecords(value: unknown): Array<{ id: string; appliedAt?: string }> {
+function normalizeConditionRecords(value: unknown): NormalizedConditionRecord[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((item) => {
       if (typeof item === "string") return { id: item };
       if (item && typeof item === "object" && "id" in item && typeof item.id === "string") {
-        return { id: item.id, appliedAt: "appliedAt" in item && typeof item.appliedAt === "string" ? item.appliedAt : undefined };
+        const record = item as Record<string, unknown>;
+        const level = numericValue(record.level, Number.NaN);
+        return {
+          id: item.id,
+          appliedAt: typeof record.appliedAt === "string" ? record.appliedAt : undefined,
+          ...(Number.isFinite(level) ? { level: Math.max(1, Math.floor(level)) } : {})
+        };
       }
       return undefined;
     })
-    .filter((item): item is { id: string; appliedAt?: string } => Boolean(item));
+    .filter((item): item is NormalizedConditionRecord => Boolean(item));
 }
 
 function genericFantasyAttributeModifier(actor: Actor, ability: string): number {
@@ -6696,6 +6818,10 @@ function normalizeStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
 function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -7133,9 +7259,9 @@ function conditionsAfterRest(
   actor: Actor,
   lookup: (entryId: string) => RulesCompendiumEntry | undefined,
   restType: SystemRestType
-): { conditions: Array<{ id: string; appliedAt?: string }>; removed: AppliedCondition[] } {
+): { conditions: NormalizedConditionRecord[]; removed: AppliedCondition[] } {
   const conditions = normalizeConditionRecords(actor.data.conditions);
-  const kept: Array<{ id: string; appliedAt?: string }> = [];
+  const kept: NormalizedConditionRecord[] = [];
   const removed: AppliedCondition[] = [];
   for (const condition of conditions) {
     const entry = lookup(condition.id);

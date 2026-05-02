@@ -4171,6 +4171,16 @@ describe("api", () => {
       expect(paralyzedCondition.statusCode).toBe(200);
       expect(paralyzedCondition.json().entry).toEqual(expect.objectContaining({ id: "paralyzed", name: "Paralyzed", data: expect.objectContaining({ closeHitsCritical: true }) }));
       expect(paralyzedCondition.json().sheet.conditions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "paralyzed", name: "Paralyzed" })]));
+      const paralyzedDexteritySave = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "save-dexterity" }
+      });
+      expect(paralyzedDexteritySave.statusCode).toBe(200);
+      expect(paralyzedDexteritySave.json().quickRoll).toEqual(
+        expect.objectContaining({ id: "save-dexterity", formula: "0", metadata: expect.objectContaining({ automaticFailure: true, conditionSources: ["paralyzed"] }) })
+      );
       const unconsciousCondition = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/conditions`,
@@ -4199,6 +4209,52 @@ describe("api", () => {
       });
       expect(clearedUnconsciousCondition.statusCode).toBe(200);
       expect(clearedUnconsciousCondition.json().sheet.conditions).toEqual([]);
+      const poisonedCondition = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/conditions`,
+        headers: authHeaders,
+        payload: { conditionId: "poisoned" }
+      });
+      expect(poisonedCondition.statusCode).toBe(200);
+      expect(poisonedCondition.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "skill-stealth", formula: "2d20kl1+5" })]));
+      const poisonedStealthRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "skill-stealth" }
+      });
+      expect(poisonedStealthRoll.statusCode).toBe(200);
+      expect(poisonedStealthRoll.json().quickRoll).toEqual(expect.objectContaining({ id: "skill-stealth", formula: "2d20kl1+5" }));
+      const clearedPoisonedCondition = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/conditions/poisoned`,
+        headers: authHeaders
+      });
+      expect(clearedPoisonedCondition.statusCode).toBe(200);
+      const exhaustionCondition = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/conditions`,
+        headers: authHeaders,
+        payload: { conditionId: "exhaustion", level: 2 }
+      });
+      expect(exhaustionCondition.statusCode).toBe(200);
+      expect(exhaustionCondition.json().sheet.conditions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "exhaustion", name: "Exhaustion", level: 2 })]));
+      const exhaustedStealthRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "skill-stealth" }
+      });
+      expect(exhaustedStealthRoll.statusCode).toBe(200);
+      expect(exhaustedStealthRoll.json().quickRoll).toEqual(
+        expect.objectContaining({ id: "skill-stealth", formula: "1d20+1", metadata: expect.objectContaining({ exhaustionLevel: 2, conditionPenalty: -4 }) })
+      );
+      const clearedExhaustionCondition = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/conditions/exhaustion`,
+        headers: authHeaders
+      });
+      expect(clearedExhaustionCondition.statusCode).toBe(200);
 
       const chromaticSpell = await app.inject({
         method: "POST",
@@ -5462,6 +5518,16 @@ describe("api", () => {
       expect(clericShortRest.json().actor.data.resources).toEqual({ channelDivinity: { current: 1, max: 2, recovery: "short" } });
       expect(clericShortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ channelDivinity: 1 }));
 
+      const poisonedMonster = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${monster.json().actor.id}/conditions`,
+        headers: authHeaders,
+        payload: { conditionId: "poisoned" }
+      });
+      expect(poisonedMonster.statusCode).toBe(200);
+      expect(poisonedMonster.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: "monster-scimitar-attack", formula: "2d20kl1+4", metadata: expect.objectContaining({ conditionRollMode: "disadvantage", conditionSources: ["poisoned"] }) })])
+      );
       const monsterAttack = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${monster.json().actor.id}/roll`,
@@ -5469,8 +5535,8 @@ describe("api", () => {
         payload: { rollId: "monster-scimitar-attack" }
       });
       expect(monsterAttack.statusCode).toBe(200);
-      expect(monsterAttack.json().quickRoll).toEqual(expect.objectContaining({ id: "monster-scimitar-attack", formula: "1d20+4" }));
-      expect(monsterAttack.json().chat.body).toContain("SRD Goblin Boss Scimitar Attack: 1d20+4");
+      expect(monsterAttack.json().quickRoll).toEqual(expect.objectContaining({ id: "monster-scimitar-attack", formula: "2d20kl1+4" }));
+      expect(monsterAttack.json().chat.body).toContain("SRD Goblin Boss Scimitar Attack: 2d20kl1+4");
 
       const monsterDamage = await app.inject({
         method: "POST",

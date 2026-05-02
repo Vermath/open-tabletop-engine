@@ -2674,6 +2674,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - `pnpm --filter @open-tabletop/system-sdk build` passed.
   - `pnpm --filter @open-tabletop/api test` passed with `2` files and `68` tests.
   - `pnpm --filter @open-tabletop/api build` passed before the built-API smoke.
+  - Final `git diff --check` passed with only expected LF-to-CRLF working-copy warnings, and final `pnpm check` passed across lint, typecheck, tests, and build; lint and typecheck each reported `22` successful tasks, tests reported `22` successful tasks with API `68` passed and system SDK `25` passed, and build reported `14` successful tasks.
   - System SDK tests verify all `34` new ids resolve, representative potion metadata for Potion of Climbing, Potion of Giant Strength (storm), Potion of Healing (superior), Potion of Poison, Potion of Resistance, and Spell Scroll Level 9, plus item quick-roll output for superior healing.
   - API tests verify representative potion and scroll entries in the D&D SRD compendium and REST compendium add behavior for Potion of Healing (superior) and Spell Scroll Level 9 using bearer-authenticated requests.
 - Manual API evidence:
@@ -2758,6 +2759,31 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Importing `Imported SRD Condition Smoke` with conditions `["paralyzed", "unconscious", "missing-condition"]` returned actor data conditions `[{ id: "paralyzed" }, { id: "unconscious" }]` and warning `Unknown condition skipped: missing-condition`.
   - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
 
+### 2026-05-02 - D&D SRD condition roll automation slice
+
+- Implementation:
+  - Centralized D&D SRD D20 condition handling for ability checks, skill checks, tool checks, saving throws, and monster attack quick rolls.
+  - Derived formula effects from SRD condition metadata: Poisoned applies disadvantage to ability/skill/tool checks and attack rolls; Blinded, Prone, and Restrained apply attack disadvantage; Invisible applies attack advantage; Restrained applies Dexterity save disadvantage; and included condition relationships such as Unconscious including Prone feed into roll-mode resolution.
+  - Added automatic Strength/Dexterity save failures for Paralyzed, Petrified, Stunned, and Unconscious with `formula: "0"` and `metadata.automaticFailure`.
+  - Preserved Exhaustion levels on condition records, added optional `level` support to the D&D condition API, and applied the SRD `-2` per level D20 Test penalty to affected formulas with `metadata.exhaustionLevel` and `metadata.conditionPenalty`.
+  - Added condition roll metadata on affected quick rolls, including `conditionRollMode`, `conditionSources`, `automaticFailure`, `exhaustionLevel`, and `conditionPenalty`.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk test` passed with `25` tests.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api test` passed with `2` files and `68` tests.
+  - `pnpm --filter @open-tabletop/api build` passed before the built-API smoke.
+  - System SDK tests verify Poisoned plus Exhaustion check formulas, Restrained Dexterity save disadvantage, Paralyzed automatic Dexterity save failure, Poisoned monster attack disadvantage, Invisible monster attack advantage, and advantage/disadvantage cancellation.
+  - API tests verify Paralyzed save failure through `POST /roll`, Poisoned skill disadvantage through `POST /conditions` and `POST /roll`, explicit Exhaustion level 2 sheet/rendering and D20 penalty behavior, and Poisoned monster attack disadvantage through the REST condition and roll endpoints.
+- Manual API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore` and a real GM bearer token from `POST /api/v1/auth/login`; no legacy `x-user-id` fallback was used.
+  - `GET /systems/dnd-5e-srd/compendium` returned `200`, `323` compendium entries, and `19` condition-type entries.
+  - Creating `SRD Condition Roll Smoke` returned actor `act_moo189rqqiie9k8l`.
+  - Applying Paralyzed and rolling `save-dexterity` returned formula `0` with `metadata.conditionSources: ["paralyzed"]` and `metadata.automaticFailure: true`.
+  - Applying Poisoned and rolling `skill-stealth` returned formula `2d20kl1+5` with `metadata.conditionRollMode: "disadvantage"` and `metadata.conditionSources: ["poisoned"]`.
+  - Applying Exhaustion with `level: 2` returned a sheet condition `{ id: "exhaustion", level: 2 }`; rolling `skill-stealth` returned formula `1d20+1` with `metadata.exhaustionLevel: 2` and `metadata.conditionPenalty: -4`.
+  - Creating `SRD Condition Smoke Goblin Boss` returned monster actor `act_moo189uopxicif06`; applying Poisoned and rolling `monster-scimitar-attack` returned formula `2d20kl1+4` with Poisoned condition metadata.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
@@ -2772,5 +2798,5 @@ These are not blockers for the current PRD MVP acceptance, but remain if the pro
 - D&D SRD tool and adventuring gear coverage now includes the remaining tool table, gaming set variants, musical instrument variants, ammunition variants, packs, focus variants, kits, consumables, lighting gear, containers, Potion of Healing, cantrip/level-1 Spell Scrolls, purchase behavior, inventory metadata, expanded tool quick rolls, and bearer-token manual evidence.
 - D&D SRD magic-item coverage now includes `82` first-class armor/ammunition/weapon/shield/ring/wand/staff/wondrous/potion/scroll entries, protection-item AC/save automation, Bracers of Defense armor/shield exclusion, Staff of Striking damage formulas, potion healing/damage quick rolls, higher-level Spell Scroll metadata, charges, rarity, attunement, and bearer-token manual evidence over `310` compendium entries. Remaining equipment content work is full SRD-scale magic item coverage beyond this current SRD-backed subset, plus deeper automation for item effects that currently remain metadata-only.
 - D&D SRD monster coverage now includes `27` unique SRD stat blocks exposed as `28` threat ids, covering humanoids, undead, beasts, a celestial, giants, a monstrosity, and red dragons from CR `1/8` through CR `10`, with actor creation, encounter planning, attack/damage quick rolls, Web/Boulder Toss/Fire Breath save metadata, and bearer-token manual effect evidence. Remaining monster content work is full SRD-scale monster/action coverage beyond this expanded current threat catalog.
-- D&D SRD condition coverage now includes all `15` official SRD conditions as first-class compendium entries with structured VTT metadata, REST apply/remove behavior, D&D character import normalization, and bearer-token manual evidence over `323` compendium entries.
+- D&D SRD condition coverage now includes all `15` official SRD conditions as first-class compendium entries with structured VTT metadata, REST apply/remove behavior, D&D character import normalization, and bearer-token manual evidence over `323` compendium entries; condition automation now affects ability/skill/tool checks, saving throws, and monster attack quick rolls for Poisoned, Restrained, Paralyzed/Petrified/Stunned/Unconscious save failure, Invisible attack advantage, and Exhaustion level penalties.
 - AI flows now cover provider-configured threads, richer permission-filtered prompt context with visible actor action ids, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool and actor-action execution, encounter/journal/scene/token/actor/memory/dice/compendium/action tools, actor-action resource consumption and target effect application, provider retry/failure handling, provider request timeouts, cross-role tool-advertisement permission regression, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is broader production provider edge cases and future-tool hardening as new tool classes are added. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.

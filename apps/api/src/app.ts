@@ -3125,7 +3125,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{
     Params: { campaignId: string; systemId: string; actorId: string };
-    Body: { conditionId?: string };
+    Body: { conditionId?: string; level?: unknown };
   }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/conditions", async (request, reply) => {
     const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
     if (!actor) return notFound(reply, "System actor not found");
@@ -3134,7 +3134,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
     const entry = compendiumEntryForSystem(request.params.systemId, request.body.conditionId ?? "");
     if (!entry || entry.type !== "condition") return notFound(reply, "Condition not found");
-    actor.data = applySystemCondition(actor, entry.id, nowIso());
+    actor.data = applySystemCondition(actor, entry.id, nowIso(), { level: request.body.level });
     actor.updatedAt = nowIso();
     store.save();
     broadcastActorUpdated(broadcast, actor);
@@ -6670,8 +6670,8 @@ function useSystemAction(actor: Actor, items: Item[], rollId: string, options: S
   return useGenericFantasyAction(actor, items, rollId, options);
 }
 
-function applySystemCondition(actor: Actor, conditionId: string, appliedAt?: string): Record<string, unknown> {
-  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return applyDnd5eSrdCondition(actor, conditionId, appliedAt);
+function applySystemCondition(actor: Actor, conditionId: string, appliedAt?: string, options: { level?: unknown } = {}): Record<string, unknown> {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return applyDnd5eSrdCondition(actor, conditionId, appliedAt, options);
   if (actor.systemId === "stellar-frontiers") return applyStellarFrontiersCondition(actor, conditionId, appliedAt);
   if (actor.systemId === "mystic-noir") return applyMysticNoirCondition(actor, conditionId, appliedAt);
   return applyGenericFantasyCondition(actor, conditionId, appliedAt);
