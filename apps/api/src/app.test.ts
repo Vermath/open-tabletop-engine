@@ -4248,10 +4248,35 @@ describe("api", () => {
       });
       expect(dndThreats.statusCode).toBe(200);
       expect(dndThreats.json().map((threat: { id: string }) => threat.id)).toEqual(
-        expect.arrayContaining(["skeleton", "zombie", "wolf", "dire-wolf", "ogre", "owlbear", "red-dragon-wyrmling", "troll", "young-red-dragon"])
+        expect.arrayContaining([
+          "bandit-captain",
+          "guard",
+          "guard-captain",
+          "knight",
+          "spy",
+          "warrior-veteran",
+          "black-bear",
+          "brown-bear",
+          "giant-rat",
+          "giant-spider",
+          "giant-ape",
+          "giant-eagle",
+          "skeleton",
+          "zombie",
+          "wolf",
+          "dire-wolf",
+          "ogre",
+          "owlbear",
+          "red-dragon-wyrmling",
+          "troll",
+          "young-red-dragon"
+        ])
       );
       expect(dndThreats.json()).toEqual(
         expect.arrayContaining([
+          expect.objectContaining({ id: "bandit-captain", budget: 450, challengeRating: "2", data: expect.objectContaining({ armorClass: 15, hitPoints: 52, actions: expect.arrayContaining([expect.objectContaining({ name: "Pistol", damageFormula: "1d10+3" })]) }) }),
+          expect.objectContaining({ id: "giant-spider", budget: 200, challengeRating: "1", data: expect.objectContaining({ actions: expect.arrayContaining([expect.objectContaining({ name: "Web", save: { ability: "dexterity", dc: 13 } })]) }) }),
+          expect.objectContaining({ id: "giant-ape", budget: 2900, challengeRating: "7", data: expect.objectContaining({ armorClass: 12, hitPoints: 168, actions: expect.arrayContaining([expect.objectContaining({ name: "Boulder Toss", damageFormula: "7d6", save: { ability: "dexterity", dc: 17, success: "half" } })]) }) }),
           expect.objectContaining({ id: "skeleton", budget: 50, challengeRating: "1/4", data: expect.objectContaining({ actions: expect.arrayContaining([expect.objectContaining({ name: "Shortsword", attackBonus: 5 })]) }) }),
           expect.objectContaining({ id: "ogre", budget: 450, challengeRating: "2", data: expect.objectContaining({ actions: expect.arrayContaining([expect.objectContaining({ name: "Greatclub", damageFormula: "2d8+4" })]) }) }),
           expect.objectContaining({ id: "goblin-boss", budget: 200, challengeRating: "1", data: expect.objectContaining({ armorClass: 17, hitPoints: 21, xp: 200 }) }),
@@ -4294,6 +4319,22 @@ describe("api", () => {
         difficulty: "deadly",
         threats: [expect.objectContaining({ id: "young-red-dragon", count: 1, budgetEach: 5900, budgetTotal: 5900, challengeRating: "10" })]
       });
+      const giantApeEncounterPlan = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/encounter-plan",
+        headers: authHeaders,
+        payload: {
+          partyActorIds: [cleric.json().actor.id],
+          threats: [{ id: "giant-ape", count: 1 }]
+        }
+      });
+      expect(giantApeEncounterPlan.statusCode).toBe(200);
+      expect(giantApeEncounterPlan.json().plan).toMatchObject({
+        systemId: "dnd-5e-srd",
+        threatBudget: 2900,
+        difficulty: "deadly",
+        threats: [expect.objectContaining({ id: "giant-ape", count: 1, budgetEach: 2900, budgetTotal: 2900, challengeRating: "7" })]
+      });
 
       const monster = await app.inject({
         method: "POST",
@@ -4325,6 +4366,34 @@ describe("api", () => {
           expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+10" }),
           expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+6+1d6" }),
           expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "16d6" })
+        ])
+      );
+      const banditCaptainMonster = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters",
+        headers: authHeaders,
+        payload: { threatId: "bandit-captain", name: "SRD Bandit Captain" }
+      });
+      expect(banditCaptainMonster.statusCode).toBe(200);
+      expect(banditCaptainMonster.json().actor.data).toEqual(expect.objectContaining({ hp: { current: 52, max: 52 }, armorClass: 15, challengeRating: "2", xp: 450 }));
+      expect(banditCaptainMonster.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "monster-pistol-attack", label: "Pistol Attack", formula: "1d20+5" }),
+          expect.objectContaining({ id: "monster-pistol-damage", label: "Pistol Damage", formula: "1d10+3" })
+        ])
+      );
+      const giantSpiderMonster = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters",
+        headers: authHeaders,
+        payload: { threatId: "giant-spider", name: "SRD Giant Spider" }
+      });
+      expect(giantSpiderMonster.statusCode).toBe(200);
+      expect(giantSpiderMonster.json().threat.data.actions).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Web", save: { ability: "dexterity", dc: 13 } })]));
+      expect(giantSpiderMonster.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" }),
+          expect.objectContaining({ id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3+2d6" })
         ])
       );
 

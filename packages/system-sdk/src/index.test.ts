@@ -1785,9 +1785,37 @@ describe("dnd 5.5e srd rules", () => {
     expect((advanced.attributes as Record<string, number>).wisdom).toBe(17);
     expect(applyDnd5eSrdRest(srdActor, "long")).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd" }));
     expect(dnd5eSrdEncounterThreats().map((threat) => threat.id)).toContain("goblin-minion");
-    expect(dnd5eSrdEncounterThreats().map((threat) => threat.id)).toEqual(expect.arrayContaining(["skeleton", "zombie", "wolf", "dire-wolf", "ogre", "owlbear", "red-dragon-wyrmling", "troll", "young-red-dragon"]));
+    expect(dnd5eSrdEncounterThreats().map((threat) => threat.id)).toEqual(
+      expect.arrayContaining([
+        "bandit-captain",
+        "guard",
+        "guard-captain",
+        "knight",
+        "spy",
+        "warrior-veteran",
+        "black-bear",
+        "brown-bear",
+        "giant-rat",
+        "giant-spider",
+        "giant-ape",
+        "giant-eagle",
+        "skeleton",
+        "zombie",
+        "wolf",
+        "dire-wolf",
+        "ogre",
+        "owlbear",
+        "red-dragon-wyrmling",
+        "troll",
+        "young-red-dragon"
+      ])
+    );
     expect(dnd5eSrdEncounterThreats()).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ id: "bandit-captain", budget: 450, challengeRating: "2", data: expect.objectContaining({ armorClass: 15, hitPoints: 52, actions: expect.arrayContaining([expect.objectContaining({ name: "Pistol", attackBonus: 5, damageFormula: "1d10+3" })]) }) }),
+        expect.objectContaining({ id: "guard-captain", budget: 1100, challengeRating: "4", data: expect.objectContaining({ armorClass: 18, hitPoints: 75, actions: expect.arrayContaining([expect.objectContaining({ name: "Longsword", damageFormula: "2d10+4" })]) }) }),
+        expect.objectContaining({ id: "giant-spider", budget: 200, challengeRating: "1", data: expect.objectContaining({ skills: expect.objectContaining({ stealth: 7 }), actions: expect.arrayContaining([expect.objectContaining({ name: "Web", save: { ability: "dexterity", dc: 13 } })]) }) }),
+        expect.objectContaining({ id: "giant-ape", budget: 2900, challengeRating: "7", data: expect.objectContaining({ armorClass: 12, hitPoints: 168, actions: expect.arrayContaining([expect.objectContaining({ name: "Boulder Toss", damageFormula: "7d6", save: { ability: "dexterity", dc: 17, success: "half" } })]) }) }),
         expect.objectContaining({ id: "skeleton", budget: 50, challengeRating: "1/4", data: expect.objectContaining({ armorClass: 14, hitPoints: 13, actions: expect.arrayContaining([expect.objectContaining({ name: "Shortsword", attackBonus: 5 })]) }) }),
         expect.objectContaining({ id: "ogre", budget: 450, challengeRating: "2", data: expect.objectContaining({ armorClass: 11, hitPoints: 68, actions: expect.arrayContaining([expect.objectContaining({ name: "Greatclub", damageFormula: "2d8+4" })]) }) }),
         expect.objectContaining({ id: "goblin-boss", budget: 200, challengeRating: "1", data: expect.objectContaining({ armorClass: 17, hitPoints: 21, xp: 200 }) }),
@@ -1812,6 +1840,14 @@ describe("dnd 5.5e srd rules", () => {
       difficultyBudgets: { easy: 1600, standard: 2300, hard: 3100 },
       threats: [expect.objectContaining({ id: "young-red-dragon", budgetEach: 5900, budgetTotal: 5900, challengeRating: "10" })]
     });
+    expect(dnd5eSrdEncounterPlan([{ ...srdActor, data: { ...srdActor.data, level: 7 } }], [{ id: "giant-ape", count: 1 }])).toMatchObject({
+      systemId: "dnd-5e-srd",
+      partyRating: 1700,
+      threatBudget: 2900,
+      difficulty: "deadly",
+      difficultyBudgets: { easy: 750, standard: 1300, hard: 1700 },
+      threats: [expect.objectContaining({ id: "giant-ape", budgetEach: 2900, budgetTotal: 2900, challengeRating: "7" })]
+    });
     const goblinBossActor: Actor = {
       ...srdActor,
       type: "monster",
@@ -1825,6 +1861,36 @@ describe("dnd 5.5e srd rules", () => {
         { id: "monster-scimitar-damage", label: "Scimitar Damage", formula: "1d6+2" },
         { id: "monster-shortbow-attack", label: "Shortbow Attack", formula: "1d20+4" },
         { id: "monster-shortbow-damage", label: "Shortbow Damage", formula: "1d6+2" }
+      ])
+    );
+    const banditCaptainActor: Actor = {
+      ...srdActor,
+      type: "monster",
+      name: "Bandit Captain",
+      data: dnd5eSrdMonsterActorData("bandit-captain")!
+    };
+    expect(banditCaptainActor.data).toEqual(expect.objectContaining({ hp: { current: 52, max: 52 }, armorClass: 15, challengeRating: "2", xp: 450 }));
+    expect(dnd5eSrdSheet(banditCaptainActor, []).quickRolls).toEqual(
+      expect.arrayContaining([
+        { id: "monster-scimitar-attack", label: "Scimitar Attack", formula: "1d20+5" },
+        { id: "monster-scimitar-damage", label: "Scimitar Damage", formula: "1d6+3" },
+        { id: "monster-pistol-attack", label: "Pistol Attack", formula: "1d20+5" },
+        { id: "monster-pistol-damage", label: "Pistol Damage", formula: "1d10+3" }
+      ])
+    );
+    const giantSpiderActor: Actor = {
+      ...srdActor,
+      type: "monster",
+      name: "Giant Spider",
+      data: dnd5eSrdMonsterActorData("giant-spider")!
+    };
+    expect(giantSpiderActor.data).toEqual(expect.objectContaining({ hp: { current: 26, max: 26 }, armorClass: 14, challengeRating: "1", xp: 200 }));
+    const giantSpiderStatBlock = (giantSpiderActor.data.monster as { statBlock: { actions: unknown[] } }).statBlock;
+    expect(giantSpiderStatBlock.actions).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Web", save: { ability: "dexterity", dc: 13 } })]));
+    expect(dnd5eSrdSheet(giantSpiderActor, []).quickRolls).toEqual(
+      expect.arrayContaining([
+        { id: "monster-bite-attack", label: "Bite Attack", formula: "1d20+5" },
+        { id: "monster-bite-damage", label: "Bite Damage", formula: "1d8+3+2d6" }
       ])
     );
     const youngRedDragonActor: Actor = {

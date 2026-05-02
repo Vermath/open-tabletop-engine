@@ -2686,6 +2686,32 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
       { name: "Light Crossbow", kind: "action", attackBonus: 3, range: "80/320 ft.", damageFormula: "1d8+1", damageType: "piercing" }
     ]
   },
+  "bandit-captain": {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium or Small",
+    creatureType: "Humanoid",
+    alignment: "Neutral",
+    armorClass: 15,
+    initiative: 3,
+    hitPoints: 52,
+    hitDice: "8d8+16",
+    speed: "30 ft.",
+    challengeRating: "2",
+    xp: 450,
+    proficiencyBonus: 2,
+    abilities: { strength: 15, dexterity: 16, constitution: 14, intelligence: 14, wisdom: 11, charisma: 14 },
+    saves: { strength: 4, dexterity: 5, constitution: 2, intelligence: 2, wisdom: 2, charisma: 2 },
+    skills: { athletics: 4, deception: 4 },
+    senses: ["Passive Perception 10"],
+    languages: ["Common", "Thieves' Cant"],
+    gear: ["Pistol", "Scimitar", "Studded Leather Armor"],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Scimitar and Pistol in any combination." },
+      { name: "Scimitar", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3", damageType: "slashing" },
+      { name: "Pistol", kind: "action", attackBonus: 5, range: "30/90 ft.", damageFormula: "1d10+3", damageType: "piercing" },
+      { name: "Parry", kind: "reaction", summary: "Adds 2 to AC against a melee attack roll while holding a weapon, possibly causing it to miss." }
+    ]
+  },
   "goblin-warrior": {
     source: DND_5E_SRD_VERSION,
     size: "Small",
@@ -2787,6 +2813,27 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
     ],
     actions: [{ name: "Slam", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d8+1", damageType: "bludgeoning" }]
   },
+  guard: {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium or Small",
+    creatureType: "Humanoid",
+    alignment: "Neutral",
+    armorClass: 16,
+    initiative: 1,
+    hitPoints: 11,
+    hitDice: "2d8+2",
+    speed: "30 ft.",
+    challengeRating: "1/8",
+    xp: 25,
+    proficiencyBonus: 2,
+    abilities: { strength: 13, dexterity: 12, constitution: 12, intelligence: 10, wisdom: 11, charisma: 10 },
+    saves: { strength: 1, dexterity: 1, constitution: 1, intelligence: 0, wisdom: 0, charisma: 0 },
+    skills: { perception: 2 },
+    senses: ["Passive Perception 12"],
+    languages: ["Common"],
+    gear: ["Chain Shirt", "Shield", "Spear"],
+    actions: [{ name: "Spear", kind: "action", attackBonus: 3, range: "reach 5 ft. or range 20/60 ft.", damageFormula: "1d6+1", damageType: "piercing" }]
+  },
   tough: {
     source: DND_5E_SRD_VERSION,
     size: "Medium or Small",
@@ -2853,6 +2900,53 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
     traits: [{ name: "Pack Tactics", summary: "Has advantage on attack rolls when an ally is within 5 feet of the target and isn't Incapacitated." }],
     actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d10+3", damageType: "piercing", summary: "If the target is Large or smaller, it has the Prone condition." }]
   },
+  "black-bear": {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium",
+    creatureType: "Beast",
+    alignment: "Unaligned",
+    armorClass: 11,
+    initiative: 1,
+    hitPoints: 19,
+    hitDice: "3d8+6",
+    speed: "30 ft., Climb 30 ft., Swim 30 ft.",
+    challengeRating: "1/2",
+    xp: 100,
+    proficiencyBonus: 2,
+    abilities: { strength: 15, dexterity: 12, constitution: 14, intelligence: 2, wisdom: 12, charisma: 7 },
+    saves: { strength: 2, dexterity: 1, constitution: 2, intelligence: -4, wisdom: 1, charisma: -2 },
+    skills: { perception: 5 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
+    languages: ["None"],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
+      { name: "Rend", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "slashing" }
+    ]
+  },
+  "brown-bear": {
+    source: DND_5E_SRD_VERSION,
+    size: "Large",
+    creatureType: "Beast",
+    alignment: "Unaligned",
+    armorClass: 11,
+    initiative: 1,
+    hitPoints: 22,
+    hitDice: "3d10+6",
+    speed: "40 ft., Climb 30 ft.",
+    challengeRating: "1",
+    xp: 200,
+    proficiencyBonus: 2,
+    abilities: { strength: 17, dexterity: 12, constitution: 15, intelligence: 2, wisdom: 13, charisma: 7 },
+    saves: { strength: 3, dexterity: 1, constitution: 2, intelligence: -4, wisdom: 1, charisma: -2 },
+    skills: { perception: 3 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 13"],
+    languages: ["None"],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes one Bite attack and one Claw attack." },
+      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3", damageType: "piercing" },
+      { name: "Claw", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d8+2", damageType: "slashing" }
+    ]
+  },
   ogre: {
     source: DND_5E_SRD_VERSION,
     size: "Large",
@@ -2876,6 +2970,31 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
       { name: "Javelin", kind: "action", attackBonus: 6, range: "reach 5 ft. or range 30/120 ft.", damageFormula: "2d6+4", damageType: "piercing" }
     ]
   },
+  "guard-captain": {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium or Small",
+    creatureType: "Humanoid",
+    alignment: "Neutral",
+    armorClass: 18,
+    initiative: 4,
+    hitPoints: 75,
+    hitDice: "10d8+30",
+    speed: "30 ft.",
+    challengeRating: "4",
+    xp: 1100,
+    proficiencyBonus: 2,
+    abilities: { strength: 18, dexterity: 14, constitution: 16, intelligence: 12, wisdom: 14, charisma: 13 },
+    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: 1, wisdom: 2, charisma: 1 },
+    skills: { athletics: 6, perception: 4 },
+    senses: ["Passive Perception 14"],
+    languages: ["Common"],
+    gear: ["Breastplate", "Javelins (6)", "Longsword", "Shield"],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Javelin or Longsword in any combination." },
+      { name: "Javelin", kind: "action", attackBonus: 6, range: "reach 5 ft. or range 30/120 ft.", damageFormula: "3d6+4", damageType: "piercing" },
+      { name: "Longsword", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d10+4", damageType: "slashing" }
+    ]
+  },
   "hobgoblin-captain": {
     source: DND_5E_SRD_VERSION,
     size: "Medium",
@@ -2896,6 +3015,32 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
     gear: ["Greatsword", "Half-Plate Armor", "Longbow"],
     traits: [{ name: "Pack Tactics", summary: "Pairs well with lower-CR allies in a mixed encounter." }],
     actions: [{ name: "Multiattack", kind: "action", summary: "Makes multiple weapon attacks." }]
+  },
+  knight: {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium or Small",
+    creatureType: "Humanoid",
+    alignment: "Neutral",
+    armorClass: 18,
+    initiative: 0,
+    hitPoints: 52,
+    hitDice: "8d8+16",
+    speed: "30 ft.",
+    challengeRating: "3",
+    xp: 700,
+    proficiencyBonus: 2,
+    abilities: { strength: 16, dexterity: 11, constitution: 14, intelligence: 11, wisdom: 11, charisma: 15 },
+    saves: { strength: 3, dexterity: 0, constitution: 4, intelligence: 0, wisdom: 2, charisma: 2 },
+    senses: ["Passive Perception 10"],
+    languages: ["Common plus one other language"],
+    gear: ["Greatsword", "Heavy Crossbow", "Plate Armor"],
+    traits: [{ name: "Frightened Immunity", summary: "Immune to the Frightened condition." }],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two attacks, using Greatsword or Heavy Crossbow in any combination." },
+      { name: "Greatsword", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3+1d8", damageType: "slashing/radiant" },
+      { name: "Heavy Crossbow", kind: "action", attackBonus: 2, range: "100/400 ft.", damageFormula: "2d10+1d8", damageType: "piercing/radiant" },
+      { name: "Parry", kind: "reaction", summary: "Adds 2 to AC against a melee attack roll while holding a weapon, possibly causing it to miss." }
+    ]
   },
   owlbear: {
     source: DND_5E_SRD_VERSION,
@@ -2918,6 +3063,31 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
     actions: [
       { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
       { name: "Rend", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+5", damageType: "slashing" }
+    ]
+  },
+  spy: {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium or Small",
+    creatureType: "Humanoid",
+    alignment: "Neutral",
+    armorClass: 12,
+    initiative: 4,
+    hitPoints: 27,
+    hitDice: "6d8",
+    speed: "30 ft., Climb 30 ft.",
+    challengeRating: "1",
+    xp: 200,
+    proficiencyBonus: 2,
+    abilities: { strength: 10, dexterity: 15, constitution: 10, intelligence: 12, wisdom: 14, charisma: 16 },
+    saves: { strength: 0, dexterity: 2, constitution: 0, intelligence: 1, wisdom: 2, charisma: 3 },
+    skills: { deception: 5, insight: 4, investigation: 5, perception: 6, "sleight-of-hand": 4, stealth: 6 },
+    senses: ["Passive Perception 16"],
+    languages: ["Common plus one other language"],
+    gear: ["Hand Crossbow", "Shortsword", "Thieves' Tools"],
+    actions: [
+      { name: "Shortsword", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2+2d6", damageType: "piercing/poison" },
+      { name: "Hand Crossbow", kind: "action", attackBonus: 4, range: "30/120 ft.", damageFormula: "1d6+2+2d6", damageType: "piercing/poison" },
+      { name: "Cunning Action", kind: "bonusAction", summary: "Takes the Dash, Disengage, or Hide action." }
     ]
   },
   troll: {
@@ -2946,6 +3116,103 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
       { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
       { name: "Rend", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d6+4", damageType: "slashing" },
       { name: "Charge", kind: "bonusAction", summary: "Moves up to half its Speed straight toward an enemy it can see." }
+    ]
+  },
+  "giant-rat": {
+    source: DND_5E_SRD_VERSION,
+    size: "Small",
+    creatureType: "Beast",
+    alignment: "Unaligned",
+    armorClass: 13,
+    initiative: 3,
+    hitPoints: 7,
+    hitDice: "2d6",
+    speed: "30 ft., Climb 30 ft.",
+    challengeRating: "1/8",
+    xp: 25,
+    proficiencyBonus: 2,
+    abilities: { strength: 7, dexterity: 16, constitution: 11, intelligence: 2, wisdom: 10, charisma: 4 },
+    saves: { strength: -2, dexterity: 5, constitution: 0, intelligence: -4, wisdom: 0, charisma: -3 },
+    skills: { perception: 2 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 12"],
+    languages: ["None"],
+    traits: [{ name: "Pack Tactics", summary: "Has advantage on attack rolls when an ally is within 5 feet of the target and isn't Incapacitated." }],
+    actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3", damageType: "piercing" }]
+  },
+  "giant-spider": {
+    source: DND_5E_SRD_VERSION,
+    size: "Large",
+    creatureType: "Beast",
+    alignment: "Unaligned",
+    armorClass: 14,
+    initiative: 3,
+    hitPoints: 26,
+    hitDice: "4d10+4",
+    speed: "30 ft., Climb 30 ft.",
+    challengeRating: "1",
+    xp: 200,
+    proficiencyBonus: 2,
+    abilities: { strength: 14, dexterity: 16, constitution: 12, intelligence: 2, wisdom: 11, charisma: 4 },
+    saves: { strength: 2, dexterity: 3, constitution: 1, intelligence: -4, wisdom: 0, charisma: -3 },
+    skills: { perception: 4, stealth: 7 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 14"],
+    languages: ["None"],
+    traits: [
+      { name: "Spider Climb", summary: "Can climb difficult surfaces, including ceilings, without needing an ability check." },
+      { name: "Web Walker", summary: "Ignores movement restrictions caused by webs and knows the location of creatures in contact with the same web." }
+    ],
+    actions: [
+      { name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d8+3+2d6", damageType: "piercing/poison" },
+      { name: "Web", kind: "action", range: "60 ft.", save: { ability: "dexterity", dc: 13 }, summary: "Recharge 5-6. On a failed save, the target has the Restrained condition until the web is destroyed." }
+    ]
+  },
+  "giant-ape": {
+    source: DND_5E_SRD_VERSION,
+    size: "Huge",
+    creatureType: "Beast",
+    alignment: "Unaligned",
+    armorClass: 12,
+    initiative: 5,
+    hitPoints: 168,
+    hitDice: "16d12+64",
+    speed: "40 ft., Climb 40 ft.",
+    challengeRating: "7",
+    xp: 2900,
+    proficiencyBonus: 3,
+    abilities: { strength: 23, dexterity: 14, constitution: 18, intelligence: 5, wisdom: 12, charisma: 7 },
+    saves: { strength: 6, dexterity: 2, constitution: 4, intelligence: -3, wisdom: 1, charisma: -2 },
+    skills: { athletics: 9, perception: 4, survival: 4 },
+    senses: ["Passive Perception 14"],
+    languages: ["None"],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two Fist attacks." },
+      { name: "Fist", kind: "action", attackBonus: 9, range: "reach 10 ft.", damageFormula: "3d10+6", damageType: "bludgeoning" },
+      { name: "Boulder Toss", kind: "action", range: "90 ft.", damageFormula: "7d6", damageType: "bludgeoning", save: { ability: "dexterity", dc: 17, success: "half" }, summary: "Recharge 6. A Large or smaller target that fails also has the Prone condition." },
+      { name: "Leap", kind: "bonusAction", summary: "Jumps up to 30 feet by spending 10 feet of movement." }
+    ]
+  },
+  "giant-eagle": {
+    source: DND_5E_SRD_VERSION,
+    size: "Large",
+    creatureType: "Celestial",
+    alignment: "Neutral Good",
+    armorClass: 13,
+    initiative: 3,
+    hitPoints: 26,
+    hitDice: "4d10+4",
+    speed: "10 ft., Fly 80 ft.",
+    challengeRating: "1",
+    xp: 200,
+    proficiencyBonus: 2,
+    abilities: { strength: 16, dexterity: 17, constitution: 13, intelligence: 8, wisdom: 14, charisma: 10 },
+    saves: { strength: 3, dexterity: 3, constitution: 1, intelligence: -1, wisdom: 2, charisma: 0 },
+    skills: { perception: 6 },
+    senses: ["Passive Perception 16"],
+    languages: ["Celestial", "Understands Common and Primordial (Auran) but can't speak them"],
+    traits: [{ name: "Radiant and Necrotic Resistance", summary: "Resistant to Necrotic and Radiant damage." }],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
+      { name: "Rend", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d4+3+1d6", damageType: "slashing/radiant" }
     ]
   },
   "red-dragon-wyrmling": {
@@ -2996,6 +3263,32 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
       { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
       { name: "Rend", kind: "action", attackBonus: 10, range: "reach 10 ft.", damageFormula: "2d6+6+1d6", damageType: "slashing/fire" },
       { name: "Fire Breath", kind: "action", range: "30-foot cone", damageFormula: "16d6", damageType: "fire", save: { ability: "dexterity", dc: 17, success: "half" }, summary: "Recharge 5-6." }
+    ]
+  },
+  "warrior-veteran": {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium or Small",
+    creatureType: "Humanoid",
+    alignment: "Neutral",
+    armorClass: 17,
+    initiative: 3,
+    hitPoints: 65,
+    hitDice: "10d8+20",
+    speed: "30 ft.",
+    challengeRating: "3",
+    xp: 700,
+    proficiencyBonus: 2,
+    abilities: { strength: 16, dexterity: 13, constitution: 14, intelligence: 10, wisdom: 11, charisma: 10 },
+    saves: { strength: 3, dexterity: 1, constitution: 2, intelligence: 0, wisdom: 0, charisma: 0 },
+    skills: { athletics: 5, perception: 2 },
+    senses: ["Passive Perception 12"],
+    languages: ["Common plus one other language"],
+    gear: ["Greatsword", "Heavy Crossbow", "Splint Armor"],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two Greatsword or Heavy Crossbow attacks." },
+      { name: "Greatsword", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d6+3", damageType: "slashing" },
+      { name: "Heavy Crossbow", kind: "action", attackBonus: 3, range: "100/400 ft.", damageFormula: "2d10+1", damageType: "piercing" },
+      { name: "Parry", kind: "reaction", summary: "Adds 2 to AC against a melee attack roll while holding a weapon, possibly causing it to miss." }
     ]
   },
   "tough-boss": {
@@ -3070,20 +3363,32 @@ export function dnd5eSrdMonsterActorData(threatId: string): Record<string, unkno
 export function dnd5eSrdEncounterThreats(): EncounterThreat[] {
   return [
     dnd5eSrdMonsterThreat("bandit", "Bandit", "skirmisher", "Low-CR humanoid threat for urban, roadside, and pirate encounters."),
+    dnd5eSrdMonsterThreat("guard", "Guard", "sentinel", "Low-CR armored humanoid sentry with spear and shield."),
+    dnd5eSrdMonsterThreat("giant-rat", "Giant Rat", "beast", "Low-CR pack-tactics beast for sewers, cellars, and swarm-adjacent encounters."),
     dnd5eSrdMonsterThreat("goblin-warrior", "Goblin Warrior", "skirmisher", "Low-level goblinoid attacker with stealth and bonus-action escape pressure."),
     { ...dnd5eSrdMonsterThreat("goblin-warrior", "Goblin Minion", "minion", "Backward-compatible goblin threat alias for existing encounter drafts."), id: "goblin-minion" },
     dnd5eSrdMonsterThreat("skeleton", "Skeleton", "undead", "Low-CR undead archer or melee guard with Bludgeoning vulnerability."),
     dnd5eSrdMonsterThreat("zombie", "Zombie", "undead", "Slow low-CR undead threat with Undead Fortitude."),
     dnd5eSrdMonsterThreat("wolf", "Wolf", "beast", "Pack-tactics beast threat for wilderness encounters."),
+    dnd5eSrdMonsterThreat("black-bear", "Black Bear", "beast", "CR 1/2 climbing and swimming bear with repeated Rend attacks."),
     dnd5eSrdMonsterThreat("dire-wolf", "Dire Wolf", "beast", "Large pack hunter with stronger bite and prone rider."),
+    dnd5eSrdMonsterThreat("brown-bear", "Brown Bear", "beast", "Large CR 1 beast with Bite and Claw multiattack."),
+    dnd5eSrdMonsterThreat("giant-spider", "Giant Spider", "beast", "Large web-walking predator with poison bite and restraining web."),
+    dnd5eSrdMonsterThreat("giant-eagle", "Giant Eagle", "celestial", "Large flying celestial threat with radiant Rend attacks."),
+    dnd5eSrdMonsterThreat("spy", "Spy", "infiltrator", "Stealthy humanoid with poisoned blade, hand crossbow, and Cunning Action."),
     dnd5eSrdMonsterThreat("tough", "Tough", "brute", "Durable low-level humanoid threat that benefits from allies nearby."),
     dnd5eSrdMonsterThreat("ogre", "Ogre", "giant", "Large CR 2 giant with heavy melee and javelin pressure."),
+    dnd5eSrdMonsterThreat("bandit-captain", "Bandit Captain", "leader", "CR 2 humanoid leader with Scimitar, Pistol, and Parry."),
     dnd5eSrdMonsterThreat("goblin-boss", "Goblin Boss", "leader", "Command threat for low-level SRD encounters with multiattack and ally redirection."),
     dnd5eSrdMonsterThreat("hobgoblin-captain", "Hobgoblin Captain", "captain", "Disciplined martial SRD threat for organized goblinoid forces."),
+    dnd5eSrdMonsterThreat("knight", "Knight", "knight", "Armored CR 3 martial threat with radiant weapon damage and Parry."),
+    dnd5eSrdMonsterThreat("warrior-veteran", "Warrior Veteran", "veteran", "Martial CR 3 humanoid with Greatsword, Heavy Crossbow, and Parry."),
     dnd5eSrdMonsterThreat("owlbear", "Owlbear", "monstrosity", "Large CR 3 wilderness monster with two Rend attacks."),
+    dnd5eSrdMonsterThreat("guard-captain", "Guard Captain", "captain", "Armored CR 4 humanoid commander with Longsword and Javelin multiattack."),
     dnd5eSrdMonsterThreat("red-dragon-wyrmling", "Red Dragon Wyrmling", "dragon", "Young chromatic dragon threat with Rend and Fire Breath."),
     dnd5eSrdMonsterThreat("tough-boss", "Tough Boss", "boss", "Durable SRD boss threat for a resource-spending fight."),
     dnd5eSrdMonsterThreat("troll", "Troll", "giant", "Regenerating CR 5 giant with multiattack and Acid/Fire counterplay."),
+    dnd5eSrdMonsterThreat("giant-ape", "Giant Ape", "beast", "Huge CR 7 beast with Fist multiattack, Boulder Toss, and Leap."),
     dnd5eSrdMonsterThreat("young-red-dragon", "Young Red Dragon", "dragon", "Large CR 10 chromatic dragon with high-XP encounter pressure and Fire Breath.")
   ];
 }
