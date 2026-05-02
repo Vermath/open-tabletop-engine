@@ -292,6 +292,7 @@ export interface Dnd5eSrdMonsterAction {
   range?: string;
   damageFormula?: string;
   damageType?: string;
+  save?: { ability: string; dc: number; success?: string };
   summary?: string;
 }
 
@@ -2739,6 +2740,53 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
       { name: "Redirect Attack", kind: "reaction", summary: "Can swap with a nearby ally targeted by an attack." }
     ]
   },
+  skeleton: {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium",
+    creatureType: "Undead",
+    alignment: "Lawful Evil",
+    armorClass: 14,
+    initiative: 3,
+    hitPoints: 13,
+    hitDice: "2d8+4",
+    speed: "30 ft.",
+    challengeRating: "1/4",
+    xp: 50,
+    proficiencyBonus: 2,
+    abilities: { strength: 10, dexterity: 16, constitution: 15, intelligence: 6, wisdom: 8, charisma: 5 },
+    saves: { strength: 0, dexterity: 3, constitution: 2, intelligence: -2, wisdom: -1, charisma: -3 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 9"],
+    languages: ["Understands Common plus one other language but can't speak"],
+    gear: ["Shortbow", "Shortsword"],
+    traits: [{ name: "Bludgeoning Vulnerability", summary: "Vulnerable to Bludgeoning damage." }, { name: "Undead Immunities", summary: "Immune to Poison damage and the Exhaustion and Poisoned conditions." }],
+    actions: [
+      { name: "Shortsword", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d6+3", damageType: "piercing" },
+      { name: "Shortbow", kind: "action", attackBonus: 5, range: "80/320 ft.", damageFormula: "1d6+3", damageType: "piercing" }
+    ]
+  },
+  zombie: {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium",
+    creatureType: "Undead",
+    alignment: "Neutral Evil",
+    armorClass: 8,
+    initiative: -2,
+    hitPoints: 15,
+    hitDice: "2d8+6",
+    speed: "20 ft.",
+    challengeRating: "1/4",
+    xp: 50,
+    proficiencyBonus: 2,
+    abilities: { strength: 13, dexterity: 6, constitution: 16, intelligence: 3, wisdom: 6, charisma: 5 },
+    saves: { strength: 1, dexterity: -2, constitution: 3, intelligence: -4, wisdom: 0, charisma: -3 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 8"],
+    languages: ["Understands Common plus one other language but can't speak"],
+    traits: [
+      { name: "Undead Fortitude", summary: "When damage would reduce the zombie to 0 HP, it can drop to 1 HP instead on a Constitution save unless the damage is Radiant or from a Critical Hit." },
+      { name: "Undead Immunities", summary: "Immune to Poison damage and the Exhaustion and Poisoned conditions." }
+    ],
+    actions: [{ name: "Slam", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d8+1", damageType: "bludgeoning" }]
+  },
   tough: {
     source: DND_5E_SRD_VERSION,
     size: "Medium or Small",
@@ -2763,6 +2811,71 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
       { name: "Heavy Crossbow", kind: "action", attackBonus: 3, range: "100/400 ft.", damageFormula: "1d10+1", damageType: "piercing" }
     ]
   },
+  wolf: {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium",
+    creatureType: "Beast",
+    alignment: "Unaligned",
+    armorClass: 12,
+    initiative: 2,
+    hitPoints: 11,
+    hitDice: "2d8+2",
+    speed: "40 ft.",
+    challengeRating: "1/4",
+    xp: 50,
+    proficiencyBonus: 2,
+    abilities: { strength: 14, dexterity: 15, constitution: 12, intelligence: 3, wisdom: 12, charisma: 6 },
+    saves: { strength: 2, dexterity: 2, constitution: 1, intelligence: -4, wisdom: 1, charisma: -2 },
+    skills: { perception: 5, stealth: 4 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
+    languages: ["None"],
+    traits: [{ name: "Pack Tactics", summary: "Has advantage on attack rolls when an ally is within 5 feet of the target and isn't Incapacitated." }],
+    actions: [{ name: "Bite", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "piercing", summary: "If the target is Medium or smaller, it has the Prone condition." }]
+  },
+  "dire-wolf": {
+    source: DND_5E_SRD_VERSION,
+    size: "Large",
+    creatureType: "Beast",
+    alignment: "Unaligned",
+    armorClass: 14,
+    initiative: 2,
+    hitPoints: 22,
+    hitDice: "3d10+6",
+    speed: "50 ft.",
+    challengeRating: "1",
+    xp: 200,
+    proficiencyBonus: 2,
+    abilities: { strength: 17, dexterity: 15, constitution: 15, intelligence: 3, wisdom: 12, charisma: 7 },
+    saves: { strength: 3, dexterity: 2, constitution: 2, intelligence: -4, wisdom: 1, charisma: -2 },
+    skills: { perception: 5, stealth: 4 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
+    languages: ["None"],
+    traits: [{ name: "Pack Tactics", summary: "Has advantage on attack rolls when an ally is within 5 feet of the target and isn't Incapacitated." }],
+    actions: [{ name: "Bite", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "1d10+3", damageType: "piercing", summary: "If the target is Large or smaller, it has the Prone condition." }]
+  },
+  ogre: {
+    source: DND_5E_SRD_VERSION,
+    size: "Large",
+    creatureType: "Giant",
+    alignment: "Chaotic Evil",
+    armorClass: 11,
+    initiative: -1,
+    hitPoints: 68,
+    hitDice: "8d10+24",
+    speed: "40 ft.",
+    challengeRating: "2",
+    xp: 450,
+    proficiencyBonus: 2,
+    abilities: { strength: 19, dexterity: 8, constitution: 16, intelligence: 5, wisdom: 7, charisma: 7 },
+    saves: { strength: 4, dexterity: -1, constitution: 3, intelligence: -3, wisdom: -2, charisma: -2 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 8"],
+    languages: ["Common", "Giant"],
+    gear: ["Greatclub", "Javelins (3)"],
+    actions: [
+      { name: "Greatclub", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "2d8+4", damageType: "bludgeoning" },
+      { name: "Javelin", kind: "action", attackBonus: 6, range: "reach 5 ft. or range 30/120 ft.", damageFormula: "2d6+4", damageType: "piercing" }
+    ]
+  },
   "hobgoblin-captain": {
     source: DND_5E_SRD_VERSION,
     size: "Medium",
@@ -2783,6 +2896,107 @@ const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> =
     gear: ["Greatsword", "Half-Plate Armor", "Longbow"],
     traits: [{ name: "Pack Tactics", summary: "Pairs well with lower-CR allies in a mixed encounter." }],
     actions: [{ name: "Multiattack", kind: "action", summary: "Makes multiple weapon attacks." }]
+  },
+  owlbear: {
+    source: DND_5E_SRD_VERSION,
+    size: "Large",
+    creatureType: "Monstrosity",
+    alignment: "Unaligned",
+    armorClass: 13,
+    initiative: 1,
+    hitPoints: 59,
+    hitDice: "7d10+21",
+    speed: "40 ft., Climb 40 ft.",
+    challengeRating: "3",
+    xp: 700,
+    proficiencyBonus: 2,
+    abilities: { strength: 20, dexterity: 12, constitution: 17, intelligence: 3, wisdom: 12, charisma: 7 },
+    saves: { strength: 5, dexterity: 1, constitution: 3, intelligence: -4, wisdom: 1, charisma: -2 },
+    skills: { perception: 5 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
+    languages: ["None"],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
+      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 5 ft.", damageFormula: "2d8+5", damageType: "slashing" }
+    ]
+  },
+  troll: {
+    source: DND_5E_SRD_VERSION,
+    size: "Large",
+    creatureType: "Giant",
+    alignment: "Chaotic Evil",
+    armorClass: 15,
+    initiative: 1,
+    hitPoints: 94,
+    hitDice: "9d10+45",
+    speed: "30 ft.",
+    challengeRating: "5",
+    xp: 1800,
+    proficiencyBonus: 3,
+    abilities: { strength: 18, dexterity: 13, constitution: 20, intelligence: 7, wisdom: 9, charisma: 7 },
+    saves: { strength: 4, dexterity: 1, constitution: 5, intelligence: -2, wisdom: -1, charisma: -2 },
+    skills: { perception: 5 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 15"],
+    languages: ["Giant"],
+    traits: [
+      { name: "Loathsome Limbs", summary: "When Bloodied after heavy Slashing damage, a limb can become a Troll Limb and impose Exhaustion until regrown." },
+      { name: "Regeneration", summary: "Regains 15 HP at the start of each turn unless it took Acid or Fire damage since its last turn." }
+    ],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
+      { name: "Rend", kind: "action", attackBonus: 7, range: "reach 10 ft.", damageFormula: "2d6+4", damageType: "slashing" },
+      { name: "Charge", kind: "bonusAction", summary: "Moves up to half its Speed straight toward an enemy it can see." }
+    ]
+  },
+  "red-dragon-wyrmling": {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium",
+    creatureType: "Dragon (Chromatic)",
+    alignment: "Chaotic Evil",
+    armorClass: 17,
+    initiative: 2,
+    hitPoints: 75,
+    hitDice: "10d8+30",
+    speed: "30 ft., Climb 30 ft., Fly 60 ft.",
+    challengeRating: "4",
+    xp: 1100,
+    proficiencyBonus: 2,
+    abilities: { strength: 19, dexterity: 10, constitution: 17, intelligence: 12, wisdom: 11, charisma: 15 },
+    saves: { strength: 4, dexterity: 2, constitution: 3, intelligence: 1, wisdom: 2, charisma: 2 },
+    skills: { perception: 4, stealth: 2 },
+    senses: ["Blindsight 10 ft.", "Darkvision 60 ft.", "Passive Perception 14"],
+    languages: ["Draconic"],
+    traits: [{ name: "Fire Immunity", summary: "Immune to Fire damage." }],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two Rend attacks." },
+      { name: "Rend", kind: "action", attackBonus: 6, range: "reach 5 ft.", damageFormula: "1d10+4+1d6", damageType: "slashing/fire" },
+      { name: "Fire Breath", kind: "action", range: "15-foot cone", damageFormula: "7d6", damageType: "fire", save: { ability: "dexterity", dc: 13, success: "half" }, summary: "Recharge 5-6." }
+    ]
+  },
+  "young-red-dragon": {
+    source: DND_5E_SRD_VERSION,
+    size: "Large",
+    creatureType: "Dragon (Chromatic)",
+    alignment: "Chaotic Evil",
+    armorClass: 18,
+    initiative: 4,
+    hitPoints: 178,
+    hitDice: "17d10+85",
+    speed: "40 ft., Climb 40 ft., Fly 80 ft.",
+    challengeRating: "10",
+    xp: 5900,
+    proficiencyBonus: 4,
+    abilities: { strength: 23, dexterity: 10, constitution: 21, intelligence: 14, wisdom: 11, charisma: 19 },
+    saves: { strength: 6, dexterity: 4, constitution: 5, intelligence: 2, wisdom: 4, charisma: 4 },
+    skills: { perception: 8, stealth: 4 },
+    senses: ["Blindsight 30 ft.", "Darkvision 120 ft.", "Passive Perception 18"],
+    languages: ["Common", "Draconic"],
+    traits: [{ name: "Fire Immunity", summary: "Immune to Fire damage." }],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes three Rend attacks." },
+      { name: "Rend", kind: "action", attackBonus: 10, range: "reach 10 ft.", damageFormula: "2d6+6+1d6", damageType: "slashing/fire" },
+      { name: "Fire Breath", kind: "action", range: "30-foot cone", damageFormula: "16d6", damageType: "fire", save: { ability: "dexterity", dc: 17, success: "half" }, summary: "Recharge 5-6." }
+    ]
   },
   "tough-boss": {
     source: DND_5E_SRD_VERSION,
@@ -2858,10 +3072,19 @@ export function dnd5eSrdEncounterThreats(): EncounterThreat[] {
     dnd5eSrdMonsterThreat("bandit", "Bandit", "skirmisher", "Low-CR humanoid threat for urban, roadside, and pirate encounters."),
     dnd5eSrdMonsterThreat("goblin-warrior", "Goblin Warrior", "skirmisher", "Low-level goblinoid attacker with stealth and bonus-action escape pressure."),
     { ...dnd5eSrdMonsterThreat("goblin-warrior", "Goblin Minion", "minion", "Backward-compatible goblin threat alias for existing encounter drafts."), id: "goblin-minion" },
+    dnd5eSrdMonsterThreat("skeleton", "Skeleton", "undead", "Low-CR undead archer or melee guard with Bludgeoning vulnerability."),
+    dnd5eSrdMonsterThreat("zombie", "Zombie", "undead", "Slow low-CR undead threat with Undead Fortitude."),
+    dnd5eSrdMonsterThreat("wolf", "Wolf", "beast", "Pack-tactics beast threat for wilderness encounters."),
+    dnd5eSrdMonsterThreat("dire-wolf", "Dire Wolf", "beast", "Large pack hunter with stronger bite and prone rider."),
     dnd5eSrdMonsterThreat("tough", "Tough", "brute", "Durable low-level humanoid threat that benefits from allies nearby."),
+    dnd5eSrdMonsterThreat("ogre", "Ogre", "giant", "Large CR 2 giant with heavy melee and javelin pressure."),
     dnd5eSrdMonsterThreat("goblin-boss", "Goblin Boss", "leader", "Command threat for low-level SRD encounters with multiattack and ally redirection."),
     dnd5eSrdMonsterThreat("hobgoblin-captain", "Hobgoblin Captain", "captain", "Disciplined martial SRD threat for organized goblinoid forces."),
-    dnd5eSrdMonsterThreat("tough-boss", "Tough Boss", "boss", "Durable SRD boss threat for a resource-spending fight.")
+    dnd5eSrdMonsterThreat("owlbear", "Owlbear", "monstrosity", "Large CR 3 wilderness monster with two Rend attacks."),
+    dnd5eSrdMonsterThreat("red-dragon-wyrmling", "Red Dragon Wyrmling", "dragon", "Young chromatic dragon threat with Rend and Fire Breath."),
+    dnd5eSrdMonsterThreat("tough-boss", "Tough Boss", "boss", "Durable SRD boss threat for a resource-spending fight."),
+    dnd5eSrdMonsterThreat("troll", "Troll", "giant", "Regenerating CR 5 giant with multiattack and Acid/Fire counterplay."),
+    dnd5eSrdMonsterThreat("young-red-dragon", "Young Red Dragon", "dragon", "Large CR 10 chromatic dragon with high-XP encounter pressure and Fire Breath.")
   ];
 }
 

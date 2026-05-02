@@ -4247,10 +4247,16 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(dndThreats.statusCode).toBe(200);
+      expect(dndThreats.json().map((threat: { id: string }) => threat.id)).toEqual(
+        expect.arrayContaining(["skeleton", "zombie", "wolf", "dire-wolf", "ogre", "owlbear", "red-dragon-wyrmling", "troll", "young-red-dragon"])
+      );
       expect(dndThreats.json()).toEqual(
         expect.arrayContaining([
+          expect.objectContaining({ id: "skeleton", budget: 50, challengeRating: "1/4", data: expect.objectContaining({ actions: expect.arrayContaining([expect.objectContaining({ name: "Shortsword", attackBonus: 5 })]) }) }),
+          expect.objectContaining({ id: "ogre", budget: 450, challengeRating: "2", data: expect.objectContaining({ actions: expect.arrayContaining([expect.objectContaining({ name: "Greatclub", damageFormula: "2d8+4" })]) }) }),
           expect.objectContaining({ id: "goblin-boss", budget: 200, challengeRating: "1", data: expect.objectContaining({ armorClass: 17, hitPoints: 21, xp: 200 }) }),
-          expect.objectContaining({ id: "tough-boss", budget: 1100, challengeRating: "4", data: expect.objectContaining({ actions: expect.arrayContaining([expect.objectContaining({ name: "Warhammer" })]) }) })
+          expect.objectContaining({ id: "tough-boss", budget: 1100, challengeRating: "4", data: expect.objectContaining({ actions: expect.arrayContaining([expect.objectContaining({ name: "Warhammer" })]) }) }),
+          expect.objectContaining({ id: "young-red-dragon", budget: 5900, challengeRating: "10", data: expect.objectContaining({ armorClass: 18, hitPoints: 178, actions: expect.arrayContaining([expect.objectContaining({ name: "Fire Breath", damageFormula: "16d6", save: { ability: "dexterity", dc: 17, success: "half" } })]) }) })
         ])
       );
 
@@ -4272,6 +4278,22 @@ describe("api", () => {
         difficultyBudgets: { easy: 50, standard: 75, hard: 100 },
         threats: [expect.objectContaining({ id: "goblin-warrior", count: 2, budgetEach: 50, budgetTotal: 100, challengeRating: "1/4" })]
       });
+      const dragonEncounterPlan = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/encounter-plan",
+        headers: authHeaders,
+        payload: {
+          partyActorIds: [cleric.json().actor.id],
+          threats: [{ id: "young-red-dragon", count: 1 }]
+        }
+      });
+      expect(dragonEncounterPlan.statusCode).toBe(200);
+      expect(dragonEncounterPlan.json().plan).toMatchObject({
+        systemId: "dnd-5e-srd",
+        threatBudget: 5900,
+        difficulty: "deadly",
+        threats: [expect.objectContaining({ id: "young-red-dragon", count: 1, budgetEach: 5900, budgetTotal: 5900, challengeRating: "10" })]
+      });
 
       const monster = await app.inject({
         method: "POST",
@@ -4287,6 +4309,22 @@ describe("api", () => {
           expect.objectContaining({ id: "monster-scimitar-attack", label: "Scimitar Attack", formula: "1d20+4" }),
           expect.objectContaining({ id: "monster-scimitar-damage", label: "Scimitar Damage", formula: "1d6+2" }),
           expect.objectContaining({ id: "monster-shortbow-attack", label: "Shortbow Attack", formula: "1d20+4" })
+        ])
+      );
+      const dragonMonster = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters",
+        headers: authHeaders,
+        payload: { threatId: "young-red-dragon", name: "SRD Young Red Dragon" }
+      });
+      expect(dragonMonster.statusCode).toBe(200);
+      expect(dragonMonster.json().actor).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", type: "monster", name: "SRD Young Red Dragon" }));
+      expect(dragonMonster.json().actor.data).toEqual(expect.objectContaining({ hp: { current: 178, max: 178 }, armorClass: 18, challengeRating: "10", xp: 5900 }));
+      expect(dragonMonster.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+10" }),
+          expect.objectContaining({ id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+6+1d6" }),
+          expect.objectContaining({ id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "16d6" })
         ])
       );
 

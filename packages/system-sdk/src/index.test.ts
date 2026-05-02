@@ -1785,10 +1785,14 @@ describe("dnd 5.5e srd rules", () => {
     expect((advanced.attributes as Record<string, number>).wisdom).toBe(17);
     expect(applyDnd5eSrdRest(srdActor, "long")).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd" }));
     expect(dnd5eSrdEncounterThreats().map((threat) => threat.id)).toContain("goblin-minion");
+    expect(dnd5eSrdEncounterThreats().map((threat) => threat.id)).toEqual(expect.arrayContaining(["skeleton", "zombie", "wolf", "dire-wolf", "ogre", "owlbear", "red-dragon-wyrmling", "troll", "young-red-dragon"]));
     expect(dnd5eSrdEncounterThreats()).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ id: "skeleton", budget: 50, challengeRating: "1/4", data: expect.objectContaining({ armorClass: 14, hitPoints: 13, actions: expect.arrayContaining([expect.objectContaining({ name: "Shortsword", attackBonus: 5 })]) }) }),
+        expect.objectContaining({ id: "ogre", budget: 450, challengeRating: "2", data: expect.objectContaining({ armorClass: 11, hitPoints: 68, actions: expect.arrayContaining([expect.objectContaining({ name: "Greatclub", damageFormula: "2d8+4" })]) }) }),
         expect.objectContaining({ id: "goblin-boss", budget: 200, challengeRating: "1", data: expect.objectContaining({ armorClass: 17, hitPoints: 21, xp: 200 }) }),
-        expect.objectContaining({ id: "tough-boss", budget: 1100, challengeRating: "4", data: expect.objectContaining({ actions: expect.arrayContaining([expect.objectContaining({ name: "Warhammer" })]) }) })
+        expect.objectContaining({ id: "tough-boss", budget: 1100, challengeRating: "4", data: expect.objectContaining({ actions: expect.arrayContaining([expect.objectContaining({ name: "Warhammer" })]) }) }),
+        expect.objectContaining({ id: "young-red-dragon", budget: 5900, challengeRating: "10", data: expect.objectContaining({ armorClass: 18, hitPoints: 178, actions: expect.arrayContaining([expect.objectContaining({ name: "Fire Breath", damageFormula: "16d6", save: { ability: "dexterity", dc: 17, success: "half" } })]) }) })
       ])
     );
     expect(dnd5eSrdEncounterXpBudgets([{ ...srdActor, data: { ...srdActor.data, level: 2 } }])).toEqual({ easy: 100, standard: 150, hard: 200 });
@@ -1799,6 +1803,14 @@ describe("dnd 5.5e srd rules", () => {
       difficulty: "hard",
       difficultyBudgets: { easy: 100, standard: 150, hard: 200 },
       threats: [expect.objectContaining({ id: "goblin-boss", budgetEach: 200, budgetTotal: 200, challengeRating: "1" })]
+    });
+    expect(dnd5eSrdEncounterPlan([{ ...srdActor, data: { ...srdActor.data, level: 10 } }], [{ id: "young-red-dragon", count: 1 }])).toMatchObject({
+      systemId: "dnd-5e-srd",
+      partyRating: 3100,
+      threatBudget: 5900,
+      difficulty: "deadly",
+      difficultyBudgets: { easy: 1600, standard: 2300, hard: 3100 },
+      threats: [expect.objectContaining({ id: "young-red-dragon", budgetEach: 5900, budgetTotal: 5900, challengeRating: "10" })]
     });
     const goblinBossActor: Actor = {
       ...srdActor,
@@ -1813,6 +1825,20 @@ describe("dnd 5.5e srd rules", () => {
         { id: "monster-scimitar-damage", label: "Scimitar Damage", formula: "1d6+2" },
         { id: "monster-shortbow-attack", label: "Shortbow Attack", formula: "1d20+4" },
         { id: "monster-shortbow-damage", label: "Shortbow Damage", formula: "1d6+2" }
+      ])
+    );
+    const youngRedDragonActor: Actor = {
+      ...srdActor,
+      type: "monster",
+      name: "Young Red Dragon",
+      data: dnd5eSrdMonsterActorData("young-red-dragon")!
+    };
+    expect(youngRedDragonActor.data).toEqual(expect.objectContaining({ hp: { current: 178, max: 178 }, armorClass: 18, challengeRating: "10", xp: 5900 }));
+    expect(dnd5eSrdSheet(youngRedDragonActor, []).quickRolls).toEqual(
+      expect.arrayContaining([
+        { id: "monster-rend-attack", label: "Rend Attack", formula: "1d20+10" },
+        { id: "monster-rend-damage", label: "Rend Damage", formula: "2d6+6+1d6" },
+        { id: "monster-fire-breath-damage", label: "Fire Breath Damage", formula: "16d6" }
       ])
     );
 
