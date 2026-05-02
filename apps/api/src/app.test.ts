@@ -3197,7 +3197,7 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(templates.statusCode).toBe(200);
-      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "wizard", "rogue"]);
+      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "druid", "wizard", "rogue"]);
 
       const origins = await app.inject({
         method: "GET",
@@ -3491,6 +3491,75 @@ describe("api", () => {
           expect.objectContaining({ id: "feature-divine-smite-damage", formula: "2d8", metadata: expect.objectContaining({ freeCastResource: "paladinsSmite" }) }),
           expect.objectContaining({ id: "feature-faithful-steed", formula: "0", metadata: expect.objectContaining({ resource: "faithfulSteed" }) }),
           expect.objectContaining({ label: "Longsword Damage", metadata: { attacksPerAction: 2, feature: "Extra Attack" } })
+        ])
+      );
+
+      const druid = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "druid", name: "SRD Druid", ownerUserId: "usr_demo_player" }
+      });
+      expect(druid.statusCode).toBe(200);
+      expect(druid.json().actor.data).toEqual(
+        expect.objectContaining({
+          features: ["Spellcasting", "Druidic", "Primal Order"],
+          hitDice: { current: 1, max: 1, size: "d8" },
+          resources: {},
+          saveProficiencies: ["intelligence", "wisdom"],
+          skillProficiencies: ["nature", "survival"],
+          spellSlots: { level1: { current: 2, max: 2, recovery: "long" } }
+        })
+      );
+      expect(druid.json().sheet.inventory.map((item: { name: string }) => item.name)).toEqual(["Quarterstaff"]);
+      expect(druid.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Cure Wounds"]);
+      expect(druid.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "save-wisdom", formula: "1d20+5" }),
+          expect.objectContaining({ id: "skill-nature", formula: "1d20+3" }),
+          expect.objectContaining({ id: "skill-survival", formula: "1d20+5" }),
+          expect.objectContaining({ label: "Cure Wounds Healing", formula: "2d8+3" })
+        ])
+      );
+
+      const levelFiveDruid = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "druid", name: "SRD Level Five Druid", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFiveDruid.statusCode).toBe(200);
+      let levelFiveDruidAdvance = levelFiveDruid;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFiveDruidAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFiveDruidAdvance.statusCode).toBe(200);
+      }
+      expect(levelFiveDruidAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Wild Shape", "Wild Companion", "Druid Subclass", "Wild Resurgence"]),
+          resources: {
+            wildShape: { current: 2, max: 2, recovery: "short" },
+            wildResurgence: { current: 1, max: 1, recovery: "long" }
+          },
+          spellSlots: {
+            level1: { current: 2, max: 4, recovery: "long" },
+            level2: { current: 2, max: 3, recovery: "long" },
+            level3: { current: 2, max: 2, recovery: "long" }
+          }
+        })
+      );
+      expect(levelFiveDruidAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-wild-shape", formula: "0", metadata: expect.objectContaining({ resource: "wildShape", maxUses: 2, temporaryHitPoints: 5, durationHours: 2 }) }),
+          expect.objectContaining({ id: "feature-wild-companion", formula: "0", metadata: expect.objectContaining({ spell: "Find Familiar", resource: "wildShape" }) }),
+          expect.objectContaining({ id: "feature-wild-resurgence-wild-shape", formula: "0", metadata: expect.objectContaining({ restores: "wildShape", cost: "spell slot" }) }),
+          expect.objectContaining({ id: "feature-wild-resurgence-spell-slot", formula: "0", metadata: expect.objectContaining({ resource: "wildResurgence", restores: "level1 spell slot" }) })
         ])
       );
 
@@ -4088,6 +4157,120 @@ describe("api", () => {
       expect(paladinLongRest.json().actor.data.spellSlots).toEqual({
         level1: { current: 4, max: 4, recovery: "long" },
         level2: { current: 2, max: 2, recovery: "long" }
+      });
+
+      const wildShape = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-wild-shape", consumeResources: true }
+      });
+      expect(wildShape.statusCode).toBe(200);
+      expect(wildShape.json().roll.formula).toBe("0");
+      expect(wildShape.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-wild-shape", metadata: expect.objectContaining({ resource: "wildShape", temporaryHitPoints: 5 }) }));
+      expect(wildShape.json().usage.consumed).toEqual([{ type: "resource", key: "wildShape", label: "Wild Shape", amount: 1, remaining: 1 }]);
+
+      const wildCompanion = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-wild-companion", consumeResources: true }
+      });
+      expect(wildCompanion.statusCode).toBe(200);
+      expect(wildCompanion.json().usage).toEqual(expect.objectContaining({ slotLevel: 1 }));
+      expect(wildCompanion.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 1 }]);
+
+      const wildCompanionWithShape = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-wild-companion", useFreeResource: true, consumeResources: true }
+      });
+      expect(wildCompanionWithShape.statusCode).toBe(200);
+      expect(wildCompanionWithShape.json().usage.consumed).toEqual([{ type: "resource", key: "wildShape", label: "Wild Shape", amount: 1, remaining: 0 }]);
+
+      const depletedWildShape = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-wild-shape", consumeResources: true }
+      });
+      expect(depletedWildShape.statusCode).toBe(409);
+      expect(depletedWildShape.json().message).toContain("Insufficient wild shape");
+
+      const wildShapeResurgence = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-wild-resurgence-wild-shape", consumeResources: true }
+      });
+      expect(wildShapeResurgence.statusCode).toBe(200);
+      expect(wildShapeResurgence.json().usage).toEqual(expect.objectContaining({ slotLevel: 1 }));
+      expect(wildShapeResurgence.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }]);
+      expect(store.state.actors.find((actor) => actor.id === levelFiveDruid.json().actor.id)?.data.resources).toEqual({
+        wildShape: { current: 1, max: 2, recovery: "short" },
+        wildResurgence: { current: 1, max: 1, recovery: "long" }
+      });
+
+      const storedLevelFiveDruid = store.state.actors.find((actor) => actor.id === levelFiveDruid.json().actor.id)!;
+      storedLevelFiveDruid.data = {
+        ...storedLevelFiveDruid.data,
+        resources: {
+          wildShape: { current: 1, max: 2, recovery: "short" },
+          wildResurgence: { current: 1, max: 1, recovery: "long" }
+        },
+        spellSlots: {
+          level1: { current: 3, max: 4, recovery: "long" },
+          level2: { current: 2, max: 3, recovery: "long" },
+          level3: { current: 2, max: 2, recovery: "long" }
+        }
+      };
+      const wildSpellSlot = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-wild-resurgence-spell-slot", consumeResources: true }
+      });
+      expect(wildSpellSlot.statusCode).toBe(200);
+      expect(wildSpellSlot.json().usage).toEqual(expect.objectContaining({ slotLevel: 1 }));
+      expect(wildSpellSlot.json().usage.consumed).toEqual([
+        { type: "resource", key: "wildShape", label: "Wild Shape", amount: 1, remaining: 0 },
+        { type: "resource", key: "wildResurgence", label: "Wild Resurgence", amount: 1, remaining: 0 }
+      ]);
+      expect(store.state.actors.find((actor) => actor.id === levelFiveDruid.json().actor.id)?.data.spellSlots).toEqual({
+        level1: { current: 4, max: 4, recovery: "long" },
+        level2: { current: 2, max: 3, recovery: "long" },
+        level3: { current: 2, max: 2, recovery: "long" }
+      });
+
+      const druidShortRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short" }
+      });
+      expect(druidShortRest.statusCode).toBe(200);
+      expect(druidShortRest.json().actor.data.resources).toEqual({
+        wildShape: { current: 1, max: 2, recovery: "short" },
+        wildResurgence: { current: 0, max: 1, recovery: "long" }
+      });
+      expect(druidShortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ wildShape: 1 }));
+
+      const druidLongRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveDruid.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "long" }
+      });
+      expect(druidLongRest.statusCode).toBe(200);
+      expect(druidLongRest.json().actor.data.resources).toEqual({
+        wildShape: { current: 2, max: 2, recovery: "short" },
+        wildResurgence: { current: 1, max: 1, recovery: "long" }
+      });
+      expect(druidLongRest.json().actor.data.spellSlots).toEqual({
+        level1: { current: 4, max: 4, recovery: "long" },
+        level2: { current: 3, max: 3, recovery: "long" },
+        level3: { current: 2, max: 2, recovery: "long" }
       });
 
       const bardicInspiration = await app.inject({

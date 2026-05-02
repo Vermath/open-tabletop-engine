@@ -192,6 +192,10 @@ export const DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID = "feature-font-of-inspirati
 export const DND_5E_SRD_LAY_ON_HANDS_ROLL_ID = "feature-lay-on-hands-healing";
 export const DND_5E_SRD_DIVINE_SMITE_ROLL_ID = "feature-divine-smite-damage";
 export const DND_5E_SRD_FAITHFUL_STEED_ROLL_ID = "feature-faithful-steed";
+export const DND_5E_SRD_WILD_SHAPE_ROLL_ID = "feature-wild-shape";
+export const DND_5E_SRD_WILD_COMPANION_ROLL_ID = "feature-wild-companion";
+export const DND_5E_SRD_WILD_RESURGENCE_WILD_SHAPE_ROLL_ID = "feature-wild-resurgence-wild-shape";
+export const DND_5E_SRD_WILD_RESURGENCE_SPELL_SLOT_ROLL_ID = "feature-wild-resurgence-spell-slot";
 export const DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID = "feature-divine-spark-healing";
 export const DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID = "feature-divine-spark-damage";
 export const DND_5E_SRD_TURN_UNDEAD_ROLL_ID = "feature-turn-undead";
@@ -602,6 +606,38 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       formula: "0",
       metadata: { resource: "faithfulSteed", spell: "Find Steed", freeCasting: true, recovery: "long", slotLevel: 2 }
     });
+  }
+  if (dnd5eSrdHasWildShape(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_WILD_SHAPE_ROLL_ID,
+      label: "Wild Shape",
+      formula: "0",
+      metadata: dnd5eSrdWildShapeMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasWildCompanion(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_WILD_COMPANION_ROLL_ID,
+      label: "Wild Companion",
+      formula: "0",
+      metadata: { spell: "Find Familiar", action: "Magic", cost: ["spell slot", "Wild Shape"], resource: "wildShape", familiarType: "Fey", duration: "until Long Rest", materialComponents: false }
+    });
+  }
+  if (dnd5eSrdHasWildResurgence(actor)) {
+    rolls.push(
+      {
+        id: DND_5E_SRD_WILD_RESURGENCE_WILD_SHAPE_ROLL_ID,
+        label: "Wild Resurgence: Wild Shape",
+        formula: "0",
+        metadata: { restores: "wildShape", cost: "spell slot", limit: "once on each of your turns when no Wild Shape uses remain" }
+      },
+      {
+        id: DND_5E_SRD_WILD_RESURGENCE_SPELL_SLOT_ROLL_ID,
+        label: "Wild Resurgence: Spell Slot",
+        formula: "0",
+        metadata: { resource: "wildResurgence", cost: "Wild Shape", restores: "level1 spell slot", recovery: "long" }
+      }
+    );
   }
   if (dnd5eSrdHasChannelDivinity(actor)) {
     const saveDc = dnd5eSrdSpellSaveDc(actor);
@@ -1245,6 +1281,34 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         feats: ["Savage Attacker"]
       },
       items: [{ entryId: "longsword" }, { entryId: "cure-wounds" }]
+    },
+    {
+      id: "druid",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Druid",
+      summary: "SRD 5.2.1 primal spellcaster with Wild Shape and nature magic.",
+      actorType: "character",
+      data: {
+        ruleset: DND_5E_SRD_VERSION,
+        level: 1,
+        class: "Druid",
+        species: "Human",
+        background: "Sage",
+        proficiencyBonus: 2,
+        hp: { current: 10, max: 10 },
+        attributes: { strength: 8, dexterity: 14, constitution: 14, intelligence: 12, wisdom: 16, charisma: 10 },
+        hitDice: { current: 1, max: 1, size: "d8" },
+        saveProficiencies: ["intelligence", "wisdom"],
+        skillProficiencies: ["nature", "survival"],
+        toolProficiencies: ["calligraphers-supplies"],
+        currency: { gp: 50, sp: 0, cp: 0 },
+        resources: {},
+        spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
+        conditions: [],
+        features: ["Spellcasting", "Druidic", "Primal Order"],
+        feats: ["Magic Initiate"]
+      },
+      items: [{ entryId: "cure-wounds" }, { entryId: "quarterstaff" }]
     },
     {
       id: "wizard",
@@ -1937,6 +2001,12 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId === DND_5E_SRD_LAY_ON_HANDS_ROLL_ID) return dnd5eSrdLayOnHandsFormula(actor, options.resourceAmount);
   if (rollId === DND_5E_SRD_DIVINE_SMITE_ROLL_ID) return dnd5eSrdDivineSmiteFormula(actor, options.useFreeResource ? 1 : options.spellSlotLevel);
   if (rollId === DND_5E_SRD_FAITHFUL_STEED_ROLL_ID) return "0";
+  if (
+    rollId === DND_5E_SRD_WILD_SHAPE_ROLL_ID ||
+    rollId === DND_5E_SRD_WILD_COMPANION_ROLL_ID ||
+    rollId === DND_5E_SRD_WILD_RESURGENCE_WILD_SHAPE_ROLL_ID ||
+    rollId === DND_5E_SRD_WILD_RESURGENCE_SPELL_SLOT_ROLL_ID
+  ) return "0";
   if (rollId === DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID || rollId === DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID) return dnd5eSrdDivineSparkFormula(actor);
   if (rollId === DND_5E_SRD_TURN_UNDEAD_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID) return dnd5eSrdSearUndeadFormula(actor);
@@ -2105,6 +2175,90 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
       rollId,
       consumed: [result.consumed],
       data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_WILD_SHAPE_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Druid";
+    const level = numericValue(actor.data.level, 1);
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+    const result = consumeResourcePool(resources, "wildShape", 1, "Wild Shape", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_WILD_COMPANION_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Druid";
+    const level = numericValue(actor.data.level, 1);
+    if (options.useFreeResource) {
+      const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+      const result = consumeResourcePool(resources, "wildShape", 1, "Wild Shape", "resource");
+      return {
+        systemId: DND_5E_SRD_SYSTEM_ID,
+        actorId: actor.id,
+        rollId,
+        consumed: [result.consumed],
+        data: { ...actor.data, resources: result.pools },
+        items: []
+      };
+    }
+    const slotLevel = spellActionSlotLevel(1, options.spellSlotLevel);
+    const spellSlots = normalizeResourcePools(actor.data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true });
+    const result = consumeResourcePool(spellSlots, `level${slotLevel}`, 1, `Level ${slotLevel} Spell Slot`, "spellSlot");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      slotLevel,
+      consumed: [result.consumed],
+      data: { ...actor.data, spellSlots: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_WILD_RESURGENCE_WILD_SHAPE_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Druid";
+    const level = numericValue(actor.data.level, 1);
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+    const wildShape = resources.wildShape;
+    if (!wildShape || wildShape.max <= 0) throw new Error("Wild Shape is unavailable");
+    if (wildShape.current > 0) throw new Error("Wild Shape uses remain");
+    const slotLevel = spellActionSlotLevel(1, options.spellSlotLevel);
+    const spellSlots = normalizeResourcePools(actor.data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true });
+    const result = consumeResourcePool(spellSlots, `level${slotLevel}`, 1, `Level ${slotLevel} Spell Slot`, "spellSlot");
+    resources.wildShape = { ...wildShape, current: Math.min(wildShape.max, wildShape.current + 1) };
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      slotLevel,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources, spellSlots: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_WILD_RESURGENCE_SPELL_SLOT_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Druid";
+    const level = numericValue(actor.data.level, 1);
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+    const spellSlots = normalizeResourcePools(actor.data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true });
+    const levelOne = spellSlots.level1;
+    if (!levelOne) throw new Error("Level 1 Spell Slot is unavailable");
+    if (levelOne.current >= levelOne.max) throw new Error("Level 1 Spell Slot is already full");
+    const wildShapeResult = consumeResourcePool(resources, "wildShape", 1, "Wild Shape", "resource");
+    const resurgenceResult = consumeResourcePool(wildShapeResult.pools, "wildResurgence", 1, "Wild Resurgence", "resource");
+    spellSlots.level1 = { ...levelOne, current: Math.min(levelOne.max, levelOne.current + 1) };
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      slotLevel: 1,
+      consumed: [wildShapeResult.consumed, resurgenceResult.consumed],
+      data: { ...actor.data, resources: resurgenceResult.pools, spellSlots },
       items: []
     };
   }
@@ -3219,6 +3373,21 @@ function dnd5eSrdHasFaithfulSteed(actor: Actor): boolean {
   return normalizeStringArray(actor.data.features).includes("Faithful Steed") || "faithfulSteed" in recordValue(actor.data.resources);
 }
 
+function dnd5eSrdHasWildShape(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Druid" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  return normalizeStringArray(actor.data.features).includes("Wild Shape") || "wildShape" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasWildCompanion(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Druid" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  return normalizeStringArray(actor.data.features).includes("Wild Companion");
+}
+
+function dnd5eSrdHasWildResurgence(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Druid" && Math.floor(numericValue(actor.data.level, 1)) >= 5) return true;
+  return normalizeStringArray(actor.data.features).includes("Wild Resurgence") || "wildResurgence" in recordValue(actor.data.resources);
+}
+
 function dnd5eSrdHasSneakAttack(actor: Actor): boolean {
   if (stringValue(actor.data.class) === "Rogue") return true;
   return normalizeStringArray(actor.data.features).includes("Sneak Attack");
@@ -3250,6 +3419,7 @@ function dnd5eSrdApplyClassFeatures(features: string[], className: string, level
   if (className === "Bard") return [...new Set([...features, ...dnd5eSrdBardFeaturesForLevel(level)])];
   if (className === "Cleric") return [...new Set([...features, ...dnd5eSrdClericFeaturesForLevel(level)])];
   if (className === "Paladin") return [...new Set([...features, ...dnd5eSrdPaladinFeaturesForLevel(level)])];
+  if (className === "Druid") return [...new Set([...features, ...dnd5eSrdDruidFeaturesForLevel(level)])];
   if (className === "Wizard") return [...new Set([...features, ...dnd5eSrdWizardFeaturesForLevel(level)])];
   if (className === "Rogue") return [...new Set([...features, ...dnd5eSrdRogueFeaturesForLevel(level)])];
   return features;
@@ -3304,6 +3474,20 @@ function dnd5eSrdPaladinFeaturesForLevel(level: number): string[] {
   if (level >= 3) features.push("Channel Divinity", "Paladin Subclass");
   if (level >= 4) features.push("Ability Score Improvement");
   if (level >= 5) features.push("Extra Attack", "Faithful Steed");
+  return features;
+}
+
+function dnd5eSrdDruidFeaturesForLevel(level: number): string[] {
+  const features = ["Spellcasting", "Druidic", "Primal Order"];
+  if (level >= 2) features.push("Wild Shape", "Wild Companion");
+  if (level >= 3) features.push("Druid Subclass");
+  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 5) features.push("Wild Resurgence");
+  if (level >= 7) features.push("Elemental Fury");
+  if (level >= 15) features.push("Improved Elemental Fury");
+  if (level >= 18) features.push("Beast Spells");
+  if (level >= 19) features.push("Epic Boon");
+  if (level >= 20) features.push("Archdruid");
   return features;
 }
 
@@ -3423,6 +3607,22 @@ function dnd5eSrdDivineSmiteMetadata(actor: Actor): Record<string, unknown> {
     creatureTypeBonus: { types: ["Fiend", "Undead"], formula: "1d8" },
     freeCastResource: dnd5eSrdHasPaladinsSmite(actor) ? "paladinsSmite" : undefined,
     recovery: "long"
+  };
+}
+
+function dnd5eSrdWildShapeMetadata(actor: Actor): Record<string, unknown> {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  return {
+    resource: "wildShape",
+    action: "Bonus Action",
+    formType: "Beast",
+    maxUses: dnd5eSrdWildShapeMax(level),
+    recovery: { short: 1, long: "all" },
+    durationHours: Math.max(1, Math.floor(level / 2)),
+    temporaryHitPoints: level,
+    knownForms: dnd5eSrdWildShapeKnownForms(level),
+    maxChallengeRating: dnd5eSrdWildShapeMaxChallengeRating(level),
+    flySpeedAllowed: level >= 8
   };
 }
 
@@ -3611,6 +3811,7 @@ function dnd5eSrdShortRestLimitedResources(actor: Actor): Record<string, number>
   if (dnd5eSrdHasSecondWind(actor) || "secondWind" in resources) limited.secondWind = 1;
   if (dnd5eSrdHasRage(actor) || "rage" in resources) limited.rage = 1;
   if (dnd5eSrdHasChannelDivinity(actor) || "channelDivinity" in resources) limited.channelDivinity = 1;
+  if (dnd5eSrdHasWildShape(actor) || "wildShape" in resources) limited.wildShape = 1;
   return limited;
 }
 
@@ -3761,6 +3962,7 @@ function defaultGenericFantasySpellSlots(className: string, level: number): Reco
 function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Bard") return "charisma";
   if (className === "Cleric") return "wisdom";
+  if (className === "Druid") return "wisdom";
   if (className === "Paladin") return "charisma";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";
@@ -3772,6 +3974,7 @@ function dnd5eSrdHitDieSize(className: string): string {
   if (className === "Wizard") return "d6";
   if (className === "Bard") return "d8";
   if (className === "Cleric") return "d8";
+  if (className === "Druid") return "d8";
   if (className === "Rogue") return "d8";
   return "d10";
 }
@@ -3821,6 +4024,14 @@ function defaultDnd5eSrdResources(className: string, level = 1, data: Record<str
     if (normalized >= 5) resources.faithfulSteed = { current: 1, max: 1, recovery: "long" };
     return resources;
   }
+  if (className === "Druid") {
+    const normalized = Math.max(1, Math.floor(level));
+    const resources: Record<string, Record<string, unknown>> = {};
+    const wildShapeMax = dnd5eSrdWildShapeMax(normalized);
+    if (wildShapeMax > 0) resources.wildShape = { current: wildShapeMax, max: wildShapeMax, recovery: "short" };
+    if (normalized >= 5) resources.wildResurgence = { current: 1, max: 1, recovery: "long" };
+    return resources;
+  }
   if (className === "Wizard") {
     return { arcaneRecovery: { current: 1, max: 1, recovery: "long" } };
   }
@@ -3865,9 +4076,32 @@ function dnd5eSrdLayOnHandsMax(level: number): number {
   return Math.max(1, Math.floor(level)) * 5;
 }
 
+function dnd5eSrdWildShapeMax(level: number): number {
+  const normalized = Math.max(1, Math.floor(level));
+  if (normalized >= 17) return 4;
+  if (normalized >= 6) return 3;
+  if (normalized >= 2) return 2;
+  return 0;
+}
+
+function dnd5eSrdWildShapeKnownForms(level: number): number {
+  const normalized = Math.max(1, Math.floor(level));
+  if (normalized >= 8) return 8;
+  if (normalized >= 4) return 6;
+  if (normalized >= 2) return 4;
+  return 0;
+}
+
+function dnd5eSrdWildShapeMaxChallengeRating(level: number): string {
+  const normalized = Math.max(1, Math.floor(level));
+  if (normalized >= 8) return "1";
+  if (normalized >= 4) return "1/2";
+  return "1/4";
+}
+
 function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
   if (className === "Paladin") return defaultDnd5eSrdHalfCasterSpellSlots(level);
-  if (className !== "Bard" && className !== "Cleric" && className !== "Wizard") return {};
+  if (className !== "Bard" && className !== "Cleric" && className !== "Druid" && className !== "Wizard") return {};
   const slots: Record<string, Record<string, unknown>> = {
     level1: { current: Math.min(4, 2 + Math.max(0, level - 1)), max: Math.min(4, 2 + Math.max(0, level - 1)), recovery: "long" }
   };

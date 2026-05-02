@@ -1438,6 +1438,18 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
   if (dnd5eSrdHasFaithfulSteed(actor)) {
     options.push({ rollId: "feature-faithful-steed", label: "Faithful Steed", description: "Faithful Steed: free Find Steed casting; recovers on Long Rest" });
   }
+  if (dnd5eSrdHasWildShape(actor)) {
+    options.push({ rollId: "feature-wild-shape", label: "Wild Shape", description: `Wild Shape: spend one use; ${dnd5eSrdWildShapeDurationHours(actor)} hour form; regain one use on Short Rest` });
+  }
+  if (dnd5eSrdHasWildCompanion(actor)) {
+    options.push({ rollId: "feature-wild-companion", label: "Wild Companion", description: "Wild Companion: cast Find Familiar by spending a spell slot or Wild Shape" });
+  }
+  if (dnd5eSrdHasWildResurgence(actor)) {
+    options.push(
+      { rollId: "feature-wild-resurgence-wild-shape", label: "Wild Resurgence", description: "Wild Resurgence: spend a spell slot to regain one Wild Shape use when none remain" },
+      { rollId: "feature-wild-resurgence-spell-slot", label: "Wild Slot", description: "Wild Resurgence: spend Wild Shape to regain a level 1 spell slot once per Long Rest" }
+    );
+  }
   if (dnd5eSrdHasChannelDivinity(actor)) {
     const saveDc = dnd5eSrdSpellSaveDc(actor);
     const searUndead = dnd5eSrdHasSearUndead(actor) ? `; Sear ${dnd5eSrdSearUndeadFormula(actor)} radiant` : "";
@@ -1515,6 +1527,21 @@ function dnd5eSrdHasFaithfulSteed(actor: Actor): boolean {
   return (stringValue(actor.data.class) === "Paladin" && numericValue(actor.data.level, 1) >= 5) || features.includes("Faithful Steed") || "faithfulSteed" in recordValue(actor.data.resources);
 }
 
+function dnd5eSrdHasWildShape(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Druid" && numericValue(actor.data.level, 1) >= 2) || features.includes("Wild Shape") || "wildShape" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasWildCompanion(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Druid" && numericValue(actor.data.level, 1) >= 2) || features.includes("Wild Companion");
+}
+
+function dnd5eSrdHasWildResurgence(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Druid" && numericValue(actor.data.level, 1) >= 5) || features.includes("Wild Resurgence") || "wildResurgence" in recordValue(actor.data.resources);
+}
+
 function dnd5eSrdHasSneakAttack(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   return stringValue(actor.data.class) === "Rogue" || features.includes("Sneak Attack");
@@ -1590,6 +1617,10 @@ function dnd5eSrdDivineSmiteFormula(actor: Actor): string {
   return `${slotLevel + 1}d8`;
 }
 
+function dnd5eSrdWildShapeDurationHours(actor: Actor): number {
+  return Math.max(1, Math.floor(Math.max(1, numericValue(actor.data.level, 1)) / 2));
+}
+
 function dnd5eSrdSneakAttackFormula(actor: Actor): string {
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return `${Math.ceil(level / 2)}d6`;
@@ -1632,6 +1663,7 @@ function dnd5eSrdProficiencyBonus(actor: Actor): number {
 function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Bard") return "charisma";
   if (className === "Cleric") return "wisdom";
+  if (className === "Druid") return "wisdom";
   if (className === "Paladin") return "charisma";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";

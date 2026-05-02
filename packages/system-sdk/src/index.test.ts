@@ -234,6 +234,7 @@ describe("dnd 5.5e srd rules", () => {
     const bard = dnd5eSrdCharacterTemplate("bard");
     const wizard = dnd5eSrdCharacterTemplate("wizard");
     const paladin = dnd5eSrdCharacterTemplate("paladin");
+    const druid = dnd5eSrdCharacterTemplate("druid");
     const rogue = dnd5eSrdCharacterTemplate("rogue");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
@@ -264,6 +265,14 @@ describe("dnd 5.5e srd rules", () => {
     expect(paladin?.data.resources).toEqual({ layOnHands: { current: 5, max: 5, recovery: "long" } });
     expect(paladin?.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
     expect(paladin?.items.map((item) => item.entryId)).toEqual(["longsword", "cure-wounds"]);
+    expect(druid).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Druid" }));
+    expect(druid?.data.features).toEqual(["Spellcasting", "Druidic", "Primal Order"]);
+    expect(druid?.data.saveProficiencies).toEqual(["intelligence", "wisdom"]);
+    expect(druid?.data.skillProficiencies).toEqual(["nature", "survival"]);
+    expect(druid?.data.hitDice).toEqual({ current: 1, max: 1, size: "d8" });
+    expect(druid?.data.resources).toEqual({});
+    expect(druid?.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
+    expect(druid?.items.map((item) => item.entryId)).toEqual(["cure-wounds", "quarterstaff"]);
     expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
     expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
     expect(rogue?.data.features).toEqual(["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"]);
@@ -628,6 +637,53 @@ describe("dnd 5.5e srd rules", () => {
       ])
     );
     expect(dnd5eSrdActionFormula(levelFivePaladinActor, [], "feature-divine-smite-damage", { spellSlotLevel: 2 })).toBe("3d8");
+    const druidActor: Actor = { ...srdActor, data: { ...druid!.data } };
+    const druidCureWounds: Item = {
+      id: "itm_druid_cure_wounds",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: druidActor.id,
+      type: "spell",
+      name: "Cure Wounds",
+      data: { ...dnd5eSrdCompendiumEntry("cure-wounds")!.data, compendiumId: "cure-wounds" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(dnd5eSrdQuickRolls(druidActor, [druidCureWounds])).toEqual(
+      expect.arrayContaining([
+        { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },
+        { id: "skill-nature", label: "Nature Check", formula: "1d20+3" },
+        { id: "skill-survival", label: "Survival Check", formula: "1d20+5" },
+        { id: "spell-itm_druid_cure_wounds-healing", label: "Cure Wounds Healing", formula: "2d8+3" }
+      ])
+    );
+    let levelFiveDruidData = druidActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveDruidData = applyDnd5eSrdAdvancement({ ...druidActor, data: levelFiveDruidData }, "level-up");
+    }
+    const levelFiveDruidActor: Actor = { ...druidActor, data: levelFiveDruidData };
+    expect(levelFiveDruidData.features).toEqual(expect.arrayContaining(["Wild Shape", "Wild Companion", "Druid Subclass", "Wild Resurgence"]));
+    expect(levelFiveDruidData.resources).toEqual({
+      wildShape: { current: 2, max: 2, recovery: "short" },
+      wildResurgence: { current: 1, max: 1, recovery: "long" }
+    });
+    expect(levelFiveDruidData.spellSlots).toEqual({
+      level1: { current: 2, max: 4, recovery: "long" },
+      level2: { current: 2, max: 3, recovery: "long" },
+      level3: { current: 2, max: 2, recovery: "long" }
+    });
+    expect(dnd5eSrdQuickRolls(levelFiveDruidActor, [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-wild-shape", label: "Wild Shape", formula: "0", metadata: expect.objectContaining({ resource: "wildShape", maxUses: 2, knownForms: 6, maxChallengeRating: "1/2", temporaryHitPoints: 5 }) }),
+        expect.objectContaining({ id: "feature-wild-companion", label: "Wild Companion", formula: "0", metadata: expect.objectContaining({ spell: "Find Familiar", resource: "wildShape" }) }),
+        expect.objectContaining({ id: "feature-wild-resurgence-wild-shape", label: "Wild Resurgence: Wild Shape", formula: "0", metadata: expect.objectContaining({ restores: "wildShape", cost: "spell slot" }) }),
+        expect.objectContaining({ id: "feature-wild-resurgence-spell-slot", label: "Wild Resurgence: Spell Slot", formula: "0", metadata: expect.objectContaining({ resource: "wildResurgence", restores: "level1 spell slot" }) })
+      ])
+    );
+    expect(dnd5eSrdActionFormula(levelFiveDruidActor, [], "feature-wild-shape")).toBe("0");
+    expect(dnd5eSrdActionFormula(levelFiveDruidActor, [], "feature-wild-companion")).toBe("0");
+    expect(dnd5eSrdActionFormula(levelFiveDruidActor, [], "feature-wild-resurgence-wild-shape")).toBe("0");
+    expect(dnd5eSrdActionFormula(levelFiveDruidActor, [], "feature-wild-resurgence-spell-slot")).toBe("0");
     const rogueActor: Actor = { ...srdActor, data: { ...rogue!.data } };
     const rogueDagger: Item = {
       id: "itm_rogue_dagger",
@@ -889,6 +945,122 @@ describe("dnd 5.5e srd rules", () => {
     expect(paladinLongRest.data.spellSlots).toEqual({
       level1: { current: 4, max: 4, recovery: "long" },
       level2: { current: 2, max: 2, recovery: "long" }
+    });
+    const druidActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("druid")!.data } };
+    let levelFiveDruidData = druidActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveDruidData = applyDnd5eSrdAdvancement({ ...druidActor, data: levelFiveDruidData }, "level-up");
+    }
+    const levelFiveDruidActor: Actor = { ...druidActor, data: levelFiveDruidData };
+    expect(useDnd5eSrdAction(levelFiveDruidActor, [], "feature-wild-shape")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "wildShape", label: "Wild Shape", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({
+          resources: {
+            wildShape: { current: 1, max: 2, recovery: "short" },
+            wildResurgence: { current: 1, max: 1, recovery: "long" }
+          }
+        })
+      })
+    );
+    expect(useDnd5eSrdAction(levelFiveDruidActor, [], "feature-wild-companion")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 1,
+        consumed: [{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({
+          spellSlots: {
+            level1: { current: 1, max: 4, recovery: "long" },
+            level2: { current: 2, max: 3, recovery: "long" },
+            level3: { current: 2, max: 2, recovery: "long" }
+          }
+        })
+      })
+    );
+    expect(useDnd5eSrdAction(levelFiveDruidActor, [], "feature-wild-companion", { useFreeResource: true })).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "wildShape", label: "Wild Shape", amount: 1, remaining: 1 }]
+      })
+    );
+    expect(() =>
+      useDnd5eSrdAction({ ...levelFiveDruidActor, data: { ...levelFiveDruidData, resources: { wildShape: { current: 0, max: 2, recovery: "short" }, wildResurgence: { current: 1, max: 1, recovery: "long" } } } }, [], "feature-wild-shape")
+    ).toThrow("Insufficient wild shape");
+    expect(
+      useDnd5eSrdAction(
+        {
+          ...levelFiveDruidActor,
+          data: {
+            ...levelFiveDruidData,
+            resources: { wildShape: { current: 0, max: 2, recovery: "short" }, wildResurgence: { current: 1, max: 1, recovery: "long" } },
+            spellSlots: { level1: { current: 1, max: 4, recovery: "long" }, level2: { current: 2, max: 3, recovery: "long" }, level3: { current: 2, max: 2, recovery: "long" } }
+          }
+        },
+        [],
+        "feature-wild-resurgence-wild-shape"
+      )
+    ).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 1,
+        consumed: [{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }],
+        data: expect.objectContaining({
+          resources: {
+            wildShape: { current: 1, max: 2, recovery: "short" },
+            wildResurgence: { current: 1, max: 1, recovery: "long" }
+          }
+        })
+      })
+    );
+    expect(
+      useDnd5eSrdAction(
+        {
+          ...levelFiveDruidActor,
+          data: {
+            ...levelFiveDruidData,
+            resources: { wildShape: { current: 1, max: 2, recovery: "short" }, wildResurgence: { current: 1, max: 1, recovery: "long" } },
+            spellSlots: { level1: { current: 3, max: 4, recovery: "long" }, level2: { current: 2, max: 3, recovery: "long" }, level3: { current: 2, max: 2, recovery: "long" } }
+          }
+        },
+        [],
+        "feature-wild-resurgence-spell-slot"
+      )
+    ).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 1,
+        consumed: [
+          { type: "resource", key: "wildShape", label: "Wild Shape", amount: 1, remaining: 0 },
+          { type: "resource", key: "wildResurgence", label: "Wild Resurgence", amount: 1, remaining: 0 }
+        ],
+        data: expect.objectContaining({
+          resources: {
+            wildShape: { current: 0, max: 2, recovery: "short" },
+            wildResurgence: { current: 0, max: 1, recovery: "long" }
+          },
+          spellSlots: {
+            level1: { current: 4, max: 4, recovery: "long" },
+            level2: { current: 2, max: 3, recovery: "long" },
+            level3: { current: 2, max: 2, recovery: "long" }
+          }
+        })
+      })
+    );
+    expect(applyDnd5eSrdRest({ ...levelFiveDruidActor, data: { ...levelFiveDruidData, resources: { wildShape: { current: 0, max: 2, recovery: "short" }, wildResurgence: { current: 0, max: 1, recovery: "long" } } } }, "short")).toEqual(
+      expect.objectContaining({
+        recovered: expect.objectContaining({ resources: expect.objectContaining({ wildShape: 1 }) }),
+        data: expect.objectContaining({
+          resources: {
+            wildShape: { current: 1, max: 2, recovery: "short" },
+            wildResurgence: { current: 0, max: 1, recovery: "long" }
+          }
+        })
+      })
+    );
+    expect(applyDnd5eSrdRest({ ...levelFiveDruidActor, data: { ...levelFiveDruidData, resources: { wildShape: { current: 0, max: 2, recovery: "short" }, wildResurgence: { current: 0, max: 1, recovery: "long" } } } }, "long").data.resources).toEqual({
+      wildShape: { current: 2, max: 2, recovery: "short" },
+      wildResurgence: { current: 1, max: 1, recovery: "long" }
     });
     const wizardActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("wizard")!.data, spellSlots: { level1: { current: 0, max: 2, recovery: "long" } } } };
     const wizardShortRest = applyDnd5eSrdRest(wizardActor, "short", { arcaneRecovery: { level1: 1 } });
