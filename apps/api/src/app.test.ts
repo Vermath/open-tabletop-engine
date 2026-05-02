@@ -3307,6 +3307,37 @@ describe("api", () => {
         ])
       );
 
+      const levelFiveCleric = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "cleric", name: "SRD Level Five Cleric", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFiveCleric.statusCode).toBe(200);
+      let levelFiveClericAdvance = levelFiveCleric;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFiveClericAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveClericAdvance.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFiveClericAdvance.statusCode).toBe(200);
+      }
+      expect(levelFiveClericAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Channel Divinity", "Divine Spark", "Turn Undead", "Sear Undead"]),
+          resources: { channelDivinity: { current: 2, max: 2, recovery: "short" } }
+        })
+      );
+      expect(levelFiveClericAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-turn-undead", formula: "0", metadata: expect.objectContaining({ searUndead: { formula: "5d8", damageType: "Radiant" } }) }),
+          expect.objectContaining({ id: "feature-sear-undead-damage", formula: "5d8", metadata: expect.objectContaining({ trigger: "Turn Undead failed save", damageType: "Radiant" }) })
+        ])
+      );
+
       const fighter = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
@@ -3519,6 +3550,47 @@ describe("api", () => {
         }
       });
       expect(divineSparkTarget.statusCode).toBe(200);
+
+      const searUndeadTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_gm",
+          type: "character",
+          name: "SRD Sear Undead Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: { current: 10, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(searUndeadTarget.statusCode).toBe(200);
+
+      const searTurnUndead = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveCleric.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "feature-turn-undead", consumeResources: true }
+      });
+      expect(searTurnUndead.statusCode).toBe(200);
+      expect(searTurnUndead.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-turn-undead", metadata: expect.objectContaining({ searUndead: { formula: "5d8", damageType: "Radiant" } }) }));
+      expect(searTurnUndead.json().usage.consumed).toEqual([{ type: "resource", key: "channelDivinity", label: "Channel Divinity", amount: 1, remaining: 1 }]);
+
+      const searUndeadDamage = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveCleric.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "feature-sear-undead-damage", applyEffect: true, targetActorId: searUndeadTarget.json().id }
+      });
+      expect(searUndeadDamage.statusCode).toBe(200);
+      expect(searUndeadDamage.json().roll.formula).toBe("5d8");
+      expect(searUndeadDamage.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-sear-undead-damage", formula: "5d8", metadata: expect.objectContaining({ damageType: "Radiant" }) }));
+      expect(searUndeadDamage.json().effect).toEqual(expect.objectContaining({ type: "damage", targetActorId: searUndeadTarget.json().id, pool: "hp", before: 10, max: 12 }));
+      expect(store.state.actors.find((actor) => actor.id === searUndeadTarget.json().id)?.data.hp).toEqual({ current: searUndeadDamage.json().effect.after, max: 12 });
 
       const divineSpark = await app.inject({
         method: "POST",

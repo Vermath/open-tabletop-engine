@@ -373,6 +373,20 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(levelTwoClericActor, [], "feature-divine-spark-healing")).toBe("1d8+3");
     expect(dnd5eSrdActionFormula(levelTwoClericActor, [], "feature-divine-spark-damage")).toBe("1d8+3");
     expect(dnd5eSrdActionFormula(levelTwoClericActor, [], "feature-turn-undead")).toBe("0");
+    let levelFiveClericData = clericActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelFiveClericData }, "level-up");
+    }
+    const levelFiveClericActor: Actor = { ...clericActor, data: levelFiveClericData };
+    expect(levelFiveClericData.features).toEqual(expect.arrayContaining(["Channel Divinity", "Divine Spark", "Turn Undead", "Sear Undead"]));
+    expect(levelFiveClericData.resources).toEqual({ channelDivinity: { current: 2, max: 2, recovery: "short" } });
+    expect(dnd5eSrdQuickRolls(levelFiveClericActor, [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-turn-undead", formula: "0", metadata: expect.objectContaining({ searUndead: { formula: "5d8", damageType: "Radiant" } }) }),
+        expect.objectContaining({ id: "feature-sear-undead-damage", label: "Sear Undead Damage", formula: "5d8", metadata: expect.objectContaining({ trigger: "Turn Undead failed save", damageType: "Radiant" }) })
+      ])
+    );
+    expect(dnd5eSrdActionFormula(levelFiveClericActor, [], "feature-sear-undead-damage")).toBe("5d8");
     const fighterActor: Actor = { ...srdActor, data: { ...fighter!.data } };
     expect(dnd5eSrdQuickRolls(fighterActor, [])).toEqual(
       expect.arrayContaining([{ id: "feature-second-wind-healing", label: "Second Wind Healing", formula: "1d10+1" }])
@@ -569,6 +583,17 @@ describe("dnd 5.5e srd rules", () => {
     expect(() =>
       useDnd5eSrdAction({ ...levelTwoClericActor, data: { ...levelTwoClericActor.data, resources: { channelDivinity: { current: 0, max: 2, recovery: "short" } } } }, [], "feature-divine-spark-damage")
     ).toThrow("Insufficient channel divinity");
+    let levelFiveClericData = clericActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelFiveClericData }, "level-up");
+    }
+    expect(useDnd5eSrdAction({ ...clericActor, data: levelFiveClericData }, [], "feature-sear-undead-damage")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [],
+        data: expect.objectContaining({ resources: { channelDivinity: { current: 2, max: 2, recovery: "short" } } })
+      })
+    );
     const fighterActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("fighter")!.data } };
     expect(useDnd5eSrdAction(fighterActor, [], "feature-second-wind-healing")).toEqual(
       expect.objectContaining({

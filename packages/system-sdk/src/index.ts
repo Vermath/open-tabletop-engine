@@ -181,6 +181,7 @@ export const DND_5E_SRD_TACTICAL_MIND_ROLL_ID = "feature-tactical-mind-bonus";
 export const DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID = "feature-divine-spark-healing";
 export const DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID = "feature-divine-spark-damage";
 export const DND_5E_SRD_TURN_UNDEAD_ROLL_ID = "feature-turn-undead";
+export const DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID = "feature-sear-undead-damage";
 
 export interface Dnd5eSrdArmorClassDetails {
   value: number;
@@ -515,6 +516,7 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
   }
   if (dnd5eSrdHasChannelDivinity(actor)) {
     const saveDc = dnd5eSrdSpellSaveDc(actor);
+    const searUndead = dnd5eSrdHasSearUndead(actor) ? { formula: dnd5eSrdSearUndeadFormula(actor), damageType: "Radiant" } : undefined;
     rolls.push(
       {
         id: DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID,
@@ -532,9 +534,17 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
         id: DND_5E_SRD_TURN_UNDEAD_ROLL_ID,
         label: "Turn Undead",
         formula: "0",
-        metadata: { resource: "channelDivinity", rangeFt: 30, target: "Undead", save: { ability: "wisdom", dc: saveDc }, conditions: ["Frightened", "Incapacitated"], duration: "1 minute" }
+        metadata: { resource: "channelDivinity", rangeFt: 30, target: "Undead", save: { ability: "wisdom", dc: saveDc }, conditions: ["Frightened", "Incapacitated"], duration: "1 minute", ...(searUndead ? { searUndead } : {}) }
       }
     );
+  }
+  if (dnd5eSrdHasSearUndead(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID,
+      label: "Sear Undead Damage",
+      formula: dnd5eSrdSearUndeadFormula(actor),
+      metadata: { trigger: "Turn Undead failed save", target: "Undead", damageType: "Radiant" }
+    });
   }
   return rolls;
 }
@@ -1681,6 +1691,7 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId === DND_5E_SRD_TACTICAL_MIND_ROLL_ID) return "1d10";
   if (rollId === DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID || rollId === DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID) return dnd5eSrdDivineSparkFormula(actor);
   if (rollId === DND_5E_SRD_TURN_UNDEAD_ROLL_ID) return "0";
+  if (rollId === DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID) return dnd5eSrdSearUndeadFormula(actor);
   return genericFantasyActionFormula(actor, items, rollId, options);
 }
 
@@ -1753,6 +1764,9 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
       data: { ...actor.data, resources: result.pools },
       items: []
     };
+  }
+  if (rollId === DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID) {
+    return { systemId: DND_5E_SRD_SYSTEM_ID, actorId: actor.id, rollId, consumed: [], data: { ...actor.data }, items: [] };
   }
   return { ...useGenericFantasyAction(actor, items, rollId, options), systemId: DND_5E_SRD_SYSTEM_ID };
 }
@@ -2797,6 +2811,11 @@ function dnd5eSrdHasChannelDivinity(actor: Actor): boolean {
   return "channelDivinity" in recordValue(actor.data.resources);
 }
 
+function dnd5eSrdHasSearUndead(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Cleric" && Math.floor(numericValue(actor.data.level, 1)) >= 5) return true;
+  return normalizeStringArray(actor.data.features).includes("Sear Undead");
+}
+
 function dnd5eSrdApplyClassFeatures(features: string[], className: string, level: number): string[] {
   if (className === "Fighter") return [...new Set([...features, ...dnd5eSrdFighterFeaturesForLevel(level)])];
   if (className === "Cleric") return [...new Set([...features, ...dnd5eSrdClericFeaturesForLevel(level)])];
@@ -2842,6 +2861,10 @@ function dnd5eSrdDivineSparkDice(actor: Actor): number {
   if (level >= 13) return 3;
   if (level >= 7) return 2;
   return 1;
+}
+
+function dnd5eSrdSearUndeadFormula(actor: Actor): string {
+  return `${Math.max(1, genericFantasyAttributeModifier(actor, "wisdom"))}d8`;
 }
 
 function dnd5eSrdSpellSaveDc(actor: Actor): number {

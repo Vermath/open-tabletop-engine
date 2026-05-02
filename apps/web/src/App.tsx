@@ -1414,11 +1414,15 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
   }
   if (dnd5eSrdHasChannelDivinity(actor)) {
     const saveDc = dnd5eSrdSpellSaveDc(actor);
+    const searUndead = dnd5eSrdHasSearUndead(actor) ? `; Sear ${dnd5eSrdSearUndeadFormula(actor)} radiant` : "";
     options.push(
       { rollId: "feature-divine-spark-healing", label: "Divine Spark Healing", description: `Divine Spark Healing: ${dnd5eSrdDivineSparkFormula(actor)}; spends Channel Divinity` },
       { rollId: "feature-divine-spark-damage", label: "Divine Spark Damage", description: `Divine Spark Damage: ${dnd5eSrdDivineSparkFormula(actor)}; DC ${saveDc} Constitution; spends Channel Divinity` },
-      { rollId: "feature-turn-undead", label: "Turn Undead", description: `Turn Undead: DC ${saveDc} Wisdom; 30 ft; spends Channel Divinity` }
+      { rollId: "feature-turn-undead", label: "Turn Undead", description: `Turn Undead: DC ${saveDc} Wisdom; 30 ft; spends Channel Divinity${searUndead}` }
     );
+  }
+  if (dnd5eSrdHasSearUndead(actor)) {
+    options.push({ rollId: "feature-sear-undead-damage", label: "Sear Undead", description: `Sear Undead Damage: ${dnd5eSrdSearUndeadFormula(actor)} radiant` });
   }
   return options;
 }
@@ -1448,6 +1452,11 @@ function dnd5eSrdHasChannelDivinity(actor: Actor): boolean {
   return (stringValue(actor.data.class) === "Cleric" && numericValue(actor.data.level, 1) >= 2) || features.includes("Channel Divinity") || "channelDivinity" in recordValue(actor.data.resources);
 }
 
+function dnd5eSrdHasSearUndead(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Cleric" && numericValue(actor.data.level, 1) >= 5) || features.includes("Sear Undead");
+}
+
 function dnd5eSrdSecondWindFormula(actor: Actor): string {
   const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return `1d10+${fighterLevel}`;
@@ -1463,6 +1472,10 @@ function dnd5eSrdDivineSparkDice(actor: Actor): number {
   if (level >= 13) return 3;
   if (level >= 7) return 2;
   return 1;
+}
+
+function dnd5eSrdSearUndeadFormula(actor: Actor): string {
+  return `${Math.max(1, genericFantasyAttributeModifier(actor, "wisdom"))}d8`;
 }
 
 function dnd5eSrdSpellSaveDc(actor: Actor): number {
