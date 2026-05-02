@@ -318,6 +318,10 @@ function appendFormulaTerm(formula: string, term: string): string {
   return term.startsWith("-") ? `${formula}${term}` : `${formula}+${term}`;
 }
 
+function slugId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "action";
+}
+
 function itemBelongsToActor(actor: Actor, item: Item): boolean {
   return item.actorId === actor.id;
 }
@@ -395,8 +399,44 @@ export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[
     ...abilities.map((ability) => dnd5eSrdSavingThrow(actor, ability)),
     ...dnd5eSrdSkills().map((skill) => dnd5eSrdSkillCheck(actor, skill.id)),
     ...dnd5eSrdToolProficiencies(actor, "toolProficiencies").map((toolId) => dnd5eSrdToolCheck(actor, toolId)),
+    ...dnd5eSrdMonsterActionRolls(actor),
     ...genericFantasyActionRolls(actor, items)
   ];
+}
+
+export function dnd5eSrdMonsterActionRolls(actor: Actor): QuickRoll[] {
+  const statBlock = dnd5eSrdMonsterStatBlockFromActor(actor);
+  if (!statBlock) return [];
+  const actions = Array.isArray(statBlock.actions) ? statBlock.actions.flatMap((action) => [recordValue(action)]) : [];
+  return actions.flatMap((action) => {
+    const name = stringValue(action.name);
+    if (!name) return [];
+    const id = slugId(name);
+    const rolls: QuickRoll[] = [];
+    const attackBonus = numericValue(action.attackBonus, Number.NaN);
+    if (Number.isFinite(attackBonus)) {
+      rolls.push({
+        id: `monster-${id}-attack`,
+        label: `${name} Attack`,
+        formula: `1d20${formatSignedNumber(attackBonus)}`
+      });
+    }
+    const damageFormula = stringValue(action.damageFormula);
+    if (damageFormula) {
+      rolls.push({
+        id: `monster-${id}-damage`,
+        label: `${name} Damage`,
+        formula: damageFormula
+      });
+    }
+    return rolls;
+  });
+}
+
+function dnd5eSrdMonsterStatBlockFromActor(actor: Actor): Record<string, unknown> | undefined {
+  const monster = recordValue(actor.data.monster);
+  const statBlock = recordValue(monster.statBlock);
+  return Array.isArray(statBlock.actions) ? statBlock : undefined;
 }
 
 export function dnd5eSrdAbilityCheck(actor: Actor, ability: string): QuickRoll {
@@ -969,6 +1009,33 @@ function dnd5eSrdMonsterThreat(id: string, name: string, role: string, summary: 
     budget: statBlock.xp,
     challengeRating: statBlock.challengeRating,
     data: { ...statBlock }
+  };
+}
+
+export function dnd5eSrdMonsterActorData(threatId: string): Record<string, unknown> | undefined {
+  const threat = dnd5eSrdEncounterThreats().find((item) => item.id === threatId);
+  if (!threat) return undefined;
+  const statBlock = recordValue(threat.data);
+  return {
+    ruleset: DND_5E_SRD_VERSION,
+    level: numericValue(threat.challengeRating, 1),
+    monster: {
+      threatId: threat.id,
+      role: threat.role,
+      summary: threat.summary,
+      statBlock
+    },
+    hp: { current: numericValue(statBlock.hitPoints, 1), max: numericValue(statBlock.hitPoints, 1) },
+    armorClass: numericValue(statBlock.armorClass, 10),
+    initiative: numericValue(statBlock.initiative, 0),
+    challengeRating: stringValue(statBlock.challengeRating) ?? threat.challengeRating,
+    xp: numericValue(statBlock.xp, threat.budget),
+    proficiencyBonus: numericValue(statBlock.proficiencyBonus, 2),
+    attributes: recordValue(statBlock.abilities),
+    saveProficiencies: [],
+    skillProficiencies: Object.keys(recordValue(statBlock.skills)),
+    toolProficiencies: [],
+    conditions: []
   };
 }
 

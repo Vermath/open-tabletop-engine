@@ -3269,6 +3269,23 @@ describe("api", () => {
         threats: [expect.objectContaining({ id: "goblin-warrior", count: 2, budgetEach: 50, budgetTotal: 100, challengeRating: "1/4" })]
       });
 
+      const monster = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters",
+        headers: authHeaders,
+        payload: { threatId: "goblin-boss", name: "SRD Goblin Boss" }
+      });
+      expect(monster.statusCode).toBe(200);
+      expect(monster.json().actor).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", type: "monster", name: "SRD Goblin Boss" }));
+      expect(monster.json().actor.data).toEqual(expect.objectContaining({ hp: { current: 21, max: 21 }, armorClass: 17, challengeRating: "1", xp: 200 }));
+      expect(monster.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "monster-scimitar-attack", label: "Scimitar Attack", formula: "1d20+4" }),
+          expect.objectContaining({ id: "monster-scimitar-damage", label: "Scimitar Damage", formula: "1d6+2" }),
+          expect.objectContaining({ id: "monster-shortbow-attack", label: "Shortbow Attack", formula: "1d20+4" })
+        ])
+      );
+
       const purchase = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/purchase`,
@@ -3311,6 +3328,46 @@ describe("api", () => {
         }
       });
       expect(target.statusCode).toBe(200);
+
+      const monsterTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_gm",
+          type: "character",
+          name: "SRD Monster Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: { current: 10, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(monsterTarget.statusCode).toBe(200);
+
+      const monsterAttack = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${monster.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "monster-scimitar-attack" }
+      });
+      expect(monsterAttack.statusCode).toBe(200);
+      expect(monsterAttack.json().quickRoll).toEqual(expect.objectContaining({ id: "monster-scimitar-attack", formula: "1d20+4" }));
+      expect(monsterAttack.json().chat.body).toContain("SRD Goblin Boss Scimitar Attack: 1d20+4");
+
+      const monsterDamage = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${monster.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "monster-scimitar-damage", applyEffect: true, targetActorId: monsterTarget.json().id }
+      });
+      expect(monsterDamage.statusCode).toBe(200);
+      expect(monsterDamage.json().quickRoll).toEqual(expect.objectContaining({ id: "monster-scimitar-damage", formula: "1d6+2" }));
+      expect(monsterDamage.json().effect).toEqual(expect.objectContaining({ type: "damage", targetActorId: monsterTarget.json().id, pool: "hp", before: 10, max: 12 }));
+      expect(store.state.actors.find((actor) => actor.id === monsterTarget.json().id)?.data.hp).toEqual({ current: monsterDamage.json().effect.after, max: 12 });
 
       const saveRoll = await app.inject({
         method: "POST",
