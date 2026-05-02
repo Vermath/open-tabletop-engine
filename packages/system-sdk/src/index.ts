@@ -1173,6 +1173,69 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { level: 0, school: "evocation", action: "action", range: "60 ft", damageFormula: "1d8", damageType: "radiant", classes: ["bard", "druid"], spellAttack: true, light: "dim light until the end of the target's next turn", source: DND_5E_SRD_VERSION }
     },
     {
+      id: "aura-of-life",
+      type: "spell",
+      name: "Aura of Life",
+      summary: "Level 4 abjuration spell that protects nearby allies from necrotic harm and revives allies at 0 HP.",
+      data: { level: 4, school: "abjuration", action: "action", range: "self", classes: ["cleric", "paladin"], concentration: true, duration: "up to 10 minutes", area: "30-foot emanation", resistance: ["necrotic"], preventsHitPointMaximumReduction: true, recurringHealingFormula: "1", recurringHealingTrigger: "ally with 0 HP starts its turn in the aura", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "charm-monster",
+      type: "spell",
+      name: "Charm Monster",
+      summary: "Level 4 enchantment spell that can charm a creature and scales by targeting more creatures.",
+      data: { level: 4, school: "enchantment", action: "action", range: "30 ft", classes: ["bard", "druid", "sorcerer", "warlock", "wizard"], duration: "1 hour", save: { ability: "wisdom" }, condition: "Charmed", targetAttitude: "Friendly to caster", hostileTargetSaveAdvantage: true, endsWhenDamagedByCasterOrAllies: true, upcastTargets: { base: 1, perSlotAbove: 1 }, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "elementalism",
+      type: "spell",
+      name: "Elementalism",
+      summary: "Druid, Sorcerer, and Wizard transmutation cantrip for minor air, earth, fire, water, and shaping effects.",
+      data: { level: 0, school: "transmutation", action: "action", range: "30 ft", classes: ["druid", "sorcerer", "wizard"], effects: ["Beckon Air", "Beckon Earth", "Beckon Fire", "Beckon Water", "Sculpt Element"], source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "phantasmal-force",
+      type: "spell",
+      name: "Phantasmal Force",
+      summary: "Level 2 illusion spell that creates a mind-bound phantasm that can deal psychic damage.",
+      data: { level: 2, school: "illusion", action: "action", range: "60 ft", damageFormula: "2d8", damageType: "psychic", classes: ["bard", "sorcerer", "wizard"], concentration: true, duration: "up to 1 minute", save: { ability: "intelligence" }, area: "10-foot cube phantasm", inspectionCheck: { ability: "intelligence", skill: "investigation" }, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "power-word-heal",
+      type: "spell",
+      name: "Power Word Heal",
+      summary: "Level 9 enchantment spell that restores one creature to full HP and ends several debilitating conditions.",
+      data: { level: 9, school: "enchantment", action: "action", range: "60 ft", classes: ["bard", "cleric"], healing: "all hit points", conditionsEnded: ["Charmed", "Frightened", "Paralyzed", "Poisoned", "Stunned"], proneReaction: "target can use its Reaction to stand if Prone", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "searing-smite",
+      type: "spell",
+      name: "Searing Smite",
+      summary: "Level 1 Paladin evocation spell that adds fire damage after a melee hit and can keep burning the target.",
+      data: { level: 1, school: "evocation", action: "bonus", range: "self", damageFormula: "1d6", upcastFormula: "1d6", damageType: "fire", classes: ["paladin"], duration: "1 minute", trigger: "immediately after hitting a target with a Melee weapon or Unarmed Strike", recurringDamageFormula: "1d6", recurringDamageType: "fire", recurringSave: { ability: "constitution", success: "ends" }, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "summon-dragon",
+      type: "spell",
+      name: "Summon Dragon",
+      summary: "Level 5 Wizard conjuration spell that summons a Draconic Spirit stat block scaling by slot level.",
+      data: { level: 5, school: "conjuration", action: "action", range: "60 ft", classes: ["wizard"], concentration: true, duration: "up to 1 hour", summon: { statBlock: "Draconic Spirit", size: "Large", type: "Dragon", armorClassFormula: "14+@spellLevel", hitPointFormula: "50+10*(@spellLevel-5)", speeds: { walk: 30, fly: 60, swim: 30 }, resistances: ["acid", "cold", "fire", "lightning", "poison"], immunities: ["Charmed", "Frightened", "Poisoned"], rendFormula: "1d6+4+@spellLevel", breathWeaponFormula: "2d6", breathWeaponArea: "30-foot cone", breathWeaponSave: { ability: "dexterity", success: "half" }, multiattack: "half spell level rounded down Rend attacks plus Breath Weapon" }, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "tsunami",
+      type: "spell",
+      name: "Tsunami",
+      summary: "Level 8 Druid conjuration spell that creates a moving wall of water dealing bludgeoning damage.",
+      data: { level: 8, school: "conjuration", action: "1 minute", range: "1 mile", damageFormula: "6d10", damageType: "bludgeoning", secondaryDamageFormula: "5d10", secondaryDamageType: "bludgeoning", classes: ["druid"], concentration: true, duration: "up to 6 rounds", area: "up to 300 feet long, 300 feet high, and 50 feet thick", save: { ability: "strength", success: "half" }, recurringDamageReduction: "secondary damage decreases by 1d10 on later rounds", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "vitriolic-sphere",
+      type: "spell",
+      name: "Vitriolic Sphere",
+      summary: "Level 4 evocation spell that bursts acid in an area and deals later acid damage after a failed save.",
+      data: { level: 4, school: "evocation", action: "action", range: "150 ft", damageFormula: "10d4", upcastFormula: "2d4", damageType: "acid", secondaryDamageFormula: "5d4", secondaryDamageType: "acid", classes: ["sorcerer", "wizard"], area: "20-foot-radius sphere", save: { ability: "dexterity", success: "half initial damage only" }, delayedDamageTrigger: "end of target's next turn after failed save", source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "alert",
       type: "condition",
       name: "Alert",
@@ -5585,17 +5648,39 @@ function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<str
   if (className === "Warlock") return defaultDnd5eSrdWarlockPactMagicSlots(level);
   if (className === "Paladin" || className === "Ranger") return defaultDnd5eSrdHalfCasterSpellSlots(level);
   if (className !== "Bard" && className !== "Cleric" && className !== "Druid" && className !== "Sorcerer" && className !== "Wizard") return {};
-  const slots: Record<string, Record<string, unknown>> = {
-    level1: { current: Math.min(4, 2 + Math.max(0, level - 1)), max: Math.min(4, 2 + Math.max(0, level - 1)), recovery: "long" }
+  return defaultDnd5eSrdFullCasterSpellSlots(level);
+}
+
+function defaultDnd5eSrdFullCasterSpellSlots(level: number): Record<string, Record<string, unknown>> {
+  const normalized = Math.max(1, Math.min(20, Math.floor(level)));
+  const table: Record<number, number[]> = {
+    1: [2],
+    2: [3],
+    3: [4, 2],
+    4: [4, 3],
+    5: [4, 3, 2],
+    6: [4, 3, 3],
+    7: [4, 3, 3, 1],
+    8: [4, 3, 3, 2],
+    9: [4, 3, 3, 3, 1],
+    10: [4, 3, 3, 3, 2],
+    11: [4, 3, 3, 3, 2, 1],
+    12: [4, 3, 3, 3, 2, 1],
+    13: [4, 3, 3, 3, 2, 1, 1],
+    14: [4, 3, 3, 3, 2, 1, 1],
+    15: [4, 3, 3, 3, 2, 1, 1, 1],
+    16: [4, 3, 3, 3, 2, 1, 1, 1],
+    17: [4, 3, 3, 3, 2, 1, 1, 1, 1],
+    18: [4, 3, 3, 3, 3, 1, 1, 1, 1],
+    19: [4, 3, 3, 3, 3, 2, 1, 1, 1],
+    20: [4, 3, 3, 3, 3, 2, 2, 1, 1]
   };
-  if (level >= 3) {
-    const levelTwoSlots = Math.min(3, 2 + Math.max(0, level - 3));
-    slots.level2 = { current: levelTwoSlots, max: levelTwoSlots, recovery: "long" };
-  }
-  if (level >= 5) {
-    slots.level3 = { current: 2, max: 2, recovery: "long" };
-  }
-  return slots;
+  return Object.fromEntries(
+    (table[normalized] ?? table[1]!).map((slotCount, index) => {
+      const key = `level${index + 1}`;
+      return [key, { current: slotCount, max: slotCount, recovery: "long" }];
+    })
+  );
 }
 
 function defaultDnd5eSrdWarlockPactMagicSlots(level: number): Record<string, Record<string, unknown>> {

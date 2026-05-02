@@ -4071,6 +4071,15 @@ describe("api", () => {
           expect.objectContaining({ id: "mind-spike", name: "Mind Spike", data: expect.objectContaining({ damageFormula: "3d8", upcastFormula: "1d8", concentration: true }) }),
           expect.objectContaining({ id: "ensnaring-strike", name: "Ensnaring Strike", data: expect.objectContaining({ damageFormula: "1d6", upcastFormula: "1d6", condition: "Restrained" }) }),
           expect.objectContaining({ id: "starry-wisp", name: "Starry Wisp", data: expect.objectContaining({ damageFormula: "1d8", damageType: "radiant" }) }),
+          expect.objectContaining({ id: "aura-of-life", name: "Aura of Life", data: expect.objectContaining({ level: 4, recurringHealingFormula: "1" }) }),
+          expect.objectContaining({ id: "charm-monster", name: "Charm Monster", data: expect.objectContaining({ level: 4, condition: "Charmed" }) }),
+          expect.objectContaining({ id: "elementalism", name: "Elementalism", data: expect.objectContaining({ level: 0, effects: expect.arrayContaining(["Sculpt Element"]) }) }),
+          expect.objectContaining({ id: "phantasmal-force", name: "Phantasmal Force", data: expect.objectContaining({ level: 2, damageFormula: "2d8", damageType: "psychic" }) }),
+          expect.objectContaining({ id: "power-word-heal", name: "Power Word Heal", data: expect.objectContaining({ level: 9, healing: "all hit points" }) }),
+          expect.objectContaining({ id: "searing-smite", name: "Searing Smite", data: expect.objectContaining({ level: 1, damageFormula: "1d6", upcastFormula: "1d6" }) }),
+          expect.objectContaining({ id: "summon-dragon", name: "Summon Dragon", data: expect.objectContaining({ level: 5, summon: expect.objectContaining({ statBlock: "Draconic Spirit" }) }) }),
+          expect.objectContaining({ id: "tsunami", name: "Tsunami", data: expect.objectContaining({ level: 8, damageFormula: "6d10", secondaryDamageFormula: "5d10" }) }),
+          expect.objectContaining({ id: "vitriolic-sphere", name: "Vitriolic Sphere", data: expect.objectContaining({ level: 4, damageFormula: "10d4", upcastFormula: "2d4", secondaryDamageFormula: "5d4" }) }),
           expect.objectContaining({ id: "shield-armor", name: "Shield", data: expect.objectContaining({ costGp: 10, armorBonus: 2 }) }),
           expect.objectContaining({ id: "leather-armor", name: "Leather Armor", data: expect.objectContaining({ costGp: 10, armorBase: 11 }) }),
           expect.objectContaining({ id: "studded-leather-armor", name: "Studded Leather Armor", data: expect.objectContaining({ costGp: 45, armorBase: 12 }) }),
@@ -4105,13 +4114,28 @@ describe("api", () => {
       expect(dissonantSpell.json().sheet.quickRolls).toEqual(
         expect.arrayContaining([expect.objectContaining({ id: `spell-${dissonantSpell.json().item.id}-damage`, label: "Dissonant Whispers Damage", formula: "3d6" })])
       );
+      const vitriolicSpell = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "vitriolic-sphere" }
+      });
+      expect(vitriolicSpell.statusCode).toBe(200);
+      expect(vitriolicSpell.json().item).toEqual(expect.objectContaining({ name: "Vitriolic Sphere", data: expect.objectContaining({ damageFormula: "10d4", upcastFormula: "2d4", secondaryDamageFormula: "5d4", save: { ability: "dexterity", success: "half initial damage only" } }) }));
+      expect(vitriolicSpell.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: `spell-${vitriolicSpell.json().item.id}-damage`, label: "Vitriolic Sphere Damage", formula: "10d4" }),
+          expect.objectContaining({ id: `spell-${vitriolicSpell.json().item.id}-secondary-damage`, label: "Vitriolic Sphere Secondary Damage", formula: "5d4" })
+        ])
+      );
       const storedCriminalOrc = store.state.actors.find((actor) => actor.id === criminalOrc.json().actor.id)!;
       storedCriminalOrc.data = {
         ...storedCriminalOrc.data,
-        spellSlots: { ...(storedCriminalOrc.data.spellSlots as Record<string, unknown>), level2: { current: 1, max: 1, recovery: "long" }, level3: { current: 1, max: 1, recovery: "long" } }
+        spellSlots: { ...(storedCriminalOrc.data.spellSlots as Record<string, unknown>), level2: { current: 1, max: 1, recovery: "long" }, level3: { current: 1, max: 1, recovery: "long" }, level5: { current: 1, max: 1, recovery: "long" } }
       };
       const chromaticRollId = `spell-${chromaticSpell.json().item.id}-damage`;
       const dissonantRollId = `spell-${dissonantSpell.json().item.id}-damage`;
+      const vitriolicRollId = `spell-${vitriolicSpell.json().item.id}-damage`;
 
       const dndThreats = await app.inject({
         method: "GET",
@@ -5388,6 +5412,17 @@ describe("api", () => {
       expect(dissonantRoll.json().quickRoll).toEqual(expect.objectContaining({ id: dissonantRollId, formula: "3d6+2d6" }));
       expect(dissonantRoll.json().usage).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", slotLevel: 3 }));
       expect(dissonantRoll.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level3", label: "Level 3 Spell Slot", amount: 1, remaining: 0 }]);
+      const vitriolicRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: vitriolicRollId, spellSlotLevel: 5, consumeResources: true }
+      });
+      expect(vitriolicRoll.statusCode).toBe(200);
+      expect(vitriolicRoll.json().roll.formula).toBe("10d4+2d4");
+      expect(vitriolicRoll.json().quickRoll).toEqual(expect.objectContaining({ id: vitriolicRollId, formula: "10d4+2d4" }));
+      expect(vitriolicRoll.json().usage).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", slotLevel: 5 }));
+      expect(vitriolicRoll.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level5", label: "Level 5 Spell Slot", amount: 1, remaining: 0 }]);
 
       const roll = await app.inject({
         method: "POST",

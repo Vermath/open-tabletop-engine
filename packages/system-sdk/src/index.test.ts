@@ -334,6 +334,15 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("mind-spike")?.data).toEqual(expect.objectContaining({ level: 2, damageFormula: "3d8", upcastFormula: "1d8", damageType: "psychic", concentration: true }));
     expect(dnd5eSrdCompendiumEntry("ensnaring-strike")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d6", upcastFormula: "1d6", condition: "Restrained", save: { ability: "strength" } }));
     expect(dnd5eSrdCompendiumEntry("starry-wisp")?.data).toEqual(expect.objectContaining({ level: 0, damageFormula: "1d8", damageType: "radiant", spellAttack: true }));
+    expect(dnd5eSrdCompendiumEntry("aura-of-life")?.data).toEqual(expect.objectContaining({ level: 4, recurringHealingFormula: "1", resistance: ["necrotic"], concentration: true }));
+    expect(dnd5eSrdCompendiumEntry("charm-monster")?.data).toEqual(expect.objectContaining({ level: 4, condition: "Charmed", save: { ability: "wisdom" }, upcastTargets: { base: 1, perSlotAbove: 1 } }));
+    expect(dnd5eSrdCompendiumEntry("elementalism")?.data).toEqual(expect.objectContaining({ level: 0, effects: expect.arrayContaining(["Sculpt Element"]) }));
+    expect(dnd5eSrdCompendiumEntry("phantasmal-force")?.data).toEqual(expect.objectContaining({ level: 2, damageFormula: "2d8", damageType: "psychic", save: { ability: "intelligence" } }));
+    expect(dnd5eSrdCompendiumEntry("power-word-heal")?.data).toEqual(expect.objectContaining({ level: 9, healing: "all hit points", conditionsEnded: expect.arrayContaining(["Stunned"]) }));
+    expect(dnd5eSrdCompendiumEntry("searing-smite")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d6", upcastFormula: "1d6", recurringSave: { ability: "constitution", success: "ends" } }));
+    expect(dnd5eSrdCompendiumEntry("summon-dragon")?.data).toEqual(expect.objectContaining({ level: 5, summon: expect.objectContaining({ statBlock: "Draconic Spirit", breathWeaponFormula: "2d6" }) }));
+    expect(dnd5eSrdCompendiumEntry("tsunami")?.data).toEqual(expect.objectContaining({ level: 8, damageFormula: "6d10", secondaryDamageFormula: "5d10", save: { ability: "strength", success: "half" } }));
+    expect(dnd5eSrdCompendiumEntry("vitriolic-sphere")?.data).toEqual(expect.objectContaining({ level: 4, damageFormula: "10d4", upcastFormula: "2d4", secondaryDamageFormula: "5d4", save: { ability: "dexterity", success: "half initial damage only" } }));
     expect(dnd5eSrdCompendiumEntry("dagger")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, damageType: "piercing" }));
     expect(dnd5eSrdCompendiumEntry("sickle")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 1, damageType: "slashing" }));
     expect(dnd5eSrdCompendiumEntry("quarterstaff")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 0.2 }));
@@ -409,6 +418,50 @@ describe("dnd 5.5e srd rules", () => {
       type: "spell",
       name: "Mind Spike",
       data: { ...dnd5eSrdCompendiumEntry("mind-spike")!.data, compendiumId: "mind-spike" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const phantasmalForce: Item = {
+      id: "itm_phantasmal_force",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Phantasmal Force",
+      data: { ...dnd5eSrdCompendiumEntry("phantasmal-force")!.data, compendiumId: "phantasmal-force" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const searingSmite: Item = {
+      id: "itm_searing_smite",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Searing Smite",
+      data: { ...dnd5eSrdCompendiumEntry("searing-smite")!.data, compendiumId: "searing-smite" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const tsunami: Item = {
+      id: "itm_tsunami",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Tsunami",
+      data: { ...dnd5eSrdCompendiumEntry("tsunami")!.data, compendiumId: "tsunami" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const vitriolicSphere: Item = {
+      id: "itm_vitriolic_sphere",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Vitriolic Sphere",
+      data: { ...dnd5eSrdCompendiumEntry("vitriolic-sphere")!.data, compendiumId: "vitriolic-sphere" },
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
@@ -974,6 +1027,12 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(srdActor, [dissonantWhispers], "spell-itm_dissonant_whispers-damage", { spellSlotLevel: 3 })).toBe("3d6+2d6");
     expect(dnd5eSrdActionFormula(srdActor, [dragonsBreath], "spell-itm_dragons_breath-damage", { spellSlotLevel: 3 })).toBe("3d6+1d6");
     expect(dnd5eSrdActionFormula(srdActor, [mindSpike], "spell-itm_mind_spike-damage", { spellSlotLevel: 4 })).toBe("3d8+2d8");
+    expect(dnd5eSrdActionFormula(srdActor, [phantasmalForce], "spell-itm_phantasmal_force-damage")).toBe("2d8");
+    expect(dnd5eSrdActionFormula(srdActor, [searingSmite], "spell-itm_searing_smite-damage", { spellSlotLevel: 3 })).toBe("1d6+2d6");
+    expect(dnd5eSrdActionFormula(srdActor, [tsunami], "spell-itm_tsunami-damage")).toBe("6d10");
+    expect(dnd5eSrdActionFormula(srdActor, [tsunami], "spell-itm_tsunami-secondary-damage")).toBe("5d10");
+    expect(dnd5eSrdActionFormula(srdActor, [vitriolicSphere], "spell-itm_vitriolic_sphere-damage", { spellSlotLevel: 5 })).toBe("10d4+2d4");
+    expect(dnd5eSrdActionFormula(srdActor, [vitriolicSphere], "spell-itm_vitriolic_sphere-secondary-damage", { spellSlotLevel: 5 })).toBe("5d4");
 
     const purchased = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("longsword")!, 2);
     expect(purchased).toEqual(expect.objectContaining({ entryId: "longsword", quantity: 2, unitCostGp: 15, totalCostGp: 30, currency: { gp: 20, sp: 0, cp: 0 } }));
@@ -1586,6 +1645,39 @@ describe("dnd 5.5e srd rules", () => {
       expect.objectContaining({
         resources: { arcaneRecovery: { current: 1, max: 1, recovery: "long" } },
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } }
+      })
+    );
+    let levelNineWizardData = dnd5eSrdCharacterTemplate("wizard")!.data;
+    for (let level = 2; level <= 9; level += 1) {
+      levelNineWizardData = applyDnd5eSrdAdvancement({ ...wizardActor, data: levelNineWizardData }, "level-up");
+    }
+    const levelNineWizardActor: Actor = { ...wizardActor, data: levelNineWizardData };
+    expect(levelNineWizardData.spellSlots).toEqual({
+      level1: { current: 2, max: 4, recovery: "long" },
+      level2: { current: 2, max: 3, recovery: "long" },
+      level3: { current: 2, max: 3, recovery: "long" },
+      level4: { current: 1, max: 3, recovery: "long" },
+      level5: { current: 1, max: 1, recovery: "long" }
+    });
+    const levelNineVitriolicSphere: Item = {
+      id: "itm_level_nine_vitriolic_sphere",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: levelNineWizardActor.id,
+      type: "spell",
+      name: "Vitriolic Sphere",
+      data: { ...dnd5eSrdCompendiumEntry("vitriolic-sphere")!.data, compendiumId: "vitriolic-sphere" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(useDnd5eSrdAction(levelNineWizardActor, [levelNineVitriolicSphere], "spell-itm_level_nine_vitriolic_sphere-damage", { spellSlotLevel: 5 })).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 5,
+        consumed: [{ type: "spellSlot", key: "level5", label: "Level 5 Spell Slot", amount: 1, remaining: 0 }],
+        data: expect.objectContaining({
+          spellSlots: expect.objectContaining({ level5: { current: 0, max: 1, recovery: "long" } })
+        })
       })
     );
     const barbarianActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("barbarian")!.data } };
