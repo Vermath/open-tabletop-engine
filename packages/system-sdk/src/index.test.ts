@@ -329,6 +329,11 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("sorcerous-burst")?.data).toEqual(expect.objectContaining({ level: 0, damageFormula: "1d8", damageType: "choice" }));
     expect(dnd5eSrdCompendiumEntry("eldritch-blast")?.data).toEqual(expect.objectContaining({ level: 0, damageFormula: "1d10", damageType: "force" }));
     expect(dnd5eSrdCompendiumEntry("hex")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d6", damageType: "necrotic", concentration: true }));
+    expect(dnd5eSrdCompendiumEntry("dissonant-whispers")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "3d6", upcastFormula: "1d6", damageType: "psychic", save: { ability: "wisdom", success: "half" } }));
+    expect(dnd5eSrdCompendiumEntry("dragons-breath")?.data).toEqual(expect.objectContaining({ level: 2, damageFormula: "3d6", upcastFormula: "1d6", damageType: "choice", damageTypes: expect.arrayContaining(["fire"]), concentration: true, save: { ability: "dexterity", success: "half" } }));
+    expect(dnd5eSrdCompendiumEntry("mind-spike")?.data).toEqual(expect.objectContaining({ level: 2, damageFormula: "3d8", upcastFormula: "1d8", damageType: "psychic", concentration: true }));
+    expect(dnd5eSrdCompendiumEntry("ensnaring-strike")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d6", upcastFormula: "1d6", condition: "Restrained", save: { ability: "strength" } }));
+    expect(dnd5eSrdCompendiumEntry("starry-wisp")?.data).toEqual(expect.objectContaining({ level: 0, damageFormula: "1d8", damageType: "radiant", spellAttack: true }));
     expect(dnd5eSrdCompendiumEntry("dagger")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, damageType: "piercing" }));
     expect(dnd5eSrdCompendiumEntry("sickle")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 1, damageType: "slashing" }));
     expect(dnd5eSrdCompendiumEntry("quarterstaff")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 0.2 }));
@@ -371,6 +376,39 @@ describe("dnd 5.5e srd rules", () => {
       type: "spell",
       name: "Ice Knife",
       data: { ...dnd5eSrdCompendiumEntry("ice-knife")!.data, compendiumId: "ice-knife" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const dissonantWhispers: Item = {
+      id: "itm_dissonant_whispers",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Dissonant Whispers",
+      data: { ...dnd5eSrdCompendiumEntry("dissonant-whispers")!.data, compendiumId: "dissonant-whispers" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const dragonsBreath: Item = {
+      id: "itm_dragons_breath",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Dragon's Breath",
+      data: { ...dnd5eSrdCompendiumEntry("dragons-breath")!.data, compendiumId: "dragons-breath" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const mindSpike: Item = {
+      id: "itm_mind_spike",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Mind Spike",
+      data: { ...dnd5eSrdCompendiumEntry("mind-spike")!.data, compendiumId: "mind-spike" },
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
@@ -933,6 +971,9 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(srdActor, [spell], "spell-itm_healing_word-healing", { spellSlotLevel: 2 })).toBe("1d4+3+2d4");
     expect(dnd5eSrdActionFormula(srdActor, [chromaticOrb], "spell-itm_chromatic_orb-damage", { spellSlotLevel: 2 })).toBe("3d8+1d8");
     expect(dnd5eSrdActionFormula(srdActor, [iceKnife], "spell-itm_ice_knife-secondary-damage", { spellSlotLevel: 2 })).toBe("2d6+1d6");
+    expect(dnd5eSrdActionFormula(srdActor, [dissonantWhispers], "spell-itm_dissonant_whispers-damage", { spellSlotLevel: 3 })).toBe("3d6+2d6");
+    expect(dnd5eSrdActionFormula(srdActor, [dragonsBreath], "spell-itm_dragons_breath-damage", { spellSlotLevel: 3 })).toBe("3d6+1d6");
+    expect(dnd5eSrdActionFormula(srdActor, [mindSpike], "spell-itm_mind_spike-damage", { spellSlotLevel: 4 })).toBe("3d8+2d8");
 
     const purchased = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("longsword")!, 2);
     expect(purchased).toEqual(expect.objectContaining({ entryId: "longsword", quantity: 2, unitCostGp: 15, totalCostGp: 30, currency: { gp: 20, sp: 0, cp: 0 } }));

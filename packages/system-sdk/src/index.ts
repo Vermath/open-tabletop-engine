@@ -1138,6 +1138,41 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { level: 1, school: "enchantment", action: "bonus", range: "90 ft", damageFormula: "1d6", damageType: "necrotic", concentration: true, duration: "up to 1 hour", trigger: "whenever you hit the cursed target with an attack roll", upcastDuration: { level3: "up to 8 hours", level5: "up to 24 hours" }, source: DND_5E_SRD_VERSION }
     },
     {
+      id: "dissonant-whispers",
+      type: "spell",
+      name: "Dissonant Whispers",
+      summary: "Level 1 Bard enchantment spell that deals psychic damage and can force movement on a failed save.",
+      data: { level: 1, school: "enchantment", action: "action", range: "60 ft", damageFormula: "3d6", upcastFormula: "1d6", damageType: "psychic", classes: ["bard"], save: { ability: "wisdom", success: "half" }, forcedMovement: "target must move away on a failed save", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "dragons-breath",
+      type: "spell",
+      name: "Dragon's Breath",
+      summary: "Level 2 transmutation spell that lets a touched creature exhale a chosen elemental cone.",
+      data: { level: 2, school: "transmutation", action: "bonus", range: "touch", damageFormula: "3d6", upcastFormula: "1d6", damageType: "choice", damageTypes: ["acid", "cold", "fire", "lightning", "poison"], classes: ["sorcerer", "wizard"], concentration: true, duration: "up to 1 minute", area: "15-foot cone", save: { ability: "dexterity", success: "half" }, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "mind-spike",
+      type: "spell",
+      name: "Mind Spike",
+      summary: "Level 2 divination spell that deals psychic damage and tracks the target while concentration lasts.",
+      data: { level: 2, school: "divination", action: "action", range: "120 ft", damageFormula: "3d8", upcastFormula: "1d8", damageType: "psychic", classes: ["sorcerer", "warlock", "wizard"], concentration: true, duration: "up to 1 hour", save: { ability: "wisdom", success: "half" }, tracking: "reveals the target's location while concentration lasts", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "ensnaring-strike",
+      type: "spell",
+      name: "Ensnaring Strike",
+      summary: "Level 1 Ranger conjuration spell that adds piercing damage and can restrain a weapon-hit target.",
+      data: { level: 1, school: "conjuration", action: "bonus", range: "self", damageFormula: "1d6", upcastFormula: "1d6", damageType: "piercing", classes: ["ranger"], concentration: true, duration: "up to 1 minute", trigger: "after hitting a creature with a weapon", save: { ability: "strength" }, condition: "Restrained", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "starry-wisp",
+      type: "spell",
+      name: "Starry Wisp",
+      summary: "Bard and Druid evocation cantrip that deals radiant damage and briefly lights the target.",
+      data: { level: 0, school: "evocation", action: "action", range: "60 ft", damageFormula: "1d8", damageType: "radiant", classes: ["bard", "druid"], spellAttack: true, light: "dim light until the end of the target's next turn", source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "alert",
       type: "condition",
       name: "Alert",
