@@ -192,6 +192,7 @@ export const DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID = "feature-font-of-inspirati
 export const DND_5E_SRD_LAY_ON_HANDS_ROLL_ID = "feature-lay-on-hands-healing";
 export const DND_5E_SRD_DIVINE_SMITE_ROLL_ID = "feature-divine-smite-damage";
 export const DND_5E_SRD_FAITHFUL_STEED_ROLL_ID = "feature-faithful-steed";
+export const DND_5E_SRD_HUNTERS_MARK_DAMAGE_ROLL_ID = "feature-hunters-mark-damage";
 export const DND_5E_SRD_WILD_SHAPE_ROLL_ID = "feature-wild-shape";
 export const DND_5E_SRD_WILD_COMPANION_ROLL_ID = "feature-wild-companion";
 export const DND_5E_SRD_WILD_RESURGENCE_WILD_SHAPE_ROLL_ID = "feature-wild-resurgence-wild-shape";
@@ -607,6 +608,14 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       metadata: { resource: "faithfulSteed", spell: "Find Steed", freeCasting: true, recovery: "long", slotLevel: 2 }
     });
   }
+  if (dnd5eSrdHasHuntersMark(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_HUNTERS_MARK_DAMAGE_ROLL_ID,
+      label: "Hunter's Mark Damage",
+      formula: dnd5eSrdHuntersMarkFormula(actor),
+      metadata: dnd5eSrdHuntersMarkMetadata(actor)
+    });
+  }
   if (dnd5eSrdHasWildShape(actor)) {
     rolls.push({
       id: DND_5E_SRD_WILD_SHAPE_ROLL_ID,
@@ -908,6 +917,13 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { level: 1, school: "evocation", action: "bonus", range: "self", damageFormula: "2d8", upcastFormula: "1d8", damageType: "radiant", trigger: "immediately after hitting a target with a Melee weapon or Unarmed Strike", creatureTypeBonus: { types: ["Fiend", "Undead"], formula: "1d8" }, source: DND_5E_SRD_VERSION }
     },
     {
+      id: "hunters-mark",
+      type: "spell",
+      name: "Hunter's Mark",
+      summary: "Level 1 Ranger divination spell that marks quarry and adds force damage on attack hits.",
+      data: { level: 1, school: "divination", action: "bonus", range: "90 ft", damageFormula: "1d6", damageType: "force", concentration: true, duration: "up to 1 hour", trigger: "whenever you hit the marked target with an attack roll", upcastDuration: { level3: "up to 8 hours", level5: "up to 24 hours" }, source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "alert",
       type: "condition",
       name: "Alert",
@@ -936,6 +952,13 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { category: "armor", equipmentCategory: "armor", armorType: "light", armorBase: 11, costGp: 10, weightLb: 10, source: DND_5E_SRD_VERSION }
     },
     {
+      id: "studded-leather-armor",
+      type: "item",
+      name: "Studded Leather Armor",
+      summary: "Light armor with reinforced protection while preserving Dexterity defense.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "light", armorBase: 12, costGp: 45, weightLb: 13, source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "chain-mail",
       type: "item",
       name: "Chain Mail",
@@ -962,6 +985,27 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       name: "Shortbow",
       summary: "Simple ranged weapon for short-range archery.",
       data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "two-handed"], costGp: 25, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "longbow",
+      type: "item",
+      name: "Longbow",
+      summary: "Martial ranged weapon for long-range archery.",
+      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d8", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "heavy", "two-handed"], costGp: 50, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "scimitar",
+      type: "item",
+      name: "Scimitar",
+      summary: "Martial finesse weapon with a light slashing blade.",
+      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", damageType: "slashing", ability: "dexterity", properties: ["finesse", "light"], costGp: 25, weightLb: 3, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "shortsword",
+      type: "item",
+      name: "Shortsword",
+      summary: "Martial finesse weapon for quick piercing attacks.",
+      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", damageType: "piercing", ability: "dexterity", properties: ["finesse", "light"], costGp: 10, weightLb: 2, source: DND_5E_SRD_VERSION }
     },
     {
       id: "spear",
@@ -1309,6 +1353,34 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         feats: ["Magic Initiate"]
       },
       items: [{ entryId: "cure-wounds" }, { entryId: "quarterstaff" }]
+    },
+    {
+      id: "ranger",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Ranger",
+      summary: "SRD 5.2.1 wilderness warrior with Favored Enemy, Hunter's Mark, and Wisdom spellcasting.",
+      actorType: "character",
+      data: {
+        ruleset: DND_5E_SRD_VERSION,
+        level: 1,
+        class: "Ranger",
+        species: "Human",
+        background: "Soldier",
+        proficiencyBonus: 2,
+        hp: { current: 12, max: 12 },
+        attributes: { strength: 10, dexterity: 16, constitution: 14, intelligence: 10, wisdom: 14, charisma: 10 },
+        hitDice: { current: 1, max: 1, size: "d10" },
+        saveProficiencies: ["strength", "dexterity"],
+        skillProficiencies: ["nature", "perception", "survival"],
+        toolProficiencies: ["gaming-set"],
+        currency: { gp: 50, sp: 0, cp: 0 },
+        resources: { favoredEnemy: { current: 2, max: 2, recovery: "long" } },
+        spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
+        conditions: [],
+        features: ["Spellcasting", "Favored Enemy", "Weapon Mastery"],
+        feats: ["Savage Attacker"]
+      },
+      items: [{ entryId: "hunters-mark" }, { entryId: "cure-wounds" }, { entryId: "longbow" }, { entryId: "scimitar" }, { entryId: "shortsword" }, { entryId: "studded-leather-armor" }]
     },
     {
       id: "wizard",
@@ -2001,6 +2073,7 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId === DND_5E_SRD_LAY_ON_HANDS_ROLL_ID) return dnd5eSrdLayOnHandsFormula(actor, options.resourceAmount);
   if (rollId === DND_5E_SRD_DIVINE_SMITE_ROLL_ID) return dnd5eSrdDivineSmiteFormula(actor, options.useFreeResource ? 1 : options.spellSlotLevel);
   if (rollId === DND_5E_SRD_FAITHFUL_STEED_ROLL_ID) return "0";
+  if (rollId === DND_5E_SRD_HUNTERS_MARK_DAMAGE_ROLL_ID) return dnd5eSrdHuntersMarkFormula(actor);
   if (
     rollId === DND_5E_SRD_WILD_SHAPE_ROLL_ID ||
     rollId === DND_5E_SRD_WILD_COMPANION_ROLL_ID ||
@@ -2175,6 +2248,35 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
       rollId,
       consumed: [result.consumed],
       data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_HUNTERS_MARK_DAMAGE_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Ranger";
+    const level = numericValue(actor.data.level, 1);
+    const slotLevel = spellActionSlotLevel(1, options.spellSlotLevel);
+    if (options.useFreeResource) {
+      const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+      const result = consumeResourcePool(resources, "favoredEnemy", 1, "Favored Enemy", "resource");
+      return {
+        systemId: DND_5E_SRD_SYSTEM_ID,
+        actorId: actor.id,
+        rollId,
+        slotLevel: 1,
+        consumed: [result.consumed],
+        data: { ...actor.data, resources: result.pools },
+        items: []
+      };
+    }
+    const spellSlots = normalizeResourcePools(actor.data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true });
+    const result = consumeResourcePool(spellSlots, `level${slotLevel}`, 1, `Level ${slotLevel} Spell Slot`, "spellSlot");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      slotLevel,
+      consumed: [result.consumed],
+      data: { ...actor.data, spellSlots: result.pools },
       items: []
     };
   }
@@ -3103,6 +3205,7 @@ function dnd5eSrdSaveProficienciesForClass(className: string, explicit: unknown)
   if (normalizedClass === "bard") return ["dexterity", "charisma"];
   if (normalizedClass === "cleric") return ["wisdom", "charisma"];
   if (normalizedClass === "paladin") return ["wisdom", "charisma"];
+  if (normalizedClass === "ranger") return ["strength", "dexterity"];
   if (normalizedClass === "wizard") return ["intelligence", "wisdom"];
   if (normalizedClass === "rogue") return ["dexterity", "intelligence"];
   return ["strength", "constitution"];
@@ -3126,6 +3229,7 @@ function dnd5eSrdSkillProficienciesForClass(className: string, explicit: unknown
   if (normalizedClass === "bard") return ["performance", "persuasion", "perception"];
   if (normalizedClass === "cleric") return ["medicine", "religion"];
   if (normalizedClass === "paladin") return ["athletics", "persuasion"];
+  if (normalizedClass === "ranger") return ["nature", "perception", "survival"];
   if (normalizedClass === "wizard") return ["arcana", "history"];
   if (normalizedClass === "rogue") return ["stealth", "sleight-of-hand"];
   return ["athletics", "intimidation"];
@@ -3373,6 +3477,11 @@ function dnd5eSrdHasFaithfulSteed(actor: Actor): boolean {
   return normalizeStringArray(actor.data.features).includes("Faithful Steed") || "faithfulSteed" in recordValue(actor.data.resources);
 }
 
+function dnd5eSrdHasHuntersMark(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Ranger") return true;
+  return normalizeStringArray(actor.data.features).includes("Favored Enemy") || normalizeStringArray(actor.data.features).includes("Hunter's Mark") || "favoredEnemy" in recordValue(actor.data.resources);
+}
+
 function dnd5eSrdHasWildShape(actor: Actor): boolean {
   if (stringValue(actor.data.class) === "Druid" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
   return normalizeStringArray(actor.data.features).includes("Wild Shape") || "wildShape" in recordValue(actor.data.resources);
@@ -3420,14 +3529,22 @@ function dnd5eSrdApplyClassFeatures(features: string[], className: string, level
   if (className === "Cleric") return [...new Set([...features, ...dnd5eSrdClericFeaturesForLevel(level)])];
   if (className === "Paladin") return [...new Set([...features, ...dnd5eSrdPaladinFeaturesForLevel(level)])];
   if (className === "Druid") return [...new Set([...features, ...dnd5eSrdDruidFeaturesForLevel(level)])];
+  if (className === "Ranger") return [...new Set([...features, ...dnd5eSrdRangerFeaturesForLevel(level)])];
   if (className === "Wizard") return [...new Set([...features, ...dnd5eSrdWizardFeaturesForLevel(level)])];
   if (className === "Rogue") return [...new Set([...features, ...dnd5eSrdRogueFeaturesForLevel(level)])];
   return features;
 }
 
 function dnd5eSrdApplyClassCombat(combat: Record<string, unknown>, className: string, level: number, speed: unknown): Record<string, unknown> {
-  if (className !== "Fighter" && className !== "Barbarian" && className !== "Paladin") return combat;
-  const attacksPerAction = className === "Fighter" ? dnd5eSrdFighterAttacksPerAction(level) : className === "Barbarian" ? dnd5eSrdBarbarianAttacksPerAction(level) : dnd5eSrdPaladinAttacksPerAction(level);
+  if (className !== "Fighter" && className !== "Barbarian" && className !== "Paladin" && className !== "Ranger") return combat;
+  const attacksPerAction =
+    className === "Fighter"
+      ? dnd5eSrdFighterAttacksPerAction(level)
+      : className === "Barbarian"
+        ? dnd5eSrdBarbarianAttacksPerAction(level)
+        : className === "Paladin"
+          ? dnd5eSrdPaladinAttacksPerAction(level)
+          : dnd5eSrdRangerAttacksPerAction(level);
   return {
     ...combat,
     attacksPerAction,
@@ -3488,6 +3605,24 @@ function dnd5eSrdDruidFeaturesForLevel(level: number): string[] {
   if (level >= 18) features.push("Beast Spells");
   if (level >= 19) features.push("Epic Boon");
   if (level >= 20) features.push("Archdruid");
+  return features;
+}
+
+function dnd5eSrdRangerFeaturesForLevel(level: number): string[] {
+  const features = ["Spellcasting", "Favored Enemy", "Weapon Mastery"];
+  if (level >= 2) features.push("Deft Explorer", "Fighting Style");
+  if (level >= 3) features.push("Ranger Subclass");
+  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 5) features.push("Extra Attack");
+  if (level >= 6) features.push("Roving");
+  if (level >= 9) features.push("Expertise");
+  if (level >= 10) features.push("Tireless");
+  if (level >= 13) features.push("Relentless Hunter");
+  if (level >= 14) features.push("Nature's Veil");
+  if (level >= 17) features.push("Precise Hunter");
+  if (level >= 18) features.push("Feral Senses");
+  if (level >= 19) features.push("Epic Boon");
+  if (level >= 20) features.push("Foe Slayer");
   return features;
 }
 
@@ -3610,6 +3745,27 @@ function dnd5eSrdDivineSmiteMetadata(actor: Actor): Record<string, unknown> {
   };
 }
 
+function dnd5eSrdHuntersMarkFormula(actor: Actor): string {
+  return numericValue(actor.data.level, 1) >= 20 ? "1d10" : "1d6";
+}
+
+function dnd5eSrdHuntersMarkMetadata(actor: Actor): Record<string, unknown> {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  return {
+    resource: "favoredEnemy",
+    spell: "Hunter's Mark",
+    damageType: "Force",
+    trigger: "hit the marked target with an attack roll",
+    concentration: true,
+    duration: "up to 1 hour",
+    trackingAdvantage: ["Wisdom (Perception)", "Wisdom (Survival)"],
+    freeCastResource: "favoredEnemy",
+    freeUses: dnd5eSrdFavoredEnemyMax(level),
+    upcastDuration: { level3: "up to 8 hours", level5: "up to 24 hours" },
+    ...(level >= 20 ? { foeSlayer: true } : {})
+  };
+}
+
 function dnd5eSrdWildShapeMetadata(actor: Actor): Record<string, unknown> {
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return {
@@ -3675,6 +3831,7 @@ function dnd5eSrdAttacksPerAction(actor: Actor): number {
   const className = stringValue(actor.data.class);
   if (className === "Barbarian") return Math.max(hasExtraAttack ? 2 : 1, dnd5eSrdBarbarianAttacksPerAction(numericValue(actor.data.level, 1)));
   if (className === "Paladin") return Math.max(hasExtraAttack ? 2 : 1, dnd5eSrdPaladinAttacksPerAction(numericValue(actor.data.level, 1)));
+  if (className === "Ranger") return Math.max(hasExtraAttack ? 2 : 1, dnd5eSrdRangerAttacksPerAction(numericValue(actor.data.level, 1)));
   if (className !== "Fighter" && !hasExtraAttack) return 1;
   return Math.max(hasExtraAttack ? 2 : 1, dnd5eSrdFighterAttacksPerAction(numericValue(actor.data.level, 1)));
 }
@@ -3692,6 +3849,10 @@ function dnd5eSrdBarbarianAttacksPerAction(level: number): number {
 }
 
 function dnd5eSrdPaladinAttacksPerAction(level: number): number {
+  return Math.max(1, Math.floor(level)) >= 5 ? 2 : 1;
+}
+
+function dnd5eSrdRangerAttacksPerAction(level: number): number {
   return Math.max(1, Math.floor(level)) >= 5 ? 2 : 1;
 }
 
@@ -3964,6 +4125,7 @@ function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Cleric") return "wisdom";
   if (className === "Druid") return "wisdom";
   if (className === "Paladin") return "charisma";
+  if (className === "Ranger") return "wisdom";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";
   return "strength";
@@ -4024,6 +4186,10 @@ function defaultDnd5eSrdResources(className: string, level = 1, data: Record<str
     if (normalized >= 5) resources.faithfulSteed = { current: 1, max: 1, recovery: "long" };
     return resources;
   }
+  if (className === "Ranger") {
+    const max = dnd5eSrdFavoredEnemyMax(level);
+    return { favoredEnemy: { current: max, max, recovery: "long" } };
+  }
   if (className === "Druid") {
     const normalized = Math.max(1, Math.floor(level));
     const resources: Record<string, Record<string, unknown>> = {};
@@ -4076,6 +4242,15 @@ function dnd5eSrdLayOnHandsMax(level: number): number {
   return Math.max(1, Math.floor(level)) * 5;
 }
 
+function dnd5eSrdFavoredEnemyMax(level: number): number {
+  const normalized = Math.max(1, Math.floor(level));
+  if (normalized >= 17) return 6;
+  if (normalized >= 13) return 5;
+  if (normalized >= 9) return 4;
+  if (normalized >= 5) return 3;
+  return 2;
+}
+
 function dnd5eSrdWildShapeMax(level: number): number {
   const normalized = Math.max(1, Math.floor(level));
   if (normalized >= 17) return 4;
@@ -4100,7 +4275,7 @@ function dnd5eSrdWildShapeMaxChallengeRating(level: number): string {
 }
 
 function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
-  if (className === "Paladin") return defaultDnd5eSrdHalfCasterSpellSlots(level);
+  if (className === "Paladin" || className === "Ranger") return defaultDnd5eSrdHalfCasterSpellSlots(level);
   if (className !== "Bard" && className !== "Cleric" && className !== "Druid" && className !== "Wizard") return {};
   const slots: Record<string, Record<string, unknown>> = {
     level1: { current: Math.min(4, 2 + Math.max(0, level - 1)), max: Math.min(4, 2 + Math.max(0, level - 1)), recovery: "long" }

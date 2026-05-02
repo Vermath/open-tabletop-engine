@@ -1438,6 +1438,9 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
   if (dnd5eSrdHasFaithfulSteed(actor)) {
     options.push({ rollId: "feature-faithful-steed", label: "Faithful Steed", description: "Faithful Steed: free Find Steed casting; recovers on Long Rest" });
   }
+  if (dnd5eSrdHasHuntersMark(actor)) {
+    options.push({ rollId: "feature-hunters-mark-damage", label: "Hunter's Mark", description: `Hunter's Mark Damage: ${dnd5eSrdHuntersMarkFormula(actor)} force; spends a spell slot or Favored Enemy` });
+  }
   if (dnd5eSrdHasWildShape(actor)) {
     options.push({ rollId: "feature-wild-shape", label: "Wild Shape", description: `Wild Shape: spend one use; ${dnd5eSrdWildShapeDurationHours(actor)} hour form; regain one use on Short Rest` });
   }
@@ -1525,6 +1528,11 @@ function dnd5eSrdHasPaladinsSmite(actor: Actor): boolean {
 function dnd5eSrdHasFaithfulSteed(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   return (stringValue(actor.data.class) === "Paladin" && numericValue(actor.data.level, 1) >= 5) || features.includes("Faithful Steed") || "faithfulSteed" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasHuntersMark(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return stringValue(actor.data.class) === "Ranger" || features.includes("Favored Enemy") || features.includes("Hunter's Mark") || "favoredEnemy" in recordValue(actor.data.resources);
 }
 
 function dnd5eSrdHasWildShape(actor: Actor): boolean {
@@ -1617,6 +1625,10 @@ function dnd5eSrdDivineSmiteFormula(actor: Actor): string {
   return `${slotLevel + 1}d8`;
 }
 
+function dnd5eSrdHuntersMarkFormula(actor: Actor): string {
+  return numericValue(actor.data.level, 1) >= 20 ? "1d10" : "1d6";
+}
+
 function dnd5eSrdWildShapeDurationHours(actor: Actor): number {
   return Math.max(1, Math.floor(Math.max(1, numericValue(actor.data.level, 1)) / 2));
 }
@@ -1665,6 +1677,7 @@ function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Cleric") return "wisdom";
   if (className === "Druid") return "wisdom";
   if (className === "Paladin") return "charisma";
+  if (className === "Ranger") return "wisdom";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";
   return "strength";
@@ -1677,11 +1690,12 @@ function dnd5eSrdTacticalShiftMovement(actor: Actor): number {
 function dnd5eSrdAttacksPerAction(actor: Actor): number {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   const className = stringValue(actor.data.class);
-  const hasExtraAttack = className === "Fighter" || ((className === "Barbarian" || className === "Paladin") && numericValue(actor.data.level, 1) >= 5) || features.includes("Extra Attack");
+  const hasExtraAttack = className === "Fighter" || ((className === "Barbarian" || className === "Paladin" || className === "Ranger") && numericValue(actor.data.level, 1) >= 5) || features.includes("Extra Attack");
   if (!hasExtraAttack) return 1;
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   if (className === "Barbarian") return level >= 5 || features.includes("Extra Attack") ? 2 : 1;
   if (className === "Paladin") return level >= 5 || features.includes("Extra Attack") ? 2 : 1;
+  if (className === "Ranger") return level >= 5 || features.includes("Extra Attack") ? 2 : 1;
   if (level >= 20) return 4;
   if (level >= 11) return 3;
   if (level >= 5 || features.includes("Extra Attack")) return 2;

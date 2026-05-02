@@ -3197,7 +3197,7 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(templates.statusCode).toBe(200);
-      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "druid", "wizard", "rogue"]);
+      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "druid", "ranger", "wizard", "rogue"]);
 
       const origins = await app.inject({
         method: "GET",
@@ -3563,6 +3563,70 @@ describe("api", () => {
         ])
       );
 
+      const ranger = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "ranger", name: "SRD Ranger", ownerUserId: "usr_demo_player" }
+      });
+      expect(ranger.statusCode).toBe(200);
+      expect(ranger.json().actor.data).toEqual(
+        expect.objectContaining({
+          features: ["Spellcasting", "Favored Enemy", "Weapon Mastery"],
+          hitDice: { current: 1, max: 1, size: "d10" },
+          resources: { favoredEnemy: { current: 2, max: 2, recovery: "long" } },
+          saveProficiencies: ["strength", "dexterity"],
+          skillProficiencies: ["nature", "perception", "survival"],
+          spellSlots: { level1: { current: 2, max: 2, recovery: "long" } }
+        })
+      );
+      expect(ranger.json().sheet.inventory.map((item: { name: string }) => item.name)).toEqual(["Longbow", "Scimitar", "Shortsword", "Studded Leather Armor"]);
+      expect(ranger.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Hunter's Mark", "Cure Wounds"]);
+      expect(ranger.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "save-dexterity", formula: "1d20+5" }),
+          expect.objectContaining({ id: "skill-perception", formula: "1d20+4" }),
+          expect.objectContaining({ id: "feature-hunters-mark-damage", formula: "1d6", metadata: expect.objectContaining({ resource: "favoredEnemy", freeUses: 2, damageType: "Force" }) }),
+          expect.objectContaining({ label: "Longbow Damage", formula: "1d8+3" })
+        ])
+      );
+
+      const levelFiveRanger = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "ranger", name: "SRD Level Five Ranger", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFiveRanger.statusCode).toBe(200);
+      let levelFiveRangerAdvance = levelFiveRanger;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFiveRangerAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRanger.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFiveRangerAdvance.statusCode).toBe(200);
+      }
+      expect(levelFiveRangerAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Favored Enemy", "Deft Explorer", "Fighting Style", "Ranger Subclass", "Extra Attack"]),
+          resources: { favoredEnemy: { current: 2, max: 3, recovery: "long" } },
+          spellSlots: {
+            level1: { current: 2, max: 4, recovery: "long" },
+            level2: { current: 2, max: 2, recovery: "long" }
+          },
+          combat: expect.objectContaining({ attacksPerAction: 2 })
+        })
+      );
+      expect(levelFiveRangerAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-hunters-mark-damage", formula: "1d6", metadata: expect.objectContaining({ freeUses: 3, freeCastResource: "favoredEnemy" }) }),
+          expect.objectContaining({ label: "Longbow Damage", metadata: { attacksPerAction: 2, feature: "Extra Attack" } })
+        ])
+      );
+
       const rogue = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
@@ -3726,10 +3790,13 @@ describe("api", () => {
           expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" }),
           expect.objectContaining({ id: "chromatic-orb", name: "Chromatic Orb", data: expect.objectContaining({ damageFormula: "3d8", upcastFormula: "1d8" }) }),
           expect.objectContaining({ id: "ice-knife", name: "Ice Knife", data: expect.objectContaining({ damageFormula: "1d10", secondaryDamageFormula: "2d6" }) }),
+          expect.objectContaining({ id: "hunters-mark", name: "Hunter's Mark", data: expect.objectContaining({ damageFormula: "1d6", damageType: "force" }) }),
           expect.objectContaining({ id: "shield-armor", name: "Shield", data: expect.objectContaining({ costGp: 10, armorBonus: 2 }) }),
           expect.objectContaining({ id: "leather-armor", name: "Leather Armor", data: expect.objectContaining({ costGp: 10, armorBase: 11 }) }),
+          expect.objectContaining({ id: "studded-leather-armor", name: "Studded Leather Armor", data: expect.objectContaining({ costGp: 45, armorBase: 12 }) }),
           expect.objectContaining({ id: "chain-mail", name: "Chain Mail", data: expect.objectContaining({ costGp: 75, armorBase: 16, dexBonus: false }) }),
-          expect.objectContaining({ id: "shortbow", name: "Shortbow", data: expect.objectContaining({ costGp: 25, damage: "1d6" }) })
+          expect.objectContaining({ id: "shortbow", name: "Shortbow", data: expect.objectContaining({ costGp: 25, damage: "1d6" }) }),
+          expect.objectContaining({ id: "longbow", name: "Longbow", data: expect.objectContaining({ costGp: 50, damage: "1d8" }) })
         ])
       );
 
@@ -4010,6 +4077,25 @@ describe("api", () => {
       });
       expect(paladinSmiteTarget.statusCode).toBe(200);
 
+      const rangerTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: "SRD Ranger Mark Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: { current: 10, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(rangerTarget.statusCode).toBe(200);
+
       const sneakAttack = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRogue.json().actor.id}/roll`,
@@ -4271,6 +4357,56 @@ describe("api", () => {
         level1: { current: 4, max: 4, recovery: "long" },
         level2: { current: 3, max: 3, recovery: "long" },
         level3: { current: 2, max: 2, recovery: "long" }
+      });
+
+      const huntersMarkFree = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRanger.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-hunters-mark-damage", useFreeResource: true, consumeResources: true, applyEffect: true, targetActorId: rangerTarget.json().id }
+      });
+      expect(huntersMarkFree.statusCode).toBe(200);
+      expect(huntersMarkFree.json().roll.formula).toBe("1d6");
+      expect(huntersMarkFree.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-hunters-mark-damage", metadata: expect.objectContaining({ resource: "favoredEnemy", damageType: "Force" }) }));
+      expect(huntersMarkFree.json().usage.consumed).toEqual([{ type: "resource", key: "favoredEnemy", label: "Favored Enemy", amount: 1, remaining: 1 }]);
+      expect(huntersMarkFree.json().effect).toEqual(expect.objectContaining({ type: "damage", targetActorId: rangerTarget.json().id, pool: "hp", before: 10, max: 12 }));
+
+      const huntersMarkSlot = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRanger.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-hunters-mark-damage", spellSlotLevel: 2, consumeResources: true }
+      });
+      expect(huntersMarkSlot.statusCode).toBe(200);
+      expect(huntersMarkSlot.json().usage).toEqual(expect.objectContaining({ slotLevel: 2 }));
+      expect(huntersMarkSlot.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 1 }]);
+
+      const storedLevelFiveRanger = store.state.actors.find((actor) => actor.id === levelFiveRanger.json().actor.id)!;
+      storedLevelFiveRanger.data = {
+        ...storedLevelFiveRanger.data,
+        resources: { favoredEnemy: { current: 0, max: 3, recovery: "long" } },
+        spellSlots: { level1: { current: 0, max: 4, recovery: "long" }, level2: { current: 0, max: 2, recovery: "long" } }
+      };
+      const depletedFavoredEnemy = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRanger.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-hunters-mark-damage", useFreeResource: true, consumeResources: true }
+      });
+      expect(depletedFavoredEnemy.statusCode).toBe(409);
+      expect(depletedFavoredEnemy.json().message).toContain("Insufficient favored enemy");
+
+      const rangerLongRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRanger.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "long" }
+      });
+      expect(rangerLongRest.statusCode).toBe(200);
+      expect(rangerLongRest.json().actor.data.resources).toEqual({ favoredEnemy: { current: 3, max: 3, recovery: "long" } });
+      expect(rangerLongRest.json().actor.data.spellSlots).toEqual({
+        level1: { current: 4, max: 4, recovery: "long" },
+        level2: { current: 2, max: 2, recovery: "long" }
       });
 
       const bardicInspiration = await app.inject({

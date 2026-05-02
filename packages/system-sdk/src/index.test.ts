@@ -235,6 +235,7 @@ describe("dnd 5.5e srd rules", () => {
     const wizard = dnd5eSrdCharacterTemplate("wizard");
     const paladin = dnd5eSrdCharacterTemplate("paladin");
     const druid = dnd5eSrdCharacterTemplate("druid");
+    const ranger = dnd5eSrdCharacterTemplate("ranger");
     const rogue = dnd5eSrdCharacterTemplate("rogue");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
@@ -273,6 +274,14 @@ describe("dnd 5.5e srd rules", () => {
     expect(druid?.data.resources).toEqual({});
     expect(druid?.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
     expect(druid?.items.map((item) => item.entryId)).toEqual(["cure-wounds", "quarterstaff"]);
+    expect(ranger).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Ranger" }));
+    expect(ranger?.data.features).toEqual(["Spellcasting", "Favored Enemy", "Weapon Mastery"]);
+    expect(ranger?.data.saveProficiencies).toEqual(["strength", "dexterity"]);
+    expect(ranger?.data.skillProficiencies).toEqual(["nature", "perception", "survival"]);
+    expect(ranger?.data.hitDice).toEqual({ current: 1, max: 1, size: "d10" });
+    expect(ranger?.data.resources).toEqual({ favoredEnemy: { current: 2, max: 2, recovery: "long" } });
+    expect(ranger?.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
+    expect(ranger?.items.map((item) => item.entryId)).toEqual(["hunters-mark", "cure-wounds", "longbow", "scimitar", "shortsword", "studded-leather-armor"]);
     expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
     expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
     expect(rogue?.data.features).toEqual(["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"]);
@@ -289,9 +298,14 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("ice-knife")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d10", secondaryDamageFormula: "2d6", secondaryUpcastFormula: "1d6" }));
     expect(dnd5eSrdCompendiumEntry("ray-of-sickness")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8" }));
     expect(dnd5eSrdCompendiumEntry("divine-smite")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8", damageType: "radiant" }));
+    expect(dnd5eSrdCompendiumEntry("hunters-mark")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d6", damageType: "force", concentration: true }));
     expect(dnd5eSrdCompendiumEntry("dagger")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, damageType: "piercing" }));
     expect(dnd5eSrdCompendiumEntry("quarterstaff")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 0.2 }));
     expect(dnd5eSrdCompendiumEntry("shortbow")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 25, damageType: "piercing" }));
+    expect(dnd5eSrdCompendiumEntry("longbow")?.data).toEqual(expect.objectContaining({ damage: "1d8", costGp: 50, damageType: "piercing" }));
+    expect(dnd5eSrdCompendiumEntry("scimitar")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 25, damageType: "slashing" }));
+    expect(dnd5eSrdCompendiumEntry("shortsword")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 10, damageType: "piercing" }));
+    expect(dnd5eSrdCompendiumEntry("studded-leather-armor")?.data).toEqual(expect.objectContaining({ armorBase: 12, armorType: "light", costGp: 45, weightLb: 13 }));
     expect(dnd5eSrdCompendiumEntry("spear")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 1 }));
 
     const spell: Item = {
@@ -684,6 +698,47 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdActionFormula(levelFiveDruidActor, [], "feature-wild-companion")).toBe("0");
     expect(dnd5eSrdActionFormula(levelFiveDruidActor, [], "feature-wild-resurgence-wild-shape")).toBe("0");
     expect(dnd5eSrdActionFormula(levelFiveDruidActor, [], "feature-wild-resurgence-spell-slot")).toBe("0");
+    const rangerActor: Actor = { ...srdActor, data: { ...ranger!.data } };
+    const rangerLongbow: Item = {
+      id: "itm_ranger_longbow",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: rangerActor.id,
+      type: "item",
+      name: "Longbow",
+      data: { ...dnd5eSrdCompendiumEntry("longbow")!.data, compendiumId: "longbow" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(dnd5eSrdQuickRolls(rangerActor, [rangerLongbow])).toEqual(
+      expect.arrayContaining([
+        { id: "save-strength", label: "Strength Save", formula: "1d20+2" },
+        { id: "save-dexterity", label: "Dexterity Save", formula: "1d20+5" },
+        { id: "skill-perception", label: "Perception Check", formula: "1d20+4" },
+        { id: "skill-survival", label: "Survival Check", formula: "1d20+4" },
+        expect.objectContaining({ id: "feature-hunters-mark-damage", label: "Hunter's Mark Damage", formula: "1d6", metadata: expect.objectContaining({ resource: "favoredEnemy", freeUses: 2, damageType: "Force" }) }),
+        { id: "item-itm_ranger_longbow-damage", label: "Longbow Damage", formula: "1d8+3" }
+      ])
+    );
+    expect(dnd5eSrdActionFormula(rangerActor, [], "feature-hunters-mark-damage")).toBe("1d6");
+    let levelFiveRangerData = rangerActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveRangerData = applyDnd5eSrdAdvancement({ ...rangerActor, data: levelFiveRangerData }, "level-up");
+    }
+    const levelFiveRangerActor: Actor = { ...rangerActor, data: levelFiveRangerData };
+    expect(levelFiveRangerData.features).toEqual(expect.arrayContaining(["Favored Enemy", "Deft Explorer", "Fighting Style", "Ranger Subclass", "Extra Attack"]));
+    expect(levelFiveRangerData.resources).toEqual({ favoredEnemy: { current: 2, max: 3, recovery: "long" } });
+    expect(levelFiveRangerData.spellSlots).toEqual({
+      level1: { current: 2, max: 4, recovery: "long" },
+      level2: { current: 2, max: 2, recovery: "long" }
+    });
+    expect(levelFiveRangerData.combat).toEqual(expect.objectContaining({ attacksPerAction: 2 }));
+    expect(dnd5eSrdQuickRolls(levelFiveRangerActor, [rangerLongbow])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-hunters-mark-damage", formula: "1d6", metadata: expect.objectContaining({ freeUses: 3, upcastDuration: { level3: "up to 8 hours", level5: "up to 24 hours" } }) }),
+        expect.objectContaining({ id: "item-itm_ranger_longbow-damage", formula: "1d8+3", metadata: { attacksPerAction: 2, feature: "Extra Attack" } })
+      ])
+    );
     const rogueActor: Actor = { ...srdActor, data: { ...rogue!.data } };
     const rogueDagger: Item = {
       id: "itm_rogue_dagger",
@@ -946,6 +1001,40 @@ describe("dnd 5.5e srd rules", () => {
       level1: { current: 4, max: 4, recovery: "long" },
       level2: { current: 2, max: 2, recovery: "long" }
     });
+    const rangerActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("ranger")!.data } };
+    let levelFiveRangerData = rangerActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveRangerData = applyDnd5eSrdAdvancement({ ...rangerActor, data: levelFiveRangerData }, "level-up");
+    }
+    const levelFiveRangerActor: Actor = { ...rangerActor, data: levelFiveRangerData };
+    expect(useDnd5eSrdAction(levelFiveRangerActor, [], "feature-hunters-mark-damage", { useFreeResource: true })).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 1,
+        consumed: [{ type: "resource", key: "favoredEnemy", label: "Favored Enemy", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({ resources: { favoredEnemy: { current: 1, max: 3, recovery: "long" } } })
+      })
+    );
+    expect(useDnd5eSrdAction(levelFiveRangerActor, [], "feature-hunters-mark-damage", { spellSlotLevel: 2 })).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 2,
+        consumed: [{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({
+          spellSlots: {
+            level1: { current: 2, max: 4, recovery: "long" },
+            level2: { current: 1, max: 2, recovery: "long" }
+          }
+        })
+      })
+    );
+    expect(() => useDnd5eSrdAction({ ...levelFiveRangerActor, data: { ...levelFiveRangerData, resources: { favoredEnemy: { current: 0, max: 3, recovery: "long" } } } }, [], "feature-hunters-mark-damage", { useFreeResource: true })).toThrow("Insufficient favored enemy");
+    expect(applyDnd5eSrdRest({ ...levelFiveRangerActor, data: { ...levelFiveRangerData, resources: { favoredEnemy: { current: 0, max: 3, recovery: "long" } }, spellSlots: { level1: { current: 0, max: 4, recovery: "long" }, level2: { current: 0, max: 2, recovery: "long" } } } }, "long").data).toEqual(
+      expect.objectContaining({
+        resources: { favoredEnemy: { current: 3, max: 3, recovery: "long" } },
+        spellSlots: { level1: { current: 4, max: 4, recovery: "long" }, level2: { current: 2, max: 2, recovery: "long" } }
+      })
+    );
     const druidActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("druid")!.data } };
     let levelFiveDruidData = druidActor.data;
     for (let level = 2; level <= 5; level += 1) {
