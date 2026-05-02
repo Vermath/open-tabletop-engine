@@ -239,6 +239,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
     expect(dnd5eSrdCompendiumEntry("longsword")?.data).toEqual(expect.objectContaining({ costGp: 15, weightLb: 3 }));
     expect(dnd5eSrdCompendiumEntry("shield-armor")?.data).toEqual(expect.objectContaining({ costGp: 10, armorBonus: 2 }));
+    expect(dnd5eSrdCompendiumEntry("leather-armor")?.data).toEqual(expect.objectContaining({ armorBase: 11, armorType: "light", costGp: 10, weightLb: 10 }));
+    expect(dnd5eSrdCompendiumEntry("chain-mail")?.data).toEqual(expect.objectContaining({ armorBase: 16, armorType: "heavy", dexBonus: false, strengthRequirement: 13, stealthDisadvantage: true, costGp: 75, weightLb: 55 }));
     expect(dnd5eSrdCompendiumEntry("chromatic-orb")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "3d8", upcastFormula: "1d8" }));
     expect(dnd5eSrdCompendiumEntry("ice-knife")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d10", secondaryDamageFormula: "2d6", secondaryUpcastFormula: "1d6" }));
     expect(dnd5eSrdCompendiumEntry("ray-of-sickness")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8" }));
@@ -291,7 +293,52 @@ describe("dnd 5.5e srd rules", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
+    const leatherArmor: Item = {
+      id: "itm_leather_armor",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Leather Armor",
+      data: { ...dnd5eSrdCompendiumEntry("leather-armor")!.data, compendiumId: "leather-armor" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const chainMail: Item = {
+      id: "itm_chain_mail",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Chain Mail",
+      data: { ...dnd5eSrdCompendiumEntry("chain-mail")!.data, compendiumId: "chain-mail" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const shield: Item = {
+      id: "itm_shield",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Shield",
+      data: { ...dnd5eSrdCompendiumEntry("shield-armor")!.data, compendiumId: "shield-armor" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
     expect(dnd5eSrdSheet(srdActor, [spell]).spells.map((item) => item.name)).toEqual(["Healing Word"]);
+    expect(dnd5eSrdSheet(srdActor, [leatherArmor, shield]).data).toEqual(
+      expect.objectContaining({
+        armorClass: 14,
+        armorClassDetails: expect.objectContaining({ value: 14, base: 11, dexModifier: 1, armorName: "Leather Armor", shieldBonus: 2, speedPenalty: 0 })
+      })
+    );
+    expect(dnd5eSrdSheet(srdActor, [chainMail, shield]).data).toEqual(
+      expect.objectContaining({
+        armorClass: 18,
+        armorClassDetails: expect.objectContaining({ value: 18, base: 16, dexModifier: 0, armorName: "Chain Mail", shieldBonus: 2, stealthDisadvantage: true, strengthRequirement: 13, speedPenalty: -10 })
+      })
+    );
     expect(dnd5eSrdQuickRolls(srdActor, [spell, chromaticOrb, iceKnife, shortbow])).toEqual(
       expect.arrayContaining([
         { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },
@@ -328,6 +375,9 @@ describe("dnd 5.5e srd rules", () => {
     const purchasedShortbow = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("shortbow")!, 1);
     expect(purchasedShortbow).toEqual(expect.objectContaining({ entryId: "shortbow", quantity: 1, unitCostGp: 25, totalCostGp: 25, currency: { gp: 25, sp: 0, cp: 0 } }));
     expect(purchasedShortbow.itemData).toEqual(expect.objectContaining({ compendiumId: "shortbow", quantity: 1, purchasedForGp: 25, damage: "1d6" }));
+    const purchasedLeather = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("leather-armor")!, 1);
+    expect(purchasedLeather).toEqual(expect.objectContaining({ entryId: "leather-armor", quantity: 1, unitCostGp: 10, totalCostGp: 10, currency: { gp: 40, sp: 0, cp: 0 } }));
+    expect(purchasedLeather.itemData).toEqual(expect.objectContaining({ compendiumId: "leather-armor", quantity: 1, purchasedForGp: 10, armorBase: 11 }));
     expect(() => dnd5eSrdEquipmentPurchase({ ...srdActor, data: { ...srdActor.data, currency: { gp: 1 } } }, dnd5eSrdCompendiumEntry("longsword")!, 1)).toThrow("Insufficient currency");
     expect(() => dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("magic-initiate")!, 1)).toThrow("not purchasable");
   });

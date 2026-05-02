@@ -174,6 +174,19 @@ export interface Dnd5eSrdEquipmentPurchaseResult {
   itemData: Record<string, unknown>;
 }
 
+export interface Dnd5eSrdArmorClassDetails {
+  value: number;
+  base: number;
+  dexModifier: number;
+  armorName: string;
+  armorItemId?: string;
+  shieldBonus: number;
+  shieldItemIds: string[];
+  stealthDisadvantage: boolean;
+  strengthRequirement?: number;
+  speedPenalty: number;
+}
+
 export interface EncounterThreat {
   id: string;
   systemId: string;
@@ -677,7 +690,21 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       type: "item",
       name: "Shield",
       summary: "Defensive gear that improves armor class while wielded.",
-      data: { category: "armor", equipmentCategory: "armor", armorBonus: 2, costGp: 10, weightLb: 6, source: DND_5E_SRD_VERSION }
+      data: { category: "armor", equipmentCategory: "armor", armorKind: "shield", armorBonus: 2, costGp: 10, weightLb: 6, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "leather-armor",
+      type: "item",
+      name: "Leather Armor",
+      summary: "Light armor that sets base Armor Class while allowing Dexterity defense.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "light", armorBase: 11, costGp: 10, weightLb: 10, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "chain-mail",
+      type: "item",
+      name: "Chain Mail",
+      summary: "Heavy armor with a fixed Armor Class, Strength requirement, and noisy profile.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "heavy", armorBase: 16, dexBonus: false, strengthRequirement: 13, stealthDisadvantage: true, costGp: 75, weightLb: 55, source: DND_5E_SRD_VERSION }
     },
     {
       id: "dagger",
@@ -1480,10 +1507,65 @@ export function genericFantasySheet(actor: Actor, items: Item[] = []): GenericFa
 }
 
 export function dnd5eSrdSheet(actor: Actor, items: Item[] = []): GenericFantasySheet {
+  const sheet = genericFantasySheet(actor, items);
+  const existingArmorClass = numericValue(actor.data.armorClass, Number.NaN);
+  const armorClassDetails = dnd5eSrdArmorClass(actor, items);
   return {
-    ...genericFantasySheet(actor, items),
+    ...sheet,
+    data: Number.isFinite(existingArmorClass) ? sheet.data : { ...sheet.data, armorClass: armorClassDetails.value, armorClassDetails },
     quickRolls: dnd5eSrdQuickRolls(actor, items),
     conditions: dnd5eSrdActorConditions(actor)
+  };
+}
+
+export function dnd5eSrdArmorClass(actor: Actor, items: Item[] = []): Dnd5eSrdArmorClassDetails {
+  const dexModifier = genericFantasyAttributeModifier(actor, "dexterity");
+  const strengthScore = numericValue(recordValue(actor.data.attributes).strength, 10);
+  const armorCandidates: Dnd5eSrdArmorClassDetails[] = [
+    {
+      value: 10 + dexModifier,
+      base: 10,
+      dexModifier,
+      armorName: "Unarmored",
+      shieldBonus: 0,
+      shieldItemIds: [],
+      stealthDisadvantage: false,
+      speedPenalty: 0
+    }
+  ];
+  const actorItems = items.filter((item) => itemBelongsToActor(actor, item)).filter((item) => itemQuantity(recordValue(item.data)) > 0);
+  for (const item of actorItems) {
+    const data = recordValue(item.data);
+    if (data.equipped === false) continue;
+    const armorBase = numericValue(data.armorBase, Number.NaN);
+    if (!Number.isFinite(armorBase)) continue;
+    const dexContribution = data.dexBonus === false ? 0 : Math.min(dexModifier, numericValue(data.dexCap, dexModifier));
+    const strengthRequirement = numericValue(data.strengthRequirement, Number.NaN);
+    const hasStrengthRequirement = Number.isFinite(strengthRequirement);
+    armorCandidates.push({
+      value: armorBase + dexContribution,
+      base: armorBase,
+      dexModifier: dexContribution,
+      armorName: item.name,
+      armorItemId: item.id,
+      shieldBonus: 0,
+      shieldItemIds: [],
+      stealthDisadvantage: booleanValue(data.stealthDisadvantage),
+      strengthRequirement: hasStrengthRequirement ? strengthRequirement : undefined,
+      speedPenalty: hasStrengthRequirement && strengthScore < strengthRequirement ? -10 : 0
+    });
+  }
+  const armor = armorCandidates.sort((left, right) => right.value - left.value)[0]!;
+  const shieldItems = actorItems.filter((item) => {
+    const data = recordValue(item.data);
+    return data.equipped !== false && Number.isFinite(numericValue(data.armorBonus, Number.NaN));
+  });
+  const shieldBonus = shieldItems.reduce((max, item) => Math.max(max, numericValue(recordValue(item.data).armorBonus, 0)), 0);
+  return {
+    ...armor,
+    value: armor.value + shieldBonus,
+    shieldBonus,
+    shieldItemIds: shieldBonus > 0 ? shieldItems.filter((item) => numericValue(recordValue(item.data).armorBonus, 0) === shieldBonus).map((item) => item.id) : []
   };
 }
 
@@ -2554,6 +2636,10 @@ function scaleDiceFormula(formula: string, multiplier: number): string {
   }
   const count = numericValue(match[1] ? Number(match[1]) : 1, 1);
   return `${count * Math.max(1, multiplier)}d${match[2]}`;
+}
+
+function itemQuantity(data: Record<string, unknown>): number {
+  return Math.max(0, numericValue(data.quantity, 1));
 }
 
 function numericValue(value: unknown, fallback: number): number {

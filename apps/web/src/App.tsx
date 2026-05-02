@@ -1228,6 +1228,7 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
   const resources = actorResourceLabels(props.actor);
   const actionLabels = actorActionLabels(props.actor, props.items);
   const firstAction = actorActionOptions(props.actor, props.items)[0];
+  const armorClass = actorArmorClass(props.actor, props.items);
   return (
     <div className="panel-stack">
       <div className="section-title">Selected Actor</div>
@@ -1242,6 +1243,12 @@ function ActorPanel(props: { actor?: Actor; token?: Token; items: Item[]; update
           {hp?.current ?? "?"}/{hp?.max ?? "?"}
         </strong>
       </div>
+      {armorClass && (
+        <div className="metric-row">
+          <span>AC</span>
+          <strong>{armorClass.label ? `${armorClass.value} (${armorClass.label})` : armorClass.value}</strong>
+        </div>
+      )}
       {conditions.length > 0 && (
         <div className="metric-row">
           <span>Conditions</span>
@@ -1344,6 +1351,36 @@ function itemDisplayLabel(item: Item): string {
 
 function actorActionLabels(actor: Actor, items: Item[]): string[] {
   return actorActionOptions(actor, items).map((option) => option.description);
+}
+
+function actorArmorClass(actor: Actor, items: Item[]): { value: number; label?: string } | undefined {
+  const storedArmorClass = numericValue(actor.data.armorClass, NaN);
+  if (Number.isFinite(storedArmorClass)) return { value: storedArmorClass };
+  if (actor.systemId !== "dnd-5e-srd") return undefined;
+  const dexModifier = genericFantasyAttributeModifier(actor, "dexterity");
+  const actorItems = items.filter((item) => item.actorId === actor.id && itemQuantity(recordValue(item.data)) > 0);
+  const armorOptions = [
+    { value: 10 + dexModifier, label: "Unarmored" },
+    ...actorItems.flatMap((item) => {
+      const data = recordValue(item.data);
+      if (data.equipped === false) return [];
+      const armorBase = numericValue(data.armorBase, NaN);
+      if (!Number.isFinite(armorBase)) return [];
+      const dexContribution = data.dexBonus === false ? 0 : Math.min(dexModifier, numericValue(data.dexCap, dexModifier));
+      return [{ value: armorBase + dexContribution, label: item.name }];
+    })
+  ];
+  const armor = armorOptions.sort((left, right) => right.value - left.value)[0]!;
+  const shieldBonus = actorItems.reduce((max, item) => {
+    const data = recordValue(item.data);
+    if (data.equipped === false) return max;
+    return Math.max(max, numericValue(data.armorBonus, 0));
+  }, 0);
+  return { value: armor.value + shieldBonus, label: shieldBonus > 0 ? `${armor.label} + Shield` : armor.label };
+}
+
+function itemQuantity(data: Record<string, unknown>): number {
+  return Math.max(0, numericValue(data.quantity, 1));
 }
 
 type ActorActionOption = { rollId: string; label: string; description: string };

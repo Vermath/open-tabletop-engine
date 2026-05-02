@@ -3291,6 +3291,8 @@ describe("api", () => {
           expect.objectContaining({ id: "chromatic-orb", name: "Chromatic Orb", data: expect.objectContaining({ damageFormula: "3d8", upcastFormula: "1d8" }) }),
           expect.objectContaining({ id: "ice-knife", name: "Ice Knife", data: expect.objectContaining({ damageFormula: "1d10", secondaryDamageFormula: "2d6" }) }),
           expect.objectContaining({ id: "shield-armor", name: "Shield", data: expect.objectContaining({ costGp: 10, armorBonus: 2 }) }),
+          expect.objectContaining({ id: "leather-armor", name: "Leather Armor", data: expect.objectContaining({ costGp: 10, armorBase: 11 }) }),
+          expect.objectContaining({ id: "chain-mail", name: "Chain Mail", data: expect.objectContaining({ costGp: 75, armorBase: 16, dexBonus: false }) }),
           expect.objectContaining({ id: "shortbow", name: "Shortbow", data: expect.objectContaining({ costGp: 25, damage: "1d6" }) })
         ])
       );
@@ -3374,6 +3376,21 @@ describe("api", () => {
       expect(purchase.json().item).toEqual(expect.objectContaining({ name: "Longsword", data: expect.objectContaining({ quantity: 2, purchasedForGp: 30 }) }));
       expect(purchase.json().sheet.inventory.map((item: { name: string }) => item.name)).toContain("Longsword");
 
+      const shieldPurchase = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/purchase`,
+        headers: authHeaders,
+        payload: { entryId: "shield-armor", quantity: 1 }
+      });
+      expect(shieldPurchase.statusCode).toBe(200);
+      expect(shieldPurchase.json().purchase).toEqual(expect.objectContaining({ entryId: "shield-armor", quantity: 1, unitCostGp: 10, totalCostGp: 10, currency: { gp: 10, sp: 0, cp: 0 } }));
+      expect(shieldPurchase.json().sheet.data).toEqual(
+        expect.objectContaining({
+          armorClass: 13,
+          armorClassDetails: expect.objectContaining({ value: 13, base: 10, dexModifier: 1, armorName: "Unarmored", shieldBonus: 2 })
+        })
+      );
+
       const insufficientPurchase = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/purchase`,
@@ -3381,7 +3398,7 @@ describe("api", () => {
         payload: { entryId: "longsword", quantity: 2 }
       });
       expect(insufficientPurchase.statusCode).toBe(409);
-      expect(store.state.actors.find((actor) => actor.id === cleric.json().actor.id)?.data.currency).toEqual({ gp: 20, sp: 0, cp: 0 });
+      expect(store.state.actors.find((actor) => actor.id === cleric.json().actor.id)?.data.currency).toEqual({ gp: 10, sp: 0, cp: 0 });
 
       const target = await app.inject({
         method: "POST",
