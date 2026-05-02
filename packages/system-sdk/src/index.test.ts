@@ -1071,7 +1071,41 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdSheet(actor, []).quickRolls).toEqual(
       expect.arrayContaining([
         { id: "skill-stealth", label: "Stealth Check", formula: "1d20+5" },
-        { id: "tool-thieves-tools", label: "Thieves' Tools Check", formula: "1d20+5" }
+        { id: "tool-thieves-tools", label: "Thieves' Tools Check", formula: "1d20+5" },
+        expect.objectContaining({ id: "species-orc-adrenaline-rush", label: "Adrenaline Rush", formula: "2", metadata: expect.objectContaining({ temporaryHitPoints: 2, recovery: "short" }) }),
+        expect.objectContaining({ id: "species-orc-relentless-endurance", label: "Relentless Endurance", formula: "0", metadata: expect.objectContaining({ result: "drop to 1 HP instead", recovery: "long" }) })
+      ])
+    );
+    const adrenalineRush = useDnd5eSrdAction(actor, [], "species-orc-adrenaline-rush");
+    expect(adrenalineRush.consumed).toEqual([{ type: "resource", key: "adrenalineRush", label: "Adrenaline Rush", amount: 1, remaining: 1 }]);
+    expect(applyDnd5eSrdRest({ ...actor, data: adrenalineRush.data }, "short").data.resources).toEqual(expect.objectContaining({ adrenalineRush: { current: 2, max: 2, recovery: "short" } }));
+
+    const dwarf = dnd5eSrdApplyCharacterOrigins(dnd5eSrdCharacterTemplate("fighter")!, { speciesId: "dwarf" });
+    expect(dwarf.data.hp).toEqual({ current: 13, max: 13 });
+    expect(dwarf.data.resources).toEqual(expect.objectContaining({ stonecunning: { current: 2, max: 2, recovery: "long" } }));
+    const dwarfActor: Actor = { ...srdActor, data: dwarf.data };
+    expect(dnd5eSrdQuickRolls(dwarfActor, [])).toEqual(expect.arrayContaining([expect.objectContaining({ id: "species-dwarf-stonecunning", metadata: expect.objectContaining({ sense: "Tremorsense", rangeFt: 60 }) })]));
+    const advancedDwarf = applyDnd5eSrdAdvancement(dwarfActor, "level-up");
+    expect(advancedDwarf.hp).toEqual({ current: 19, max: 19 });
+
+    const dragonborn = dnd5eSrdApplyCharacterOrigins(dnd5eSrdCharacterTemplate("fighter")!, { speciesId: "dragonborn" });
+    const levelFiveDragonbornActor: Actor = { ...srdActor, data: Array.from({ length: 4 }).reduce((data) => applyDnd5eSrdAdvancement({ ...srdActor, data: data as Record<string, unknown> }, "level-up"), dragonborn.data) as Record<string, unknown> };
+    expect(levelFiveDragonbornActor.data.resources).toEqual(expect.objectContaining({ breathWeapon: { current: 2, max: 3, recovery: "long" }, draconicFlight: { current: 1, max: 1, recovery: "long" } }));
+    expect(dnd5eSrdQuickRolls(levelFiveDragonbornActor, [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "species-dragonborn-breath-weapon", formula: "2d10", metadata: expect.objectContaining({ save: expect.objectContaining({ ability: "dexterity", dc: 13 }) }) }),
+        expect.objectContaining({ id: "species-draconic-flight", metadata: expect.objectContaining({ flySpeed: 30, recovery: "long" }) })
+      ])
+    );
+    expect(useDnd5eSrdAction(levelFiveDragonbornActor, [], "species-dragonborn-breath-weapon").consumed).toEqual([{ type: "resource", key: "breathWeapon", label: "Breath Weapon", amount: 1, remaining: 1 }]);
+
+    const goliath = dnd5eSrdApplyCharacterOrigins(dnd5eSrdCharacterTemplate("barbarian")!, { speciesId: "goliath" });
+    const levelFiveGoliathActor: Actor = { ...srdActor, data: Array.from({ length: 4 }).reduce((data) => applyDnd5eSrdAdvancement({ ...srdActor, data: data as Record<string, unknown> }, "level-up"), goliath.data) as Record<string, unknown> };
+    expect(levelFiveGoliathActor.data.resources).toEqual(expect.objectContaining({ giantAncestry: { current: 2, max: 3, recovery: "long" }, largeForm: { current: 1, max: 1, recovery: "long" } }));
+    expect(dnd5eSrdQuickRolls(levelFiveGoliathActor, [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "species-goliath-giant-ancestry", metadata: expect.objectContaining({ options: expect.arrayContaining([expect.objectContaining({ name: "Stone's Endurance", reductionFormula: "1d12+2" })]) }) }),
+        expect.objectContaining({ id: "species-goliath-large-form", metadata: expect.objectContaining({ size: "Large", speedWhileActive: 45 }) })
       ])
     );
     expect(() =>

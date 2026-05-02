@@ -3215,6 +3215,7 @@ describe("api", () => {
         payload: {
           templateId: "wizard",
           name: "SRD Criminal Orc Wizard",
+          ownerUserId: "usr_demo_player",
           backgroundId: "criminal",
           speciesId: "orc",
           abilityScoreIncreases: { dexterity: 2, constitution: 1 }
@@ -3237,9 +3238,78 @@ describe("api", () => {
       expect(criminalOrc.json().sheet.quickRolls).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: "skill-stealth", formula: "1d20+5" }),
-          expect.objectContaining({ id: "tool-thieves-tools", formula: "1d20+5" })
+          expect.objectContaining({ id: "tool-thieves-tools", formula: "1d20+5" }),
+          expect.objectContaining({ id: "species-orc-adrenaline-rush", formula: "2", metadata: expect.objectContaining({ temporaryHitPoints: 2, recovery: "short" }) }),
+          expect.objectContaining({ id: "species-orc-relentless-endurance", formula: "0", metadata: expect.objectContaining({ result: "drop to 1 HP instead" }) })
         ])
       );
+      const orcAdrenalineRush = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "species-orc-adrenaline-rush", consumeResources: true }
+      });
+      expect(orcAdrenalineRush.statusCode).toBe(200);
+      expect(orcAdrenalineRush.json().usage.consumed).toEqual([{ type: "resource", key: "adrenalineRush", label: "Adrenaline Rush", amount: 1, remaining: 1 }]);
+      const orcShortRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short" }
+      });
+      expect(orcShortRest.statusCode).toBe(200);
+      expect(orcShortRest.json().actor.data.resources).toEqual(expect.objectContaining({ adrenalineRush: { current: 2, max: 2, recovery: "short" } }));
+
+      const dwarfFighter = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "SRD Dwarf Fighter", ownerUserId: "usr_demo_player", speciesId: "dwarf" }
+      });
+      expect(dwarfFighter.statusCode).toBe(200);
+      expect(dwarfFighter.json().actor.data.hp).toEqual({ current: 13, max: 13 });
+      expect(dwarfFighter.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "species-dwarf-stonecunning", metadata: expect.objectContaining({ rangeFt: 60 }) })]));
+      const stonecunning = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${dwarfFighter.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "species-dwarf-stonecunning", consumeResources: true }
+      });
+      expect(stonecunning.statusCode).toBe(200);
+      expect(stonecunning.json().usage.consumed).toEqual([{ type: "resource", key: "stonecunning", label: "Stonecunning", amount: 1, remaining: 1 }]);
+
+      const dragonbornFighter = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "SRD Dragonborn Fighter", ownerUserId: "usr_demo_player", speciesId: "dragonborn" }
+      });
+      expect(dragonbornFighter.statusCode).toBe(200);
+      let dragonbornAdvance = dragonbornFighter;
+      for (let level = 2; level <= 5; level += 1) {
+        dragonbornAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${dragonbornFighter.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(dragonbornAdvance.statusCode).toBe(200);
+      }
+      expect(dragonbornAdvance.json().actor.data.resources).toEqual(expect.objectContaining({ breathWeapon: { current: 2, max: 3, recovery: "long" }, draconicFlight: { current: 1, max: 1, recovery: "long" } }));
+      expect(dragonbornAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "species-dragonborn-breath-weapon", formula: "2d10", metadata: expect.objectContaining({ save: expect.objectContaining({ ability: "dexterity", dc: 13 }) }) }),
+          expect.objectContaining({ id: "species-draconic-flight", formula: "0", metadata: expect.objectContaining({ flySpeed: 30 }) })
+        ])
+      );
+      const dragonbornBreath = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${dragonbornFighter.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "species-dragonborn-breath-weapon", consumeResources: true }
+      });
+      expect(dragonbornBreath.statusCode).toBe(200);
+      expect(dragonbornBreath.json().usage.consumed).toEqual([{ type: "resource", key: "breathWeapon", label: "Breath Weapon", amount: 1, remaining: 1 }]);
 
       const invalidOrigin = await app.inject({
         method: "POST",

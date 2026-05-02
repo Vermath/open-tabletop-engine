@@ -217,6 +217,13 @@ export const DND_5E_SRD_TURN_UNDEAD_ROLL_ID = "feature-turn-undead";
 export const DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID = "feature-sear-undead-damage";
 export const DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID = "feature-sneak-attack-damage";
 export const DND_5E_SRD_CUNNING_STRIKE_ROLL_ID = "feature-cunning-strike";
+export const DND_5E_SRD_DRAGONBORN_BREATH_WEAPON_ROLL_ID = "species-dragonborn-breath-weapon";
+export const DND_5E_SRD_DRACONIC_FLIGHT_ROLL_ID = "species-draconic-flight";
+export const DND_5E_SRD_DWARF_STONECUNNING_ROLL_ID = "species-dwarf-stonecunning";
+export const DND_5E_SRD_GOLIATH_GIANT_ANCESTRY_ROLL_ID = "species-goliath-giant-ancestry";
+export const DND_5E_SRD_GOLIATH_LARGE_FORM_ROLL_ID = "species-goliath-large-form";
+export const DND_5E_SRD_ORC_ADRENALINE_RUSH_ROLL_ID = "species-orc-adrenaline-rush";
+export const DND_5E_SRD_ORC_RELENTLESS_ENDURANCE_ROLL_ID = "species-orc-relentless-endurance";
 
 export interface Dnd5eSrdArmorClassDetails {
   value: number;
@@ -513,6 +520,7 @@ export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[
     ...dnd5eSrdSkills().map((skill) => dnd5eSrdSkillCheck(actor, skill.id)),
     ...dnd5eSrdToolProficiencies(actor, "toolProficiencies").map((toolId) => dnd5eSrdToolCheck(actor, toolId)),
     ...dnd5eSrdClassFeatureRolls(actor),
+    ...dnd5eSrdSpeciesTraitRolls(actor),
     ...dnd5eSrdMonsterActionRolls(actor),
     ...dnd5eSrdActionRolls(actor, items)
   ];
@@ -816,6 +824,67 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       label: "Cunning Strike",
       formula: "0",
       metadata: dnd5eSrdCunningStrikeMetadata(actor)
+    });
+  }
+  return rolls;
+}
+
+export function dnd5eSrdSpeciesTraitRolls(actor: Actor): QuickRoll[] {
+  const rolls: QuickRoll[] = [];
+  if (dnd5eSrdHasDragonbornBreathWeapon(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_DRAGONBORN_BREATH_WEAPON_ROLL_ID,
+      label: "Breath Weapon",
+      formula: dnd5eSrdDragonbornBreathWeaponFormula(actor),
+      metadata: dnd5eSrdDragonbornBreathWeaponMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasDraconicFlight(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_DRACONIC_FLIGHT_ROLL_ID,
+      label: "Draconic Flight",
+      formula: "0",
+      metadata: dnd5eSrdDraconicFlightMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasDwarfStonecunning(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_DWARF_STONECUNNING_ROLL_ID,
+      label: "Stonecunning",
+      formula: "0",
+      metadata: dnd5eSrdStonecunningMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasGoliathGiantAncestry(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_GOLIATH_GIANT_ANCESTRY_ROLL_ID,
+      label: "Giant Ancestry",
+      formula: "0",
+      metadata: dnd5eSrdGiantAncestryMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasGoliathLargeForm(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_GOLIATH_LARGE_FORM_ROLL_ID,
+      label: "Large Form",
+      formula: "0",
+      metadata: dnd5eSrdLargeFormMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasOrcAdrenalineRush(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_ORC_ADRENALINE_RUSH_ROLL_ID,
+      label: "Adrenaline Rush",
+      formula: dnd5eSrdAdrenalineRushFormula(actor),
+      metadata: dnd5eSrdAdrenalineRushMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasOrcRelentlessEndurance(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_ORC_RELENTLESS_ENDURANCE_ROLL_ID,
+      label: "Relentless Endurance",
+      formula: "0",
+      metadata: dnd5eSrdRelentlessEnduranceMetadata()
     });
   }
   return rolls;
@@ -1275,7 +1344,7 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   const className = stringValue(data.class) || "Fighter";
   const level = numericValue(data.level, 1);
   const resources = normalizeDnd5eSrdResources(data.resources, className, level, data);
-  for (const [resourceId, resource] of Object.entries(dnd5eSrdSpeciesResources(species, proficiencyBonus))) {
+  for (const [resourceId, resource] of Object.entries(dnd5eSrdSpeciesResources(species, proficiencyBonus, level))) {
     resources[resourceId] = resource;
   }
   data.ruleset = DND_5E_SRD_VERSION;
@@ -1297,6 +1366,7 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   data.resources = resources;
   data.features = [...features];
   if (species.senses?.length) data.senses = [...species.senses];
+  if (species.id === "dwarf") dnd5eSrdApplyDwarvenToughness(data, level);
   dnd5eSrdApplyAbilityScoreIncreases(data, background, options.abilityScoreIncreases);
   const originResources = normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
   const bardicInspiration = originResources.bardicInspiration;
@@ -2143,7 +2213,7 @@ export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record
   const features = dnd5eSrdApplyClassFeatures(normalizeStringArray(next.features), className, level);
   const combat = dnd5eSrdApplyClassCombat(recordValue(next.combat), className, level, next.speed);
   const nextWithSrdAttributes = { ...next, attributes };
-  return {
+  const advanced = {
     ...next,
     ruleset: DND_5E_SRD_VERSION,
     attributes,
@@ -2153,6 +2223,8 @@ export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record
     resources: normalizeDnd5eSrdResources(next.resources, className, level, nextWithSrdAttributes, { raiseMaxToDefault: true }),
     spellSlots: normalizeDnd5eSrdSpellSlots(next.spellSlots, className, level, { raiseMaxToDefault: true })
   };
+  if (dnd5eSrdHasDwarvenToughnessData(actor.data)) dnd5eSrdApplyDwarvenToughness(advanced, 1);
+  return advanced;
 }
 
 export function applyGenericFantasyRest(actor: Actor, restType: SystemRestType): SystemRestResult {
@@ -2383,6 +2455,9 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId === DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID) return dnd5eSrdSearUndeadFormula(actor);
   if (rollId === DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID) return dnd5eSrdSneakAttackFormula(actor);
   if (rollId === DND_5E_SRD_CUNNING_STRIKE_ROLL_ID) return "0";
+  if (rollId === DND_5E_SRD_DRAGONBORN_BREATH_WEAPON_ROLL_ID) return dnd5eSrdDragonbornBreathWeaponFormula(actor);
+  if (rollId === DND_5E_SRD_ORC_ADRENALINE_RUSH_ROLL_ID) return dnd5eSrdAdrenalineRushFormula(actor);
+  if (dnd5eSrdSpeciesResourceAction(rollId)) return "0";
   const slotLevel = dnd5eSrdSpellActionSlotLevel(actor, items, rollId, options);
   return genericFantasyActionFormula(actor, items, rollId, slotLevel ? { ...options, spellSlotLevel: slotLevel } : options);
 }
@@ -2828,6 +2903,20 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
   }
   if (rollId === DND_5E_SRD_SNEAK_ATTACK_DAMAGE_ROLL_ID || rollId === DND_5E_SRD_CUNNING_STRIKE_ROLL_ID) {
     return { systemId: DND_5E_SRD_SYSTEM_ID, actorId: actor.id, rollId, consumed: [], data: { ...actor.data }, items: [] };
+  }
+  const speciesAction = dnd5eSrdSpeciesResourceAction(rollId);
+  if (speciesAction) {
+    const className = stringValue(actor.data.class) || "Fighter";
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data, { raiseMaxToDefault: true });
+    const result = consumeResourcePool(resources, speciesAction.key, 1, speciesAction.label, "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
   }
   const spellAction = useDnd5eSrdSpellAction(actor, items, rollId, options);
   if (spellAction) return spellAction;
@@ -3755,15 +3844,50 @@ function normalizeDnd5eSrdOriginId(value: string): string {
   return value.trim().replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase().replace(/'/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-function dnd5eSrdSpeciesResources(species: Dnd5eSrdCharacterSpecies, proficiencyBonus: number): Record<string, Record<string, unknown> & { current: number; max: number }> {
+function dnd5eSrdSpeciesResources(species: Dnd5eSrdCharacterSpecies, proficiencyBonus: number, level = 1): Record<string, Record<string, unknown> & { current: number; max: number }> {
+  const normalizedLevel = Math.max(1, Math.floor(level));
+  if (species.id === "dragonborn") {
+    const resources: Record<string, Record<string, unknown> & { current: number; max: number }> = {
+      breathWeapon: { current: proficiencyBonus, max: proficiencyBonus, recovery: "long" }
+    };
+    if (normalizedLevel >= 5) resources.draconicFlight = { current: 1, max: 1, recovery: "long" };
+    return resources;
+  }
+  if (species.id === "dwarf") {
+    return { stonecunning: { current: proficiencyBonus, max: proficiencyBonus, recovery: "long" } };
+  }
   if (species.id === "orc") {
     return {
       adrenalineRush: { current: proficiencyBonus, max: proficiencyBonus, recovery: "short" },
       relentlessEndurance: { current: 1, max: 1, recovery: "long" }
     };
   }
-  if (species.id === "goliath") return { giantAncestry: { current: proficiencyBonus, max: proficiencyBonus, recovery: "long" } };
+  if (species.id === "goliath") {
+    const resources: Record<string, Record<string, unknown> & { current: number; max: number }> = {
+      giantAncestry: { current: proficiencyBonus, max: proficiencyBonus, recovery: "long" }
+    };
+    if (normalizedLevel >= 5) resources.largeForm = { current: 1, max: 1, recovery: "long" };
+    return resources;
+  }
   return {};
+}
+
+function defaultDnd5eSrdSpeciesResourcesForData(data: Record<string, unknown>, level: number): Record<string, Record<string, unknown> & { current: number; max: number }> {
+  const origin = recordValue(data.origin);
+  const speciesId = stringValue(origin.speciesId) ?? stringValue(data.species);
+  if (!speciesId) return {};
+  const species = dnd5eSrdSpeciesById(speciesId);
+  if (!species) return {};
+  return dnd5eSrdSpeciesResources(species, dnd5eSrdProficiencyBonusForLevel(level, data.proficiencyBonus), level);
+}
+
+function dnd5eSrdApplyDwarvenToughness(data: Record<string, unknown>, levels: number): void {
+  const hp = normalizePool(data.hp, 1);
+  const bonus = Math.max(1, Math.floor(levels));
+  data.hp = {
+    current: hp.current + bonus,
+    max: hp.max + bonus
+  };
 }
 
 function dnd5eSrdApplyAbilityScoreIncreases(data: Record<string, unknown>, background: Dnd5eSrdCharacterBackground, increases: unknown): void {
@@ -3867,6 +3991,55 @@ function genericFantasyDamageFormula(actor: Actor, data: Record<string, unknown>
   const upcastFormula = stringValue(data[upcastKey]);
   if (spellLevel <= 0 || slotLevel <= spellLevel || !upcastFormula) return baseFormula;
   return appendFormulaTerm(baseFormula, scaleDiceFormula(resolveGenericFantasyFormulaTokens(upcastFormula, actor), slotLevel - spellLevel));
+}
+
+function dnd5eSrdSpeciesResourceAction(rollId: string): { key: string; label: string } | undefined {
+  if (rollId === DND_5E_SRD_DRAGONBORN_BREATH_WEAPON_ROLL_ID) return { key: "breathWeapon", label: "Breath Weapon" };
+  if (rollId === DND_5E_SRD_DRACONIC_FLIGHT_ROLL_ID) return { key: "draconicFlight", label: "Draconic Flight" };
+  if (rollId === DND_5E_SRD_DWARF_STONECUNNING_ROLL_ID) return { key: "stonecunning", label: "Stonecunning" };
+  if (rollId === DND_5E_SRD_GOLIATH_GIANT_ANCESTRY_ROLL_ID) return { key: "giantAncestry", label: "Giant Ancestry" };
+  if (rollId === DND_5E_SRD_GOLIATH_LARGE_FORM_ROLL_ID) return { key: "largeForm", label: "Large Form" };
+  if (rollId === DND_5E_SRD_ORC_ADRENALINE_RUSH_ROLL_ID) return { key: "adrenalineRush", label: "Adrenaline Rush" };
+  if (rollId === DND_5E_SRD_ORC_RELENTLESS_ENDURANCE_ROLL_ID) return { key: "relentlessEndurance", label: "Relentless Endurance" };
+  return undefined;
+}
+
+function dnd5eSrdHasSpeciesFeature(actor: Actor, featureName: string, resourceKey?: string): boolean {
+  const features = normalizeStringArray(actor.data.features);
+  const resources = recordValue(actor.data.resources);
+  return features.includes(featureName) || Boolean(resourceKey && resourceKey in resources);
+}
+
+function dnd5eSrdHasDwarvenToughnessData(data: Record<string, unknown>): boolean {
+  return stringValue(data.species) === "Dwarf" || normalizeStringArray(data.features).includes("Dwarven Toughness");
+}
+
+function dnd5eSrdHasDragonbornBreathWeapon(actor: Actor): boolean {
+  return stringValue(actor.data.species) === "Dragonborn" || dnd5eSrdHasSpeciesFeature(actor, "Breath Weapon", "breathWeapon");
+}
+
+function dnd5eSrdHasDraconicFlight(actor: Actor): boolean {
+  return numericValue(actor.data.level, 1) >= 5 && (stringValue(actor.data.species) === "Dragonborn" || dnd5eSrdHasSpeciesFeature(actor, "Draconic Flight", "draconicFlight"));
+}
+
+function dnd5eSrdHasDwarfStonecunning(actor: Actor): boolean {
+  return stringValue(actor.data.species) === "Dwarf" || dnd5eSrdHasSpeciesFeature(actor, "Stonecunning", "stonecunning");
+}
+
+function dnd5eSrdHasGoliathGiantAncestry(actor: Actor): boolean {
+  return stringValue(actor.data.species) === "Goliath" || dnd5eSrdHasSpeciesFeature(actor, "Giant Ancestry", "giantAncestry");
+}
+
+function dnd5eSrdHasGoliathLargeForm(actor: Actor): boolean {
+  return numericValue(actor.data.level, 1) >= 5 && (stringValue(actor.data.species) === "Goliath" || dnd5eSrdHasSpeciesFeature(actor, "Large Form", "largeForm"));
+}
+
+function dnd5eSrdHasOrcAdrenalineRush(actor: Actor): boolean {
+  return stringValue(actor.data.species) === "Orc" || dnd5eSrdHasSpeciesFeature(actor, "Adrenaline Rush", "adrenalineRush");
+}
+
+function dnd5eSrdHasOrcRelentlessEndurance(actor: Actor): boolean {
+  return stringValue(actor.data.species) === "Orc" || dnd5eSrdHasSpeciesFeature(actor, "Relentless Endurance", "relentlessEndurance");
 }
 
 function dnd5eSrdHasSecondWind(actor: Actor): boolean {
@@ -4514,6 +4687,101 @@ function dnd5eSrdMagicalCunningMetadata(actor: Actor): Record<string, unknown> {
   };
 }
 
+function dnd5eSrdDragonbornBreathWeaponFormula(actor: Actor): string {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  const dice = level >= 17 ? 4 : level >= 11 ? 3 : level >= 5 ? 2 : 1;
+  return `${dice}d10`;
+}
+
+function dnd5eSrdDragonbornBreathWeaponMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "breathWeapon",
+    action: "replace one attack from the Attack action",
+    shapes: ["15-foot Cone", "30-foot Line"],
+    save: { ability: "dexterity", dc: 8 + dnd5eSrdProficiencyBonus(actor) + genericFantasyAttributeModifier(actor, "constitution"), success: "half" },
+    damageType: stringValue(recordValue(actor.data.origin).draconicAncestryDamageType) ?? "chosen Draconic Ancestry",
+    damageTypes: ["Acid", "Cold", "Fire", "Lightning", "Poison"],
+    uses: dnd5eSrdProficiencyBonus(actor),
+    recovery: "long"
+  };
+}
+
+function dnd5eSrdDraconicFlightMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "draconicFlight",
+    action: "Bonus Action",
+    duration: "10 minutes",
+    flySpeed: numericValue(actor.data.speed, 30),
+    endsWhen: ["retracted", "Incapacitated"],
+    recovery: "long"
+  };
+}
+
+function dnd5eSrdStonecunningMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "stonecunning",
+    action: "Bonus Action",
+    sense: "Tremorsense",
+    rangeFt: 60,
+    duration: "10 minutes",
+    requirement: "on or touching a natural or worked stone surface",
+    uses: dnd5eSrdProficiencyBonus(actor),
+    recovery: "long"
+  };
+}
+
+function dnd5eSrdGiantAncestryMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "giantAncestry",
+    uses: dnd5eSrdProficiencyBonus(actor),
+    recovery: "long",
+    options: [
+      { name: "Cloud's Jaunt", action: "Bonus Action", effect: "teleport up to 30 feet" },
+      { name: "Fire's Burn", trigger: "hit and deal damage", damageFormula: "1d10", damageType: "Fire" },
+      { name: "Frost's Chill", trigger: "hit and deal damage", damageFormula: "1d6", damageType: "Cold", speedReductionFt: 10 },
+      { name: "Hill's Tumble", trigger: "hit and deal damage", condition: "Prone" },
+      { name: "Stone's Endurance", reaction: true, reductionFormula: appendFormulaBonus("1d12", genericFantasyAttributeModifier(actor, "constitution")) },
+      { name: "Storm's Thunder", reaction: true, damageFormula: "1d8", damageType: "Thunder", rangeFt: 60 }
+    ]
+  };
+}
+
+function dnd5eSrdLargeFormMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "largeForm",
+    action: "Bonus Action",
+    size: "Large",
+    duration: "10 minutes",
+    strengthCheckAdvantage: true,
+    speedBonusFt: 10,
+    speedWhileActive: numericValue(actor.data.speed, 35) + 10,
+    recovery: "long"
+  };
+}
+
+function dnd5eSrdAdrenalineRushFormula(actor: Actor): string {
+  return String(dnd5eSrdProficiencyBonus(actor));
+}
+
+function dnd5eSrdAdrenalineRushMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "adrenalineRush",
+    action: "Bonus Action",
+    actionGranted: "Dash",
+    temporaryHitPoints: dnd5eSrdProficiencyBonus(actor),
+    recovery: "short"
+  };
+}
+
+function dnd5eSrdRelentlessEnduranceMetadata(): Record<string, unknown> {
+  return {
+    resource: "relentlessEndurance",
+    trigger: "reduced to 0 HP but not killed outright",
+    result: "drop to 1 HP instead",
+    recovery: "long"
+  };
+}
+
 function dnd5eSrdAvailableSpellSlotLevels(actor: Actor): number[] {
   const className = stringValue(actor.data.class) || "Sorcerer";
   const slots = normalizeDnd5eSrdSpellSlots(actor.data.spellSlots, className, numericValue(actor.data.level, 1), { raiseMaxToDefault: true });
@@ -5089,6 +5357,13 @@ function normalizeDnd5eSrdSpellSlots(
 }
 
 function defaultDnd5eSrdResources(className: string, level = 1, data: Record<string, unknown> = {}): Record<string, Record<string, unknown>> {
+  return {
+    ...defaultDnd5eSrdClassResources(className, level, data),
+    ...defaultDnd5eSrdSpeciesResourcesForData(data, level)
+  };
+}
+
+function defaultDnd5eSrdClassResources(className: string, level = 1, data: Record<string, unknown> = {}): Record<string, Record<string, unknown>> {
   if (className === "Fighter") {
     const resources: Record<string, Record<string, unknown>> = {
       secondWind: { current: dnd5eSrdSecondWindMax(level), max: dnd5eSrdSecondWindMax(level), recovery: "short" }

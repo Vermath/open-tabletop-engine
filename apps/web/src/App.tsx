@@ -1394,7 +1394,7 @@ function actorActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
 }
 
 function dnd5eSrdActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
-  return [...dnd5eSrdClassFeatureActionOptions(actor), ...dnd5eSrdItemActionOptions(actor, items)];
+  return [...dnd5eSrdClassFeatureActionOptions(actor), ...dnd5eSrdSpeciesTraitActionOptions(actor), ...dnd5eSrdItemActionOptions(actor, items)];
 }
 
 function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
@@ -1511,6 +1511,66 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
     options.push({ rollId: "feature-cunning-strike", label: "Cunning Strike", description: `Cunning Strike: spend Sneak Attack dice for Poison, Trip, or Withdraw; DC ${dnd5eSrdRogueSaveDc(actor)}` });
   }
   return options;
+}
+
+function dnd5eSrdSpeciesTraitActionOptions(actor: Actor): ActorActionOption[] {
+  const options: ActorActionOption[] = [];
+  if (dnd5eSrdHasDragonbornBreathWeapon(actor)) {
+    const dc = 8 + dnd5eSrdProficiencyBonus(actor) + genericFantasyAttributeModifier(actor, "constitution");
+    options.push({ rollId: "species-dragonborn-breath-weapon", label: "Breath Weapon", description: `Breath Weapon: ${dnd5eSrdDragonbornBreathWeaponFormula(actor)}; DC ${dc} Dexterity; spends one use` });
+  }
+  if (dnd5eSrdHasDraconicFlight(actor)) {
+    options.push({ rollId: "species-draconic-flight", label: "Draconic Flight", description: `Draconic Flight: spend one use for ${numericValue(actor.data.speed, 30)} ft fly speed for 10 minutes` });
+  }
+  if (dnd5eSrdHasDwarfStonecunning(actor)) {
+    options.push({ rollId: "species-dwarf-stonecunning", label: "Stonecunning", description: "Stonecunning: spend one use for 60 ft Tremorsense for 10 minutes on stone" });
+  }
+  if (dnd5eSrdHasGoliathGiantAncestry(actor)) {
+    options.push({ rollId: "species-goliath-giant-ancestry", label: "Giant Ancestry", description: "Giant Ancestry: spend one use for your chosen Giant boon" });
+  }
+  if (dnd5eSrdHasGoliathLargeForm(actor)) {
+    options.push({ rollId: "species-goliath-large-form", label: "Large Form", description: `Large Form: spend one use to become Large, gain Strength check advantage, and move ${numericValue(actor.data.speed, 35) + 10} ft` });
+  }
+  if (dnd5eSrdHasOrcAdrenalineRush(actor)) {
+    options.push({ rollId: "species-orc-adrenaline-rush", label: "Adrenaline Rush", description: `Adrenaline Rush: Dash as a Bonus Action and gain ${dnd5eSrdAdrenalineRushFormula(actor)} temp HP` });
+  }
+  if (dnd5eSrdHasOrcRelentlessEndurance(actor)) {
+    options.push({ rollId: "species-orc-relentless-endurance", label: "Relentless", description: "Relentless Endurance: spend one use to drop to 1 HP instead of 0" });
+  }
+  return options;
+}
+
+function dnd5eSrdHasSpeciesFeature(actor: Actor, featureName: string, resourceKey?: string): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return features.includes(featureName) || Boolean(resourceKey && resourceKey in recordValue(actor.data.resources));
+}
+
+function dnd5eSrdHasDragonbornBreathWeapon(actor: Actor): boolean {
+  return stringValue(actor.data.species) === "Dragonborn" || dnd5eSrdHasSpeciesFeature(actor, "Breath Weapon", "breathWeapon");
+}
+
+function dnd5eSrdHasDraconicFlight(actor: Actor): boolean {
+  return numericValue(actor.data.level, 1) >= 5 && (stringValue(actor.data.species) === "Dragonborn" || dnd5eSrdHasSpeciesFeature(actor, "Draconic Flight", "draconicFlight"));
+}
+
+function dnd5eSrdHasDwarfStonecunning(actor: Actor): boolean {
+  return stringValue(actor.data.species) === "Dwarf" || dnd5eSrdHasSpeciesFeature(actor, "Stonecunning", "stonecunning");
+}
+
+function dnd5eSrdHasGoliathGiantAncestry(actor: Actor): boolean {
+  return stringValue(actor.data.species) === "Goliath" || dnd5eSrdHasSpeciesFeature(actor, "Giant Ancestry", "giantAncestry");
+}
+
+function dnd5eSrdHasGoliathLargeForm(actor: Actor): boolean {
+  return numericValue(actor.data.level, 1) >= 5 && (stringValue(actor.data.species) === "Goliath" || dnd5eSrdHasSpeciesFeature(actor, "Large Form", "largeForm"));
+}
+
+function dnd5eSrdHasOrcAdrenalineRush(actor: Actor): boolean {
+  return stringValue(actor.data.species) === "Orc" || dnd5eSrdHasSpeciesFeature(actor, "Adrenaline Rush", "adrenalineRush");
+}
+
+function dnd5eSrdHasOrcRelentlessEndurance(actor: Actor): boolean {
+  return stringValue(actor.data.species) === "Orc" || dnd5eSrdHasSpeciesFeature(actor, "Relentless Endurance", "relentlessEndurance");
 }
 
 function dnd5eSrdHasSecondWind(actor: Actor): boolean {
@@ -1756,6 +1816,16 @@ function dnd5eSrdMagicalCunningLimit(actor: Actor): number {
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   const maxSlots = level >= 17 ? 4 : level >= 11 ? 3 : level >= 2 ? 2 : 1;
   return level >= 20 ? maxSlots : Math.ceil(maxSlots / 2);
+}
+
+function dnd5eSrdDragonbornBreathWeaponFormula(actor: Actor): string {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  const dice = level >= 17 ? 4 : level >= 11 ? 3 : level >= 5 ? 2 : 1;
+  return `${dice}d10`;
+}
+
+function dnd5eSrdAdrenalineRushFormula(actor: Actor): string {
+  return String(dnd5eSrdProficiencyBonus(actor));
 }
 
 function dnd5eSrdSneakAttackFormula(actor: Actor): string {
