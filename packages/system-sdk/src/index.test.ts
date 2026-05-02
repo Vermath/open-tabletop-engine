@@ -237,6 +237,7 @@ describe("dnd 5.5e srd rules", () => {
     const druid = dnd5eSrdCharacterTemplate("druid");
     const ranger = dnd5eSrdCharacterTemplate("ranger");
     const monk = dnd5eSrdCharacterTemplate("monk");
+    const sorcerer = dnd5eSrdCharacterTemplate("sorcerer");
     const rogue = dnd5eSrdCharacterTemplate("rogue");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
@@ -291,6 +292,14 @@ describe("dnd 5.5e srd rules", () => {
     expect(monk?.data.resources).toEqual({});
     expect(monk?.data.spellSlots).toEqual({});
     expect(monk?.items.map((item) => item.entryId)).toEqual(["spear", "dagger", "musical-instrument"]);
+    expect(sorcerer).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Sorcerer" }));
+    expect(sorcerer?.data.features).toEqual(["Spellcasting", "Innate Sorcery"]);
+    expect(sorcerer?.data.saveProficiencies).toEqual(["constitution", "charisma"]);
+    expect(sorcerer?.data.skillProficiencies).toEqual(["arcana", "persuasion"]);
+    expect(sorcerer?.data.hitDice).toEqual({ current: 1, max: 1, size: "d6" });
+    expect(sorcerer?.data.resources).toEqual({ innateSorcery: { current: 2, max: 2, recovery: "long" } });
+    expect(sorcerer?.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
+    expect(sorcerer?.items.map((item) => item.entryId)).toEqual(["sorcerous-burst", "chromatic-orb", "shield", "spear", "dagger", "arcane-focus"]);
     expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
     expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
     expect(rogue?.data.features).toEqual(["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"]);
@@ -308,6 +317,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("ray-of-sickness")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8" }));
     expect(dnd5eSrdCompendiumEntry("divine-smite")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8", damageType: "radiant" }));
     expect(dnd5eSrdCompendiumEntry("hunters-mark")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d6", damageType: "force", concentration: true }));
+    expect(dnd5eSrdCompendiumEntry("sorcerous-burst")?.data).toEqual(expect.objectContaining({ level: 0, damageFormula: "1d8", damageType: "choice" }));
     expect(dnd5eSrdCompendiumEntry("dagger")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, damageType: "piercing" }));
     expect(dnd5eSrdCompendiumEntry("quarterstaff")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 0.2 }));
     expect(dnd5eSrdCompendiumEntry("shortbow")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 25, damageType: "piercing" }));
@@ -317,6 +327,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("studded-leather-armor")?.data).toEqual(expect.objectContaining({ armorBase: 12, armorType: "light", costGp: 45, weightLb: 13 }));
     expect(dnd5eSrdCompendiumEntry("spear")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 1 }));
     expect(dnd5eSrdCompendiumEntry("musical-instrument")?.data).toEqual(expect.objectContaining({ toolId: "musical-instrument", costGp: 2 }));
+    expect(dnd5eSrdCompendiumEntry("arcane-focus")?.data).toEqual(expect.objectContaining({ focusType: "arcane", costGp: 10 }));
 
     const spell: Item = {
       id: "itm_healing_word",
@@ -800,6 +811,68 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdActionFormula(levelFiveMonkActor, [monkSpear], "feature-deflect-attacks-damage")).toBe("2d8+5");
     expect(dnd5eSrdActionFormula(levelFiveMonkActor, [monkSpear], "feature-uncanny-metabolism-healing")).toBe("1d8+5");
+    const sorcererActor: Actor = { ...srdActor, data: { ...sorcerer!.data } };
+    const sorcerousBurst: Item = {
+      id: "itm_sorcerous_burst",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: sorcererActor.id,
+      type: "spell",
+      name: "Sorcerous Burst",
+      data: { ...dnd5eSrdCompendiumEntry("sorcerous-burst")!.data, compendiumId: "sorcerous-burst" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const sorcererChromaticOrb: Item = {
+      id: "itm_sorcerer_chromatic_orb",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: sorcererActor.id,
+      type: "spell",
+      name: "Chromatic Orb",
+      data: { ...dnd5eSrdCompendiumEntry("chromatic-orb")!.data, compendiumId: "chromatic-orb" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(dnd5eSrdQuickRolls(sorcererActor, [sorcerousBurst, sorcererChromaticOrb])).toEqual(
+      expect.arrayContaining([
+        { id: "save-constitution", label: "Constitution Save", formula: "1d20+4" },
+        { id: "save-charisma", label: "Charisma Save", formula: "1d20+5" },
+        { id: "skill-arcana", label: "Arcana Check", formula: "1d20+2" },
+        { id: "skill-persuasion", label: "Persuasion Check", formula: "1d20+5" },
+        { id: "tool-calligraphers-supplies", label: "Calligrapher's Supplies Check", formula: "1d20+4" },
+        expect.objectContaining({ id: "feature-innate-sorcery", label: "Innate Sorcery", formula: "0", metadata: expect.objectContaining({ resource: "innateSorcery", spellSaveDc: 14, spellAttackAdvantage: true }) }),
+        { id: "spell-itm_sorcerous_burst-damage", label: "Sorcerous Burst Damage", formula: "1d8" },
+        { id: "spell-itm_sorcerer_chromatic_orb-damage", label: "Chromatic Orb Damage", formula: "3d8" }
+      ])
+    );
+    expect(dnd5eSrdActionFormula(sorcererActor, [], "feature-innate-sorcery")).toBe("0");
+    let levelFiveSorcererData = sorcererActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveSorcererData = applyDnd5eSrdAdvancement({ ...sorcererActor, data: levelFiveSorcererData }, "level-up");
+    }
+    const levelFiveSorcererActor: Actor = { ...sorcererActor, data: levelFiveSorcererData };
+    expect(levelFiveSorcererData.features).toEqual(expect.arrayContaining(["Font of Magic", "Metamagic", "Sorcerer Subclass", "Ability Score Improvement", "Sorcerous Restoration"]));
+    expect(levelFiveSorcererData.resources).toEqual({
+      innateSorcery: { current: 2, max: 2, recovery: "long" },
+      sorceryPoints: { current: 2, max: 5, recovery: "long" },
+      sorcerousRestoration: { current: 1, max: 1, recovery: "long" }
+    });
+    expect(levelFiveSorcererData.spellSlots).toEqual({
+      level1: { current: 2, max: 4, recovery: "long" },
+      level2: { current: 2, max: 3, recovery: "long" },
+      level3: { current: 2, max: 2, recovery: "long" }
+    });
+    expect(dnd5eSrdQuickRolls(levelFiveSorcererActor, [sorcerousBurst, sorcererChromaticOrb])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-innate-sorcery", metadata: expect.objectContaining({ spellSaveDc: 17 }) }),
+        expect.objectContaining({ id: "feature-convert-spell-slot-to-sorcery-points", metadata: expect.objectContaining({ max: 5, availableSlotLevels: [1, 2, 3] }) }),
+        expect.objectContaining({ id: "feature-create-spell-slot", metadata: expect.objectContaining({ availableSlotLevels: [1, 2, 3] }) }),
+        expect.objectContaining({ id: "feature-metamagic-empowered-spell", metadata: expect.objectContaining({ cost: 1, rerollDamageDiceUpTo: 5 }) }),
+        expect.objectContaining({ id: "feature-metamagic-quickened-spell", metadata: expect.objectContaining({ cost: 2, castingTime: "Bonus Action" }) })
+      ])
+    );
+    expect(dnd5eSrdActionFormula(levelFiveSorcererActor, [], "feature-metamagic-quickened-spell")).toBe("0");
     const rogueActor: Actor = { ...srdActor, data: { ...rogue!.data } };
     const rogueDagger: Item = {
       id: "itm_rogue_dagger",
@@ -1130,6 +1203,73 @@ describe("dnd 5.5e srd rules", () => {
     expect(applyDnd5eSrdRest({ ...levelFiveMonkActor, data: { ...levelFiveMonkData, resources: { focus: { current: 0, max: 5, recovery: "short" }, uncannyMetabolism: { current: 0, max: 1, recovery: "long" } } } }, "long").data.resources).toEqual({
       focus: { current: 5, max: 5, recovery: "short" },
       uncannyMetabolism: { current: 1, max: 1, recovery: "long" }
+    });
+    const sorcererActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("sorcerer")!.data } };
+    let levelFiveSorcererData = sorcererActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveSorcererData = applyDnd5eSrdAdvancement({ ...sorcererActor, data: levelFiveSorcererData }, "level-up");
+    }
+    const levelFiveSorcererActor: Actor = { ...sorcererActor, data: levelFiveSorcererData };
+    expect(useDnd5eSrdAction(levelFiveSorcererActor, [], "feature-innate-sorcery")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "innateSorcery", label: "Innate Sorcery", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({
+          resources: expect.objectContaining({ innateSorcery: { current: 1, max: 2, recovery: "long" } })
+        })
+      })
+    );
+    expect(useDnd5eSrdAction(levelFiveSorcererActor, [], "feature-metamagic-quickened-spell")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "sorceryPoints", label: "Sorcery Points", amount: 2, remaining: 0 }]
+      })
+    );
+    expect(useDnd5eSrdAction(levelFiveSorcererActor, [], "feature-create-spell-slot", { spellSlotLevel: 1 })).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 1,
+        consumed: [{ type: "resource", key: "sorceryPoints", label: "Sorcery Points", amount: 2, remaining: 0 }],
+        data: expect.objectContaining({
+          spellSlots: {
+            level1: { current: 3, max: 4, recovery: "long" },
+            level2: { current: 2, max: 3, recovery: "long" },
+            level3: { current: 2, max: 2, recovery: "long" }
+          }
+        })
+      })
+    );
+    expect(useDnd5eSrdAction({ ...levelFiveSorcererActor, data: { ...levelFiveSorcererData, resources: { innateSorcery: { current: 2, max: 2, recovery: "long" }, sorceryPoints: { current: 3, max: 5, recovery: "long" }, sorcerousRestoration: { current: 1, max: 1, recovery: "long" } } } }, [], "feature-convert-spell-slot-to-sorcery-points", { spellSlotLevel: 2 })).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 2,
+        consumed: [{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({
+          resources: {
+            innateSorcery: { current: 2, max: 2, recovery: "long" },
+            sorceryPoints: { current: 5, max: 5, recovery: "long" },
+            sorcerousRestoration: { current: 1, max: 1, recovery: "long" }
+          }
+        })
+      })
+    );
+    expect(() => useDnd5eSrdAction({ ...levelFiveSorcererActor, data: { ...levelFiveSorcererData, resources: { innateSorcery: { current: 2, max: 2, recovery: "long" }, sorceryPoints: { current: 1, max: 5, recovery: "long" }, sorcerousRestoration: { current: 1, max: 1, recovery: "long" } } } }, [], "feature-metamagic-quickened-spell")).toThrow("Insufficient sorcery points");
+    expect(applyDnd5eSrdRest({ ...levelFiveSorcererActor, data: { ...levelFiveSorcererData, resources: { innateSorcery: { current: 0, max: 2, recovery: "long" }, sorceryPoints: { current: 0, max: 5, recovery: "long" }, sorcerousRestoration: { current: 1, max: 1, recovery: "long" } } } }, "short")).toEqual(
+      expect.objectContaining({
+        recovered: expect.objectContaining({ resources: { sorceryPoints: 2 }, sorcerousRestoration: { restoredSorceryPoints: 2, limit: 2 }, resourcesSpent: { sorcerousRestoration: 1 } }),
+        data: expect.objectContaining({
+          resources: {
+            innateSorcery: { current: 0, max: 2, recovery: "long" },
+            sorceryPoints: { current: 2, max: 5, recovery: "long" },
+            sorcerousRestoration: { current: 0, max: 1, recovery: "long" }
+          }
+        })
+      })
+    );
+    expect(applyDnd5eSrdRest({ ...levelFiveSorcererActor, data: { ...levelFiveSorcererData, resources: { innateSorcery: { current: 0, max: 2, recovery: "long" }, sorceryPoints: { current: 0, max: 5, recovery: "long" }, sorcerousRestoration: { current: 0, max: 1, recovery: "long" } } } }, "long").data.resources).toEqual({
+      innateSorcery: { current: 2, max: 2, recovery: "long" },
+      sorceryPoints: { current: 5, max: 5, recovery: "long" },
+      sorcerousRestoration: { current: 1, max: 1, recovery: "long" }
     });
     const druidActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("druid")!.data } };
     let levelFiveDruidData = druidActor.data;

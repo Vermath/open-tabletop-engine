@@ -200,6 +200,11 @@ export const DND_5E_SRD_STEP_OF_THE_WIND_ROLL_ID = "feature-step-of-the-wind";
 export const DND_5E_SRD_UNCANNY_METABOLISM_ROLL_ID = "feature-uncanny-metabolism-healing";
 export const DND_5E_SRD_DEFLECT_ATTACKS_DAMAGE_ROLL_ID = "feature-deflect-attacks-damage";
 export const DND_5E_SRD_STUNNING_STRIKE_ROLL_ID = "feature-stunning-strike";
+export const DND_5E_SRD_INNATE_SORCERY_ROLL_ID = "feature-innate-sorcery";
+export const DND_5E_SRD_CONVERT_SPELL_SLOT_ROLL_ID = "feature-convert-spell-slot-to-sorcery-points";
+export const DND_5E_SRD_CREATE_SPELL_SLOT_ROLL_ID = "feature-create-spell-slot";
+export const DND_5E_SRD_METAMAGIC_EMPOWERED_ROLL_ID = "feature-metamagic-empowered-spell";
+export const DND_5E_SRD_METAMAGIC_QUICKENED_ROLL_ID = "feature-metamagic-quickened-spell";
 export const DND_5E_SRD_WILD_SHAPE_ROLL_ID = "feature-wild-shape";
 export const DND_5E_SRD_WILD_COMPANION_ROLL_ID = "feature-wild-companion";
 export const DND_5E_SRD_WILD_RESURGENCE_WILD_SHAPE_ROLL_ID = "feature-wild-resurgence-wild-shape";
@@ -675,6 +680,46 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       metadata: dnd5eSrdStunningStrikeMetadata(actor)
     });
   }
+  if (dnd5eSrdHasInnateSorcery(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_INNATE_SORCERY_ROLL_ID,
+      label: "Innate Sorcery",
+      formula: "0",
+      metadata: dnd5eSrdInnateSorceryMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasFontOfMagic(actor)) {
+    rolls.push(
+      {
+        id: DND_5E_SRD_CONVERT_SPELL_SLOT_ROLL_ID,
+        label: "Convert Spell Slot",
+        formula: "0",
+        metadata: dnd5eSrdConvertSpellSlotMetadata(actor)
+      },
+      {
+        id: DND_5E_SRD_CREATE_SPELL_SLOT_ROLL_ID,
+        label: "Create Spell Slot",
+        formula: "0",
+        metadata: dnd5eSrdCreateSpellSlotMetadata(actor)
+      }
+    );
+  }
+  if (dnd5eSrdHasMetamagic(actor)) {
+    rolls.push(
+      {
+        id: DND_5E_SRD_METAMAGIC_EMPOWERED_ROLL_ID,
+        label: "Metamagic: Empowered Spell",
+        formula: "0",
+        metadata: dnd5eSrdMetamagicEmpoweredMetadata(actor)
+      },
+      {
+        id: DND_5E_SRD_METAMAGIC_QUICKENED_ROLL_ID,
+        label: "Metamagic: Quickened Spell",
+        formula: "0",
+        metadata: dnd5eSrdMetamagicQuickenedMetadata(actor)
+      }
+    );
+  }
   if (dnd5eSrdHasWildShape(actor)) {
     rolls.push({
       id: DND_5E_SRD_WILD_SHAPE_ROLL_ID,
@@ -985,6 +1030,13 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { level: 1, school: "divination", action: "bonus", range: "90 ft", damageFormula: "1d6", damageType: "force", concentration: true, duration: "up to 1 hour", trigger: "whenever you hit the marked target with an attack roll", upcastDuration: { level3: "up to 8 hours", level5: "up to 24 hours" }, source: DND_5E_SRD_VERSION }
     },
     {
+      id: "sorcerous-burst",
+      type: "spell",
+      name: "Sorcerous Burst",
+      summary: "Sorcerer evocation cantrip that deals a selectable elemental damage type.",
+      data: { level: 0, school: "evocation", action: "action", range: "120 ft", damageFormula: "1d8", damageType: "choice", damageTypes: ["acid", "cold", "fire", "lightning", "poison", "psychic", "thunder"], source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "alert",
       type: "condition",
       name: "Alert",
@@ -1081,6 +1133,13 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       name: "Musical Instrument",
       summary: "A chosen musical instrument proficiency for SRD character origins and class equipment.",
       data: { category: "tool", equipmentCategory: "tool", toolId: "musical-instrument", ability: "charisma", costGp: 2, weightLb: 3, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "arcane-focus",
+      type: "item",
+      name: "Arcane Focus",
+      summary: "A crystal or similar focus for arcane spellcasting.",
+      data: { category: "adventuring-gear", equipmentCategory: "gear", focusType: "arcane", costGp: 10, weightLb: 1, source: DND_5E_SRD_VERSION }
     },
     {
       id: "calligraphers-supplies",
@@ -1477,6 +1536,34 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         feats: ["Magic Initiate"]
       },
       items: [{ entryId: "spear" }, { entryId: "dagger", quantity: 5 }, { entryId: "musical-instrument" }]
+    },
+    {
+      id: "sorcerer",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Sorcerer",
+      summary: "SRD 5.2.1 Charisma spellcaster with Innate Sorcery and Sorcery Point flexibility.",
+      actorType: "character",
+      data: {
+        ruleset: DND_5E_SRD_VERSION,
+        level: 1,
+        class: "Sorcerer",
+        species: "Human",
+        background: "Sage",
+        proficiencyBonus: 2,
+        hp: { current: 8, max: 8 },
+        attributes: { strength: 8, dexterity: 14, constitution: 14, intelligence: 10, wisdom: 10, charisma: 16 },
+        hitDice: { current: 1, max: 1, size: "d6" },
+        saveProficiencies: ["constitution", "charisma"],
+        skillProficiencies: ["arcana", "persuasion"],
+        toolProficiencies: ["calligraphers-supplies"],
+        currency: { gp: 50, sp: 0, cp: 0 },
+        resources: { innateSorcery: { current: 2, max: 2, recovery: "long" } },
+        spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
+        conditions: [],
+        features: ["Spellcasting", "Innate Sorcery"],
+        feats: []
+      },
+      items: [{ entryId: "sorcerous-burst" }, { entryId: "chromatic-orb" }, { entryId: "shield" }, { entryId: "spear" }, { entryId: "dagger", quantity: 2 }, { entryId: "arcane-focus" }]
     },
     {
       id: "wizard",
@@ -2055,13 +2142,22 @@ export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType, option
   };
   const dataAfterRestLimits = restType === "short" ? dnd5eSrdApplyShortRestResourceLimits(actor, dataWithDefaults) : dnd5eSrdApplyLongRestResourceLimits(actor, dataWithDefaults);
   const arcaneRecovery = dnd5eSrdApplyArcaneRecovery(actor, dataAfterRestLimits, restType, options);
-  const recovered = dnd5eSrdRestRecovered(actor, arcaneRecovery.data, arcaneRecovery.recovered ? { ...rest.recovered, ...arcaneRecovery.recovered } : rest.recovered);
+  const sorcerousRestoration = dnd5eSrdApplySorcerousRestoration(actor, arcaneRecovery.data, restType);
+  const recovered = dnd5eSrdRestRecovered(
+    actor,
+    sorcerousRestoration.data,
+    {
+      ...rest.recovered,
+      ...(arcaneRecovery.recovered ?? {}),
+      ...(sorcerousRestoration.recovered ?? {})
+    }
+  );
   return {
     ...rest,
     systemId: DND_5E_SRD_SYSTEM_ID,
     summary: `${actor.name} completed a ${restType} rest using ${DND_5E_SRD_VERSION}`,
     recovered,
-    data: arcaneRecovery.data
+    data: sorcerousRestoration.data
   };
 }
 
@@ -2198,6 +2294,14 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId === DND_5E_SRD_UNCANNY_METABOLISM_ROLL_ID) return dnd5eSrdUncannyMetabolismFormula(actor);
   if (rollId === DND_5E_SRD_DEFLECT_ATTACKS_DAMAGE_ROLL_ID) return dnd5eSrdDeflectAttacksDamageFormula(actor);
   if (rollId === DND_5E_SRD_STUNNING_STRIKE_ROLL_ID) return "0";
+  if (
+    rollId === DND_5E_SRD_INNATE_SORCERY_ROLL_ID ||
+    rollId === DND_5E_SRD_CONVERT_SPELL_SLOT_ROLL_ID ||
+    rollId === DND_5E_SRD_CREATE_SPELL_SLOT_ROLL_ID ||
+    rollId === DND_5E_SRD_METAMAGIC_EMPOWERED_ROLL_ID ||
+    rollId === DND_5E_SRD_METAMAGIC_QUICKENED_ROLL_ID
+  )
+    return "0";
   if (
     rollId === DND_5E_SRD_WILD_SHAPE_ROLL_ID ||
     rollId === DND_5E_SRD_WILD_COMPANION_ROLL_ID ||
@@ -2440,6 +2544,77 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
     const className = stringValue(actor.data.class) || "Monk";
     const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data, { raiseMaxToDefault: true });
     const result = consumeResourcePool(resources, "focus", 1, "Focus Point", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_INNATE_SORCERY_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Sorcerer";
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data, { raiseMaxToDefault: true });
+    const result = consumeResourcePool(resources, "innateSorcery", 1, "Innate Sorcery", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_CONVERT_SPELL_SLOT_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Sorcerer";
+    const level = numericValue(actor.data.level, 1);
+    const slotLevel = spellActionSlotLevel(1, options.spellSlotLevel);
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+    const sorceryPoints = resources.sorceryPoints;
+    if (!sorceryPoints) throw new Error("Sorcery Points are unavailable");
+    if (sorceryPoints.current >= sorceryPoints.max) throw new Error("Sorcery Points are already full");
+    const spellSlots = normalizeResourcePools(actor.data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true });
+    const result = consumeResourcePool(spellSlots, `level${slotLevel}`, 1, `Level ${slotLevel} Spell Slot`, "spellSlot");
+    resources.sorceryPoints = { ...sorceryPoints, current: Math.min(sorceryPoints.max, sorceryPoints.current + slotLevel) };
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      slotLevel,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources, spellSlots: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_CREATE_SPELL_SLOT_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Sorcerer";
+    const level = numericValue(actor.data.level, 1);
+    const slotLevel = spellActionSlotLevel(1, options.spellSlotLevel);
+    const cost = dnd5eSrdCreateSpellSlotCost(slotLevel, level);
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+    const spellSlots = normalizeResourcePools(actor.data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true });
+    const slotKey = `level${slotLevel}`;
+    const slot = spellSlots[slotKey];
+    if (!slot) throw new Error(`No ${formatOrdinal(slotLevel)}-level spell slot pool is available`);
+    if (slot.current >= slot.max) throw new Error(`Level ${slotLevel} Spell Slot is already full`);
+    const result = consumeResourcePool(resources, "sorceryPoints", cost, "Sorcery Points", "resource");
+    spellSlots[slotKey] = { ...slot, current: Math.min(slot.max, slot.current + 1) };
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      slotLevel,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools, spellSlots },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_METAMAGIC_EMPOWERED_ROLL_ID || rollId === DND_5E_SRD_METAMAGIC_QUICKENED_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Sorcerer";
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data, { raiseMaxToDefault: true });
+    const cost = rollId === DND_5E_SRD_METAMAGIC_QUICKENED_ROLL_ID ? 2 : 1;
+    const result = consumeResourcePool(resources, "sorceryPoints", cost, "Sorcery Points", "resource");
     return {
       systemId: DND_5E_SRD_SYSTEM_ID,
       actorId: actor.id,
@@ -3377,6 +3552,7 @@ function dnd5eSrdSaveProficienciesForClass(className: string, explicit: unknown)
   if (normalizedClass === "paladin") return ["wisdom", "charisma"];
   if (normalizedClass === "ranger") return ["strength", "dexterity"];
   if (normalizedClass === "monk") return ["strength", "dexterity"];
+  if (normalizedClass === "sorcerer") return ["constitution", "charisma"];
   if (normalizedClass === "wizard") return ["intelligence", "wisdom"];
   if (normalizedClass === "rogue") return ["dexterity", "intelligence"];
   return ["strength", "constitution"];
@@ -3402,6 +3578,7 @@ function dnd5eSrdSkillProficienciesForClass(className: string, explicit: unknown
   if (normalizedClass === "paladin") return ["athletics", "persuasion"];
   if (normalizedClass === "ranger") return ["nature", "perception", "survival"];
   if (normalizedClass === "monk") return ["acrobatics", "stealth"];
+  if (normalizedClass === "sorcerer") return ["arcana", "persuasion"];
   if (normalizedClass === "wizard") return ["arcana", "history"];
   if (normalizedClass === "rogue") return ["stealth", "sleight-of-hand"];
   return ["athletics", "intimidation"];
@@ -3674,6 +3851,26 @@ function dnd5eSrdHasStunningStrike(actor: Actor): boolean {
   return normalizeStringArray(actor.data.features).includes("Stunning Strike");
 }
 
+function dnd5eSrdHasInnateSorcery(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Sorcerer") return true;
+  return normalizeStringArray(actor.data.features).includes("Innate Sorcery") || "innateSorcery" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasFontOfMagic(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Sorcerer" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  return normalizeStringArray(actor.data.features).includes("Font of Magic") || "sorceryPoints" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasMetamagic(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Sorcerer" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  return normalizeStringArray(actor.data.features).includes("Metamagic");
+}
+
+function dnd5eSrdHasSorcerousRestoration(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Sorcerer" && Math.floor(numericValue(actor.data.level, 1)) >= 5) return true;
+  return normalizeStringArray(actor.data.features).includes("Sorcerous Restoration") || "sorcerousRestoration" in recordValue(actor.data.resources);
+}
+
 function dnd5eSrdHasWildShape(actor: Actor): boolean {
   if (stringValue(actor.data.class) === "Druid" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
   return normalizeStringArray(actor.data.features).includes("Wild Shape") || "wildShape" in recordValue(actor.data.resources);
@@ -3723,6 +3920,7 @@ function dnd5eSrdApplyClassFeatures(features: string[], className: string, level
   if (className === "Druid") return [...new Set([...features, ...dnd5eSrdDruidFeaturesForLevel(level)])];
   if (className === "Ranger") return [...new Set([...features, ...dnd5eSrdRangerFeaturesForLevel(level)])];
   if (className === "Monk") return [...new Set([...features, ...dnd5eSrdMonkFeaturesForLevel(level)])];
+  if (className === "Sorcerer") return [...new Set([...features, ...dnd5eSrdSorcererFeaturesForLevel(level)])];
   if (className === "Wizard") return [...new Set([...features, ...dnd5eSrdWizardFeaturesForLevel(level)])];
   if (className === "Rogue") return [...new Set([...features, ...dnd5eSrdRogueFeaturesForLevel(level)])];
   return features;
@@ -3838,6 +4036,18 @@ function dnd5eSrdMonkFeaturesForLevel(level: number): string[] {
   if (level >= 18) features.push("Superior Defense");
   if (level >= 19) features.push("Epic Boon");
   if (level >= 20) features.push("Body and Mind");
+  return features;
+}
+
+function dnd5eSrdSorcererFeaturesForLevel(level: number): string[] {
+  const features = ["Spellcasting", "Innate Sorcery"];
+  if (level >= 2) features.push("Font of Magic", "Metamagic");
+  if (level >= 3) features.push("Sorcerer Subclass");
+  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 5) features.push("Sorcerous Restoration");
+  if (level >= 7) features.push("Sorcery Incarnate");
+  if (level >= 19) features.push("Epic Boon");
+  if (level >= 20) features.push("Arcane Apotheosis");
   return features;
 }
 
@@ -4094,6 +4304,96 @@ function dnd5eSrdMonkSaveDc(actor: Actor): number {
   return 8 + dnd5eSrdProficiencyBonus(actor) + genericFantasyAttributeModifier(actor, "wisdom");
 }
 
+function dnd5eSrdInnateSorceryMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "innateSorcery",
+    uses: 2,
+    recovery: "long",
+    action: "Bonus Action",
+    duration: "1 minute",
+    spellSaveDcBonus: 1,
+    spellSaveDc: dnd5eSrdSpellSaveDc(actor) + 1,
+    spellAttackAdvantage: true
+  };
+}
+
+function dnd5eSrdConvertSpellSlotMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "sorceryPoints",
+    gain: "Sorcery Points equal to the expended spell slot level",
+    max: dnd5eSrdSorceryPointsMax(numericValue(actor.data.level, 1)),
+    action: "no action required",
+    availableSlotLevels: dnd5eSrdAvailableSpellSlotLevels(actor)
+  };
+}
+
+function dnd5eSrdCreateSpellSlotMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "sorceryPoints",
+    action: "Bonus Action",
+    createdSlotExpires: "Long Rest",
+    costs: dnd5eSrdCreateSpellSlotCosts().map((entry) => ({ spellSlotLevel: entry.slotLevel, sorceryPointCost: entry.cost, minimumSorcererLevel: entry.minimumLevel })),
+    availableSlotLevels: dnd5eSrdAvailableCreatableSorcererSlotLevels(numericValue(actor.data.level, 1))
+  };
+}
+
+function dnd5eSrdMetamagicEmpoweredMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "sorceryPoints",
+    cost: 1,
+    trigger: "when rolling damage for a spell",
+    rerollDamageDiceUpTo: Math.max(1, genericFantasyAttributeModifier(actor, "charisma")),
+    canCombineWithOtherMetamagic: true
+  };
+}
+
+function dnd5eSrdMetamagicQuickenedMetadata(_actor: Actor): Record<string, unknown> {
+  return {
+    resource: "sorceryPoints",
+    cost: 2,
+    trigger: "when casting a spell with an Action casting time",
+    castingTime: "Bonus Action",
+    restriction: "cannot combine with another level 1+ spell on the same turn"
+  };
+}
+
+function dnd5eSrdAvailableSpellSlotLevels(actor: Actor): number[] {
+  const className = stringValue(actor.data.class) || "Sorcerer";
+  const slots = normalizeResourcePools(actor.data.spellSlots, defaultDnd5eSrdSpellSlots(className, numericValue(actor.data.level, 1)), { raiseMaxToDefault: true });
+  return Object.keys(slots)
+    .map((key) => /^level(\d+)$/.exec(key)?.[1])
+    .filter((value): value is string => Boolean(value))
+    .map((value) => Number(value))
+    .sort((left, right) => left - right);
+}
+
+function dnd5eSrdAvailableCreatableSorcererSlotLevels(level: number): number[] {
+  const normalized = Math.max(1, Math.floor(level));
+  return dnd5eSrdCreateSpellSlotCosts().filter((entry) => normalized >= entry.minimumLevel).map((entry) => entry.slotLevel);
+}
+
+function dnd5eSrdCreateSpellSlotCost(slotLevel: number, sorcererLevel: number): number {
+  const normalizedSlotLevel = Math.max(1, Math.floor(slotLevel));
+  const entry = dnd5eSrdCreateSpellSlotCosts().find((cost) => cost.slotLevel === normalizedSlotLevel);
+  if (!entry) throw new Error("Font of Magic can create spell slots no higher than level 5");
+  if (Math.max(1, Math.floor(sorcererLevel)) < entry.minimumLevel) throw new Error(`Creating a level ${normalizedSlotLevel} spell slot requires Sorcerer level ${entry.minimumLevel}`);
+  return entry.cost;
+}
+
+function dnd5eSrdCreateSpellSlotCosts(): Array<{ slotLevel: number; cost: number; minimumLevel: number }> {
+  return [
+    { slotLevel: 1, cost: 2, minimumLevel: 2 },
+    { slotLevel: 2, cost: 3, minimumLevel: 3 },
+    { slotLevel: 3, cost: 5, minimumLevel: 5 },
+    { slotLevel: 4, cost: 6, minimumLevel: 7 },
+    { slotLevel: 5, cost: 7, minimumLevel: 9 }
+  ];
+}
+
+function dnd5eSrdSorcerousRestorationLimit(level: number): number {
+  return Math.floor(Math.max(1, Math.floor(level)) / 2);
+}
+
 function dnd5eSrdHasEmpoweredStrikes(actor: Actor): boolean {
   if (stringValue(actor.data.class) === "Monk" && Math.floor(numericValue(actor.data.level, 1)) >= 6) return true;
   return normalizeStringArray(actor.data.features).includes("Empowered Strikes");
@@ -4332,6 +4632,26 @@ function dnd5eSrdArcaneRecoverySlotLevelLimit(level: number): number {
   return Math.ceil(Math.max(1, Math.floor(level)) / 2);
 }
 
+function dnd5eSrdApplySorcerousRestoration(actor: Actor, data: Record<string, unknown>, restType: SystemRestType): { data: Record<string, unknown>; recovered?: Record<string, unknown> } {
+  if (restType !== "short") return { data };
+  if (!dnd5eSrdHasSorcerousRestoration(actor)) return { data };
+  const className = stringValue(actor.data.class) || "Sorcerer";
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  const resources = normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
+  const sorceryPoints = resources.sorceryPoints;
+  const restoration = resources.sorcerousRestoration;
+  if (!sorceryPoints || !restoration || restoration.current <= 0 || sorceryPoints.current >= sorceryPoints.max) return { data };
+  const limit = dnd5eSrdSorcerousRestorationLimit(level);
+  const restored = Math.min(limit, sorceryPoints.max - sorceryPoints.current);
+  if (restored <= 0) return { data };
+  resources.sorceryPoints = { ...sorceryPoints, current: sorceryPoints.current + restored };
+  resources.sorcerousRestoration = { ...restoration, current: restoration.current - 1 };
+  return {
+    data: { ...data, resources },
+    recovered: { sorcerousRestoration: { restoredSorceryPoints: restored, limit }, resourcesSpent: { sorcerousRestoration: 1 } }
+  };
+}
+
 function dnd5eSrdRestRecovered(actor: Actor, data: Record<string, unknown>, recovered: Record<string, unknown>): Record<string, unknown> {
   const className = stringValue(actor.data.class) || "Fighter";
   const level = numericValue(actor.data.level, 1);
@@ -4509,6 +4829,7 @@ function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Paladin") return "charisma";
   if (className === "Ranger") return "wisdom";
   if (className === "Monk") return "dexterity";
+  if (className === "Sorcerer") return "charisma";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";
   return "strength";
@@ -4516,6 +4837,7 @@ function dnd5eSrdPrimaryAbility(className: string): string {
 
 function dnd5eSrdHitDieSize(className: string): string {
   if (className === "Barbarian") return "d12";
+  if (className === "Sorcerer") return "d6";
   if (className === "Wizard") return "d6";
   if (className === "Bard") return "d8";
   if (className === "Cleric") return "d8";
@@ -4581,6 +4903,16 @@ function defaultDnd5eSrdResources(className: string, level = 1, data: Record<str
       focus: { current: dnd5eSrdMonkFocusMax(normalized), max: dnd5eSrdMonkFocusMax(normalized), recovery: "short" },
       uncannyMetabolism: { current: 1, max: 1, recovery: "long" }
     };
+  }
+  if (className === "Sorcerer") {
+    const normalized = Math.max(1, Math.floor(level));
+    const resources: Record<string, Record<string, unknown>> = {
+      innateSorcery: { current: 2, max: 2, recovery: "long" }
+    };
+    const sorceryPointsMax = dnd5eSrdSorceryPointsMax(normalized);
+    if (sorceryPointsMax > 0) resources.sorceryPoints = { current: sorceryPointsMax, max: sorceryPointsMax, recovery: "long" };
+    if (normalized >= 5) resources.sorcerousRestoration = { current: 1, max: 1, recovery: "long" };
+    return resources;
   }
   if (className === "Druid") {
     const normalized = Math.max(1, Math.floor(level));
@@ -4648,6 +4980,11 @@ function dnd5eSrdMonkFocusMax(level: number): number {
   return normalized >= 2 ? normalized : 0;
 }
 
+function dnd5eSrdSorceryPointsMax(level: number): number {
+  const normalized = Math.max(1, Math.floor(level));
+  return normalized >= 2 ? normalized : 0;
+}
+
 function dnd5eSrdWildShapeMax(level: number): number {
   const normalized = Math.max(1, Math.floor(level));
   if (normalized >= 17) return 4;
@@ -4673,7 +5010,7 @@ function dnd5eSrdWildShapeMaxChallengeRating(level: number): string {
 
 function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
   if (className === "Paladin" || className === "Ranger") return defaultDnd5eSrdHalfCasterSpellSlots(level);
-  if (className !== "Bard" && className !== "Cleric" && className !== "Druid" && className !== "Wizard") return {};
+  if (className !== "Bard" && className !== "Cleric" && className !== "Druid" && className !== "Sorcerer" && className !== "Wizard") return {};
   const slots: Record<string, Record<string, unknown>> = {
     level1: { current: Math.min(4, 2 + Math.max(0, level - 1)), max: Math.min(4, 2 + Math.max(0, level - 1)), recovery: "long" }
   };

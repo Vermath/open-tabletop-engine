@@ -3197,7 +3197,7 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(templates.statusCode).toBe(200);
-      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "druid", "ranger", "monk", "wizard", "rogue"]);
+      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "druid", "ranger", "monk", "sorcerer", "wizard", "rogue"]);
 
       const origins = await app.inject({
         method: "GET",
@@ -3695,6 +3695,79 @@ describe("api", () => {
         ])
       );
 
+      const sorcerer = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "sorcerer", name: "SRD Sorcerer", ownerUserId: "usr_demo_player" }
+      });
+      expect(sorcerer.statusCode).toBe(200);
+      expect(sorcerer.json().actor.data).toEqual(
+        expect.objectContaining({
+          features: ["Spellcasting", "Innate Sorcery"],
+          hitDice: { current: 1, max: 1, size: "d6" },
+          resources: { innateSorcery: { current: 2, max: 2, recovery: "long" } },
+          saveProficiencies: ["constitution", "charisma"],
+          skillProficiencies: ["arcana", "persuasion"],
+          spellSlots: { level1: { current: 2, max: 2, recovery: "long" } }
+        })
+      );
+      expect(sorcerer.json().sheet.inventory.map((item: { name: string }) => item.name)).toEqual(["Spear", "Dagger", "Arcane Focus"]);
+      expect(sorcerer.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Sorcerous Burst", "Chromatic Orb", "Shield"]);
+      expect(sorcerer.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "save-constitution", formula: "1d20+4" }),
+          expect.objectContaining({ id: "save-charisma", formula: "1d20+5" }),
+          expect.objectContaining({ id: "skill-arcana", formula: "1d20+2" }),
+          expect.objectContaining({ id: "feature-innate-sorcery", formula: "0", metadata: expect.objectContaining({ resource: "innateSorcery", spellSaveDc: 14 }) }),
+          expect.objectContaining({ label: "Sorcerous Burst Damage", formula: "1d8" }),
+          expect.objectContaining({ label: "Chromatic Orb Damage", formula: "3d8" })
+        ])
+      );
+
+      const levelFiveSorcerer = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "sorcerer", name: "SRD Level Five Sorcerer", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFiveSorcerer.statusCode).toBe(200);
+      let levelFiveSorcererAdvance = levelFiveSorcerer;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFiveSorcererAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveSorcerer.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFiveSorcererAdvance.statusCode).toBe(200);
+      }
+      expect(levelFiveSorcererAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Font of Magic", "Metamagic", "Sorcerer Subclass", "Sorcerous Restoration"]),
+          resources: {
+            innateSorcery: { current: 2, max: 2, recovery: "long" },
+            sorceryPoints: { current: 2, max: 5, recovery: "long" },
+            sorcerousRestoration: { current: 1, max: 1, recovery: "long" }
+          },
+          spellSlots: {
+            level1: { current: 2, max: 4, recovery: "long" },
+            level2: { current: 2, max: 3, recovery: "long" },
+            level3: { current: 2, max: 2, recovery: "long" }
+          }
+        })
+      );
+      expect(levelFiveSorcererAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-innate-sorcery", formula: "0", metadata: expect.objectContaining({ spellSaveDc: 17 }) }),
+          expect.objectContaining({ id: "feature-convert-spell-slot-to-sorcery-points", formula: "0", metadata: expect.objectContaining({ max: 5, availableSlotLevels: [1, 2, 3] }) }),
+          expect.objectContaining({ id: "feature-create-spell-slot", formula: "0", metadata: expect.objectContaining({ availableSlotLevels: [1, 2, 3] }) }),
+          expect.objectContaining({ id: "feature-metamagic-empowered-spell", formula: "0", metadata: expect.objectContaining({ cost: 1 }) }),
+          expect.objectContaining({ id: "feature-metamagic-quickened-spell", formula: "0", metadata: expect.objectContaining({ cost: 2 }) })
+        ])
+      );
+
       const rogue = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
@@ -3859,13 +3932,15 @@ describe("api", () => {
           expect.objectContaining({ id: "chromatic-orb", name: "Chromatic Orb", data: expect.objectContaining({ damageFormula: "3d8", upcastFormula: "1d8" }) }),
           expect.objectContaining({ id: "ice-knife", name: "Ice Knife", data: expect.objectContaining({ damageFormula: "1d10", secondaryDamageFormula: "2d6" }) }),
           expect.objectContaining({ id: "hunters-mark", name: "Hunter's Mark", data: expect.objectContaining({ damageFormula: "1d6", damageType: "force" }) }),
+          expect.objectContaining({ id: "sorcerous-burst", name: "Sorcerous Burst", data: expect.objectContaining({ damageFormula: "1d8", damageType: "choice" }) }),
           expect.objectContaining({ id: "shield-armor", name: "Shield", data: expect.objectContaining({ costGp: 10, armorBonus: 2 }) }),
           expect.objectContaining({ id: "leather-armor", name: "Leather Armor", data: expect.objectContaining({ costGp: 10, armorBase: 11 }) }),
           expect.objectContaining({ id: "studded-leather-armor", name: "Studded Leather Armor", data: expect.objectContaining({ costGp: 45, armorBase: 12 }) }),
           expect.objectContaining({ id: "chain-mail", name: "Chain Mail", data: expect.objectContaining({ costGp: 75, armorBase: 16, dexBonus: false }) }),
           expect.objectContaining({ id: "shortbow", name: "Shortbow", data: expect.objectContaining({ costGp: 25, damage: "1d6" }) }),
           expect.objectContaining({ id: "longbow", name: "Longbow", data: expect.objectContaining({ costGp: 50, damage: "1d8" }) }),
-          expect.objectContaining({ id: "musical-instrument", name: "Musical Instrument", data: expect.objectContaining({ toolId: "musical-instrument", costGp: 2 }) })
+          expect.objectContaining({ id: "musical-instrument", name: "Musical Instrument", data: expect.objectContaining({ toolId: "musical-instrument", costGp: 2 }) }),
+          expect.objectContaining({ id: "arcane-focus", name: "Arcane Focus", data: expect.objectContaining({ focusType: "arcane", costGp: 10 }) })
         ])
       );
 
@@ -4564,6 +4639,138 @@ describe("api", () => {
       expect(monkLongRest.json().actor.data.resources).toEqual({
         focus: { current: 5, max: 5, recovery: "short" },
         uncannyMetabolism: { current: 1, max: 1, recovery: "long" }
+      });
+
+      const innateSorcery = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveSorcerer.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-innate-sorcery", consumeResources: true }
+      });
+      expect(innateSorcery.statusCode).toBe(200);
+      expect(innateSorcery.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-innate-sorcery", metadata: expect.objectContaining({ spellSaveDc: 17, spellAttackAdvantage: true }) }));
+      expect(innateSorcery.json().usage.consumed).toEqual([{ type: "resource", key: "innateSorcery", label: "Innate Sorcery", amount: 1, remaining: 1 }]);
+
+      const quickenedSpell = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveSorcerer.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-metamagic-quickened-spell", consumeResources: true }
+      });
+      expect(quickenedSpell.statusCode).toBe(200);
+      expect(quickenedSpell.json().usage.consumed).toEqual([{ type: "resource", key: "sorceryPoints", label: "Sorcery Points", amount: 2, remaining: 0 }]);
+
+      const storedLevelFiveSorcerer = store.state.actors.find((actor) => actor.id === levelFiveSorcerer.json().actor.id)!;
+      storedLevelFiveSorcerer.data = {
+        ...storedLevelFiveSorcerer.data,
+        resources: {
+          innateSorcery: { current: 2, max: 2, recovery: "long" },
+          sorceryPoints: { current: 2, max: 5, recovery: "long" },
+          sorcerousRestoration: { current: 1, max: 1, recovery: "long" }
+        },
+        spellSlots: {
+          level1: { current: 2, max: 4, recovery: "long" },
+          level2: { current: 2, max: 3, recovery: "long" },
+          level3: { current: 2, max: 2, recovery: "long" }
+        }
+      };
+      const createdSlot = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveSorcerer.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-create-spell-slot", spellSlotLevel: 1, consumeResources: true }
+      });
+      expect(createdSlot.statusCode).toBe(200);
+      expect(createdSlot.json().usage.consumed).toEqual([{ type: "resource", key: "sorceryPoints", label: "Sorcery Points", amount: 2, remaining: 0 }]);
+      expect(createdSlot.json().actor.data.spellSlots).toEqual({
+        level1: { current: 3, max: 4, recovery: "long" },
+        level2: { current: 2, max: 3, recovery: "long" },
+        level3: { current: 2, max: 2, recovery: "long" }
+      });
+
+      storedLevelFiveSorcerer.data = {
+        ...storedLevelFiveSorcerer.data,
+        resources: {
+          innateSorcery: { current: 2, max: 2, recovery: "long" },
+          sorceryPoints: { current: 3, max: 5, recovery: "long" },
+          sorcerousRestoration: { current: 1, max: 1, recovery: "long" }
+        },
+        spellSlots: {
+          level1: { current: 3, max: 4, recovery: "long" },
+          level2: { current: 2, max: 3, recovery: "long" },
+          level3: { current: 2, max: 2, recovery: "long" }
+        }
+      };
+      const convertedSlot = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveSorcerer.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-convert-spell-slot-to-sorcery-points", spellSlotLevel: 2, consumeResources: true }
+      });
+      expect(convertedSlot.statusCode).toBe(200);
+      expect(convertedSlot.json().usage).toEqual(expect.objectContaining({ slotLevel: 2 }));
+      expect(convertedSlot.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 1 }]);
+      expect(convertedSlot.json().actor.data.resources).toEqual({
+        innateSorcery: { current: 2, max: 2, recovery: "long" },
+        sorceryPoints: { current: 5, max: 5, recovery: "long" },
+        sorcerousRestoration: { current: 1, max: 1, recovery: "long" }
+      });
+
+      storedLevelFiveSorcerer.data = {
+        ...storedLevelFiveSorcerer.data,
+        resources: {
+          innateSorcery: { current: 2, max: 2, recovery: "long" },
+          sorceryPoints: { current: 1, max: 5, recovery: "long" },
+          sorcerousRestoration: { current: 1, max: 1, recovery: "long" }
+        }
+      };
+      const depletedSorceryPoints = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveSorcerer.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-metamagic-quickened-spell", consumeResources: true }
+      });
+      expect(depletedSorceryPoints.statusCode).toBe(409);
+      expect(depletedSorceryPoints.json().message).toContain("Insufficient sorcery points");
+
+      storedLevelFiveSorcerer.data = {
+        ...storedLevelFiveSorcerer.data,
+        resources: {
+          innateSorcery: { current: 0, max: 2, recovery: "long" },
+          sorceryPoints: { current: 0, max: 5, recovery: "long" },
+          sorcerousRestoration: { current: 1, max: 1, recovery: "long" }
+        }
+      };
+      const sorcererShortRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveSorcerer.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short" }
+      });
+      expect(sorcererShortRest.statusCode).toBe(200);
+      expect(sorcererShortRest.json().actor.data.resources).toEqual({
+        innateSorcery: { current: 0, max: 2, recovery: "long" },
+        sorceryPoints: { current: 2, max: 5, recovery: "long" },
+        sorcerousRestoration: { current: 0, max: 1, recovery: "long" }
+      });
+      expect(sorcererShortRest.json().rest.recovered).toEqual(expect.objectContaining({ resources: { sorceryPoints: 2 }, sorcerousRestoration: { restoredSorceryPoints: 2, limit: 2 }, resourcesSpent: { sorcerousRestoration: 1 } }));
+
+      const sorcererLongRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveSorcerer.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "long" }
+      });
+      expect(sorcererLongRest.statusCode).toBe(200);
+      expect(sorcererLongRest.json().actor.data.resources).toEqual({
+        innateSorcery: { current: 2, max: 2, recovery: "long" },
+        sorceryPoints: { current: 5, max: 5, recovery: "long" },
+        sorcerousRestoration: { current: 1, max: 1, recovery: "long" }
+      });
+      expect(sorcererLongRest.json().actor.data.spellSlots).toEqual({
+        level1: { current: 4, max: 4, recovery: "long" },
+        level2: { current: 3, max: 3, recovery: "long" },
+        level3: { current: 2, max: 2, recovery: "long" }
       });
 
       const bardicInspiration = await app.inject({

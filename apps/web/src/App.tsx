@@ -1458,6 +1458,21 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
   if (dnd5eSrdHasStunningStrike(actor)) {
     options.push({ rollId: "feature-stunning-strike", label: "Stunning Strike", description: `Stunning Strike: spend 1 Focus; DC ${dnd5eSrdMonkSaveDc(actor)} Constitution` });
   }
+  if (dnd5eSrdHasInnateSorcery(actor)) {
+    options.push({ rollId: "feature-innate-sorcery", label: "Innate Sorcery", description: `Innate Sorcery: spend one use for +1 spell DC (${dnd5eSrdSpellSaveDc(actor) + 1}) and spell attack advantage` });
+  }
+  if (dnd5eSrdHasFontOfMagic(actor)) {
+    options.push(
+      { rollId: "feature-convert-spell-slot-to-sorcery-points", label: "Convert Slot", description: "Font of Magic: convert a spell slot into Sorcery Points equal to its level" },
+      { rollId: "feature-create-spell-slot", label: "Create Slot", description: "Font of Magic: spend Sorcery Points to restore a spell slot" }
+    );
+  }
+  if (dnd5eSrdHasMetamagic(actor)) {
+    options.push(
+      { rollId: "feature-metamagic-empowered-spell", label: "Empowered Spell", description: `Metamagic: spend 1 Sorcery Point to reroll up to ${Math.max(1, genericFantasyAttributeModifier(actor, "charisma"))} damage dice` },
+      { rollId: "feature-metamagic-quickened-spell", label: "Quickened Spell", description: "Metamagic: spend 2 Sorcery Points to cast an action spell as a Bonus Action" }
+    );
+  }
   if (dnd5eSrdHasWildShape(actor)) {
     options.push({ rollId: "feature-wild-shape", label: "Wild Shape", description: `Wild Shape: spend one use; ${dnd5eSrdWildShapeDurationHours(actor)} hour form; regain one use on Short Rest` });
   }
@@ -1570,6 +1585,21 @@ function dnd5eSrdHasDeflectAttacks(actor: Actor): boolean {
 function dnd5eSrdHasStunningStrike(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   return (stringValue(actor.data.class) === "Monk" && numericValue(actor.data.level, 1) >= 5) || features.includes("Stunning Strike");
+}
+
+function dnd5eSrdHasInnateSorcery(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return stringValue(actor.data.class) === "Sorcerer" || features.includes("Innate Sorcery") || "innateSorcery" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasFontOfMagic(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Sorcerer" && numericValue(actor.data.level, 1) >= 2) || features.includes("Font of Magic") || "sorceryPoints" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasMetamagic(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Sorcerer" && numericValue(actor.data.level, 1) >= 2) || features.includes("Metamagic");
 }
 
 function dnd5eSrdHasWildShape(actor: Actor): boolean {
@@ -1740,6 +1770,7 @@ function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Paladin") return "charisma";
   if (className === "Ranger") return "wisdom";
   if (className === "Monk") return "dexterity";
+  if (className === "Sorcerer") return "charisma";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";
   return "strength";
