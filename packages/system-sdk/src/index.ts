@@ -129,6 +129,10 @@ export interface AdvancementOption {
 
 export type SystemRestType = "short" | "long";
 
+export interface SystemRestOptions {
+  arcaneRecovery?: Record<string, number>;
+}
+
 export interface SystemRestResult {
   systemId: string;
   actorId: string;
@@ -1058,10 +1062,10 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         skillProficiencies: ["arcana", "history"],
         toolProficiencies: ["calligraphers-supplies"],
         currency: { gp: 50, sp: 0, cp: 0 },
-        resources: {},
+        resources: { arcaneRecovery: { current: 1, max: 1, recovery: "long" } },
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
-        features: ["Spellcasting", "Ritual Adept"],
+        features: ["Spellcasting", "Arcane Recovery"],
         feats: []
       },
       items: [{ entryId: "fire-bolt" }, { entryId: "shield" }]
@@ -1574,22 +1578,24 @@ export function applyGenericFantasyRest(actor: Actor, restType: SystemRestType):
   };
 }
 
-export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType): SystemRestResult {
+export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType, options: SystemRestOptions = {}): SystemRestResult {
   const rest = applyGenericFantasyRest(actor, restType);
   const className = stringValue(actor.data.class) || "";
   const level = numericValue(actor.data.level, 1);
   const dataWithDefaults = {
     ...rest.data,
-    resources: normalizeResourcePools(rest.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true })
+    resources: normalizeResourcePools(rest.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true }),
+    spellSlots: normalizeResourcePools(rest.data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true })
   };
-  const data = restType === "short" ? dnd5eSrdApplyShortRestResourceLimits(actor, dataWithDefaults) : dnd5eSrdApplyLongRestResourceLimits(actor, dataWithDefaults);
-  const recovered = dnd5eSrdRestRecovered(actor, data, rest.recovered);
+  const dataAfterRestLimits = restType === "short" ? dnd5eSrdApplyShortRestResourceLimits(actor, dataWithDefaults) : dnd5eSrdApplyLongRestResourceLimits(actor, dataWithDefaults);
+  const arcaneRecovery = dnd5eSrdApplyArcaneRecovery(actor, dataAfterRestLimits, restType, options);
+  const recovered = dnd5eSrdRestRecovered(actor, arcaneRecovery.data, arcaneRecovery.recovered ? { ...rest.recovered, ...arcaneRecovery.recovered } : rest.recovered);
   return {
     ...rest,
     systemId: DND_5E_SRD_SYSTEM_ID,
     summary: `${actor.name} completed a ${restType} rest using ${DND_5E_SRD_VERSION}`,
     recovered,
-    data
+    data: arcaneRecovery.data
   };
 }
 
@@ -2819,6 +2825,7 @@ function dnd5eSrdHasSearUndead(actor: Actor): boolean {
 function dnd5eSrdApplyClassFeatures(features: string[], className: string, level: number): string[] {
   if (className === "Fighter") return [...new Set([...features, ...dnd5eSrdFighterFeaturesForLevel(level)])];
   if (className === "Cleric") return [...new Set([...features, ...dnd5eSrdClericFeaturesForLevel(level)])];
+  if (className === "Wizard") return [...new Set([...features, ...dnd5eSrdWizardFeaturesForLevel(level)])];
   return features;
 }
 
@@ -2843,6 +2850,13 @@ function dnd5eSrdClericFeaturesForLevel(level: number): string[] {
   const features = ["Spellcasting", "Divine Order"];
   if (level >= 2) features.push("Channel Divinity", "Divine Spark", "Turn Undead");
   if (level >= 5) features.push("Sear Undead");
+  return features;
+}
+
+function dnd5eSrdWizardFeaturesForLevel(level: number): string[] {
+  const features = ["Spellcasting", "Arcane Recovery"];
+  if (level >= 2) features.push("Arcane Tradition");
+  if (level >= 4) features.push("Ability Score Improvement");
   return features;
 }
 
@@ -2933,6 +2947,53 @@ function dnd5eSrdApplyLongRestResourceLimits(actor: Actor, data: Record<string, 
   };
 }
 
+function dnd5eSrdApplyArcaneRecovery(actor: Actor, data: Record<string, unknown>, restType: SystemRestType, options: SystemRestOptions): { data: Record<string, unknown>; recovered?: Record<string, unknown> } {
+  const selection = options.arcaneRecovery;
+  if (!selection) return { data };
+  if (restType !== "short") throw new Error("Arcane Recovery can only be used on a Short Rest");
+  const className = stringValue(actor.data.class) || "";
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (className !== "Wizard" && !normalizeStringArray(actor.data.features).includes("Arcane Recovery") && !("arcaneRecovery" in recordValue(actor.data.resources))) {
+    throw new Error("Arcane Recovery is only available to Wizards");
+  }
+  const resources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
+  const arcaneRecovery = resources.arcaneRecovery;
+  if (!arcaneRecovery || arcaneRecovery.current <= 0) throw new Error("Arcane Recovery is unavailable until a Long Rest");
+  const spellSlots = normalizeResourcePools(data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true });
+  const recoveredSpellSlots: Record<string, number> = {};
+  let totalLevels = 0;
+  for (const [key, rawAmount] of Object.entries(selection)) {
+    const amount = Math.floor(numericValue(rawAmount, 0));
+    if (amount <= 0) continue;
+    const match = /^level([1-9]\d*)$/.exec(key);
+    if (!match) throw new Error(`Unknown spell slot level: ${key}`);
+    const slotLevel = Number(match[1]);
+    if (slotLevel >= 6) throw new Error("Arcane Recovery cannot recover spell slots of 6th level or higher");
+    const slot = spellSlots[key];
+    if (!slot) throw new Error(`No ${formatOrdinal(slotLevel)}-level spell slot pool is available`);
+    const expended = Math.max(0, slot.max - slot.current);
+    if (amount > expended) throw new Error(`Cannot recover ${amount} ${formatOrdinal(slotLevel)}-level spell slots; only ${expended} are expended`);
+    recoveredSpellSlots[key] = amount;
+    totalLevels += slotLevel * amount;
+  }
+  if (totalLevels <= 0) throw new Error("Arcane Recovery requires at least one expended spell slot");
+  const limit = dnd5eSrdArcaneRecoverySlotLevelLimit(level);
+  if (totalLevels > limit) throw new Error(`Arcane Recovery can recover up to ${limit} combined spell slot levels`);
+  for (const [key, amount] of Object.entries(recoveredSpellSlots)) {
+    const slot = spellSlots[key]!;
+    spellSlots[key] = { ...slot, current: Math.min(slot.max, slot.current + amount) };
+  }
+  resources.arcaneRecovery = { ...arcaneRecovery, current: arcaneRecovery.current - 1 };
+  return {
+    data: { ...data, resources, spellSlots },
+    recovered: { spellSlots: recoveredSpellSlots, arcaneRecovery: { totalLevels, limit }, resourcesSpent: { arcaneRecovery: 1 } }
+  };
+}
+
+function dnd5eSrdArcaneRecoverySlotLevelLimit(level: number): number {
+  return Math.ceil(Math.max(1, Math.floor(level)) / 2);
+}
+
 function dnd5eSrdRestRecovered(actor: Actor, data: Record<string, unknown>, recovered: Record<string, unknown>): Record<string, unknown> {
   const className = stringValue(actor.data.class) || "Fighter";
   const level = numericValue(actor.data.level, 1);
@@ -2955,6 +3016,11 @@ function dnd5eSrdShortRestLimitedResources(actor: Actor): Record<string, number>
   if (dnd5eSrdHasSecondWind(actor) || "secondWind" in resources) limited.secondWind = 1;
   if (dnd5eSrdHasChannelDivinity(actor) || "channelDivinity" in resources) limited.channelDivinity = 1;
   return limited;
+}
+
+function formatOrdinal(value: number): string {
+  const suffix = value % 10 === 1 && value % 100 !== 11 ? "st" : value % 10 === 2 && value % 100 !== 12 ? "nd" : value % 10 === 3 && value % 100 !== 13 ? "rd" : "th";
+  return `${value}${suffix}`;
 }
 
 function spellActionSlotLevel(spellLevel: number, requestedSlotLevel: number | undefined): number {
@@ -3115,6 +3181,9 @@ function defaultDnd5eSrdResources(className: string, level = 1): Record<string, 
   if (className === "Cleric") {
     const channelDivinityMax = dnd5eSrdChannelDivinityMax(level);
     return channelDivinityMax > 0 ? { channelDivinity: { current: channelDivinityMax, max: channelDivinityMax, recovery: "short" } } : {};
+  }
+  if (className === "Wizard") {
+    return { arcaneRecovery: { current: 1, max: 1, recovery: "long" } };
   }
   return {};
 }

@@ -524,10 +524,11 @@ export function App() {
     await refresh();
   }
 
-  async function restSelectedActor(restType: "short" | "long") {
+  async function restSelectedActor(restType: "short" | "long", options: { arcaneRecovery?: Record<string, number> } = {}) {
     if (!selectedActor) return;
     const rested = await apiPost<{ rest: { summary: string } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/rest`, {
-      restType
+      restType,
+      ...options
     });
     setStatus(rested.rest.summary);
     await refresh();
@@ -1478,6 +1479,26 @@ function dnd5eSrdSearUndeadFormula(actor: Actor): string {
   return `${Math.max(1, genericFantasyAttributeModifier(actor, "wisdom"))}d8`;
 }
 
+function dnd5eSrdArcaneRecoverySelection(actor: Actor): Record<string, number> | undefined {
+  if (actor.systemId !== "dnd-5e-srd" || stringValue(actor.data.class) !== "Wizard") return undefined;
+  const arcaneRecovery = recordValue(recordValue(actor.data.resources).arcaneRecovery);
+  if (numericValue(arcaneRecovery.current, 0) <= 0) return undefined;
+  const slots = recordValue(actor.data.spellSlots);
+  let remaining = Math.ceil(Math.max(1, numericValue(actor.data.level, 1)) / 2);
+  const selection: Record<string, number> = {};
+  for (let slotLevel = 1; slotLevel <= 5 && remaining > 0; slotLevel += 1) {
+    const key = `level${slotLevel}`;
+    const slot = recordValue(slots[key]);
+    const expended = Math.max(0, numericValue(slot.max, 0) - numericValue(slot.current, 0));
+    const recoverable = Math.min(expended, Math.floor(remaining / slotLevel));
+    if (recoverable > 0) {
+      selection[key] = recoverable;
+      remaining -= recoverable * slotLevel;
+    }
+  }
+  return Object.keys(selection).length > 0 ? selection : undefined;
+}
+
 function dnd5eSrdSpellSaveDc(actor: Actor): number {
   const className = stringValue(actor.data.class) ?? "Fighter";
   return 8 + dnd5eSrdProficiencyBonus(actor) + genericFantasyAttributeModifier(actor, dnd5eSrdPrimaryAbility(className));
@@ -2168,10 +2189,11 @@ function formatDateTime(value?: string): string {
   return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; importedActor?: Actor; encounterPlan?: EncounterPlanInfo; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onAdvanceActor(): void; onRestActor(restType: "short" | "long"): void; onPlanEncounter(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canPlanEncounter: boolean; canRollSystem: boolean }) {
+function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; importedActor?: Actor; encounterPlan?: EncounterPlanInfo; onInstallPlugin(plugin: PluginRuntimeInfo): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onAdvanceActor(): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onPlanEncounter(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canPlanEncounter: boolean; canRollSystem: boolean }) {
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   const rollLabel = systemRollLabel(props.actor?.systemId);
   const advancementLabel = systemAdvancementLabel(props.actor?.systemId);
+  const arcaneRecovery = props.actor ? dnd5eSrdArcaneRecoverySelection(props.actor) : undefined;
   return (
     <div className="panel-stack">
       <div className="section-title">Runtime SDK</div>
@@ -2239,6 +2261,11 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
       <button className="ghost-button wide" onClick={() => props.onRestActor("short")} disabled={!props.actor || !props.canRestActor}>
         <RefreshCw size={16} /> Short Rest
       </button>
+      {arcaneRecovery && (
+        <button className="ghost-button wide" onClick={() => props.onRestActor("short", { arcaneRecovery })} disabled={!props.actor || !props.canRestActor}>
+          <RefreshCw size={16} /> Arcane Recovery
+        </button>
+      )}
       <button className="ghost-button wide" onClick={() => props.onRestActor("long")} disabled={!props.actor || !props.canRestActor}>
         <RefreshCw size={16} /> Long Rest
       </button>

@@ -230,6 +230,7 @@ describe("dnd 5.5e srd rules", () => {
   it("exposes first-class SRD templates, compendium entries, and quick rolls", () => {
     const cleric = dnd5eSrdCharacterTemplate("cleric");
     const fighter = dnd5eSrdCharacterTemplate("fighter");
+    const wizard = dnd5eSrdCharacterTemplate("wizard");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
     expect(cleric?.data.skillProficiencies).toEqual(["medicine", "religion"]);
@@ -238,6 +239,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(cleric?.data.features).toEqual(["Spellcasting", "Divine Order"]);
     expect(dnd5eSrdCharacterTemplate("fighter")?.data.toolProficiencies).toEqual(["gaming-set"]);
     expect(fighter?.data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
+    expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
+    expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
     expect(cleric?.items.map((item) => item.entryId)).toEqual(["healing-word", "cure-wounds"]);
     expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
     expect(dnd5eSrdCompendiumEntry("longsword")?.data).toEqual(expect.objectContaining({ costGp: 15, weightLb: 3 }));
@@ -592,6 +595,28 @@ describe("dnd 5.5e srd rules", () => {
         systemId: "dnd-5e-srd",
         consumed: [],
         data: expect.objectContaining({ resources: { channelDivinity: { current: 2, max: 2, recovery: "short" } } })
+      })
+    );
+    const wizardActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("wizard")!.data, spellSlots: { level1: { current: 0, max: 2, recovery: "long" } } } };
+    const wizardShortRest = applyDnd5eSrdRest(wizardActor, "short", { arcaneRecovery: { level1: 1 } });
+    expect(wizardShortRest.recovered).toEqual(
+      expect.objectContaining({
+        spellSlots: { level1: 1 },
+        arcaneRecovery: { totalLevels: 1, limit: 1 },
+        resourcesSpent: { arcaneRecovery: 1 }
+      })
+    );
+    expect(wizardShortRest.data).toEqual(
+      expect.objectContaining({
+        resources: { arcaneRecovery: { current: 0, max: 1, recovery: "long" } },
+        spellSlots: { level1: { current: 1, max: 2, recovery: "long" } }
+      })
+    );
+    expect(() => applyDnd5eSrdRest({ ...wizardActor, data: wizardShortRest.data }, "short", { arcaneRecovery: { level1: 1 } })).toThrow("Arcane Recovery is unavailable");
+    expect(applyDnd5eSrdRest({ ...wizardActor, data: wizardShortRest.data }, "long").data).toEqual(
+      expect.objectContaining({
+        resources: { arcaneRecovery: { current: 1, max: 1, recovery: "long" } },
+        spellSlots: { level1: { current: 2, max: 2, recovery: "long" } }
       })
     );
     const fighterActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("fighter")!.data } };

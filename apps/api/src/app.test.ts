@@ -3254,6 +3254,56 @@ describe("api", () => {
       expect(invalidOrigin.statusCode).toBe(400);
       expect(invalidOrigin.json().message).toContain("Criminal ability increases");
 
+      const wizard = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "wizard", name: "SRD Wizard", ownerUserId: "usr_demo_player" }
+      });
+      expect(wizard.statusCode).toBe(200);
+      expect(wizard.json().actor.data).toEqual(
+        expect.objectContaining({
+          features: ["Spellcasting", "Arcane Recovery"],
+          resources: { arcaneRecovery: { current: 1, max: 1, recovery: "long" } },
+          spellSlots: { level1: { current: 2, max: 2, recovery: "long" } }
+        })
+      );
+      const storedWizard = store.state.actors.find((actor) => actor.id === wizard.json().actor.id)!;
+      storedWizard.data = { ...storedWizard.data, spellSlots: { level1: { current: 0, max: 2, recovery: "long" } } };
+      const arcaneRecoveryRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${wizard.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short", arcaneRecovery: { level1: 1 } }
+      });
+      expect(arcaneRecoveryRest.statusCode).toBe(200);
+      expect(arcaneRecoveryRest.json().rest.recovered).toEqual(
+        expect.objectContaining({
+          spellSlots: { level1: 1 },
+          arcaneRecovery: { totalLevels: 1, limit: 1 },
+          resourcesSpent: { arcaneRecovery: 1 }
+        })
+      );
+      expect(arcaneRecoveryRest.json().actor.data.resources).toEqual({ arcaneRecovery: { current: 0, max: 1, recovery: "long" } });
+      expect(arcaneRecoveryRest.json().actor.data.spellSlots).toEqual({ level1: { current: 1, max: 2, recovery: "long" } });
+      const depletedArcaneRecovery = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${wizard.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short", arcaneRecovery: { level1: 1 } }
+      });
+      expect(depletedArcaneRecovery.statusCode).toBe(409);
+      expect(depletedArcaneRecovery.json().message).toContain("Arcane Recovery is unavailable");
+      const wizardLongRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${wizard.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "long" }
+      });
+      expect(wizardLongRest.statusCode).toBe(200);
+      expect(wizardLongRest.json().actor.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
+      expect(wizardLongRest.json().actor.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
+
       const cleric = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
