@@ -3230,6 +3230,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       applyEffect?: boolean;
       targetActorId?: string;
       spellSlotLevel?: number;
+      resourceAmount?: number;
+      useFreeResource?: boolean;
     };
   }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/roll", async (request, reply) => {
     const canReadActor = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
@@ -3248,7 +3250,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       quickRolls.find((item) => item.id === `aptitude-${request.body.ability}`) ??
       quickRolls[0];
     if (!rollDefinition) return notFound(reply, "No system roll is available for this actor");
-    const actionOptions = systemActionOptions(request.body.spellSlotLevel);
+    const actionOptions = systemActionOptions(request.body.spellSlotLevel, request.body.resourceAmount, request.body.useFreeResource);
     const resolvedFormula = systemActionFormula(actor, items, rollDefinition.id, actionOptions) ?? rollDefinition.formula;
     let usage: SystemActionUseResult | undefined;
     const actorDataUpdates = new Map<string, Record<string, unknown>>();
@@ -3990,6 +3992,8 @@ function createAiThreadTools(): AiToolDefinition[] {
           targetActorId: { type: "string", description: "Optional target actor id for applying damage or healing." },
           applyEffect: { type: "boolean", description: "When true, apply damage or healing roll totals to the target actor's tracked pool." },
           spellSlotLevel: { type: "number", description: "Optional spell slot level for upcasting a leveled spell action." },
+          resourceAmount: { type: "number", description: "Optional rules-resource amount for variable-pool actions such as Lay On Hands." },
+          useFreeResource: { type: "boolean", description: "When true, use a class feature's free casting resource instead of a spell slot when supported." },
           visibility: { type: "string", description: "Chat visibility for the action roll.", enum: ["public", "gm_only", "whisper"] }
         },
         required: ["actorId"],
@@ -4003,8 +4007,10 @@ function createAiThreadTools(): AiToolDefinition[] {
         const targetActorId = stringFromRecord(request, "targetActorId");
         const applyEffect = booleanFromRecord(request, "applyEffect") ?? false;
         const spellSlotLevel = numberFromRecord(request, "spellSlotLevel", 1, 9);
+        const resourceAmount = numberFromRecord(request, "resourceAmount", 1, 999);
+        const useFreeResource = booleanFromRecord(request, "useFreeResource") ?? false;
         const visibility = rollVisibilityFromRecord(request, "visibility", "public");
-        return context.useActorAction({ actorId, actionRollId, actionName, targetActorId, applyEffect, spellSlotLevel, visibility });
+        return context.useActorAction({ actorId, actionRollId, actionName, targetActorId, applyEffect, spellSlotLevel, resourceAmount, useFreeResource, visibility });
       }
     },
     {
@@ -4125,7 +4131,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       store.state.chat.push(message);
       return { rollId: roll.id, formula: roll.formula, label: roll.label, total: roll.total, visibility: roll.visibility };
     },
-    useActorAction: async ({ actorId, actionRollId, actionName, targetActorId, applyEffect, spellSlotLevel, visibility }) => {
+    useActorAction: async ({ actorId, actionRollId, actionName, targetActorId, applyEffect, spellSlotLevel, resourceAmount, useFreeResource, visibility }) => {
       const actor = store.state.actors.find((item) => item.id === actorId && item.campaignId === campaignId);
       if (!actor) return toolError("not_found", { entity: "actor", id: actorId });
       if (!canUpdateActorForUser(store, userId, actor)) return missingPermissionToolOutput("actor.update");
@@ -4139,7 +4145,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
           availableActions: quickRolls.map((item) => ({ rollId: item.id, label: item.label, formula: item.formula }))
         });
       }
-      const actionOptions = systemActionOptions(spellSlotLevel);
+      const actionOptions = systemActionOptions(spellSlotLevel, resourceAmount, useFreeResource);
       const resolvedFormula = systemActionFormula(actor, items, action.id, actionOptions) ?? action.formula;
       let usage: SystemActionUseResult;
       try {
@@ -6647,8 +6653,8 @@ function systemQuickRolls(actor: Actor, items: Item[] = []) {
   return genericFantasyQuickRolls(actor, items);
 }
 
-function systemActionOptions(spellSlotLevel: number | undefined): SystemActionUseOptions {
-  return { spellSlotLevel };
+function systemActionOptions(spellSlotLevel: number | undefined, resourceAmount?: number, useFreeResource?: boolean): SystemActionUseOptions {
+  return { spellSlotLevel, resourceAmount, useFreeResource };
 }
 
 function systemActionFormula(actor: Actor, items: Item[], rollId: string, options: SystemActionUseOptions): string | undefined {

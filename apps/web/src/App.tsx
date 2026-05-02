@@ -1429,6 +1429,15 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
   if (dnd5eSrdHasFontOfInspiration(actor)) {
     options.push({ rollId: "feature-font-of-inspiration", label: "Font of Inspiration", description: "Font of Inspiration: spend a spell slot to regain one Bardic Inspiration use" });
   }
+  if (dnd5eSrdHasLayOnHands(actor)) {
+    options.push({ rollId: "feature-lay-on-hands-healing", label: "Lay On Hands", description: `Lay On Hands Healing: ${dnd5eSrdLayOnHandsFormula(actor)}; spends healing pool points` });
+  }
+  if (dnd5eSrdHasPaladinsSmite(actor)) {
+    options.push({ rollId: "feature-divine-smite-damage", label: "Divine Smite", description: `Divine Smite Damage: ${dnd5eSrdDivineSmiteFormula(actor)} radiant; can spend a spell slot or Paladin's Smite` });
+  }
+  if (dnd5eSrdHasFaithfulSteed(actor)) {
+    options.push({ rollId: "feature-faithful-steed", label: "Faithful Steed", description: "Faithful Steed: free Find Steed casting; recovers on Long Rest" });
+  }
   if (dnd5eSrdHasChannelDivinity(actor)) {
     const saveDc = dnd5eSrdSpellSaveDc(actor);
     const searUndead = dnd5eSrdHasSearUndead(actor) ? `; Sear ${dnd5eSrdSearUndeadFormula(actor)} radiant` : "";
@@ -1491,6 +1500,21 @@ function dnd5eSrdHasFontOfInspiration(actor: Actor): boolean {
   return (stringValue(actor.data.class) === "Bard" && numericValue(actor.data.level, 1) >= 5) || features.includes("Font of Inspiration");
 }
 
+function dnd5eSrdHasLayOnHands(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return stringValue(actor.data.class) === "Paladin" || features.includes("Lay On Hands") || "layOnHands" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasPaladinsSmite(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Paladin" && numericValue(actor.data.level, 1) >= 2) || features.includes("Paladin's Smite") || "paladinsSmite" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasFaithfulSteed(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Paladin" && numericValue(actor.data.level, 1) >= 5) || features.includes("Faithful Steed") || "faithfulSteed" in recordValue(actor.data.resources);
+}
+
 function dnd5eSrdHasSneakAttack(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   return stringValue(actor.data.class) === "Rogue" || features.includes("Sneak Attack");
@@ -1551,6 +1575,21 @@ function dnd5eSrdBardicInspirationDie(actor: Actor): string {
   return "d6";
 }
 
+function dnd5eSrdLayOnHandsFormula(actor: Actor): string {
+  const layOnHands = recordValue(recordValue(actor.data.resources).layOnHands);
+  return String(Math.max(1, Math.min(5, numericValue(layOnHands.current, dnd5eSrdLayOnHandsMax(actor)))));
+}
+
+function dnd5eSrdLayOnHandsMax(actor: Actor): number {
+  return Math.max(1, Math.floor(numericValue(actor.data.level, 1))) * 5;
+}
+
+function dnd5eSrdDivineSmiteFormula(actor: Actor): string {
+  const slots = recordValue(actor.data.spellSlots);
+  const slotLevel = Object.keys(slots).some((key) => key === "level2" && numericValue(recordValue(slots[key]).current, 0) > 0) ? 2 : 1;
+  return `${slotLevel + 1}d8`;
+}
+
 function dnd5eSrdSneakAttackFormula(actor: Actor): string {
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return `${Math.ceil(level / 2)}d6`;
@@ -1593,6 +1632,7 @@ function dnd5eSrdProficiencyBonus(actor: Actor): number {
 function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Bard") return "charisma";
   if (className === "Cleric") return "wisdom";
+  if (className === "Paladin") return "charisma";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";
   return "strength";
@@ -1605,10 +1645,11 @@ function dnd5eSrdTacticalShiftMovement(actor: Actor): number {
 function dnd5eSrdAttacksPerAction(actor: Actor): number {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   const className = stringValue(actor.data.class);
-  const hasExtraAttack = className === "Fighter" || (className === "Barbarian" && numericValue(actor.data.level, 1) >= 5) || features.includes("Extra Attack");
+  const hasExtraAttack = className === "Fighter" || ((className === "Barbarian" || className === "Paladin") && numericValue(actor.data.level, 1) >= 5) || features.includes("Extra Attack");
   if (!hasExtraAttack) return 1;
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   if (className === "Barbarian") return level >= 5 || features.includes("Extra Attack") ? 2 : 1;
+  if (className === "Paladin") return level >= 5 || features.includes("Extra Attack") ? 2 : 1;
   if (level >= 20) return 4;
   if (level >= 11) return 3;
   if (level >= 5 || features.includes("Extra Attack")) return 2;

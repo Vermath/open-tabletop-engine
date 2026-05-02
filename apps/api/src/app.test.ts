@@ -3197,7 +3197,7 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(templates.statusCode).toBe(200);
-      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "wizard", "rogue"]);
+      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "wizard", "rogue"]);
 
       const origins = await app.inject({
         method: "GET",
@@ -3423,6 +3423,74 @@ describe("api", () => {
           expect.objectContaining({ id: "skill-athletics", formula: "1d20+0", metadata: { feature: "Jack of All Trades", bonus: 1 } }),
           expect.objectContaining({ id: "feature-bardic-inspiration", formula: "1d8", metadata: expect.objectContaining({ die: "d8", recovery: "short" }) }),
           expect.objectContaining({ id: "feature-font-of-inspiration", formula: "0", metadata: expect.objectContaining({ resource: "bardicInspiration" }) })
+        ])
+      );
+
+      const paladin = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "paladin", name: "SRD Paladin", ownerUserId: "usr_demo_player" }
+      });
+      expect(paladin.statusCode).toBe(200);
+      expect(paladin.json().actor.data).toEqual(
+        expect.objectContaining({
+          features: ["Lay On Hands", "Spellcasting", "Weapon Mastery"],
+          hitDice: { current: 1, max: 1, size: "d10" },
+          resources: { layOnHands: { current: 5, max: 5, recovery: "long" } },
+          saveProficiencies: ["wisdom", "charisma"],
+          skillProficiencies: ["athletics", "persuasion"],
+          spellSlots: { level1: { current: 2, max: 2, recovery: "long" } }
+        })
+      );
+      expect(paladin.json().sheet.inventory.map((item: { name: string }) => item.name)).toEqual(["Longsword"]);
+      expect(paladin.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Cure Wounds"]);
+      expect(paladin.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "save-charisma", formula: "1d20+4" }),
+          expect.objectContaining({ id: "skill-athletics", formula: "1d20+5" }),
+          expect.objectContaining({ id: "feature-lay-on-hands-healing", formula: "5", metadata: expect.objectContaining({ resource: "layOnHands", pool: 5 }) })
+        ])
+      );
+
+      const levelFivePaladin = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "paladin", name: "SRD Level Five Paladin", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFivePaladin.statusCode).toBe(200);
+      let levelFivePaladinAdvance = levelFivePaladin;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFivePaladinAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFivePaladin.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFivePaladinAdvance.statusCode).toBe(200);
+      }
+      expect(levelFivePaladinAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Lay On Hands", "Paladin's Smite", "Extra Attack", "Faithful Steed"]),
+          resources: {
+            layOnHands: { current: 5, max: 25, recovery: "long" },
+            paladinsSmite: { current: 1, max: 1, recovery: "long" },
+            faithfulSteed: { current: 1, max: 1, recovery: "long" }
+          },
+          spellSlots: {
+            level1: { current: 2, max: 4, recovery: "long" },
+            level2: { current: 2, max: 2, recovery: "long" }
+          },
+          combat: expect.objectContaining({ attacksPerAction: 2 })
+        })
+      );
+      expect(levelFivePaladinAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-divine-smite-damage", formula: "2d8", metadata: expect.objectContaining({ freeCastResource: "paladinsSmite" }) }),
+          expect.objectContaining({ id: "feature-faithful-steed", formula: "0", metadata: expect.objectContaining({ resource: "faithfulSteed" }) }),
+          expect.objectContaining({ label: "Longsword Damage", metadata: { attacksPerAction: 2, feature: "Extra Attack" } })
         ])
       );
 
@@ -3835,6 +3903,44 @@ describe("api", () => {
       });
       expect(barbarianTarget.statusCode).toBe(200);
 
+      const paladinTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: "SRD Paladin Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: { current: 3, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(paladinTarget.statusCode).toBe(200);
+
+      const paladinSmiteTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: "SRD Paladin Smite Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: { current: 10, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(paladinSmiteTarget.statusCode).toBe(200);
+
       const sneakAttack = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRogue.json().actor.id}/roll`,
@@ -3905,6 +4011,84 @@ describe("api", () => {
       });
       expect(barbarianLongRest.statusCode).toBe(200);
       expect(barbarianLongRest.json().actor.data.resources).toEqual({ rage: { current: 2, max: 2, recovery: "short" } });
+
+      const layOnHands = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${paladin.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-lay-on-hands-healing", resourceAmount: 4, consumeResources: true, applyEffect: true, targetActorId: paladinTarget.json().id }
+      });
+      expect(layOnHands.statusCode).toBe(200);
+      expect(layOnHands.json().roll.formula).toBe("4");
+      expect(layOnHands.json().usage.consumed).toEqual([{ type: "resource", key: "layOnHands", label: "Lay On Hands", amount: 4, remaining: 1 }]);
+      expect(layOnHands.json().effect).toEqual(expect.objectContaining({ type: "healing", targetActorId: paladinTarget.json().id, pool: "hp", before: 3, max: 12, amount: 4, after: 7 }));
+      expect(store.state.actors.find((actor) => actor.id === paladin.json().actor.id)?.data.resources).toEqual({ layOnHands: { current: 1, max: 5, recovery: "long" } });
+
+      const depletedLayOnHands = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${paladin.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-lay-on-hands-healing", resourceAmount: 2, consumeResources: true }
+      });
+      expect(depletedLayOnHands.statusCode).toBe(409);
+      expect(depletedLayOnHands.json().message).toContain("Insufficient lay on hands");
+
+      const divineSmite = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFivePaladin.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-divine-smite-damage", spellSlotLevel: 2, consumeResources: true, applyEffect: true, targetActorId: paladinSmiteTarget.json().id }
+      });
+      expect(divineSmite.statusCode).toBe(200);
+      expect(divineSmite.json().roll.formula).toBe("3d8");
+      expect(divineSmite.json().usage).toEqual(expect.objectContaining({ slotLevel: 2 }));
+      expect(divineSmite.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 1 }]);
+      expect(divineSmite.json().effect).toEqual(expect.objectContaining({ type: "damage", targetActorId: paladinSmiteTarget.json().id, pool: "hp", before: 10, max: 12 }));
+      expect(store.state.actors.find((actor) => actor.id === levelFivePaladin.json().actor.id)?.data.spellSlots).toEqual({
+        level1: { current: 2, max: 4, recovery: "long" },
+        level2: { current: 1, max: 2, recovery: "long" }
+      });
+
+      const freeDivineSmite = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFivePaladin.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-divine-smite-damage", useFreeResource: true, consumeResources: true }
+      });
+      expect(freeDivineSmite.statusCode).toBe(200);
+      expect(freeDivineSmite.json().roll.formula).toBe("2d8");
+      expect(freeDivineSmite.json().usage.consumed).toEqual([{ type: "resource", key: "paladinsSmite", label: "Paladin's Smite", amount: 1, remaining: 0 }]);
+
+      const faithfulSteed = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFivePaladin.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-faithful-steed", consumeResources: true }
+      });
+      expect(faithfulSteed.statusCode).toBe(200);
+      expect(faithfulSteed.json().usage.consumed).toEqual([{ type: "resource", key: "faithfulSteed", label: "Faithful Steed", amount: 1, remaining: 0 }]);
+      expect(store.state.actors.find((actor) => actor.id === levelFivePaladin.json().actor.id)?.data.resources).toEqual({
+        layOnHands: { current: 5, max: 25, recovery: "long" },
+        paladinsSmite: { current: 0, max: 1, recovery: "long" },
+        faithfulSteed: { current: 0, max: 1, recovery: "long" }
+      });
+
+      const paladinLongRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFivePaladin.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "long" }
+      });
+      expect(paladinLongRest.statusCode).toBe(200);
+      expect(paladinLongRest.json().actor.data.resources).toEqual({
+        layOnHands: { current: 25, max: 25, recovery: "long" },
+        paladinsSmite: { current: 1, max: 1, recovery: "long" },
+        faithfulSteed: { current: 1, max: 1, recovery: "long" }
+      });
+      expect(paladinLongRest.json().actor.data.spellSlots).toEqual({
+        level1: { current: 4, max: 4, recovery: "long" },
+        level2: { current: 2, max: 2, recovery: "long" }
+      });
 
       const bardicInspiration = await app.inject({
         method: "POST",

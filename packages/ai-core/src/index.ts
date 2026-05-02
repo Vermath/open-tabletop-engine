@@ -39,7 +39,7 @@ export interface AiToolContext {
   createProposal(input: { title: string; summary: string; changes: ProposalChange[] }): Promise<string>;
   createMemory(input: { text: string; visibility: Visibility; sourceIds: string[] }): Promise<string>;
   rollDice(input: { formula: string; label?: string; visibility: "public" | "gm_only" | "whisper" }): Promise<{ rollId: string; formula: string; label?: string; total: number; visibility: string }>;
-  useActorAction(input: { actorId: string; actionRollId?: string; actionName?: string; targetActorId?: string; applyEffect?: boolean; spellSlotLevel?: number; visibility: "public" | "gm_only" | "whisper" }): Promise<{
+  useActorAction(input: { actorId: string; actionRollId?: string; actionName?: string; targetActorId?: string; applyEffect?: boolean; spellSlotLevel?: number; resourceAmount?: number; useFreeResource?: boolean; visibility: "public" | "gm_only" | "whisper" }): Promise<{
     actorId: string;
     systemId: string;
     actionRollId: string;

@@ -155,6 +155,8 @@ export interface SystemActionConsumption {
 
 export interface SystemActionUseOptions {
   spellSlotLevel?: number;
+  resourceAmount?: number;
+  useFreeResource?: boolean;
 }
 
 export interface SystemActionUseResult {
@@ -187,6 +189,9 @@ export const DND_5E_SRD_RAGE_DAMAGE_ROLL_ID = "feature-rage-damage-bonus";
 export const DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID = "feature-reckless-attack";
 export const DND_5E_SRD_BARDIC_INSPIRATION_ROLL_ID = "feature-bardic-inspiration";
 export const DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID = "feature-font-of-inspiration";
+export const DND_5E_SRD_LAY_ON_HANDS_ROLL_ID = "feature-lay-on-hands-healing";
+export const DND_5E_SRD_DIVINE_SMITE_ROLL_ID = "feature-divine-smite-damage";
+export const DND_5E_SRD_FAITHFUL_STEED_ROLL_ID = "feature-faithful-steed";
 export const DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID = "feature-divine-spark-healing";
 export const DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID = "feature-divine-spark-damage";
 export const DND_5E_SRD_TURN_UNDEAD_ROLL_ID = "feature-turn-undead";
@@ -574,6 +579,30 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       metadata: { trigger: "expend a spell slot to regain one Bardic Inspiration use", resource: "bardicInspiration" }
     });
   }
+  if (dnd5eSrdHasLayOnHands(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_LAY_ON_HANDS_ROLL_ID,
+      label: "Lay On Hands Healing",
+      formula: dnd5eSrdLayOnHandsFormula(actor),
+      metadata: dnd5eSrdLayOnHandsMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasPaladinsSmite(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_DIVINE_SMITE_ROLL_ID,
+      label: "Divine Smite Damage",
+      formula: dnd5eSrdDivineSmiteFormula(actor),
+      metadata: dnd5eSrdDivineSmiteMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasFaithfulSteed(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_FAITHFUL_STEED_ROLL_ID,
+      label: "Faithful Steed",
+      formula: "0",
+      metadata: { resource: "faithfulSteed", spell: "Find Steed", freeCasting: true, recovery: "long", slotLevel: 2 }
+    });
+  }
   if (dnd5eSrdHasChannelDivinity(actor)) {
     const saveDc = dnd5eSrdSpellSaveDc(actor);
     const searUndead = dnd5eSrdHasSearUndead(actor) ? { formula: dnd5eSrdSearUndeadFormula(actor), damageType: "Radiant" } : undefined;
@@ -834,6 +863,13 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       name: "Ray of Sickness",
       summary: "Level 1 necromancy spell that deals poison damage and scales when upcast.",
       data: { level: 1, school: "necromancy", action: "action", range: "60 ft", damageFormula: "2d8", upcastFormula: "1d8", damageType: "poison", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "divine-smite",
+      type: "spell",
+      name: "Divine Smite",
+      summary: "Level 1 Paladin evocation spell that adds radiant damage after a melee hit.",
+      data: { level: 1, school: "evocation", action: "bonus", range: "self", damageFormula: "2d8", upcastFormula: "1d8", damageType: "radiant", trigger: "immediately after hitting a target with a Melee weapon or Unarmed Strike", creatureTypeBonus: { types: ["Fiend", "Undead"], formula: "1d8" }, source: DND_5E_SRD_VERSION }
     },
     {
       id: "alert",
@@ -1181,6 +1217,34 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         feats: ["Magic Initiate"]
       },
       items: [{ entryId: "healing-word" }, { entryId: "cure-wounds" }]
+    },
+    {
+      id: "paladin",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Paladin",
+      summary: "SRD 5.2.1 holy warrior with Lay On Hands, spellcasting, and Divine Smite.",
+      actorType: "character",
+      data: {
+        ruleset: DND_5E_SRD_VERSION,
+        level: 1,
+        class: "Paladin",
+        species: "Human",
+        background: "Soldier",
+        proficiencyBonus: 2,
+        hp: { current: 12, max: 12 },
+        attributes: { strength: 16, dexterity: 10, constitution: 14, intelligence: 10, wisdom: 12, charisma: 14 },
+        hitDice: { current: 1, max: 1, size: "d10" },
+        saveProficiencies: ["wisdom", "charisma"],
+        skillProficiencies: ["athletics", "persuasion"],
+        toolProficiencies: ["gaming-set"],
+        currency: { gp: 50, sp: 0, cp: 0 },
+        resources: { layOnHands: { current: 5, max: 5, recovery: "long" } },
+        spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
+        conditions: [],
+        features: ["Lay On Hands", "Spellcasting", "Weapon Mastery"],
+        feats: ["Savage Attacker"]
+      },
+      items: [{ entryId: "longsword" }, { entryId: "cure-wounds" }]
     },
     {
       id: "wizard",
@@ -1870,6 +1934,9 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId === DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_BARDIC_INSPIRATION_ROLL_ID) return dnd5eSrdBardicInspirationFormula(actor);
   if (rollId === DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID) return "0";
+  if (rollId === DND_5E_SRD_LAY_ON_HANDS_ROLL_ID) return dnd5eSrdLayOnHandsFormula(actor, options.resourceAmount);
+  if (rollId === DND_5E_SRD_DIVINE_SMITE_ROLL_ID) return dnd5eSrdDivineSmiteFormula(actor, options.useFreeResource ? 1 : options.spellSlotLevel);
+  if (rollId === DND_5E_SRD_FAITHFUL_STEED_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID || rollId === DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID) return dnd5eSrdDivineSparkFormula(actor);
   if (rollId === DND_5E_SRD_TURN_UNDEAD_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID) return dnd5eSrdSearUndeadFormula(actor);
@@ -1981,6 +2048,63 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
       slotLevel,
       consumed: [result.consumed],
       data: { ...actor.data, resources, spellSlots: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_LAY_ON_HANDS_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Paladin";
+    const level = numericValue(actor.data.level, 1);
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+    const amount = dnd5eSrdResourceActionAmount(options.resourceAmount, dnd5eSrdDefaultLayOnHandsAmount(actor));
+    const result = consumeResourcePool(resources, "layOnHands", amount, "Lay On Hands", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_DIVINE_SMITE_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Paladin";
+    const level = numericValue(actor.data.level, 1);
+    const slotLevel = options.useFreeResource ? 1 : spellActionSlotLevel(1, options.spellSlotLevel);
+    if (options.useFreeResource) {
+      const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+      const result = consumeResourcePool(resources, "paladinsSmite", 1, "Paladin's Smite", "resource");
+      return {
+        systemId: DND_5E_SRD_SYSTEM_ID,
+        actorId: actor.id,
+        rollId,
+        slotLevel,
+        consumed: [result.consumed],
+        data: { ...actor.data, resources: result.pools },
+        items: []
+      };
+    }
+    const spellSlots = normalizeResourcePools(actor.data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true });
+    const result = consumeResourcePool(spellSlots, `level${slotLevel}`, 1, `Level ${slotLevel} Spell Slot`, "spellSlot");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      slotLevel,
+      consumed: [result.consumed],
+      data: { ...actor.data, spellSlots: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_FAITHFUL_STEED_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Paladin";
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data, { raiseMaxToDefault: true });
+    const result = consumeResourcePool(resources, "faithfulSteed", 1, "Faithful Steed", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
       items: []
     };
   }
@@ -2824,6 +2948,7 @@ function dnd5eSrdSaveProficienciesForClass(className: string, explicit: unknown)
   const normalizedClass = className.toLowerCase();
   if (normalizedClass === "bard") return ["dexterity", "charisma"];
   if (normalizedClass === "cleric") return ["wisdom", "charisma"];
+  if (normalizedClass === "paladin") return ["wisdom", "charisma"];
   if (normalizedClass === "wizard") return ["intelligence", "wisdom"];
   if (normalizedClass === "rogue") return ["dexterity", "intelligence"];
   return ["strength", "constitution"];
@@ -2846,6 +2971,7 @@ function dnd5eSrdSkillProficienciesForClass(className: string, explicit: unknown
   const normalizedClass = className.toLowerCase();
   if (normalizedClass === "bard") return ["performance", "persuasion", "perception"];
   if (normalizedClass === "cleric") return ["medicine", "religion"];
+  if (normalizedClass === "paladin") return ["athletics", "persuasion"];
   if (normalizedClass === "wizard") return ["arcana", "history"];
   if (normalizedClass === "rogue") return ["stealth", "sleight-of-hand"];
   return ["athletics", "intimidation"];
@@ -3078,6 +3204,21 @@ function dnd5eSrdHasFontOfInspiration(actor: Actor): boolean {
   return normalizeStringArray(actor.data.features).includes("Font of Inspiration");
 }
 
+function dnd5eSrdHasLayOnHands(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Paladin") return true;
+  return normalizeStringArray(actor.data.features).includes("Lay On Hands") || "layOnHands" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasPaladinsSmite(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Paladin" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  return normalizeStringArray(actor.data.features).includes("Paladin's Smite") || "paladinsSmite" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasFaithfulSteed(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Paladin" && Math.floor(numericValue(actor.data.level, 1)) >= 5) return true;
+  return normalizeStringArray(actor.data.features).includes("Faithful Steed") || "faithfulSteed" in recordValue(actor.data.resources);
+}
+
 function dnd5eSrdHasSneakAttack(actor: Actor): boolean {
   if (stringValue(actor.data.class) === "Rogue") return true;
   return normalizeStringArray(actor.data.features).includes("Sneak Attack");
@@ -3108,14 +3249,15 @@ function dnd5eSrdApplyClassFeatures(features: string[], className: string, level
   if (className === "Barbarian") return [...new Set([...features, ...dnd5eSrdBarbarianFeaturesForLevel(level)])];
   if (className === "Bard") return [...new Set([...features, ...dnd5eSrdBardFeaturesForLevel(level)])];
   if (className === "Cleric") return [...new Set([...features, ...dnd5eSrdClericFeaturesForLevel(level)])];
+  if (className === "Paladin") return [...new Set([...features, ...dnd5eSrdPaladinFeaturesForLevel(level)])];
   if (className === "Wizard") return [...new Set([...features, ...dnd5eSrdWizardFeaturesForLevel(level)])];
   if (className === "Rogue") return [...new Set([...features, ...dnd5eSrdRogueFeaturesForLevel(level)])];
   return features;
 }
 
 function dnd5eSrdApplyClassCombat(combat: Record<string, unknown>, className: string, level: number, speed: unknown): Record<string, unknown> {
-  if (className !== "Fighter" && className !== "Barbarian") return combat;
-  const attacksPerAction = className === "Fighter" ? dnd5eSrdFighterAttacksPerAction(level) : dnd5eSrdBarbarianAttacksPerAction(level);
+  if (className !== "Fighter" && className !== "Barbarian" && className !== "Paladin") return combat;
+  const attacksPerAction = className === "Fighter" ? dnd5eSrdFighterAttacksPerAction(level) : className === "Barbarian" ? dnd5eSrdBarbarianAttacksPerAction(level) : dnd5eSrdPaladinAttacksPerAction(level);
   return {
     ...combat,
     attacksPerAction,
@@ -3153,6 +3295,15 @@ function dnd5eSrdClericFeaturesForLevel(level: number): string[] {
   const features = ["Spellcasting", "Divine Order"];
   if (level >= 2) features.push("Channel Divinity", "Divine Spark", "Turn Undead");
   if (level >= 5) features.push("Sear Undead");
+  return features;
+}
+
+function dnd5eSrdPaladinFeaturesForLevel(level: number): string[] {
+  const features = ["Lay On Hands", "Spellcasting", "Weapon Mastery"];
+  if (level >= 2) features.push("Fighting Style", "Paladin's Smite");
+  if (level >= 3) features.push("Channel Divinity", "Paladin Subclass");
+  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 5) features.push("Extra Attack", "Faithful Steed");
   return features;
 }
 
@@ -3237,6 +3388,44 @@ function dnd5eSrdBardicInspirationMetadata(actor: Actor): Record<string, unknown
   };
 }
 
+function dnd5eSrdLayOnHandsFormula(actor: Actor, requestedAmount?: number): string {
+  return String(dnd5eSrdResourceActionAmount(requestedAmount, dnd5eSrdDefaultLayOnHandsAmount(actor)));
+}
+
+function dnd5eSrdDefaultLayOnHandsAmount(actor: Actor): number {
+  const resources = normalizeDnd5eSrdResources(actor.data.resources, "Paladin", numericValue(actor.data.level, 1), actor.data, { raiseMaxToDefault: true });
+  const layOnHands = resources.layOnHands;
+  return Math.max(1, Math.min(5, layOnHands?.current ?? dnd5eSrdLayOnHandsMax(numericValue(actor.data.level, 1))));
+}
+
+function dnd5eSrdLayOnHandsMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "layOnHands",
+    pool: dnd5eSrdLayOnHandsMax(numericValue(actor.data.level, 1)),
+    defaultAmount: dnd5eSrdDefaultLayOnHandsAmount(actor),
+    chooseAmount: true,
+    recovery: "long",
+    target: "one creature within touch range"
+  };
+}
+
+function dnd5eSrdDivineSmiteFormula(_actor: Actor, spellSlotLevel?: number): string {
+  const slotLevel = spellActionSlotLevel(1, spellSlotLevel);
+  return `${slotLevel + 1}d8`;
+}
+
+function dnd5eSrdDivineSmiteMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    trigger: "immediately after hitting with a Melee weapon or Unarmed Strike",
+    damageType: "Radiant",
+    spellSlotLevel: 1,
+    upcast: "+1d8 per spell slot level above 1",
+    creatureTypeBonus: { types: ["Fiend", "Undead"], formula: "1d8" },
+    freeCastResource: dnd5eSrdHasPaladinsSmite(actor) ? "paladinsSmite" : undefined,
+    recovery: "long"
+  };
+}
+
 function dnd5eSrdSneakAttackFormula(actor: Actor): string {
   return `${dnd5eSrdSneakAttackDice(actor)}d6`;
 }
@@ -3285,6 +3474,7 @@ function dnd5eSrdAttacksPerAction(actor: Actor): number {
   const hasExtraAttack = normalizeStringArray(actor.data.features).includes("Extra Attack");
   const className = stringValue(actor.data.class);
   if (className === "Barbarian") return Math.max(hasExtraAttack ? 2 : 1, dnd5eSrdBarbarianAttacksPerAction(numericValue(actor.data.level, 1)));
+  if (className === "Paladin") return Math.max(hasExtraAttack ? 2 : 1, dnd5eSrdPaladinAttacksPerAction(numericValue(actor.data.level, 1)));
   if (className !== "Fighter" && !hasExtraAttack) return 1;
   return Math.max(hasExtraAttack ? 2 : 1, dnd5eSrdFighterAttacksPerAction(numericValue(actor.data.level, 1)));
 }
@@ -3298,6 +3488,10 @@ function dnd5eSrdFighterAttacksPerAction(level: number): number {
 }
 
 function dnd5eSrdBarbarianAttacksPerAction(level: number): number {
+  return Math.max(1, Math.floor(level)) >= 5 ? 2 : 1;
+}
+
+function dnd5eSrdPaladinAttacksPerAction(level: number): number {
   return Math.max(1, Math.floor(level)) >= 5 ? 2 : 1;
 }
 
@@ -3428,6 +3622,11 @@ function formatOrdinal(value: number): string {
 function spellActionSlotLevel(spellLevel: number, requestedSlotLevel: number | undefined): number {
   const requested = typeof requestedSlotLevel === "number" && Number.isFinite(requestedSlotLevel) ? Math.floor(requestedSlotLevel) : spellLevel;
   return Math.max(spellLevel, requested);
+}
+
+function dnd5eSrdResourceActionAmount(requestedAmount: number | undefined, fallback: number): number {
+  const requested = typeof requestedAmount === "number" && Number.isFinite(requestedAmount) ? Math.floor(requestedAmount) : fallback;
+  return Math.max(1, requested);
 }
 
 function scaleDiceFormula(formula: string, multiplier: number): string {
@@ -3562,6 +3761,7 @@ function defaultGenericFantasySpellSlots(className: string, level: number): Reco
 function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Bard") return "charisma";
   if (className === "Cleric") return "wisdom";
+  if (className === "Paladin") return "charisma";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";
   return "strength";
@@ -3612,6 +3812,15 @@ function defaultDnd5eSrdResources(className: string, level = 1, data: Record<str
     const max = dnd5eSrdBardicInspirationMax(data);
     return { bardicInspiration: { current: max, max, recovery: Math.max(1, Math.floor(level)) >= 5 ? "short" : "long" } };
   }
+  if (className === "Paladin") {
+    const normalized = Math.max(1, Math.floor(level));
+    const resources: Record<string, Record<string, unknown>> = {
+      layOnHands: { current: dnd5eSrdLayOnHandsMax(normalized), max: dnd5eSrdLayOnHandsMax(normalized), recovery: "long" }
+    };
+    if (normalized >= 2) resources.paladinsSmite = { current: 1, max: 1, recovery: "long" };
+    if (normalized >= 5) resources.faithfulSteed = { current: 1, max: 1, recovery: "long" };
+    return resources;
+  }
   if (className === "Wizard") {
     return { arcaneRecovery: { current: 1, max: 1, recovery: "long" } };
   }
@@ -3652,7 +3861,12 @@ function dnd5eSrdBardicInspirationMax(data: Record<string, unknown>): number {
   return Math.max(1, abilityModifier(numericValue(attributes.charisma, 16)));
 }
 
+function dnd5eSrdLayOnHandsMax(level: number): number {
+  return Math.max(1, Math.floor(level)) * 5;
+}
+
 function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
+  if (className === "Paladin") return defaultDnd5eSrdHalfCasterSpellSlots(level);
   if (className !== "Bard" && className !== "Cleric" && className !== "Wizard") return {};
   const slots: Record<string, Record<string, unknown>> = {
     level1: { current: Math.min(4, 2 + Math.max(0, level - 1)), max: Math.min(4, 2 + Math.max(0, level - 1)), recovery: "long" }
@@ -3665,6 +3879,38 @@ function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<str
     slots.level3 = { current: 2, max: 2, recovery: "long" };
   }
   return slots;
+}
+
+function defaultDnd5eSrdHalfCasterSpellSlots(level: number): Record<string, Record<string, unknown>> {
+  const normalized = Math.max(1, Math.min(20, Math.floor(level)));
+  const table: Record<number, number[]> = {
+    1: [2],
+    2: [2],
+    3: [3],
+    4: [3],
+    5: [4, 2],
+    6: [4, 2],
+    7: [4, 3],
+    8: [4, 3],
+    9: [4, 3, 2],
+    10: [4, 3, 2],
+    11: [4, 3, 3],
+    12: [4, 3, 3],
+    13: [4, 3, 3, 1],
+    14: [4, 3, 3, 1],
+    15: [4, 3, 3, 2],
+    16: [4, 3, 3, 2],
+    17: [4, 3, 3, 3, 1],
+    18: [4, 3, 3, 3, 1],
+    19: [4, 3, 3, 3, 2],
+    20: [4, 3, 3, 3, 2]
+  };
+  return Object.fromEntries(
+    (table[normalized] ?? table[1]!).map((slotCount, index) => {
+      const key = `level${index + 1}`;
+      return [key, { current: slotCount, max: slotCount, recovery: "long" }];
+    })
+  );
 }
 
 function averageHitDie(hitDieSize: string): number {

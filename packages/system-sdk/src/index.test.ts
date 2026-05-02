@@ -233,6 +233,7 @@ describe("dnd 5.5e srd rules", () => {
     const barbarian = dnd5eSrdCharacterTemplate("barbarian");
     const bard = dnd5eSrdCharacterTemplate("bard");
     const wizard = dnd5eSrdCharacterTemplate("wizard");
+    const paladin = dnd5eSrdCharacterTemplate("paladin");
     const rogue = dnd5eSrdCharacterTemplate("rogue");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
@@ -255,6 +256,14 @@ describe("dnd 5.5e srd rules", () => {
     expect(bard?.data.resources).toEqual({ bardicInspiration: { current: 3, max: 3, recovery: "long" } });
     expect(bard?.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
     expect(bard?.items.map((item) => item.entryId)).toEqual(["healing-word", "dagger"]);
+    expect(paladin).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Paladin" }));
+    expect(paladin?.data.features).toEqual(["Lay On Hands", "Spellcasting", "Weapon Mastery"]);
+    expect(paladin?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
+    expect(paladin?.data.skillProficiencies).toEqual(["athletics", "persuasion"]);
+    expect(paladin?.data.hitDice).toEqual({ current: 1, max: 1, size: "d10" });
+    expect(paladin?.data.resources).toEqual({ layOnHands: { current: 5, max: 5, recovery: "long" } });
+    expect(paladin?.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
+    expect(paladin?.items.map((item) => item.entryId)).toEqual(["longsword", "cure-wounds"]);
     expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
     expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
     expect(rogue?.data.features).toEqual(["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"]);
@@ -270,6 +279,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("chromatic-orb")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "3d8", upcastFormula: "1d8" }));
     expect(dnd5eSrdCompendiumEntry("ice-knife")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d10", secondaryDamageFormula: "2d6", secondaryUpcastFormula: "1d6" }));
     expect(dnd5eSrdCompendiumEntry("ray-of-sickness")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8" }));
+    expect(dnd5eSrdCompendiumEntry("divine-smite")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8", damageType: "radiant" }));
     expect(dnd5eSrdCompendiumEntry("dagger")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, damageType: "piercing" }));
     expect(dnd5eSrdCompendiumEntry("quarterstaff")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 0.2 }));
     expect(dnd5eSrdCompendiumEntry("shortbow")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 25, damageType: "piercing" }));
@@ -572,6 +582,52 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdActionFormula(levelFiveBardActor, [], "feature-bardic-inspiration")).toBe("1d8");
     expect(dnd5eSrdActionFormula(levelFiveBardActor, [], "feature-font-of-inspiration")).toBe("0");
+    const paladinActor: Actor = { ...srdActor, data: { ...paladin!.data } };
+    const paladinLongsword: Item = {
+      id: "itm_paladin_longsword",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: paladinActor.id,
+      type: "item",
+      name: "Longsword",
+      data: { ...dnd5eSrdCompendiumEntry("longsword")!.data, compendiumId: "longsword" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(dnd5eSrdQuickRolls(paladinActor, [paladinLongsword])).toEqual(
+      expect.arrayContaining([
+        { id: "save-charisma", label: "Charisma Save", formula: "1d20+4" },
+        { id: "skill-athletics", label: "Athletics Check", formula: "1d20+5" },
+        expect.objectContaining({ id: "feature-lay-on-hands-healing", label: "Lay On Hands Healing", formula: "5", metadata: expect.objectContaining({ resource: "layOnHands", pool: 5, chooseAmount: true }) }),
+        { id: "item-itm_paladin_longsword-damage", label: "Longsword Damage", formula: "1d8+3" }
+      ])
+    );
+    expect(dnd5eSrdActionFormula(paladinActor, [], "feature-lay-on-hands-healing")).toBe("5");
+    expect(dnd5eSrdActionFormula(paladinActor, [], "feature-lay-on-hands-healing", { resourceAmount: 3 })).toBe("3");
+    let levelFivePaladinData = paladinActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFivePaladinData = applyDnd5eSrdAdvancement({ ...paladinActor, data: levelFivePaladinData }, "level-up");
+    }
+    const levelFivePaladinActor: Actor = { ...paladinActor, data: levelFivePaladinData };
+    expect(levelFivePaladinData.features).toEqual(expect.arrayContaining(["Lay On Hands", "Paladin's Smite", "Extra Attack", "Faithful Steed"]));
+    expect(levelFivePaladinData.resources).toEqual({
+      layOnHands: { current: 5, max: 25, recovery: "long" },
+      paladinsSmite: { current: 1, max: 1, recovery: "long" },
+      faithfulSteed: { current: 1, max: 1, recovery: "long" }
+    });
+    expect(levelFivePaladinData.spellSlots).toEqual({
+      level1: { current: 2, max: 4, recovery: "long" },
+      level2: { current: 2, max: 2, recovery: "long" }
+    });
+    expect(levelFivePaladinData.combat).toEqual(expect.objectContaining({ attacksPerAction: 2 }));
+    expect(dnd5eSrdQuickRolls(levelFivePaladinActor, [paladinLongsword])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-divine-smite-damage", label: "Divine Smite Damage", formula: "2d8", metadata: expect.objectContaining({ freeCastResource: "paladinsSmite", creatureTypeBonus: { types: ["Fiend", "Undead"], formula: "1d8" } }) }),
+        expect.objectContaining({ id: "feature-faithful-steed", label: "Faithful Steed", formula: "0", metadata: expect.objectContaining({ resource: "faithfulSteed", spell: "Find Steed" }) }),
+        expect.objectContaining({ id: "item-itm_paladin_longsword-damage", formula: "1d8+3", metadata: { attacksPerAction: 2, feature: "Extra Attack" } })
+      ])
+    );
+    expect(dnd5eSrdActionFormula(levelFivePaladinActor, [], "feature-divine-smite-damage", { spellSlotLevel: 2 })).toBe("3d8");
     const rogueActor: Actor = { ...srdActor, data: { ...rogue!.data } };
     const rogueDagger: Item = {
       id: "itm_rogue_dagger",
@@ -763,6 +819,77 @@ describe("dnd 5.5e srd rules", () => {
         data: expect.objectContaining({ resources: { channelDivinity: { current: 2, max: 2, recovery: "short" } } })
       })
     );
+    const paladinActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("paladin")!.data } };
+    const layOnHands = useDnd5eSrdAction(paladinActor, [], "feature-lay-on-hands-healing", { resourceAmount: 3 });
+    expect(layOnHands).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "layOnHands", label: "Lay On Hands", amount: 3, remaining: 2 }],
+        data: expect.objectContaining({ resources: { layOnHands: { current: 2, max: 5, recovery: "long" } } })
+      })
+    );
+    expect(() => useDnd5eSrdAction({ ...paladinActor, data: layOnHands.data }, [], "feature-lay-on-hands-healing", { resourceAmount: 3 })).toThrow("Insufficient lay on hands");
+    let levelFivePaladinData = paladinActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFivePaladinData = applyDnd5eSrdAdvancement({ ...paladinActor, data: levelFivePaladinData }, "level-up");
+    }
+    const levelFivePaladinActor: Actor = { ...paladinActor, data: levelFivePaladinData };
+    expect(useDnd5eSrdAction(levelFivePaladinActor, [], "feature-divine-smite-damage", { spellSlotLevel: 2 })).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 2,
+        consumed: [{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({
+          spellSlots: {
+            level1: { current: 2, max: 4, recovery: "long" },
+            level2: { current: 1, max: 2, recovery: "long" }
+          }
+        })
+      })
+    );
+    expect(useDnd5eSrdAction(levelFivePaladinActor, [], "feature-divine-smite-damage", { useFreeResource: true })).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 1,
+        consumed: [{ type: "resource", key: "paladinsSmite", label: "Paladin's Smite", amount: 1, remaining: 0 }],
+        data: expect.objectContaining({
+          resources: {
+            layOnHands: { current: 5, max: 25, recovery: "long" },
+            paladinsSmite: { current: 0, max: 1, recovery: "long" },
+            faithfulSteed: { current: 1, max: 1, recovery: "long" }
+          }
+        })
+      })
+    );
+    const faithfulSteed = useDnd5eSrdAction(levelFivePaladinActor, [], "feature-faithful-steed");
+    expect(faithfulSteed.consumed).toEqual([{ type: "resource", key: "faithfulSteed", label: "Faithful Steed", amount: 1, remaining: 0 }]);
+    const paladinLongRest = applyDnd5eSrdRest(
+      {
+        ...levelFivePaladinActor,
+        data: {
+          ...levelFivePaladinData,
+          resources: {
+            layOnHands: { current: 0, max: 25, recovery: "long" },
+            paladinsSmite: { current: 0, max: 1, recovery: "long" },
+            faithfulSteed: { current: 0, max: 1, recovery: "long" }
+          },
+          spellSlots: {
+            level1: { current: 0, max: 4, recovery: "long" },
+            level2: { current: 0, max: 2, recovery: "long" }
+          }
+        }
+      },
+      "long"
+    );
+    expect(paladinLongRest.data.resources).toEqual({
+      layOnHands: { current: 25, max: 25, recovery: "long" },
+      paladinsSmite: { current: 1, max: 1, recovery: "long" },
+      faithfulSteed: { current: 1, max: 1, recovery: "long" }
+    });
+    expect(paladinLongRest.data.spellSlots).toEqual({
+      level1: { current: 4, max: 4, recovery: "long" },
+      level2: { current: 2, max: 2, recovery: "long" }
+    });
     const wizardActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("wizard")!.data, spellSlots: { level1: { current: 0, max: 2, recovery: "long" } } } };
     const wizardShortRest = applyDnd5eSrdRest(wizardActor, "short", { arcaneRecovery: { level1: 1 } });
     expect(wizardShortRest.recovered).toEqual(
