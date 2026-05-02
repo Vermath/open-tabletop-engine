@@ -141,6 +141,8 @@ export interface EncounterThreat {
   summary: string;
   role: string;
   budget: number;
+  challengeRating?: string;
+  data?: Record<string, unknown>;
 }
 
 export interface EncounterThreatSelection {
@@ -155,6 +157,8 @@ export interface EncounterPlanThreat {
   count: number;
   budgetEach: number;
   budgetTotal: number;
+  challengeRating?: string;
+  data?: Record<string, unknown>;
 }
 
 export interface EncounterPlan {
@@ -162,8 +166,46 @@ export interface EncounterPlan {
   partyRating: number;
   threatBudget: number;
   difficulty: "trivial" | "easy" | "standard" | "hard" | "deadly";
+  difficultyBudgets?: {
+    easy: number;
+    standard: number;
+    hard: number;
+  };
   summary: string;
   threats: EncounterPlanThreat[];
+}
+
+export interface Dnd5eSrdMonsterAction {
+  name: string;
+  kind: "action" | "bonusAction" | "reaction";
+  attackBonus?: number;
+  range?: string;
+  damageFormula?: string;
+  damageType?: string;
+  summary?: string;
+}
+
+export interface Dnd5eSrdMonsterStatBlock {
+  source: typeof DND_5E_SRD_VERSION;
+  size: string;
+  creatureType: string;
+  alignment: string;
+  armorClass: number;
+  initiative: number;
+  hitPoints: number;
+  hitDice: string;
+  speed: string;
+  challengeRating: string;
+  xp: number;
+  proficiencyBonus: number;
+  abilities: Record<string, number>;
+  saves: Record<string, number>;
+  skills?: Record<string, number>;
+  senses: string[];
+  languages: string[];
+  gear?: string[];
+  traits?: Array<{ name: string; summary: string }>;
+  actions: Dnd5eSrdMonsterAction[];
 }
 
 export type GenericFantasyCompendiumType = "item" | "spell" | "condition";
@@ -765,40 +807,180 @@ export function genericFantasyEncounterThreats(): EncounterThreat[] {
   ];
 }
 
+const DND_5E_SRD_MONSTER_STAT_BLOCKS: Record<string, Dnd5eSrdMonsterStatBlock> = {
+  bandit: {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium or Small",
+    creatureType: "Humanoid",
+    alignment: "Neutral",
+    armorClass: 12,
+    initiative: 1,
+    hitPoints: 11,
+    hitDice: "2d8+2",
+    speed: "30 ft.",
+    challengeRating: "1/8",
+    xp: 25,
+    proficiencyBonus: 2,
+    abilities: { strength: 11, dexterity: 12, constitution: 12, intelligence: 10, wisdom: 10, charisma: 10 },
+    saves: { strength: 0, dexterity: 1, constitution: 1, intelligence: 0, wisdom: 0, charisma: 0 },
+    senses: ["Passive Perception 10"],
+    languages: ["Common", "Thieves' Cant"],
+    gear: ["Leather Armor", "Light Crossbow", "Scimitar"],
+    actions: [
+      { name: "Scimitar", kind: "action", attackBonus: 3, range: "reach 5 ft.", damageFormula: "1d6+1", damageType: "slashing" },
+      { name: "Light Crossbow", kind: "action", attackBonus: 3, range: "80/320 ft.", damageFormula: "1d8+1", damageType: "piercing" }
+    ]
+  },
+  "goblin-warrior": {
+    source: DND_5E_SRD_VERSION,
+    size: "Small",
+    creatureType: "Fey (Goblinoid)",
+    alignment: "Chaotic Neutral",
+    armorClass: 15,
+    initiative: 2,
+    hitPoints: 10,
+    hitDice: "3d6",
+    speed: "30 ft.",
+    challengeRating: "1/4",
+    xp: 50,
+    proficiencyBonus: 2,
+    abilities: { strength: 8, dexterity: 14, constitution: 10, intelligence: 10, wisdom: 8, charisma: 8 },
+    saves: { strength: -1, dexterity: 2, constitution: 0, intelligence: 0, wisdom: -1, charisma: -1 },
+    skills: { stealth: 6 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 9"],
+    languages: ["Common", "Goblin"],
+    gear: ["Scimitar", "Shortbow"],
+    traits: [{ name: "Nimble Escape", summary: "Can disengage or hide as a bonus action." }],
+    actions: [
+      { name: "Scimitar", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "slashing" },
+      { name: "Shortbow", kind: "action", attackBonus: 4, range: "80/320 ft.", damageFormula: "1d6+2", damageType: "piercing" },
+      { name: "Nimble Escape", kind: "bonusAction", summary: "Disengage or Hide." }
+    ]
+  },
+  "goblin-boss": {
+    source: DND_5E_SRD_VERSION,
+    size: "Small",
+    creatureType: "Fey (Goblinoid)",
+    alignment: "Chaotic Neutral",
+    armorClass: 17,
+    initiative: 2,
+    hitPoints: 21,
+    hitDice: "6d6",
+    speed: "30 ft.",
+    challengeRating: "1",
+    xp: 200,
+    proficiencyBonus: 2,
+    abilities: { strength: 10, dexterity: 15, constitution: 10, intelligence: 10, wisdom: 8, charisma: 10 },
+    saves: { strength: 0, dexterity: 2, constitution: 0, intelligence: 0, wisdom: -1, charisma: 0 },
+    skills: { stealth: 6 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 9"],
+    languages: ["Common", "Goblin"],
+    gear: ["Chain Shirt", "Scimitar", "Shield", "Shortbow"],
+    traits: [{ name: "Nimble Escape", summary: "Can disengage or hide as a bonus action." }],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two Scimitar or Shortbow attacks." },
+      { name: "Scimitar", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "slashing" },
+      { name: "Shortbow", kind: "action", attackBonus: 4, range: "80/320 ft.", damageFormula: "1d6+2", damageType: "piercing" },
+      { name: "Nimble Escape", kind: "bonusAction", summary: "Disengage or Hide." },
+      { name: "Redirect Attack", kind: "reaction", summary: "Can swap with a nearby ally targeted by an attack." }
+    ]
+  },
+  tough: {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium or Small",
+    creatureType: "Humanoid",
+    alignment: "Neutral",
+    armorClass: 12,
+    initiative: 1,
+    hitPoints: 32,
+    hitDice: "5d8+10",
+    speed: "30 ft.",
+    challengeRating: "1/2",
+    xp: 100,
+    proficiencyBonus: 2,
+    abilities: { strength: 15, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 10, charisma: 11 },
+    saves: { strength: 2, dexterity: 1, constitution: 2, intelligence: 0, wisdom: 0, charisma: 0 },
+    senses: ["Passive Perception 10"],
+    languages: ["Common"],
+    gear: ["Heavy Crossbow", "Leather Armor", "Mace"],
+    traits: [{ name: "Pack Tactics", summary: "Has advantage when an ally threatens the target nearby." }],
+    actions: [
+      { name: "Mace", kind: "action", attackBonus: 4, range: "reach 5 ft.", damageFormula: "1d6+2", damageType: "bludgeoning" },
+      { name: "Heavy Crossbow", kind: "action", attackBonus: 3, range: "100/400 ft.", damageFormula: "1d10+1", damageType: "piercing" }
+    ]
+  },
+  "hobgoblin-captain": {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium",
+    creatureType: "Fey (Goblinoid)",
+    alignment: "Lawful Evil",
+    armorClass: 17,
+    initiative: 4,
+    hitPoints: 58,
+    hitDice: "9d8+18",
+    speed: "30 ft.",
+    challengeRating: "3",
+    xp: 700,
+    proficiencyBonus: 2,
+    abilities: { strength: 15, dexterity: 14, constitution: 14, intelligence: 12, wisdom: 10, charisma: 13 },
+    saves: { strength: 2, dexterity: 2, constitution: 2, intelligence: 1, wisdom: 0, charisma: 1 },
+    senses: ["Darkvision 60 ft.", "Passive Perception 10"],
+    languages: ["Common", "Goblin"],
+    gear: ["Greatsword", "Half-Plate Armor", "Longbow"],
+    traits: [{ name: "Pack Tactics", summary: "Pairs well with lower-CR allies in a mixed encounter." }],
+    actions: [{ name: "Multiattack", kind: "action", summary: "Makes multiple weapon attacks." }]
+  },
+  "tough-boss": {
+    source: DND_5E_SRD_VERSION,
+    size: "Medium or Small",
+    creatureType: "Humanoid",
+    alignment: "Neutral",
+    armorClass: 16,
+    initiative: 2,
+    hitPoints: 82,
+    hitDice: "11d8+33",
+    speed: "30 ft.",
+    challengeRating: "4",
+    xp: 1100,
+    proficiencyBonus: 2,
+    abilities: { strength: 17, dexterity: 14, constitution: 16, intelligence: 11, wisdom: 10, charisma: 11 },
+    saves: { strength: 5, dexterity: 2, constitution: 5, intelligence: 0, wisdom: 0, charisma: 2 },
+    senses: ["Passive Perception 10"],
+    languages: ["Common plus one other language"],
+    gear: ["Chain Mail", "Heavy Crossbow", "Warhammer"],
+    traits: [{ name: "Pack Tactics", summary: "Has advantage when an ally threatens the target nearby." }],
+    actions: [
+      { name: "Multiattack", kind: "action", summary: "Makes two Warhammer or Heavy Crossbow attacks." },
+      { name: "Warhammer", kind: "action", attackBonus: 5, range: "reach 5 ft.", damageFormula: "2d8+3", damageType: "bludgeoning" },
+      { name: "Heavy Crossbow", kind: "action", attackBonus: 4, range: "100/400 ft.", damageFormula: "2d10+2", damageType: "piercing" }
+    ]
+  }
+};
+
+function dnd5eSrdMonsterThreat(id: string, name: string, role: string, summary: string): EncounterThreat {
+  const statBlock = DND_5E_SRD_MONSTER_STAT_BLOCKS[id];
+  if (!statBlock) throw new Error(`Unknown SRD monster stat block: ${id}`);
+  return {
+    id,
+    systemId: DND_5E_SRD_SYSTEM_ID,
+    name,
+    summary,
+    role,
+    budget: statBlock.xp,
+    challengeRating: statBlock.challengeRating,
+    data: { ...statBlock }
+  };
+}
+
 export function dnd5eSrdEncounterThreats(): EncounterThreat[] {
   return [
-    {
-      id: "goblin-minion",
-      systemId: DND_5E_SRD_SYSTEM_ID,
-      name: "Goblin Minion",
-      summary: "Low-budget SRD humanoid threat for skirmishes.",
-      role: "minion",
-      budget: 50
-    },
-    {
-      id: "goblin-boss",
-      systemId: DND_5E_SRD_SYSTEM_ID,
-      name: "Goblin Boss",
-      summary: "Command threat for a low-level SRD encounter.",
-      role: "leader",
-      budget: 100
-    },
-    {
-      id: "guard-captain",
-      systemId: DND_5E_SRD_SYSTEM_ID,
-      name: "Guard Captain",
-      summary: "Disciplined martial SRD threat for urban or military scenes.",
-      role: "captain",
-      budget: 150
-    },
-    {
-      id: "tough-boss",
-      systemId: DND_5E_SRD_SYSTEM_ID,
-      name: "Tough Boss",
-      summary: "Durable SRD boss threat for a resource-spending fight.",
-      role: "boss",
-      budget: 250
-    }
+    dnd5eSrdMonsterThreat("bandit", "Bandit", "skirmisher", "Low-CR humanoid threat for urban, roadside, and pirate encounters."),
+    dnd5eSrdMonsterThreat("goblin-warrior", "Goblin Warrior", "skirmisher", "Low-level goblinoid attacker with stealth and bonus-action escape pressure."),
+    { ...dnd5eSrdMonsterThreat("goblin-warrior", "Goblin Minion", "minion", "Backward-compatible goblin threat alias for existing encounter drafts."), id: "goblin-minion" },
+    dnd5eSrdMonsterThreat("tough", "Tough", "brute", "Durable low-level humanoid threat that benefits from allies nearby."),
+    dnd5eSrdMonsterThreat("goblin-boss", "Goblin Boss", "leader", "Command threat for low-level SRD encounters with multiattack and ally redirection."),
+    dnd5eSrdMonsterThreat("hobgoblin-captain", "Hobgoblin Captain", "captain", "Disciplined martial SRD threat for organized goblinoid forces."),
+    dnd5eSrdMonsterThreat("tough-boss", "Tough Boss", "boss", "Durable SRD boss threat for a resource-spending fight.")
   ];
 }
 
@@ -812,12 +994,63 @@ export function genericFantasyEncounterPlan(party: Actor[], selections: Encounte
 }
 
 export function dnd5eSrdEncounterPlan(party: Actor[], selections: EncounterThreatSelection[]): EncounterPlan {
+  const difficultyBudgets = dnd5eSrdEncounterXpBudgets(party);
   return buildEncounterPlan({
     systemId: DND_5E_SRD_SYSTEM_ID,
-    partyRating: party.reduce((total, actor) => total + numericValue(actor.data.level, 1) * 100, 0) || 100,
+    partyRating: difficultyBudgets.hard || 100,
     threats: dnd5eSrdEncounterThreats(),
-    selections
+    selections,
+    difficultyBudgets,
+    difficultyForBudget: (budget) => dnd5eSrdEncounterDifficulty(budget, difficultyBudgets),
+    budgetLabel: "XP"
   });
+}
+
+const DND_5E_SRD_ENCOUNTER_XP_BUDGETS_BY_LEVEL: Record<number, { easy: number; standard: number; hard: number }> = {
+  1: { easy: 50, standard: 75, hard: 100 },
+  2: { easy: 100, standard: 150, hard: 200 },
+  3: { easy: 150, standard: 225, hard: 400 },
+  4: { easy: 250, standard: 375, hard: 500 },
+  5: { easy: 500, standard: 750, hard: 1100 },
+  6: { easy: 600, standard: 1000, hard: 1400 },
+  7: { easy: 750, standard: 1300, hard: 1700 },
+  8: { easy: 1000, standard: 1700, hard: 2100 },
+  9: { easy: 1300, standard: 2000, hard: 2600 },
+  10: { easy: 1600, standard: 2300, hard: 3100 },
+  11: { easy: 1900, standard: 2900, hard: 4100 },
+  12: { easy: 2200, standard: 3700, hard: 4700 },
+  13: { easy: 2600, standard: 4200, hard: 5400 },
+  14: { easy: 2900, standard: 4900, hard: 6200 },
+  15: { easy: 3300, standard: 5400, hard: 7800 },
+  16: { easy: 3800, standard: 6100, hard: 9800 },
+  17: { easy: 4500, standard: 7200, hard: 11700 },
+  18: { easy: 5000, standard: 8700, hard: 14200 },
+  19: { easy: 5500, standard: 10700, hard: 17200 },
+  20: { easy: 6400, standard: 13200, hard: 22000 }
+};
+
+export function dnd5eSrdEncounterXpBudgets(party: Actor[]): { easy: number; standard: number; hard: number } {
+  const levels = party.length > 0 ? party.map((actor) => numericValue(actor.data.level, 1)) : [1];
+  return levels.reduce(
+    (total, levelValue) => {
+      const level = Math.min(20, Math.max(1, Math.floor(levelValue)));
+      const budget = DND_5E_SRD_ENCOUNTER_XP_BUDGETS_BY_LEVEL[level] ?? DND_5E_SRD_ENCOUNTER_XP_BUDGETS_BY_LEVEL[1]!;
+      return {
+        easy: total.easy + budget.easy,
+        standard: total.standard + budget.standard,
+        hard: total.hard + budget.hard
+      };
+    },
+    { easy: 0, standard: 0, hard: 0 }
+  );
+}
+
+function dnd5eSrdEncounterDifficulty(threatBudget: number, budgets: { easy: number; standard: number; hard: number }): EncounterPlan["difficulty"] {
+  if (threatBudget <= 0 || threatBudget < budgets.easy) return "trivial";
+  if (threatBudget < budgets.standard) return "easy";
+  if (threatBudget < budgets.hard) return "standard";
+  if (threatBudget <= budgets.hard) return "hard";
+  return "deadly";
 }
 
 export function genericFantasyAdvancementOptions(actor: Actor): AdvancementOption[] {
@@ -2195,7 +2428,15 @@ function normalizeImportSelections(value: unknown): CharacterTemplateItem[] {
   });
 }
 
-function buildEncounterPlan(input: { systemId: string; partyRating: number; threats: EncounterThreat[]; selections: EncounterThreatSelection[] }): EncounterPlan {
+function buildEncounterPlan(input: {
+  systemId: string;
+  partyRating: number;
+  threats: EncounterThreat[];
+  selections: EncounterThreatSelection[];
+  difficultyBudgets?: EncounterPlan["difficultyBudgets"];
+  difficultyForBudget?: (budget: number) => EncounterPlan["difficulty"];
+  budgetLabel?: string;
+}): EncounterPlan {
   const requested = input.selections.length > 0 ? input.selections : [{ id: input.threats[0]?.id ?? "", count: 1 }];
   const threats = requested.flatMap((selection) => {
     const threat = input.threats.find((item) => item.id === selection.id);
@@ -2208,20 +2449,27 @@ function buildEncounterPlan(input: { systemId: string; partyRating: number; thre
         role: threat.role,
         count,
         budgetEach: threat.budget,
-        budgetTotal: threat.budget * count
+        budgetTotal: threat.budget * count,
+        challengeRating: threat.challengeRating,
+        data: threat.data
       }
     ];
   });
   const threatBudget = threats.reduce((total, threat) => total + threat.budgetTotal, 0);
   const ratio = input.partyRating > 0 ? threatBudget / input.partyRating : 99;
-  const difficulty = encounterDifficulty(ratio);
+  const difficulty = input.difficultyForBudget?.(threatBudget) ?? encounterDifficulty(ratio);
+  const budgetLabel = input.budgetLabel ?? "budget";
+  const budgetSummary = input.difficultyBudgets
+    ? `${threatBudget}/${input.partyRating} ${budgetLabel}; easy ${input.difficultyBudgets.easy}, standard ${input.difficultyBudgets.standard}, hard ${input.difficultyBudgets.hard}`
+    : `${threatBudget}/${input.partyRating} ${budgetLabel}`;
   return {
     systemId: input.systemId,
     partyRating: input.partyRating,
     threatBudget,
     difficulty,
+    difficultyBudgets: input.difficultyBudgets,
     threats,
-    summary: `${difficulty} encounter: ${threats.map((threat) => `${threat.count}x ${threat.name}`).join(", ") || "no threats"} (${threatBudget}/${input.partyRating} budget)`
+    summary: `${difficulty} encounter: ${threats.map((threat) => `${threat.count}x ${threat.name}`).join(", ") || "no threats"} (${budgetSummary})`
   };
 }
 

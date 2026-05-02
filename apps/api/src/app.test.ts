@@ -3237,6 +3237,38 @@ describe("api", () => {
         ])
       );
 
+      const dndThreats = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/encounter-threats",
+        headers: authHeaders
+      });
+      expect(dndThreats.statusCode).toBe(200);
+      expect(dndThreats.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "goblin-boss", budget: 200, challengeRating: "1", data: expect.objectContaining({ armorClass: 17, hitPoints: 21, xp: 200 }) }),
+          expect.objectContaining({ id: "tough-boss", budget: 1100, challengeRating: "4", data: expect.objectContaining({ actions: expect.arrayContaining([expect.objectContaining({ name: "Warhammer" })]) }) })
+        ])
+      );
+
+      const dndEncounterPlan = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/encounter-plan",
+        headers: authHeaders,
+        payload: {
+          partyActorIds: [cleric.json().actor.id],
+          threats: [{ id: "goblin-warrior", count: 2 }]
+        }
+      });
+      expect(dndEncounterPlan.statusCode).toBe(200);
+      expect(dndEncounterPlan.json().plan).toMatchObject({
+        systemId: "dnd-5e-srd",
+        partyRating: 100,
+        threatBudget: 100,
+        difficulty: "hard",
+        difficultyBudgets: { easy: 50, standard: 75, hard: 100 },
+        threats: [expect.objectContaining({ id: "goblin-warrior", count: 2, budgetEach: 50, budgetTotal: 100, challengeRating: "1/4" })]
+      });
+
       const purchase = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/purchase`,
