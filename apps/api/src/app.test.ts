@@ -3575,6 +3575,92 @@ describe("api", () => {
       expect(longRest.statusCode).toBe(200);
       expect(longRest.json().actor.data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
 
+      const levelTwoFighter = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "SRD Level Two Fighter", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelTwoFighter.statusCode).toBe(200);
+      const levelTwoAdvance = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelTwoFighter.json().actor.id}/advance`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { optionId: "level-up" }
+      });
+      expect(levelTwoAdvance.statusCode).toBe(200);
+      expect(levelTwoAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 2,
+          features: expect.arrayContaining(["Action Surge", "Tactical Mind"]),
+          resources: {
+            secondWind: { current: 2, max: 2, recovery: "short" },
+            actionSurge: { current: 1, max: 1, recovery: "short" }
+          }
+        })
+      );
+      expect(levelTwoAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-action-surge", label: "Action Surge", formula: "0" }),
+          expect.objectContaining({ id: "feature-tactical-mind-bonus", label: "Tactical Mind Bonus", formula: "1d10" })
+        ])
+      );
+
+      const actionSurge = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelTwoFighter.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-action-surge", consumeResources: true }
+      });
+      expect(actionSurge.statusCode).toBe(200);
+      expect(actionSurge.json().roll.formula).toBe("0");
+      expect(actionSurge.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-action-surge", formula: "0" }));
+      expect(actionSurge.json().usage.consumed).toEqual([{ type: "resource", key: "actionSurge", label: "Action Surge", amount: 1, remaining: 0 }]);
+      expect(store.state.actors.find((actor) => actor.id === levelTwoFighter.json().actor.id)?.data.resources).toEqual({
+        secondWind: { current: 2, max: 2, recovery: "short" },
+        actionSurge: { current: 0, max: 1, recovery: "short" }
+      });
+
+      const depletedActionSurge = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelTwoFighter.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-action-surge", consumeResources: true }
+      });
+      expect(depletedActionSurge.statusCode).toBe(409);
+      expect(depletedActionSurge.json().message).toBe("Insufficient action surge");
+
+      const tacticalMind = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelTwoFighter.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-tactical-mind-bonus", consumeResources: true }
+      });
+      expect(tacticalMind.statusCode).toBe(200);
+      expect(tacticalMind.json().roll.formula).toBe("1d10");
+      expect(tacticalMind.json().usage.consumed).toEqual([{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }]);
+
+      const storedLevelTwoFighter = store.state.actors.find((actor) => actor.id === levelTwoFighter.json().actor.id)!;
+      storedLevelTwoFighter.data = {
+        ...storedLevelTwoFighter.data,
+        resources: {
+          secondWind: { current: 0, max: 2, recovery: "short" },
+          actionSurge: { current: 0, max: 1, recovery: "short" }
+        }
+      };
+      const levelTwoShortRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelTwoFighter.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short" }
+      });
+      expect(levelTwoShortRest.statusCode).toBe(200);
+      expect(levelTwoShortRest.json().actor.data.resources).toEqual({
+        secondWind: { current: 1, max: 2, recovery: "short" },
+        actionSurge: { current: 1, max: 1, recovery: "short" }
+      });
+      expect(levelTwoShortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ secondWind: 1, actionSurge: 1 }));
+
       const chromaticRoll = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,

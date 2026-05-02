@@ -362,6 +362,21 @@ describe("dnd 5.5e srd rules", () => {
       expect.arrayContaining([{ id: "feature-second-wind-healing", label: "Second Wind Healing", formula: "1d10+1" }])
     );
     expect(dnd5eSrdActionFormula({ ...fighterActor, data: { ...fighterActor.data, level: 3 } }, [], "feature-second-wind-healing")).toBe("1d10+3");
+    const levelTwoFighterData = applyDnd5eSrdAdvancement(fighterActor, "level-up");
+    const levelTwoFighterActor: Actor = { ...fighterActor, data: levelTwoFighterData };
+    expect(levelTwoFighterData.features).toEqual(expect.arrayContaining(["Action Surge", "Tactical Mind"]));
+    expect(levelTwoFighterData.resources).toEqual({
+      secondWind: { current: 2, max: 2, recovery: "short" },
+      actionSurge: { current: 1, max: 1, recovery: "short" }
+    });
+    expect(dnd5eSrdQuickRolls(levelTwoFighterActor, [])).toEqual(
+      expect.arrayContaining([
+        { id: "feature-action-surge", label: "Action Surge", formula: "0" },
+        { id: "feature-tactical-mind-bonus", label: "Tactical Mind Bonus", formula: "1d10" }
+      ])
+    );
+    expect(dnd5eSrdActionFormula(levelTwoFighterActor, [], "feature-action-surge")).toBe("0");
+    expect(dnd5eSrdActionFormula(levelTwoFighterActor, [], "feature-tactical-mind-bonus")).toBe("1d10");
     expect(dnd5eSrdSheet(srdActor, [spell]).quickRolls).toEqual(
       expect.arrayContaining([
         { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },
@@ -498,14 +513,80 @@ describe("dnd 5.5e srd rules", () => {
       })
     );
     expect(() => useDnd5eSrdAction({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 2, recovery: "short" } } } }, [], "feature-second-wind-healing")).toThrow("Insufficient second wind");
+    const levelTwoFighterActor: Actor = { ...fighterActor, data: applyDnd5eSrdAdvancement(fighterActor, "level-up") };
+    expect(useDnd5eSrdAction(levelTwoFighterActor, [], "feature-action-surge")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "actionSurge", label: "Action Surge", amount: 1, remaining: 0 }],
+        data: expect.objectContaining({
+          resources: {
+            secondWind: { current: 2, max: 2, recovery: "short" },
+            actionSurge: { current: 0, max: 1, recovery: "short" }
+          }
+        })
+      })
+    );
+    expect(() =>
+      useDnd5eSrdAction(
+        { ...levelTwoFighterActor, data: { ...levelTwoFighterActor.data, resources: { secondWind: { current: 2, max: 2, recovery: "short" }, actionSurge: { current: 0, max: 1, recovery: "short" } } } },
+        [],
+        "feature-action-surge"
+      )
+    ).toThrow("Insufficient action surge");
+    expect(useDnd5eSrdAction(levelTwoFighterActor, [], "feature-tactical-mind-bonus")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({
+          resources: {
+            secondWind: { current: 1, max: 2, recovery: "short" },
+            actionSurge: { current: 1, max: 1, recovery: "short" }
+          }
+        })
+      })
+    );
     expect(applyDnd5eSrdRest({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 2, recovery: "short" } } } }, "short")).toEqual(
       expect.objectContaining({
         recovered: expect.objectContaining({ resources: expect.objectContaining({ secondWind: 1 }) }),
         data: expect.objectContaining({ resources: { secondWind: { current: 1, max: 2, recovery: "short" } } })
       })
     );
+    expect(
+      applyDnd5eSrdRest(
+        {
+          ...levelTwoFighterActor,
+          data: {
+            ...levelTwoFighterActor.data,
+            resources: {
+              secondWind: { current: 0, max: 2, recovery: "short" },
+              actionSurge: { current: 0, max: 1, recovery: "short" }
+            }
+          }
+        },
+        "short"
+      )
+    ).toEqual(
+      expect.objectContaining({
+        recovered: expect.objectContaining({ resources: expect.objectContaining({ secondWind: 1, actionSurge: 1 }) }),
+        data: expect.objectContaining({
+          resources: {
+            secondWind: { current: 1, max: 2, recovery: "short" },
+            actionSurge: { current: 1, max: 1, recovery: "short" }
+          }
+        })
+      })
+    );
     expect(applyDnd5eSrdRest({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 2, recovery: "short" } } } }, "long").data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
     expect(applyDnd5eSrdRest({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 1, recovery: "short" } } } }, "long").data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
+    expect(
+      applyDnd5eSrdRest(
+        { ...fighterActor, data: { ...fighterActor.data, level: 4, resources: { secondWind: { current: 0, max: 2, recovery: "short" }, actionSurge: { current: 0, max: 1, recovery: "short" } } } },
+        "long"
+      ).data.resources
+    ).toEqual({
+      secondWind: { current: 3, max: 3, recovery: "short" },
+      actionSurge: { current: 1, max: 1, recovery: "short" }
+    });
 
     const conditioned = applyDnd5eSrdCondition(srdActor, "magic-initiate", "2026-05-01T00:00:00.000Z");
     expect(dnd5eSrdSheet({ ...srdActor, data: conditioned }, []).conditions).toContainEqual(expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" }));

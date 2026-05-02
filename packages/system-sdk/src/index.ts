@@ -175,6 +175,8 @@ export interface Dnd5eSrdEquipmentPurchaseResult {
 }
 
 export const DND_5E_SRD_SECOND_WIND_ROLL_ID = "feature-second-wind-healing";
+export const DND_5E_SRD_ACTION_SURGE_ROLL_ID = "feature-action-surge";
+export const DND_5E_SRD_TACTICAL_MIND_ROLL_ID = "feature-tactical-mind-bonus";
 
 export interface Dnd5eSrdArmorClassDetails {
   value: number;
@@ -477,14 +479,35 @@ export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[
 }
 
 export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
-  if (!dnd5eSrdHasSecondWind(actor)) return [];
-  return [
-    {
-      id: DND_5E_SRD_SECOND_WIND_ROLL_ID,
-      label: "Second Wind Healing",
-      formula: dnd5eSrdSecondWindFormula(actor)
-    }
-  ];
+  const rolls: QuickRoll[] = [];
+  if (dnd5eSrdHasSecondWind(actor)) {
+    rolls.push(
+      {
+        id: DND_5E_SRD_SECOND_WIND_ROLL_ID,
+        label: "Second Wind Healing",
+        formula: dnd5eSrdSecondWindFormula(actor)
+      }
+    );
+  }
+  if (dnd5eSrdHasActionSurge(actor)) {
+    rolls.push(
+      {
+        id: DND_5E_SRD_ACTION_SURGE_ROLL_ID,
+        label: "Action Surge",
+        formula: "0"
+      }
+    );
+  }
+  if (dnd5eSrdHasTacticalMind(actor)) {
+    rolls.push(
+      {
+        id: DND_5E_SRD_TACTICAL_MIND_ROLL_ID,
+        label: "Tactical Mind Bonus",
+        formula: "1d10"
+      }
+    );
+  }
+  return rolls;
 }
 
 export function dnd5eSrdMonsterActionRolls(actor: Actor): QuickRoll[] {
@@ -840,7 +863,7 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   const data = cloneJsonRecord(template.data);
   const proficiencyBonus = dnd5eSrdProficiencyBonusForLevel(numericValue(data.level, 1), data.proficiencyBonus);
   const features = new Set([...normalizeStringArray(data.features), ...species.traits]);
-  const resources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(stringValue(data.class) || "Fighter"));
+  const resources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(stringValue(data.class) || "Fighter", numericValue(data.level, 1)));
   for (const [resourceId, resource] of Object.entries(dnd5eSrdSpeciesResources(species, proficiencyBonus))) {
     resources[resourceId] = resource;
   }
@@ -1067,7 +1090,7 @@ export function dnd5eSrdCharacterImport(input: CharacterImportInput): CharacterI
       toolProficiencies: dnd5eSrdToolProficienciesForBackground(stringValue(source.background) || "Soldier", source.toolProficiencies),
       toolExpertise: dnd5eSrdToolProficienciesFromExplicit(source.toolExpertise),
       currency: dnd5eSrdCurrency(source.currency),
-      resources: normalizeResourcePools(source.resources, defaultDnd5eSrdResources(className)),
+      resources: normalizeResourcePools(source.resources, defaultDnd5eSrdResources(className, level)),
       spellSlots: normalizeResourcePools(source.spellSlots, defaultDnd5eSrdSpellSlots(className, level)),
       conditions: conditions.map((id) => ({ id }))
     },
@@ -1446,12 +1469,14 @@ export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record
   }
   const level = numericValue(next.level, numericValue(actor.data.level, 1) + 1);
   const hitDice = recordValue(next.hitDice);
+  const features = dnd5eSrdApplyClassFeatures(normalizeStringArray(next.features), className, level);
   return {
     ...next,
     ruleset: DND_5E_SRD_VERSION,
     attributes,
     hitDice: { ...hitDice, size: stringValue(hitDice.size) ?? dnd5eSrdHitDieSize(className) },
-    resources: normalizeResourcePools(next.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true }),
+    features,
+    resources: normalizeResourcePools(next.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true }),
     spellSlots: normalizeResourcePools(next.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true })
   };
 }
@@ -1501,10 +1526,11 @@ export function applyGenericFantasyRest(actor: Actor, restType: SystemRestType):
 
 export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType): SystemRestResult {
   const rest = applyGenericFantasyRest(actor, restType);
-  const className = stringValue(actor.data.class) || "Fighter";
+  const className = stringValue(actor.data.class) || "";
+  const level = numericValue(actor.data.level, 1);
   const dataWithDefaults = {
     ...rest.data,
-    resources: normalizeResourcePools(rest.data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true })
+    resources: normalizeResourcePools(rest.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true })
   };
   const data = restType === "short" ? dnd5eSrdApplyShortRestResourceLimits(actor, dataWithDefaults) : dnd5eSrdApplyLongRestResourceLimits(actor, dataWithDefaults);
   const recovered = dnd5eSrdRestRecovered(actor, data, rest.recovered);
@@ -1611,6 +1637,8 @@ export function genericFantasyActionFormula(actor: Actor, items: Item[] = [], ro
 
 export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): string | undefined {
   if (rollId === DND_5E_SRD_SECOND_WIND_ROLL_ID) return dnd5eSrdSecondWindFormula(actor);
+  if (rollId === DND_5E_SRD_ACTION_SURGE_ROLL_ID) return "0";
+  if (rollId === DND_5E_SRD_TACTICAL_MIND_ROLL_ID) return "1d10";
   return genericFantasyActionFormula(actor, items, rollId, options);
 }
 
@@ -1634,7 +1662,33 @@ export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId
 export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): SystemActionUseResult {
   if (rollId === DND_5E_SRD_SECOND_WIND_ROLL_ID) {
     const className = stringValue(actor.data.class) || "Fighter";
-    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className));
+    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
+    const result = consumeResourcePool(resources, "secondWind", 1, "Second Wind", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_ACTION_SURGE_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Fighter";
+    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
+    const result = consumeResourcePool(resources, "actionSurge", 1, "Action Surge", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_TACTICAL_MIND_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Fighter";
+    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
     const result = consumeResourcePool(resources, "secondWind", 1, "Second Wind", "resource");
     return {
       systemId: DND_5E_SRD_SYSTEM_ID,
@@ -2666,6 +2720,28 @@ function dnd5eSrdHasSecondWind(actor: Actor): boolean {
   return "secondWind" in recordValue(actor.data.resources);
 }
 
+function dnd5eSrdHasActionSurge(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Fighter" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  if (normalizeStringArray(actor.data.features).includes("Action Surge")) return true;
+  return "actionSurge" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasTacticalMind(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Fighter" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  return normalizeStringArray(actor.data.features).includes("Tactical Mind");
+}
+
+function dnd5eSrdApplyClassFeatures(features: string[], className: string, level: number): string[] {
+  if (className !== "Fighter") return features;
+  return [...new Set([...features, ...dnd5eSrdFighterFeaturesForLevel(level)])];
+}
+
+function dnd5eSrdFighterFeaturesForLevel(level: number): string[] {
+  const features = ["Fighting Style", "Second Wind"];
+  if (level >= 2) features.push("Action Surge", "Tactical Mind");
+  return features;
+}
+
 function dnd5eSrdSecondWindFormula(actor: Actor): string {
   const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return appendFormulaTerm("1d10", String(fighterLevel));
@@ -2674,8 +2750,9 @@ function dnd5eSrdSecondWindFormula(actor: Actor): string {
 function dnd5eSrdApplyShortRestResourceLimits(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {
   if (!dnd5eSrdHasSecondWind(actor) && !("secondWind" in recordValue(data.resources))) return data;
   const className = stringValue(actor.data.class) || "Fighter";
-  const beforeResources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true });
-  const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true });
+  const level = numericValue(actor.data.level, 1);
+  const beforeResources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
+  const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
   const before = beforeResources.secondWind;
   const after = afterResources.secondWind;
   if (!before || !after) return data;
@@ -2692,7 +2769,8 @@ function dnd5eSrdApplyShortRestResourceLimits(actor: Actor, data: Record<string,
 function dnd5eSrdApplyLongRestResourceLimits(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {
   if (!dnd5eSrdHasSecondWind(actor) && !("secondWind" in recordValue(data.resources))) return data;
   const className = stringValue(actor.data.class) || "Fighter";
-  const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true });
+  const level = numericValue(actor.data.level, 1);
+  const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
   const after = afterResources.secondWind;
   if (!after) return data;
   return {
@@ -2707,8 +2785,9 @@ function dnd5eSrdApplyLongRestResourceLimits(actor: Actor, data: Record<string, 
 function dnd5eSrdRestRecovered(actor: Actor, data: Record<string, unknown>, recovered: Record<string, unknown>): Record<string, unknown> {
   if (!dnd5eSrdHasSecondWind(actor) && !("secondWind" in recordValue(data.resources))) return recovered;
   const className = stringValue(actor.data.class) || "Fighter";
-  const before = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true }).secondWind;
-  const after = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className), { raiseMaxToDefault: true }).secondWind;
+  const level = numericValue(actor.data.level, 1);
+  const before = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true }).secondWind;
+  const after = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true }).secondWind;
   if (!before || !after) return recovered;
   const resourcesRecovered = { ...recordValue(recovered.resources) };
   const amount = Math.max(0, after.current - before.current);
@@ -2863,9 +2942,28 @@ function dnd5eSrdHitDieSize(className: string): string {
   return "d10";
 }
 
-function defaultDnd5eSrdResources(className: string): Record<string, Record<string, unknown>> {
-  if (className === "Fighter") return { secondWind: { current: 2, max: 2, recovery: "short" } };
+function defaultDnd5eSrdResources(className: string, level = 1): Record<string, Record<string, unknown>> {
+  if (className === "Fighter") {
+    const resources: Record<string, Record<string, unknown>> = {
+      secondWind: { current: dnd5eSrdSecondWindMax(level), max: dnd5eSrdSecondWindMax(level), recovery: "short" }
+    };
+    const actionSurgeMax = dnd5eSrdActionSurgeMax(level);
+    if (actionSurgeMax > 0) resources.actionSurge = { current: actionSurgeMax, max: actionSurgeMax, recovery: "short" };
+    return resources;
+  }
   return {};
+}
+
+function dnd5eSrdSecondWindMax(level: number): number {
+  const normalized = Math.max(1, Math.floor(level));
+  if (normalized >= 10) return 4;
+  if (normalized >= 4) return 3;
+  return 2;
+}
+
+function dnd5eSrdActionSurgeMax(level: number): number {
+  const normalized = Math.max(1, Math.floor(level));
+  return normalized >= 17 ? 2 : normalized >= 2 ? 1 : 0;
 }
 
 function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
