@@ -236,6 +236,7 @@ describe("dnd 5.5e srd rules", () => {
     const paladin = dnd5eSrdCharacterTemplate("paladin");
     const druid = dnd5eSrdCharacterTemplate("druid");
     const ranger = dnd5eSrdCharacterTemplate("ranger");
+    const monk = dnd5eSrdCharacterTemplate("monk");
     const rogue = dnd5eSrdCharacterTemplate("rogue");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
@@ -282,6 +283,14 @@ describe("dnd 5.5e srd rules", () => {
     expect(ranger?.data.resources).toEqual({ favoredEnemy: { current: 2, max: 2, recovery: "long" } });
     expect(ranger?.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
     expect(ranger?.items.map((item) => item.entryId)).toEqual(["hunters-mark", "cure-wounds", "longbow", "scimitar", "shortsword", "studded-leather-armor"]);
+    expect(monk).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Monk" }));
+    expect(monk?.data.features).toEqual(["Martial Arts", "Unarmored Defense"]);
+    expect(monk?.data.saveProficiencies).toEqual(["strength", "dexterity"]);
+    expect(monk?.data.skillProficiencies).toEqual(["acrobatics", "stealth"]);
+    expect(monk?.data.hitDice).toEqual({ current: 1, max: 1, size: "d8" });
+    expect(monk?.data.resources).toEqual({});
+    expect(monk?.data.spellSlots).toEqual({});
+    expect(monk?.items.map((item) => item.entryId)).toEqual(["spear", "dagger", "musical-instrument"]);
     expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
     expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
     expect(rogue?.data.features).toEqual(["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"]);
@@ -307,6 +316,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("shortsword")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 10, damageType: "piercing" }));
     expect(dnd5eSrdCompendiumEntry("studded-leather-armor")?.data).toEqual(expect.objectContaining({ armorBase: 12, armorType: "light", costGp: 45, weightLb: 13 }));
     expect(dnd5eSrdCompendiumEntry("spear")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 1 }));
+    expect(dnd5eSrdCompendiumEntry("musical-instrument")?.data).toEqual(expect.objectContaining({ toolId: "musical-instrument", costGp: 2 }));
 
     const spell: Item = {
       id: "itm_healing_word",
@@ -739,6 +749,57 @@ describe("dnd 5.5e srd rules", () => {
         expect.objectContaining({ id: "item-itm_ranger_longbow-damage", formula: "1d8+3", metadata: { attacksPerAction: 2, feature: "Extra Attack" } })
       ])
     );
+    const monkActor: Actor = { ...srdActor, data: { ...monk!.data } };
+    const monkSpear: Item = {
+      id: "itm_monk_spear",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: monkActor.id,
+      type: "item",
+      name: "Spear",
+      data: { ...dnd5eSrdCompendiumEntry("spear")!.data, compendiumId: "spear" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(dnd5eSrdSheet(monkActor, [monkSpear]).data).toEqual(expect.objectContaining({ armorClass: 15, armorClassDetails: expect.objectContaining({ armorName: "Unarmored Defense", value: 15 }) }));
+    expect(dnd5eSrdQuickRolls(monkActor, [monkSpear])).toEqual(
+      expect.arrayContaining([
+        { id: "save-strength", label: "Strength Save", formula: "1d20+2" },
+        { id: "save-dexterity", label: "Dexterity Save", formula: "1d20+5" },
+        { id: "skill-acrobatics", label: "Acrobatics Check", formula: "1d20+5" },
+        { id: "skill-stealth", label: "Stealth Check", formula: "1d20+5" },
+        { id: "tool-musical-instrument", label: "Musical Instrument Check", formula: "1d20+2" },
+        expect.objectContaining({ id: "feature-martial-arts-damage", label: "Martial Arts Damage", formula: "1d6+3", metadata: expect.objectContaining({ martialArtsDie: "d6", dexterousAttacks: true }) }),
+        expect.objectContaining({ id: "item-itm_monk_spear-damage", label: "Spear Damage", formula: "1d6+3", metadata: expect.objectContaining({ martialArts: { die: "d6", dexterousAttacks: true } }) })
+      ])
+    );
+    expect(dnd5eSrdActionFormula(monkActor, [monkSpear], "feature-martial-arts-damage")).toBe("1d6+3");
+    expect(dnd5eSrdActionFormula(monkActor, [monkSpear], "item-itm_monk_spear-damage")).toBe("1d6+3");
+    let levelFiveMonkData = monkActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveMonkData = applyDnd5eSrdAdvancement({ ...monkActor, data: levelFiveMonkData }, "level-up");
+    }
+    const levelFiveMonkActor: Actor = { ...monkActor, data: levelFiveMonkData };
+    expect(levelFiveMonkData.features).toEqual(expect.arrayContaining(["Monk's Focus", "Flurry of Blows", "Patient Defense", "Step of the Wind", "Uncanny Metabolism", "Deflect Attacks", "Monk Subclass", "Extra Attack", "Stunning Strike"]));
+    expect(levelFiveMonkData.resources).toEqual({
+      focus: { current: 2, max: 5, recovery: "short" },
+      uncannyMetabolism: { current: 1, max: 1, recovery: "long" }
+    });
+    expect(levelFiveMonkData.combat).toEqual(expect.objectContaining({ attacksPerAction: 2, unarmoredMovement: { bonusFt: 10, armorRestriction: "not wearing armor or wielding a Shield" } }));
+    expect(dnd5eSrdQuickRolls(levelFiveMonkActor, [monkSpear])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-martial-arts-damage", formula: "1d8+5", metadata: expect.objectContaining({ martialArtsDie: "d8" }) }),
+        expect.objectContaining({ id: "feature-flurry-of-blows", formula: "0", metadata: expect.objectContaining({ resource: "focus", unarmedStrikes: 2 }) }),
+        expect.objectContaining({ id: "feature-patient-defense", formula: "0", metadata: expect.objectContaining({ resource: "focus", focusedAction: ["Disengage", "Dodge"] }) }),
+        expect.objectContaining({ id: "feature-step-of-the-wind", formula: "0", metadata: expect.objectContaining({ resource: "focus", jumpDistance: "doubled for the turn" }) }),
+        expect.objectContaining({ id: "feature-uncanny-metabolism-healing", formula: "1d8+5", metadata: expect.objectContaining({ resource: "uncannyMetabolism", focusRestoredTo: 5 }) }),
+        expect.objectContaining({ id: "feature-deflect-attacks-damage", formula: "2d8+5", metadata: expect.objectContaining({ resource: "focus", reductionFormula: "1d10+5+5", save: { ability: "dexterity", dc: 13 } }) }),
+        expect.objectContaining({ id: "feature-stunning-strike", formula: "0", metadata: expect.objectContaining({ resource: "focus", save: { ability: "constitution", dc: 13 } }) }),
+        expect.objectContaining({ id: "item-itm_monk_spear-damage", formula: "1d8+5", metadata: expect.objectContaining({ attacksPerAction: 2, feature: "Extra Attack", martialArts: { die: "d8", dexterousAttacks: true } }) })
+      ])
+    );
+    expect(dnd5eSrdActionFormula(levelFiveMonkActor, [monkSpear], "feature-deflect-attacks-damage")).toBe("2d8+5");
+    expect(dnd5eSrdActionFormula(levelFiveMonkActor, [monkSpear], "feature-uncanny-metabolism-healing")).toBe("1d8+5");
     const rogueActor: Actor = { ...srdActor, data: { ...rogue!.data } };
     const rogueDagger: Item = {
       id: "itm_rogue_dagger",
@@ -1035,6 +1096,41 @@ describe("dnd 5.5e srd rules", () => {
         spellSlots: { level1: { current: 4, max: 4, recovery: "long" }, level2: { current: 2, max: 2, recovery: "long" } }
       })
     );
+    const monkActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("monk")!.data } };
+    let levelFiveMonkData = monkActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveMonkData = applyDnd5eSrdAdvancement({ ...monkActor, data: levelFiveMonkData }, "level-up");
+    }
+    const levelFiveMonkActor: Actor = { ...monkActor, data: levelFiveMonkData };
+    expect(useDnd5eSrdAction(levelFiveMonkActor, [], "feature-flurry-of-blows")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "focus", label: "Focus Point", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({ resources: { focus: { current: 1, max: 5, recovery: "short" }, uncannyMetabolism: { current: 1, max: 1, recovery: "long" } } })
+      })
+    );
+    expect(useDnd5eSrdAction(levelFiveMonkActor, [], "feature-stunning-strike")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "focus", label: "Focus Point", amount: 1, remaining: 1 }]
+      })
+    );
+    expect(useDnd5eSrdAction(levelFiveMonkActor, [], "feature-uncanny-metabolism-healing")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "uncannyMetabolism", label: "Uncanny Metabolism", amount: 1, remaining: 0 }],
+        data: expect.objectContaining({ resources: { focus: { current: 5, max: 5, recovery: "short" }, uncannyMetabolism: { current: 0, max: 1, recovery: "long" } } })
+      })
+    );
+    expect(() => useDnd5eSrdAction({ ...levelFiveMonkActor, data: { ...levelFiveMonkData, resources: { focus: { current: 0, max: 5, recovery: "short" }, uncannyMetabolism: { current: 1, max: 1, recovery: "long" } } } }, [], "feature-flurry-of-blows")).toThrow("Insufficient focus point");
+    expect(applyDnd5eSrdRest({ ...levelFiveMonkActor, data: { ...levelFiveMonkData, resources: { focus: { current: 0, max: 5, recovery: "short" }, uncannyMetabolism: { current: 0, max: 1, recovery: "long" } } } }, "short").data.resources).toEqual({
+      focus: { current: 5, max: 5, recovery: "short" },
+      uncannyMetabolism: { current: 0, max: 1, recovery: "long" }
+    });
+    expect(applyDnd5eSrdRest({ ...levelFiveMonkActor, data: { ...levelFiveMonkData, resources: { focus: { current: 0, max: 5, recovery: "short" }, uncannyMetabolism: { current: 0, max: 1, recovery: "long" } } } }, "long").data.resources).toEqual({
+      focus: { current: 5, max: 5, recovery: "short" },
+      uncannyMetabolism: { current: 1, max: 1, recovery: "long" }
+    });
     const druidActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("druid")!.data } };
     let levelFiveDruidData = druidActor.data;
     for (let level = 2; level <= 5; level += 1) {

@@ -3197,7 +3197,7 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(templates.statusCode).toBe(200);
-      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "druid", "ranger", "wizard", "rogue"]);
+      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "druid", "ranger", "monk", "wizard", "rogue"]);
 
       const origins = await app.inject({
         method: "GET",
@@ -3627,6 +3627,74 @@ describe("api", () => {
         ])
       );
 
+      const monk = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "monk", name: "SRD Monk", ownerUserId: "usr_demo_player" }
+      });
+      expect(monk.statusCode).toBe(200);
+      expect(monk.json().actor.data).toEqual(
+        expect.objectContaining({
+          features: ["Martial Arts", "Unarmored Defense"],
+          hitDice: { current: 1, max: 1, size: "d8" },
+          resources: {},
+          saveProficiencies: ["strength", "dexterity"],
+          skillProficiencies: ["acrobatics", "stealth"],
+          spellSlots: {}
+        })
+      );
+      expect(monk.json().sheet.data).toEqual(expect.objectContaining({ armorClass: 15, armorClassDetails: expect.objectContaining({ armorName: "Unarmored Defense" }) }));
+      expect(monk.json().sheet.inventory.map((item: { name: string }) => item.name)).toEqual(["Spear", "Dagger", "Musical Instrument"]);
+      expect(monk.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "save-dexterity", formula: "1d20+5" }),
+          expect.objectContaining({ id: "skill-acrobatics", formula: "1d20+5" }),
+          expect.objectContaining({ id: "tool-musical-instrument", formula: "1d20+2" }),
+          expect.objectContaining({ id: "feature-martial-arts-damage", formula: "1d6+3", metadata: expect.objectContaining({ martialArtsDie: "d6" }) }),
+          expect.objectContaining({ label: "Spear Damage", formula: "1d6+3", metadata: expect.objectContaining({ martialArts: { die: "d6", dexterousAttacks: true } }) })
+        ])
+      );
+
+      const levelFiveMonk = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "monk", name: "SRD Level Five Monk", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFiveMonk.statusCode).toBe(200);
+      let levelFiveMonkAdvance = levelFiveMonk;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFiveMonkAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFiveMonkAdvance.statusCode).toBe(200);
+      }
+      expect(levelFiveMonkAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Monk's Focus", "Flurry of Blows", "Patient Defense", "Step of the Wind", "Uncanny Metabolism", "Deflect Attacks", "Monk Subclass", "Extra Attack", "Stunning Strike"]),
+          resources: {
+            focus: { current: 2, max: 5, recovery: "short" },
+            uncannyMetabolism: { current: 1, max: 1, recovery: "long" }
+          },
+          combat: expect.objectContaining({ attacksPerAction: 2, unarmoredMovement: { bonusFt: 10, armorRestriction: "not wearing armor or wielding a Shield" } })
+        })
+      );
+      expect(levelFiveMonkAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-martial-arts-damage", formula: "1d8+5", metadata: expect.objectContaining({ martialArtsDie: "d8" }) }),
+          expect.objectContaining({ id: "feature-flurry-of-blows", formula: "0", metadata: expect.objectContaining({ resource: "focus", unarmedStrikes: 2 }) }),
+          expect.objectContaining({ id: "feature-uncanny-metabolism-healing", formula: "1d8+5", metadata: expect.objectContaining({ resource: "uncannyMetabolism", focusRestoredTo: 5 }) }),
+          expect.objectContaining({ id: "feature-deflect-attacks-damage", formula: "2d8+5", metadata: expect.objectContaining({ reductionFormula: "1d10+5+5", save: { ability: "dexterity", dc: 13 } }) }),
+          expect.objectContaining({ id: "feature-stunning-strike", formula: "0", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 13 } }) }),
+          expect.objectContaining({ label: "Spear Damage", formula: "1d8+5", metadata: expect.objectContaining({ attacksPerAction: 2, feature: "Extra Attack" }) })
+        ])
+      );
+
       const rogue = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
@@ -3796,7 +3864,8 @@ describe("api", () => {
           expect.objectContaining({ id: "studded-leather-armor", name: "Studded Leather Armor", data: expect.objectContaining({ costGp: 45, armorBase: 12 }) }),
           expect.objectContaining({ id: "chain-mail", name: "Chain Mail", data: expect.objectContaining({ costGp: 75, armorBase: 16, dexBonus: false }) }),
           expect.objectContaining({ id: "shortbow", name: "Shortbow", data: expect.objectContaining({ costGp: 25, damage: "1d6" }) }),
-          expect.objectContaining({ id: "longbow", name: "Longbow", data: expect.objectContaining({ costGp: 50, damage: "1d8" }) })
+          expect.objectContaining({ id: "longbow", name: "Longbow", data: expect.objectContaining({ costGp: 50, damage: "1d8" }) }),
+          expect.objectContaining({ id: "musical-instrument", name: "Musical Instrument", data: expect.objectContaining({ toolId: "musical-instrument", costGp: 2 }) })
         ])
       );
 
@@ -4095,6 +4164,25 @@ describe("api", () => {
         }
       });
       expect(rangerTarget.statusCode).toBe(200);
+
+      const monkTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: "SRD Monk Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: { current: 10, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(monkTarget.statusCode).toBe(200);
 
       const sneakAttack = await app.inject({
         method: "POST",
@@ -4407,6 +4495,75 @@ describe("api", () => {
       expect(rangerLongRest.json().actor.data.spellSlots).toEqual({
         level1: { current: 4, max: 4, recovery: "long" },
         level2: { current: 2, max: 2, recovery: "long" }
+      });
+
+      const flurryOfBlows = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-flurry-of-blows", consumeResources: true }
+      });
+      expect(flurryOfBlows.statusCode).toBe(200);
+      expect(flurryOfBlows.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-flurry-of-blows", metadata: expect.objectContaining({ resource: "focus", unarmedStrikes: 2 }) }));
+      expect(flurryOfBlows.json().usage.consumed).toEqual([{ type: "resource", key: "focus", label: "Focus Point", amount: 1, remaining: 1 }]);
+
+      const deflectAttacks = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-deflect-attacks-damage", consumeResources: true, applyEffect: true, targetActorId: monkTarget.json().id }
+      });
+      expect(deflectAttacks.statusCode).toBe(200);
+      expect(deflectAttacks.json().roll.formula).toBe("2d8+5");
+      expect(deflectAttacks.json().usage.consumed).toEqual([{ type: "resource", key: "focus", label: "Focus Point", amount: 1, remaining: 0 }]);
+      expect(deflectAttacks.json().effect).toEqual(expect.objectContaining({ type: "damage", targetActorId: monkTarget.json().id, pool: "hp", before: 10, max: 12 }));
+
+      const depletedFocus = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-stunning-strike", consumeResources: true }
+      });
+      expect(depletedFocus.statusCode).toBe(409);
+      expect(depletedFocus.json().message).toContain("Insufficient focus point");
+
+      const monkShortRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short" }
+      });
+      expect(monkShortRest.statusCode).toBe(200);
+      expect(monkShortRest.json().actor.data.resources).toEqual({
+        focus: { current: 5, max: 5, recovery: "short" },
+        uncannyMetabolism: { current: 1, max: 1, recovery: "long" }
+      });
+      expect(monkShortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ focus: 5 }));
+
+      const uncannyMetabolism = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-uncanny-metabolism-healing", consumeResources: true, applyEffect: true }
+      });
+      expect(uncannyMetabolism.statusCode).toBe(200);
+      expect(uncannyMetabolism.json().roll.formula).toBe("1d8+5");
+      expect(uncannyMetabolism.json().usage.consumed).toEqual([{ type: "resource", key: "uncannyMetabolism", label: "Uncanny Metabolism", amount: 1, remaining: 0 }]);
+      expect(uncannyMetabolism.json().actor.data.resources).toEqual({
+        focus: { current: 5, max: 5, recovery: "short" },
+        uncannyMetabolism: { current: 0, max: 1, recovery: "long" }
+      });
+
+      const monkLongRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "long" }
+      });
+      expect(monkLongRest.statusCode).toBe(200);
+      expect(monkLongRest.json().actor.data.resources).toEqual({
+        focus: { current: 5, max: 5, recovery: "short" },
+        uncannyMetabolism: { current: 1, max: 1, recovery: "long" }
       });
 
       const bardicInspiration = await app.inject({

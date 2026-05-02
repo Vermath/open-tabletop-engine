@@ -1441,6 +1441,23 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
   if (dnd5eSrdHasHuntersMark(actor)) {
     options.push({ rollId: "feature-hunters-mark-damage", label: "Hunter's Mark", description: `Hunter's Mark Damage: ${dnd5eSrdHuntersMarkFormula(actor)} force; spends a spell slot or Favored Enemy` });
   }
+  if (dnd5eSrdHasMartialArts(actor)) {
+    options.push({ rollId: "feature-martial-arts-damage", label: "Martial Arts", description: `Martial Arts Damage: ${dnd5eSrdMartialArtsFormula(actor)} bludgeoning` });
+  }
+  if (dnd5eSrdHasMonkFocus(actor)) {
+    options.push(
+      { rollId: "feature-flurry-of-blows", label: "Flurry", description: `Flurry of Blows: spend 1 Focus for ${numericValue(actor.data.level, 1) >= 10 ? 3 : 2} Unarmed Strikes` },
+      { rollId: "feature-patient-defense", label: "Patient Defense", description: "Patient Defense: spend 1 Focus for Disengage and Dodge" },
+      { rollId: "feature-step-of-the-wind", label: "Step of the Wind", description: "Step of the Wind: spend 1 Focus for Disengage, Dash, and doubled jump distance" },
+      { rollId: "feature-uncanny-metabolism-healing", label: "Metabolism", description: `Uncanny Metabolism Healing: ${dnd5eSrdUncannyMetabolismFormula(actor)}; restores Focus on Initiative` }
+    );
+  }
+  if (dnd5eSrdHasDeflectAttacks(actor)) {
+    options.push({ rollId: "feature-deflect-attacks-damage", label: "Deflect", description: `Deflect Attacks Damage: ${dnd5eSrdDeflectAttacksDamageFormula(actor)} after reducing damage to 0` });
+  }
+  if (dnd5eSrdHasStunningStrike(actor)) {
+    options.push({ rollId: "feature-stunning-strike", label: "Stunning Strike", description: `Stunning Strike: spend 1 Focus; DC ${dnd5eSrdMonkSaveDc(actor)} Constitution` });
+  }
   if (dnd5eSrdHasWildShape(actor)) {
     options.push({ rollId: "feature-wild-shape", label: "Wild Shape", description: `Wild Shape: spend one use; ${dnd5eSrdWildShapeDurationHours(actor)} hour form; regain one use on Short Rest` });
   }
@@ -1533,6 +1550,26 @@ function dnd5eSrdHasFaithfulSteed(actor: Actor): boolean {
 function dnd5eSrdHasHuntersMark(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   return stringValue(actor.data.class) === "Ranger" || features.includes("Favored Enemy") || features.includes("Hunter's Mark") || "favoredEnemy" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasMartialArts(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return stringValue(actor.data.class) === "Monk" || features.includes("Martial Arts");
+}
+
+function dnd5eSrdHasMonkFocus(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Monk" && numericValue(actor.data.level, 1) >= 2) || features.includes("Monk's Focus") || "focus" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasDeflectAttacks(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Monk" && numericValue(actor.data.level, 1) >= 3) || features.includes("Deflect Attacks");
+}
+
+function dnd5eSrdHasStunningStrike(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Monk" && numericValue(actor.data.level, 1) >= 5) || features.includes("Stunning Strike");
 }
 
 function dnd5eSrdHasWildShape(actor: Actor): boolean {
@@ -1629,6 +1666,30 @@ function dnd5eSrdHuntersMarkFormula(actor: Actor): string {
   return numericValue(actor.data.level, 1) >= 20 ? "1d10" : "1d6";
 }
 
+function dnd5eSrdMartialArtsFormula(actor: Actor): string {
+  return appendActionFormulaBonus(`1${dnd5eSrdMartialArtsDie(actor)}`, genericFantasyAttributeModifier(actor, "dexterity"));
+}
+
+function dnd5eSrdMartialArtsDie(actor: Actor): string {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (level >= 17) return "d12";
+  if (level >= 11) return "d10";
+  if (level >= 5) return "d8";
+  return "d6";
+}
+
+function dnd5eSrdUncannyMetabolismFormula(actor: Actor): string {
+  return `1${dnd5eSrdMartialArtsDie(actor)}+${Math.max(1, Math.floor(numericValue(actor.data.level, 1)))}`;
+}
+
+function dnd5eSrdDeflectAttacksDamageFormula(actor: Actor): string {
+  return appendActionFormulaBonus(`2${dnd5eSrdMartialArtsDie(actor)}`, genericFantasyAttributeModifier(actor, "dexterity"));
+}
+
+function dnd5eSrdMonkSaveDc(actor: Actor): number {
+  return 8 + dnd5eSrdProficiencyBonus(actor) + genericFantasyAttributeModifier(actor, "wisdom");
+}
+
 function dnd5eSrdWildShapeDurationHours(actor: Actor): number {
   return Math.max(1, Math.floor(Math.max(1, numericValue(actor.data.level, 1)) / 2));
 }
@@ -1678,6 +1739,7 @@ function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Druid") return "wisdom";
   if (className === "Paladin") return "charisma";
   if (className === "Ranger") return "wisdom";
+  if (className === "Monk") return "dexterity";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";
   return "strength";
@@ -1690,12 +1752,13 @@ function dnd5eSrdTacticalShiftMovement(actor: Actor): number {
 function dnd5eSrdAttacksPerAction(actor: Actor): number {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   const className = stringValue(actor.data.class);
-  const hasExtraAttack = className === "Fighter" || ((className === "Barbarian" || className === "Paladin" || className === "Ranger") && numericValue(actor.data.level, 1) >= 5) || features.includes("Extra Attack");
+  const hasExtraAttack = className === "Fighter" || ((className === "Barbarian" || className === "Paladin" || className === "Ranger" || className === "Monk") && numericValue(actor.data.level, 1) >= 5) || features.includes("Extra Attack");
   if (!hasExtraAttack) return 1;
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   if (className === "Barbarian") return level >= 5 || features.includes("Extra Attack") ? 2 : 1;
   if (className === "Paladin") return level >= 5 || features.includes("Extra Attack") ? 2 : 1;
   if (className === "Ranger") return level >= 5 || features.includes("Extra Attack") ? 2 : 1;
+  if (className === "Monk") return level >= 5 || features.includes("Extra Attack") ? 2 : 1;
   if (level >= 20) return 4;
   if (level >= 11) return 3;
   if (level >= 5 || features.includes("Extra Attack")) return 2;
@@ -1705,8 +1768,10 @@ function dnd5eSrdAttacksPerAction(actor: Actor): number {
 function dnd5eSrdItemActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
   const attacksPerAction = dnd5eSrdAttacksPerAction(actor);
   return genericFantasyActionOptions(actor, items).map((option) => {
-    if (attacksPerAction <= 1 || !dnd5eSrdIsWeaponDamageOption(actor, items, option.rollId)) return option;
-    return { ...option, description: `${option.description}; ${attacksPerAction} attacks/action` };
+    const martialArtsFormula = dnd5eSrdMonkWeaponDamageFormulaForRoll(actor, items, option.rollId);
+    const nextOption = martialArtsFormula ? { ...option, description: `${option.label}: ${martialArtsFormula}` } : option;
+    if (attacksPerAction <= 1 || !dnd5eSrdIsWeaponDamageOption(actor, items, option.rollId)) return nextOption;
+    return { ...nextOption, description: `${nextOption.description}; ${attacksPerAction} attacks/action` };
   });
 }
 
@@ -1716,6 +1781,35 @@ function dnd5eSrdIsWeaponDamageOption(actor: Actor, items: Item[], rollId: strin
     if (stringValue(data.category) !== "weapon" && stringValue(data.equipmentCategory) !== "weapon") return false;
     return rollId === `item-${item.id}-damage` || rollId === `item-${item.id}-versatile-damage`;
   });
+}
+
+function dnd5eSrdMonkWeaponDamageFormulaForRoll(actor: Actor, items: Item[], rollId: string): string | undefined {
+  if (!dnd5eSrdHasMartialArts(actor)) return undefined;
+  const item = items.filter((candidate) => candidate.actorId === actor.id).find((candidate) => rollId.startsWith(`item-${candidate.id}-`));
+  if (!item) return undefined;
+  const data = recordValue(item.data);
+  if (!dnd5eSrdIsMonkWeapon(data)) return undefined;
+  const weaponDamage = rollId === `item-${item.id}-versatile-damage` ? stringValue(data.versatileDamage) : stringValue(data.damage);
+  const damageDie = dnd5eSrdLargerDamageDie(weaponDamage, `1${dnd5eSrdMartialArtsDie(actor)}`);
+  return appendActionFormulaBonus(damageDie, genericFantasyAttributeModifier(actor, "dexterity"));
+}
+
+function dnd5eSrdIsMonkWeapon(data: Record<string, unknown>): boolean {
+  if (stringValue(data.category) !== "weapon" && stringValue(data.equipmentCategory) !== "weapon") return false;
+  const properties = Array.isArray(data.properties) ? data.properties.map(String).map((property) => property.toLowerCase()) : [];
+  return properties.includes("light") || properties.includes("thrown") || properties.includes("versatile") || stringValue(data.compendiumId) === "spear";
+}
+
+function dnd5eSrdLargerDamageDie(left: string | undefined, right: string): string {
+  const leftSides = dnd5eSrdDamageDieSides(left);
+  const rightSides = dnd5eSrdDamageDieSides(right);
+  if (!left || rightSides > leftSides) return right;
+  return left;
+}
+
+function dnd5eSrdDamageDieSides(value: string | undefined): number {
+  const match = /^1d(\d+)$/i.exec(value?.trim() ?? "");
+  return match ? Number(match[1]) : 0;
 }
 
 function genericFantasyActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
