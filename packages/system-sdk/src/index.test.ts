@@ -235,6 +235,7 @@ describe("dnd 5.5e srd rules", () => {
     expect(cleric?.data.skillProficiencies).toEqual(["medicine", "religion"]);
     expect(cleric?.data.toolProficiencies).toEqual(["calligraphers-supplies"]);
     expect(cleric?.data.currency).toEqual({ gp: 50, sp: 0, cp: 0 });
+    expect(cleric?.data.features).toEqual(["Spellcasting", "Divine Order"]);
     expect(dnd5eSrdCharacterTemplate("fighter")?.data.toolProficiencies).toEqual(["gaming-set"]);
     expect(fighter?.data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
     expect(cleric?.items.map((item) => item.entryId)).toEqual(["healing-word", "cure-wounds"]);
@@ -357,6 +358,21 @@ describe("dnd 5.5e srd rules", () => {
         { id: "item-itm_shortbow-damage", label: "Shortbow Damage", formula: "1d6+1" }
       ])
     );
+    const clericActor: Actor = { ...srdActor, data: { ...cleric!.data } };
+    const levelTwoClericData = applyDnd5eSrdAdvancement(clericActor, "level-up");
+    const levelTwoClericActor: Actor = { ...clericActor, data: levelTwoClericData };
+    expect(levelTwoClericData.features).toEqual(expect.arrayContaining(["Channel Divinity", "Divine Spark", "Turn Undead"]));
+    expect(levelTwoClericData.resources).toEqual({ channelDivinity: { current: 2, max: 2, recovery: "short" } });
+    expect(dnd5eSrdQuickRolls(levelTwoClericActor, [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-divine-spark-healing", label: "Divine Spark Healing", formula: "1d8+3", metadata: expect.objectContaining({ resource: "channelDivinity", rangeFt: 30 }) }),
+        expect.objectContaining({ id: "feature-divine-spark-damage", label: "Divine Spark Damage", formula: "1d8+3", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 13, success: "half" } }) }),
+        expect.objectContaining({ id: "feature-turn-undead", label: "Turn Undead", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 13 } }) })
+      ])
+    );
+    expect(dnd5eSrdActionFormula(levelTwoClericActor, [], "feature-divine-spark-healing")).toBe("1d8+3");
+    expect(dnd5eSrdActionFormula(levelTwoClericActor, [], "feature-divine-spark-damage")).toBe("1d8+3");
+    expect(dnd5eSrdActionFormula(levelTwoClericActor, [], "feature-turn-undead")).toBe("0");
     const fighterActor: Actor = { ...srdActor, data: { ...fighter!.data } };
     expect(dnd5eSrdQuickRolls(fighterActor, [])).toEqual(
       expect.arrayContaining([{ id: "feature-second-wind-healing", label: "Second Wind Healing", formula: "1d10+1" }])
@@ -535,6 +551,24 @@ describe("dnd 5.5e srd rules", () => {
         consumed: [{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 0 }]
       })
     );
+    const clericActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("cleric")!.data } };
+    const levelTwoClericActor: Actor = { ...clericActor, data: applyDnd5eSrdAdvancement(clericActor, "level-up") };
+    expect(useDnd5eSrdAction(levelTwoClericActor, [], "feature-divine-spark-healing")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "channelDivinity", label: "Channel Divinity", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({ resources: { channelDivinity: { current: 1, max: 2, recovery: "short" } } })
+      })
+    );
+    expect(useDnd5eSrdAction(levelTwoClericActor, [], "feature-turn-undead")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "channelDivinity", label: "Channel Divinity", amount: 1, remaining: 1 }]
+      })
+    );
+    expect(() =>
+      useDnd5eSrdAction({ ...levelTwoClericActor, data: { ...levelTwoClericActor.data, resources: { channelDivinity: { current: 0, max: 2, recovery: "short" } } } }, [], "feature-divine-spark-damage")
+    ).toThrow("Insufficient channel divinity");
     const fighterActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("fighter")!.data } };
     expect(useDnd5eSrdAction(fighterActor, [], "feature-second-wind-healing")).toEqual(
       expect.objectContaining({
@@ -582,6 +616,12 @@ describe("dnd 5.5e srd rules", () => {
         data: expect.objectContaining({ resources: { secondWind: { current: 1, max: 2, recovery: "short" } } })
       })
     );
+    expect(applyDnd5eSrdRest({ ...levelTwoClericActor, data: { ...levelTwoClericActor.data, resources: { channelDivinity: { current: 0, max: 2, recovery: "short" } } } }, "short")).toEqual(
+      expect.objectContaining({
+        recovered: expect.objectContaining({ resources: expect.objectContaining({ channelDivinity: 1 }) }),
+        data: expect.objectContaining({ resources: { channelDivinity: { current: 1, max: 2, recovery: "short" } } })
+      })
+    );
     expect(
       applyDnd5eSrdRest(
         {
@@ -609,6 +649,7 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(applyDnd5eSrdRest({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 2, recovery: "short" } } } }, "long").data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
     expect(applyDnd5eSrdRest({ ...fighterActor, data: { ...fighterActor.data, resources: { secondWind: { current: 0, max: 1, recovery: "short" } } } }, "long").data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
+    expect(applyDnd5eSrdRest({ ...levelTwoClericActor, data: { ...levelTwoClericActor.data, resources: { channelDivinity: { current: 0, max: 2, recovery: "short" } } } }, "long").data.resources).toEqual({ channelDivinity: { current: 2, max: 2, recovery: "short" } });
     expect(
       applyDnd5eSrdRest(
         { ...fighterActor, data: { ...fighterActor.data, level: 4, resources: { secondWind: { current: 0, max: 2, recovery: "short" }, actionSurge: { current: 0, max: 1, recovery: "short" } } } },

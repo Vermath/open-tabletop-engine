@@ -3278,6 +3278,35 @@ describe("api", () => {
       const healingWord = cleric.json().items.find((item: { name: string }) => item.name === "Healing Word");
       const healingRollId = `spell-${healingWord.id}-healing`;
 
+      const levelTwoCleric = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "cleric", name: "SRD Level Two Cleric", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelTwoCleric.statusCode).toBe(200);
+      const levelTwoClericAdvance = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelTwoCleric.json().actor.id}/advance`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { optionId: "level-up" }
+      });
+      expect(levelTwoClericAdvance.statusCode).toBe(200);
+      expect(levelTwoClericAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 2,
+          features: expect.arrayContaining(["Channel Divinity", "Divine Spark", "Turn Undead"]),
+          resources: { channelDivinity: { current: 2, max: 2, recovery: "short" } }
+        })
+      );
+      expect(levelTwoClericAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-divine-spark-healing", formula: "1d8+3", metadata: expect.objectContaining({ resource: "channelDivinity", rangeFt: 30 }) }),
+          expect.objectContaining({ id: "feature-divine-spark-damage", formula: "1d8+3", metadata: expect.objectContaining({ save: { ability: "constitution", dc: 13, success: "half" } }) }),
+          expect.objectContaining({ id: "feature-turn-undead", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 13 } }) })
+        ])
+      );
+
       const fighter = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
@@ -3471,6 +3500,66 @@ describe("api", () => {
         }
       });
       expect(spellTarget.statusCode).toBe(200);
+
+      const divineSparkTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_gm",
+          type: "character",
+          name: "SRD Divine Spark Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: { current: 3, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(divineSparkTarget.statusCode).toBe(200);
+
+      const divineSpark = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelTwoCleric.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "feature-divine-spark-healing", consumeResources: true, applyEffect: true, targetActorId: divineSparkTarget.json().id }
+      });
+      expect(divineSpark.statusCode).toBe(200);
+      expect(divineSpark.json().roll.formula).toBe("1d8+3");
+      expect(divineSpark.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-divine-spark-healing", formula: "1d8+3", metadata: expect.objectContaining({ resource: "channelDivinity" }) }));
+      expect(divineSpark.json().usage.consumed).toEqual([{ type: "resource", key: "channelDivinity", label: "Channel Divinity", amount: 1, remaining: 1 }]);
+      expect(divineSpark.json().effect).toEqual(expect.objectContaining({ type: "healing", targetActorId: divineSparkTarget.json().id, pool: "hp", before: 3, max: 12 }));
+
+      const turnUndead = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelTwoCleric.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "feature-turn-undead", consumeResources: true }
+      });
+      expect(turnUndead.statusCode).toBe(200);
+      expect(turnUndead.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-turn-undead", formula: "0", metadata: expect.objectContaining({ save: { ability: "wisdom", dc: 13 } }) }));
+      expect(turnUndead.json().usage.consumed).toEqual([{ type: "resource", key: "channelDivinity", label: "Channel Divinity", amount: 1, remaining: 0 }]);
+
+      const depletedChannelDivinity = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelTwoCleric.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "feature-divine-spark-damage", consumeResources: true }
+      });
+      expect(depletedChannelDivinity.statusCode).toBe(409);
+      expect(depletedChannelDivinity.json().message).toContain("Insufficient channel divinity");
+
+      const clericShortRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelTwoCleric.json().actor.id}/rest`,
+        headers: authHeaders,
+        payload: { restType: "short" }
+      });
+      expect(clericShortRest.statusCode).toBe(200);
+      expect(clericShortRest.json().actor.data.resources).toEqual({ channelDivinity: { current: 1, max: 2, recovery: "short" } });
+      expect(clericShortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ channelDivinity: 1 }));
 
       const monsterAttack = await app.inject({
         method: "POST",

@@ -1412,6 +1412,14 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
   if (dnd5eSrdHasTacticalMind(actor)) {
     options.push({ rollId: "feature-tactical-mind-bonus", label: "Tactical Mind", description: "Tactical Mind Bonus: 1d10; spends Second Wind" });
   }
+  if (dnd5eSrdHasChannelDivinity(actor)) {
+    const saveDc = dnd5eSrdSpellSaveDc(actor);
+    options.push(
+      { rollId: "feature-divine-spark-healing", label: "Divine Spark Healing", description: `Divine Spark Healing: ${dnd5eSrdDivineSparkFormula(actor)}; spends Channel Divinity` },
+      { rollId: "feature-divine-spark-damage", label: "Divine Spark Damage", description: `Divine Spark Damage: ${dnd5eSrdDivineSparkFormula(actor)}; DC ${saveDc} Constitution; spends Channel Divinity` },
+      { rollId: "feature-turn-undead", label: "Turn Undead", description: `Turn Undead: DC ${saveDc} Wisdom; 30 ft; spends Channel Divinity` }
+    );
+  }
   return options;
 }
 
@@ -1435,9 +1443,42 @@ function dnd5eSrdHasTacticalShift(actor: Actor): boolean {
   return (stringValue(actor.data.class) === "Fighter" && numericValue(actor.data.level, 1) >= 5) || features.includes("Tactical Shift");
 }
 
+function dnd5eSrdHasChannelDivinity(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Cleric" && numericValue(actor.data.level, 1) >= 2) || features.includes("Channel Divinity") || "channelDivinity" in recordValue(actor.data.resources);
+}
+
 function dnd5eSrdSecondWindFormula(actor: Actor): string {
   const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return `1d10+${fighterLevel}`;
+}
+
+function dnd5eSrdDivineSparkFormula(actor: Actor): string {
+  return appendActionFormulaBonus(`${dnd5eSrdDivineSparkDice(actor)}d8`, genericFantasyAttributeModifier(actor, "wisdom"));
+}
+
+function dnd5eSrdDivineSparkDice(actor: Actor): number {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (level >= 18) return 4;
+  if (level >= 13) return 3;
+  if (level >= 7) return 2;
+  return 1;
+}
+
+function dnd5eSrdSpellSaveDc(actor: Actor): number {
+  const className = stringValue(actor.data.class) ?? "Fighter";
+  return 8 + dnd5eSrdProficiencyBonus(actor) + genericFantasyAttributeModifier(actor, dnd5eSrdPrimaryAbility(className));
+}
+
+function dnd5eSrdProficiencyBonus(actor: Actor): number {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  return Math.max(2, Math.floor(numericValue(actor.data.proficiencyBonus, 2 + Math.floor((level - 1) / 4))));
+}
+
+function dnd5eSrdPrimaryAbility(className: string): string {
+  if (className === "Cleric") return "wisdom";
+  if (className === "Wizard") return "intelligence";
+  return "strength";
 }
 
 function dnd5eSrdTacticalShiftMovement(actor: Actor): number {

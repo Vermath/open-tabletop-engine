@@ -178,6 +178,9 @@ export interface Dnd5eSrdEquipmentPurchaseResult {
 export const DND_5E_SRD_SECOND_WIND_ROLL_ID = "feature-second-wind-healing";
 export const DND_5E_SRD_ACTION_SURGE_ROLL_ID = "feature-action-surge";
 export const DND_5E_SRD_TACTICAL_MIND_ROLL_ID = "feature-tactical-mind-bonus";
+export const DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID = "feature-divine-spark-healing";
+export const DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID = "feature-divine-spark-damage";
+export const DND_5E_SRD_TURN_UNDEAD_ROLL_ID = "feature-turn-undead";
 
 export interface Dnd5eSrdArmorClassDetails {
   value: number;
@@ -507,6 +510,29 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
         id: DND_5E_SRD_TACTICAL_MIND_ROLL_ID,
         label: "Tactical Mind Bonus",
         formula: "1d10"
+      }
+    );
+  }
+  if (dnd5eSrdHasChannelDivinity(actor)) {
+    const saveDc = dnd5eSrdSpellSaveDc(actor);
+    rolls.push(
+      {
+        id: DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID,
+        label: "Divine Spark Healing",
+        formula: dnd5eSrdDivineSparkFormula(actor),
+        metadata: { resource: "channelDivinity", rangeFt: 30 }
+      },
+      {
+        id: DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID,
+        label: "Divine Spark Damage",
+        formula: dnd5eSrdDivineSparkFormula(actor),
+        metadata: { resource: "channelDivinity", rangeFt: 30, damageTypes: ["Necrotic", "Radiant"], save: { ability: "constitution", dc: saveDc, success: "half" } }
+      },
+      {
+        id: DND_5E_SRD_TURN_UNDEAD_ROLL_ID,
+        label: "Turn Undead",
+        formula: "0",
+        metadata: { resource: "channelDivinity", rangeFt: 30, target: "Undead", save: { ability: "wisdom", dc: saveDc }, conditions: ["Frightened", "Incapacitated"], duration: "1 minute" }
       }
     );
   }
@@ -997,7 +1023,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         resources: {},
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
-        features: ["Spellcasting"],
+        features: ["Spellcasting", "Divine Order"],
         feats: ["Magic Initiate"]
       },
       items: [{ entryId: "healing-word" }, { entryId: "cure-wounds" }]
@@ -1103,7 +1129,8 @@ export function dnd5eSrdCharacterImport(input: CharacterImportInput): CharacterI
       currency: dnd5eSrdCurrency(source.currency),
       resources: normalizeResourcePools(source.resources, defaultDnd5eSrdResources(className, level)),
       spellSlots: normalizeResourcePools(source.spellSlots, defaultDnd5eSrdSpellSlots(className, level)),
-      conditions: conditions.map((id) => ({ id }))
+      conditions: conditions.map((id) => ({ id })),
+      features: dnd5eSrdApplyClassFeatures(normalizeStringArray(source.features), className, level)
     },
     items,
     warnings
@@ -1652,6 +1679,8 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId === DND_5E_SRD_SECOND_WIND_ROLL_ID) return dnd5eSrdSecondWindFormula(actor);
   if (rollId === DND_5E_SRD_ACTION_SURGE_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_TACTICAL_MIND_ROLL_ID) return "1d10";
+  if (rollId === DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID || rollId === DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID) return dnd5eSrdDivineSparkFormula(actor);
+  if (rollId === DND_5E_SRD_TURN_UNDEAD_ROLL_ID) return "0";
   return genericFantasyActionFormula(actor, items, rollId, options);
 }
 
@@ -1703,6 +1732,19 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
     const className = stringValue(actor.data.class) || "Fighter";
     const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
     const result = consumeResourcePool(resources, "secondWind", 1, "Second Wind", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID || rollId === DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID || rollId === DND_5E_SRD_TURN_UNDEAD_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Cleric";
+    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
+    const result = consumeResourcePool(resources, "channelDivinity", 1, "Channel Divinity", "resource");
     return {
       systemId: DND_5E_SRD_SYSTEM_ID,
       actorId: actor.id,
@@ -2749,9 +2791,16 @@ function dnd5eSrdHasTacticalShift(actor: Actor): boolean {
   return normalizeStringArray(actor.data.features).includes("Tactical Shift");
 }
 
+function dnd5eSrdHasChannelDivinity(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Cleric" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  if (normalizeStringArray(actor.data.features).includes("Channel Divinity")) return true;
+  return "channelDivinity" in recordValue(actor.data.resources);
+}
+
 function dnd5eSrdApplyClassFeatures(features: string[], className: string, level: number): string[] {
-  if (className !== "Fighter") return features;
-  return [...new Set([...features, ...dnd5eSrdFighterFeaturesForLevel(level)])];
+  if (className === "Fighter") return [...new Set([...features, ...dnd5eSrdFighterFeaturesForLevel(level)])];
+  if (className === "Cleric") return [...new Set([...features, ...dnd5eSrdClericFeaturesForLevel(level)])];
+  return features;
 }
 
 function dnd5eSrdApplyClassCombat(combat: Record<string, unknown>, className: string, level: number, speed: unknown): Record<string, unknown> {
@@ -2771,9 +2820,33 @@ function dnd5eSrdFighterFeaturesForLevel(level: number): string[] {
   return features;
 }
 
+function dnd5eSrdClericFeaturesForLevel(level: number): string[] {
+  const features = ["Spellcasting", "Divine Order"];
+  if (level >= 2) features.push("Channel Divinity", "Divine Spark", "Turn Undead");
+  if (level >= 5) features.push("Sear Undead");
+  return features;
+}
+
 function dnd5eSrdSecondWindFormula(actor: Actor): string {
   const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return appendFormulaTerm("1d10", String(fighterLevel));
+}
+
+function dnd5eSrdDivineSparkFormula(actor: Actor): string {
+  return appendFormulaBonus(`${dnd5eSrdDivineSparkDice(actor)}d8`, genericFantasyAttributeModifier(actor, "wisdom"));
+}
+
+function dnd5eSrdDivineSparkDice(actor: Actor): number {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (level >= 18) return 4;
+  if (level >= 13) return 3;
+  if (level >= 7) return 2;
+  return 1;
+}
+
+function dnd5eSrdSpellSaveDc(actor: Actor): number {
+  const className = stringValue(actor.data.class) || "Fighter";
+  return 8 + dnd5eSrdProficiencyBonus(actor) + genericFantasyAttributeModifier(actor, dnd5eSrdPrimaryAbility(className));
 }
 
 function dnd5eSrdAttacksPerAction(actor: Actor): number {
@@ -2807,52 +2880,58 @@ function dnd5eSrdIsWeaponDamageRoll(actor: Actor, items: Item[], rollId: string)
 }
 
 function dnd5eSrdApplyShortRestResourceLimits(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {
-  if (!dnd5eSrdHasSecondWind(actor) && !("secondWind" in recordValue(data.resources))) return data;
+  const limitedRecovery = dnd5eSrdShortRestLimitedResources(actor);
+  if (Object.keys(limitedRecovery).length === 0) return data;
   const className = stringValue(actor.data.class) || "Fighter";
   const level = numericValue(actor.data.level, 1);
   const beforeResources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
   const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
-  const before = beforeResources.secondWind;
-  const after = afterResources.secondWind;
-  if (!before || !after) return data;
-  const recovered = Math.min(1, Math.max(0, before.max - before.current));
+  const resources = { ...afterResources };
+  for (const [resourceId, maxRecovered] of Object.entries(limitedRecovery)) {
+    const before = beforeResources[resourceId];
+    const after = afterResources[resourceId];
+    if (!before || !after) continue;
+    const recovered = Math.min(maxRecovered, Math.max(0, before.max - before.current));
+    resources[resourceId] = { ...after, current: Math.min(after.max, before.current + recovered) };
+  }
   return {
     ...data,
-    resources: {
-      ...afterResources,
-      secondWind: { ...after, current: Math.min(after.max, before.current + recovered) }
-    }
+    resources
   };
 }
 
 function dnd5eSrdApplyLongRestResourceLimits(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {
-  if (!dnd5eSrdHasSecondWind(actor) && !("secondWind" in recordValue(data.resources))) return data;
   const className = stringValue(actor.data.class) || "Fighter";
   const level = numericValue(actor.data.level, 1);
   const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
-  const after = afterResources.secondWind;
-  if (!after) return data;
   return {
     ...data,
-    resources: {
-      ...afterResources,
-      secondWind: { ...after, current: after.max }
-    }
+    resources: Object.fromEntries(Object.entries(afterResources).map(([key, pool]) => [key, { ...pool, current: stringValue(pool.recovery) === "long" || stringValue(pool.recovery) === "short" ? pool.max : pool.current }]))
   };
 }
 
 function dnd5eSrdRestRecovered(actor: Actor, data: Record<string, unknown>, recovered: Record<string, unknown>): Record<string, unknown> {
-  if (!dnd5eSrdHasSecondWind(actor) && !("secondWind" in recordValue(data.resources))) return recovered;
   const className = stringValue(actor.data.class) || "Fighter";
   const level = numericValue(actor.data.level, 1);
-  const before = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true }).secondWind;
-  const after = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true }).secondWind;
-  if (!before || !after) return recovered;
+  const beforeResources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
+  const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
   const resourcesRecovered = { ...recordValue(recovered.resources) };
-  const amount = Math.max(0, after.current - before.current);
-  if (amount > 0) resourcesRecovered.secondWind = amount;
-  else delete resourcesRecovered.secondWind;
+  for (const [resourceId, after] of Object.entries(afterResources)) {
+    const before = beforeResources[resourceId];
+    if (!before) continue;
+    const amount = Math.max(0, after.current - before.current);
+    if (amount > 0) resourcesRecovered[resourceId] = amount;
+    else delete resourcesRecovered[resourceId];
+  }
   return { ...recovered, resources: resourcesRecovered };
+}
+
+function dnd5eSrdShortRestLimitedResources(actor: Actor): Record<string, number> {
+  const resources = recordValue(actor.data.resources);
+  const limited: Record<string, number> = {};
+  if (dnd5eSrdHasSecondWind(actor) || "secondWind" in resources) limited.secondWind = 1;
+  if (dnd5eSrdHasChannelDivinity(actor) || "channelDivinity" in resources) limited.channelDivinity = 1;
+  return limited;
 }
 
 function spellActionSlotLevel(spellLevel: number, requestedSlotLevel: number | undefined): number {
@@ -3010,6 +3089,10 @@ function defaultDnd5eSrdResources(className: string, level = 1): Record<string, 
     if (actionSurgeMax > 0) resources.actionSurge = { current: actionSurgeMax, max: actionSurgeMax, recovery: "short" };
     return resources;
   }
+  if (className === "Cleric") {
+    const channelDivinityMax = dnd5eSrdChannelDivinityMax(level);
+    return channelDivinityMax > 0 ? { channelDivinity: { current: channelDivinityMax, max: channelDivinityMax, recovery: "short" } } : {};
+  }
   return {};
 }
 
@@ -3023,6 +3106,14 @@ function dnd5eSrdSecondWindMax(level: number): number {
 function dnd5eSrdActionSurgeMax(level: number): number {
   const normalized = Math.max(1, Math.floor(level));
   return normalized >= 17 ? 2 : normalized >= 2 ? 1 : 0;
+}
+
+function dnd5eSrdChannelDivinityMax(level: number): number {
+  const normalized = Math.max(1, Math.floor(level));
+  if (normalized >= 18) return 4;
+  if (normalized >= 6) return 3;
+  if (normalized >= 2) return 2;
+  return 0;
 }
 
 function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
