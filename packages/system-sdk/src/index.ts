@@ -108,10 +108,15 @@ export interface SystemActionConsumption {
   remaining: number;
 }
 
+export interface SystemActionUseOptions {
+  spellSlotLevel?: number;
+}
+
 export interface SystemActionUseResult {
   systemId: string;
   actorId: string;
   rollId: string;
+  slotLevel?: number;
   consumed: SystemActionConsumption[];
   data: Record<string, unknown>;
   items: Item[];
@@ -255,6 +260,10 @@ function appendFormulaBonus(formula: string, bonus: number): string {
   return `${formula}${formatSignedNumber(bonus)}`;
 }
 
+function appendFormulaTerm(formula: string, term: string): string {
+  return term.startsWith("-") ? `${formula}${term}` : `${formula}+${term}`;
+}
+
 function itemBelongsToActor(actor: Actor, item: Item): boolean {
   return item.actorId === actor.id;
 }
@@ -299,7 +308,7 @@ export function genericFantasyActionRolls(actor: Actor, items: Item[] = []): Qui
       rolls.push({
         id: `${prefix}-${item.id}-healing`,
         label: `${item.name} Healing`,
-        formula: resolveGenericFantasyFormulaTokens(healingFormula, actor)
+        formula: genericFantasyHealingFormula(actor, data)
       });
     }
     const saveDcAbility = stringValue(data.saveDcAbility);
@@ -343,7 +352,7 @@ export function genericFantasyCompendium(): GenericFantasyCompendiumEntry[] {
       type: "spell",
       name: "Healing Word",
       summary: "Restores a small amount of hit points at range.",
-      data: { level: 1, school: "evocation", action: "bonus", range: "60 ft", healingFormula: "1d4+@attributes.charisma" }
+      data: { level: 1, school: "evocation", action: "bonus", range: "60 ft", healingFormula: "1d4+@attributes.charisma", upcastFormula: "1d4" }
     },
     {
       id: "fire-bolt",
@@ -357,7 +366,7 @@ export function genericFantasyCompendium(): GenericFantasyCompendiumEntry[] {
       type: "spell",
       name: "Cure Wounds",
       summary: "Touch-range healing spell that scales with the caster's magic.",
-      data: { level: 1, school: "evocation", action: "action", range: "touch", healingFormula: "1d8+@attributes.wisdom" }
+      data: { level: 1, school: "evocation", action: "action", range: "touch", healingFormula: "1d8+@attributes.wisdom", upcastFormula: "1d8" }
     },
     {
       id: "shield",
@@ -397,7 +406,12 @@ export function genericFantasyCompendiumEntry(entryId: string): GenericFantasyCo
 export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
   return [
     ...genericFantasyCompendium().map((entry) => {
-      const dndDataOverrides = entry.id === "healing-word" ? { healingFormula: "1d4+@attributes.wisdom" } : {};
+      const dndDataOverrides =
+        entry.id === "healing-word"
+          ? { healingFormula: "1d4+@attributes.wisdom", upcastFormula: "2d4" }
+          : entry.id === "cure-wounds"
+            ? { healingFormula: "2d8+@attributes.wisdom", upcastFormula: "2d8" }
+            : {};
       return {
         ...entry,
         summary: entry.summary.replace("Generic Fantasy runtime", "D&D 5.5e SRD runtime"),
@@ -848,23 +862,40 @@ export function dnd5eSrdSheet(actor: Actor, items: Item[] = []): GenericFantasyS
   };
 }
 
-export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId: string): SystemActionUseResult {
+export function genericFantasyActionFormula(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): string | undefined {
+  const item = actionItemForRoll(actor, items, rollId, ["spell", "item"]);
+  if (!item) return undefined;
+  const data = recordValue(item.data);
+  const prefix = item.type === "spell" ? "spell" : "item";
+  if (rollId === `${prefix}-${item.id}-healing` && stringValue(data.healingFormula)) {
+    return genericFantasyHealingFormula(actor, data, options.spellSlotLevel);
+  }
+  return genericFantasyActionRolls(actor, items).find((roll) => roll.id === rollId)?.formula;
+}
+
+export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): string | undefined {
+  return genericFantasyActionFormula(actor, items, rollId, options);
+}
+
+export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): SystemActionUseResult {
   const item = actionItemForRoll(actor, items, rollId, ["spell", "item"]);
   const consumed: SystemActionConsumption[] = [];
   let data = { ...actor.data };
+  let slotLevel: number | undefined;
   if (item?.type === "spell" && rollId.startsWith(`spell-${item.id}-`)) {
     const level = Math.floor(numericValue(recordValue(item.data).level, 0));
     if (level > 0) {
-      const result = consumeResourcePool(data.spellSlots, `level${level}`, 1, `Level ${level} Spell Slot`, "spellSlot");
+      slotLevel = spellActionSlotLevel(level, options.spellSlotLevel);
+      const result = consumeResourcePool(data.spellSlots, `level${slotLevel}`, 1, `Level ${slotLevel} Spell Slot`, "spellSlot");
       data = { ...data, spellSlots: result.pools };
       consumed.push(result.consumed);
     }
   }
-  return { systemId: "generic-fantasy", actorId: actor.id, rollId, consumed, data, items: [] };
+  return { systemId: "generic-fantasy", actorId: actor.id, rollId, slotLevel, consumed, data, items: [] };
 }
 
-export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: string): SystemActionUseResult {
-  return { ...useGenericFantasyAction(actor, items, rollId), systemId: DND_5E_SRD_SYSTEM_ID };
+export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): SystemActionUseResult {
+  return { ...useGenericFantasyAction(actor, items, rollId, options), systemId: DND_5E_SRD_SYSTEM_ID };
 }
 
 export function genericFantasyActorConditions(actor: Actor): AppliedCondition[] {
@@ -1613,6 +1644,30 @@ function resolveGenericFantasyFormulaTokens(formula: string, actor: Actor): stri
   });
 }
 
+function genericFantasyHealingFormula(actor: Actor, data: Record<string, unknown>, spellSlotLevel?: number): string {
+  const baseFormula = resolveGenericFantasyFormulaTokens(stringValue(data.healingFormula) ?? "0", actor);
+  const spellLevel = Math.floor(numericValue(data.level, 0));
+  const slotLevel = spellActionSlotLevel(spellLevel, spellSlotLevel);
+  const upcastFormula = stringValue(data.upcastFormula);
+  if (spellLevel <= 0 || slotLevel <= spellLevel || !upcastFormula) return baseFormula;
+  return appendFormulaTerm(baseFormula, scaleDiceFormula(resolveGenericFantasyFormulaTokens(upcastFormula, actor), slotLevel - spellLevel));
+}
+
+function spellActionSlotLevel(spellLevel: number, requestedSlotLevel: number | undefined): number {
+  const requested = typeof requestedSlotLevel === "number" && Number.isFinite(requestedSlotLevel) ? Math.floor(requestedSlotLevel) : spellLevel;
+  return Math.max(spellLevel, requested);
+}
+
+function scaleDiceFormula(formula: string, multiplier: number): string {
+  const normalized = formula.trim();
+  const match = /^(\d*)d(\d+)$/i.exec(normalized);
+  if (!match) {
+    return Array.from({ length: Math.max(1, multiplier) }, () => normalized).join("+");
+  }
+  const count = numericValue(match[1] ? Number(match[1]) : 1, 1);
+  return `${count * Math.max(1, multiplier)}d${match[2]}`;
+}
+
 function numericValue(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
@@ -1743,8 +1798,17 @@ function defaultDnd5eSrdResources(className: string): Record<string, Record<stri
 
 function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
   if (className !== "Cleric" && className !== "Wizard") return {};
-  const levelOneSlots = Math.min(4, 2 + Math.floor((level - 1) / 2));
-  return { level1: { current: levelOneSlots, max: levelOneSlots, recovery: "long" } };
+  const slots: Record<string, Record<string, unknown>> = {
+    level1: { current: Math.min(4, 2 + Math.max(0, level - 1)), max: Math.min(4, 2 + Math.max(0, level - 1)), recovery: "long" }
+  };
+  if (level >= 3) {
+    const levelTwoSlots = Math.min(3, 2 + Math.max(0, level - 3));
+    slots.level2 = { current: levelTwoSlots, max: levelTwoSlots, recovery: "long" };
+  }
+  if (level >= 5) {
+    slots.level3 = { current: 2, max: 2, recovery: "long" };
+  }
+  return slots;
 }
 
 function averageHitDie(hitDieSize: string): number {

@@ -3208,6 +3208,11 @@ describe("api", () => {
       expect(cleric.statusCode).toBe(200);
       expect(cleric.json().actor).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "SRD Cleric" }));
       expect(cleric.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Healing Word", "Cure Wounds"]);
+      const storedCleric = store.state.actors.find((actor) => actor.id === cleric.json().actor.id)!;
+      storedCleric.data = {
+        ...storedCleric.data,
+        spellSlots: { ...(storedCleric.data.spellSlots as Record<string, unknown>), level2: { current: 1, max: 1, recovery: "long" } }
+      };
       const healingWord = cleric.json().items.find((item: { name: string }) => item.name === "Healing Word");
       const healingRollId = `spell-${healingWord.id}-healing`;
 
@@ -3219,7 +3224,7 @@ describe("api", () => {
       expect(compendium.statusCode).toBe(200);
       expect(compendium.json().entries).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ id: "healing-word", name: "Healing Word" }),
+          expect.objectContaining({ id: "healing-word", name: "Healing Word", data: expect.objectContaining({ healingFormula: "1d4+@attributes.wisdom", upcastFormula: "2d4" }) }),
           expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" })
         ])
       );
@@ -3250,13 +3255,19 @@ describe("api", () => {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/roll`,
         headers: authHeaders,
-        payload: { rollId: healingRollId, consumeResources: true, applyEffect: true, targetActorId: target.json().id }
+        payload: { rollId: healingRollId, spellSlotLevel: 2, consumeResources: true, applyEffect: true, targetActorId: target.json().id }
       });
       expect(roll.statusCode).toBe(200);
-      expect(roll.json().usage).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd" }));
-      expect(roll.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 1 }]);
+      expect(roll.json().roll.formula).toBe("1d4+3+2d4");
+      expect(roll.json().quickRoll).toEqual(expect.objectContaining({ formula: "1d4+3+2d4" }));
+      expect(roll.json().usage).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", slotLevel: 2 }));
+      expect(roll.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level2", label: "Level 2 Spell Slot", amount: 1, remaining: 0 }]);
       expect(roll.json().effect).toEqual(expect.objectContaining({ type: "healing", targetActorId: target.json().id, pool: "hp", before: 4, max: 12 }));
       expect(store.state.actors.find((actor) => actor.id === target.json().id)?.data.hp).toEqual({ current: roll.json().effect.after, max: 12 });
+      expect(store.state.actors.find((actor) => actor.id === cleric.json().actor.id)?.data.spellSlots).toEqual({
+        level1: { current: 2, max: 2, recovery: "long" },
+        level2: { current: 0, max: 1, recovery: "long" }
+      });
     } finally {
       await app.close();
     }
