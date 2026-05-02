@@ -185,6 +185,8 @@ export const DND_5E_SRD_TACTICAL_MIND_ROLL_ID = "feature-tactical-mind-bonus";
 export const DND_5E_SRD_RAGE_ROLL_ID = "feature-rage";
 export const DND_5E_SRD_RAGE_DAMAGE_ROLL_ID = "feature-rage-damage-bonus";
 export const DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID = "feature-reckless-attack";
+export const DND_5E_SRD_BARDIC_INSPIRATION_ROLL_ID = "feature-bardic-inspiration";
+export const DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID = "feature-font-of-inspiration";
 export const DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID = "feature-divine-spark-healing";
 export const DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID = "feature-divine-spark-damage";
 export const DND_5E_SRD_TURN_UNDEAD_ROLL_ID = "feature-turn-undead";
@@ -556,6 +558,22 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       }
     });
   }
+  if (dnd5eSrdHasBardicInspiration(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_BARDIC_INSPIRATION_ROLL_ID,
+      label: "Bardic Inspiration",
+      formula: dnd5eSrdBardicInspirationFormula(actor),
+      metadata: dnd5eSrdBardicInspirationMetadata(actor)
+    });
+  }
+  if (dnd5eSrdHasFontOfInspiration(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID,
+      label: "Font of Inspiration",
+      formula: "0",
+      metadata: { trigger: "expend a spell slot to regain one Bardic Inspiration use", resource: "bardicInspiration" }
+    });
+  }
   if (dnd5eSrdHasChannelDivinity(actor)) {
     const saveDc = dnd5eSrdSpellSaveDc(actor);
     const searUndead = dnd5eSrdHasSearUndead(actor) ? { formula: dnd5eSrdSearUndeadFormula(actor), damageType: "Radiant" } : undefined;
@@ -679,11 +697,13 @@ export function dnd5eSrdSkillCheck(actor: Actor, skillId: string): QuickRoll {
   const skill = dnd5eSrdSkillDefinition(skillId);
   const modifier = genericFantasyAttributeModifier(actor, skill.ability);
   const proficiencyMultiplier = dnd5eSrdSkillProficiencyMultiplier(actor, skill.id);
+  const jackOfAllTradesBonus = proficiencyMultiplier === 0 && dnd5eSrdHasJackOfAllTrades(actor) ? Math.floor(dnd5eSrdProficiencyBonus(actor) / 2) : 0;
   const d20 = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "poisoned") ? "2d20kl1" : "1d20";
   return {
     id: `skill-${skill.id}`,
     label: `${skill.label} Check`,
-    formula: `${d20}${formatSignedNumber(modifier + proficiencyMultiplier * dnd5eSrdProficiencyBonus(actor))}`
+    formula: `${d20}${formatSignedNumber(modifier + proficiencyMultiplier * dnd5eSrdProficiencyBonus(actor) + jackOfAllTradesBonus)}`,
+    ...(jackOfAllTradesBonus > 0 ? { metadata: { feature: "Jack of All Trades", bonus: jackOfAllTradesBonus } } : {})
   };
 }
 
@@ -769,9 +789,9 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
     ...genericFantasyCompendium().map((entry) => {
       const dndDataOverrides =
         entry.id === "healing-word"
-          ? { healingFormula: "1d4+@attributes.wisdom", upcastFormula: "2d4" }
+          ? { healingFormula: "1d4+@spellcasting", upcastFormula: "2d4" }
           : entry.id === "cure-wounds"
-            ? { healingFormula: "2d8+@attributes.wisdom", upcastFormula: "2d8" }
+            ? { healingFormula: "2d8+@spellcasting", upcastFormula: "2d8" }
             : entry.id === "longsword"
               ? { costGp: 15, weightLb: 3, damageType: "slashing", equipmentCategory: "weapon" }
               : {};
@@ -970,7 +990,9 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   const data = cloneJsonRecord(template.data);
   const proficiencyBonus = dnd5eSrdProficiencyBonusForLevel(numericValue(data.level, 1), data.proficiencyBonus);
   const features = new Set([...normalizeStringArray(data.features), ...species.traits]);
-  const resources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(stringValue(data.class) || "Fighter", numericValue(data.level, 1)));
+  const className = stringValue(data.class) || "Fighter";
+  const level = numericValue(data.level, 1);
+  const resources = normalizeDnd5eSrdResources(data.resources, className, level, data);
   for (const [resourceId, resource] of Object.entries(dnd5eSrdSpeciesResources(species, proficiencyBonus))) {
     resources[resourceId] = resource;
   }
@@ -994,6 +1016,12 @@ export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, optio
   data.features = [...features];
   if (species.senses?.length) data.senses = [...species.senses];
   dnd5eSrdApplyAbilityScoreIncreases(data, background, options.abilityScoreIncreases);
+  const originResources = normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
+  const bardicInspiration = originResources.bardicInspiration;
+  if (bardicInspiration && numericValue(recordValue(resources.bardicInspiration).current, 0) === numericValue(recordValue(resources.bardicInspiration).max, 0)) {
+    originResources.bardicInspiration = { ...bardicInspiration, current: bardicInspiration.max };
+  }
+  data.resources = originResources;
   return { data, items: template.items.map((item) => ({ ...item })), background: { ...background }, species: { ...species, traits: [...species.traits], senses: species.senses ? [...species.senses] : undefined } };
 }
 
@@ -1097,6 +1125,34 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         feats: ["Savage Attacker"]
       },
       items: [{ entryId: "spear" }]
+    },
+    {
+      id: "bard",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Bard",
+      summary: "SRD 5.2.1 support spellcaster with Bardic Inspiration and skill flexibility.",
+      actorType: "character",
+      data: {
+        ruleset: DND_5E_SRD_VERSION,
+        level: 1,
+        class: "Bard",
+        species: "Human",
+        background: "Sage",
+        proficiencyBonus: 2,
+        hp: { current: 10, max: 10 },
+        attributes: { strength: 8, dexterity: 14, constitution: 14, intelligence: 12, wisdom: 10, charisma: 16 },
+        hitDice: { current: 1, max: 1, size: "d8" },
+        saveProficiencies: ["dexterity", "charisma"],
+        skillProficiencies: ["performance", "persuasion", "perception"],
+        toolProficiencies: ["gaming-set"],
+        currency: { gp: 50, sp: 0, cp: 0 },
+        resources: { bardicInspiration: { current: 3, max: 3, recovery: "long" } },
+        spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
+        conditions: [],
+        features: ["Bardic Inspiration", "Spellcasting"],
+        feats: []
+      },
+      items: [{ entryId: "healing-word" }, { entryId: "dagger" }]
     },
     {
       id: "cleric",
@@ -1254,7 +1310,7 @@ export function dnd5eSrdCharacterImport(input: CharacterImportInput): CharacterI
       toolProficiencies: dnd5eSrdToolProficienciesForBackground(stringValue(source.background) || "Soldier", source.toolProficiencies),
       toolExpertise: dnd5eSrdToolProficienciesFromExplicit(source.toolExpertise),
       currency: dnd5eSrdCurrency(source.currency),
-      resources: normalizeResourcePools(source.resources, defaultDnd5eSrdResources(className, level)),
+      resources: normalizeDnd5eSrdResources(source.resources, className, level, imported.data),
       spellSlots: normalizeResourcePools(source.spellSlots, defaultDnd5eSrdSpellSlots(className, level)),
       conditions: conditions.map((id) => ({ id })),
       features: dnd5eSrdApplyClassFeatures(normalizeStringArray(source.features), className, level)
@@ -1636,6 +1692,7 @@ export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record
   const hitDice = recordValue(next.hitDice);
   const features = dnd5eSrdApplyClassFeatures(normalizeStringArray(next.features), className, level);
   const combat = dnd5eSrdApplyClassCombat(recordValue(next.combat), className, level, next.speed);
+  const nextWithSrdAttributes = { ...next, attributes };
   return {
     ...next,
     ruleset: DND_5E_SRD_VERSION,
@@ -1643,7 +1700,7 @@ export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record
     hitDice: { ...hitDice, size: stringValue(hitDice.size) ?? dnd5eSrdHitDieSize(className) },
     features,
     combat,
-    resources: normalizeResourcePools(next.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true }),
+    resources: normalizeDnd5eSrdResources(next.resources, className, level, nextWithSrdAttributes, { raiseMaxToDefault: true }),
     spellSlots: normalizeResourcePools(next.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true })
   };
 }
@@ -1697,7 +1754,7 @@ export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType, option
   const level = numericValue(actor.data.level, 1);
   const dataWithDefaults = {
     ...rest.data,
-    resources: normalizeResourcePools(rest.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true }),
+    resources: normalizeDnd5eSrdResources(rest.data.resources, className, level, actor.data, { raiseMaxToDefault: true }),
     spellSlots: normalizeResourcePools(rest.data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true })
   };
   const dataAfterRestLimits = restType === "short" ? dnd5eSrdApplyShortRestResourceLimits(actor, dataWithDefaults) : dnd5eSrdApplyLongRestResourceLimits(actor, dataWithDefaults);
@@ -1811,6 +1868,8 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId === DND_5E_SRD_RAGE_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_RAGE_DAMAGE_ROLL_ID) return String(dnd5eSrdRageDamageBonus(actor));
   if (rollId === DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID) return "0";
+  if (rollId === DND_5E_SRD_BARDIC_INSPIRATION_ROLL_ID) return dnd5eSrdBardicInspirationFormula(actor);
+  if (rollId === DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID || rollId === DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID) return dnd5eSrdDivineSparkFormula(actor);
   if (rollId === DND_5E_SRD_TURN_UNDEAD_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID) return dnd5eSrdSearUndeadFormula(actor);
@@ -1839,7 +1898,7 @@ export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId
 export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): SystemActionUseResult {
   if (rollId === DND_5E_SRD_SECOND_WIND_ROLL_ID) {
     const className = stringValue(actor.data.class) || "Fighter";
-    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data);
     const result = consumeResourcePool(resources, "secondWind", 1, "Second Wind", "resource");
     return {
       systemId: DND_5E_SRD_SYSTEM_ID,
@@ -1852,7 +1911,7 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
   }
   if (rollId === DND_5E_SRD_ACTION_SURGE_ROLL_ID) {
     const className = stringValue(actor.data.class) || "Fighter";
-    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data);
     const result = consumeResourcePool(resources, "actionSurge", 1, "Action Surge", "resource");
     return {
       systemId: DND_5E_SRD_SYSTEM_ID,
@@ -1865,7 +1924,7 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
   }
   if (rollId === DND_5E_SRD_TACTICAL_MIND_ROLL_ID) {
     const className = stringValue(actor.data.class) || "Fighter";
-    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data);
     const result = consumeResourcePool(resources, "secondWind", 1, "Second Wind", "resource");
     return {
       systemId: DND_5E_SRD_SYSTEM_ID,
@@ -1878,7 +1937,7 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
   }
   if (rollId === DND_5E_SRD_RAGE_ROLL_ID) {
     const className = stringValue(actor.data.class) || "Barbarian";
-    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data);
     const result = consumeResourcePool(resources, "rage", 1, "Rage", "resource");
     return {
       systemId: DND_5E_SRD_SYSTEM_ID,
@@ -1892,9 +1951,42 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
   if (rollId === DND_5E_SRD_RAGE_DAMAGE_ROLL_ID || rollId === DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID) {
     return { systemId: DND_5E_SRD_SYSTEM_ID, actorId: actor.id, rollId, consumed: [], data: { ...actor.data }, items: [] };
   }
+  if (rollId === DND_5E_SRD_BARDIC_INSPIRATION_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Bard";
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data);
+    const result = consumeResourcePool(resources, "bardicInspiration", 1, "Bardic Inspiration", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_FONT_OF_INSPIRATION_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Bard";
+    const level = numericValue(actor.data.level, 1);
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+    const bardicInspiration = resources.bardicInspiration;
+    if (!bardicInspiration || bardicInspiration.current >= bardicInspiration.max) throw new Error("Bardic Inspiration is already full");
+    const slotLevel = spellActionSlotLevel(1, options.spellSlotLevel);
+    const spellSlots = normalizeResourcePools(actor.data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true });
+    const result = consumeResourcePool(spellSlots, `level${slotLevel}`, 1, `Level ${slotLevel} Spell Slot`, "spellSlot");
+    resources.bardicInspiration = { ...bardicInspiration, current: Math.min(bardicInspiration.max, bardicInspiration.current + 1) };
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      slotLevel,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources, spellSlots: result.pools },
+      items: []
+    };
+  }
   if (rollId === DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID || rollId === DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID || rollId === DND_5E_SRD_TURN_UNDEAD_ROLL_ID) {
     const className = stringValue(actor.data.class) || "Cleric";
-    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
+    const resources = normalizeDnd5eSrdResources(actor.data.resources, className, numericValue(actor.data.level, 1), actor.data);
     const result = consumeResourcePool(resources, "channelDivinity", 1, "Channel Divinity", "resource");
     return {
       systemId: DND_5E_SRD_SYSTEM_ID,
@@ -2730,8 +2822,10 @@ function dnd5eSrdSaveProficienciesForClass(className: string, explicit: unknown)
   const explicitProficiencies = normalizeStringArray(explicit).map((ability) => ability.toLowerCase()).filter((ability) => ability in defaultAttributes);
   if (explicitProficiencies.length > 0) return explicitProficiencies;
   const normalizedClass = className.toLowerCase();
+  if (normalizedClass === "bard") return ["dexterity", "charisma"];
   if (normalizedClass === "cleric") return ["wisdom", "charisma"];
   if (normalizedClass === "wizard") return ["intelligence", "wisdom"];
+  if (normalizedClass === "rogue") return ["dexterity", "intelligence"];
   return ["strength", "constitution"];
 }
 
@@ -2750,8 +2844,10 @@ function dnd5eSrdSkillProficienciesForClass(className: string, explicit: unknown
   const explicitProficiencies = dnd5eSrdSkillProficienciesFromExplicit(explicit);
   if (explicitProficiencies.length > 0) return explicitProficiencies;
   const normalizedClass = className.toLowerCase();
+  if (normalizedClass === "bard") return ["performance", "persuasion", "perception"];
   if (normalizedClass === "cleric") return ["medicine", "religion"];
   if (normalizedClass === "wizard") return ["arcana", "history"];
+  if (normalizedClass === "rogue") return ["stealth", "sleight-of-hand"];
   return ["athletics", "intimidation"];
 }
 
@@ -2901,11 +2997,19 @@ function mysticNoirSkillModifier(actor: Actor, skill: string): number {
 }
 
 function resolveGenericFantasyFormulaTokens(formula: string, actor: Actor): string {
-  return formula.replace(/([+-]?)@attributes\.([A-Za-z0-9_-]+)/g, (_match, operator: string, ability: string) => {
-    const modifier = genericFantasyAttributeModifier(actor, ability);
-    const signedModifier = operator === "-" ? -modifier : modifier;
-    return operator ? formatSignedNumber(signedModifier) : String(signedModifier);
-  });
+  return formula
+    .replace(/([+-]?)@spellcasting\b/g, (_match, operator: string) => {
+      const className = stringValue(actor.data.class) || "";
+      const ability = actor.systemId === DND_5E_SRD_SYSTEM_ID ? dnd5eSrdPrimaryAbility(className) : className === "Mender" ? "wisdom" : "charisma";
+      const modifier = genericFantasyAttributeModifier(actor, ability);
+      const signedModifier = operator === "-" ? -modifier : modifier;
+      return operator ? formatSignedNumber(signedModifier) : String(signedModifier);
+    })
+    .replace(/([+-]?)@attributes\.([A-Za-z0-9_-]+)/g, (_match, operator: string, ability: string) => {
+      const modifier = genericFantasyAttributeModifier(actor, ability);
+      const signedModifier = operator === "-" ? -modifier : modifier;
+      return operator ? formatSignedNumber(signedModifier) : String(signedModifier);
+    });
 }
 
 function genericFantasyHealingFormula(actor: Actor, data: Record<string, unknown>, spellSlotLevel?: number): string {
@@ -2959,6 +3063,21 @@ function dnd5eSrdHasSearUndead(actor: Actor): boolean {
   return normalizeStringArray(actor.data.features).includes("Sear Undead");
 }
 
+function dnd5eSrdHasBardicInspiration(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Bard") return true;
+  return normalizeStringArray(actor.data.features).includes("Bardic Inspiration") || "bardicInspiration" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasJackOfAllTrades(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Bard" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  return normalizeStringArray(actor.data.features).includes("Jack of All Trades");
+}
+
+function dnd5eSrdHasFontOfInspiration(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Bard" && Math.floor(numericValue(actor.data.level, 1)) >= 5) return true;
+  return normalizeStringArray(actor.data.features).includes("Font of Inspiration");
+}
+
 function dnd5eSrdHasSneakAttack(actor: Actor): boolean {
   if (stringValue(actor.data.class) === "Rogue") return true;
   return normalizeStringArray(actor.data.features).includes("Sneak Attack");
@@ -2987,6 +3106,7 @@ function dnd5eSrdHasRecklessAttack(actor: Actor): boolean {
 function dnd5eSrdApplyClassFeatures(features: string[], className: string, level: number): string[] {
   if (className === "Fighter") return [...new Set([...features, ...dnd5eSrdFighterFeaturesForLevel(level)])];
   if (className === "Barbarian") return [...new Set([...features, ...dnd5eSrdBarbarianFeaturesForLevel(level)])];
+  if (className === "Bard") return [...new Set([...features, ...dnd5eSrdBardFeaturesForLevel(level)])];
   if (className === "Cleric") return [...new Set([...features, ...dnd5eSrdClericFeaturesForLevel(level)])];
   if (className === "Wizard") return [...new Set([...features, ...dnd5eSrdWizardFeaturesForLevel(level)])];
   if (className === "Rogue") return [...new Set([...features, ...dnd5eSrdRogueFeaturesForLevel(level)])];
@@ -3017,6 +3137,15 @@ function dnd5eSrdBarbarianFeaturesForLevel(level: number): string[] {
   if (level >= 3) features.push("Barbarian Subclass", "Primal Knowledge");
   if (level >= 4) features.push("Ability Score Improvement");
   if (level >= 5) features.push("Extra Attack", "Fast Movement");
+  return features;
+}
+
+function dnd5eSrdBardFeaturesForLevel(level: number): string[] {
+  const features = ["Bardic Inspiration", "Spellcasting"];
+  if (level >= 2) features.push("Expertise", "Jack of All Trades");
+  if (level >= 3) features.push("Bard Subclass");
+  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 5) features.push("Font of Inspiration");
   return features;
 }
 
@@ -3081,6 +3210,30 @@ function dnd5eSrdRageMetadata(actor: Actor): Record<string, unknown> {
     restrictions: ["Cannot maintain Concentration", "Cannot cast spells"],
     duration: { initial: "until the end of your next turn", maximum: "10 minutes" },
     extension: ["Make an attack roll against an enemy", "Force an enemy to make a saving throw", "Take a Bonus Action to extend your Rage"]
+  };
+}
+
+function dnd5eSrdBardicInspirationFormula(actor: Actor): string {
+  return `1${dnd5eSrdBardicInspirationDie(actor)}`;
+}
+
+function dnd5eSrdBardicInspirationDie(actor: Actor): string {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (level >= 15) return "d12";
+  if (level >= 10) return "d10";
+  if (level >= 5) return "d8";
+  return "d6";
+}
+
+function dnd5eSrdBardicInspirationMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "bardicInspiration",
+    die: dnd5eSrdBardicInspirationDie(actor),
+    duration: "1 hour",
+    trigger: "after seeing or hearing the D20 Test but before knowing whether it succeeds",
+    target: "one creature other than yourself within 60 ft.",
+    maxUses: dnd5eSrdBardicInspirationMax(actor.data),
+    recovery: dnd5eSrdHasFontOfInspiration(actor) ? "short" : "long"
   };
 }
 
@@ -3169,8 +3322,8 @@ function dnd5eSrdApplyShortRestResourceLimits(actor: Actor, data: Record<string,
   if (Object.keys(limitedRecovery).length === 0) return data;
   const className = stringValue(actor.data.class) || "Fighter";
   const level = numericValue(actor.data.level, 1);
-  const beforeResources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
-  const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
+  const beforeResources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+  const afterResources = normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
   const resources = { ...afterResources };
   for (const [resourceId, maxRecovered] of Object.entries(limitedRecovery)) {
     const before = beforeResources[resourceId];
@@ -3188,7 +3341,7 @@ function dnd5eSrdApplyShortRestResourceLimits(actor: Actor, data: Record<string,
 function dnd5eSrdApplyLongRestResourceLimits(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {
   const className = stringValue(actor.data.class) || "Fighter";
   const level = numericValue(actor.data.level, 1);
-  const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
+  const afterResources = normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
   return {
     ...data,
     resources: Object.fromEntries(Object.entries(afterResources).map(([key, pool]) => [key, { ...pool, current: stringValue(pool.recovery) === "long" || stringValue(pool.recovery) === "short" ? pool.max : pool.current }]))
@@ -3204,7 +3357,7 @@ function dnd5eSrdApplyArcaneRecovery(actor: Actor, data: Record<string, unknown>
   if (className !== "Wizard" && !normalizeStringArray(actor.data.features).includes("Arcane Recovery") && !("arcaneRecovery" in recordValue(actor.data.resources))) {
     throw new Error("Arcane Recovery is only available to Wizards");
   }
-  const resources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
+  const resources = normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
   const arcaneRecovery = resources.arcaneRecovery;
   if (!arcaneRecovery || arcaneRecovery.current <= 0) throw new Error("Arcane Recovery is unavailable until a Long Rest");
   const spellSlots = normalizeResourcePools(data.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true });
@@ -3245,8 +3398,8 @@ function dnd5eSrdArcaneRecoverySlotLevelLimit(level: number): number {
 function dnd5eSrdRestRecovered(actor: Actor, data: Record<string, unknown>, recovered: Record<string, unknown>): Record<string, unknown> {
   const className = stringValue(actor.data.class) || "Fighter";
   const level = numericValue(actor.data.level, 1);
-  const beforeResources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
-  const afterResources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true });
+  const beforeResources = normalizeDnd5eSrdResources(actor.data.resources, className, level, actor.data, { raiseMaxToDefault: true });
+  const afterResources = normalizeDnd5eSrdResources(data.resources, className, level, data, { raiseMaxToDefault: true });
   const resourcesRecovered = { ...recordValue(recovered.resources) };
   for (const [resourceId, after] of Object.entries(afterResources)) {
     const before = beforeResources[resourceId];
@@ -3407,6 +3560,7 @@ function defaultGenericFantasySpellSlots(className: string, level: number): Reco
 }
 
 function dnd5eSrdPrimaryAbility(className: string): string {
+  if (className === "Bard") return "charisma";
   if (className === "Cleric") return "wisdom";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";
@@ -3416,12 +3570,29 @@ function dnd5eSrdPrimaryAbility(className: string): string {
 function dnd5eSrdHitDieSize(className: string): string {
   if (className === "Barbarian") return "d12";
   if (className === "Wizard") return "d6";
+  if (className === "Bard") return "d8";
   if (className === "Cleric") return "d8";
   if (className === "Rogue") return "d8";
   return "d10";
 }
 
-function defaultDnd5eSrdResources(className: string, level = 1): Record<string, Record<string, unknown>> {
+function normalizeDnd5eSrdResources(
+  value: unknown,
+  className: string,
+  level = 1,
+  data: Record<string, unknown> = {},
+  options: { raiseMaxToDefault?: boolean } = {}
+): Record<string, Record<string, unknown> & { current: number; max: number }> {
+  const defaults = defaultDnd5eSrdResources(className, level, data);
+  const pools = normalizeResourcePools(value, defaults, options);
+  for (const [key, defaultPool] of Object.entries(defaults)) {
+    const recovery = stringValue(defaultPool.recovery);
+    if (recovery && pools[key]) pools[key] = { ...pools[key], recovery };
+  }
+  return pools;
+}
+
+function defaultDnd5eSrdResources(className: string, level = 1, data: Record<string, unknown> = {}): Record<string, Record<string, unknown>> {
   if (className === "Fighter") {
     const resources: Record<string, Record<string, unknown>> = {
       secondWind: { current: dnd5eSrdSecondWindMax(level), max: dnd5eSrdSecondWindMax(level), recovery: "short" }
@@ -3436,6 +3607,10 @@ function defaultDnd5eSrdResources(className: string, level = 1): Record<string, 
   }
   if (className === "Barbarian") {
     return { rage: { current: dnd5eSrdRageMax(level), max: dnd5eSrdRageMax(level), recovery: "short" } };
+  }
+  if (className === "Bard") {
+    const max = dnd5eSrdBardicInspirationMax(data);
+    return { bardicInspiration: { current: max, max, recovery: Math.max(1, Math.floor(level)) >= 5 ? "short" : "long" } };
   }
   if (className === "Wizard") {
     return { arcaneRecovery: { current: 1, max: 1, recovery: "long" } };
@@ -3472,8 +3647,13 @@ function dnd5eSrdRageMax(level: number): number {
   return 2;
 }
 
+function dnd5eSrdBardicInspirationMax(data: Record<string, unknown>): number {
+  const attributes = recordValue(data.attributes);
+  return Math.max(1, abilityModifier(numericValue(attributes.charisma, 16)));
+}
+
 function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {
-  if (className !== "Cleric" && className !== "Wizard") return {};
+  if (className !== "Bard" && className !== "Cleric" && className !== "Wizard") return {};
   const slots: Record<string, Record<string, unknown>> = {
     level1: { current: Math.min(4, 2 + Math.max(0, level - 1)), max: Math.min(4, 2 + Math.max(0, level - 1)), recovery: "long" }
   };

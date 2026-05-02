@@ -1423,6 +1423,12 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
   if (dnd5eSrdHasRecklessAttack(actor)) {
     options.push({ rollId: "feature-reckless-attack", label: "Reckless Attack", description: "Reckless Attack: Strength attacks gain advantage; attacks against you gain advantage" });
   }
+  if (dnd5eSrdHasBardicInspiration(actor)) {
+    options.push({ rollId: "feature-bardic-inspiration", label: "Bardic Inspiration", description: `Bardic Inspiration: ${dnd5eSrdBardicInspirationFormula(actor)}; spends one use` });
+  }
+  if (dnd5eSrdHasFontOfInspiration(actor)) {
+    options.push({ rollId: "feature-font-of-inspiration", label: "Font of Inspiration", description: "Font of Inspiration: spend a spell slot to regain one Bardic Inspiration use" });
+  }
   if (dnd5eSrdHasChannelDivinity(actor)) {
     const saveDc = dnd5eSrdSpellSaveDc(actor);
     const searUndead = dnd5eSrdHasSearUndead(actor) ? `; Sear ${dnd5eSrdSearUndeadFormula(actor)} radiant` : "";
@@ -1475,6 +1481,16 @@ function dnd5eSrdHasSearUndead(actor: Actor): boolean {
   return (stringValue(actor.data.class) === "Cleric" && numericValue(actor.data.level, 1) >= 5) || features.includes("Sear Undead");
 }
 
+function dnd5eSrdHasBardicInspiration(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return stringValue(actor.data.class) === "Bard" || features.includes("Bardic Inspiration") || "bardicInspiration" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasFontOfInspiration(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Bard" && numericValue(actor.data.level, 1) >= 5) || features.includes("Font of Inspiration");
+}
+
 function dnd5eSrdHasSneakAttack(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   return stringValue(actor.data.class) === "Rogue" || features.includes("Sneak Attack");
@@ -1523,6 +1539,18 @@ function dnd5eSrdRageDamageBonus(actor: Actor): number {
   return 2;
 }
 
+function dnd5eSrdBardicInspirationFormula(actor: Actor): string {
+  return `1${dnd5eSrdBardicInspirationDie(actor)}`;
+}
+
+function dnd5eSrdBardicInspirationDie(actor: Actor): string {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (level >= 15) return "d12";
+  if (level >= 10) return "d10";
+  if (level >= 5) return "d8";
+  return "d6";
+}
+
 function dnd5eSrdSneakAttackFormula(actor: Actor): string {
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return `${Math.ceil(level / 2)}d6`;
@@ -1563,6 +1591,7 @@ function dnd5eSrdProficiencyBonus(actor: Actor): number {
 }
 
 function dnd5eSrdPrimaryAbility(className: string): string {
+  if (className === "Bard") return "charisma";
   if (className === "Cleric") return "wisdom";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";

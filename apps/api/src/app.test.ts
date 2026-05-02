@@ -3197,7 +3197,7 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(templates.statusCode).toBe(200);
-      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "cleric", "wizard", "rogue"]);
+      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "wizard", "rogue"]);
 
       const origins = await app.inject({
         method: "GET",
@@ -3361,6 +3361,71 @@ describe("api", () => {
         ])
       );
 
+      const bard = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "bard", name: "SRD Bard", ownerUserId: "usr_demo_player" }
+      });
+      expect(bard.statusCode).toBe(200);
+      expect(bard.json().actor.data).toEqual(
+        expect.objectContaining({
+          features: ["Bardic Inspiration", "Spellcasting"],
+          hitDice: { current: 1, max: 1, size: "d8" },
+          resources: { bardicInspiration: { current: 3, max: 3, recovery: "long" } },
+          saveProficiencies: ["dexterity", "charisma"],
+          skillProficiencies: ["performance", "persuasion", "perception"],
+          spellSlots: { level1: { current: 2, max: 2, recovery: "long" } }
+        })
+      );
+      expect(bard.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Healing Word"]);
+      expect(bard.json().sheet.inventory.map((item: { name: string }) => item.name)).toEqual(["Dagger"]);
+      expect(bard.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "save-charisma", formula: "1d20+5" }),
+          expect.objectContaining({ id: "skill-performance", formula: "1d20+5" }),
+          expect.objectContaining({ id: "feature-bardic-inspiration", formula: "1d6", metadata: expect.objectContaining({ resource: "bardicInspiration", die: "d6", recovery: "long" }) }),
+          expect.objectContaining({ label: "Healing Word Healing", formula: "1d4+3" })
+        ])
+      );
+
+      const levelFiveBard = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "bard", name: "SRD Level Five Bard", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFiveBard.statusCode).toBe(200);
+      let levelFiveBardAdvance = levelFiveBard;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFiveBardAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveBard.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFiveBardAdvance.statusCode).toBe(200);
+      }
+      expect(levelFiveBardAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Bardic Inspiration", "Jack of All Trades", "Font of Inspiration"]),
+          resources: { bardicInspiration: { current: 3, max: 5, recovery: "short" } },
+          spellSlots: {
+            level1: { current: 2, max: 4, recovery: "long" },
+            level2: { current: 2, max: 3, recovery: "long" },
+            level3: { current: 2, max: 2, recovery: "long" }
+          }
+        })
+      );
+      expect(levelFiveBardAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "skill-athletics", formula: "1d20+0", metadata: { feature: "Jack of All Trades", bonus: 1 } }),
+          expect.objectContaining({ id: "feature-bardic-inspiration", formula: "1d8", metadata: expect.objectContaining({ die: "d8", recovery: "short" }) }),
+          expect.objectContaining({ id: "feature-font-of-inspiration", formula: "0", metadata: expect.objectContaining({ resource: "bardicInspiration" }) })
+        ])
+      );
+
       const rogue = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
@@ -3520,7 +3585,7 @@ describe("api", () => {
       expect(compendium.statusCode).toBe(200);
       expect(compendium.json().entries).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ id: "healing-word", name: "Healing Word", data: expect.objectContaining({ healingFormula: "1d4+@attributes.wisdom", upcastFormula: "2d4" }) }),
+          expect.objectContaining({ id: "healing-word", name: "Healing Word", data: expect.objectContaining({ healingFormula: "1d4+@spellcasting", upcastFormula: "2d4" }) }),
           expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" }),
           expect.objectContaining({ id: "chromatic-orb", name: "Chromatic Orb", data: expect.objectContaining({ damageFormula: "3d8", upcastFormula: "1d8" }) }),
           expect.objectContaining({ id: "ice-knife", name: "Ice Knife", data: expect.objectContaining({ damageFormula: "1d10", secondaryDamageFormula: "2d6" }) }),
@@ -3840,6 +3905,66 @@ describe("api", () => {
       });
       expect(barbarianLongRest.statusCode).toBe(200);
       expect(barbarianLongRest.json().actor.data.resources).toEqual({ rage: { current: 2, max: 2, recovery: "short" } });
+
+      const bardicInspiration = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${bard.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-bardic-inspiration", consumeResources: true }
+      });
+      expect(bardicInspiration.statusCode).toBe(200);
+      expect(bardicInspiration.json().roll.formula).toBe("1d6");
+      expect(bardicInspiration.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-bardic-inspiration", metadata: expect.objectContaining({ resource: "bardicInspiration", die: "d6" }) }));
+      expect(bardicInspiration.json().usage.consumed).toEqual([{ type: "resource", key: "bardicInspiration", label: "Bardic Inspiration", amount: 1, remaining: 2 }]);
+      expect(store.state.actors.find((actor) => actor.id === bard.json().actor.id)?.data.resources).toEqual({ bardicInspiration: { current: 2, max: 3, recovery: "long" } });
+
+      const storedBard = store.state.actors.find((actor) => actor.id === bard.json().actor.id)!;
+      storedBard.data = { ...storedBard.data, resources: { bardicInspiration: { current: 0, max: 3, recovery: "long" } } };
+      const depletedBardicInspiration = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${bard.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-bardic-inspiration", consumeResources: true }
+      });
+      expect(depletedBardicInspiration.statusCode).toBe(409);
+      expect(depletedBardicInspiration.json().message).toContain("Insufficient bardic inspiration");
+
+      const storedLevelFiveBard = store.state.actors.find((actor) => actor.id === levelFiveBard.json().actor.id)!;
+      storedLevelFiveBard.data = {
+        ...storedLevelFiveBard.data,
+        resources: { bardicInspiration: { current: 4, max: 5, recovery: "short" } },
+        spellSlots: {
+          level1: { current: 1, max: 4, recovery: "long" },
+          level2: { current: 3, max: 3, recovery: "long" },
+          level3: { current: 2, max: 2, recovery: "long" }
+        }
+      };
+      const fontOfInspiration = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveBard.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-font-of-inspiration", consumeResources: true }
+      });
+      expect(fontOfInspiration.statusCode).toBe(200);
+      expect(fontOfInspiration.json().roll.formula).toBe("0");
+      expect(fontOfInspiration.json().usage).toEqual(expect.objectContaining({ slotLevel: 1 }));
+      expect(fontOfInspiration.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }]);
+      expect(store.state.actors.find((actor) => actor.id === levelFiveBard.json().actor.id)?.data.resources).toEqual({ bardicInspiration: { current: 5, max: 5, recovery: "short" } });
+      expect(store.state.actors.find((actor) => actor.id === levelFiveBard.json().actor.id)?.data.spellSlots).toEqual({
+        level1: { current: 0, max: 4, recovery: "long" },
+        level2: { current: 3, max: 3, recovery: "long" },
+        level3: { current: 2, max: 2, recovery: "long" }
+      });
+      storedLevelFiveBard.data = { ...storedLevelFiveBard.data, resources: { bardicInspiration: { current: 0, max: 5, recovery: "short" } } };
+      const bardShortRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveBard.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short" }
+      });
+      expect(bardShortRest.statusCode).toBe(200);
+      expect(bardShortRest.json().actor.data.resources).toEqual({ bardicInspiration: { current: 5, max: 5, recovery: "short" } });
+      expect(bardShortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ bardicInspiration: 5 }));
 
       const rageDamage = await app.inject({
         method: "POST",

@@ -231,6 +231,7 @@ describe("dnd 5.5e srd rules", () => {
     const cleric = dnd5eSrdCharacterTemplate("cleric");
     const fighter = dnd5eSrdCharacterTemplate("fighter");
     const barbarian = dnd5eSrdCharacterTemplate("barbarian");
+    const bard = dnd5eSrdCharacterTemplate("bard");
     const wizard = dnd5eSrdCharacterTemplate("wizard");
     const rogue = dnd5eSrdCharacterTemplate("rogue");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
@@ -246,6 +247,14 @@ describe("dnd 5.5e srd rules", () => {
     expect(barbarian?.data.hitDice).toEqual({ current: 1, max: 1, size: "d12" });
     expect(barbarian?.data.resources).toEqual({ rage: { current: 2, max: 2, recovery: "short" } });
     expect(barbarian?.items.map((item) => item.entryId)).toEqual(["spear"]);
+    expect(bard).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Bard" }));
+    expect(bard?.data.features).toEqual(["Bardic Inspiration", "Spellcasting"]);
+    expect(bard?.data.saveProficiencies).toEqual(["dexterity", "charisma"]);
+    expect(bard?.data.skillProficiencies).toEqual(["performance", "persuasion", "perception"]);
+    expect(bard?.data.hitDice).toEqual({ current: 1, max: 1, size: "d8" });
+    expect(bard?.data.resources).toEqual({ bardicInspiration: { current: 3, max: 3, recovery: "long" } });
+    expect(bard?.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
+    expect(bard?.items.map((item) => item.entryId)).toEqual(["healing-word", "dagger"]);
     expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
     expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
     expect(rogue?.data.features).toEqual(["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"]);
@@ -503,6 +512,66 @@ describe("dnd 5.5e srd rules", () => {
         })
       ])
     );
+    const bardActor: Actor = { ...srdActor, data: { ...bard!.data } };
+    const bardHealingWord: Item = {
+      id: "itm_bard_healing_word",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: bardActor.id,
+      type: "spell",
+      name: "Healing Word",
+      data: { ...dnd5eSrdCompendiumEntry("healing-word")!.data, compendiumId: "healing-word" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const bardDagger: Item = {
+      id: "itm_bard_dagger",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: bardActor.id,
+      type: "item",
+      name: "Dagger",
+      data: { ...dnd5eSrdCompendiumEntry("dagger")!.data, compendiumId: "dagger" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(dnd5eSrdQuickRolls(bardActor, [bardHealingWord, bardDagger])).toEqual(
+      expect.arrayContaining([
+        { id: "save-charisma", label: "Charisma Save", formula: "1d20+5" },
+        { id: "save-dexterity", label: "Dexterity Save", formula: "1d20+4" },
+        { id: "skill-performance", label: "Performance Check", formula: "1d20+5" },
+        expect.objectContaining({ id: "feature-bardic-inspiration", label: "Bardic Inspiration", formula: "1d6", metadata: expect.objectContaining({ resource: "bardicInspiration", die: "d6", recovery: "long" }) }),
+        { id: "spell-itm_bard_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3" },
+        { id: "item-itm_bard_dagger-damage", label: "Dagger Damage", formula: "1d4+2" }
+      ])
+    );
+    expect(dnd5eSrdActionFormula(bardActor, [], "feature-bardic-inspiration")).toBe("1d6");
+    const levelTwoBardData = applyDnd5eSrdAdvancement(bardActor, "level-up");
+    const levelTwoBardActor: Actor = { ...bardActor, data: levelTwoBardData };
+    expect(levelTwoBardData.features).toEqual(expect.arrayContaining(["Expertise", "Jack of All Trades"]));
+    expect(dnd5eSrdQuickRolls(levelTwoBardActor, []).find((roll) => roll.id === "skill-athletics")).toEqual(
+      expect.objectContaining({ formula: "1d20+0", metadata: { feature: "Jack of All Trades", bonus: 1 } })
+    );
+    let levelFiveBardData = bardActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveBardData = applyDnd5eSrdAdvancement({ ...bardActor, data: levelFiveBardData }, "level-up");
+    }
+    const levelFiveBardActor: Actor = { ...bardActor, data: levelFiveBardData };
+    expect(levelFiveBardData.features).toEqual(expect.arrayContaining(["Bardic Inspiration", "Jack of All Trades", "Font of Inspiration"]));
+    expect(levelFiveBardData.resources).toEqual({ bardicInspiration: { current: 3, max: 5, recovery: "short" } });
+    expect(levelFiveBardData.spellSlots).toEqual({
+      level1: { current: 2, max: 4, recovery: "long" },
+      level2: { current: 2, max: 3, recovery: "long" },
+      level3: { current: 2, max: 2, recovery: "long" }
+    });
+    expect(dnd5eSrdQuickRolls(levelFiveBardActor, [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-bardic-inspiration", label: "Bardic Inspiration", formula: "1d8", metadata: expect.objectContaining({ die: "d8", recovery: "short" }) }),
+        expect.objectContaining({ id: "feature-font-of-inspiration", label: "Font of Inspiration", formula: "0", metadata: expect.objectContaining({ resource: "bardicInspiration" }) })
+      ])
+    );
+    expect(dnd5eSrdActionFormula(levelFiveBardActor, [], "feature-bardic-inspiration")).toBe("1d8");
+    expect(dnd5eSrdActionFormula(levelFiveBardActor, [], "feature-font-of-inspiration")).toBe("0");
     const rogueActor: Actor = { ...srdActor, data: { ...rogue!.data } };
     const rogueDagger: Item = {
       id: "itm_rogue_dagger",
@@ -747,6 +816,58 @@ describe("dnd 5.5e srd rules", () => {
       })
     );
     expect(applyDnd5eSrdRest({ ...barbarianActor, data: { ...barbarianActor.data, level: 3, resources: { rage: { current: 0, max: 2, recovery: "short" } } } }, "long").data.resources).toEqual({ rage: { current: 3, max: 3, recovery: "short" } });
+    const bardActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("bard")!.data } };
+    expect(useDnd5eSrdAction(bardActor, [], "feature-bardic-inspiration")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "bardicInspiration", label: "Bardic Inspiration", amount: 1, remaining: 2 }],
+        data: expect.objectContaining({ resources: { bardicInspiration: { current: 2, max: 3, recovery: "long" } } })
+      })
+    );
+    expect(() =>
+      useDnd5eSrdAction({ ...bardActor, data: { ...bardActor.data, resources: { bardicInspiration: { current: 0, max: 3, recovery: "long" } } } }, [], "feature-bardic-inspiration")
+    ).toThrow("Insufficient bardic inspiration");
+    expect(applyDnd5eSrdRest({ ...bardActor, data: { ...bardActor.data, resources: { bardicInspiration: { current: 0, max: 3, recovery: "long" } } } }, "short").data.resources).toEqual({
+      bardicInspiration: { current: 0, max: 3, recovery: "long" }
+    });
+    let levelFiveBardData = bardActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveBardData = applyDnd5eSrdAdvancement({ ...bardActor, data: levelFiveBardData }, "level-up");
+    }
+    const levelFiveBardActor: Actor = { ...bardActor, data: levelFiveBardData };
+    expect(applyDnd5eSrdRest({ ...levelFiveBardActor, data: { ...levelFiveBardActor.data, resources: { bardicInspiration: { current: 0, max: 5, recovery: "short" } } } }, "short")).toEqual(
+      expect.objectContaining({
+        recovered: expect.objectContaining({ resources: expect.objectContaining({ bardicInspiration: 5 }) }),
+        data: expect.objectContaining({ resources: { bardicInspiration: { current: 5, max: 5, recovery: "short" } } })
+      })
+    );
+    expect(
+      useDnd5eSrdAction(
+        {
+          ...levelFiveBardActor,
+          data: {
+            ...levelFiveBardActor.data,
+            resources: { bardicInspiration: { current: 4, max: 5, recovery: "short" } },
+            spellSlots: { level1: { current: 1, max: 4, recovery: "long" } }
+          }
+        },
+        [],
+        "feature-font-of-inspiration"
+      )
+    ).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 1,
+        consumed: [{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }],
+        data: expect.objectContaining({
+          resources: { bardicInspiration: { current: 5, max: 5, recovery: "short" } },
+          spellSlots: { level1: { current: 0, max: 4, recovery: "long" }, level2: { current: 3, max: 3, recovery: "long" }, level3: { current: 2, max: 2, recovery: "long" } }
+        })
+      })
+    );
+    expect(() =>
+      useDnd5eSrdAction({ ...levelFiveBardActor, data: { ...levelFiveBardActor.data, resources: { bardicInspiration: { current: 5, max: 5, recovery: "short" } } } }, [], "feature-font-of-inspiration")
+    ).toThrow("Bardic Inspiration is already full");
     const rogueActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("rogue")!.data } };
     expect(useDnd5eSrdAction(rogueActor, [], "feature-sneak-attack-damage")).toEqual(
       expect.objectContaining({
