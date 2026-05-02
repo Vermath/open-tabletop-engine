@@ -7,7 +7,7 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdCharacterImport, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
+import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdCharacterImport, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -3023,6 +3023,41 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.items.push(item);
     store.save();
     return { entry, item, sheet: systemSheet(actor, actorItems(store, actor)) };
+  });
+
+  app.post<{
+    Params: { campaignId: string; systemId: string; actorId: string };
+    Body: { entryId?: string; quantity?: number };
+  }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/purchase", async (request, reply) => {
+    const actor = findSystemActor(store, request.params.campaignId, request.params.systemId, request.params.actorId);
+    if (!actor) return notFound(reply, "System actor not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+    if (request.params.systemId !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Equipment purchasing is only available for D&D 5.5e SRD actors");
+    const entry = dnd5eSrdCompendiumEntry(request.body.entryId ?? "");
+    if (!entry) return notFound(reply, "Compendium entry not found");
+    let purchase: ReturnType<typeof dnd5eSrdEquipmentPurchase>;
+    try {
+      purchase = dnd5eSrdEquipmentPurchase(actor, entry, request.body.quantity);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Equipment purchase failed";
+      return message.startsWith("Insufficient currency") ? conflict(reply, message) : badRequest(reply, message);
+    }
+    actor.data = purchase.data;
+    actor.updatedAt = nowIso();
+    const item = createTimestamped("itm", {
+      campaignId: request.params.campaignId,
+      systemId: request.params.systemId,
+      actorId: actor.id,
+      type: entry.type,
+      name: entry.name,
+      data: cloneRecord(purchase.itemData)
+    }) satisfies Item;
+    store.state.items.push(item);
+    store.save();
+    broadcastActorUpdated(broadcast, actor);
+    return { entry, purchase, actor, item, sheet: systemSheet(actor, actorItems(store, actor)) };
   });
 
   app.post<{

@@ -122,6 +122,18 @@ export interface SystemActionUseResult {
   items: Item[];
 }
 
+export interface Dnd5eSrdEquipmentPurchaseResult {
+  systemId: typeof DND_5E_SRD_SYSTEM_ID;
+  actorId: string;
+  entryId: string;
+  quantity: number;
+  unitCostGp: number;
+  totalCostGp: number;
+  currency: Record<string, number>;
+  data: Record<string, unknown>;
+  itemData: Record<string, unknown>;
+}
+
 export interface EncounterThreat {
   id: string;
   systemId: string;
@@ -465,7 +477,9 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
           ? { healingFormula: "1d4+@attributes.wisdom", upcastFormula: "2d4" }
           : entry.id === "cure-wounds"
             ? { healingFormula: "2d8+@attributes.wisdom", upcastFormula: "2d8" }
-            : {};
+            : entry.id === "longsword"
+              ? { costGp: 15, weightLb: 3, damageType: "slashing", equipmentCategory: "weapon" }
+              : {};
       const dndSummaryOverride =
         entry.id === "blessed"
           ? "Adds 1d4 to SRD saving throws."
@@ -491,6 +505,20 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       name: "Savage Attacker",
       summary: "Tracks the SRD-origin feat choice on a character sheet.",
       data: { source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "shield-armor",
+      type: "item",
+      name: "Shield",
+      summary: "Defensive gear that improves armor class while wielded.",
+      data: { category: "armor", equipmentCategory: "armor", armorBonus: 2, costGp: 10, weightLb: 6, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "calligraphers-supplies",
+      type: "item",
+      name: "Calligrapher's Supplies",
+      summary: "A tool kit for careful lettering, copying, and scribing.",
+      data: { category: "tool", equipmentCategory: "tool", toolId: "calligraphers-supplies", ability: "dexterity", costGp: 10, weightLb: 5, source: DND_5E_SRD_VERSION }
     }
   ];
 }
@@ -563,6 +591,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         saveProficiencies: ["strength", "constitution"],
         skillProficiencies: ["athletics", "intimidation"],
         toolProficiencies: ["gaming-set"],
+        currency: { gp: 50, sp: 0, cp: 0 },
         resources: { secondWind: { current: 1, max: 1, recovery: "short" } },
         spellSlots: {},
         conditions: [],
@@ -590,6 +619,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         saveProficiencies: ["wisdom", "charisma"],
         skillProficiencies: ["medicine", "religion"],
         toolProficiencies: ["calligraphers-supplies"],
+        currency: { gp: 50, sp: 0, cp: 0 },
         resources: {},
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
@@ -617,6 +647,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         saveProficiencies: ["intelligence", "wisdom"],
         skillProficiencies: ["arcana", "history"],
         toolProficiencies: ["calligraphers-supplies"],
+        currency: { gp: 50, sp: 0, cp: 0 },
         resources: {},
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
@@ -695,6 +726,7 @@ export function dnd5eSrdCharacterImport(input: CharacterImportInput): CharacterI
       skillExpertise: dnd5eSrdSkillProficienciesFromExplicit(source.skillExpertise),
       toolProficiencies: dnd5eSrdToolProficienciesForBackground(stringValue(source.background) || "Soldier", source.toolProficiencies),
       toolExpertise: dnd5eSrdToolProficienciesFromExplicit(source.toolExpertise),
+      currency: dnd5eSrdCurrency(source.currency),
       resources: normalizeResourcePools(source.resources, defaultDnd5eSrdResources(className)),
       spellSlots: normalizeResourcePools(source.spellSlots, defaultDnd5eSrdSpellSlots(className, level)),
       conditions: conditions.map((id) => ({ id }))
@@ -972,6 +1004,30 @@ export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId
 
 export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): SystemActionUseResult {
   return { ...useGenericFantasyAction(actor, items, rollId, options), systemId: DND_5E_SRD_SYSTEM_ID };
+}
+
+export function dnd5eSrdEquipmentPurchase(actor: Actor, entry: GenericFantasyCompendiumEntry, quantity = 1): Dnd5eSrdEquipmentPurchaseResult {
+  if (entry.type === "condition") throw new Error(`Compendium entry is not purchasable: ${entry.id}`);
+  const unitCostGp = numericValue(entry.data.costGp, Number.NaN);
+  if (!Number.isFinite(unitCostGp) || unitCostGp < 0) throw new Error(`Compendium entry has no SRD equipment cost: ${entry.id}`);
+  const purchaseQuantity = clampInteger(quantity, 1, 99, 1);
+  const unitCostCopper = Math.round(unitCostGp * 100);
+  const totalCostCopper = unitCostCopper * purchaseQuantity;
+  const availableCopper = dnd5eSrdCurrencyToCopper(actor.data.currency);
+  if (availableCopper < totalCostCopper) throw new Error(`Insufficient currency: requires ${dnd5eSrdFormatGp(totalCostCopper)}, available ${dnd5eSrdFormatGp(availableCopper)}`);
+  const currency = dnd5eSrdCurrencyFromCopper(availableCopper - totalCostCopper);
+  const totalCostGp = totalCostCopper / 100;
+  return {
+    systemId: DND_5E_SRD_SYSTEM_ID,
+    actorId: actor.id,
+    entryId: entry.id,
+    quantity: purchaseQuantity,
+    unitCostGp,
+    totalCostGp,
+    currency,
+    data: { ...actor.data, currency },
+    itemData: { ...entry.data, compendiumId: entry.id, quantity: purchaseQuantity, purchasedForGp: totalCostGp }
+  };
 }
 
 export function genericFantasyActorConditions(actor: Actor): AppliedCondition[] {
@@ -1838,6 +1894,34 @@ function dnd5eSrdToolProficienciesFromExplicit(explicit: unknown): string[] {
 
 function normalizeDnd5eSrdToolId(tool: string): string {
   return tool.trim().replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase().replace(/'/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function dnd5eSrdCurrency(value: unknown): Record<string, number> {
+  if (typeof value === "number" && Number.isFinite(value)) return dnd5eSrdCurrencyFromCopper(Math.max(0, Math.floor(value * 100)));
+  return dnd5eSrdCurrencyFromCopper(dnd5eSrdCurrencyToCopper(value));
+}
+
+function dnd5eSrdCurrencyToCopper(value: unknown): number {
+  const source = recordValue(value);
+  const cp = Math.max(0, Math.floor(numericValue(source.cp, 0)));
+  const sp = Math.max(0, Math.floor(numericValue(source.sp, 0)));
+  const ep = Math.max(0, Math.floor(numericValue(source.ep, 0)));
+  const gp = Math.max(0, Math.floor(numericValue(source.gp, 0)));
+  const pp = Math.max(0, Math.floor(numericValue(source.pp, 0)));
+  return cp + sp * 10 + ep * 50 + gp * 100 + pp * 1000;
+}
+
+function dnd5eSrdCurrencyFromCopper(copper: number): Record<string, number> {
+  const safeCopper = Math.max(0, Math.floor(copper));
+  const gp = Math.floor(safeCopper / 100);
+  const sp = Math.floor((safeCopper % 100) / 10);
+  const cp = safeCopper % 10;
+  return { gp, sp, cp };
+}
+
+function dnd5eSrdFormatGp(copper: number): string {
+  const currency = dnd5eSrdCurrencyFromCopper(copper) as { gp: number; sp: number; cp: number };
+  return `${currency.gp + currency.sp / 10 + currency.cp / 100} GP`;
 }
 
 function stellarFrontiersAptitudeModifier(actor: Actor, aptitude: string): number {

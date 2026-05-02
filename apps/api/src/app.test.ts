@@ -3210,6 +3210,7 @@ describe("api", () => {
       expect(cleric.json().actor.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
       expect(cleric.json().actor.data.skillProficiencies).toEqual(["medicine", "religion"]);
       expect(cleric.json().actor.data.toolProficiencies).toEqual(["calligraphers-supplies"]);
+      expect(cleric.json().actor.data.currency).toEqual({ gp: 50, sp: 0, cp: 0 });
       expect(cleric.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Healing Word", "Cure Wounds"]);
       expect(cleric.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" })]));
       expect(cleric.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "skill-medicine", label: "Medicine Check", formula: "1d20+5" })]));
@@ -3231,9 +3232,31 @@ describe("api", () => {
       expect(compendium.json().entries).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: "healing-word", name: "Healing Word", data: expect.objectContaining({ healingFormula: "1d4+@attributes.wisdom", upcastFormula: "2d4" }) }),
-          expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" })
+          expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" }),
+          expect.objectContaining({ id: "shield-armor", name: "Shield", data: expect.objectContaining({ costGp: 10, armorBonus: 2 }) })
         ])
       );
+
+      const purchase = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/purchase`,
+        headers: authHeaders,
+        payload: { entryId: "longsword", quantity: 2 }
+      });
+      expect(purchase.statusCode).toBe(200);
+      expect(purchase.json().purchase).toEqual(expect.objectContaining({ entryId: "longsword", quantity: 2, unitCostGp: 15, totalCostGp: 30, currency: { gp: 20, sp: 0, cp: 0 } }));
+      expect(purchase.json().actor.data.currency).toEqual({ gp: 20, sp: 0, cp: 0 });
+      expect(purchase.json().item).toEqual(expect.objectContaining({ name: "Longsword", data: expect.objectContaining({ quantity: 2, purchasedForGp: 30 }) }));
+      expect(purchase.json().sheet.inventory.map((item: { name: string }) => item.name)).toContain("Longsword");
+
+      const insufficientPurchase = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/purchase`,
+        headers: authHeaders,
+        payload: { entryId: "longsword", quantity: 2 }
+      });
+      expect(insufficientPurchase.statusCode).toBe(409);
+      expect(store.state.actors.find((actor) => actor.id === cleric.json().actor.id)?.data.currency).toEqual({ gp: 20, sp: 0, cp: 0 });
 
       const target = await app.inject({
         method: "POST",

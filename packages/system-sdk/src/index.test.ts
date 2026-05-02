@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdCharacterImport, dnd5eSrdCharacterTemplate, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
+import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdCharacterImport, dnd5eSrdCharacterTemplate, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -222,6 +222,7 @@ describe("dnd 5.5e srd rules", () => {
       attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 },
       skillProficiencies: ["medicine", "religion"],
       toolProficiencies: ["calligraphers-supplies"],
+      currency: { gp: 50, sp: 0, cp: 0 },
       spellSlots: { level1: { current: 1, max: 2, recovery: "long" }, level2: { current: 1, max: 1, recovery: "long" } }
     }
   };
@@ -232,9 +233,12 @@ describe("dnd 5.5e srd rules", () => {
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
     expect(cleric?.data.skillProficiencies).toEqual(["medicine", "religion"]);
     expect(cleric?.data.toolProficiencies).toEqual(["calligraphers-supplies"]);
+    expect(cleric?.data.currency).toEqual({ gp: 50, sp: 0, cp: 0 });
     expect(dnd5eSrdCharacterTemplate("fighter")?.data.toolProficiencies).toEqual(["gaming-set"]);
     expect(cleric?.items.map((item) => item.entryId)).toEqual(["healing-word", "cure-wounds"]);
     expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
+    expect(dnd5eSrdCompendiumEntry("longsword")?.data).toEqual(expect.objectContaining({ costGp: 15, weightLb: 3 }));
+    expect(dnd5eSrdCompendiumEntry("shield-armor")?.data).toEqual(expect.objectContaining({ costGp: 10, armorBonus: 2 }));
 
     const spell: Item = {
       id: "itm_healing_word",
@@ -271,6 +275,12 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "skill-medicine")?.formula).toBe("2d20kl1+5");
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "tool-calligraphers-supplies")?.formula).toBe("2d20kl1+3");
     expect(dnd5eSrdActionFormula(srdActor, [spell], "spell-itm_healing_word-healing", { spellSlotLevel: 2 })).toBe("1d4+3+2d4");
+
+    const purchased = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("longsword")!, 2);
+    expect(purchased).toEqual(expect.objectContaining({ entryId: "longsword", quantity: 2, unitCostGp: 15, totalCostGp: 30, currency: { gp: 20, sp: 0, cp: 0 } }));
+    expect(purchased.itemData).toEqual(expect.objectContaining({ compendiumId: "longsword", quantity: 2, purchasedForGp: 30 }));
+    expect(() => dnd5eSrdEquipmentPurchase({ ...srdActor, data: { ...srdActor.data, currency: { gp: 1 } } }, dnd5eSrdCompendiumEntry("longsword")!, 1)).toThrow("Insufficient currency");
+    expect(() => dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("magic-initiate")!, 1)).toThrow("not purchasable");
   });
 
   it("uses SRD system ids for advancement, rests, actions, imports, and encounter planning", () => {
