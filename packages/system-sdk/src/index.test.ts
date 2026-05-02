@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdCharacterImport, dnd5eSrdCharacterTemplate, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
+import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplate, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -281,6 +281,49 @@ describe("dnd 5.5e srd rules", () => {
     expect(purchased.itemData).toEqual(expect.objectContaining({ compendiumId: "longsword", quantity: 2, purchasedForGp: 30 }));
     expect(() => dnd5eSrdEquipmentPurchase({ ...srdActor, data: { ...srdActor.data, currency: { gp: 1 } } }, dnd5eSrdCompendiumEntry("longsword")!, 1)).toThrow("Insufficient currency");
     expect(() => dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("magic-initiate")!, 1)).toThrow("not purchasable");
+  });
+
+  it("applies SRD character origin choices to template actors", () => {
+    const origins = dnd5eSrdCharacterOrigins();
+    expect(origins.backgrounds.map((background) => background.id)).toEqual(["acolyte", "criminal", "sage", "soldier"]);
+    expect(origins.species.map((species) => species.id)).toEqual(["dragonborn", "dwarf", "elf", "gnome", "goliath", "halfling", "human", "orc", "tiefling"]);
+    expect(dnd5eSrdCompendiumEntry("alert")).toEqual(expect.objectContaining({ name: "Alert" }));
+    expect(dnd5eSrdCompendiumEntry("thieves-tools")?.data).toEqual(expect.objectContaining({ toolId: "thieves-tools", costGp: 25 }));
+
+    const built = dnd5eSrdApplyCharacterOrigins(dnd5eSrdCharacterTemplate("wizard")!, {
+      backgroundId: "criminal",
+      speciesId: "orc",
+      abilityScoreIncreases: { dexterity: 2, constitution: 1 }
+    });
+    expect(built.background).toEqual(expect.objectContaining({ id: "criminal", feat: "Alert" }));
+    expect(built.species).toEqual(expect.objectContaining({ id: "orc", speed: 30, traits: expect.arrayContaining(["Adrenaline Rush", "Relentless Endurance"]) }));
+    expect(built.data).toEqual(
+      expect.objectContaining({
+        background: "Criminal",
+        species: "Orc",
+        skillProficiencies: ["sleight-of-hand", "stealth"],
+        toolProficiencies: ["thieves-tools"],
+        feats: ["Alert"],
+        currency: { gp: 50, sp: 0, cp: 0 },
+        senses: ["Darkvision 120 ft."]
+      })
+    );
+    expect(built.data.origin).toEqual(expect.objectContaining({ backgroundId: "criminal", speciesId: "orc", abilityScoreIncreases: { dexterity: 2, constitution: 1 } }));
+    expect(built.data.attributes).toEqual(expect.objectContaining({ dexterity: 16, constitution: 15 }));
+    expect(built.data.resources).toEqual(expect.objectContaining({ adrenalineRush: { current: 2, max: 2, recovery: "short" }, relentlessEndurance: { current: 1, max: 1, recovery: "long" } }));
+    const actor: Actor = { ...srdActor, data: built.data };
+    expect(dnd5eSrdSheet(actor, []).quickRolls).toEqual(
+      expect.arrayContaining([
+        { id: "skill-stealth", label: "Stealth Check", formula: "1d20+5" },
+        { id: "tool-thieves-tools", label: "Thieves' Tools Check", formula: "1d20+5" }
+      ])
+    );
+    expect(() =>
+      dnd5eSrdApplyCharacterOrigins(dnd5eSrdCharacterTemplate("wizard")!, {
+        backgroundId: "criminal",
+        abilityScoreIncreases: { strength: 2, constitution: 1 }
+      })
+    ).toThrow("Criminal ability increases");
   });
 
   it("uses SRD system ids for advancement, rests, actions, imports, and encounter planning", () => {

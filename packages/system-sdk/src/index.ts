@@ -62,6 +62,46 @@ export interface CharacterTemplate {
   items: CharacterTemplateItem[];
 }
 
+export interface Dnd5eSrdCharacterBackground {
+  id: string;
+  name: string;
+  abilityScores: string[];
+  feat: string;
+  skillProficiencies: string[];
+  toolProficiencies: string[];
+  startingGp: number;
+  source: typeof DND_5E_SRD_VERSION;
+}
+
+export interface Dnd5eSrdCharacterSpecies {
+  id: string;
+  name: string;
+  creatureType: "Humanoid";
+  size: string;
+  speed: number;
+  traits: string[];
+  senses?: string[];
+  source: typeof DND_5E_SRD_VERSION;
+}
+
+export interface Dnd5eSrdCharacterOrigins {
+  backgrounds: Dnd5eSrdCharacterBackground[];
+  species: Dnd5eSrdCharacterSpecies[];
+}
+
+export interface Dnd5eSrdCharacterOriginOptions {
+  backgroundId?: string;
+  speciesId?: string;
+  abilityScoreIncreases?: unknown;
+}
+
+export interface Dnd5eSrdCharacterOriginBuild {
+  data: Record<string, unknown>;
+  items: CharacterTemplateItem[];
+  background: Dnd5eSrdCharacterBackground;
+  species: Dnd5eSrdCharacterSpecies;
+}
+
 export interface CharacterImportInput {
   name?: unknown;
   data?: Record<string, unknown>;
@@ -582,6 +622,13 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { source: DND_5E_SRD_VERSION }
     },
     {
+      id: "alert",
+      type: "condition",
+      name: "Alert",
+      summary: "Tracks the SRD-origin feat choice on a character sheet.",
+      data: { source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "savage-attacker",
       type: "condition",
       name: "Savage Attacker",
@@ -601,12 +648,117 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       name: "Calligrapher's Supplies",
       summary: "A tool kit for careful lettering, copying, and scribing.",
       data: { category: "tool", equipmentCategory: "tool", toolId: "calligraphers-supplies", ability: "dexterity", costGp: 10, weightLb: 5, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "thieves-tools",
+      type: "item",
+      name: "Thieves' Tools",
+      summary: "A kit for lock work, trap disarming, and other delicate criminal tasks.",
+      data: { category: "tool", equipmentCategory: "tool", toolId: "thieves-tools", ability: "dexterity", costGp: 25, weightLb: 1, source: DND_5E_SRD_VERSION }
     }
   ];
 }
 
 export function dnd5eSrdCompendiumEntry(entryId: string): GenericFantasyCompendiumEntry | undefined {
   return dnd5eSrdCompendium().find((entry) => entry.id === entryId);
+}
+
+const DND_5E_SRD_BACKGROUNDS: Dnd5eSrdCharacterBackground[] = [
+  {
+    id: "acolyte",
+    name: "Acolyte",
+    abilityScores: ["intelligence", "wisdom", "charisma"],
+    feat: "Magic Initiate (Cleric)",
+    skillProficiencies: ["insight", "religion"],
+    toolProficiencies: ["calligraphers-supplies"],
+    startingGp: 50,
+    source: DND_5E_SRD_VERSION
+  },
+  {
+    id: "criminal",
+    name: "Criminal",
+    abilityScores: ["dexterity", "constitution", "intelligence"],
+    feat: "Alert",
+    skillProficiencies: ["sleight-of-hand", "stealth"],
+    toolProficiencies: ["thieves-tools"],
+    startingGp: 50,
+    source: DND_5E_SRD_VERSION
+  },
+  {
+    id: "sage",
+    name: "Sage",
+    abilityScores: ["constitution", "intelligence", "wisdom"],
+    feat: "Magic Initiate (Wizard)",
+    skillProficiencies: ["arcana", "history"],
+    toolProficiencies: ["calligraphers-supplies"],
+    startingGp: 50,
+    source: DND_5E_SRD_VERSION
+  },
+  {
+    id: "soldier",
+    name: "Soldier",
+    abilityScores: ["strength", "dexterity", "constitution"],
+    feat: "Savage Attacker",
+    skillProficiencies: ["athletics", "intimidation"],
+    toolProficiencies: ["gaming-set"],
+    startingGp: 50,
+    source: DND_5E_SRD_VERSION
+  }
+];
+
+const DND_5E_SRD_SPECIES: Dnd5eSrdCharacterSpecies[] = [
+  { id: "dragonborn", name: "Dragonborn", creatureType: "Humanoid", size: "Medium", speed: 30, traits: ["Draconic Ancestry", "Breath Weapon", "Damage Resistance", "Darkvision", "Draconic Flight"], senses: ["Darkvision 60 ft."], source: DND_5E_SRD_VERSION },
+  { id: "dwarf", name: "Dwarf", creatureType: "Humanoid", size: "Medium", speed: 30, traits: ["Darkvision", "Dwarven Resilience", "Dwarven Toughness", "Stonecunning"], senses: ["Darkvision 120 ft."], source: DND_5E_SRD_VERSION },
+  { id: "elf", name: "Elf", creatureType: "Humanoid", size: "Medium", speed: 30, traits: ["Darkvision", "Elven Lineage", "Fey Ancestry", "Keen Senses", "Trance"], senses: ["Darkvision 60 ft."], source: DND_5E_SRD_VERSION },
+  { id: "gnome", name: "Gnome", creatureType: "Humanoid", size: "Small", speed: 30, traits: ["Darkvision", "Gnomish Cunning", "Gnomish Lineage"], senses: ["Darkvision 60 ft."], source: DND_5E_SRD_VERSION },
+  { id: "goliath", name: "Goliath", creatureType: "Humanoid", size: "Medium", speed: 35, traits: ["Giant Ancestry", "Large Form", "Powerful Build"], source: DND_5E_SRD_VERSION },
+  { id: "halfling", name: "Halfling", creatureType: "Humanoid", size: "Small", speed: 30, traits: ["Brave", "Halfling Nimbleness", "Luck", "Naturally Stealthy"], source: DND_5E_SRD_VERSION },
+  { id: "human", name: "Human", creatureType: "Humanoid", size: "Medium or Small", speed: 30, traits: ["Resourceful", "Skillful", "Versatile"], source: DND_5E_SRD_VERSION },
+  { id: "orc", name: "Orc", creatureType: "Humanoid", size: "Medium", speed: 30, traits: ["Adrenaline Rush", "Darkvision", "Relentless Endurance"], senses: ["Darkvision 120 ft."], source: DND_5E_SRD_VERSION },
+  { id: "tiefling", name: "Tiefling", creatureType: "Humanoid", size: "Medium or Small", speed: 30, traits: ["Darkvision", "Fiendish Legacy", "Otherworldly Presence"], senses: ["Darkvision 60 ft."], source: DND_5E_SRD_VERSION }
+];
+
+export function dnd5eSrdCharacterOrigins(): Dnd5eSrdCharacterOrigins {
+  return {
+    backgrounds: DND_5E_SRD_BACKGROUNDS.map((background) => ({ ...background, abilityScores: [...background.abilityScores], skillProficiencies: [...background.skillProficiencies], toolProficiencies: [...background.toolProficiencies] })),
+    species: DND_5E_SRD_SPECIES.map((species) => ({ ...species, traits: [...species.traits], senses: species.senses ? [...species.senses] : undefined }))
+  };
+}
+
+export function dnd5eSrdApplyCharacterOrigins(template: CharacterTemplate, options: Dnd5eSrdCharacterOriginOptions = {}): Dnd5eSrdCharacterOriginBuild {
+  if (template.systemId !== DND_5E_SRD_SYSTEM_ID) throw new Error("D&D SRD character origins can only be applied to D&D SRD templates");
+  const background = dnd5eSrdBackgroundById(options.backgroundId ?? stringValue(template.data.background) ?? "soldier");
+  if (!background) throw new Error("Unknown D&D SRD background");
+  const species = dnd5eSrdSpeciesById(options.speciesId ?? stringValue(template.data.species) ?? "human");
+  if (!species) throw new Error("Unknown D&D SRD species");
+  const data = cloneJsonRecord(template.data);
+  const proficiencyBonus = dnd5eSrdProficiencyBonusForLevel(numericValue(data.level, 1), data.proficiencyBonus);
+  const features = new Set([...normalizeStringArray(data.features), ...species.traits]);
+  const resources = normalizeResourcePools(data.resources, defaultDnd5eSrdResources(stringValue(data.class) || "Fighter"));
+  for (const [resourceId, resource] of Object.entries(dnd5eSrdSpeciesResources(species, proficiencyBonus))) {
+    resources[resourceId] = resource;
+  }
+  data.ruleset = DND_5E_SRD_VERSION;
+  data.background = background.name;
+  data.species = species.name;
+  data.creatureType = species.creatureType;
+  data.size = species.size;
+  data.speed = species.speed;
+  data.origin = {
+    source: DND_5E_SRD_VERSION,
+    backgroundId: background.id,
+    speciesId: species.id
+  };
+  data.proficiencyBonus = proficiencyBonus;
+  data.skillProficiencies = [...background.skillProficiencies];
+  data.toolProficiencies = [...background.toolProficiencies];
+  data.feats = [background.feat];
+  data.currency = dnd5eSrdCurrency({ gp: background.startingGp });
+  data.resources = resources;
+  data.features = [...features];
+  if (species.senses?.length) data.senses = [...species.senses];
+  dnd5eSrdApplyAbilityScoreIncreases(data, background, options.abilityScoreIncreases);
+  return { data, items: template.items.map((item) => ({ ...item })), background: { ...background }, species: { ...species, traits: [...species.traits], senses: species.senses ? [...species.senses] : undefined } };
 }
 
 export function genericFantasyCharacterTemplates(): CharacterTemplate[] {
@@ -2092,7 +2244,8 @@ function dnd5eSrdSkillDefinition(skillId: string): { id: string; label: string; 
 function dnd5eSrdTools(): Array<{ id: string; label: string; ability: string }> {
   return [
     { id: "calligraphers-supplies", label: "Calligrapher's Supplies", ability: "dexterity" },
-    { id: "gaming-set", label: "Gaming Set", ability: "wisdom" }
+    { id: "gaming-set", label: "Gaming Set", ability: "wisdom" },
+    { id: "thieves-tools", label: "Thieves' Tools", ability: "dexterity" }
   ];
 }
 
@@ -2176,7 +2329,8 @@ function dnd5eSrdToolProficienciesForBackground(background: string, explicit: un
   const explicitProficiencies = dnd5eSrdToolProficienciesFromExplicit(explicit);
   if (explicitProficiencies.length > 0) return explicitProficiencies;
   const normalizedBackground = background.toLowerCase();
-  if (normalizedBackground === "sage") return ["calligraphers-supplies"];
+  if (normalizedBackground === "acolyte" || normalizedBackground === "sage") return ["calligraphers-supplies"];
+  if (normalizedBackground === "criminal") return ["thieves-tools"];
   if (normalizedBackground === "soldier") return ["gaming-set"];
   return [];
 }
@@ -2194,6 +2348,62 @@ function dnd5eSrdToolProficienciesFromExplicit(explicit: unknown): string[] {
 
 function normalizeDnd5eSrdToolId(tool: string): string {
   return tool.trim().replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase().replace(/'/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function dnd5eSrdBackgroundById(value: string): Dnd5eSrdCharacterBackground | undefined {
+  const id = normalizeDnd5eSrdOriginId(value);
+  return DND_5E_SRD_BACKGROUNDS.find((background) => background.id === id);
+}
+
+function dnd5eSrdSpeciesById(value: string): Dnd5eSrdCharacterSpecies | undefined {
+  const id = normalizeDnd5eSrdOriginId(value);
+  return DND_5E_SRD_SPECIES.find((species) => species.id === id);
+}
+
+function normalizeDnd5eSrdOriginId(value: string): string {
+  return value.trim().replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase().replace(/'/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function dnd5eSrdSpeciesResources(species: Dnd5eSrdCharacterSpecies, proficiencyBonus: number): Record<string, Record<string, unknown> & { current: number; max: number }> {
+  if (species.id === "orc") {
+    return {
+      adrenalineRush: { current: proficiencyBonus, max: proficiencyBonus, recovery: "short" },
+      relentlessEndurance: { current: 1, max: 1, recovery: "long" }
+    };
+  }
+  if (species.id === "goliath") return { giantAncestry: { current: proficiencyBonus, max: proficiencyBonus, recovery: "long" } };
+  return {};
+}
+
+function dnd5eSrdApplyAbilityScoreIncreases(data: Record<string, unknown>, background: Dnd5eSrdCharacterBackground, increases: unknown): void {
+  const source = recordValue(increases);
+  const entries = Object.entries(source)
+    .map(([ability, value]) => [normalizeDnd5eSrdOriginId(ability), Math.floor(numericValue(value, Number.NaN))] as const)
+    .filter(([, value]) => Number.isFinite(value) && value > 0);
+  if (entries.length === 0) return;
+  const defaultAttributes = defaultDnd5eSrdAttributes();
+  const allowedAbilities = new Set(background.abilityScores);
+  const seen = new Set<string>();
+  for (const [ability, value] of entries) {
+    if (!(ability in defaultAttributes)) throw new Error("D&D SRD ability score increases must use a valid ability");
+    if (!allowedAbilities.has(ability)) throw new Error(`D&D SRD ${background.name} ability increases can only use ${background.abilityScores.join(", ")}`);
+    if (seen.has(ability)) throw new Error("D&D SRD ability score increases cannot repeat an ability");
+    if (value !== 1 && value !== 2) throw new Error("D&D SRD ability score increases must be 1 or 2");
+    seen.add(ability);
+  }
+  const values = entries.map(([, value]) => value).sort((a, b) => b - a);
+  const validSpread = values.length === 2 && values[0] === 2 && values[1] === 1;
+  const validThreeOnes = values.length === 3 && values.every((value) => value === 1);
+  if (!validSpread && !validThreeOnes) throw new Error("D&D SRD ability score increases must be +2/+1 or +1/+1/+1");
+  const attributes = normalizeNumberRecord(data.attributes, defaultAttributes);
+  const applied: Record<string, number> = {};
+  for (const [ability, value] of entries) {
+    const nextScore = Math.min(20, numericValue(attributes[ability], 10) + value);
+    attributes[ability] = nextScore;
+    applied[ability] = value;
+  }
+  data.attributes = attributes;
+  data.origin = { ...recordValue(data.origin), abilityScoreIncreases: applied };
 }
 
 function dnd5eSrdCurrency(value: unknown): Record<string, number> {
@@ -2284,6 +2494,10 @@ function normalizeStringArray(value: unknown): string[] {
 
 function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function cloneJsonRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }
 
 function importSource(input: CharacterImportInput): Record<string, unknown> {

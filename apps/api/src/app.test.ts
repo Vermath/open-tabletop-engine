@@ -3199,6 +3199,61 @@ describe("api", () => {
       expect(templates.statusCode).toBe(200);
       expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "cleric", "wizard"]);
 
+      const origins = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/character-origins",
+        headers: authHeaders
+      });
+      expect(origins.statusCode).toBe(200);
+      expect(origins.json().backgrounds.map((background: { id: string }) => background.id)).toEqual(["acolyte", "criminal", "sage", "soldier"]);
+      expect(origins.json().species.map((species: { id: string }) => species.id)).toEqual(["dragonborn", "dwarf", "elf", "gnome", "goliath", "halfling", "human", "orc", "tiefling"]);
+
+      const criminalOrc = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: {
+          templateId: "wizard",
+          name: "SRD Criminal Orc Wizard",
+          backgroundId: "criminal",
+          speciesId: "orc",
+          abilityScoreIncreases: { dexterity: 2, constitution: 1 }
+        }
+      });
+      expect(criminalOrc.statusCode).toBe(200);
+      expect(criminalOrc.json().origins.background).toEqual(expect.objectContaining({ id: "criminal", feat: "Alert" }));
+      expect(criminalOrc.json().origins.species).toEqual(expect.objectContaining({ id: "orc", traits: expect.arrayContaining(["Adrenaline Rush", "Relentless Endurance"]) }));
+      expect(criminalOrc.json().actor.data).toEqual(
+        expect.objectContaining({
+          background: "Criminal",
+          species: "Orc",
+          skillProficiencies: ["sleight-of-hand", "stealth"],
+          toolProficiencies: ["thieves-tools"],
+          feats: ["Alert"],
+          attributes: expect.objectContaining({ dexterity: 16, constitution: 15 }),
+          resources: expect.objectContaining({ adrenalineRush: { current: 2, max: 2, recovery: "short" }, relentlessEndurance: { current: 1, max: 1, recovery: "long" } })
+        })
+      );
+      expect(criminalOrc.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "skill-stealth", formula: "1d20+5" }),
+          expect.objectContaining({ id: "tool-thieves-tools", formula: "1d20+5" })
+        ])
+      );
+
+      const invalidOrigin = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: {
+          templateId: "wizard",
+          backgroundId: "criminal",
+          abilityScoreIncreases: { strength: 2, constitution: 1 }
+        }
+      });
+      expect(invalidOrigin.statusCode).toBe(400);
+      expect(invalidOrigin.json().message).toContain("Criminal ability increases");
+
       const cleric = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",

@@ -7,7 +7,7 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdCharacterImport, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
+import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -2914,9 +2914,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return characterTemplatesForSystem(system.id);
   });
 
+  app.get<{ Params: { campaignId: string; systemId: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/character-origins", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
+    if (allowed !== true) return allowed;
+    const system = installedSystems.find((item) => item.id === request.params.systemId);
+    if (!system) return notFound(reply, "System not found");
+    if (system.id !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Character origins are only available for the D&D SRD runtime");
+    return dnd5eSrdCharacterOrigins();
+  });
+
   app.post<{
     Params: { campaignId: string; systemId: string };
-    Body: { templateId?: string; name?: string; ownerUserId?: string };
+    Body: { templateId?: string; name?: string; ownerUserId?: string; backgroundId?: string; speciesId?: string; abilityScoreIncreases?: unknown };
   }>("/api/v1/campaigns/:campaignId/systems/:systemId/characters", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.create");
     if (allowed !== true) return allowed;
@@ -2924,16 +2933,33 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const template = characterTemplatesForSystem(request.params.systemId).find((item) => item.id === request.body.templateId);
     if (!template) return notFound(reply, "Character template not found");
+    const originOptions = {
+      backgroundId: request.body.backgroundId,
+      speciesId: request.body.speciesId,
+      abilityScoreIncreases: request.body.abilityScoreIncreases
+    };
+    let characterData = cloneRecord(template.data);
+    let templateItems = template.items;
+    let origins: ReturnType<typeof dnd5eSrdApplyCharacterOrigins> | undefined;
+    if (request.params.systemId === DND_5E_SRD_SYSTEM_ID && (originOptions.backgroundId || originOptions.speciesId || originOptions.abilityScoreIncreases)) {
+      try {
+        origins = dnd5eSrdApplyCharacterOrigins(template, originOptions);
+      } catch (error) {
+        return badRequest(reply, error instanceof Error ? error.message : "Invalid D&D SRD character origin choices");
+      }
+      characterData = origins.data;
+      templateItems = origins.items;
+    }
     const actor = createTimestamped("act", {
       campaignId: request.params.campaignId,
       systemId: template.systemId,
       ownerUserId: request.body.ownerUserId ?? userId,
       type: template.actorType,
       name: request.body.name?.trim() || template.name,
-      data: cloneRecord(template.data),
+      data: cloneRecord(characterData),
       permissions: {}
     }) satisfies Actor;
-    const items = createTemplateItems(request.params.campaignId, actor, template);
+    const items = createTemplateItems(request.params.campaignId, actor, { ...template, items: templateItems });
     store.state.actors.push(actor);
     store.state.items.push(...items);
     store.save();
@@ -2945,7 +2971,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: actor
       })
     );
-    return { template, actor, items, sheet: systemSheet(actor, items) };
+    return { template, origins, actor, items, sheet: systemSheet(actor, items) };
   });
 
   app.post<{
