@@ -45,6 +45,7 @@ export interface QuickRoll {
   id: string;
   label: string;
   formula: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface CharacterTemplateItem {
@@ -474,18 +475,20 @@ export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[
     ...dnd5eSrdToolProficiencies(actor, "toolProficiencies").map((toolId) => dnd5eSrdToolCheck(actor, toolId)),
     ...dnd5eSrdClassFeatureRolls(actor),
     ...dnd5eSrdMonsterActionRolls(actor),
-    ...genericFantasyActionRolls(actor, items)
+    ...dnd5eSrdActionRolls(actor, items)
   ];
 }
 
 export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
   const rolls: QuickRoll[] = [];
   if (dnd5eSrdHasSecondWind(actor)) {
+    const metadata = dnd5eSrdHasTacticalShift(actor) ? { tacticalShift: { movementFt: dnd5eSrdTacticalShiftMovement(actor), opportunityAttacks: false } } : undefined;
     rolls.push(
       {
         id: DND_5E_SRD_SECOND_WIND_ROLL_ID,
         label: "Second Wind Healing",
-        formula: dnd5eSrdSecondWindFormula(actor)
+        formula: dnd5eSrdSecondWindFormula(actor),
+        ...(metadata ? { metadata } : {})
       }
     );
   }
@@ -508,6 +511,14 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
     );
   }
   return rolls;
+}
+
+export function dnd5eSrdActionRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
+  const attacksPerAction = dnd5eSrdAttacksPerAction(actor);
+  return genericFantasyActionRolls(actor, items).map((roll) => {
+    if (attacksPerAction <= 1 || !dnd5eSrdIsWeaponDamageRoll(actor, items, roll.id)) return roll;
+    return { ...roll, metadata: { ...roll.metadata, attacksPerAction, feature: "Extra Attack" } };
+  });
 }
 
 export function dnd5eSrdMonsterActionRolls(actor: Actor): QuickRoll[] {
@@ -1470,12 +1481,14 @@ export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record
   const level = numericValue(next.level, numericValue(actor.data.level, 1) + 1);
   const hitDice = recordValue(next.hitDice);
   const features = dnd5eSrdApplyClassFeatures(normalizeStringArray(next.features), className, level);
+  const combat = dnd5eSrdApplyClassCombat(recordValue(next.combat), className, level, next.speed);
   return {
     ...next,
     ruleset: DND_5E_SRD_VERSION,
     attributes,
     hitDice: { ...hitDice, size: stringValue(hitDice.size) ?? dnd5eSrdHitDieSize(className) },
     features,
+    combat,
     resources: normalizeResourcePools(next.resources, defaultDnd5eSrdResources(className, level), { raiseMaxToDefault: true }),
     spellSlots: normalizeResourcePools(next.spellSlots, defaultDnd5eSrdSpellSlots(className, level), { raiseMaxToDefault: true })
   };
@@ -2731,20 +2744,66 @@ function dnd5eSrdHasTacticalMind(actor: Actor): boolean {
   return normalizeStringArray(actor.data.features).includes("Tactical Mind");
 }
 
+function dnd5eSrdHasTacticalShift(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Fighter" && Math.floor(numericValue(actor.data.level, 1)) >= 5) return true;
+  return normalizeStringArray(actor.data.features).includes("Tactical Shift");
+}
+
 function dnd5eSrdApplyClassFeatures(features: string[], className: string, level: number): string[] {
   if (className !== "Fighter") return features;
   return [...new Set([...features, ...dnd5eSrdFighterFeaturesForLevel(level)])];
 }
 
+function dnd5eSrdApplyClassCombat(combat: Record<string, unknown>, className: string, level: number, speed: unknown): Record<string, unknown> {
+  if (className !== "Fighter") return combat;
+  const attacksPerAction = dnd5eSrdFighterAttacksPerAction(level);
+  return {
+    ...combat,
+    attacksPerAction,
+    ...(level >= 5 ? { tacticalShift: { movementFt: dnd5eSrdTacticalShiftMovementFromSpeed(speed), opportunityAttacks: false } } : {})
+  };
+}
+
 function dnd5eSrdFighterFeaturesForLevel(level: number): string[] {
   const features = ["Fighting Style", "Second Wind"];
   if (level >= 2) features.push("Action Surge", "Tactical Mind");
+  if (level >= 5) features.push("Extra Attack", "Tactical Shift");
   return features;
 }
 
 function dnd5eSrdSecondWindFormula(actor: Actor): string {
   const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return appendFormulaTerm("1d10", String(fighterLevel));
+}
+
+function dnd5eSrdAttacksPerAction(actor: Actor): number {
+  const hasExtraAttack = normalizeStringArray(actor.data.features).includes("Extra Attack");
+  if (stringValue(actor.data.class) !== "Fighter" && !hasExtraAttack) return 1;
+  return Math.max(hasExtraAttack ? 2 : 1, dnd5eSrdFighterAttacksPerAction(numericValue(actor.data.level, 1)));
+}
+
+function dnd5eSrdFighterAttacksPerAction(level: number): number {
+  const normalized = Math.max(1, Math.floor(level));
+  if (normalized >= 20) return 4;
+  if (normalized >= 11) return 3;
+  if (normalized >= 5) return 2;
+  return 1;
+}
+
+function dnd5eSrdTacticalShiftMovement(actor: Actor): number {
+  return dnd5eSrdTacticalShiftMovementFromSpeed(actor.data.speed);
+}
+
+function dnd5eSrdTacticalShiftMovementFromSpeed(speed: unknown): number {
+  return Math.floor(numericValue(speed, 30) / 2);
+}
+
+function dnd5eSrdIsWeaponDamageRoll(actor: Actor, items: Item[], rollId: string): boolean {
+  return items.filter((item) => itemBelongsToActor(actor, item)).some((item) => {
+    const data = recordValue(item.data);
+    if (stringValue(data.category) !== "weapon" && stringValue(data.equipmentCategory) !== "weapon") return false;
+    return rollId === `item-${item.id}-damage` || rollId === `item-${item.id}-versatile-damage`;
+  });
 }
 
 function dnd5eSrdApplyShortRestResourceLimits(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {

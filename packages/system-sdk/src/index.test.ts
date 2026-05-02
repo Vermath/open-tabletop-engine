@@ -377,6 +377,37 @@ describe("dnd 5.5e srd rules", () => {
     );
     expect(dnd5eSrdActionFormula(levelTwoFighterActor, [], "feature-action-surge")).toBe("0");
     expect(dnd5eSrdActionFormula(levelTwoFighterActor, [], "feature-tactical-mind-bonus")).toBe("1d10");
+    let levelFiveFighterData = fighterActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveFighterData = applyDnd5eSrdAdvancement({ ...fighterActor, data: levelFiveFighterData }, "level-up");
+    }
+    const levelFiveFighterActor: Actor = { ...fighterActor, data: levelFiveFighterData };
+    const fighterLongsword: Item = {
+      id: "itm_fighter_longsword",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: fighterActor.id,
+      type: "item",
+      name: "Longsword",
+      data: { ...dnd5eSrdCompendiumEntry("longsword")!.data, compendiumId: "longsword" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(levelFiveFighterData.features).toEqual(expect.arrayContaining(["Extra Attack", "Tactical Shift"]));
+    expect(levelFiveFighterData.combat).toEqual(expect.objectContaining({ attacksPerAction: 2, tacticalShift: { movementFt: 15, opportunityAttacks: false } }));
+    expect(dnd5eSrdQuickRolls(levelFiveFighterActor, []).find((roll) => roll.id === "feature-second-wind-healing")).toEqual(
+      expect.objectContaining({ formula: "1d10+5", metadata: { tacticalShift: { movementFt: 15, opportunityAttacks: false } } })
+    );
+    expect(dnd5eSrdQuickRolls(levelFiveFighterActor, [fighterLongsword])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "item-itm_fighter_longsword-damage",
+          label: "Longsword Damage",
+          formula: "1d8+5",
+          metadata: { attacksPerAction: 2, feature: "Extra Attack" }
+        })
+      ])
+    );
     expect(dnd5eSrdSheet(srdActor, [spell]).quickRolls).toEqual(
       expect.arrayContaining([
         { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },

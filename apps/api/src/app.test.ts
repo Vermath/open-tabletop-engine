@@ -3661,6 +3661,47 @@ describe("api", () => {
       });
       expect(levelTwoShortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ secondWind: 1, actionSurge: 1 }));
 
+      const levelFiveFighter = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "SRD Level Five Fighter", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFiveFighter.statusCode).toBe(200);
+      let levelFiveAdvance = levelFiveFighter;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFiveAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveFighter.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFiveAdvance.statusCode).toBe(200);
+      }
+      const levelFiveLongsword = levelFiveFighter.json().items.find((item: { name: string }) => item.name === "Longsword");
+      const levelFiveLongswordRollId = `item-${levelFiveLongsword.id}-damage`;
+      expect(levelFiveAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Extra Attack", "Tactical Shift"]),
+          combat: expect.objectContaining({ attacksPerAction: 2, tacticalShift: { movementFt: 15, opportunityAttacks: false } })
+        })
+      );
+      expect(levelFiveAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-second-wind-healing", formula: "1d10+5", metadata: { tacticalShift: { movementFt: 15, opportunityAttacks: false } } }),
+          expect.objectContaining({ id: levelFiveLongswordRollId, formula: "1d8+5", metadata: { attacksPerAction: 2, feature: "Extra Attack" } })
+        ])
+      );
+      const levelFiveWeaponRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveFighter.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: levelFiveLongswordRollId }
+      });
+      expect(levelFiveWeaponRoll.statusCode).toBe(200);
+      expect(levelFiveWeaponRoll.json().quickRoll).toEqual(expect.objectContaining({ id: levelFiveLongswordRollId, formula: "1d8+5", metadata: { attacksPerAction: 2, feature: "Extra Attack" } }));
+
       const chromaticRoll = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,

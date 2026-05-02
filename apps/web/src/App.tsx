@@ -1393,18 +1393,26 @@ function actorActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
 }
 
 function dnd5eSrdActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
-  return [...dnd5eSrdClassFeatureActionOptions(actor), ...genericFantasyActionOptions(actor, items)];
+  return [...dnd5eSrdClassFeatureActionOptions(actor), ...dnd5eSrdItemActionOptions(actor, items)];
 }
 
 function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
-  if (!dnd5eSrdHasSecondWind(actor)) return [];
-  return [
-    {
+  const options: ActorActionOption[] = [];
+  if (dnd5eSrdHasSecondWind(actor)) {
+    const tacticalShift = dnd5eSrdHasTacticalShift(actor) ? `; Tactical Shift ${dnd5eSrdTacticalShiftMovement(actor)} ft without opportunity attacks` : "";
+    options.push({
       rollId: "feature-second-wind-healing",
       label: "Second Wind",
-      description: `Second Wind Healing: ${dnd5eSrdSecondWindFormula(actor)}`
-    }
-  ];
+      description: `Second Wind Healing: ${dnd5eSrdSecondWindFormula(actor)}${tacticalShift}`
+    });
+  }
+  if (dnd5eSrdHasActionSurge(actor)) {
+    options.push({ rollId: "feature-action-surge", label: "Action Surge", description: "Action Surge: spend one use" });
+  }
+  if (dnd5eSrdHasTacticalMind(actor)) {
+    options.push({ rollId: "feature-tactical-mind-bonus", label: "Tactical Mind", description: "Tactical Mind Bonus: 1d10; spends Second Wind" });
+  }
+  return options;
 }
 
 function dnd5eSrdHasSecondWind(actor: Actor): boolean {
@@ -1412,9 +1420,55 @@ function dnd5eSrdHasSecondWind(actor: Actor): boolean {
   return stringValue(actor.data.class) === "Fighter" || features.includes("Second Wind") || "secondWind" in recordValue(actor.data.resources);
 }
 
+function dnd5eSrdHasActionSurge(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Fighter" && numericValue(actor.data.level, 1) >= 2) || features.includes("Action Surge") || "actionSurge" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasTacticalMind(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Fighter" && numericValue(actor.data.level, 1) >= 2) || features.includes("Tactical Mind");
+}
+
+function dnd5eSrdHasTacticalShift(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Fighter" && numericValue(actor.data.level, 1) >= 5) || features.includes("Tactical Shift");
+}
+
 function dnd5eSrdSecondWindFormula(actor: Actor): string {
   const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return `1d10+${fighterLevel}`;
+}
+
+function dnd5eSrdTacticalShiftMovement(actor: Actor): number {
+  return Math.floor(numericValue(actor.data.speed, 30) / 2);
+}
+
+function dnd5eSrdAttacksPerAction(actor: Actor): number {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  const hasExtraAttack = stringValue(actor.data.class) === "Fighter" || features.includes("Extra Attack");
+  if (!hasExtraAttack) return 1;
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (level >= 20) return 4;
+  if (level >= 11) return 3;
+  if (level >= 5 || features.includes("Extra Attack")) return 2;
+  return 1;
+}
+
+function dnd5eSrdItemActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
+  const attacksPerAction = dnd5eSrdAttacksPerAction(actor);
+  return genericFantasyActionOptions(actor, items).map((option) => {
+    if (attacksPerAction <= 1 || !dnd5eSrdIsWeaponDamageOption(actor, items, option.rollId)) return option;
+    return { ...option, description: `${option.description}; ${attacksPerAction} attacks/action` };
+  });
+}
+
+function dnd5eSrdIsWeaponDamageOption(actor: Actor, items: Item[], rollId: string): boolean {
+  return items.filter((item) => item.actorId === actor.id).some((item) => {
+    const data = recordValue(item.data);
+    if (stringValue(data.category) !== "weapon" && stringValue(data.equipmentCategory) !== "weapon") return false;
+    return rollId === `item-${item.id}-damage` || rollId === `item-${item.id}-versatile-damage`;
+  });
 }
 
 function genericFantasyActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
