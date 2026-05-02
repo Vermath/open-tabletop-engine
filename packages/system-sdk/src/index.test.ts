@@ -221,6 +221,7 @@ describe("dnd 5.5e srd rules", () => {
       background: "Sage",
       attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 },
       skillProficiencies: ["medicine", "religion"],
+      toolProficiencies: ["calligraphers-supplies"],
       spellSlots: { level1: { current: 1, max: 2, recovery: "long" }, level2: { current: 1, max: 1, recovery: "long" } }
     }
   };
@@ -230,6 +231,8 @@ describe("dnd 5.5e srd rules", () => {
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
     expect(cleric?.data.skillProficiencies).toEqual(["medicine", "religion"]);
+    expect(cleric?.data.toolProficiencies).toEqual(["calligraphers-supplies"]);
+    expect(dnd5eSrdCharacterTemplate("fighter")?.data.toolProficiencies).toEqual(["gaming-set"]);
     expect(cleric?.items.map((item) => item.entryId)).toEqual(["healing-word", "cure-wounds"]);
     expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
 
@@ -253,12 +256,20 @@ describe("dnd 5.5e srd rules", () => {
         { id: "skill-medicine", label: "Medicine Check", formula: "1d20+5" },
         { id: "skill-religion", label: "Religion Check", formula: "1d20+2" },
         { id: "skill-perception", label: "Perception Check", formula: "1d20+3" },
+        { id: "tool-calligraphers-supplies", label: "Calligrapher's Supplies Check", formula: "1d20+3" },
         { id: "spell-itm_healing_word-healing", label: "Healing Word Healing", formula: "1d4+3" }
       ])
     );
-    expect(dnd5eSrdSheet(srdActor, [spell]).quickRolls).toEqual(expect.arrayContaining([{ id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" }, { id: "skill-medicine", label: "Medicine Check", formula: "1d20+5" }]));
+    expect(dnd5eSrdSheet(srdActor, [spell]).quickRolls).toEqual(
+      expect.arrayContaining([
+        { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },
+        { id: "skill-medicine", label: "Medicine Check", formula: "1d20+5" },
+        { id: "tool-calligraphers-supplies", label: "Calligrapher's Supplies Check", formula: "1d20+3" }
+      ])
+    );
     const poisonedActor = { ...srdActor, data: { ...srdActor.data, conditions: [{ id: "poisoned" }] } };
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "skill-medicine")?.formula).toBe("2d20kl1+5");
+    expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "tool-calligraphers-supplies")?.formula).toBe("2d20kl1+3");
     expect(dnd5eSrdActionFormula(srdActor, [spell], "spell-itm_healing_word-healing", { spellSlotLevel: 2 })).toBe("1d4+3+2d4");
   });
 
@@ -320,6 +331,7 @@ describe("dnd 5.5e srd rules", () => {
         conditions: [{ id: "magic-initiate" }],
         saveProficiencies: ["wisdom", "charisma"],
         skillProficiencies: ["medicine", "religion"],
+        toolProficiencies: ["calligraphers-supplies"],
         spellSlots: { level1: { current: 4, max: 4, recovery: "long" }, level2: { current: 2, max: 2, recovery: "long" } }
       },
       items: [{ entryId: "healing-word" }, { entryId: "longsword" }]

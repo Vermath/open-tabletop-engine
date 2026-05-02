@@ -3209,9 +3209,11 @@ describe("api", () => {
       expect(cleric.json().actor).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "SRD Cleric" }));
       expect(cleric.json().actor.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
       expect(cleric.json().actor.data.skillProficiencies).toEqual(["medicine", "religion"]);
+      expect(cleric.json().actor.data.toolProficiencies).toEqual(["calligraphers-supplies"]);
       expect(cleric.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Healing Word", "Cure Wounds"]);
       expect(cleric.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" })]));
       expect(cleric.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "skill-medicine", label: "Medicine Check", formula: "1d20+5" })]));
+      expect(cleric.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "tool-calligraphers-supplies", label: "Calligrapher's Supplies Check", formula: "1d20+3" })]));
       const storedCleric = store.state.actors.find((actor) => actor.id === cleric.json().actor.id)!;
       storedCleric.data = {
         ...storedCleric.data,
@@ -3274,6 +3276,16 @@ describe("api", () => {
       expect(skillRoll.statusCode).toBe(200);
       expect(skillRoll.json().quickRoll).toEqual(expect.objectContaining({ id: "skill-medicine", formula: "1d20+5" }));
       expect(skillRoll.json().chat.body).toContain("Medicine Check: 1d20+5");
+
+      const toolRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "tool-calligraphers-supplies" }
+      });
+      expect(toolRoll.statusCode).toBe(200);
+      expect(toolRoll.json().quickRoll).toEqual(expect.objectContaining({ id: "tool-calligraphers-supplies", formula: "1d20+3" }));
+      expect(toolRoll.json().chat.body).toContain("Calligrapher's Supplies Check: 1d20+3");
 
       const roll = await app.inject({
         method: "POST",

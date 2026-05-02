@@ -340,6 +340,7 @@ export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[
     ...abilities.map((ability) => dnd5eSrdAbilityCheck(actor, ability)),
     ...abilities.map((ability) => dnd5eSrdSavingThrow(actor, ability)),
     ...dnd5eSrdSkills().map((skill) => dnd5eSrdSkillCheck(actor, skill.id)),
+    ...dnd5eSrdToolProficiencies(actor, "toolProficiencies").map((toolId) => dnd5eSrdToolCheck(actor, toolId)),
     ...genericFantasyActionRolls(actor, items)
   ];
 }
@@ -375,6 +376,18 @@ export function dnd5eSrdSkillCheck(actor: Actor, skillId: string): QuickRoll {
   return {
     id: `skill-${skill.id}`,
     label: `${skill.label} Check`,
+    formula: `${d20}${formatSignedNumber(modifier + proficiencyMultiplier * dnd5eSrdProficiencyBonus(actor))}`
+  };
+}
+
+export function dnd5eSrdToolCheck(actor: Actor, toolId: string): QuickRoll {
+  const tool = dnd5eSrdToolDefinition(toolId);
+  const modifier = genericFantasyAttributeModifier(actor, tool.ability);
+  const proficiencyMultiplier = dnd5eSrdToolProficiencyMultiplier(actor, tool.id);
+  const d20 = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "poisoned") ? "2d20kl1" : "1d20";
+  return {
+    id: `tool-${tool.id}`,
+    label: `${tool.label} Check`,
     formula: `${d20}${formatSignedNumber(modifier + proficiencyMultiplier * dnd5eSrdProficiencyBonus(actor))}`
   };
 }
@@ -549,6 +562,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         hitDice: { current: 1, max: 1, size: "d10" },
         saveProficiencies: ["strength", "constitution"],
         skillProficiencies: ["athletics", "intimidation"],
+        toolProficiencies: ["gaming-set"],
         resources: { secondWind: { current: 1, max: 1, recovery: "short" } },
         spellSlots: {},
         conditions: [],
@@ -575,6 +589,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         hitDice: { current: 1, max: 1, size: "d8" },
         saveProficiencies: ["wisdom", "charisma"],
         skillProficiencies: ["medicine", "religion"],
+        toolProficiencies: ["calligraphers-supplies"],
         resources: {},
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
@@ -601,6 +616,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         hitDice: { current: 1, max: 1, size: "d6" },
         saveProficiencies: ["intelligence", "wisdom"],
         skillProficiencies: ["arcana", "history"],
+        toolProficiencies: ["calligraphers-supplies"],
         resources: {},
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
@@ -677,6 +693,8 @@ export function dnd5eSrdCharacterImport(input: CharacterImportInput): CharacterI
       saveProficiencies: dnd5eSrdSaveProficienciesForClass(className, source.saveProficiencies),
       skillProficiencies: dnd5eSrdSkillProficienciesForClass(className, source.skillProficiencies),
       skillExpertise: dnd5eSrdSkillProficienciesFromExplicit(source.skillExpertise),
+      toolProficiencies: dnd5eSrdToolProficienciesForBackground(stringValue(source.background) || "Soldier", source.toolProficiencies),
+      toolExpertise: dnd5eSrdToolProficienciesFromExplicit(source.toolExpertise),
       resources: normalizeResourcePools(source.resources, defaultDnd5eSrdResources(className)),
       spellSlots: normalizeResourcePools(source.spellSlots, defaultDnd5eSrdSpellSlots(className, level)),
       conditions: conditions.map((id) => ({ id }))
@@ -1715,6 +1733,17 @@ function dnd5eSrdSkillDefinition(skillId: string): { id: string; label: string; 
   return dnd5eSrdSkills().find((skill) => skill.id === normalizeDnd5eSrdSkillId(skillId)) ?? { id: "perception", label: "Perception", ability: "wisdom" };
 }
 
+function dnd5eSrdTools(): Array<{ id: string; label: string; ability: string }> {
+  return [
+    { id: "calligraphers-supplies", label: "Calligrapher's Supplies", ability: "dexterity" },
+    { id: "gaming-set", label: "Gaming Set", ability: "wisdom" }
+  ];
+}
+
+function dnd5eSrdToolDefinition(toolId: string): { id: string; label: string; ability: string } {
+  return dnd5eSrdTools().find((tool) => tool.id === normalizeDnd5eSrdToolId(toolId)) ?? { id: "gaming-set", label: "Gaming Set", ability: "wisdom" };
+}
+
 function defaultDnd5eSrdAttributes(): Record<string, number> {
   return { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 };
 }
@@ -1774,6 +1803,41 @@ function dnd5eSrdSkillProficienciesFromExplicit(explicit: unknown): string[] {
 
 function normalizeDnd5eSrdSkillId(skill: string): string {
   return skill.trim().replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function dnd5eSrdToolProficiencyMultiplier(actor: Actor, toolId: string): number {
+  const normalizedToolId = normalizeDnd5eSrdToolId(toolId);
+  if (dnd5eSrdToolProficiencies(actor, "toolExpertise").includes(normalizedToolId)) return 2;
+  return dnd5eSrdToolProficiencies(actor, "toolProficiencies").includes(normalizedToolId) ? 1 : 0;
+}
+
+function dnd5eSrdToolProficiencies(actor: Actor, field: "toolProficiencies" | "toolExpertise"): string[] {
+  if (field === "toolExpertise") return dnd5eSrdToolProficienciesFromExplicit(actor.data.toolExpertise);
+  return dnd5eSrdToolProficienciesForBackground(stringValue(actor.data.background) || "Soldier", actor.data.toolProficiencies);
+}
+
+function dnd5eSrdToolProficienciesForBackground(background: string, explicit: unknown): string[] {
+  const explicitProficiencies = dnd5eSrdToolProficienciesFromExplicit(explicit);
+  if (explicitProficiencies.length > 0) return explicitProficiencies;
+  const normalizedBackground = background.toLowerCase();
+  if (normalizedBackground === "sage") return ["calligraphers-supplies"];
+  if (normalizedBackground === "soldier") return ["gaming-set"];
+  return [];
+}
+
+function dnd5eSrdToolProficienciesFromExplicit(explicit: unknown): string[] {
+  const toolIds = new Set(dnd5eSrdTools().map((tool) => tool.id));
+  return Array.from(
+    new Set(
+      normalizeStringArray(explicit)
+        .map((tool) => normalizeDnd5eSrdToolId(tool))
+        .filter((tool) => toolIds.has(tool))
+    )
+  );
+}
+
+function normalizeDnd5eSrdToolId(tool: string): string {
+  return tool.trim().replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase().replace(/'/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 function stellarFrontiersAptitudeModifier(actor: Actor, aptitude: string): number {
