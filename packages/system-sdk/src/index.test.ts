@@ -321,7 +321,15 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("shield-armor")?.data).toEqual(expect.objectContaining({ costGp: 10, armorBonus: 2 }));
     expect(dnd5eSrdCompendiumEntry("leather-armor")?.data).toEqual(expect.objectContaining({ armorBase: 11, armorType: "light", costGp: 10, weightLb: 10 }));
     expect(dnd5eSrdCompendiumEntry("chain-mail")?.data).toEqual(expect.objectContaining({ armorBase: 16, armorType: "heavy", dexBonus: false, strengthRequirement: 13, stealthDisadvantage: true, costGp: 75, weightLb: 55 }));
+    expect(dnd5eSrdCompendiumEntry("acid-arrow")?.data).toEqual(expect.objectContaining({ level: 2, damageFormula: "4d4", upcastFormula: "1d4", secondaryDamageFormula: "2d4", secondaryUpcastFormula: "1d4", spellAttack: true }));
+    expect(dnd5eSrdCompendiumEntry("acid-splash")?.data).toEqual(expect.objectContaining({ level: 0, damageFormula: "1d6", damageType: "acid", save: { ability: "dexterity" }, cantripScaling: { level5: "2d6", level11: "3d6", level17: "4d6" } }));
+    expect(dnd5eSrdCompendiumEntry("aid")?.data).toEqual(expect.objectContaining({ level: 2, healingFormula: "5", upcastFormula: "5", hitPointMaximumIncreaseFormula: "5", targetCount: 3 }));
+    expect(dnd5eSrdCompendiumEntry("bane")?.data).toEqual(expect.objectContaining({ level: 1, penaltyFormula: "1d4", save: { ability: "charisma" }, upcastTargets: { base: 3, perSlotAbove: 1 } }));
+    expect(dnd5eSrdCompendiumEntry("bless")?.data).toEqual(expect.objectContaining({ level: 1, bonusFormula: "1d4", affectedRolls: ["attack", "save"], upcastTargets: { base: 3, perSlotAbove: 1 } }));
+    expect(dnd5eSrdCompendiumEntry("burning-hands")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "3d6", upcastFormula: "1d6", damageType: "fire", save: { ability: "dexterity", success: "half" } }));
     expect(dnd5eSrdCompendiumEntry("chromatic-orb")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "3d8", upcastFormula: "1d8" }));
+    expect(dnd5eSrdCompendiumEntry("color-spray")?.data).toEqual(expect.objectContaining({ level: 1, condition: "Blinded", save: { ability: "constitution" } }));
+    expect(dnd5eSrdCompendiumEntry("command")?.data).toEqual(expect.objectContaining({ level: 1, save: { ability: "wisdom" }, commandOptions: expect.arrayContaining(["Grovel"]) }));
     expect(dnd5eSrdCompendiumEntry("ice-knife")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d10", secondaryDamageFormula: "2d6", secondaryUpcastFormula: "1d6" }));
     expect(dnd5eSrdCompendiumEntry("ray-of-sickness")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8" }));
     expect(dnd5eSrdCompendiumEntry("divine-smite")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8", damageType: "radiant" }));
@@ -334,14 +342,17 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("mind-spike")?.data).toEqual(expect.objectContaining({ level: 2, damageFormula: "3d8", upcastFormula: "1d8", damageType: "psychic", concentration: true }));
     expect(dnd5eSrdCompendiumEntry("ensnaring-strike")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d6", upcastFormula: "1d6", condition: "Restrained", save: { ability: "strength" } }));
     expect(dnd5eSrdCompendiumEntry("starry-wisp")?.data).toEqual(expect.objectContaining({ level: 0, damageFormula: "1d8", damageType: "radiant", spellAttack: true }));
+    expect(dnd5eSrdCompendiumEntry("guiding-bolt")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "4d6", upcastFormula: "1d6", damageType: "radiant", spellAttack: true }));
     expect(dnd5eSrdCompendiumEntry("aura-of-life")?.data).toEqual(expect.objectContaining({ level: 4, recurringHealingFormula: "1", resistance: ["necrotic"], concentration: true }));
     expect(dnd5eSrdCompendiumEntry("charm-monster")?.data).toEqual(expect.objectContaining({ level: 4, condition: "Charmed", save: { ability: "wisdom" }, upcastTargets: { base: 1, perSlotAbove: 1 } }));
     expect(dnd5eSrdCompendiumEntry("elementalism")?.data).toEqual(expect.objectContaining({ level: 0, effects: expect.arrayContaining(["Sculpt Element"]) }));
     expect(dnd5eSrdCompendiumEntry("phantasmal-force")?.data).toEqual(expect.objectContaining({ level: 2, damageFormula: "2d8", damageType: "psychic", save: { ability: "intelligence" } }));
+    expect(dnd5eSrdCompendiumEntry("magic-missile")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "3d4+3", upcastFormula: "1d4+1", automaticHit: true }));
     expect(dnd5eSrdCompendiumEntry("power-word-heal")?.data).toEqual(expect.objectContaining({ level: 9, healing: "all hit points", conditionsEnded: expect.arrayContaining(["Stunned"]) }));
     expect(dnd5eSrdCompendiumEntry("searing-smite")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d6", upcastFormula: "1d6", recurringSave: { ability: "constitution", success: "ends" } }));
     expect(dnd5eSrdCompendiumEntry("summon-dragon")?.data).toEqual(expect.objectContaining({ level: 5, summon: expect.objectContaining({ statBlock: "Draconic Spirit", breathWeaponFormula: "2d6" }) }));
     expect(dnd5eSrdCompendiumEntry("tsunami")?.data).toEqual(expect.objectContaining({ level: 8, damageFormula: "6d10", secondaryDamageFormula: "5d10", save: { ability: "strength", success: "half" } }));
+    expect(dnd5eSrdCompendiumEntry("thunderwave")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8", damageType: "thunder", save: { ability: "constitution", success: "half" } }));
     expect(dnd5eSrdCompendiumEntry("vitriolic-sphere")?.data).toEqual(expect.objectContaining({ level: 4, damageFormula: "10d4", upcastFormula: "2d4", secondaryDamageFormula: "5d4", save: { ability: "dexterity", success: "half initial damage only" } }));
     expect(dnd5eSrdCompendiumEntry("dagger")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, damageType: "piercing" }));
     expect(dnd5eSrdCompendiumEntry("sickle")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 1, damageType: "slashing" }));
@@ -377,6 +388,50 @@ describe("dnd 5.5e srd rules", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
+    const acidArrow: Item = {
+      id: "itm_acid_arrow",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Acid Arrow",
+      data: { ...dnd5eSrdCompendiumEntry("acid-arrow")!.data, compendiumId: "acid-arrow" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const acidSplash: Item = {
+      id: "itm_acid_splash",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Acid Splash",
+      data: { ...dnd5eSrdCompendiumEntry("acid-splash")!.data, compendiumId: "acid-splash" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const aid: Item = {
+      id: "itm_aid",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Aid",
+      data: { ...dnd5eSrdCompendiumEntry("aid")!.data, compendiumId: "aid" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const burningHands: Item = {
+      id: "itm_burning_hands",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Burning Hands",
+      data: { ...dnd5eSrdCompendiumEntry("burning-hands")!.data, compendiumId: "burning-hands" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
     const iceKnife: Item = {
       id: "itm_ice_knife",
       campaignId: "camp_demo",
@@ -385,6 +440,28 @@ describe("dnd 5.5e srd rules", () => {
       type: "spell",
       name: "Ice Knife",
       data: { ...dnd5eSrdCompendiumEntry("ice-knife")!.data, compendiumId: "ice-knife" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const guidingBolt: Item = {
+      id: "itm_guiding_bolt",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Guiding Bolt",
+      data: { ...dnd5eSrdCompendiumEntry("guiding-bolt")!.data, compendiumId: "guiding-bolt" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const magicMissile: Item = {
+      id: "itm_magic_missile",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Magic Missile",
+      data: { ...dnd5eSrdCompendiumEntry("magic-missile")!.data, compendiumId: "magic-missile" },
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
@@ -462,6 +539,17 @@ describe("dnd 5.5e srd rules", () => {
       type: "spell",
       name: "Vitriolic Sphere",
       data: { ...dnd5eSrdCompendiumEntry("vitriolic-sphere")!.data, compendiumId: "vitriolic-sphere" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const thunderwave: Item = {
+      id: "itm_thunderwave",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Thunderwave",
+      data: { ...dnd5eSrdCompendiumEntry("thunderwave")!.data, compendiumId: "thunderwave" },
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
@@ -975,6 +1063,7 @@ describe("dnd 5.5e srd rules", () => {
         expect.objectContaining({ id: "feature-metamagic-quickened-spell", metadata: expect.objectContaining({ cost: 2, castingTime: "Bonus Action" }) })
       ])
     );
+    expect(dnd5eSrdActionFormula(levelFiveSorcererActor, [acidSplash], "spell-itm_acid_splash-damage")).toBe("2d6");
     expect(dnd5eSrdActionFormula(levelFiveSorcererActor, [], "feature-metamagic-quickened-spell")).toBe("0");
     const rogueActor: Actor = { ...srdActor, data: { ...rogue!.data } };
     const rogueDagger: Item = {
@@ -1022,15 +1111,23 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "skill-medicine")?.formula).toBe("2d20kl1+5");
     expect(dnd5eSrdQuickRolls(poisonedActor, []).find((roll) => roll.id === "tool-calligraphers-supplies")?.formula).toBe("2d20kl1+3");
     expect(dnd5eSrdActionFormula(srdActor, [spell], "spell-itm_healing_word-healing", { spellSlotLevel: 2 })).toBe("1d4+3+2d4");
+    expect(dnd5eSrdActionFormula(srdActor, [acidArrow], "spell-itm_acid_arrow-damage", { spellSlotLevel: 3 })).toBe("4d4+1d4");
+    expect(dnd5eSrdActionFormula(srdActor, [acidArrow], "spell-itm_acid_arrow-secondary-damage", { spellSlotLevel: 3 })).toBe("2d4+1d4");
+    expect(dnd5eSrdActionFormula(srdActor, [acidSplash], "spell-itm_acid_splash-damage")).toBe("1d6");
+    expect(dnd5eSrdActionFormula(srdActor, [aid], "spell-itm_aid-healing", { spellSlotLevel: 4 })).toBe("5+10");
+    expect(dnd5eSrdActionFormula(srdActor, [burningHands], "spell-itm_burning_hands-damage", { spellSlotLevel: 2 })).toBe("3d6+1d6");
     expect(dnd5eSrdActionFormula(srdActor, [chromaticOrb], "spell-itm_chromatic_orb-damage", { spellSlotLevel: 2 })).toBe("3d8+1d8");
     expect(dnd5eSrdActionFormula(srdActor, [iceKnife], "spell-itm_ice_knife-secondary-damage", { spellSlotLevel: 2 })).toBe("2d6+1d6");
     expect(dnd5eSrdActionFormula(srdActor, [dissonantWhispers], "spell-itm_dissonant_whispers-damage", { spellSlotLevel: 3 })).toBe("3d6+2d6");
     expect(dnd5eSrdActionFormula(srdActor, [dragonsBreath], "spell-itm_dragons_breath-damage", { spellSlotLevel: 3 })).toBe("3d6+1d6");
+    expect(dnd5eSrdActionFormula(srdActor, [guidingBolt], "spell-itm_guiding_bolt-damage", { spellSlotLevel: 3 })).toBe("4d6+2d6");
+    expect(dnd5eSrdActionFormula(srdActor, [magicMissile], "spell-itm_magic_missile-damage", { spellSlotLevel: 3 })).toBe("3d4+3+2d4+2");
     expect(dnd5eSrdActionFormula(srdActor, [mindSpike], "spell-itm_mind_spike-damage", { spellSlotLevel: 4 })).toBe("3d8+2d8");
     expect(dnd5eSrdActionFormula(srdActor, [phantasmalForce], "spell-itm_phantasmal_force-damage")).toBe("2d8");
     expect(dnd5eSrdActionFormula(srdActor, [searingSmite], "spell-itm_searing_smite-damage", { spellSlotLevel: 3 })).toBe("1d6+2d6");
     expect(dnd5eSrdActionFormula(srdActor, [tsunami], "spell-itm_tsunami-damage")).toBe("6d10");
     expect(dnd5eSrdActionFormula(srdActor, [tsunami], "spell-itm_tsunami-secondary-damage")).toBe("5d10");
+    expect(dnd5eSrdActionFormula(srdActor, [thunderwave], "spell-itm_thunderwave-damage", { spellSlotLevel: 3 })).toBe("2d8+2d8");
     expect(dnd5eSrdActionFormula(srdActor, [vitriolicSphere], "spell-itm_vitriolic_sphere-damage", { spellSlotLevel: 5 })).toBe("10d4+2d4");
     expect(dnd5eSrdActionFormula(srdActor, [vitriolicSphere], "spell-itm_vitriolic_sphere-secondary-damage", { spellSlotLevel: 5 })).toBe("5d4");
 

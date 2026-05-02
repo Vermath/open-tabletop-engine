@@ -4060,7 +4060,15 @@ describe("api", () => {
         expect.arrayContaining([
           expect.objectContaining({ id: "healing-word", name: "Healing Word", data: expect.objectContaining({ healingFormula: "1d4+@spellcasting", upcastFormula: "2d4" }) }),
           expect.objectContaining({ id: "magic-initiate", name: "Magic Initiate" }),
+          expect.objectContaining({ id: "acid-arrow", name: "Acid Arrow", data: expect.objectContaining({ damageFormula: "4d4", upcastFormula: "1d4", secondaryDamageFormula: "2d4" }) }),
+          expect.objectContaining({ id: "acid-splash", name: "Acid Splash", data: expect.objectContaining({ damageFormula: "1d6", cantripScaling: expect.objectContaining({ level5: "2d6" }) }) }),
+          expect.objectContaining({ id: "aid", name: "Aid", data: expect.objectContaining({ healingFormula: "5", upcastFormula: "5", targetCount: 3 }) }),
+          expect.objectContaining({ id: "bane", name: "Bane", data: expect.objectContaining({ penaltyFormula: "1d4", save: { ability: "charisma" } }) }),
+          expect.objectContaining({ id: "bless", name: "Bless", data: expect.objectContaining({ bonusFormula: "1d4", affectedRolls: ["attack", "save"] }) }),
+          expect.objectContaining({ id: "burning-hands", name: "Burning Hands", data: expect.objectContaining({ damageFormula: "3d6", upcastFormula: "1d6", damageType: "fire" }) }),
           expect.objectContaining({ id: "chromatic-orb", name: "Chromatic Orb", data: expect.objectContaining({ damageFormula: "3d8", upcastFormula: "1d8" }) }),
+          expect.objectContaining({ id: "color-spray", name: "Color Spray", data: expect.objectContaining({ condition: "Blinded", save: { ability: "constitution" } }) }),
+          expect.objectContaining({ id: "command", name: "Command", data: expect.objectContaining({ commandOptions: expect.arrayContaining(["Halt"]), save: { ability: "wisdom" } }) }),
           expect.objectContaining({ id: "ice-knife", name: "Ice Knife", data: expect.objectContaining({ damageFormula: "1d10", secondaryDamageFormula: "2d6" }) }),
           expect.objectContaining({ id: "hunters-mark", name: "Hunter's Mark", data: expect.objectContaining({ damageFormula: "1d6", damageType: "force" }) }),
           expect.objectContaining({ id: "sorcerous-burst", name: "Sorcerous Burst", data: expect.objectContaining({ damageFormula: "1d8", damageType: "choice" }) }),
@@ -4071,14 +4079,17 @@ describe("api", () => {
           expect.objectContaining({ id: "mind-spike", name: "Mind Spike", data: expect.objectContaining({ damageFormula: "3d8", upcastFormula: "1d8", concentration: true }) }),
           expect.objectContaining({ id: "ensnaring-strike", name: "Ensnaring Strike", data: expect.objectContaining({ damageFormula: "1d6", upcastFormula: "1d6", condition: "Restrained" }) }),
           expect.objectContaining({ id: "starry-wisp", name: "Starry Wisp", data: expect.objectContaining({ damageFormula: "1d8", damageType: "radiant" }) }),
+          expect.objectContaining({ id: "guiding-bolt", name: "Guiding Bolt", data: expect.objectContaining({ damageFormula: "4d6", upcastFormula: "1d6", spellAttack: true }) }),
           expect.objectContaining({ id: "aura-of-life", name: "Aura of Life", data: expect.objectContaining({ level: 4, recurringHealingFormula: "1" }) }),
           expect.objectContaining({ id: "charm-monster", name: "Charm Monster", data: expect.objectContaining({ level: 4, condition: "Charmed" }) }),
           expect.objectContaining({ id: "elementalism", name: "Elementalism", data: expect.objectContaining({ level: 0, effects: expect.arrayContaining(["Sculpt Element"]) }) }),
           expect.objectContaining({ id: "phantasmal-force", name: "Phantasmal Force", data: expect.objectContaining({ level: 2, damageFormula: "2d8", damageType: "psychic" }) }),
+          expect.objectContaining({ id: "magic-missile", name: "Magic Missile", data: expect.objectContaining({ damageFormula: "3d4+3", upcastFormula: "1d4+1", automaticHit: true }) }),
           expect.objectContaining({ id: "power-word-heal", name: "Power Word Heal", data: expect.objectContaining({ level: 9, healing: "all hit points" }) }),
           expect.objectContaining({ id: "searing-smite", name: "Searing Smite", data: expect.objectContaining({ level: 1, damageFormula: "1d6", upcastFormula: "1d6" }) }),
           expect.objectContaining({ id: "summon-dragon", name: "Summon Dragon", data: expect.objectContaining({ level: 5, summon: expect.objectContaining({ statBlock: "Draconic Spirit" }) }) }),
           expect.objectContaining({ id: "tsunami", name: "Tsunami", data: expect.objectContaining({ level: 8, damageFormula: "6d10", secondaryDamageFormula: "5d10" }) }),
+          expect.objectContaining({ id: "thunderwave", name: "Thunderwave", data: expect.objectContaining({ damageFormula: "2d8", upcastFormula: "1d8", damageType: "thunder" }) }),
           expect.objectContaining({ id: "vitriolic-sphere", name: "Vitriolic Sphere", data: expect.objectContaining({ level: 4, damageFormula: "10d4", upcastFormula: "2d4", secondaryDamageFormula: "5d4" }) }),
           expect.objectContaining({ id: "shield-armor", name: "Shield", data: expect.objectContaining({ costGp: 10, armorBonus: 2 }) }),
           expect.objectContaining({ id: "leather-armor", name: "Leather Armor", data: expect.objectContaining({ costGp: 10, armorBase: 11 }) }),
@@ -4114,6 +4125,17 @@ describe("api", () => {
       expect(dissonantSpell.json().sheet.quickRolls).toEqual(
         expect.arrayContaining([expect.objectContaining({ id: `spell-${dissonantSpell.json().item.id}-damage`, label: "Dissonant Whispers Damage", formula: "3d6" })])
       );
+      const magicMissileSpell = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "magic-missile" }
+      });
+      expect(magicMissileSpell.statusCode).toBe(200);
+      expect(magicMissileSpell.json().item).toEqual(expect.objectContaining({ name: "Magic Missile", data: expect.objectContaining({ damageFormula: "3d4+3", upcastFormula: "1d4+1", automaticHit: true }) }));
+      expect(magicMissileSpell.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: `spell-${magicMissileSpell.json().item.id}-damage`, label: "Magic Missile Damage", formula: "3d4+3" })])
+      );
       const vitriolicSpell = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/compendium`,
@@ -4135,6 +4157,7 @@ describe("api", () => {
       };
       const chromaticRollId = `spell-${chromaticSpell.json().item.id}-damage`;
       const dissonantRollId = `spell-${dissonantSpell.json().item.id}-damage`;
+      const magicMissileRollId = `spell-${magicMissileSpell.json().item.id}-damage`;
       const vitriolicRollId = `spell-${vitriolicSpell.json().item.id}-damage`;
 
       const dndThreats = await app.inject({
@@ -5412,6 +5435,15 @@ describe("api", () => {
       expect(dissonantRoll.json().quickRoll).toEqual(expect.objectContaining({ id: dissonantRollId, formula: "3d6+2d6" }));
       expect(dissonantRoll.json().usage).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", slotLevel: 3 }));
       expect(dissonantRoll.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level3", label: "Level 3 Spell Slot", amount: 1, remaining: 0 }]);
+      const magicMissileRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: magicMissileRollId, spellSlotLevel: 3 }
+      });
+      expect(magicMissileRoll.statusCode).toBe(200);
+      expect(magicMissileRoll.json().roll.formula).toBe("3d4+3+2d4+2");
+      expect(magicMissileRoll.json().quickRoll).toEqual(expect.objectContaining({ id: magicMissileRollId, formula: "3d4+3+2d4+2" }));
       const vitriolicRoll = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,

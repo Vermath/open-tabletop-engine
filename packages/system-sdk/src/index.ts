@@ -28,6 +28,10 @@ export interface SystemManifest {
 export const DND_5E_SRD_SYSTEM_ID = "dnd-5e-srd";
 export const DND_5E_SRD_VERSION = "SRD 5.2.1";
 
+const DND_5E_SRD_CANTRIP_D6_SCALING = { level5: "2d6", level11: "3d6", level17: "4d6" };
+const DND_5E_SRD_CANTRIP_D8_SCALING = { level5: "2d8", level11: "3d8", level17: "4d8" };
+const DND_5E_SRD_CANTRIP_D10_SCALING = { level5: "2d10", level11: "3d10", level17: "4d10" };
+
 export interface ActorSheetRegistration {
   systemId: string;
   actorType: string;
@@ -1059,12 +1063,16 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
           ? { healingFormula: "1d4+@spellcasting", upcastFormula: "2d4" }
           : entry.id === "cure-wounds"
             ? { healingFormula: "2d8+@spellcasting", upcastFormula: "2d8" }
+            : entry.id === "fire-bolt"
+              ? { damage: undefined, ability: undefined, damageFormula: "1d10", damageType: "fire", classes: ["sorcerer", "wizard"], spellAttack: true, cantripScaling: DND_5E_SRD_CANTRIP_D10_SCALING }
+              : entry.id === "blessed"
+                ? { affectedRolls: ["attack", "save"], bonusFormula: "1d4" }
             : entry.id === "longsword"
               ? { costGp: 15, weightLb: 3, damageType: "slashing", equipmentCategory: "weapon" }
               : {};
       const dndSummaryOverride =
         entry.id === "blessed"
-          ? "Adds 1d4 to SRD saving throws."
+          ? "Adds 1d4 to SRD attack rolls and saving throws."
           : entry.id === "poisoned"
             ? "Rolls SRD ability and skill checks with disadvantage."
             : undefined;
@@ -1082,11 +1090,67 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { source: DND_5E_SRD_VERSION }
     },
     {
+      id: "acid-arrow",
+      type: "spell",
+      name: "Acid Arrow",
+      summary: "Level 2 Wizard evocation spell with initial acid damage and later acid damage.",
+      data: { level: 2, school: "evocation", action: "action", range: "90 ft", damageFormula: "4d4", upcastFormula: "1d4", damageType: "acid", secondaryDamageFormula: "2d4", secondaryUpcastFormula: "1d4", secondaryDamageType: "acid", classes: ["wizard"], spellAttack: true, missEffect: "half initial damage only", delayedDamageTrigger: "end of target's next turn on a hit", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "acid-splash",
+      type: "spell",
+      name: "Acid Splash",
+      summary: "Sorcerer and Wizard evocation cantrip that bursts acid in a small area.",
+      data: { level: 0, school: "evocation", action: "action", range: "60 ft", damageFormula: "1d6", damageType: "acid", classes: ["sorcerer", "wizard"], area: "5-foot-radius sphere", save: { ability: "dexterity" }, cantripScaling: DND_5E_SRD_CANTRIP_D6_SCALING, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "aid",
+      type: "spell",
+      name: "Aid",
+      summary: "Level 2 abjuration spell that raises current and maximum hit points for several allies.",
+      data: { level: 2, school: "abjuration", action: "action", range: "30 ft", healingFormula: "5", upcastFormula: "5", hitPointMaximumIncreaseFormula: "5", classes: ["bard", "cleric", "druid", "paladin", "ranger"], duration: "8 hours", targetCount: 3, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "bane",
+      type: "spell",
+      name: "Bane",
+      summary: "Level 1 enchantment spell that penalizes attacks and saves for failed targets.",
+      data: { level: 1, school: "enchantment", action: "action", range: "30 ft", classes: ["bard", "cleric", "warlock"], concentration: true, duration: "up to 1 minute", save: { ability: "charisma" }, targetCount: 3, penaltyFormula: "1d4", affectedRolls: ["attack", "save"], upcastTargets: { base: 3, perSlotAbove: 1 }, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "bless",
+      type: "spell",
+      name: "Bless",
+      summary: "Level 1 enchantment spell that adds a bonus die to allied attacks and saves.",
+      data: { level: 1, school: "enchantment", action: "action", range: "30 ft", classes: ["cleric", "paladin"], concentration: true, duration: "up to 1 minute", targetCount: 3, bonusFormula: "1d4", affectedRolls: ["attack", "save"], upcastTargets: { base: 3, perSlotAbove: 1 }, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "burning-hands",
+      type: "spell",
+      name: "Burning Hands",
+      summary: "Level 1 evocation spell that projects fire in a cone and scales when upcast.",
+      data: { level: 1, school: "evocation", action: "action", range: "self", damageFormula: "3d6", upcastFormula: "1d6", damageType: "fire", classes: ["sorcerer", "wizard"], area: "15-foot cone", save: { ability: "dexterity", success: "half" }, ignitesUnattendedObjects: true, source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "chromatic-orb",
       type: "spell",
       name: "Chromatic Orb",
       summary: "Level 1 evocation spell that deals selectable elemental damage and scales when upcast.",
       data: { level: 1, school: "evocation", action: "action", range: "90 ft", damageFormula: "3d8", upcastFormula: "1d8", damageType: "choice", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "color-spray",
+      type: "spell",
+      name: "Color Spray",
+      summary: "Level 1 illusion spell that can blind creatures in a cone until the next turn.",
+      data: { level: 1, school: "illusion", action: "action", range: "self", classes: ["bard", "sorcerer", "wizard"], area: "15-foot cone", save: { ability: "constitution" }, condition: "Blinded", conditionDuration: "until the end of your next turn", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "command",
+      type: "spell",
+      name: "Command",
+      summary: "Level 1 enchantment spell that forces one creature to follow a simple command.",
+      data: { level: 1, school: "enchantment", action: "action", range: "60 ft", classes: ["bard", "cleric", "paladin"], save: { ability: "wisdom" }, commandOptions: ["Approach", "Drop", "Flee", "Grovel", "Halt"], upcastTargets: { base: 1, perSlotAbove: 1 }, source: DND_5E_SRD_VERSION }
     },
     {
       id: "ice-knife",
@@ -1121,14 +1185,14 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       type: "spell",
       name: "Sorcerous Burst",
       summary: "Sorcerer evocation cantrip that deals a selectable elemental damage type.",
-      data: { level: 0, school: "evocation", action: "action", range: "120 ft", damageFormula: "1d8", damageType: "choice", damageTypes: ["acid", "cold", "fire", "lightning", "poison", "psychic", "thunder"], source: DND_5E_SRD_VERSION }
+      data: { level: 0, school: "evocation", action: "action", range: "120 ft", damageFormula: "1d8", damageType: "choice", damageTypes: ["acid", "cold", "fire", "lightning", "poison", "psychic", "thunder"], spellAttack: true, cantripScaling: DND_5E_SRD_CANTRIP_D8_SCALING, explodingDie: { die: "d8", maxExtraDice: "@spellcasting" }, source: DND_5E_SRD_VERSION }
     },
     {
       id: "eldritch-blast",
       type: "spell",
       name: "Eldritch Blast",
       summary: "Warlock evocation cantrip that deals force damage at long range.",
-      data: { level: 0, school: "evocation", action: "action", range: "120 ft", damageFormula: "1d10", damageType: "force", source: DND_5E_SRD_VERSION }
+      data: { level: 0, school: "evocation", action: "action", range: "120 ft", damageFormula: "1d10", damageType: "force", classes: ["warlock"], spellAttack: true, cantripScaling: DND_5E_SRD_CANTRIP_D10_SCALING, beamCountScaling: { level1: 1, level5: 2, level11: 3, level17: 4 }, source: DND_5E_SRD_VERSION }
     },
     {
       id: "hex",
@@ -1170,7 +1234,14 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       type: "spell",
       name: "Starry Wisp",
       summary: "Bard and Druid evocation cantrip that deals radiant damage and briefly lights the target.",
-      data: { level: 0, school: "evocation", action: "action", range: "60 ft", damageFormula: "1d8", damageType: "radiant", classes: ["bard", "druid"], spellAttack: true, light: "dim light until the end of the target's next turn", source: DND_5E_SRD_VERSION }
+      data: { level: 0, school: "evocation", action: "action", range: "60 ft", damageFormula: "1d8", damageType: "radiant", classes: ["bard", "druid"], spellAttack: true, light: "dim light until the end of the target's next turn", cantripScaling: DND_5E_SRD_CANTRIP_D8_SCALING, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "guiding-bolt",
+      type: "spell",
+      name: "Guiding Bolt",
+      summary: "Level 1 Cleric evocation spell that deals radiant damage and grants advantage on the next attack against the target.",
+      data: { level: 1, school: "evocation", action: "action", range: "120 ft", damageFormula: "4d6", upcastFormula: "1d6", damageType: "radiant", classes: ["cleric"], spellAttack: true, duration: "1 round", nextAttackAdvantage: true, source: DND_5E_SRD_VERSION }
     },
     {
       id: "aura-of-life",
@@ -1201,6 +1272,13 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { level: 2, school: "illusion", action: "action", range: "60 ft", damageFormula: "2d8", damageType: "psychic", classes: ["bard", "sorcerer", "wizard"], concentration: true, duration: "up to 1 minute", save: { ability: "intelligence" }, area: "10-foot cube phantasm", inspectionCheck: { ability: "intelligence", skill: "investigation" }, source: DND_5E_SRD_VERSION }
     },
     {
+      id: "magic-missile",
+      type: "spell",
+      name: "Magic Missile",
+      summary: "Level 1 evocation spell that creates force darts and adds one dart per upcast slot level.",
+      data: { level: 1, school: "evocation", action: "action", range: "120 ft", damageFormula: "3d4+3", upcastFormula: "1d4+1", damageType: "force", classes: ["sorcerer", "wizard"], dartCount: 3, upcastDarts: { base: 3, perSlotAbove: 1 }, automaticHit: true, source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "power-word-heal",
       type: "spell",
       name: "Power Word Heal",
@@ -1227,6 +1305,13 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       name: "Tsunami",
       summary: "Level 8 Druid conjuration spell that creates a moving wall of water dealing bludgeoning damage.",
       data: { level: 8, school: "conjuration", action: "1 minute", range: "1 mile", damageFormula: "6d10", damageType: "bludgeoning", secondaryDamageFormula: "5d10", secondaryDamageType: "bludgeoning", classes: ["druid"], concentration: true, duration: "up to 6 rounds", area: "up to 300 feet long, 300 feet high, and 50 feet thick", save: { ability: "strength", success: "half" }, recurringDamageReduction: "secondary damage decreases by 1d10 on later rounds", source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "thunderwave",
+      type: "spell",
+      name: "Thunderwave",
+      summary: "Level 1 evocation spell that damages and pushes creatures in a cube originating from the caster.",
+      data: { level: 1, school: "evocation", action: "action", range: "self", damageFormula: "2d8", upcastFormula: "1d8", damageType: "thunder", classes: ["bard", "druid", "sorcerer", "wizard"], area: "15-foot cube", save: { ability: "constitution", success: "half" }, pushFt: 10, audibleDistanceFt: 300, source: DND_5E_SRD_VERSION }
     },
     {
       id: "vitriolic-sphere",
@@ -4085,10 +4170,22 @@ function genericFantasyHealingFormula(actor: Actor, data: Record<string, unknown
 function genericFantasyDamageFormula(actor: Actor, data: Record<string, unknown>, spellSlotLevel?: number, formulaKey = "damageFormula", upcastKey = "upcastFormula"): string {
   const baseFormula = resolveGenericFantasyFormulaTokens(stringValue(data[formulaKey]) ?? "0", actor);
   const spellLevel = Math.floor(numericValue(data.level, 0));
+  const scaledBaseFormula = formulaKey === "damageFormula" && spellLevel <= 0 ? genericFantasyCantripDamageFormula(actor, data, baseFormula) : baseFormula;
   const slotLevel = spellActionSlotLevel(spellLevel, spellSlotLevel);
   const upcastFormula = stringValue(data[upcastKey]);
-  if (spellLevel <= 0 || slotLevel <= spellLevel || !upcastFormula) return baseFormula;
-  return appendFormulaTerm(baseFormula, scaleDiceFormula(resolveGenericFantasyFormulaTokens(upcastFormula, actor), slotLevel - spellLevel));
+  if (spellLevel <= 0 || slotLevel <= spellLevel || !upcastFormula) return scaledBaseFormula;
+  return appendFormulaTerm(scaledBaseFormula, scaleDiceFormula(resolveGenericFantasyFormulaTokens(upcastFormula, actor), slotLevel - spellLevel));
+}
+
+function genericFantasyCantripDamageFormula(actor: Actor, data: Record<string, unknown>, baseFormula: string): string {
+  const scaling = recordValue(data.cantripScaling);
+  const actorLevel = Math.floor(numericValue(actor.data.level, 1));
+  for (const level of [17, 11, 5]) {
+    if (actorLevel < level) continue;
+    const formula = stringValue(scaling[`level${level}`]);
+    if (formula) return resolveGenericFantasyFormulaTokens(formula, actor);
+  }
+  return baseFormula;
 }
 
 function dnd5eSrdSpeciesResourceAction(rollId: string): { key: string; label: string } | undefined {
@@ -5266,12 +5363,17 @@ function dnd5eSrdResourceActionAmount(requestedAmount: number | undefined, fallb
 
 function scaleDiceFormula(formula: string, multiplier: number): string {
   const normalized = formula.trim();
-  const match = /^(\d*)d(\d+)$/i.exec(normalized);
+  const scale = Math.max(1, multiplier);
+  const numericMatch = /^([+-]?\d+)$/.exec(normalized);
+  if (numericMatch) return String(Number(numericMatch[1]) * scale);
+  const match = /^(\d*)d(\d+)([+-]\d+)?$/i.exec(normalized);
   if (!match) {
-    return Array.from({ length: Math.max(1, multiplier) }, () => normalized).join("+");
+    return Array.from({ length: scale }, () => normalized).join("+");
   }
   const count = numericValue(match[1] ? Number(match[1]) : 1, 1);
-  return `${count * Math.max(1, multiplier)}d${match[2]}`;
+  const dice = `${count * scale}d${match[2]}`;
+  const bonus = numericValue(match[3] ? Number(match[3]) : 0, 0) * scale;
+  return bonus === 0 ? dice : appendFormulaBonus(dice, bonus);
 }
 
 function itemQuantity(data: Record<string, unknown>): number {
