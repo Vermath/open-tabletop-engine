@@ -3197,7 +3197,7 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(templates.statusCode).toBe(200);
-      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "druid", "ranger", "monk", "sorcerer", "wizard", "rogue"]);
+      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "bard", "cleric", "paladin", "druid", "ranger", "monk", "sorcerer", "warlock", "wizard", "rogue"]);
 
       const origins = await app.inject({
         method: "GET",
@@ -3768,6 +3768,67 @@ describe("api", () => {
         ])
       );
 
+      const warlock = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "warlock", name: "SRD Warlock", ownerUserId: "usr_demo_player" }
+      });
+      expect(warlock.statusCode).toBe(200);
+      expect(warlock.json().actor.data).toEqual(
+        expect.objectContaining({
+          features: ["Eldritch Invocations", "Pact Magic"],
+          hitDice: { current: 1, max: 1, size: "d8" },
+          resources: {},
+          saveProficiencies: ["wisdom", "charisma"],
+          skillProficiencies: ["arcana", "intimidation"],
+          spellSlots: { level1: { current: 1, max: 1, recovery: "short" } }
+        })
+      );
+      expect(warlock.json().sheet.inventory.map((item: { name: string }) => item.name)).toEqual(["Leather Armor", "Sickle", "Dagger", "Arcane Focus"]);
+      expect(warlock.json().sheet.spells.map((item: { name: string }) => item.name)).toEqual(["Eldritch Blast", "Hex"]);
+      expect(warlock.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "save-charisma", formula: "1d20+5" }),
+          expect.objectContaining({ id: "skill-intimidation", formula: "1d20+5" }),
+          expect.objectContaining({ id: "feature-eldritch-invocations", formula: "0", metadata: expect.objectContaining({ known: 1 }) }),
+          expect.objectContaining({ label: "Eldritch Blast Damage", formula: "1d10" }),
+          expect.objectContaining({ label: "Hex Damage", formula: "1d6" })
+        ])
+      );
+
+      const levelFiveWarlock = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "warlock", name: "SRD Level Five Warlock", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFiveWarlock.statusCode).toBe(200);
+      let levelFiveWarlockAdvance = levelFiveWarlock;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFiveWarlockAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveWarlock.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFiveWarlockAdvance.statusCode).toBe(200);
+      }
+      expect(levelFiveWarlockAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Eldritch Invocations", "Pact Magic", "Magical Cunning", "Warlock Subclass", "Ability Score Improvement"]),
+          resources: { magicalCunning: { current: 1, max: 1, recovery: "long" } },
+          spellSlots: { level3: { current: 2, max: 2, recovery: "short" } }
+        })
+      );
+      expect(levelFiveWarlockAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "feature-eldritch-invocations", formula: "0", metadata: expect.objectContaining({ known: 5 }) }),
+          expect.objectContaining({ id: "feature-magical-cunning", formula: "0", metadata: expect.objectContaining({ maxRecoveredSlots: 1, pactMagic: { slotLevel: 3, maxSlots: 2, recovery: "short" } }) })
+        ])
+      );
+
       const rogue = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
@@ -3933,10 +3994,13 @@ describe("api", () => {
           expect.objectContaining({ id: "ice-knife", name: "Ice Knife", data: expect.objectContaining({ damageFormula: "1d10", secondaryDamageFormula: "2d6" }) }),
           expect.objectContaining({ id: "hunters-mark", name: "Hunter's Mark", data: expect.objectContaining({ damageFormula: "1d6", damageType: "force" }) }),
           expect.objectContaining({ id: "sorcerous-burst", name: "Sorcerous Burst", data: expect.objectContaining({ damageFormula: "1d8", damageType: "choice" }) }),
+          expect.objectContaining({ id: "eldritch-blast", name: "Eldritch Blast", data: expect.objectContaining({ damageFormula: "1d10", damageType: "force" }) }),
+          expect.objectContaining({ id: "hex", name: "Hex", data: expect.objectContaining({ damageFormula: "1d6", damageType: "necrotic" }) }),
           expect.objectContaining({ id: "shield-armor", name: "Shield", data: expect.objectContaining({ costGp: 10, armorBonus: 2 }) }),
           expect.objectContaining({ id: "leather-armor", name: "Leather Armor", data: expect.objectContaining({ costGp: 10, armorBase: 11 }) }),
           expect.objectContaining({ id: "studded-leather-armor", name: "Studded Leather Armor", data: expect.objectContaining({ costGp: 45, armorBase: 12 }) }),
           expect.objectContaining({ id: "chain-mail", name: "Chain Mail", data: expect.objectContaining({ costGp: 75, armorBase: 16, dexBonus: false }) }),
+          expect.objectContaining({ id: "sickle", name: "Sickle", data: expect.objectContaining({ costGp: 1, damage: "1d4" }) }),
           expect.objectContaining({ id: "shortbow", name: "Shortbow", data: expect.objectContaining({ costGp: 25, damage: "1d6" }) }),
           expect.objectContaining({ id: "longbow", name: "Longbow", data: expect.objectContaining({ costGp: 50, damage: "1d8" }) }),
           expect.objectContaining({ id: "musical-instrument", name: "Musical Instrument", data: expect.objectContaining({ toolId: "musical-instrument", costGp: 2 }) }),
@@ -4772,6 +4836,69 @@ describe("api", () => {
         level2: { current: 3, max: 3, recovery: "long" },
         level3: { current: 2, max: 2, recovery: "long" }
       });
+
+      const warlockHex = levelFiveWarlock.json().items.find((item: { name: string }) => item.name === "Hex");
+      const hexDamage = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveWarlock.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: `spell-${warlockHex.id}-damage`, consumeResources: true }
+      });
+      expect(hexDamage.statusCode).toBe(200);
+      expect(hexDamage.json().usage).toEqual(expect.objectContaining({ slotLevel: 3 }));
+      expect(hexDamage.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level3", label: "Level 3 Spell Slot", amount: 1, remaining: 1 }]);
+
+      const storedLevelFiveWarlock = store.state.actors.find((actor) => actor.id === levelFiveWarlock.json().actor.id)!;
+      storedLevelFiveWarlock.data = {
+        ...storedLevelFiveWarlock.data,
+        resources: { magicalCunning: { current: 1, max: 1, recovery: "long" } },
+        spellSlots: { level3: { current: 0, max: 2, recovery: "short" } }
+      };
+      const magicalCunning = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveWarlock.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-magical-cunning", consumeResources: true }
+      });
+      expect(magicalCunning.statusCode).toBe(200);
+      expect(magicalCunning.json().usage.consumed).toEqual([{ type: "resource", key: "magicalCunning", label: "Magical Cunning", amount: 1, remaining: 0 }]);
+      expect(magicalCunning.json().actor.data.resources).toEqual({ magicalCunning: { current: 0, max: 1, recovery: "long" } });
+      expect(magicalCunning.json().actor.data.spellSlots).toEqual({ level3: { current: 1, max: 2, recovery: "short" } });
+
+      storedLevelFiveWarlock.data = {
+        ...storedLevelFiveWarlock.data,
+        resources: { magicalCunning: { current: 0, max: 1, recovery: "long" } },
+        spellSlots: { level3: { current: 0, max: 2, recovery: "short" } }
+      };
+      const depletedMagicalCunning = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveWarlock.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-magical-cunning", consumeResources: true }
+      });
+      expect(depletedMagicalCunning.statusCode).toBe(409);
+      expect(depletedMagicalCunning.json().message).toContain("Insufficient magical cunning");
+
+      const warlockShortRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveWarlock.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short" }
+      });
+      expect(warlockShortRest.statusCode).toBe(200);
+      expect(warlockShortRest.json().actor.data.resources).toEqual({ magicalCunning: { current: 0, max: 1, recovery: "long" } });
+      expect(warlockShortRest.json().actor.data.spellSlots).toEqual({ level3: { current: 2, max: 2, recovery: "short" } });
+      expect(warlockShortRest.json().rest.recovered.spellSlots).toEqual({ level3: 2 });
+
+      const warlockLongRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveWarlock.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "long" }
+      });
+      expect(warlockLongRest.statusCode).toBe(200);
+      expect(warlockLongRest.json().actor.data.resources).toEqual({ magicalCunning: { current: 1, max: 1, recovery: "long" } });
+      expect(warlockLongRest.json().actor.data.spellSlots).toEqual({ level3: { current: 2, max: 2, recovery: "short" } });
 
       const bardicInspiration = await app.inject({
         method: "POST",

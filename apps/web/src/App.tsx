@@ -1473,6 +1473,12 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
       { rollId: "feature-metamagic-quickened-spell", label: "Quickened Spell", description: "Metamagic: spend 2 Sorcery Points to cast an action spell as a Bonus Action" }
     );
   }
+  if (dnd5eSrdHasEldritchInvocations(actor)) {
+    options.push({ rollId: "feature-eldritch-invocations", label: "Invocations", description: `Eldritch Invocations: ${dnd5eSrdEldritchInvocationsKnown(actor)} known; includes pact options such as Blade, Chain, and Tome` });
+  }
+  if (dnd5eSrdHasMagicalCunning(actor)) {
+    options.push({ rollId: "feature-magical-cunning", label: "Magical Cunning", description: `Magical Cunning: spend one use to regain ${dnd5eSrdMagicalCunningLimit(actor)} Pact Magic slot` });
+  }
   if (dnd5eSrdHasWildShape(actor)) {
     options.push({ rollId: "feature-wild-shape", label: "Wild Shape", description: `Wild Shape: spend one use; ${dnd5eSrdWildShapeDurationHours(actor)} hour form; regain one use on Short Rest` });
   }
@@ -1602,6 +1608,16 @@ function dnd5eSrdHasMetamagic(actor: Actor): boolean {
   return (stringValue(actor.data.class) === "Sorcerer" && numericValue(actor.data.level, 1) >= 2) || features.includes("Metamagic");
 }
 
+function dnd5eSrdHasEldritchInvocations(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return stringValue(actor.data.class) === "Warlock" || features.includes("Eldritch Invocations");
+}
+
+function dnd5eSrdHasMagicalCunning(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Warlock" && numericValue(actor.data.level, 1) >= 2) || features.includes("Magical Cunning") || "magicalCunning" in recordValue(actor.data.resources);
+}
+
 function dnd5eSrdHasWildShape(actor: Actor): boolean {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
   return (stringValue(actor.data.class) === "Druid" && numericValue(actor.data.level, 1) >= 2) || features.includes("Wild Shape") || "wildShape" in recordValue(actor.data.resources);
@@ -1724,6 +1740,24 @@ function dnd5eSrdWildShapeDurationHours(actor: Actor): number {
   return Math.max(1, Math.floor(Math.max(1, numericValue(actor.data.level, 1)) / 2));
 }
 
+function dnd5eSrdEldritchInvocationsKnown(actor: Actor): number {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (level >= 18) return 10;
+  if (level >= 15) return 9;
+  if (level >= 12) return 8;
+  if (level >= 9) return 7;
+  if (level >= 7) return 6;
+  if (level >= 5) return 5;
+  if (level >= 2) return 3;
+  return 1;
+}
+
+function dnd5eSrdMagicalCunningLimit(actor: Actor): number {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  const maxSlots = level >= 17 ? 4 : level >= 11 ? 3 : level >= 2 ? 2 : 1;
+  return level >= 20 ? maxSlots : Math.ceil(maxSlots / 2);
+}
+
 function dnd5eSrdSneakAttackFormula(actor: Actor): string {
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return `${Math.ceil(level / 2)}d6`;
@@ -1771,6 +1805,7 @@ function dnd5eSrdPrimaryAbility(className: string): string {
   if (className === "Ranger") return "wisdom";
   if (className === "Monk") return "dexterity";
   if (className === "Sorcerer") return "charisma";
+  if (className === "Warlock") return "charisma";
   if (className === "Wizard") return "intelligence";
   if (className === "Rogue") return "dexterity";
   return "strength";

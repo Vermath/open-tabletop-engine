@@ -238,6 +238,7 @@ describe("dnd 5.5e srd rules", () => {
     const ranger = dnd5eSrdCharacterTemplate("ranger");
     const monk = dnd5eSrdCharacterTemplate("monk");
     const sorcerer = dnd5eSrdCharacterTemplate("sorcerer");
+    const warlock = dnd5eSrdCharacterTemplate("warlock");
     const rogue = dnd5eSrdCharacterTemplate("rogue");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
     expect(cleric?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
@@ -300,6 +301,14 @@ describe("dnd 5.5e srd rules", () => {
     expect(sorcerer?.data.resources).toEqual({ innateSorcery: { current: 2, max: 2, recovery: "long" } });
     expect(sorcerer?.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
     expect(sorcerer?.items.map((item) => item.entryId)).toEqual(["sorcerous-burst", "chromatic-orb", "shield", "spear", "dagger", "arcane-focus"]);
+    expect(warlock).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Warlock" }));
+    expect(warlock?.data.features).toEqual(["Eldritch Invocations", "Pact Magic"]);
+    expect(warlock?.data.saveProficiencies).toEqual(["wisdom", "charisma"]);
+    expect(warlock?.data.skillProficiencies).toEqual(["arcana", "intimidation"]);
+    expect(warlock?.data.hitDice).toEqual({ current: 1, max: 1, size: "d8" });
+    expect(warlock?.data.resources).toEqual({});
+    expect(warlock?.data.spellSlots).toEqual({ level1: { current: 1, max: 1, recovery: "short" } });
+    expect(warlock?.items.map((item) => item.entryId)).toEqual(["eldritch-blast", "hex", "leather-armor", "sickle", "dagger", "arcane-focus"]);
     expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
     expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
     expect(rogue?.data.features).toEqual(["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"]);
@@ -318,7 +327,10 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("divine-smite")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8", damageType: "radiant" }));
     expect(dnd5eSrdCompendiumEntry("hunters-mark")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d6", damageType: "force", concentration: true }));
     expect(dnd5eSrdCompendiumEntry("sorcerous-burst")?.data).toEqual(expect.objectContaining({ level: 0, damageFormula: "1d8", damageType: "choice" }));
+    expect(dnd5eSrdCompendiumEntry("eldritch-blast")?.data).toEqual(expect.objectContaining({ level: 0, damageFormula: "1d10", damageType: "force" }));
+    expect(dnd5eSrdCompendiumEntry("hex")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "1d6", damageType: "necrotic", concentration: true }));
     expect(dnd5eSrdCompendiumEntry("dagger")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, damageType: "piercing" }));
+    expect(dnd5eSrdCompendiumEntry("sickle")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 1, damageType: "slashing" }));
     expect(dnd5eSrdCompendiumEntry("quarterstaff")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 0.2 }));
     expect(dnd5eSrdCompendiumEntry("shortbow")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 25, damageType: "piercing" }));
     expect(dnd5eSrdCompendiumEntry("longbow")?.data).toEqual(expect.objectContaining({ damage: "1d8", costGp: 50, damageType: "piercing" }));
@@ -933,6 +945,98 @@ describe("dnd 5.5e srd rules", () => {
     expect(purchasedLeather.itemData).toEqual(expect.objectContaining({ compendiumId: "leather-armor", quantity: 1, purchasedForGp: 10, armorBase: 11 }));
     expect(() => dnd5eSrdEquipmentPurchase({ ...srdActor, data: { ...srdActor.data, currency: { gp: 1 } } }, dnd5eSrdCompendiumEntry("longsword")!, 1)).toThrow("Insufficient currency");
     expect(() => dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("magic-initiate")!, 1)).toThrow("not purchasable");
+  });
+
+  it("automates SRD Warlock Pact Magic, Magical Cunning, and invocation metadata", () => {
+    const template = dnd5eSrdCharacterTemplate("warlock")!;
+    const warlockActor: Actor = { ...srdActor, data: { ...template.data } };
+    const eldritchBlast: Item = {
+      id: "itm_eldritch_blast",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: warlockActor.id,
+      type: "spell",
+      name: "Eldritch Blast",
+      data: { ...dnd5eSrdCompendiumEntry("eldritch-blast")!.data, compendiumId: "eldritch-blast" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const hex: Item = {
+      id: "itm_hex",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: warlockActor.id,
+      type: "spell",
+      name: "Hex",
+      data: { ...dnd5eSrdCompendiumEntry("hex")!.data, compendiumId: "hex" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+
+    expect(dnd5eSrdQuickRolls(warlockActor, [eldritchBlast, hex])).toEqual(
+      expect.arrayContaining([
+        { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+2" },
+        { id: "save-charisma", label: "Charisma Save", formula: "1d20+5" },
+        { id: "skill-intimidation", label: "Intimidation Check", formula: "1d20+5" },
+        expect.objectContaining({ id: "feature-eldritch-invocations", label: "Eldritch Invocations", formula: "0", metadata: expect.objectContaining({ known: 1, pactOptions: ["Pact of the Blade", "Pact of the Chain", "Pact of the Tome"] }) }),
+        { id: "spell-itm_eldritch_blast-damage", label: "Eldritch Blast Damage", formula: "1d10" },
+        { id: "spell-itm_hex-damage", label: "Hex Damage", formula: "1d6" }
+      ])
+    );
+
+    let levelFiveWarlockData = warlockActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveWarlockData = applyDnd5eSrdAdvancement({ ...warlockActor, data: levelFiveWarlockData }, "level-up");
+    }
+    const levelFiveWarlockActor: Actor = { ...warlockActor, data: levelFiveWarlockData };
+    expect(levelFiveWarlockData.features).toEqual(expect.arrayContaining(["Eldritch Invocations", "Pact Magic", "Magical Cunning", "Warlock Subclass", "Ability Score Improvement"]));
+    expect(levelFiveWarlockData.resources).toEqual({ magicalCunning: { current: 1, max: 1, recovery: "long" } });
+    expect(levelFiveWarlockData.spellSlots).toEqual({ level3: { current: 2, max: 2, recovery: "short" } });
+    expect(dnd5eSrdQuickRolls(levelFiveWarlockActor, [hex])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-eldritch-invocations", formula: "0", metadata: expect.objectContaining({ known: 5 }) }),
+        expect.objectContaining({ id: "feature-magical-cunning", formula: "0", metadata: expect.objectContaining({ maxRecoveredSlots: 1, pactMagic: { slotLevel: 3, maxSlots: 2, recovery: "short" } }) })
+      ])
+    );
+
+    const hexUsage = useDnd5eSrdAction(levelFiveWarlockActor, [hex], "spell-itm_hex-damage");
+    expect(hexUsage).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        slotLevel: 3,
+        consumed: [{ type: "spellSlot", key: "level3", label: "Level 3 Spell Slot", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({ spellSlots: { level3: { current: 1, max: 2, recovery: "short" } } })
+      })
+    );
+
+    const cunningActor: Actor = { ...levelFiveWarlockActor, data: { ...levelFiveWarlockData, spellSlots: { level3: { current: 0, max: 2, recovery: "short" } } } };
+    const magicalCunning = useDnd5eSrdAction(cunningActor, [], "feature-magical-cunning");
+    expect(magicalCunning).toEqual(
+      expect.objectContaining({
+        consumed: [{ type: "resource", key: "magicalCunning", label: "Magical Cunning", amount: 1, remaining: 0 }],
+        data: expect.objectContaining({
+          resources: { magicalCunning: { current: 0, max: 1, recovery: "long" } },
+          spellSlots: { level3: { current: 1, max: 2, recovery: "short" } }
+        })
+      })
+    );
+    expect(() => useDnd5eSrdAction({ ...cunningActor, data: { ...cunningActor.data, resources: { magicalCunning: { current: 0, max: 1, recovery: "long" } } } }, [], "feature-magical-cunning")).toThrow("Insufficient magical cunning");
+
+    expect(applyDnd5eSrdRest(cunningActor, "short")).toEqual(
+      expect.objectContaining({
+        recovered: expect.objectContaining({ spellSlots: { level3: 2 } }),
+        data: expect.objectContaining({
+          resources: { magicalCunning: { current: 1, max: 1, recovery: "long" } },
+          spellSlots: { level3: { current: 2, max: 2, recovery: "short" } }
+        })
+      })
+    );
+    expect(applyDnd5eSrdRest({ ...cunningActor, data: { ...cunningActor.data, resources: { magicalCunning: { current: 0, max: 1, recovery: "long" } } } }, "long").data).toEqual(
+      expect.objectContaining({
+        resources: { magicalCunning: { current: 1, max: 1, recovery: "long" } },
+        spellSlots: { level3: { current: 2, max: 2, recovery: "short" } }
+      })
+    );
   });
 
   it("applies SRD character origin choices to template actors", () => {
