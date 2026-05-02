@@ -564,6 +564,32 @@ describe("dnd 5.5e srd rules", () => {
       "cloak-of-elvenkind",
       "cloak-of-invisibility",
       "cloak-of-protection",
+      "philter-of-love",
+      "potion-of-animal-friendship",
+      "potion-of-clairvoyance",
+      "potion-of-climbing",
+      "potion-of-diminution",
+      "potion-of-flying",
+      "potion-of-gaseous-form",
+      "potion-of-giant-strength-hill",
+      "potion-of-giant-strength-frost-or-stone",
+      "potion-of-giant-strength-fire",
+      "potion-of-giant-strength-cloud",
+      "potion-of-giant-strength-storm",
+      "potion-of-growth",
+      "potion-of-healing-greater",
+      "potion-of-healing-superior",
+      "potion-of-healing-supreme",
+      "potion-of-heroism",
+      "potion-of-invisibility",
+      "potion-of-invulnerability",
+      "potion-of-longevity",
+      "potion-of-mind-reading",
+      "potion-of-poison",
+      "potion-of-resistance",
+      "potion-of-speed",
+      "potion-of-vitality",
+      "potion-of-water-breathing",
       "ring-of-free-action",
       "ring-of-invisibility",
       "ring-of-protection",
@@ -572,6 +598,14 @@ describe("dnd 5.5e srd rules", () => {
       "shield-plus-1",
       "shield-plus-2",
       "shield-plus-3",
+      "spell-scroll-level-2",
+      "spell-scroll-level-3",
+      "spell-scroll-level-4",
+      "spell-scroll-level-5",
+      "spell-scroll-level-6",
+      "spell-scroll-level-7",
+      "spell-scroll-level-8",
+      "spell-scroll-level-9",
       "staff-of-healing",
       "staff-of-power",
       "staff-of-striking",
@@ -604,6 +638,12 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("bracers-of-defense")?.data).toEqual(expect.objectContaining({ armorClassBonus: 2, requiresNoArmorOrShield: true }));
     expect(dnd5eSrdCompendiumEntry("bag-of-holding")?.data).toEqual(expect.objectContaining({ capacityLb: 500, capacityCubicFt: 64, extradimensionalStorage: true }));
     expect(dnd5eSrdCompendiumEntry("wand-of-magic-missiles")?.data).toEqual(expect.objectContaining({ magicItemCategory: "wand", rarity: "uncommon", spell: "magic-missile", charges: expect.objectContaining({ max: 7 }) }));
+    expect(dnd5eSrdCompendiumEntry("potion-of-climbing")?.data).toEqual(expect.objectContaining({ magicItemCategory: "potion", rarity: "common", consumable: true, climbSpeedEqualsSpeed: true, craftingCostGp: 25 }));
+    expect(dnd5eSrdCompendiumEntry("potion-of-giant-strength-storm")?.data).toEqual(expect.objectContaining({ rarity: "legendary", abilityScoreSet: { strength: 29 }, duration: "1 hour" }));
+    expect(dnd5eSrdCompendiumEntry("potion-of-healing-superior")?.data).toEqual(expect.objectContaining({ healingFormula: "8d4+8", rarity: "rare", craftingCostGp: 1000 }));
+    expect(dnd5eSrdCompendiumEntry("potion-of-poison")?.data).toEqual(expect.objectContaining({ damageFormula: "4d6", damageType: "poison", save: { ability: "constitution", dc: 13 }, condition: "Poisoned" }));
+    expect(dnd5eSrdCompendiumEntry("potion-of-resistance")?.data).toEqual(expect.objectContaining({ resistanceChoice: expect.arrayContaining(["acid", "fire", "thunder"]), duration: "1 hour" }));
+    expect(dnd5eSrdCompendiumEntry("spell-scroll-level-9")?.data).toEqual(expect.objectContaining({ magicItemCategory: "scroll", rarity: "legendary", scrollLevel: 9, spellSaveDc: 19, spellAttackBonus: 11, craftingCostGp: 50000 }));
 
     const cloakOfProtection: Item = {
       id: "itm_cloak_of_protection",
@@ -660,6 +700,28 @@ describe("dnd 5.5e srd rules", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
+    const superiorHealingPotion: Item = {
+      id: "itm_superior_healing_potion",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Potion of Healing (superior)",
+      data: { ...dnd5eSrdCompendiumEntry("potion-of-healing-superior")!.data, compendiumId: "potion-of-healing-superior" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const levelNineScroll: Item = {
+      id: "itm_spell_scroll_level_9",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Spell Scroll, Level 9",
+      data: { ...dnd5eSrdCompendiumEntry("spell-scroll-level-9")!.data, compendiumId: "spell-scroll-level-9" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
     const protectedSheet = dnd5eSrdSheet(srdActor, [cloakOfProtection, ringOfProtection]);
     expect(protectedSheet.data.armorClass).toBe(13);
     expect(protectedSheet.data.armorClassDetails).toEqual(expect.objectContaining({ value: 13, armorClassBonus: 2, armorClassBonusItemIds: ["itm_cloak_of_protection", "itm_ring_of_protection"] }));
@@ -677,6 +739,10 @@ describe("dnd 5.5e srd rules", () => {
         expect.objectContaining({ id: "item-itm_staff_of_striking-versatile-damage", formula: "1d8+3" })
       ])
     );
+    expect(dnd5eSrdSheet(srdActor, [superiorHealingPotion, levelNineScroll]).quickRolls).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "item-itm_superior_healing_potion-healing", formula: "8d4+8" })])
+    );
+    expect(levelNineScroll.data).toEqual(expect.objectContaining({ scrollLevel: 9, spellSaveDc: 19, spellAttackBonus: 11 }));
 
     const spell: Item = {
       id: "itm_healing_word",

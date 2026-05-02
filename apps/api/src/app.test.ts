@@ -4125,6 +4125,10 @@ describe("api", () => {
           expect.objectContaining({ id: "healers-kit", name: "Healer's Kit", data: expect.objectContaining({ uses: 10, costGp: 5 }) }),
           expect.objectContaining({ id: "potion-of-healing", name: "Potion of Healing", data: expect.objectContaining({ magicItem: true, healingFormula: "2d4+2", costGp: 50 }) }),
           expect.objectContaining({ id: "spell-scroll-level-1", name: "Spell Scroll, Level 1", data: expect.objectContaining({ scrollLevel: 1, spellSaveDc: 13, costGp: 50 }) }),
+          expect.objectContaining({ id: "potion-of-healing-superior", name: "Potion of Healing (superior)", data: expect.objectContaining({ magicItemCategory: "potion", rarity: "rare", healingFormula: "8d4+8" }) }),
+          expect.objectContaining({ id: "potion-of-giant-strength-storm", name: "Potion of Giant Strength (storm)", data: expect.objectContaining({ abilityScoreSet: { strength: 29 }, duration: "1 hour" }) }),
+          expect.objectContaining({ id: "potion-of-poison", name: "Potion of Poison", data: expect.objectContaining({ damageFormula: "4d6", save: { ability: "constitution", dc: 13 } }) }),
+          expect.objectContaining({ id: "spell-scroll-level-9", name: "Spell Scroll, Level 9", data: expect.objectContaining({ magicItemCategory: "scroll", scrollLevel: 9, spellSaveDc: 19, spellAttackBonus: 11 }) }),
           expect.objectContaining({ id: "ammunition-of-slaying", name: "Ammunition of Slaying", data: expect.objectContaining({ rarity: "very rare", extraDamageFormula: "6d10" }) }),
           expect.objectContaining({ id: "weapon-plus-2", name: "Weapon, +2", data: expect.objectContaining({ magicItemCategory: "weapon", attackBonus: 2, damageBonus: 2 }) }),
           expect.objectContaining({ id: "shield-plus-3", name: "Shield, +3", data: expect.objectContaining({ armorBonus: 5, shieldEnhancementBonus: 3 }) }),
@@ -4208,6 +4212,25 @@ describe("api", () => {
           expect.objectContaining({ id: `item-${staffOfStriking.json().item.id}-versatile-damage`, label: "Staff of Striking Versatile Damage", formula: "1d8+2" })
         ])
       );
+      const superiorHealingPotion = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "potion-of-healing-superior" }
+      });
+      expect(superiorHealingPotion.statusCode).toBe(200);
+      expect(superiorHealingPotion.json().item).toEqual(expect.objectContaining({ name: "Potion of Healing (superior)", data: expect.objectContaining({ rarity: "rare", healingFormula: "8d4+8", craftingCostGp: 1000 }) }));
+      expect(superiorHealingPotion.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: `item-${superiorHealingPotion.json().item.id}-healing`, label: "Potion of Healing (superior) Healing", formula: "8d4+8" })])
+      );
+      const levelNineScroll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "spell-scroll-level-9" }
+      });
+      expect(levelNineScroll.statusCode).toBe(200);
+      expect(levelNineScroll.json().item).toEqual(expect.objectContaining({ name: "Spell Scroll, Level 9", data: expect.objectContaining({ rarity: "legendary", scrollLevel: 9, spellSaveDc: 19, spellAttackBonus: 11, craftingCostGp: 50000 }) }));
       const storedCriminalOrc = store.state.actors.find((actor) => actor.id === criminalOrc.json().actor.id)!;
       storedCriminalOrc.data = {
         ...storedCriminalOrc.data,
