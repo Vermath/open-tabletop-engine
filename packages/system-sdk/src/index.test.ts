@@ -230,6 +230,7 @@ describe("dnd 5.5e srd rules", () => {
   it("exposes first-class SRD templates, compendium entries, and quick rolls", () => {
     const cleric = dnd5eSrdCharacterTemplate("cleric");
     const fighter = dnd5eSrdCharacterTemplate("fighter");
+    const barbarian = dnd5eSrdCharacterTemplate("barbarian");
     const wizard = dnd5eSrdCharacterTemplate("wizard");
     const rogue = dnd5eSrdCharacterTemplate("rogue");
     expect(cleric).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Cleric" }));
@@ -240,6 +241,11 @@ describe("dnd 5.5e srd rules", () => {
     expect(cleric?.data.features).toEqual(["Spellcasting", "Divine Order"]);
     expect(dnd5eSrdCharacterTemplate("fighter")?.data.toolProficiencies).toEqual(["gaming-set"]);
     expect(fighter?.data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
+    expect(barbarian).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", name: "Barbarian" }));
+    expect(barbarian?.data.features).toEqual(["Rage", "Unarmored Defense", "Weapon Mastery"]);
+    expect(barbarian?.data.hitDice).toEqual({ current: 1, max: 1, size: "d12" });
+    expect(barbarian?.data.resources).toEqual({ rage: { current: 2, max: 2, recovery: "short" } });
+    expect(barbarian?.items.map((item) => item.entryId)).toEqual(["spear"]);
     expect(wizard?.data.features).toEqual(["Spellcasting", "Arcane Recovery"]);
     expect(wizard?.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
     expect(rogue?.data.features).toEqual(["Expertise", "Sneak Attack", "Thieves' Cant", "Weapon Mastery"]);
@@ -442,6 +448,57 @@ describe("dnd 5.5e srd rules", () => {
           id: "item-itm_fighter_longsword-damage",
           label: "Longsword Damage",
           formula: "1d8+5",
+          metadata: { attacksPerAction: 2, feature: "Extra Attack" }
+        })
+      ])
+    );
+    const barbarianActor: Actor = { ...srdActor, data: { ...barbarian!.data } };
+    const barbarianSpear: Item = {
+      id: "itm_barbarian_spear",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: barbarianActor.id,
+      type: "item",
+      name: "Spear",
+      data: { ...dnd5eSrdCompendiumEntry("spear")!.data, compendiumId: "spear" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    expect(dnd5eSrdQuickRolls(barbarianActor, [barbarianSpear])).toEqual(
+      expect.arrayContaining([
+        { id: "save-strength", label: "Strength Save", formula: "1d20+5" },
+        { id: "skill-athletics", label: "Athletics Check", formula: "1d20+5" },
+        { id: "feature-rage", label: "Rage", formula: "0", metadata: expect.objectContaining({ resource: "rage", damageBonus: 2, damageBonusRollId: "feature-rage-damage-bonus" }) },
+        { id: "feature-rage-damage-bonus", label: "Rage Damage Bonus", formula: "2", metadata: expect.objectContaining({ bonusDamage: 2, damageType: "Weapon" }) },
+        { id: "item-itm_barbarian_spear-damage", label: "Spear Damage", formula: "1d6+3" }
+      ])
+    );
+    expect(dnd5eSrdActionFormula(barbarianActor, [], "feature-rage")).toBe("0");
+    expect(dnd5eSrdActionFormula(barbarianActor, [], "feature-rage-damage-bonus")).toBe("2");
+    const levelTwoBarbarianData = applyDnd5eSrdAdvancement(barbarianActor, "level-up");
+    const levelTwoBarbarianActor: Actor = { ...barbarianActor, data: levelTwoBarbarianData };
+    expect(levelTwoBarbarianData.features).toEqual(expect.arrayContaining(["Danger Sense", "Reckless Attack"]));
+    expect(dnd5eSrdQuickRolls(levelTwoBarbarianActor, [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "save-dexterity", formula: "1d20+1", metadata: { advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] } }),
+        expect.objectContaining({ id: "feature-reckless-attack", label: "Reckless Attack", formula: "0", metadata: expect.objectContaining({ drawback: "attack rolls against you have Advantage during that time" }) })
+      ])
+    );
+    let levelFiveBarbarianData = barbarianActor.data;
+    for (let level = 2; level <= 5; level += 1) {
+      levelFiveBarbarianData = applyDnd5eSrdAdvancement({ ...barbarianActor, data: levelFiveBarbarianData }, "level-up");
+    }
+    const levelFiveBarbarianActor: Actor = { ...barbarianActor, data: levelFiveBarbarianData };
+    expect(levelFiveBarbarianData.features).toEqual(expect.arrayContaining(["Rage", "Danger Sense", "Reckless Attack", "Extra Attack", "Fast Movement"]));
+    expect(levelFiveBarbarianData.resources).toEqual({ rage: { current: 2, max: 3, recovery: "short" } });
+    expect(levelFiveBarbarianData.combat).toEqual(expect.objectContaining({ attacksPerAction: 2, fastMovement: { bonusFt: 10, armorRestriction: "not wearing Heavy armor" } }));
+    expect(dnd5eSrdQuickRolls(levelFiveBarbarianActor, [barbarianSpear])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "feature-rage-damage-bonus", formula: "2", metadata: expect.objectContaining({ bonusDamage: 2 }) }),
+        expect.objectContaining({
+          id: "item-itm_barbarian_spear-damage",
+          label: "Spear Damage",
+          formula: "1d6+5",
           metadata: { attacksPerAction: 2, feature: "Extra Attack" }
         })
       ])
@@ -659,6 +716,37 @@ describe("dnd 5.5e srd rules", () => {
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } }
       })
     );
+    const barbarianActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("barbarian")!.data } };
+    expect(useDnd5eSrdAction(barbarianActor, [], "feature-rage")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [{ type: "resource", key: "rage", label: "Rage", amount: 1, remaining: 1 }],
+        data: expect.objectContaining({ resources: { rage: { current: 1, max: 2, recovery: "short" } } })
+      })
+    );
+    expect(() => useDnd5eSrdAction({ ...barbarianActor, data: { ...barbarianActor.data, resources: { rage: { current: 0, max: 2, recovery: "short" } } } }, [], "feature-rage")).toThrow("Insufficient rage");
+    expect(useDnd5eSrdAction(barbarianActor, [], "feature-rage-damage-bonus")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [],
+        data: expect.objectContaining({ features: expect.arrayContaining(["Rage"]) })
+      })
+    );
+    const levelTwoBarbarianActor: Actor = { ...barbarianActor, data: applyDnd5eSrdAdvancement(barbarianActor, "level-up") };
+    expect(useDnd5eSrdAction(levelTwoBarbarianActor, [], "feature-reckless-attack")).toEqual(
+      expect.objectContaining({
+        systemId: "dnd-5e-srd",
+        consumed: [],
+        data: expect.objectContaining({ features: expect.arrayContaining(["Reckless Attack"]) })
+      })
+    );
+    expect(applyDnd5eSrdRest({ ...barbarianActor, data: { ...barbarianActor.data, resources: { rage: { current: 0, max: 2, recovery: "short" } } } }, "short")).toEqual(
+      expect.objectContaining({
+        recovered: expect.objectContaining({ resources: expect.objectContaining({ rage: 1 }) }),
+        data: expect.objectContaining({ resources: { rage: { current: 1, max: 2, recovery: "short" } } })
+      })
+    );
+    expect(applyDnd5eSrdRest({ ...barbarianActor, data: { ...barbarianActor.data, level: 3, resources: { rage: { current: 0, max: 2, recovery: "short" } } } }, "long").data.resources).toEqual({ rage: { current: 3, max: 3, recovery: "short" } });
     const rogueActor: Actor = { ...srdActor, data: { ...dnd5eSrdCharacterTemplate("rogue")!.data } };
     expect(useDnd5eSrdAction(rogueActor, [], "feature-sneak-attack-damage")).toEqual(
       expect.objectContaining({

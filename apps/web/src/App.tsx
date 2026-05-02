@@ -1413,6 +1413,16 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
   if (dnd5eSrdHasTacticalMind(actor)) {
     options.push({ rollId: "feature-tactical-mind-bonus", label: "Tactical Mind", description: "Tactical Mind Bonus: 1d10; spends Second Wind" });
   }
+  if (dnd5eSrdHasRage(actor)) {
+    const rageDamageBonus = dnd5eSrdRageDamageBonus(actor);
+    options.push(
+      { rollId: "feature-rage", label: "Rage", description: `Rage: spends one use; +${rageDamageBonus} Strength damage; resists bludgeoning, piercing, and slashing` },
+      { rollId: "feature-rage-damage-bonus", label: "Rage Damage", description: `Rage Damage Bonus: ${rageDamageBonus}` }
+    );
+  }
+  if (dnd5eSrdHasRecklessAttack(actor)) {
+    options.push({ rollId: "feature-reckless-attack", label: "Reckless Attack", description: "Reckless Attack: Strength attacks gain advantage; attacks against you gain advantage" });
+  }
   if (dnd5eSrdHasChannelDivinity(actor)) {
     const saveDc = dnd5eSrdSpellSaveDc(actor);
     const searUndead = dnd5eSrdHasSearUndead(actor) ? `; Sear ${dnd5eSrdSearUndeadFormula(actor)} radiant` : "";
@@ -1475,6 +1485,16 @@ function dnd5eSrdHasCunningStrike(actor: Actor): boolean {
   return (stringValue(actor.data.class) === "Rogue" && numericValue(actor.data.level, 1) >= 5) || features.includes("Cunning Strike");
 }
 
+function dnd5eSrdHasRage(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return stringValue(actor.data.class) === "Barbarian" || features.includes("Rage") || "rage" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasRecklessAttack(actor: Actor): boolean {
+  const features = Array.isArray(actor.data.features) ? actor.data.features : [];
+  return (stringValue(actor.data.class) === "Barbarian" && numericValue(actor.data.level, 1) >= 2) || features.includes("Reckless Attack");
+}
+
 function dnd5eSrdSecondWindFormula(actor: Actor): string {
   const fighterLevel = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   return `1d10+${fighterLevel}`;
@@ -1494,6 +1514,13 @@ function dnd5eSrdDivineSparkDice(actor: Actor): number {
 
 function dnd5eSrdSearUndeadFormula(actor: Actor): string {
   return `${Math.max(1, genericFantasyAttributeModifier(actor, "wisdom"))}d8`;
+}
+
+function dnd5eSrdRageDamageBonus(actor: Actor): number {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (level >= 16) return 4;
+  if (level >= 9) return 3;
+  return 2;
 }
 
 function dnd5eSrdSneakAttackFormula(actor: Actor): string {
@@ -1548,9 +1575,11 @@ function dnd5eSrdTacticalShiftMovement(actor: Actor): number {
 
 function dnd5eSrdAttacksPerAction(actor: Actor): number {
   const features = Array.isArray(actor.data.features) ? actor.data.features : [];
-  const hasExtraAttack = stringValue(actor.data.class) === "Fighter" || features.includes("Extra Attack");
+  const className = stringValue(actor.data.class);
+  const hasExtraAttack = className === "Fighter" || (className === "Barbarian" && numericValue(actor.data.level, 1) >= 5) || features.includes("Extra Attack");
   if (!hasExtraAttack) return 1;
   const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (className === "Barbarian") return level >= 5 || features.includes("Extra Attack") ? 2 : 1;
   if (level >= 20) return 4;
   if (level >= 11) return 3;
   if (level >= 5 || features.includes("Extra Attack")) return 2;

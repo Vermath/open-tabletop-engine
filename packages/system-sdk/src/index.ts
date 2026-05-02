@@ -182,6 +182,9 @@ export interface Dnd5eSrdEquipmentPurchaseResult {
 export const DND_5E_SRD_SECOND_WIND_ROLL_ID = "feature-second-wind-healing";
 export const DND_5E_SRD_ACTION_SURGE_ROLL_ID = "feature-action-surge";
 export const DND_5E_SRD_TACTICAL_MIND_ROLL_ID = "feature-tactical-mind-bonus";
+export const DND_5E_SRD_RAGE_ROLL_ID = "feature-rage";
+export const DND_5E_SRD_RAGE_DAMAGE_ROLL_ID = "feature-rage-damage-bonus";
+export const DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID = "feature-reckless-attack";
 export const DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID = "feature-divine-spark-healing";
 export const DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID = "feature-divine-spark-damage";
 export const DND_5E_SRD_TURN_UNDEAD_ROLL_ID = "feature-turn-undead";
@@ -520,6 +523,39 @@ export function dnd5eSrdClassFeatureRolls(actor: Actor): QuickRoll[] {
       }
     );
   }
+  if (dnd5eSrdHasRage(actor)) {
+    const rageDamageBonus = dnd5eSrdRageDamageBonus(actor);
+    rolls.push(
+      {
+        id: DND_5E_SRD_RAGE_ROLL_ID,
+        label: "Rage",
+        formula: "0",
+        metadata: dnd5eSrdRageMetadata(actor)
+      },
+      {
+        id: DND_5E_SRD_RAGE_DAMAGE_ROLL_ID,
+        label: "Rage Damage Bonus",
+        formula: String(rageDamageBonus),
+        metadata: {
+          trigger: "Strength-based weapon or Unarmed Strike damage while raging",
+          damageType: "Weapon",
+          bonusDamage: rageDamageBonus
+        }
+      }
+    );
+  }
+  if (dnd5eSrdHasRecklessAttack(actor)) {
+    rolls.push({
+      id: DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID,
+      label: "Reckless Attack",
+      formula: "0",
+      metadata: {
+        trigger: "first attack roll on your turn",
+        advantage: { attacksUsing: "Strength", until: "start of your next turn" },
+        drawback: "attack rolls against you have Advantage during that time"
+      }
+    });
+  }
   if (dnd5eSrdHasChannelDivinity(actor)) {
     const saveDc = dnd5eSrdSpellSaveDc(actor);
     const searUndead = dnd5eSrdHasSearUndead(actor) ? { formula: dnd5eSrdSearUndeadFormula(actor), damageType: "Radiant" } : undefined;
@@ -630,10 +666,12 @@ export function dnd5eSrdSavingThrow(actor: Actor, ability: string): QuickRoll {
   const proficiencyBonus = dnd5eSrdSaveProficiencies(actor).includes(ability) ? dnd5eSrdProficiencyBonus(actor) : 0;
   const bonus = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "blessed") ? "+1d4" : "";
   const label = `${ability.charAt(0).toUpperCase()}${ability.slice(1)} Save`;
+  const metadata = ability === "dexterity" && dnd5eSrdHasDangerSense(actor) ? { advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] } : undefined;
   return {
     id: `save-${ability}`,
     label,
-    formula: `1d20${formatSignedNumber(modifier + proficiencyBonus)}${bonus}`
+    formula: `1d20${formatSignedNumber(modifier + proficiencyBonus)}${bonus}`,
+    ...(metadata ? { metadata } : {})
   };
 }
 
@@ -1031,6 +1069,34 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         feats: ["Savage Attacker"]
       },
       items: [{ entryId: "longsword" }]
+    },
+    {
+      id: "barbarian",
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      name: "Barbarian",
+      summary: "SRD 5.2.1 frontline warrior with Rage and Strength-based weapon attacks.",
+      actorType: "character",
+      data: {
+        ruleset: DND_5E_SRD_VERSION,
+        level: 1,
+        class: "Barbarian",
+        species: "Human",
+        background: "Soldier",
+        proficiencyBonus: 2,
+        hp: { current: 14, max: 14 },
+        attributes: { strength: 16, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 10, charisma: 10 },
+        hitDice: { current: 1, max: 1, size: "d12" },
+        saveProficiencies: ["strength", "constitution"],
+        skillProficiencies: ["athletics", "intimidation"],
+        toolProficiencies: ["gaming-set"],
+        currency: { gp: 50, sp: 0, cp: 0 },
+        resources: { rage: { current: 2, max: 2, recovery: "short" } },
+        spellSlots: {},
+        conditions: [],
+        features: ["Rage", "Unarmored Defense", "Weapon Mastery"],
+        feats: ["Savage Attacker"]
+      },
+      items: [{ entryId: "spear" }]
     },
     {
       id: "cleric",
@@ -1742,6 +1808,9 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId === DND_5E_SRD_SECOND_WIND_ROLL_ID) return dnd5eSrdSecondWindFormula(actor);
   if (rollId === DND_5E_SRD_ACTION_SURGE_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_TACTICAL_MIND_ROLL_ID) return "1d10";
+  if (rollId === DND_5E_SRD_RAGE_ROLL_ID) return "0";
+  if (rollId === DND_5E_SRD_RAGE_DAMAGE_ROLL_ID) return String(dnd5eSrdRageDamageBonus(actor));
+  if (rollId === DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID || rollId === DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID) return dnd5eSrdDivineSparkFormula(actor);
   if (rollId === DND_5E_SRD_TURN_UNDEAD_ROLL_ID) return "0";
   if (rollId === DND_5E_SRD_SEAR_UNDEAD_DAMAGE_ROLL_ID) return dnd5eSrdSearUndeadFormula(actor);
@@ -1806,6 +1875,22 @@ export function useDnd5eSrdAction(actor: Actor, items: Item[] = [], rollId: stri
       data: { ...actor.data, resources: result.pools },
       items: []
     };
+  }
+  if (rollId === DND_5E_SRD_RAGE_ROLL_ID) {
+    const className = stringValue(actor.data.class) || "Barbarian";
+    const resources = normalizeResourcePools(actor.data.resources, defaultDnd5eSrdResources(className, numericValue(actor.data.level, 1)));
+    const result = consumeResourcePool(resources, "rage", 1, "Rage", "resource");
+    return {
+      systemId: DND_5E_SRD_SYSTEM_ID,
+      actorId: actor.id,
+      rollId,
+      consumed: [result.consumed],
+      data: { ...actor.data, resources: result.pools },
+      items: []
+    };
+  }
+  if (rollId === DND_5E_SRD_RAGE_DAMAGE_ROLL_ID || rollId === DND_5E_SRD_RECKLESS_ATTACK_ROLL_ID) {
+    return { systemId: DND_5E_SRD_SYSTEM_ID, actorId: actor.id, rollId, consumed: [], data: { ...actor.data }, items: [] };
   }
   if (rollId === DND_5E_SRD_DIVINE_SPARK_HEALING_ROLL_ID || rollId === DND_5E_SRD_DIVINE_SPARK_DAMAGE_ROLL_ID || rollId === DND_5E_SRD_TURN_UNDEAD_ROLL_ID) {
     const className = stringValue(actor.data.class) || "Cleric";
@@ -2884,8 +2969,24 @@ function dnd5eSrdHasCunningStrike(actor: Actor): boolean {
   return normalizeStringArray(actor.data.features).includes("Cunning Strike");
 }
 
+function dnd5eSrdHasRage(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Barbarian") return true;
+  return normalizeStringArray(actor.data.features).includes("Rage") || "rage" in recordValue(actor.data.resources);
+}
+
+function dnd5eSrdHasDangerSense(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Barbarian" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  return normalizeStringArray(actor.data.features).includes("Danger Sense");
+}
+
+function dnd5eSrdHasRecklessAttack(actor: Actor): boolean {
+  if (stringValue(actor.data.class) === "Barbarian" && Math.floor(numericValue(actor.data.level, 1)) >= 2) return true;
+  return normalizeStringArray(actor.data.features).includes("Reckless Attack");
+}
+
 function dnd5eSrdApplyClassFeatures(features: string[], className: string, level: number): string[] {
   if (className === "Fighter") return [...new Set([...features, ...dnd5eSrdFighterFeaturesForLevel(level)])];
+  if (className === "Barbarian") return [...new Set([...features, ...dnd5eSrdBarbarianFeaturesForLevel(level)])];
   if (className === "Cleric") return [...new Set([...features, ...dnd5eSrdClericFeaturesForLevel(level)])];
   if (className === "Wizard") return [...new Set([...features, ...dnd5eSrdWizardFeaturesForLevel(level)])];
   if (className === "Rogue") return [...new Set([...features, ...dnd5eSrdRogueFeaturesForLevel(level)])];
@@ -2893,12 +2994,13 @@ function dnd5eSrdApplyClassFeatures(features: string[], className: string, level
 }
 
 function dnd5eSrdApplyClassCombat(combat: Record<string, unknown>, className: string, level: number, speed: unknown): Record<string, unknown> {
-  if (className !== "Fighter") return combat;
-  const attacksPerAction = dnd5eSrdFighterAttacksPerAction(level);
+  if (className !== "Fighter" && className !== "Barbarian") return combat;
+  const attacksPerAction = className === "Fighter" ? dnd5eSrdFighterAttacksPerAction(level) : dnd5eSrdBarbarianAttacksPerAction(level);
   return {
     ...combat,
     attacksPerAction,
-    ...(level >= 5 ? { tacticalShift: { movementFt: dnd5eSrdTacticalShiftMovementFromSpeed(speed), opportunityAttacks: false } } : {})
+    ...(className === "Fighter" && level >= 5 ? { tacticalShift: { movementFt: dnd5eSrdTacticalShiftMovementFromSpeed(speed), opportunityAttacks: false } } : {}),
+    ...(className === "Barbarian" && level >= 5 ? { fastMovement: { bonusFt: 10, armorRestriction: "not wearing Heavy armor" } } : {})
   };
 }
 
@@ -2906,6 +3008,15 @@ function dnd5eSrdFighterFeaturesForLevel(level: number): string[] {
   const features = ["Fighting Style", "Second Wind"];
   if (level >= 2) features.push("Action Surge", "Tactical Mind");
   if (level >= 5) features.push("Extra Attack", "Tactical Shift");
+  return features;
+}
+
+function dnd5eSrdBarbarianFeaturesForLevel(level: number): string[] {
+  const features = ["Rage", "Unarmored Defense", "Weapon Mastery"];
+  if (level >= 2) features.push("Danger Sense", "Reckless Attack");
+  if (level >= 3) features.push("Barbarian Subclass", "Primal Knowledge");
+  if (level >= 4) features.push("Ability Score Improvement");
+  if (level >= 5) features.push("Extra Attack", "Fast Movement");
   return features;
 }
 
@@ -2951,6 +3062,26 @@ function dnd5eSrdDivineSparkDice(actor: Actor): number {
 
 function dnd5eSrdSearUndeadFormula(actor: Actor): string {
   return `${Math.max(1, genericFantasyAttributeModifier(actor, "wisdom"))}d8`;
+}
+
+function dnd5eSrdRageDamageBonus(actor: Actor): number {
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
+  if (level >= 16) return 4;
+  if (level >= 9) return 3;
+  return 2;
+}
+
+function dnd5eSrdRageMetadata(actor: Actor): Record<string, unknown> {
+  return {
+    resource: "rage",
+    damageBonus: dnd5eSrdRageDamageBonus(actor),
+    damageBonusRollId: DND_5E_SRD_RAGE_DAMAGE_ROLL_ID,
+    resistances: ["Bludgeoning", "Piercing", "Slashing"],
+    advantage: ["Strength checks", "Strength saving throws"],
+    restrictions: ["Cannot maintain Concentration", "Cannot cast spells"],
+    duration: { initial: "until the end of your next turn", maximum: "10 minutes" },
+    extension: ["Make an attack roll against an enemy", "Force an enemy to make a saving throw", "Take a Bonus Action to extend your Rage"]
+  };
 }
 
 function dnd5eSrdSneakAttackFormula(actor: Actor): string {
@@ -2999,7 +3130,9 @@ function dnd5eSrdSpellSaveDc(actor: Actor): number {
 
 function dnd5eSrdAttacksPerAction(actor: Actor): number {
   const hasExtraAttack = normalizeStringArray(actor.data.features).includes("Extra Attack");
-  if (stringValue(actor.data.class) !== "Fighter" && !hasExtraAttack) return 1;
+  const className = stringValue(actor.data.class);
+  if (className === "Barbarian") return Math.max(hasExtraAttack ? 2 : 1, dnd5eSrdBarbarianAttacksPerAction(numericValue(actor.data.level, 1)));
+  if (className !== "Fighter" && !hasExtraAttack) return 1;
   return Math.max(hasExtraAttack ? 2 : 1, dnd5eSrdFighterAttacksPerAction(numericValue(actor.data.level, 1)));
 }
 
@@ -3009,6 +3142,10 @@ function dnd5eSrdFighterAttacksPerAction(level: number): number {
   if (normalized >= 11) return 3;
   if (normalized >= 5) return 2;
   return 1;
+}
+
+function dnd5eSrdBarbarianAttacksPerAction(level: number): number {
+  return Math.max(1, Math.floor(level)) >= 5 ? 2 : 1;
 }
 
 function dnd5eSrdTacticalShiftMovement(actor: Actor): number {
@@ -3125,6 +3262,7 @@ function dnd5eSrdShortRestLimitedResources(actor: Actor): Record<string, number>
   const resources = recordValue(actor.data.resources);
   const limited: Record<string, number> = {};
   if (dnd5eSrdHasSecondWind(actor) || "secondWind" in resources) limited.secondWind = 1;
+  if (dnd5eSrdHasRage(actor) || "rage" in resources) limited.rage = 1;
   if (dnd5eSrdHasChannelDivinity(actor) || "channelDivinity" in resources) limited.channelDivinity = 1;
   return limited;
 }
@@ -3276,6 +3414,7 @@ function dnd5eSrdPrimaryAbility(className: string): string {
 }
 
 function dnd5eSrdHitDieSize(className: string): string {
+  if (className === "Barbarian") return "d12";
   if (className === "Wizard") return "d6";
   if (className === "Cleric") return "d8";
   if (className === "Rogue") return "d8";
@@ -3294,6 +3433,9 @@ function defaultDnd5eSrdResources(className: string, level = 1): Record<string, 
   if (className === "Cleric") {
     const channelDivinityMax = dnd5eSrdChannelDivinityMax(level);
     return channelDivinityMax > 0 ? { channelDivinity: { current: channelDivinityMax, max: channelDivinityMax, recovery: "short" } } : {};
+  }
+  if (className === "Barbarian") {
+    return { rage: { current: dnd5eSrdRageMax(level), max: dnd5eSrdRageMax(level), recovery: "short" } };
   }
   if (className === "Wizard") {
     return { arcaneRecovery: { current: 1, max: 1, recovery: "long" } };
@@ -3319,6 +3461,15 @@ function dnd5eSrdChannelDivinityMax(level: number): number {
   if (normalized >= 6) return 3;
   if (normalized >= 2) return 2;
   return 0;
+}
+
+function dnd5eSrdRageMax(level: number): number {
+  const normalized = Math.max(1, Math.floor(level));
+  if (normalized >= 17) return 6;
+  if (normalized >= 12) return 5;
+  if (normalized >= 6) return 4;
+  if (normalized >= 3) return 3;
+  return 2;
 }
 
 function defaultDnd5eSrdSpellSlots(className: string, level: number): Record<string, Record<string, unknown>> {

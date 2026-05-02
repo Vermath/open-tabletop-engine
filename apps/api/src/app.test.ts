@@ -3197,7 +3197,7 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(templates.statusCode).toBe(200);
-      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "cleric", "wizard", "rogue"]);
+      expect(templates.json().map((template: { id: string }) => template.id)).toEqual(["fighter", "barbarian", "cleric", "wizard", "rogue"]);
 
       const origins = await app.inject({
         method: "GET",
@@ -3303,6 +3303,63 @@ describe("api", () => {
       expect(wizardLongRest.statusCode).toBe(200);
       expect(wizardLongRest.json().actor.data.resources).toEqual({ arcaneRecovery: { current: 1, max: 1, recovery: "long" } });
       expect(wizardLongRest.json().actor.data.spellSlots).toEqual({ level1: { current: 2, max: 2, recovery: "long" } });
+
+      const barbarian = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "barbarian", name: "SRD Barbarian", ownerUserId: "usr_demo_player" }
+      });
+      expect(barbarian.statusCode).toBe(200);
+      expect(barbarian.json().actor.data).toEqual(
+        expect.objectContaining({
+          features: ["Rage", "Unarmored Defense", "Weapon Mastery"],
+          hitDice: { current: 1, max: 1, size: "d12" },
+          resources: { rage: { current: 2, max: 2, recovery: "short" } },
+          saveProficiencies: ["strength", "constitution"]
+        })
+      );
+      expect(barbarian.json().sheet.inventory.map((item: { name: string }) => item.name)).toEqual(["Spear"]);
+      expect(barbarian.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "save-strength", formula: "1d20+5" }),
+          expect.objectContaining({ id: "feature-rage", formula: "0", metadata: expect.objectContaining({ resource: "rage", damageBonus: 2, damageBonusRollId: "feature-rage-damage-bonus" }) }),
+          expect.objectContaining({ id: "feature-rage-damage-bonus", formula: "2", metadata: expect.objectContaining({ bonusDamage: 2, damageType: "Weapon" }) })
+        ])
+      );
+
+      const levelFiveBarbarian = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "barbarian", name: "SRD Level Five Barbarian", ownerUserId: "usr_demo_player" }
+      });
+      expect(levelFiveBarbarian.statusCode).toBe(200);
+      let levelFiveBarbarianAdvance = levelFiveBarbarian;
+      for (let level = 2; level <= 5; level += 1) {
+        levelFiveBarbarianAdvance = await app.inject({
+          method: "POST",
+          url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveBarbarian.json().actor.id}/advance`,
+          headers: { "x-user-id": "usr_demo_player" },
+          payload: { optionId: "level-up" }
+        });
+        expect(levelFiveBarbarianAdvance.statusCode).toBe(200);
+      }
+      expect(levelFiveBarbarianAdvance.json().actor.data).toEqual(
+        expect.objectContaining({
+          level: 5,
+          features: expect.arrayContaining(["Rage", "Danger Sense", "Reckless Attack", "Extra Attack", "Fast Movement"]),
+          resources: { rage: { current: 2, max: 3, recovery: "short" } },
+          combat: expect.objectContaining({ attacksPerAction: 2, fastMovement: { bonusFt: 10, armorRestriction: "not wearing Heavy armor" } })
+        })
+      );
+      expect(levelFiveBarbarianAdvance.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "save-dexterity", formula: "1d20+1", metadata: { advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] } }),
+          expect.objectContaining({ id: "feature-reckless-attack", formula: "0", metadata: expect.objectContaining({ drawback: "attack rolls against you have Advantage during that time" }) }),
+          expect.objectContaining({ id: "feature-rage-damage-bonus", formula: "2", metadata: expect.objectContaining({ bonusDamage: 2 }) })
+        ])
+      );
 
       const rogue = await app.inject({
         method: "POST",
@@ -3694,6 +3751,25 @@ describe("api", () => {
       });
       expect(rogueTarget.statusCode).toBe(200);
 
+      const barbarianTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/actors",
+        headers: authHeaders,
+        payload: {
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_gm",
+          type: "character",
+          name: "SRD Barbarian Target",
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: { current: 10, max: 12 },
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        }
+      });
+      expect(barbarianTarget.statusCode).toBe(200);
+
       const sneakAttack = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveRogue.json().actor.id}/roll`,
@@ -3715,6 +3791,76 @@ describe("api", () => {
       expect(cunningStrike.statusCode).toBe(200);
       expect(cunningStrike.json().roll.formula).toBe("0");
       expect(cunningStrike.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-cunning-strike", formula: "0", metadata: expect.objectContaining({ saveDc: 16, sneakAttackDice: 3 }) }));
+
+      const rage = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${barbarian.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-rage", consumeResources: true }
+      });
+      expect(rage.statusCode).toBe(200);
+      expect(rage.json().roll.formula).toBe("0");
+      expect(rage.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-rage", metadata: expect.objectContaining({ resource: "rage", damageBonus: 2 }) }));
+      expect(rage.json().usage.consumed).toEqual([{ type: "resource", key: "rage", label: "Rage", amount: 1, remaining: 1 }]);
+      expect(store.state.actors.find((actor) => actor.id === barbarian.json().actor.id)?.data.resources).toEqual({ rage: { current: 1, max: 2, recovery: "short" } });
+
+      const rageAgain = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${barbarian.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-rage", consumeResources: true }
+      });
+      expect(rageAgain.statusCode).toBe(200);
+      expect(rageAgain.json().usage.consumed).toEqual([{ type: "resource", key: "rage", label: "Rage", amount: 1, remaining: 0 }]);
+
+      const depletedRage = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${barbarian.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-rage", consumeResources: true }
+      });
+      expect(depletedRage.statusCode).toBe(409);
+      expect(depletedRage.json().message).toContain("Insufficient rage");
+
+      const barbarianShortRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${barbarian.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "short" }
+      });
+      expect(barbarianShortRest.statusCode).toBe(200);
+      expect(barbarianShortRest.json().actor.data.resources).toEqual({ rage: { current: 1, max: 2, recovery: "short" } });
+      expect(barbarianShortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ rage: 1 }));
+
+      const barbarianLongRest = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${barbarian.json().actor.id}/rest`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { restType: "long" }
+      });
+      expect(barbarianLongRest.statusCode).toBe(200);
+      expect(barbarianLongRest.json().actor.data.resources).toEqual({ rage: { current: 2, max: 2, recovery: "short" } });
+
+      const rageDamage = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveBarbarian.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: "feature-rage-damage-bonus", applyEffect: true, targetActorId: barbarianTarget.json().id }
+      });
+      expect(rageDamage.statusCode).toBe(200);
+      expect(rageDamage.json().roll.formula).toBe("2");
+      expect(rageDamage.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-rage-damage-bonus", formula: "2", metadata: expect.objectContaining({ bonusDamage: 2 }) }));
+      expect(rageDamage.json().effect).toEqual(expect.objectContaining({ type: "damage", targetActorId: barbarianTarget.json().id, pool: "hp", before: 10, max: 12, amount: 2, after: 8 }));
+
+      const recklessAttack = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveBarbarian.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-reckless-attack" }
+      });
+      expect(recklessAttack.statusCode).toBe(200);
+      expect(recklessAttack.json().roll.formula).toBe("0");
+      expect(recklessAttack.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-reckless-attack", formula: "0", metadata: expect.objectContaining({ advantage: { attacksUsing: "Strength", until: "start of your next turn" } }) }));
 
       const searTurnUndead = await app.inject({
         method: "POST",
