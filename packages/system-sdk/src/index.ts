@@ -335,12 +335,24 @@ export function genericFantasyQuickRolls(actor: Actor, items: Item[] = []): Quic
 }
 
 export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
-  const abilities = dnd5eSrdAbilityKeys(actor);
+  const abilities = dnd5eSrdAbilityKeys();
   return [
-    ...abilities.map((ability) => genericFantasyAbilityCheck(actor, ability)),
+    ...abilities.map((ability) => dnd5eSrdAbilityCheck(actor, ability)),
     ...abilities.map((ability) => dnd5eSrdSavingThrow(actor, ability)),
+    ...dnd5eSrdSkills().map((skill) => dnd5eSrdSkillCheck(actor, skill.id)),
     ...genericFantasyActionRolls(actor, items)
   ];
+}
+
+export function dnd5eSrdAbilityCheck(actor: Actor, ability: string): QuickRoll {
+  const modifier = genericFantasyAttributeModifier(actor, ability);
+  const label = `${ability.charAt(0).toUpperCase()}${ability.slice(1)} Check`;
+  const d20 = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "poisoned") ? "2d20kl1" : "1d20";
+  return {
+    id: `ability-${ability}`,
+    label,
+    formula: `${d20}${formatSignedNumber(modifier)}`
+  };
 }
 
 export function dnd5eSrdSavingThrow(actor: Actor, ability: string): QuickRoll {
@@ -352,6 +364,18 @@ export function dnd5eSrdSavingThrow(actor: Actor, ability: string): QuickRoll {
     id: `save-${ability}`,
     label,
     formula: `1d20${formatSignedNumber(modifier + proficiencyBonus)}${bonus}`
+  };
+}
+
+export function dnd5eSrdSkillCheck(actor: Actor, skillId: string): QuickRoll {
+  const skill = dnd5eSrdSkillDefinition(skillId);
+  const modifier = genericFantasyAttributeModifier(actor, skill.ability);
+  const proficiencyMultiplier = dnd5eSrdSkillProficiencyMultiplier(actor, skill.id);
+  const d20 = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "poisoned") ? "2d20kl1" : "1d20";
+  return {
+    id: `skill-${skill.id}`,
+    label: `${skill.label} Check`,
+    formula: `${d20}${formatSignedNumber(modifier + proficiencyMultiplier * dnd5eSrdProficiencyBonus(actor))}`
   };
 }
 
@@ -429,9 +453,15 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
           : entry.id === "cure-wounds"
             ? { healingFormula: "2d8+@attributes.wisdom", upcastFormula: "2d8" }
             : {};
+      const dndSummaryOverride =
+        entry.id === "blessed"
+          ? "Adds 1d4 to SRD saving throws."
+          : entry.id === "poisoned"
+            ? "Rolls SRD ability and skill checks with disadvantage."
+            : undefined;
       return {
         ...entry,
-        summary: entry.summary.replace("Generic Fantasy runtime", "D&D 5.5e SRD runtime"),
+        summary: dndSummaryOverride ?? entry.summary.replace("Generic Fantasy runtime", "D&D 5.5e SRD runtime"),
         data: { ...entry.data, ...dndDataOverrides, source: DND_5E_SRD_VERSION }
       };
     }),
@@ -518,6 +548,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         attributes: { strength: 16, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 10, charisma: 12 },
         hitDice: { current: 1, max: 1, size: "d10" },
         saveProficiencies: ["strength", "constitution"],
+        skillProficiencies: ["athletics", "intimidation"],
         resources: { secondWind: { current: 1, max: 1, recovery: "short" } },
         spellSlots: {},
         conditions: [],
@@ -543,6 +574,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         attributes: { strength: 10, dexterity: 12, constitution: 12, intelligence: 13, wisdom: 16, charisma: 10 },
         hitDice: { current: 1, max: 1, size: "d8" },
         saveProficiencies: ["wisdom", "charisma"],
+        skillProficiencies: ["medicine", "religion"],
         resources: {},
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
@@ -568,6 +600,7 @@ export function dnd5eSrdCharacterTemplates(): CharacterTemplate[] {
         attributes: { strength: 8, dexterity: 14, constitution: 14, intelligence: 16, wisdom: 12, charisma: 10 },
         hitDice: { current: 1, max: 1, size: "d6" },
         saveProficiencies: ["intelligence", "wisdom"],
+        skillProficiencies: ["arcana", "history"],
         resources: {},
         spellSlots: { level1: { current: 2, max: 2, recovery: "long" } },
         conditions: [],
@@ -642,6 +675,8 @@ export function dnd5eSrdCharacterImport(input: CharacterImportInput): CharacterI
       proficiencyBonus: dnd5eSrdProficiencyBonusForLevel(level, source.proficiencyBonus),
       hitDice: { ...recordValue(imported.data.hitDice), size: stringValue(sourceHitDice.size) ?? dnd5eSrdHitDieSize(className) },
       saveProficiencies: dnd5eSrdSaveProficienciesForClass(className, source.saveProficiencies),
+      skillProficiencies: dnd5eSrdSkillProficienciesForClass(className, source.skillProficiencies),
+      skillExpertise: dnd5eSrdSkillProficienciesFromExplicit(source.skillExpertise),
       resources: normalizeResourcePools(source.resources, defaultDnd5eSrdResources(className)),
       spellSlots: normalizeResourcePools(source.spellSlots, defaultDnd5eSrdSpellSlots(className, level)),
       conditions: conditions.map((id) => ({ id }))
@@ -1649,8 +1684,35 @@ function genericFantasyAttributeModifier(actor: Actor, ability: string): number 
   return abilityModifier(numericValue(attributes?.[ability], 10));
 }
 
-function dnd5eSrdAbilityKeys(actor: Actor): string[] {
+function dnd5eSrdAbilityKeys(): string[] {
   return Object.keys(defaultDnd5eSrdAttributes());
+}
+
+function dnd5eSrdSkills(): Array<{ id: string; label: string; ability: string }> {
+  return [
+    { id: "acrobatics", label: "Acrobatics", ability: "dexterity" },
+    { id: "animal-handling", label: "Animal Handling", ability: "wisdom" },
+    { id: "arcana", label: "Arcana", ability: "intelligence" },
+    { id: "athletics", label: "Athletics", ability: "strength" },
+    { id: "deception", label: "Deception", ability: "charisma" },
+    { id: "history", label: "History", ability: "intelligence" },
+    { id: "insight", label: "Insight", ability: "wisdom" },
+    { id: "intimidation", label: "Intimidation", ability: "charisma" },
+    { id: "investigation", label: "Investigation", ability: "intelligence" },
+    { id: "medicine", label: "Medicine", ability: "wisdom" },
+    { id: "nature", label: "Nature", ability: "intelligence" },
+    { id: "perception", label: "Perception", ability: "wisdom" },
+    { id: "performance", label: "Performance", ability: "charisma" },
+    { id: "persuasion", label: "Persuasion", ability: "charisma" },
+    { id: "religion", label: "Religion", ability: "intelligence" },
+    { id: "sleight-of-hand", label: "Sleight of Hand", ability: "dexterity" },
+    { id: "stealth", label: "Stealth", ability: "dexterity" },
+    { id: "survival", label: "Survival", ability: "wisdom" }
+  ];
+}
+
+function dnd5eSrdSkillDefinition(skillId: string): { id: string; label: string; ability: string } {
+  return dnd5eSrdSkills().find((skill) => skill.id === normalizeDnd5eSrdSkillId(skillId)) ?? { id: "perception", label: "Perception", ability: "wisdom" };
 }
 
 function defaultDnd5eSrdAttributes(): Record<string, number> {
@@ -1677,6 +1739,41 @@ function dnd5eSrdSaveProficienciesForClass(className: string, explicit: unknown)
   if (normalizedClass === "cleric") return ["wisdom", "charisma"];
   if (normalizedClass === "wizard") return ["intelligence", "wisdom"];
   return ["strength", "constitution"];
+}
+
+function dnd5eSrdSkillProficiencyMultiplier(actor: Actor, skillId: string): number {
+  const normalizedSkillId = normalizeDnd5eSrdSkillId(skillId);
+  if (dnd5eSrdSkillProficiencies(actor, "skillExpertise").includes(normalizedSkillId)) return 2;
+  return dnd5eSrdSkillProficiencies(actor, "skillProficiencies").includes(normalizedSkillId) ? 1 : 0;
+}
+
+function dnd5eSrdSkillProficiencies(actor: Actor, field: "skillProficiencies" | "skillExpertise"): string[] {
+  if (field === "skillExpertise") return dnd5eSrdSkillProficienciesFromExplicit(actor.data.skillExpertise);
+  return dnd5eSrdSkillProficienciesForClass(stringValue(actor.data.class) || "Fighter", actor.data.skillProficiencies);
+}
+
+function dnd5eSrdSkillProficienciesForClass(className: string, explicit: unknown): string[] {
+  const explicitProficiencies = dnd5eSrdSkillProficienciesFromExplicit(explicit);
+  if (explicitProficiencies.length > 0) return explicitProficiencies;
+  const normalizedClass = className.toLowerCase();
+  if (normalizedClass === "cleric") return ["medicine", "religion"];
+  if (normalizedClass === "wizard") return ["arcana", "history"];
+  return ["athletics", "intimidation"];
+}
+
+function dnd5eSrdSkillProficienciesFromExplicit(explicit: unknown): string[] {
+  const skillIds = new Set(dnd5eSrdSkills().map((skill) => skill.id));
+  return Array.from(
+    new Set(
+      normalizeStringArray(explicit)
+        .map((skill) => normalizeDnd5eSrdSkillId(skill))
+        .filter((skill) => skillIds.has(skill))
+    )
+  );
+}
+
+function normalizeDnd5eSrdSkillId(skill: string): string {
+  return skill.trim().replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
 function stellarFrontiersAptitudeModifier(actor: Actor, aptitude: string): number {
