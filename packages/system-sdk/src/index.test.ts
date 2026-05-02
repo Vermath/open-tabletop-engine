@@ -317,10 +317,19 @@ describe("dnd 5.5e srd rules", () => {
     expect(rogue?.items.map((item) => item.entryId)).toEqual(["dagger", "shortbow"]);
     expect(cleric?.items.map((item) => item.entryId)).toEqual(["healing-word", "cure-wounds"]);
     expect(dnd5eSrdCompendiumEntry("magic-initiate")).toEqual(expect.objectContaining({ name: "Magic Initiate" }));
-    expect(dnd5eSrdCompendiumEntry("longsword")?.data).toEqual(expect.objectContaining({ costGp: 15, weightLb: 3 }));
+    expect(dnd5eSrdCompendiumEntry("longsword")?.data).toEqual(expect.objectContaining({ costGp: 15, weightLb: 3, weaponCategory: "martial", weaponKind: "melee", mastery: "sap" }));
     expect(dnd5eSrdCompendiumEntry("shield-armor")?.data).toEqual(expect.objectContaining({ costGp: 10, armorBonus: 2 }));
+    expect(dnd5eSrdCompendiumEntry("padded-armor")?.data).toEqual(expect.objectContaining({ armorBase: 11, armorType: "light", stealthDisadvantage: true, costGp: 5, weightLb: 8 }));
     expect(dnd5eSrdCompendiumEntry("leather-armor")?.data).toEqual(expect.objectContaining({ armorBase: 11, armorType: "light", costGp: 10, weightLb: 10 }));
+    expect(dnd5eSrdCompendiumEntry("hide-armor")?.data).toEqual(expect.objectContaining({ armorBase: 12, armorType: "medium", dexCap: 2, costGp: 10, weightLb: 12 }));
+    expect(dnd5eSrdCompendiumEntry("chain-shirt")?.data).toEqual(expect.objectContaining({ armorBase: 13, armorType: "medium", dexCap: 2, costGp: 50, weightLb: 20 }));
+    expect(dnd5eSrdCompendiumEntry("scale-mail")?.data).toEqual(expect.objectContaining({ armorBase: 14, armorType: "medium", dexCap: 2, stealthDisadvantage: true, costGp: 50, weightLb: 45 }));
+    expect(dnd5eSrdCompendiumEntry("breastplate")?.data).toEqual(expect.objectContaining({ armorBase: 14, armorType: "medium", dexCap: 2, costGp: 400, weightLb: 20 }));
+    expect(dnd5eSrdCompendiumEntry("half-plate-armor")?.data).toEqual(expect.objectContaining({ armorBase: 15, armorType: "medium", dexCap: 2, stealthDisadvantage: true, costGp: 750, weightLb: 40 }));
+    expect(dnd5eSrdCompendiumEntry("ring-mail")?.data).toEqual(expect.objectContaining({ armorBase: 14, armorType: "heavy", dexBonus: false, stealthDisadvantage: true, costGp: 30, weightLb: 40 }));
     expect(dnd5eSrdCompendiumEntry("chain-mail")?.data).toEqual(expect.objectContaining({ armorBase: 16, armorType: "heavy", dexBonus: false, strengthRequirement: 13, stealthDisadvantage: true, costGp: 75, weightLb: 55 }));
+    expect(dnd5eSrdCompendiumEntry("splint-armor")?.data).toEqual(expect.objectContaining({ armorBase: 17, armorType: "heavy", dexBonus: false, strengthRequirement: 15, costGp: 200, weightLb: 60 }));
+    expect(dnd5eSrdCompendiumEntry("plate-armor")?.data).toEqual(expect.objectContaining({ armorBase: 18, armorType: "heavy", dexBonus: false, strengthRequirement: 15, costGp: 1500, weightLb: 65 }));
     expect(dnd5eSrdCompendiumEntry("acid-arrow")?.data).toEqual(expect.objectContaining({ level: 2, damageFormula: "4d4", upcastFormula: "1d4", secondaryDamageFormula: "2d4", secondaryUpcastFormula: "1d4", spellAttack: true }));
     expect(dnd5eSrdCompendiumEntry("acid-splash")?.data).toEqual(expect.objectContaining({ level: 0, damageFormula: "1d6", damageType: "acid", save: { ability: "dexterity" }, cantripScaling: { level5: "2d6", level11: "3d6", level17: "4d6" } }));
     expect(dnd5eSrdCompendiumEntry("aid")?.data).toEqual(expect.objectContaining({ level: 2, healingFormula: "5", upcastFormula: "5", hitPointMaximumIncreaseFormula: "5", targetCount: 3 }));
@@ -354,15 +363,44 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("tsunami")?.data).toEqual(expect.objectContaining({ level: 8, damageFormula: "6d10", secondaryDamageFormula: "5d10", save: { ability: "strength", success: "half" } }));
     expect(dnd5eSrdCompendiumEntry("thunderwave")?.data).toEqual(expect.objectContaining({ level: 1, damageFormula: "2d8", upcastFormula: "1d8", damageType: "thunder", save: { ability: "constitution", success: "half" } }));
     expect(dnd5eSrdCompendiumEntry("vitriolic-sphere")?.data).toEqual(expect.objectContaining({ level: 4, damageFormula: "10d4", upcastFormula: "2d4", secondaryDamageFormula: "5d4", save: { ability: "dexterity", success: "half initial damage only" } }));
-    expect(dnd5eSrdCompendiumEntry("dagger")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, damageType: "piercing" }));
-    expect(dnd5eSrdCompendiumEntry("sickle")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 1, damageType: "slashing" }));
-    expect(dnd5eSrdCompendiumEntry("quarterstaff")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 0.2 }));
-    expect(dnd5eSrdCompendiumEntry("shortbow")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 25, damageType: "piercing" }));
-    expect(dnd5eSrdCompendiumEntry("longbow")?.data).toEqual(expect.objectContaining({ damage: "1d8", costGp: 50, damageType: "piercing" }));
-    expect(dnd5eSrdCompendiumEntry("scimitar")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 25, damageType: "slashing" }));
-    expect(dnd5eSrdCompendiumEntry("shortsword")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 10, damageType: "piercing" }));
+    expect(dnd5eSrdCompendiumEntry("club")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 0.1, damageType: "bludgeoning", mastery: "slow" }));
+    expect(dnd5eSrdCompendiumEntry("dagger")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, damageType: "piercing", mastery: "nick", range: "20/60" }));
+    expect(dnd5eSrdCompendiumEntry("greatclub")?.data).toEqual(expect.objectContaining({ damage: "1d8", costGp: 0.2, properties: ["two-handed"], mastery: "push" }));
+    expect(dnd5eSrdCompendiumEntry("handaxe")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 5, properties: ["light", "thrown"], mastery: "vex" }));
+    expect(dnd5eSrdCompendiumEntry("javelin")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 0.5, range: "30/120", mastery: "slow" }));
+    expect(dnd5eSrdCompendiumEntry("light-hammer")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, range: "20/60", mastery: "nick" }));
+    expect(dnd5eSrdCompendiumEntry("mace")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 5, mastery: "sap" }));
+    expect(dnd5eSrdCompendiumEntry("sickle")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 1, damageType: "slashing", mastery: "nick" }));
+    expect(dnd5eSrdCompendiumEntry("quarterstaff")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 0.2, mastery: "topple" }));
+    expect(dnd5eSrdCompendiumEntry("dart")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 0.05, weaponKind: "ranged", mastery: "vex" }));
+    expect(dnd5eSrdCompendiumEntry("light-crossbow")?.data).toEqual(expect.objectContaining({ damage: "1d8", costGp: 25, range: "80/320", ammunition: "bolt", mastery: "slow" }));
+    expect(dnd5eSrdCompendiumEntry("shortbow")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 25, damageType: "piercing", range: "80/320", mastery: "vex" }));
+    expect(dnd5eSrdCompendiumEntry("sling")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 0.1, range: "30/120", mastery: "slow" }));
+    expect(dnd5eSrdCompendiumEntry("battleaxe")?.data).toEqual(expect.objectContaining({ damage: "1d8", versatileDamage: "1d10", costGp: 10, mastery: "topple" }));
+    expect(dnd5eSrdCompendiumEntry("flail")?.data).toEqual(expect.objectContaining({ damage: "1d8", costGp: 10, damageType: "bludgeoning", mastery: "sap" }));
+    expect(dnd5eSrdCompendiumEntry("glaive")?.data).toEqual(expect.objectContaining({ damage: "1d10", costGp: 20, properties: ["heavy", "reach", "two-handed"], mastery: "graze" }));
+    expect(dnd5eSrdCompendiumEntry("greataxe")?.data).toEqual(expect.objectContaining({ damage: "1d12", costGp: 30, mastery: "cleave" }));
+    expect(dnd5eSrdCompendiumEntry("greatsword")?.data).toEqual(expect.objectContaining({ damage: "2d6", costGp: 50, damageType: "slashing", mastery: "graze" }));
+    expect(dnd5eSrdCompendiumEntry("halberd")?.data).toEqual(expect.objectContaining({ damage: "1d10", costGp: 20, mastery: "cleave" }));
+    expect(dnd5eSrdCompendiumEntry("lance")?.data).toEqual(expect.objectContaining({ damage: "1d10", costGp: 10, special: "two-handed unless mounted", mastery: "topple" }));
+    expect(dnd5eSrdCompendiumEntry("longbow")?.data).toEqual(expect.objectContaining({ damage: "1d8", costGp: 50, damageType: "piercing", range: "150/600", mastery: "slow" }));
+    expect(dnd5eSrdCompendiumEntry("maul")?.data).toEqual(expect.objectContaining({ damage: "2d6", costGp: 10, damageType: "bludgeoning", mastery: "topple" }));
+    expect(dnd5eSrdCompendiumEntry("morningstar")?.data).toEqual(expect.objectContaining({ damage: "1d8", costGp: 15, damageType: "piercing", mastery: "sap" }));
+    expect(dnd5eSrdCompendiumEntry("pike")?.data).toEqual(expect.objectContaining({ damage: "1d10", costGp: 5, properties: ["heavy", "reach", "two-handed"], mastery: "push" }));
+    expect(dnd5eSrdCompendiumEntry("rapier")?.data).toEqual(expect.objectContaining({ damage: "1d8", costGp: 25, properties: ["finesse"], mastery: "vex" }));
+    expect(dnd5eSrdCompendiumEntry("scimitar")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 25, damageType: "slashing", mastery: "nick" }));
+    expect(dnd5eSrdCompendiumEntry("shortsword")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 10, damageType: "piercing", mastery: "vex" }));
     expect(dnd5eSrdCompendiumEntry("studded-leather-armor")?.data).toEqual(expect.objectContaining({ armorBase: 12, armorType: "light", costGp: 45, weightLb: 13 }));
-    expect(dnd5eSrdCompendiumEntry("spear")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 1 }));
+    expect(dnd5eSrdCompendiumEntry("spear")?.data).toEqual(expect.objectContaining({ damage: "1d6", versatileDamage: "1d8", costGp: 1, mastery: "sap" }));
+    expect(dnd5eSrdCompendiumEntry("trident")?.data).toEqual(expect.objectContaining({ damage: "1d8", versatileDamage: "1d10", costGp: 5, mastery: "topple" }));
+    expect(dnd5eSrdCompendiumEntry("warhammer")?.data).toEqual(expect.objectContaining({ damage: "1d8", versatileDamage: "1d10", costGp: 15, mastery: "push" }));
+    expect(dnd5eSrdCompendiumEntry("war-pick")?.data).toEqual(expect.objectContaining({ damage: "1d8", versatileDamage: "1d10", costGp: 5, mastery: "sap" }));
+    expect(dnd5eSrdCompendiumEntry("whip")?.data).toEqual(expect.objectContaining({ damage: "1d4", costGp: 2, properties: ["finesse", "reach"], mastery: "slow" }));
+    expect(dnd5eSrdCompendiumEntry("blowgun")?.data).toEqual(expect.objectContaining({ damage: "1", costGp: 10, range: "25/100", mastery: "vex" }));
+    expect(dnd5eSrdCompendiumEntry("hand-crossbow")?.data).toEqual(expect.objectContaining({ damage: "1d6", costGp: 75, range: "30/120", mastery: "vex" }));
+    expect(dnd5eSrdCompendiumEntry("heavy-crossbow")?.data).toEqual(expect.objectContaining({ damage: "1d10", costGp: 50, range: "100/400", mastery: "push" }));
+    expect(dnd5eSrdCompendiumEntry("musket")?.data).toEqual(expect.objectContaining({ damage: "1d12", costGp: 500, range: "40/120", mastery: "slow" }));
+    expect(dnd5eSrdCompendiumEntry("pistol")?.data).toEqual(expect.objectContaining({ damage: "1d10", costGp: 250, range: "30/90", mastery: "vex" }));
     expect(dnd5eSrdCompendiumEntry("musical-instrument")?.data).toEqual(expect.objectContaining({ toolId: "musical-instrument", costGp: 2 }));
     expect(dnd5eSrdCompendiumEntry("arcane-focus")?.data).toEqual(expect.objectContaining({ focusType: "arcane", costGp: 10 }));
 
@@ -597,6 +635,50 @@ describe("dnd 5.5e srd rules", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     };
+    const halfPlateArmor: Item = {
+      id: "itm_half_plate_armor",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Half Plate Armor",
+      data: { ...dnd5eSrdCompendiumEntry("half-plate-armor")!.data, compendiumId: "half-plate-armor" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const plateArmor: Item = {
+      id: "itm_plate_armor",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Plate Armor",
+      data: { ...dnd5eSrdCompendiumEntry("plate-armor")!.data, compendiumId: "plate-armor" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const lightCrossbow: Item = {
+      id: "itm_light_crossbow",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Light Crossbow",
+      data: { ...dnd5eSrdCompendiumEntry("light-crossbow")!.data, compendiumId: "light-crossbow" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const greatsword: Item = {
+      id: "itm_greatsword",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Greatsword",
+      data: { ...dnd5eSrdCompendiumEntry("greatsword")!.data, compendiumId: "greatsword" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
     expect(dnd5eSrdSheet(srdActor, [spell]).spells.map((item) => item.name)).toEqual(["Healing Word"]);
     expect(dnd5eSrdSheet(srdActor, [leatherArmor, shield]).data).toEqual(
       expect.objectContaining({
@@ -610,7 +692,20 @@ describe("dnd 5.5e srd rules", () => {
         armorClassDetails: expect.objectContaining({ value: 18, base: 16, dexModifier: 0, armorName: "Chain Mail", shieldBonus: 2, stealthDisadvantage: true, strengthRequirement: 13, speedPenalty: -10 })
       })
     );
-    expect(dnd5eSrdQuickRolls(srdActor, [spell, chromaticOrb, iceKnife, shortbow])).toEqual(
+    const dexterousActor: Actor = { ...srdActor, data: { ...srdActor.data, attributes: { ...(srdActor.data.attributes as Record<string, unknown>), dexterity: 18 } } };
+    expect(dnd5eSrdSheet(dexterousActor, [halfPlateArmor]).data).toEqual(
+      expect.objectContaining({
+        armorClass: 17,
+        armorClassDetails: expect.objectContaining({ value: 17, base: 15, dexModifier: 2, armorName: "Half Plate Armor", stealthDisadvantage: true })
+      })
+    );
+    expect(dnd5eSrdSheet(dexterousActor, [plateArmor]).data).toEqual(
+      expect.objectContaining({
+        armorClass: 18,
+        armorClassDetails: expect.objectContaining({ value: 18, base: 18, dexModifier: 0, armorName: "Plate Armor", stealthDisadvantage: true, strengthRequirement: 15, speedPenalty: -10 })
+      })
+    );
+    expect(dnd5eSrdQuickRolls(srdActor, [spell, chromaticOrb, iceKnife, shortbow, lightCrossbow])).toEqual(
       expect.arrayContaining([
         { id: "save-wisdom", label: "Wisdom Save", formula: "1d20+5" },
         { id: "save-charisma", label: "Charisma Save", formula: "1d20+2" },
@@ -623,7 +718,8 @@ describe("dnd 5.5e srd rules", () => {
         { id: "spell-itm_chromatic_orb-damage", label: "Chromatic Orb Damage", formula: "3d8" },
         { id: "spell-itm_ice_knife-damage", label: "Ice Knife Damage", formula: "1d10" },
         { id: "spell-itm_ice_knife-secondary-damage", label: "Ice Knife Secondary Damage", formula: "2d6" },
-        { id: "item-itm_shortbow-damage", label: "Shortbow Damage", formula: "1d6+1" }
+        { id: "item-itm_shortbow-damage", label: "Shortbow Damage", formula: "1d6+1" },
+        { id: "item-itm_light_crossbow-damage", label: "Light Crossbow Damage", formula: "1d8+1" }
       ])
     );
     const clericActor: Actor = { ...srdActor, data: { ...cleric!.data } };
@@ -696,12 +792,18 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdQuickRolls(levelFiveFighterActor, []).find((roll) => roll.id === "feature-second-wind-healing")).toEqual(
       expect.objectContaining({ formula: "1d10+5", metadata: { tacticalShift: { movementFt: 15, opportunityAttacks: false } } })
     );
-    expect(dnd5eSrdQuickRolls(levelFiveFighterActor, [fighterLongsword])).toEqual(
+    expect(dnd5eSrdQuickRolls(levelFiveFighterActor, [fighterLongsword, { ...greatsword, actorId: levelFiveFighterActor.id }])).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: "item-itm_fighter_longsword-damage",
           label: "Longsword Damage",
           formula: "1d8+5",
+          metadata: { attacksPerAction: 2, feature: "Extra Attack" }
+        }),
+        expect.objectContaining({
+          id: "item-itm_greatsword-damage",
+          label: "Greatsword Damage",
+          formula: "2d6+5",
           metadata: { attacksPerAction: 2, feature: "Extra Attack" }
         })
       ])
@@ -1140,6 +1242,12 @@ describe("dnd 5.5e srd rules", () => {
     const purchasedLeather = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("leather-armor")!, 1);
     expect(purchasedLeather).toEqual(expect.objectContaining({ entryId: "leather-armor", quantity: 1, unitCostGp: 10, totalCostGp: 10, currency: { gp: 40, sp: 0, cp: 0 } }));
     expect(purchasedLeather.itemData).toEqual(expect.objectContaining({ compendiumId: "leather-armor", quantity: 1, purchasedForGp: 10, armorBase: 11 }));
+    const purchasedScaleMail = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("scale-mail")!, 1);
+    expect(purchasedScaleMail).toEqual(expect.objectContaining({ entryId: "scale-mail", quantity: 1, unitCostGp: 50, totalCostGp: 50, currency: { gp: 0, sp: 0, cp: 0 } }));
+    expect(purchasedScaleMail.itemData).toEqual(expect.objectContaining({ compendiumId: "scale-mail", quantity: 1, purchasedForGp: 50, armorBase: 14, dexCap: 2, stealthDisadvantage: true }));
+    const purchasedHandaxes = dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("handaxe")!, 2);
+    expect(purchasedHandaxes).toEqual(expect.objectContaining({ entryId: "handaxe", quantity: 2, unitCostGp: 5, totalCostGp: 10, currency: { gp: 40, sp: 0, cp: 0 } }));
+    expect(purchasedHandaxes.itemData).toEqual(expect.objectContaining({ compendiumId: "handaxe", quantity: 2, purchasedForGp: 10, damage: "1d6", mastery: "vex" }));
     expect(() => dnd5eSrdEquipmentPurchase({ ...srdActor, data: { ...srdActor.data, currency: { gp: 1 } } }, dnd5eSrdCompendiumEntry("longsword")!, 1)).toThrow("Insufficient currency");
     expect(() => dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("magic-initiate")!, 1)).toThrow("not purchasable");
   });

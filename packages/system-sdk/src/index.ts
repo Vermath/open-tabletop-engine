@@ -1067,9 +1067,9 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
               ? { damage: undefined, ability: undefined, damageFormula: "1d10", damageType: "fire", classes: ["sorcerer", "wizard"], spellAttack: true, cantripScaling: DND_5E_SRD_CANTRIP_D10_SCALING }
               : entry.id === "blessed"
                 ? { affectedRolls: ["attack", "save"], bonusFormula: "1d4" }
-            : entry.id === "longsword"
-              ? { costGp: 15, weightLb: 3, damageType: "slashing", equipmentCategory: "weapon" }
-              : {};
+                : entry.id === "longsword"
+                  ? { costGp: 15, weightLb: 3, damageType: "slashing", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", properties: ["versatile"], versatileDamage: "1d10", mastery: "sap" }
+                  : {};
       const dndSummaryOverride =
         entry.id === "blessed"
           ? "Adds 1d4 to SRD attack rolls and saving throws."
@@ -1339,7 +1339,14 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       type: "item",
       name: "Shield",
       summary: "Defensive gear that improves armor class while wielded.",
-      data: { category: "armor", equipmentCategory: "armor", armorKind: "shield", armorBonus: 2, costGp: 10, weightLb: 6, source: DND_5E_SRD_VERSION }
+      data: { category: "armor", equipmentCategory: "armor", armorKind: "shield", armorBonus: 2, donDoffAction: "utilize", costGp: 10, weightLb: 6, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "padded-armor",
+      type: "item",
+      name: "Padded Armor",
+      summary: "Light armor that sets base Armor Class and imposes Stealth disadvantage.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "light", armorBase: 11, stealthDisadvantage: true, costGp: 5, weightLb: 8, source: DND_5E_SRD_VERSION }
     },
     {
       id: "leather-armor",
@@ -1356,6 +1363,48 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { category: "armor", equipmentCategory: "armor", armorType: "light", armorBase: 12, costGp: 45, weightLb: 13, source: DND_5E_SRD_VERSION }
     },
     {
+      id: "hide-armor",
+      type: "item",
+      name: "Hide Armor",
+      summary: "Medium armor with limited Dexterity contribution.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "medium", armorBase: 12, dexCap: 2, costGp: 10, weightLb: 12, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "chain-shirt",
+      type: "item",
+      name: "Chain Shirt",
+      summary: "Medium armor with a higher base Armor Class and limited Dexterity contribution.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "medium", armorBase: 13, dexCap: 2, costGp: 50, weightLb: 20, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "scale-mail",
+      type: "item",
+      name: "Scale Mail",
+      summary: "Medium armor with limited Dexterity contribution and Stealth disadvantage.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "medium", armorBase: 14, dexCap: 2, stealthDisadvantage: true, costGp: 50, weightLb: 45, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "breastplate",
+      type: "item",
+      name: "Breastplate",
+      summary: "Medium armor with strong protection and limited Dexterity contribution.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "medium", armorBase: 14, dexCap: 2, costGp: 400, weightLb: 20, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "half-plate-armor",
+      type: "item",
+      name: "Half Plate Armor",
+      summary: "Medium armor with high base Armor Class, limited Dexterity contribution, and Stealth disadvantage.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "medium", armorBase: 15, dexCap: 2, stealthDisadvantage: true, costGp: 750, weightLb: 40, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "ring-mail",
+      type: "item",
+      name: "Ring Mail",
+      summary: "Heavy armor with fixed Armor Class and Stealth disadvantage.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "heavy", armorBase: 14, dexBonus: false, stealthDisadvantage: true, costGp: 30, weightLb: 40, source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "chain-mail",
       type: "item",
       name: "Chain Mail",
@@ -1363,60 +1412,277 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { category: "armor", equipmentCategory: "armor", armorType: "heavy", armorBase: 16, dexBonus: false, strengthRequirement: 13, stealthDisadvantage: true, costGp: 75, weightLb: 55, source: DND_5E_SRD_VERSION }
     },
     {
+      id: "splint-armor",
+      type: "item",
+      name: "Splint Armor",
+      summary: "Heavy armor with strong fixed Armor Class, Strength requirement, and Stealth disadvantage.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "heavy", armorBase: 17, dexBonus: false, strengthRequirement: 15, stealthDisadvantage: true, costGp: 200, weightLb: 60, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "plate-armor",
+      type: "item",
+      name: "Plate Armor",
+      summary: "Heavy armor with the highest mundane fixed Armor Class, Strength requirement, and Stealth disadvantage.",
+      data: { category: "armor", equipmentCategory: "armor", armorType: "heavy", armorBase: 18, dexBonus: false, strengthRequirement: 15, stealthDisadvantage: true, costGp: 1500, weightLb: 65, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "club",
+      type: "item",
+      name: "Club",
+      summary: "Simple light melee weapon with the Slow mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "melee", damage: "1d4", damageType: "bludgeoning", ability: "strength", properties: ["light"], mastery: "slow", costGp: 0.1, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
       id: "dagger",
       type: "item",
       name: "Dagger",
       summary: "Simple finesse weapon with light and thrown properties.",
-      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d4", damageType: "piercing", ability: "dexterity", properties: ["finesse", "light", "thrown"], costGp: 2, weightLb: 1, source: DND_5E_SRD_VERSION }
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "melee", damage: "1d4", damageType: "piercing", ability: "dexterity", properties: ["finesse", "light", "thrown"], range: "20/60", mastery: "nick", costGp: 2, weightLb: 1, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "greatclub",
+      type: "item",
+      name: "Greatclub",
+      summary: "Simple two-handed melee weapon with the Push mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "melee", damage: "1d8", damageType: "bludgeoning", ability: "strength", properties: ["two-handed"], mastery: "push", costGp: 0.2, weightLb: 10, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "handaxe",
+      type: "item",
+      name: "Handaxe",
+      summary: "Simple light thrown melee weapon with the Vex mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "melee", damage: "1d6", damageType: "slashing", ability: "strength", properties: ["light", "thrown"], range: "20/60", mastery: "vex", costGp: 5, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "javelin",
+      type: "item",
+      name: "Javelin",
+      summary: "Simple thrown melee weapon with the Slow mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "melee", damage: "1d6", damageType: "piercing", ability: "strength", properties: ["thrown"], range: "30/120", mastery: "slow", costGp: 0.5, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "light-hammer",
+      type: "item",
+      name: "Light Hammer",
+      summary: "Simple light thrown melee weapon with the Nick mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "melee", damage: "1d4", damageType: "bludgeoning", ability: "strength", properties: ["light", "thrown"], range: "20/60", mastery: "nick", costGp: 2, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "mace",
+      type: "item",
+      name: "Mace",
+      summary: "Simple melee weapon with the Sap mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "melee", damage: "1d6", damageType: "bludgeoning", ability: "strength", properties: [], mastery: "sap", costGp: 5, weightLb: 4, source: DND_5E_SRD_VERSION }
     },
     {
       id: "sickle",
       type: "item",
       name: "Sickle",
       summary: "Simple light melee weapon with a curved slashing blade.",
-      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d4", damageType: "slashing", ability: "strength", properties: ["light"], costGp: 1, weightLb: 2, source: DND_5E_SRD_VERSION }
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "melee", damage: "1d4", damageType: "slashing", ability: "strength", properties: ["light"], mastery: "nick", costGp: 1, weightLb: 2, source: DND_5E_SRD_VERSION }
     },
     {
       id: "quarterstaff",
       type: "item",
       name: "Quarterstaff",
       summary: "Simple versatile melee weapon.",
-      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", versatileDamage: "1d8", damageType: "bludgeoning", ability: "strength", properties: ["versatile"], costGp: 0.2, weightLb: 4, source: DND_5E_SRD_VERSION }
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "melee", damage: "1d6", versatileDamage: "1d8", damageType: "bludgeoning", ability: "strength", properties: ["versatile"], mastery: "topple", costGp: 0.2, weightLb: 4, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "dart",
+      type: "item",
+      name: "Dart",
+      summary: "Simple finesse thrown ranged weapon with the Vex mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "ranged", damage: "1d4", damageType: "piercing", ability: "dexterity", properties: ["finesse", "thrown"], range: "20/60", mastery: "vex", costGp: 0.05, weightLb: 0.25, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "light-crossbow",
+      type: "item",
+      name: "Light Crossbow",
+      summary: "Simple ranged weapon with loading and two-handed properties.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "ranged", damage: "1d8", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "loading", "two-handed"], range: "80/320", ammunition: "bolt", mastery: "slow", costGp: 25, weightLb: 5, source: DND_5E_SRD_VERSION }
     },
     {
       id: "shortbow",
       type: "item",
       name: "Shortbow",
       summary: "Simple ranged weapon for short-range archery.",
-      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "two-handed"], costGp: 25, weightLb: 2, source: DND_5E_SRD_VERSION }
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "ranged", damage: "1d6", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "two-handed"], range: "80/320", ammunition: "arrow", mastery: "vex", costGp: 25, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "sling",
+      type: "item",
+      name: "Sling",
+      summary: "Simple ranged weapon for hurling bullets.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "ranged", damage: "1d4", damageType: "bludgeoning", ability: "dexterity", properties: ["ammunition"], range: "30/120", ammunition: "bullet", mastery: "slow", costGp: 0.1, weightLb: 0, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "battleaxe",
+      type: "item",
+      name: "Battleaxe",
+      summary: "Martial versatile melee weapon with the Topple mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d8", versatileDamage: "1d10", damageType: "slashing", ability: "strength", properties: ["versatile"], mastery: "topple", costGp: 10, weightLb: 4, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "flail",
+      type: "item",
+      name: "Flail",
+      summary: "Martial melee weapon with the Sap mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d8", damageType: "bludgeoning", ability: "strength", properties: [], mastery: "sap", costGp: 10, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "glaive",
+      type: "item",
+      name: "Glaive",
+      summary: "Martial heavy reach melee weapon with the Graze mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d10", damageType: "slashing", ability: "strength", properties: ["heavy", "reach", "two-handed"], mastery: "graze", costGp: 20, weightLb: 6, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "greataxe",
+      type: "item",
+      name: "Greataxe",
+      summary: "Martial heavy two-handed melee weapon with the Cleave mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d12", damageType: "slashing", ability: "strength", properties: ["heavy", "two-handed"], mastery: "cleave", costGp: 30, weightLb: 7, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "greatsword",
+      type: "item",
+      name: "Greatsword",
+      summary: "Martial heavy two-handed melee weapon with the Graze mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "2d6", damageType: "slashing", ability: "strength", properties: ["heavy", "two-handed"], mastery: "graze", costGp: 50, weightLb: 6, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "halberd",
+      type: "item",
+      name: "Halberd",
+      summary: "Martial heavy reach melee weapon with the Cleave mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d10", damageType: "slashing", ability: "strength", properties: ["heavy", "reach", "two-handed"], mastery: "cleave", costGp: 20, weightLb: 6, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "lance",
+      type: "item",
+      name: "Lance",
+      summary: "Martial heavy reach melee weapon with special mounted handling.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d10", damageType: "piercing", ability: "strength", properties: ["heavy", "reach", "two-handed"], special: "two-handed unless mounted", mastery: "topple", costGp: 10, weightLb: 6, source: DND_5E_SRD_VERSION }
     },
     {
       id: "longbow",
       type: "item",
       name: "Longbow",
       summary: "Martial ranged weapon for long-range archery.",
-      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d8", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "heavy", "two-handed"], costGp: 50, weightLb: 2, source: DND_5E_SRD_VERSION }
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "ranged", damage: "1d8", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "heavy", "two-handed"], range: "150/600", ammunition: "arrow", mastery: "slow", costGp: 50, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "maul",
+      type: "item",
+      name: "Maul",
+      summary: "Martial heavy two-handed melee weapon with the Topple mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "2d6", damageType: "bludgeoning", ability: "strength", properties: ["heavy", "two-handed"], mastery: "topple", costGp: 10, weightLb: 10, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "morningstar",
+      type: "item",
+      name: "Morningstar",
+      summary: "Martial melee weapon with the Sap mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d8", damageType: "piercing", ability: "strength", properties: [], mastery: "sap", costGp: 15, weightLb: 4, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "pike",
+      type: "item",
+      name: "Pike",
+      summary: "Martial heavy reach melee weapon with the Push mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d10", damageType: "piercing", ability: "strength", properties: ["heavy", "reach", "two-handed"], mastery: "push", costGp: 5, weightLb: 18, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "rapier",
+      type: "item",
+      name: "Rapier",
+      summary: "Martial finesse melee weapon with the Vex mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d8", damageType: "piercing", ability: "dexterity", properties: ["finesse"], mastery: "vex", costGp: 25, weightLb: 2, source: DND_5E_SRD_VERSION }
     },
     {
       id: "scimitar",
       type: "item",
       name: "Scimitar",
       summary: "Martial finesse weapon with a light slashing blade.",
-      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", damageType: "slashing", ability: "dexterity", properties: ["finesse", "light"], costGp: 25, weightLb: 3, source: DND_5E_SRD_VERSION }
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d6", damageType: "slashing", ability: "dexterity", properties: ["finesse", "light"], mastery: "nick", costGp: 25, weightLb: 3, source: DND_5E_SRD_VERSION }
     },
     {
       id: "shortsword",
       type: "item",
       name: "Shortsword",
       summary: "Martial finesse weapon for quick piercing attacks.",
-      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", damageType: "piercing", ability: "dexterity", properties: ["finesse", "light"], costGp: 10, weightLb: 2, source: DND_5E_SRD_VERSION }
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d6", damageType: "piercing", ability: "dexterity", properties: ["finesse", "light"], mastery: "vex", costGp: 10, weightLb: 2, source: DND_5E_SRD_VERSION }
     },
     {
       id: "spear",
       type: "item",
       name: "Spear",
       summary: "Simple thrown melee weapon with versatile handling.",
-      data: { category: "weapon", equipmentCategory: "weapon", damage: "1d6", versatileDamage: "1d8", damageType: "piercing", ability: "strength", properties: ["thrown", "versatile"], costGp: 1, weightLb: 3, source: DND_5E_SRD_VERSION }
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "simple", weaponKind: "melee", damage: "1d6", versatileDamage: "1d8", damageType: "piercing", ability: "strength", properties: ["thrown", "versatile"], range: "20/60", mastery: "sap", costGp: 1, weightLb: 3, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "trident",
+      type: "item",
+      name: "Trident",
+      summary: "Martial thrown versatile melee weapon with the Topple mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d8", versatileDamage: "1d10", damageType: "piercing", ability: "strength", properties: ["thrown", "versatile"], range: "20/60", mastery: "topple", costGp: 5, weightLb: 4, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "warhammer",
+      type: "item",
+      name: "Warhammer",
+      summary: "Martial versatile melee weapon with the Push mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d8", versatileDamage: "1d10", damageType: "bludgeoning", ability: "strength", properties: ["versatile"], mastery: "push", costGp: 15, weightLb: 5, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "war-pick",
+      type: "item",
+      name: "War Pick",
+      summary: "Martial versatile melee weapon with the Sap mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d8", versatileDamage: "1d10", damageType: "piercing", ability: "strength", properties: ["versatile"], mastery: "sap", costGp: 5, weightLb: 2, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "whip",
+      type: "item",
+      name: "Whip",
+      summary: "Martial finesse reach melee weapon with the Slow mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "melee", damage: "1d4", damageType: "slashing", ability: "dexterity", properties: ["finesse", "reach"], mastery: "slow", costGp: 2, weightLb: 3, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "blowgun",
+      type: "item",
+      name: "Blowgun",
+      summary: "Martial loading ranged weapon with the Vex mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "ranged", damage: "1", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "loading"], range: "25/100", ammunition: "needle", mastery: "vex", costGp: 10, weightLb: 1, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "hand-crossbow",
+      type: "item",
+      name: "Hand Crossbow",
+      summary: "Martial light loading ranged weapon with the Vex mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "ranged", damage: "1d6", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "light", "loading"], range: "30/120", ammunition: "bolt", mastery: "vex", costGp: 75, weightLb: 3, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "heavy-crossbow",
+      type: "item",
+      name: "Heavy Crossbow",
+      summary: "Martial heavy loading ranged weapon with the Push mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "ranged", damage: "1d10", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "heavy", "loading", "two-handed"], range: "100/400", ammunition: "bolt", mastery: "push", costGp: 50, weightLb: 18, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "musket",
+      type: "item",
+      name: "Musket",
+      summary: "Martial loading ranged firearm with the Slow mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "ranged", damage: "1d12", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "loading", "two-handed"], range: "40/120", ammunition: "bullet", mastery: "slow", costGp: 500, weightLb: 10, source: DND_5E_SRD_VERSION }
+    },
+    {
+      id: "pistol",
+      type: "item",
+      name: "Pistol",
+      summary: "Martial loading ranged firearm with the Vex mastery.",
+      data: { category: "weapon", equipmentCategory: "weapon", weaponCategory: "martial", weaponKind: "ranged", damage: "1d10", damageType: "piercing", ability: "dexterity", properties: ["ammunition", "loading"], range: "30/90", ammunition: "bullet", mastery: "vex", costGp: 250, weightLb: 3, source: DND_5E_SRD_VERSION }
     },
     {
       id: "musical-instrument",

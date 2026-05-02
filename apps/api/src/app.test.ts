@@ -4092,12 +4092,24 @@ describe("api", () => {
           expect.objectContaining({ id: "thunderwave", name: "Thunderwave", data: expect.objectContaining({ damageFormula: "2d8", upcastFormula: "1d8", damageType: "thunder" }) }),
           expect.objectContaining({ id: "vitriolic-sphere", name: "Vitriolic Sphere", data: expect.objectContaining({ level: 4, damageFormula: "10d4", upcastFormula: "2d4", secondaryDamageFormula: "5d4" }) }),
           expect.objectContaining({ id: "shield-armor", name: "Shield", data: expect.objectContaining({ costGp: 10, armorBonus: 2 }) }),
+          expect.objectContaining({ id: "padded-armor", name: "Padded Armor", data: expect.objectContaining({ costGp: 5, armorBase: 11, stealthDisadvantage: true }) }),
           expect.objectContaining({ id: "leather-armor", name: "Leather Armor", data: expect.objectContaining({ costGp: 10, armorBase: 11 }) }),
           expect.objectContaining({ id: "studded-leather-armor", name: "Studded Leather Armor", data: expect.objectContaining({ costGp: 45, armorBase: 12 }) }),
+          expect.objectContaining({ id: "scale-mail", name: "Scale Mail", data: expect.objectContaining({ costGp: 50, armorBase: 14, dexCap: 2, stealthDisadvantage: true }) }),
+          expect.objectContaining({ id: "half-plate-armor", name: "Half Plate Armor", data: expect.objectContaining({ costGp: 750, armorBase: 15, dexCap: 2 }) }),
           expect.objectContaining({ id: "chain-mail", name: "Chain Mail", data: expect.objectContaining({ costGp: 75, armorBase: 16, dexBonus: false }) }),
+          expect.objectContaining({ id: "plate-armor", name: "Plate Armor", data: expect.objectContaining({ costGp: 1500, armorBase: 18, strengthRequirement: 15 }) }),
+          expect.objectContaining({ id: "club", name: "Club", data: expect.objectContaining({ costGp: 0.1, damage: "1d4", mastery: "slow" }) }),
+          expect.objectContaining({ id: "handaxe", name: "Handaxe", data: expect.objectContaining({ costGp: 5, damage: "1d6", range: "20/60", mastery: "vex" }) }),
+          expect.objectContaining({ id: "light-crossbow", name: "Light Crossbow", data: expect.objectContaining({ costGp: 25, damage: "1d8", range: "80/320", mastery: "slow" }) }),
+          expect.objectContaining({ id: "battleaxe", name: "Battleaxe", data: expect.objectContaining({ costGp: 10, damage: "1d8", versatileDamage: "1d10", mastery: "topple" }) }),
+          expect.objectContaining({ id: "greatsword", name: "Greatsword", data: expect.objectContaining({ costGp: 50, damage: "2d6", mastery: "graze" }) }),
+          expect.objectContaining({ id: "rapier", name: "Rapier", data: expect.objectContaining({ costGp: 25, damage: "1d8", properties: ["finesse"], mastery: "vex" }) }),
           expect.objectContaining({ id: "sickle", name: "Sickle", data: expect.objectContaining({ costGp: 1, damage: "1d4" }) }),
           expect.objectContaining({ id: "shortbow", name: "Shortbow", data: expect.objectContaining({ costGp: 25, damage: "1d6" }) }),
           expect.objectContaining({ id: "longbow", name: "Longbow", data: expect.objectContaining({ costGp: 50, damage: "1d8" }) }),
+          expect.objectContaining({ id: "heavy-crossbow", name: "Heavy Crossbow", data: expect.objectContaining({ costGp: 50, damage: "1d10", range: "100/400", mastery: "push" }) }),
+          expect.objectContaining({ id: "musket", name: "Musket", data: expect.objectContaining({ costGp: 500, damage: "1d12", range: "40/120", mastery: "slow" }) }),
           expect.objectContaining({ id: "musical-instrument", name: "Musical Instrument", data: expect.objectContaining({ toolId: "musical-instrument", costGp: 2 }) }),
           expect.objectContaining({ id: "arcane-focus", name: "Arcane Focus", data: expect.objectContaining({ focusType: "arcane", costGp: 10 }) })
         ])
@@ -4244,6 +4256,17 @@ describe("api", () => {
       });
       expect(insufficientPurchase.statusCode).toBe(409);
       expect(store.state.actors.find((actor) => actor.id === cleric.json().actor.id)?.data.currency).toEqual({ gp: 10, sp: 0, cp: 0 });
+
+      const handaxePurchase = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/purchase`,
+        headers: authHeaders,
+        payload: { entryId: "handaxe", quantity: 2 }
+      });
+      expect(handaxePurchase.statusCode).toBe(200);
+      expect(handaxePurchase.json().purchase).toEqual(expect.objectContaining({ entryId: "handaxe", quantity: 2, unitCostGp: 5, totalCostGp: 10, currency: { gp: 0, sp: 0, cp: 0 } }));
+      expect(handaxePurchase.json().item).toEqual(expect.objectContaining({ name: "Handaxe", data: expect.objectContaining({ quantity: 2, purchasedForGp: 10, damage: "1d6", mastery: "vex" }) }));
+      expect(handaxePurchase.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: `item-${handaxePurchase.json().item.id}-damage`, label: "Handaxe Damage", formula: "1d6+0" })]));
 
       const target = await app.inject({
         method: "POST",
