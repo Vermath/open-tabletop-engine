@@ -4125,6 +4125,14 @@ describe("api", () => {
           expect.objectContaining({ id: "healers-kit", name: "Healer's Kit", data: expect.objectContaining({ uses: 10, costGp: 5 }) }),
           expect.objectContaining({ id: "potion-of-healing", name: "Potion of Healing", data: expect.objectContaining({ magicItem: true, healingFormula: "2d4+2", costGp: 50 }) }),
           expect.objectContaining({ id: "spell-scroll-level-1", name: "Spell Scroll, Level 1", data: expect.objectContaining({ scrollLevel: 1, spellSaveDc: 13, costGp: 50 }) }),
+          expect.objectContaining({ id: "ammunition-of-slaying", name: "Ammunition of Slaying", data: expect.objectContaining({ rarity: "very rare", extraDamageFormula: "6d10" }) }),
+          expect.objectContaining({ id: "weapon-plus-2", name: "Weapon, +2", data: expect.objectContaining({ magicItemCategory: "weapon", attackBonus: 2, damageBonus: 2 }) }),
+          expect.objectContaining({ id: "shield-plus-3", name: "Shield, +3", data: expect.objectContaining({ armorBonus: 5, shieldEnhancementBonus: 3 }) }),
+          expect.objectContaining({ id: "cloak-of-protection", name: "Cloak of Protection", data: expect.objectContaining({ armorClassBonus: 1, savingThrowBonus: 1 }) }),
+          expect.objectContaining({ id: "bracers-of-defense", name: "Bracers of Defense", data: expect.objectContaining({ armorClassBonus: 2, requiresNoArmorOrShield: true }) }),
+          expect.objectContaining({ id: "bag-of-holding", name: "Bag of Holding", data: expect.objectContaining({ capacityLb: 500, extradimensionalStorage: true }) }),
+          expect.objectContaining({ id: "wand-of-magic-missiles", name: "Wand of Magic Missiles", data: expect.objectContaining({ spell: "magic-missile", charges: expect.objectContaining({ max: 7 }) }) }),
+          expect.objectContaining({ id: "staff-of-striking", name: "Staff of Striking", data: expect.objectContaining({ magicBonus: 3, damageBonus: 3 }) }),
           expect.objectContaining({ id: "torch", name: "Torch", data: expect.objectContaining({ costGp: 0.01, light: expect.objectContaining({ brightFt: 20 }) }) })
         ])
       );
@@ -4174,6 +4182,30 @@ describe("api", () => {
         expect.arrayContaining([
           expect.objectContaining({ id: `spell-${vitriolicSpell.json().item.id}-damage`, label: "Vitriolic Sphere Damage", formula: "10d4" }),
           expect.objectContaining({ id: `spell-${vitriolicSpell.json().item.id}-secondary-damage`, label: "Vitriolic Sphere Secondary Damage", formula: "5d4" })
+        ])
+      );
+      const cloakOfProtection = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "cloak-of-protection" }
+      });
+      expect(cloakOfProtection.statusCode).toBe(200);
+      expect(cloakOfProtection.json().item).toEqual(expect.objectContaining({ name: "Cloak of Protection", data: expect.objectContaining({ armorClassBonus: 1, savingThrowBonus: 1 }) }));
+      expect(cloakOfProtection.json().sheet.data).toEqual(expect.objectContaining({ armorClass: 14, armorClassDetails: expect.objectContaining({ armorClassBonus: 1 }) }));
+      expect(cloakOfProtection.json().sheet.quickRolls).toEqual(expect.arrayContaining([expect.objectContaining({ id: "save-dexterity", formula: "1d20+4", metadata: expect.objectContaining({ itemBonus: 1 }) })]));
+      const staffOfStriking = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/compendium`,
+        headers: authHeaders,
+        payload: { entryId: "staff-of-striking" }
+      });
+      expect(staffOfStriking.statusCode).toBe(200);
+      expect(staffOfStriking.json().item).toEqual(expect.objectContaining({ name: "Staff of Striking", data: expect.objectContaining({ magicBonus: 3, damageBonus: 3, charges: expect.objectContaining({ max: 10 }) }) }));
+      expect(staffOfStriking.json().sheet.quickRolls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: `item-${staffOfStriking.json().item.id}-damage`, label: "Staff of Striking Damage", formula: "1d6+2" }),
+          expect.objectContaining({ id: `item-${staffOfStriking.json().item.id}-versatile-damage`, label: "Staff of Striking Versatile Damage", formula: "1d8+2" })
         ])
       );
       const storedCriminalOrc = store.state.actors.find((actor) => actor.id === criminalOrc.json().actor.id)!;

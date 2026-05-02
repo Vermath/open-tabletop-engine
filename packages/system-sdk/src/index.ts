@@ -237,6 +237,8 @@ export interface Dnd5eSrdArmorClassDetails {
   armorItemId?: string;
   shieldBonus: number;
   shieldItemIds: string[];
+  armorClassBonus?: number;
+  armorClassBonusItemIds?: string[];
   stealthDisadvantage: boolean;
   strengthRequirement?: number;
   speedPenalty: number;
@@ -455,10 +457,11 @@ export function genericFantasyActionRolls(actor: Actor, items: Item[] = []): Qui
     const damage = stringValue(data.damage);
     const ability = stringValue(data.ability);
     if (damage && ability) {
+      const damageBonus = numericValue(data.damageBonus, 0);
       rolls.push({
         id: `${prefix}-${item.id}-damage`,
         label: `${item.name} Damage`,
-        formula: appendFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability))
+        formula: appendFormulaBonus(damage, genericFantasyAttributeModifier(actor, ability) + damageBonus)
       });
     }
     const damageFormula = stringValue(data.damageFormula);
@@ -479,10 +482,11 @@ export function genericFantasyActionRolls(actor: Actor, items: Item[] = []): Qui
     }
     const versatileDamage = stringValue(data.versatileDamage);
     if (versatileDamage && ability) {
+      const damageBonus = numericValue(data.damageBonus, 0);
       rolls.push({
         id: `${prefix}-${item.id}-versatile-damage`,
         label: `${item.name} Versatile Damage`,
-        formula: appendFormulaBonus(versatileDamage, genericFantasyAttributeModifier(actor, ability))
+        formula: appendFormulaBonus(versatileDamage, genericFantasyAttributeModifier(actor, ability) + damageBonus)
       });
     }
     const healingFormula = stringValue(data.healingFormula);
@@ -520,7 +524,7 @@ export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[
   const abilities = dnd5eSrdAbilityKeys();
   return [
     ...abilities.map((ability) => dnd5eSrdAbilityCheck(actor, ability)),
-    ...abilities.map((ability) => dnd5eSrdSavingThrow(actor, ability)),
+    ...abilities.map((ability) => dnd5eSrdSavingThrow(actor, ability, items)),
     ...dnd5eSrdSkills().map((skill) => dnd5eSrdSkillCheck(actor, skill.id)),
     ...dnd5eSrdToolProficiencies(actor, "toolProficiencies").map((toolId) => dnd5eSrdToolCheck(actor, toolId)),
     ...dnd5eSrdClassFeatureRolls(actor),
@@ -950,16 +954,18 @@ export function dnd5eSrdAbilityCheck(actor: Actor, ability: string): QuickRoll {
   };
 }
 
-export function dnd5eSrdSavingThrow(actor: Actor, ability: string): QuickRoll {
+export function dnd5eSrdSavingThrow(actor: Actor, ability: string, items: Item[] = []): QuickRoll {
   const modifier = genericFantasyAttributeModifier(actor, ability);
   const proficiencyBonus = dnd5eSrdSaveProficiencies(actor).includes(ability) ? dnd5eSrdProficiencyBonus(actor) : 0;
+  const itemBonus = dnd5eSrdEquippedItemNumericBonus(actor, items, "savingThrowBonus").total;
   const bonus = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "blessed") ? "+1d4" : "";
   const label = `${ability.charAt(0).toUpperCase()}${ability.slice(1)} Save`;
-  const metadata = ability === "dexterity" && dnd5eSrdHasDangerSense(actor) ? { advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] } : undefined;
+  const dangerSense = ability === "dexterity" && dnd5eSrdHasDangerSense(actor) ? { advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] } : {};
+  const metadata = Object.keys(dangerSense).length > 0 || itemBonus > 0 ? { ...dangerSense, ...(itemBonus > 0 ? { itemBonus } : {}) } : undefined;
   return {
     id: `save-${ability}`,
     label,
-    formula: `1d20${formatSignedNumber(modifier + proficiencyBonus)}${bonus}`,
+    formula: `1d20${formatSignedNumber(modifier + proficiencyBonus + itemBonus)}${bonus}`,
     ...(metadata ? { metadata } : {})
   };
 }
@@ -1076,6 +1082,17 @@ interface Dnd5eSrdGearEntrySeed {
   data?: Record<string, unknown>;
 }
 
+interface Dnd5eSrdMagicItemEntrySeed {
+  id: string;
+  name: string;
+  magicItemCategory: string;
+  rarity: "common" | "uncommon" | "rare" | "very rare" | "legendary";
+  summary?: string;
+  requiresAttunement?: boolean;
+  attunementRequirement?: string;
+  data?: Record<string, unknown>;
+}
+
 function dnd5eSrdToolEntry(seed: Dnd5eSrdToolEntrySeed): GenericFantasyCompendiumEntry {
   return {
     id: seed.id,
@@ -1111,6 +1128,39 @@ function dnd5eSrdGearEntry(seed: Dnd5eSrdGearEntrySeed): GenericFantasyCompendiu
       source: DND_5E_SRD_VERSION
     }
   };
+}
+
+function dnd5eSrdMagicItemEntry(seed: Dnd5eSrdMagicItemEntrySeed): GenericFantasyCompendiumEntry {
+  return {
+    id: seed.id,
+    type: "item",
+    name: seed.name,
+    summary: seed.summary ?? "SRD magic item entry with rarity, attunement, and VTT automation metadata.",
+    data: {
+      category: "magic-item",
+      equipmentCategory: "magic-item",
+      magicItem: true,
+      magicItemCategory: seed.magicItemCategory,
+      rarity: seed.rarity,
+      ...(seed.requiresAttunement ? { requiresAttunement: true } : {}),
+      ...(seed.attunementRequirement ? { attunementRequirement: seed.attunementRequirement } : {}),
+      ...dnd5eSrdMagicItemCraftingMetadata(seed.rarity, booleanValue(seed.data?.consumable)),
+      ...seed.data,
+      source: DND_5E_SRD_VERSION
+    }
+  };
+}
+
+function dnd5eSrdMagicItemCraftingMetadata(rarity: Dnd5eSrdMagicItemEntrySeed["rarity"], consumable = false): Record<string, unknown> {
+  const table: Record<Dnd5eSrdMagicItemEntrySeed["rarity"], { craftingDays: number; craftingCostGp: number }> = {
+    common: { craftingDays: 5, craftingCostGp: 50 },
+    uncommon: { craftingDays: 10, craftingCostGp: 200 },
+    rare: { craftingDays: 50, craftingCostGp: 2000 },
+    "very rare": { craftingDays: 125, craftingCostGp: 20000 },
+    legendary: { craftingDays: 250, craftingCostGp: 100000 }
+  };
+  const entry = table[rarity];
+  return consumable ? { craftingDays: entry.craftingDays / 2, craftingCostGp: entry.craftingCostGp / 2 } : entry;
 }
 
 function dnd5eSrdToolCompendiumEntries(): GenericFantasyCompendiumEntry[] {
@@ -1253,6 +1303,62 @@ function dnd5eSrdAdventuringGearCompendiumEntries(): GenericFantasyCompendiumEnt
     { id: "waterskin", name: "Waterskin", costGp: 0.2, weightLb: 5, data: { capacityPints: 4, weightWhenFull: true } }
   ];
   return gear.map(dnd5eSrdGearEntry);
+}
+
+function dnd5eSrdMagicItemCompendiumEntries(): GenericFantasyCompendiumEntry[] {
+  const creatureTypes = ["aberration", "beast", "celestial", "construct", "dragon", "elemental", "fey", "fiend", "giant", "humanoid", "monstrosity", "ooze", "plant", "undead"];
+  const resistanceTypes = ["acid", "cold", "fire", "force", "lightning", "necrotic", "poison", "psychic", "radiant", "thunder"];
+  const magicItems: Dnd5eSrdMagicItemEntrySeed[] = [
+    { id: "adamantine-armor", name: "Adamantine Armor", magicItemCategory: "armor", rarity: "uncommon", data: { appliesTo: "Any Medium or Heavy armor except Hide Armor", criticalHitsBecomeNormalHits: true } },
+    { id: "ammunition-plus-1", name: "Ammunition, +1", magicItemCategory: "weapon", rarity: "uncommon", data: { appliesTo: "Any ammunition", consumable: true, magicBonus: 1, attackBonus: 1, damageBonus: 1, typicalQuantities: [10, 20], becomesNonmagicalOnHit: true } },
+    { id: "ammunition-plus-2", name: "Ammunition, +2", magicItemCategory: "weapon", rarity: "rare", data: { appliesTo: "Any ammunition", consumable: true, magicBonus: 2, attackBonus: 2, damageBonus: 2, typicalQuantities: [10, 20], becomesNonmagicalOnHit: true } },
+    { id: "ammunition-plus-3", name: "Ammunition, +3", magicItemCategory: "weapon", rarity: "very rare", data: { appliesTo: "Any ammunition", consumable: true, magicBonus: 3, attackBonus: 3, damageBonus: 3, typicalQuantities: [10, 20], becomesNonmagicalOnHit: true } },
+    { id: "ammunition-of-slaying", name: "Ammunition of Slaying", magicItemCategory: "weapon", rarity: "very rare", data: { appliesTo: "Any ammunition", consumable: true, targetCreatureType: "GM choice", creatureTypes, extraDamageFormula: "6d10", damageType: "force", save: { ability: "constitution", dc: 17, success: "half" }, becomesNonmagicalAfterExtraDamage: true } },
+    { id: "amulet-of-health", name: "Amulet of Health", magicItemCategory: "wondrous item", rarity: "rare", requiresAttunement: true, data: { abilityScoreSet: { constitution: 19 } } },
+    { id: "amulet-of-proof-against-detection-and-location", name: "Amulet of Proof against Detection and Location", magicItemCategory: "wondrous item", rarity: "uncommon", requiresAttunement: true, data: { blocksDivinationTargeting: true, blocksMagicalScrying: true } },
+    { id: "animated-shield", name: "Animated Shield", magicItemCategory: "armor", rarity: "very rare", requiresAttunement: true, data: { equipmentCategory: "armor", armorBonus: 2, activation: "bonus", duration: "1 minute", handsFreeWhileAnimated: true } },
+    { id: "armor-plus-1", name: "Armor, +1", magicItemCategory: "armor", rarity: "rare", data: { appliesTo: "Any Light, Medium, or Heavy armor", armorEnhancementBonus: 1 } },
+    { id: "armor-plus-2", name: "Armor, +2", magicItemCategory: "armor", rarity: "very rare", data: { appliesTo: "Any Light, Medium, or Heavy armor", armorEnhancementBonus: 2 } },
+    { id: "armor-plus-3", name: "Armor, +3", magicItemCategory: "armor", rarity: "legendary", data: { appliesTo: "Any Light, Medium, or Heavy armor", armorEnhancementBonus: 3 } },
+    { id: "armor-of-invulnerability", name: "Armor of Invulnerability", magicItemCategory: "armor", rarity: "legendary", requiresAttunement: true, data: { appliesTo: "Plate Armor", resistance: ["bludgeoning", "piercing", "slashing"], activation: "magic action", activatedImmunity: ["bludgeoning", "piercing", "slashing"], activatedDuration: "10 minutes", recovery: "next dawn" } },
+    { id: "armor-of-resistance", name: "Armor of Resistance", magicItemCategory: "armor", rarity: "rare", requiresAttunement: true, data: { appliesTo: "Any Light, Medium, or Heavy armor", resistanceChoice: resistanceTypes } },
+    { id: "arrow-catching-shield", name: "Arrow-Catching Shield", magicItemCategory: "armor", rarity: "rare", requiresAttunement: true, data: { equipmentCategory: "armor", armorBonus: 2, conditionalArmorClassBonus: { bonus: 2, against: "ranged attack rolls" }, reaction: "become the target of a ranged attack against a target within 5 feet" } },
+    { id: "bag-of-holding", name: "Bag of Holding", magicItemCategory: "wondrous item", rarity: "uncommon", data: { capacityLb: 500, capacityCubicFt: 64, weightLb: 15, extradimensionalStorage: true, ruptureHazard: "contents scattered in Astral Plane" } },
+    { id: "bag-of-tricks", name: "Bag of Tricks", magicItemCategory: "wondrous item", rarity: "uncommon", data: { charges: { current: 3, max: 3, recovery: "dawn" }, action: "magic action", summons: "random Beast", duration: "until next dawn or 0 HP" } },
+    { id: "boots-of-elvenkind", name: "Boots of Elvenkind", magicItemCategory: "wondrous item", rarity: "uncommon", data: { stealthSoundlessSteps: true } },
+    { id: "boots-of-speed", name: "Boots of Speed", magicItemCategory: "wondrous item", rarity: "rare", requiresAttunement: true, data: { activation: "bonus", speedMultiplier: 2, opportunityAttackDisadvantage: true, totalDurationMinutesPerDay: 10 } },
+    { id: "boots-of-striding-and-springing", name: "Boots of Striding and Springing", magicItemCategory: "wondrous item", rarity: "uncommon", requiresAttunement: true, data: { minimumWalkingSpeedFt: 30, jumpDistanceMultiplier: 3 } },
+    { id: "boots-of-the-winterlands", name: "Boots of the Winterlands", magicItemCategory: "wondrous item", rarity: "uncommon", requiresAttunement: true, data: { resistance: ["cold"], ignoreDifficultTerrain: "ice or snow", tolerateColdWeather: true } },
+    { id: "bracers-of-archery", name: "Bracers of Archery", magicItemCategory: "wondrous item", rarity: "uncommon", requiresAttunement: true, data: { weaponProficiencies: ["longbow", "shortbow"], rangedWeaponDamageBonus: 2, appliesTo: ["longbow", "shortbow"] } },
+    { id: "bracers-of-defense", name: "Bracers of Defense", magicItemCategory: "wondrous item", rarity: "rare", requiresAttunement: true, data: { armorClassBonus: 2, requiresNoArmorOrShield: true } },
+    { id: "cloak-of-displacement", name: "Cloak of Displacement", magicItemCategory: "wondrous item", rarity: "rare", requiresAttunement: true, data: { attacksAgainstWearerDisadvantage: true, suppressedAfterDamageUntilNextTurn: true } },
+    { id: "cloak-of-elvenkind", name: "Cloak of Elvenkind", magicItemCategory: "wondrous item", rarity: "uncommon", requiresAttunement: true, data: { stealthAdvantage: true, perceptionAgainstWearerDisadvantage: true, activation: "pull hood up or down" } },
+    { id: "cloak-of-invisibility", name: "Cloak of Invisibility", magicItemCategory: "wondrous item", rarity: "legendary", requiresAttunement: true, data: { activation: "magic action", condition: "Invisible", totalDurationHours: 2, recovery: "dawn" } },
+    { id: "cloak-of-protection", name: "Cloak of Protection", magicItemCategory: "wondrous item", rarity: "uncommon", requiresAttunement: true, data: { armorClassBonus: 1, savingThrowBonus: 1 } },
+    { id: "ring-of-free-action", name: "Ring of Free Action", magicItemCategory: "ring", rarity: "rare", requiresAttunement: true, data: { ignoresDifficultTerrain: true, preventsSpeedReductionByMagic: true, conditionImmunity: ["paralyzed", "restrained"] } },
+    { id: "ring-of-invisibility", name: "Ring of Invisibility", magicItemCategory: "ring", rarity: "legendary", requiresAttunement: true, data: { activation: "magic action", condition: "Invisible", endsWhen: ["attacking", "casting a spell", "taking off the ring"] } },
+    { id: "ring-of-protection", name: "Ring of Protection", magicItemCategory: "ring", rarity: "rare", requiresAttunement: true, data: { armorClassBonus: 1, savingThrowBonus: 1 } },
+    { id: "ring-of-regeneration", name: "Ring of Regeneration", magicItemCategory: "ring", rarity: "very rare", requiresAttunement: true, data: { healingFormula: "1d6", healingIntervalMinutes: 10, severedPartRegrowthDays: "1d6+1" } },
+    { id: "ring-of-resistance", name: "Ring of Resistance", magicItemCategory: "ring", rarity: "rare", requiresAttunement: true, data: { resistanceChoice: resistanceTypes } },
+    { id: "shield-plus-1", name: "Shield, +1", magicItemCategory: "armor", rarity: "uncommon", data: { equipmentCategory: "armor", armorBonus: 3, shieldEnhancementBonus: 1 } },
+    { id: "shield-plus-2", name: "Shield, +2", magicItemCategory: "armor", rarity: "rare", data: { equipmentCategory: "armor", armorBonus: 4, shieldEnhancementBonus: 2 } },
+    { id: "shield-plus-3", name: "Shield, +3", magicItemCategory: "armor", rarity: "very rare", data: { equipmentCategory: "armor", armorBonus: 5, shieldEnhancementBonus: 3 } },
+    { id: "staff-of-healing", name: "Staff of Healing", magicItemCategory: "staff", rarity: "rare", requiresAttunement: true, attunementRequirement: "Bard, Cleric, or Druid", data: { charges: { current: 10, max: 10, recoveryFormula: "1d6+4", recovery: "dawn" }, spells: [{ id: "cure-wounds", chargeCost: "1 per spell level, maximum 4" }, { id: "lesser-restoration", chargeCost: 2 }, { id: "mass-cure-wounds", chargeCost: 5 }] } },
+    { id: "staff-of-power", name: "Staff of Power", magicItemCategory: "staff", rarity: "very rare", requiresAttunement: true, attunementRequirement: "Sorcerer, Warlock, or Wizard", data: { equipmentCategory: "weapon", weaponKind: "melee", damage: "1d6", versatileDamage: "1d8", ability: "strength", magicBonus: 2, attackBonus: 2, damageBonus: 2, armorClassBonus: 2, savingThrowBonus: 2, spellAttackBonus: 2, charges: { current: 20, max: 20, recoveryFormula: "2d8+4", recovery: "dawn" } } },
+    { id: "staff-of-striking", name: "Staff of Striking", magicItemCategory: "staff", rarity: "very rare", requiresAttunement: true, data: { equipmentCategory: "weapon", weaponKind: "melee", damage: "1d6", versatileDamage: "1d8", ability: "strength", magicBonus: 3, attackBonus: 3, damageBonus: 3, charges: { current: 10, max: 10, recoveryFormula: "1d6+4", recovery: "dawn" }, extraDamagePerChargeFormula: "1d6", maxChargesPerHit: 3, extraDamageType: "force" } },
+    { id: "wand-of-fireballs", name: "Wand of Fireballs", magicItemCategory: "wand", rarity: "rare", requiresAttunement: true, attunementRequirement: "Spellcaster", data: { charges: { current: 7, max: 7, recoveryFormula: "1d6+1", recovery: "dawn" }, spell: "fireball", spellLevel: 3, saveDc: 15, maxChargesPerCast: 3 } },
+    { id: "wand-of-lightning-bolts", name: "Wand of Lightning Bolts", magicItemCategory: "wand", rarity: "rare", requiresAttunement: true, attunementRequirement: "Spellcaster", data: { charges: { current: 7, max: 7, recoveryFormula: "1d6+1", recovery: "dawn" }, spell: "lightning-bolt", spellLevel: 3, saveDc: 15, maxChargesPerCast: 3 } },
+    { id: "wand-of-magic-detection", name: "Wand of Magic Detection", magicItemCategory: "wand", rarity: "uncommon", data: { charges: { current: 3, max: 3, recoveryFormula: "1d3", recovery: "dawn" }, spell: "detect-magic", chargeCost: 1 } },
+    { id: "wand-of-magic-missiles", name: "Wand of Magic Missiles", magicItemCategory: "wand", rarity: "uncommon", data: { charges: { current: 7, max: 7, recoveryFormula: "1d6+1", recovery: "dawn" }, spell: "magic-missile", spellLevel: 1, maxChargesPerCast: 3 } },
+    { id: "wand-of-the-war-mage-plus-1", name: "Wand of the War Mage, +1", magicItemCategory: "wand", rarity: "uncommon", requiresAttunement: true, attunementRequirement: "Spellcaster", data: { spellAttackBonus: 1, ignoresCover: "half" } },
+    { id: "wand-of-the-war-mage-plus-2", name: "Wand of the War Mage, +2", magicItemCategory: "wand", rarity: "rare", requiresAttunement: true, attunementRequirement: "Spellcaster", data: { spellAttackBonus: 2, ignoresCover: "half" } },
+    { id: "wand-of-the-war-mage-plus-3", name: "Wand of the War Mage, +3", magicItemCategory: "wand", rarity: "very rare", requiresAttunement: true, attunementRequirement: "Spellcaster", data: { spellAttackBonus: 3, ignoresCover: "half" } },
+    { id: "weapon-plus-1", name: "Weapon, +1", magicItemCategory: "weapon", rarity: "uncommon", data: { appliesTo: "Any Simple or Martial weapon", magicBonus: 1, attackBonus: 1, damageBonus: 1 } },
+    { id: "weapon-plus-2", name: "Weapon, +2", magicItemCategory: "weapon", rarity: "rare", data: { appliesTo: "Any Simple or Martial weapon", magicBonus: 2, attackBonus: 2, damageBonus: 2 } },
+    { id: "weapon-plus-3", name: "Weapon, +3", magicItemCategory: "weapon", rarity: "very rare", data: { appliesTo: "Any Simple or Martial weapon", magicBonus: 3, attackBonus: 3, damageBonus: 3 } },
+    { id: "weapon-of-warning", name: "Weapon of Warning", magicItemCategory: "weapon", rarity: "uncommon", requiresAttunement: true, data: { appliesTo: "Any Simple or Martial weapon", initiativeAdvantage: true, preventsSurprise: true, awakensAllies: true } }
+  ];
+  return magicItems.map(dnd5eSrdMagicItemEntry);
 }
 
 export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
@@ -1913,7 +2019,8 @@ export function dnd5eSrdCompendium(): GenericFantasyCompendiumEntry[] {
       data: { category: "tool", equipmentCategory: "tool", toolId: "thieves-tools", ability: "dexterity", costGp: 25, weightLb: 1, source: DND_5E_SRD_VERSION }
     },
     ...dnd5eSrdToolCompendiumEntries(),
-    ...dnd5eSrdAdventuringGearCompendiumEntries()
+    ...dnd5eSrdAdventuringGearCompendiumEntries(),
+    ...dnd5eSrdMagicItemCompendiumEntries()
   ];
 }
 
@@ -2977,6 +3084,23 @@ export function dnd5eSrdSheet(actor: Actor, items: Item[] = []): GenericFantasyS
   };
 }
 
+function dnd5eSrdEquippedItemNumericBonus(actor: Actor, items: Item[], bonusKey: string, options: { hasEquippedArmorOrShield?: boolean } = {}): { total: number; itemIds: string[] } {
+  const itemBonuses = items
+    .filter((item) => itemBelongsToActor(actor, item))
+    .filter((item) => itemQuantity(recordValue(item.data)) > 0)
+    .flatMap((item) => {
+      const data = recordValue(item.data);
+      if (data.equipped === false) return [];
+      if (bonusKey === "armorClassBonus" && options.hasEquippedArmorOrShield && booleanValue(data.requiresNoArmorOrShield)) return [];
+      const bonus = numericValue(data[bonusKey], Number.NaN);
+      return Number.isFinite(bonus) ? [{ itemId: item.id, bonus }] : [];
+    });
+  return {
+    total: itemBonuses.reduce((sum, item) => sum + item.bonus, 0),
+    itemIds: itemBonuses.map((item) => item.itemId)
+  };
+}
+
 export function dnd5eSrdArmorClass(actor: Actor, items: Item[] = []): Dnd5eSrdArmorClassDetails {
   const dexModifier = genericFantasyAttributeModifier(actor, "dexterity");
   const wisdomModifier = genericFantasyAttributeModifier(actor, "wisdom");
@@ -3041,11 +3165,13 @@ export function dnd5eSrdArmorClass(actor: Actor, items: Item[] = []): Dnd5eSrdAr
     return data.equipped !== false && Number.isFinite(numericValue(data.armorBonus, Number.NaN));
   });
   const shieldBonus = shieldItems.reduce((max, item) => Math.max(max, numericValue(recordValue(item.data).armorBonus, 0)), 0);
+  const armorClassItemBonus = dnd5eSrdEquippedItemNumericBonus(actor, actorItems, "armorClassBonus", { hasEquippedArmorOrShield: hasEquippedArmor || hasEquippedShield });
   return {
     ...armor,
-    value: armor.value + shieldBonus,
+    value: armor.value + shieldBonus + armorClassItemBonus.total,
     shieldBonus,
-    shieldItemIds: shieldBonus > 0 ? shieldItems.filter((item) => numericValue(recordValue(item.data).armorBonus, 0) === shieldBonus).map((item) => item.id) : []
+    shieldItemIds: shieldBonus > 0 ? shieldItems.filter((item) => numericValue(recordValue(item.data).armorBonus, 0) === shieldBonus).map((item) => item.id) : [],
+    ...(armorClassItemBonus.total > 0 ? { armorClassBonus: armorClassItemBonus.total, armorClassBonusItemIds: armorClassItemBonus.itemIds } : {})
   };
 }
 
@@ -5656,7 +5782,7 @@ function dnd5eSrdMonkWeaponDamageFormulaForRoll(actor: Actor, items: Item[], rol
   if (!dnd5eSrdIsMonkWeapon(data)) return undefined;
   const weaponDamage = rollId === `item-${item.id}-versatile-damage` ? stringValue(data.versatileDamage) : stringValue(data.damage);
   const damageDie = dnd5eSrdLargerDamageDie(weaponDamage, `1${dnd5eSrdMartialArtsDie(actor)}`);
-  return appendFormulaBonus(damageDie, genericFantasyAttributeModifier(actor, "dexterity"));
+  return appendFormulaBonus(damageDie, genericFantasyAttributeModifier(actor, "dexterity") + numericValue(data.damageBonus, 0));
 }
 
 function dnd5eSrdIsMonkWeapon(data: Record<string, unknown>): boolean {

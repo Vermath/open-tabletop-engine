@@ -537,7 +537,57 @@ describe("dnd 5.5e srd rules", () => {
       "vial",
       "waterskin"
     ];
-    expect([...srdToolEntryIds, ...srdAdventuringGearEntryIds].filter((entryId) => !dnd5eSrdCompendiumEntry(entryId))).toEqual([]);
+    const srdMagicItemEntryIds = [
+      "adamantine-armor",
+      "ammunition-plus-1",
+      "ammunition-plus-2",
+      "ammunition-plus-3",
+      "ammunition-of-slaying",
+      "amulet-of-health",
+      "amulet-of-proof-against-detection-and-location",
+      "animated-shield",
+      "armor-plus-1",
+      "armor-plus-2",
+      "armor-plus-3",
+      "armor-of-invulnerability",
+      "armor-of-resistance",
+      "arrow-catching-shield",
+      "bag-of-holding",
+      "bag-of-tricks",
+      "boots-of-elvenkind",
+      "boots-of-speed",
+      "boots-of-striding-and-springing",
+      "boots-of-the-winterlands",
+      "bracers-of-archery",
+      "bracers-of-defense",
+      "cloak-of-displacement",
+      "cloak-of-elvenkind",
+      "cloak-of-invisibility",
+      "cloak-of-protection",
+      "ring-of-free-action",
+      "ring-of-invisibility",
+      "ring-of-protection",
+      "ring-of-regeneration",
+      "ring-of-resistance",
+      "shield-plus-1",
+      "shield-plus-2",
+      "shield-plus-3",
+      "staff-of-healing",
+      "staff-of-power",
+      "staff-of-striking",
+      "wand-of-fireballs",
+      "wand-of-lightning-bolts",
+      "wand-of-magic-detection",
+      "wand-of-magic-missiles",
+      "wand-of-the-war-mage-plus-1",
+      "wand-of-the-war-mage-plus-2",
+      "wand-of-the-war-mage-plus-3",
+      "weapon-plus-1",
+      "weapon-plus-2",
+      "weapon-plus-3",
+      "weapon-of-warning"
+    ];
+    expect([...srdToolEntryIds, ...srdAdventuringGearEntryIds, ...srdMagicItemEntryIds].filter((entryId) => !dnd5eSrdCompendiumEntry(entryId))).toEqual([]);
     expect(dnd5eSrdCompendiumEntry("alchemists-supplies")?.data).toEqual(expect.objectContaining({ category: "tool", toolId: "alchemists-supplies", ability: "intelligence", costGp: 50, weightLb: 8 }));
     expect(dnd5eSrdCompendiumEntry("dice-set")?.data).toEqual(expect.objectContaining({ toolGroup: "gaming-set", variantOf: "gaming-set", costGp: 0.1, weightLb: 0 }));
     expect(dnd5eSrdCompendiumEntry("flute")?.data).toEqual(expect.objectContaining({ toolGroup: "musical-instrument", variantOf: "musical-instrument", costGp: 2, weightLb: 1 }));
@@ -547,6 +597,86 @@ describe("dnd 5.5e srd rules", () => {
     expect(dnd5eSrdCompendiumEntry("healers-kit")?.data).toEqual(expect.objectContaining({ uses: 10, action: "utilize", stabilizesAtZeroHp: true, costGp: 5 }));
     expect(dnd5eSrdCompendiumEntry("potion-of-healing")?.data).toEqual(expect.objectContaining({ magicItem: true, healingFormula: "2d4+2", costGp: 50 }));
     expect(dnd5eSrdCompendiumEntry("spell-scroll-level-1")?.data).toEqual(expect.objectContaining({ magicItem: true, scrollLevel: 1, spellSaveDc: 13, spellAttackBonus: 5 }));
+    expect(dnd5eSrdCompendiumEntry("ammunition-of-slaying")?.data).toEqual(expect.objectContaining({ magicItem: true, rarity: "very rare", extraDamageFormula: "6d10", save: { ability: "constitution", dc: 17, success: "half" } }));
+    expect(dnd5eSrdCompendiumEntry("weapon-plus-2")?.data).toEqual(expect.objectContaining({ magicItemCategory: "weapon", rarity: "rare", attackBonus: 2, damageBonus: 2, craftingCostGp: 2000 }));
+    expect(dnd5eSrdCompendiumEntry("shield-plus-3")?.data).toEqual(expect.objectContaining({ magicItemCategory: "armor", rarity: "very rare", armorBonus: 5, shieldEnhancementBonus: 3 }));
+    expect(dnd5eSrdCompendiumEntry("cloak-of-protection")?.data).toEqual(expect.objectContaining({ requiresAttunement: true, armorClassBonus: 1, savingThrowBonus: 1 }));
+    expect(dnd5eSrdCompendiumEntry("bracers-of-defense")?.data).toEqual(expect.objectContaining({ armorClassBonus: 2, requiresNoArmorOrShield: true }));
+    expect(dnd5eSrdCompendiumEntry("bag-of-holding")?.data).toEqual(expect.objectContaining({ capacityLb: 500, capacityCubicFt: 64, extradimensionalStorage: true }));
+    expect(dnd5eSrdCompendiumEntry("wand-of-magic-missiles")?.data).toEqual(expect.objectContaining({ magicItemCategory: "wand", rarity: "uncommon", spell: "magic-missile", charges: expect.objectContaining({ max: 7 }) }));
+
+    const cloakOfProtection: Item = {
+      id: "itm_cloak_of_protection",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Cloak of Protection",
+      data: { ...dnd5eSrdCompendiumEntry("cloak-of-protection")!.data, compendiumId: "cloak-of-protection" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const ringOfProtection: Item = {
+      id: "itm_ring_of_protection",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Ring of Protection",
+      data: { ...dnd5eSrdCompendiumEntry("ring-of-protection")!.data, compendiumId: "ring-of-protection" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const bracersOfDefense: Item = {
+      id: "itm_bracers_of_defense",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Bracers of Defense",
+      data: { ...dnd5eSrdCompendiumEntry("bracers-of-defense")!.data, compendiumId: "bracers-of-defense" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const bracersChainMail: Item = {
+      id: "itm_bracers_chain_mail",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Chain Mail",
+      data: { ...dnd5eSrdCompendiumEntry("chain-mail")!.data, compendiumId: "chain-mail" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const staffOfStriking: Item = {
+      id: "itm_staff_of_striking",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Staff of Striking",
+      data: { ...dnd5eSrdCompendiumEntry("staff-of-striking")!.data, compendiumId: "staff-of-striking" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const protectedSheet = dnd5eSrdSheet(srdActor, [cloakOfProtection, ringOfProtection]);
+    expect(protectedSheet.data.armorClass).toBe(13);
+    expect(protectedSheet.data.armorClassDetails).toEqual(expect.objectContaining({ value: 13, armorClassBonus: 2, armorClassBonusItemIds: ["itm_cloak_of_protection", "itm_ring_of_protection"] }));
+    expect(protectedSheet.quickRolls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "save-dexterity", formula: "1d20+3", metadata: expect.objectContaining({ itemBonus: 2 }) }),
+        expect.objectContaining({ id: "save-wisdom", formula: "1d20+7", metadata: expect.objectContaining({ itemBonus: 2 }) })
+      ])
+    );
+    expect(dnd5eSrdSheet(srdActor, [bracersOfDefense]).data.armorClass).toBe(13);
+    expect(dnd5eSrdSheet(srdActor, [bracersOfDefense, bracersChainMail]).data.armorClass).toBe(16);
+    expect(dnd5eSrdSheet(srdActor, [staffOfStriking]).quickRolls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "item-itm_staff_of_striking-damage", formula: "1d6+3" }),
+        expect.objectContaining({ id: "item-itm_staff_of_striking-versatile-damage", formula: "1d8+3" })
+      ])
+    );
 
     const spell: Item = {
       id: "itm_healing_word",
