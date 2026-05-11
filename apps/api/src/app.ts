@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
@@ -42,7 +42,7 @@ type PluginReviewPolicyMode = "allow_unreviewed" | "require_approved";
 
 const MAX_FOG_HISTORY_ENTRIES = 100;
 const DEFAULT_SYSTEM_ID = DND_5E_SRD_SYSTEM_ID;
-const CORE_COMPATIBILITY_VERSION = "0.1.0";
+const CORE_COMPATIBILITY_VERSION = "0.2.0";
 const AI_STALE_RUNNING_THREAD_MS = 15 * 60 * 1000;
 const AI_STALE_STARTED_TOOL_CALL_MS = 15 * 60 * 1000;
 const AI_STALE_PROPOSAL_REVIEW_MS = 24 * 60 * 60 * 1000;
@@ -187,7 +187,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.get("/api/v1/health", async () => ({
     ok: true,
-    version: "0.1.0",
+    version: "0.2.0",
     service: "open-tabletop-api"
   }));
 
@@ -3099,6 +3099,215 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return applied;
   });
 
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/content-imports", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    return store.state.contentImports.filter((item) => item.campaignId === request.params.campaignId && item.status !== "deleted");
+  });
+
+  app.post<{
+    Params: { campaignId: string };
+    Body: {
+      source?: Partial<Omit<ContentImportSource, "submittedByUserId" | "submittedAt">>;
+      entities?: Array<Partial<ContentImportEntity> & { kind: ContentImportEntityKind; name: string }>;
+    };
+  }>("/api/v1/campaigns/:campaignId/content-imports/preview", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    if (!request.body.entities || request.body.entities.length === 0) return reply.code(400).send({ error: "content_import_entities_required" });
+
+    const source = normalizeContentImportSource(request.body.source, userId);
+    const entities = request.body.entities.map((entity) => normalizeContentImportEntity(entity, source));
+    const batch = createTimestamped("cimp", {
+      campaignId: request.params.campaignId,
+      status: "previewed" as const,
+      source,
+      entities,
+      selectedEntityIds: entities.filter((entity) => entity.selectedByDefault).map((entity) => entity.id),
+      appliedRecords: []
+    }) satisfies ContentImportBatch;
+    store.state.contentImports.push(batch);
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: batch.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "contentImport.previewed",
+        targetType: "contentImport",
+        targetId: batch.id,
+        after: {
+          sourceType: source.sourceType,
+          adapterId: source.adapterId,
+          license: source.license,
+          entityCount: entities.length,
+          selectedEntityIds: batch.selectedEntityIds
+        }
+      })
+    );
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: batch.campaignId,
+        type: "contentImport.previewed",
+        targetId: batch.id,
+        payload: batch
+      })
+    );
+    return batch;
+  });
+
+  app.get<{ Params: { importId: string } }>("/api/v1/content-imports/:importId", async (request, reply) => {
+    const batch = store.state.contentImports.find((item) => item.id === request.params.importId);
+    if (!batch || batch.status === "deleted") return notFound(reply, "Content import not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, batch.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    return batch;
+  });
+
+  app.post<{ Params: { importId: string }; Body: { selectedEntityIds?: string[] } }>("/api/v1/content-imports/:importId/apply", async (request, reply) => {
+    const batch = store.state.contentImports.find((item) => item.id === request.params.importId);
+    if (!batch || batch.status === "deleted") return notFound(reply, "Content import not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, batch.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (batch.status === "applied") return reply.code(409).send({ error: "content_import_already_applied" });
+    const selectedEntityIds = request.body.selectedEntityIds ?? batch.selectedEntityIds;
+    if (selectedEntityIds.length === 0) return reply.code(400).send({ error: "content_import_selection_required" });
+    const selected = batch.entities.filter((entity) => selectedEntityIds.includes(entity.id));
+    if (selected.length !== selectedEntityIds.length) return reply.code(400).send({ error: "content_import_unknown_entity" });
+
+    const campaign = store.state.campaigns.find((item) => item.id === batch.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    const appliedRecords: ContentImportAppliedRecord[] = [];
+    try {
+      for (const entity of selected) {
+        appliedRecords.push(applyContentImportEntity(store.state, campaign, entity, userId));
+      }
+    } catch (error) {
+      for (const record of appliedRecords) removeAppliedContentImportRecord(store.state, record);
+      const message = error instanceof Error ? error.message : "Content import could not be applied";
+      store.state.auditLogs.push(
+        createTimestamped("audit", {
+          campaignId: batch.campaignId,
+          actorUserId: userId,
+          actorType: "user" as const,
+          action: "contentImport.apply.failed",
+          targetType: "contentImport",
+          targetId: batch.id,
+          after: { reason: "apply_failed", message, selectedEntityIds }
+        })
+      );
+      store.save();
+      return reply.code(409).send({ error: "content_import_apply_failed", message });
+    }
+
+    batch.status = "applied";
+    batch.selectedEntityIds = selectedEntityIds;
+    batch.appliedRecords = appliedRecords;
+    batch.appliedAt = nowIso();
+    batch.appliedByUserId = userId;
+    batch.updatedAt = nowIso();
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: batch.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "contentImport.applied",
+        targetType: "contentImport",
+        targetId: batch.id,
+        after: { selectedEntityIds, appliedRecords }
+      })
+    );
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: batch.campaignId,
+        type: "contentImport.applied",
+        targetId: batch.id,
+        payload: batch
+      })
+    );
+    return batch;
+  });
+
+  app.post<{ Params: { importId: string } }>("/api/v1/content-imports/:importId/rollback", async (request, reply) => {
+    const batch = store.state.contentImports.find((item) => item.id === request.params.importId);
+    if (!batch || batch.status === "deleted") return notFound(reply, "Content import not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, batch.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (batch.status !== "applied") return reply.code(409).send({ error: "content_import_not_applied" });
+
+    const removed = batch.appliedRecords.map((record) => removeAppliedContentImportRecord(store.state, record)).filter(Boolean);
+    batch.status = "rolled_back";
+    batch.rolledBackAt = nowIso();
+    batch.rolledBackByUserId = userId;
+    batch.updatedAt = nowIso();
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: batch.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "contentImport.rolledBack",
+        targetType: "contentImport",
+        targetId: batch.id,
+        after: { removedRecords: removed, attemptedRecords: batch.appliedRecords }
+      })
+    );
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: batch.campaignId,
+        type: "contentImport.rolledBack",
+        targetId: batch.id,
+        payload: batch
+      })
+    );
+    return batch;
+  });
+
+  app.delete<{ Params: { importId: string } }>("/api/v1/content-imports/:importId", async (request, reply) => {
+    const batch = store.state.contentImports.find((item) => item.id === request.params.importId);
+    if (!batch || batch.status === "deleted") return notFound(reply, "Content import not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, batch.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (batch.status === "applied") return reply.code(409).send({ error: "content_import_delete_requires_rollback" });
+
+    batch.status = "deleted";
+    batch.deletedAt = nowIso();
+    batch.deletedByUserId = userId;
+    batch.updatedAt = nowIso();
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: batch.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "contentImport.deleted",
+        targetType: "contentImport",
+        targetId: batch.id,
+        after: { deletedAt: batch.deletedAt, previousAppliedRecords: batch.appliedRecords }
+      })
+    );
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: batch.campaignId,
+        type: "contentImport.deleted",
+        targetId: batch.id,
+        payload: batch
+      })
+    );
+    return batch;
+  });
+
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/ai/threads", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
     if (allowed !== true) return allowed;
@@ -4406,9 +4615,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     const payload = request.body as CampaignArchive | { archive: CampaignArchive; mode?: "upsert" | "reject_conflicts" };
-    const archive = "archive" in payload ? payload.archive : payload;
+    const archive = normalizeArchiveForImport("archive" in payload ? payload.archive : payload);
     const mode = "archive" in payload ? (payload.mode ?? "upsert") : "upsert";
-    if (archive.format !== "ottx") throw new Error("Unsupported archive format");
+    if (archive.format !== "ottx") return reply.code(400).send({ error: "unsupported_archive_format" });
+    if (!isSupportedArchiveVersion(archive.version)) return reply.code(400).send({ error: "unsupported_archive_version", version: archive.version });
 
     const conflicts = findArchiveConflicts(store.state, archive);
     if (mode === "reject_conflicts" && conflicts.length > 0) {
@@ -16225,6 +16435,177 @@ function checksumForBuffer(body: Buffer): string {
   return `sha256:${createHash("sha256").update(body).digest("hex")}`;
 }
 
+function isSupportedArchiveVersion(version: string): boolean {
+  return version === "0.1.0" || version === "0.2.0";
+}
+
+function normalizeArchiveForImport(archive: CampaignArchive): CampaignArchive {
+  const data = archive.data as Partial<EngineState>;
+  return {
+    ...archive,
+    files: archive.files ?? [],
+    data: {
+      ...emptyState(),
+      ...data,
+      sessions: [],
+      identities: [],
+      oauthStates: [],
+      passwordResetTokens: [],
+      emailOutbox: [],
+      scimGroups: data.scimGroups ?? [],
+      scimGroupRoleMappings: data.scimGroupRoleMappings ?? [],
+      invites: data.invites ?? [],
+      pluginReviews: [],
+      contentImports: data.contentImports ?? []
+    }
+  };
+}
+
+function normalizeContentImportSource(source: Partial<Omit<ContentImportSource, "submittedByUserId" | "submittedAt">> | undefined, submittedByUserId: string): ContentImportSource {
+  const submittedAt = nowIso();
+  return {
+    sourceType: source?.sourceType ?? "manual",
+    adapterId: source?.adapterId,
+    sourceName: source?.sourceName?.trim() || "User-provided content",
+    sourceUrl: source?.sourceUrl,
+    submittedByUserId,
+    submittedAt,
+    license: {
+      name: source?.license?.name?.trim() || "User-provided private table content",
+      url: source?.license?.url,
+      usage: source?.license?.usage ?? "user_provided",
+      attribution: source?.license?.attribution
+    },
+    notes: source?.notes
+  };
+}
+
+function normalizeContentImportEntity(input: Partial<ContentImportEntity> & { kind: ContentImportEntityKind; name: string }, source: ContentImportSource): ContentImportEntity {
+  if (!["actor", "item", "journal", "handout"].includes(input.kind)) throw new Error(`Unsupported content import entity kind: ${input.kind}`);
+  const id = input.id?.trim() || createId("cie");
+  const warnings = [...(input.warnings ?? []), ...contentImportEntityWarnings(input, source)];
+  return {
+    id,
+    kind: input.kind,
+    name: input.name.trim() || "Untitled Import",
+    selectedByDefault: input.selectedByDefault ?? true,
+    provenance: source,
+    data: input.data ?? {},
+    warnings: [...new Set(warnings)]
+  };
+}
+
+function contentImportEntityWarnings(input: Pick<ContentImportEntity, "kind" | "name">, source: ContentImportSource): string[] {
+  const warnings: string[] = [];
+  if (source.sourceUrl?.toLowerCase().includes("dndbeyond.com") || source.adapterId?.toLowerCase().includes("dndbeyond")) {
+    warnings.push("external_service_boundary_no_scraping_or_auth_bypass");
+  }
+  if (source.license.usage === "private_home_game") warnings.push("private_home_game_not_redistributable");
+  if (input.kind === "actor" && source.license.usage !== "srd" && source.sourceType === "adapter") warnings.push("verify_actor_source_license_before_distribution");
+  return warnings;
+}
+
+function applyContentImportEntity(state: EngineState, campaign: Campaign, entity: ContentImportEntity, userId: string): ContentImportAppliedRecord {
+  const recordId = contentImportRecordId(entity);
+  if (state.actors.some((item) => item.id === recordId) || state.items.some((item) => item.id === recordId) || state.journals.some((item) => item.id === recordId) || state.handouts.some((item) => item.id === recordId)) {
+    throw new Error(`Imported record already exists: ${recordId}`);
+  }
+
+  if (entity.kind === "actor") {
+    const actor = createTimestamped("act", {
+      id: recordId,
+      campaignId: campaign.id,
+      systemId: stringFromRecord(entity.data, "systemId") ?? campaign.defaultSystemId,
+      ownerUserId: stringFromRecord(entity.data, "ownerUserId"),
+      type: stringFromRecord(entity.data, "type") ?? "npc",
+      name: entity.name,
+      imageAssetId: stringFromRecord(entity.data, "imageAssetId"),
+      data: recordFromRecord(entity.data, "data") ?? { ...entity.data, provenance: entity.provenance },
+      permissions: recordOfStringArrayFromRecord(entity.data, "permissions") ?? {
+        [userId]: ["actor.read", "actor.readPrivate", "actor.update"]
+      }
+    }) satisfies Actor;
+    state.actors.push(actor);
+    return { collection: "actors", id: actor.id, entityId: entity.id };
+  }
+
+  if (entity.kind === "item") {
+    const item = createTimestamped("item", {
+      id: recordId,
+      campaignId: campaign.id,
+      systemId: stringFromRecord(entity.data, "systemId") ?? campaign.defaultSystemId,
+      actorId: stringFromRecord(entity.data, "actorId"),
+      type: stringFromRecord(entity.data, "type") ?? "loot",
+      name: entity.name,
+      data: recordFromRecord(entity.data, "data") ?? { ...entity.data, provenance: entity.provenance }
+    }) satisfies Item;
+    state.items.push(item);
+    return { collection: "items", id: item.id, entityId: entity.id };
+  }
+
+  if (entity.kind === "journal") {
+    const journal = createTimestamped("jnl", {
+      id: recordId,
+      campaignId: campaign.id,
+      parentId: stringFromRecord(entity.data, "parentId"),
+      title: entity.name,
+      body: stringFromRecord(entity.data, "body") ?? "",
+      visibility: visibilityFromRecord(entity.data, "visibility", "gm_only"),
+      visibleToUserIds: stringArrayFromRecord(entity.data, "visibleToUserIds"),
+      visibleToActorIds: stringArrayFromRecord(entity.data, "visibleToActorIds"),
+      tags: stringArrayFromRecord(entity.data, "tags").length > 0 ? stringArrayFromRecord(entity.data, "tags") : ["content-import"],
+      createdBy: userId,
+      updatedBy: userId
+    }) satisfies JournalEntry;
+    state.journals.push(journal);
+    return { collection: "journals", id: journal.id, entityId: entity.id };
+  }
+
+  const handout = createTimestamped("hnd", {
+    id: recordId,
+    campaignId: campaign.id,
+    title: entity.name,
+    body: stringFromRecord(entity.data, "body") ?? "",
+    visibility: visibilityFromRecord(entity.data, "visibility", "gm_only"),
+    assetIds: stringArrayFromRecord(entity.data, "assetIds")
+  });
+  state.handouts.push(handout);
+  return { collection: "handouts", id: handout.id, entityId: entity.id };
+}
+
+function removeAppliedContentImportRecord(state: EngineState, record: ContentImportAppliedRecord): ContentImportAppliedRecord | undefined {
+  const collection =
+    record.collection === "actors"
+      ? state.actors
+      : record.collection === "items"
+        ? state.items
+        : record.collection === "journals"
+          ? state.journals
+          : state.handouts;
+  const index = collection.findIndex((item) => item.id === record.id);
+  if (index === -1) return undefined;
+  collection.splice(index, 1);
+  return record;
+}
+
+function contentImportRecordId(entity: ContentImportEntity): string {
+  const prefix: Record<ContentImportEntityKind, string> = {
+    actor: "act_imp",
+    item: "item_imp",
+    journal: "jnl_imp",
+    handout: "hnd_imp"
+  };
+  return `${prefix[entity.kind]}_${entity.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+}
+
+function recordOfStringArrayFromRecord(record: Record<string, unknown>, key: string): Record<string, PermissionName[]> | undefined {
+  const value = record[key];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (!entries.every(([, item]) => Array.isArray(item) && item.every((permission) => typeof permission === "string" && ALL_PERMISSIONS.includes(permission as PermissionName)))) return undefined;
+  return Object.fromEntries(entries) as Record<string, PermissionName[]>;
+}
+
 function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyof EngineState, number> {
   return {
     users: upsertRecords(state.users, archive.data.users),
@@ -16260,6 +16641,7 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     permissionGrants: upsertRecords(state.permissionGrants, archive.data.permissionGrants),
     pluginStorage: upsertRecords(state.pluginStorage, archive.data.pluginStorage ?? []),
     pluginReviews: 0,
+    contentImports: upsertRecords(state.contentImports, archive.data.contentImports ?? []),
     fogPresets: upsertRecords(state.fogPresets, archive.data.fogPresets ?? [])
   };
 }

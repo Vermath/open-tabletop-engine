@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
-import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type AssetStorageRef, type EngineState, type MapAsset, type PasswordResetToken, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
+import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp } from "./app.js";
@@ -16361,7 +16361,7 @@ describe("api", () => {
           }),
           compatibilityOperations: expect.objectContaining({
             actionRequired: true,
-            coreVersion: "0.1.0",
+            coreVersion: "0.2.0",
             incompatiblePackageCount: 1,
             incompatibleInstalledCount: 1,
             packages: [expect.objectContaining({ pluginId: "future-plugin", version: "1.0.0", compatibleCore: ">=9.0.0" })],
@@ -16445,9 +16445,9 @@ describe("api", () => {
           expect.objectContaining({
             pluginId: "future-plugin",
             status: "blocked",
-            compatibleCore: { range: ">=9.0.0", coreVersion: "0.1.0", satisfied: false },
+            compatibleCore: { range: ">=9.0.0", coreVersion: "0.2.0", satisfied: false },
             issues: expect.arrayContaining(["marketplace_review_blocked", "core_compatibility_drift"]),
-            blocks: expect.arrayContaining(["Plugin requires core >=9.0.0; server core is 0.1.0"])
+            blocks: expect.arrayContaining(["Plugin requires core >=9.0.0; server core is 0.2.0"])
           }),
           expect.objectContaining({ pluginId: "missing-plugin", status: "missing_package", issues: ["installed_plugin_package_missing"] })
         ])
@@ -23797,6 +23797,701 @@ registerCommand("/state", (input) => {
         packageId: "example-macro-plugin"
       })
     });
+
+    await app.close();
+  });
+
+  it("previews, selectively applies, rolls back, and deletes user-provided content imports", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const previewed = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/content-imports/preview",
+      headers: authHeaders,
+      payload: {
+        source: {
+          sourceType: "user_upload",
+          sourceName: "Home table notes.json",
+          license: {
+            name: "Private home table export",
+            usage: "private_home_game",
+            attribution: "Demo GM"
+          }
+        },
+        entities: [
+          {
+            id: "rumor_ember_key",
+            kind: "journal",
+            name: "Imported Rumor: Ember Key",
+            selectedByDefault: true,
+            data: {
+              body: "The ember key hums near a lit brazier.",
+              visibility: "public",
+              tags: ["content-import", "rumor"]
+            }
+          },
+          {
+            id: "asterite_token",
+            kind: "item",
+            name: "Imported Asterite Token",
+            selectedByDefault: true,
+            data: {
+              type: "loot",
+              data: { quantity: 1, source: "player supplied" }
+            }
+          },
+          {
+            id: "private_npc",
+            kind: "actor",
+            name: "Imported Private NPC",
+            selectedByDefault: false,
+            data: {
+              type: "npc",
+              data: { role: "rumor source" }
+            }
+          }
+        ]
+      }
+    });
+    expect(previewed.statusCode).toBe(200);
+    const preview = previewed.json();
+    expect(preview.status).toBe("previewed");
+    expect(preview.source).toEqual(
+      expect.objectContaining({
+        sourceType: "user_upload",
+        sourceName: "Home table notes.json",
+        license: expect.objectContaining({ usage: "private_home_game" }),
+        submittedByUserId: "usr_demo_gm"
+      })
+    );
+    expect(preview.entities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "rumor_ember_key",
+          warnings: expect.arrayContaining(["private_home_game_not_redistributable"])
+        })
+      ])
+    );
+    expect(preview.selectedEntityIds).toEqual(["rumor_ember_key", "asterite_token"]);
+
+    const applied = await app.inject({
+      method: "POST",
+      url: `/api/v1/content-imports/${preview.id}/apply`,
+      headers: authHeaders,
+      payload: { selectedEntityIds: ["rumor_ember_key", "asterite_token"] }
+    });
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json()).toEqual(
+      expect.objectContaining({
+        status: "applied",
+        appliedRecords: [
+          { collection: "journals", id: "jnl_imp_rumor_ember_key", entityId: "rumor_ember_key" },
+          { collection: "items", id: "item_imp_asterite_token", entityId: "asterite_token" }
+        ]
+      })
+    );
+    expect(store.state.journals.map((journal) => journal.id)).toContain("jnl_imp_rumor_ember_key");
+    expect(store.state.items.map((item) => item.id)).toContain("item_imp_asterite_token");
+    expect(store.state.actors.map((actor) => actor.id)).not.toContain("act_imp_private_npc");
+
+    const blockedDelete = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/content-imports/${preview.id}`,
+      headers: authHeaders
+    });
+    expect(blockedDelete.statusCode).toBe(409);
+    expect(blockedDelete.json()).toEqual({ error: "content_import_delete_requires_rollback" });
+
+    const rolledBack = await app.inject({
+      method: "POST",
+      url: `/api/v1/content-imports/${preview.id}/rollback`,
+      headers: authHeaders
+    });
+    expect(rolledBack.statusCode).toBe(200);
+    expect(rolledBack.json().status).toBe("rolled_back");
+    expect(store.state.journals.map((journal) => journal.id)).not.toContain("jnl_imp_rumor_ember_key");
+    expect(store.state.items.map((item) => item.id)).not.toContain("item_imp_asterite_token");
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/content-imports/${preview.id}`,
+      headers: authHeaders
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json().status).toBe("deleted");
+
+    const visibleImports = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/content-imports",
+      headers: authHeaders
+    });
+    expect(visibleImports.statusCode).toBe(200);
+    expect(visibleImports.json()).toEqual([]);
+    expect(store.state.auditLogs.map((log) => log.action)).toEqual(
+      expect.arrayContaining(["contentImport.previewed", "contentImport.applied", "contentImport.rolledBack", "contentImport.deleted"])
+    );
+
+    await app.close();
+  });
+
+  it("imports the beta dogfood archive with three-session SRD campaign evidence intact", async () => {
+    const archive = JSON.parse(readFileSync(join(process.cwd(), "..", "..", "docs", "demo", "ember-vault-beta-dogfood.ottx.json"), "utf8"));
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const playerOneHeaders = { "x-user-id": "usr_demo_player" };
+    const playerTwoHeaders = { "x-user-id": "usr_beta_player_2" };
+    const playerThreeHeaders = { "x-user-id": "usr_beta_player_3" };
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    expect(imported.statusCode).toBe(200);
+    expect(imported.json().importedCampaignIds).toEqual(["camp_beta_ember_vault"]);
+    expect(imported.json().counts).toEqual(
+      expect.objectContaining({
+        users: 4,
+        campaigns: 1,
+        members: 4,
+        scenes: 2,
+        assets: 2,
+        tokens: 5,
+        actors: 6,
+        items: 4,
+        journals: 5,
+        handouts: 2,
+        chat: 6,
+        rolls: 4,
+        encounters: 1,
+        combats: 1,
+        proposals: 1,
+        aiThreads: 1,
+        aiEvaluations: 1,
+        aiMemory: 1,
+        aiToolCalls: 3,
+        auditLogs: 4,
+        permissionGrants: 1,
+        pluginStorage: 1
+      })
+    );
+
+    const playerJournals = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_beta_ember_vault/journal",
+      headers: playerOneHeaders
+    });
+    expect(playerJournals.statusCode).toBe(200);
+    expect(playerJournals.json().map((journal: { id: string }) => journal.id)).toEqual(expect.arrayContaining(["jnl_beta_session_1", "jnl_beta_session_2", "jnl_beta_session_3", "jnl_beta_cipher_handout"]));
+    expect(playerJournals.json().map((journal: { id: string }) => journal.id)).not.toContain("jnl_beta_prep");
+
+    const playerTokens = await app.inject({
+      method: "GET",
+      url: "/api/v1/scenes/scn_beta_vault/tokens",
+      headers: playerOneHeaders
+    });
+    expect(playerTokens.statusCode).toBe(200);
+    expect(playerTokens.json().map((token: { id: string }) => token.id)).toEqual(expect.arrayContaining(["tok_beta_valen", "tok_beta_nia", "tok_beta_orren", "tok_beta_warden"]));
+    expect(playerTokens.json().map((token: { id: string }) => token.id)).not.toContain("tok_beta_hidden_scout");
+
+    const movedValen = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_beta_valen",
+      headers: playerOneHeaders,
+      payload: { x: 430, y: 440 }
+    });
+    const movedNia = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_beta_nia",
+      headers: playerTwoHeaders,
+      payload: { x: 500, y: 500 }
+    });
+    const movedOrren = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_beta_orren",
+      headers: playerThreeHeaders,
+      payload: { x: 560, y: 470 }
+    });
+    expect(movedValen.statusCode).toBe(200);
+    expect(movedNia.statusCode).toBe(200);
+    expect(movedOrren.statusCode).toBe(200);
+
+    const blockedHiddenScoutMove = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_beta_hidden_scout",
+      headers: playerOneHeaders,
+      payload: { x: 900, y: 500 }
+    });
+    expect(blockedHiddenScoutMove.statusCode).toBe(404);
+
+    const combat = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_beta_ember_vault/combats",
+      headers: playerOneHeaders
+    });
+    expect(combat.statusCode).toBe(200);
+    expect(combat.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "cmb_beta_warden",
+          round: 3,
+          combatants: expect.arrayContaining([
+            expect.objectContaining({ tokenId: "tok_beta_valen", initiative: 18 }),
+            expect.objectContaining({ tokenId: "tok_beta_hidden_scout", initiative: 9 })
+          ])
+        })
+      ])
+    );
+
+    const proposals = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_beta_ember_vault/proposals",
+      headers: authHeaders
+    });
+    expect(proposals.statusCode).toBe(200);
+    expect(proposals.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "prop_beta_ai_recap_memory",
+          createdByType: "ai",
+          status: "pending",
+          approvalRequired: true
+        })
+      ])
+    );
+    expect(store.state.aiEvaluations.find((run) => run.id === "aie_beta_quality_smoke")).toMatchObject({
+      status: "passed",
+      score: 0.92
+    });
+    expect(store.state.pluginStorage.find((entry) => entry.id === "pst_beta_macro_counter")).toMatchObject({
+      pluginId: "example-macro-plugin",
+      value: 3
+    });
+
+    const betaEvaluation = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_beta_ember_vault/ai/evaluations",
+      headers: authHeaders,
+      payload: {
+        threadId: "ait_beta_recap",
+        name: "beta-v0.2-ai-quality-gate",
+        expectedProvider: "local-echo",
+        requiredToolCalls: ["read_campaign", "read_compendium", "create_proposal"],
+        requiredAdvertisedTools: ["read_campaign", "read_compendium", "create_proposal"],
+        forbiddenAdvertisedTools: ["delete_campaign"],
+        forbiddenAdvertisedPermissions: ["ai.applyChanges"],
+        expectedToolOutputs: [
+          {
+            toolName: "read_compendium",
+            status: "completed",
+            outputFields: [
+              { path: "systemId", equals: "dnd-5e-srd" },
+              { path: "source", equals: "SRD" }
+            ],
+            outputContains: ["encounter math"],
+            outputOmits: ["proprietary"]
+          },
+          {
+            toolName: "create_proposal",
+            status: "completed",
+            outputFields: [{ path: "approvalRequired", equals: true }],
+            outputContains: ["prop_beta_ai_recap_memory"]
+          }
+        ],
+        responseCriteria: [
+          { name: "encounter design", requiredSubstrings: ["medium difficulty"], forbiddenSubstrings: ["deadly by default"] },
+          { name: "combat advice", requiredSubstrings: ["without mutating state"], forbiddenSubstrings: ["secretly apply"] },
+          { name: "recap memory", requiredSubstrings: ["draft a proposal"], forbiddenSubstrings: ["auto-save memory"] },
+          { name: "rules lookup", requiredSubstrings: ["SRD-only"], forbiddenSubstrings: ["D&D Beyond"] },
+          { name: "proposal safety", requiredSubstrings: ["approval required"], forbiddenSubstrings: ["approval not needed"] }
+        ],
+        minToolCallCount: 3,
+        maxDurationMs: 5_000
+      }
+    });
+    expect(betaEvaluation.statusCode).toBe(200);
+    expect(betaEvaluation.json()).toMatchObject({
+      name: "beta-v0.2-ai-quality-gate",
+      status: "passed",
+      score: 1
+    });
+
+    const betaSystems = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_beta_ember_vault/systems",
+      headers: authHeaders
+    });
+    expect(betaSystems.statusCode).toBe(200);
+    expect(betaSystems.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "dnd-5e-srd", active: true })]));
+
+    const genericSystemInstall = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_beta_ember_vault/systems/generic-fantasy/install",
+      headers: authHeaders
+    });
+    expect(genericSystemInstall.statusCode).toBe(200);
+    expect(genericSystemInstall.json().campaign).toEqual(expect.objectContaining({ defaultSystemId: "generic-fantasy" }));
+
+    const dndSystemRestore = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_beta_ember_vault/systems/dnd-5e-srd/install",
+      headers: authHeaders
+    });
+    expect(dndSystemRestore.statusCode).toBe(200);
+    expect(dndSystemRestore.json().campaign).toEqual(expect.objectContaining({ defaultSystemId: "dnd-5e-srd" }));
+
+    const pluginInstall = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_beta_ember_vault/plugins/example-macro-plugin/install",
+      headers: authHeaders,
+      payload: { permissions: ["chat.write"] }
+    });
+    expect(pluginInstall.statusCode).toBe(200);
+    expect(pluginInstall.json().permissionReview).toMatchObject({
+      grantedPermissions: ["chat.write"],
+      missingPermissions: ["token.read"]
+    });
+
+    const pluginCommand = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_beta_ember_vault/plugins/example-macro-plugin/chat-command",
+      headers: authHeaders,
+      payload: { command: "/spark", args: "beta dogfood flare" }
+    });
+    expect(pluginCommand.statusCode).toBe(200);
+    expect(pluginCommand.json().chat).toEqual(
+      expect.objectContaining({
+        type: "plugin",
+        userId: "example-macro-plugin",
+        body: "Spark macro: beta dogfood flare."
+      })
+    );
+    expect(pluginCommand.json().chat.body).not.toContain("near ");
+
+    const exported = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_beta_ember_vault/export",
+      headers: authHeaders
+    });
+    expect(exported.statusCode).toBe(200);
+    const exportedArchive = exported.json();
+    expect(exportedArchive.version).toBe("0.2.0");
+    expect(exportedArchive.manifest.schemaVersion).toBe("0.2.0");
+    expect(exportedArchive.data.journals.map((journal: { id: string }) => journal.id)).toEqual(expect.arrayContaining(["jnl_beta_session_1", "jnl_beta_session_2", "jnl_beta_session_3"]));
+    expect(exportedArchive.data.items.map((item: { id: string }) => item.id)).toContain("item_beta_party_loot");
+    expect(exportedArchive.data.auditLogs.filter((log: { action: string }) => log.action === "campaign.exportCheckpoint")).toHaveLength(3);
+
+    const freshState: EngineState = emptyState();
+    freshState.users.push({
+      id: "usr_demo_gm",
+      displayName: "Import Admin",
+      createdAt: "2026-05-11T00:00:00.000Z",
+      updatedAt: "2026-05-11T00:00:00.000Z"
+    });
+    const roundTripStore = new MemoryStateStore(freshState);
+    const roundTripApp = await buildApp({ store: roundTripStore });
+    const roundTripImport = await roundTripApp.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: exportedArchive
+    });
+    expect(roundTripImport.statusCode).toBe(200);
+    expect(roundTripStore.state.campaigns.map((campaign) => campaign.id)).toContain("camp_beta_ember_vault");
+    expect(roundTripStore.state.aiMemory.map((memory) => memory.id)).toContain("aim_beta_party_goal");
+    expect(roundTripStore.state.pluginStorage.map((entry) => entry.id)).toContain("pst_beta_macro_counter");
+
+    await roundTripApp.close();
+    await app.close();
+  });
+
+  it("broadcasts beta dogfood realtime events to one GM and three players with reconnect", async () => {
+    type RealtimeTestSocket = {
+      onopen: (() => void) | null;
+      onmessage: ((event: { data: unknown }) => void) | null;
+      onerror: ((event: unknown) => void) | null;
+      close(): void;
+    };
+    type RealtimeEventMessage = { type?: string; targetId?: string; payload?: unknown; error?: string };
+    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string) => RealtimeTestSocket }).WebSocket;
+    if (!maybeWebSocket) throw new Error("WebSocket is not available in this Node runtime");
+    const TestWebSocket = maybeWebSocket;
+
+    const archive = JSON.parse(readFileSync(join(process.cwd(), "..", "..", "docs", "demo", "ember-vault-beta-dogfood.ottx.json"), "utf8"));
+    const app = await buildApp({ store: new MemoryStateStore() });
+    await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address() as AddressInfo;
+
+    async function loginToken(userId: string): Promise<string> {
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId }
+      });
+      expect(login.statusCode).toBe(200);
+      return login.json().token as string;
+    }
+
+    async function openClient(userId: string) {
+      const token = await loginToken(userId);
+      const socket = new TestWebSocket(`ws://127.0.0.1:${address.port}/api/v1/realtime?campaignId=camp_beta_ember_vault&sessionToken=${encodeURIComponent(token)}`);
+      const messages: RealtimeEventMessage[] = [];
+      const waiters: Array<{ predicate: (message: RealtimeEventMessage) => boolean; resolve: (message: RealtimeEventMessage) => void; timer: NodeJS.Timeout }> = [];
+      socket.onmessage = (event) => {
+        const message = JSON.parse(String(event.data)) as RealtimeEventMessage;
+        messages.push(message);
+        for (const waiter of [...waiters]) {
+          if (!waiter.predicate(message)) continue;
+          clearTimeout(waiter.timer);
+          waiters.splice(waiters.indexOf(waiter), 1);
+          waiter.resolve(message);
+        }
+      };
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Timed out opening realtime socket for ${userId}`)), 2000);
+        socket.onopen = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        socket.onerror = (event) => {
+          clearTimeout(timer);
+          reject(new Error(`Realtime socket error for ${userId}: ${String(event)}`));
+        };
+      });
+      return {
+        userId,
+        socket,
+        messages,
+        waitFor(type: string, targetId?: string) {
+          const existing = messages.find((message) => message.type === type && (!targetId || message.targetId === targetId));
+          if (existing) return Promise.resolve(existing);
+          return new Promise<RealtimeEventMessage>((resolve, reject) => {
+            const timer = setTimeout(() => {
+              const seen = messages.map((message) => `${message.type ?? "unknown"}:${message.targetId ?? ""}`).join(", ");
+              reject(new Error(`Timed out waiting for ${type}:${targetId ?? ""} for ${userId}. Seen: ${seen}`));
+            }, 3000);
+            waiters.push({
+              predicate: (message) => message.type === type && (!targetId || message.targetId === targetId),
+              resolve,
+              timer
+            });
+          });
+        },
+        close() {
+          socket.close();
+          for (const waiter of waiters.splice(0)) clearTimeout(waiter.timer);
+        }
+      };
+    }
+
+    const clients = await Promise.all([openClient("usr_demo_gm"), openClient("usr_demo_player"), openClient("usr_beta_player_2"), openClient("usr_beta_player_3")]);
+    try {
+      const moved = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_beta_valen",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { x: 455, y: 455 }
+      });
+      expect(moved.statusCode).toBe(200);
+      await Promise.all(clients.map((client) => client.waitFor("token.moved", "tok_beta_valen")));
+
+      const roll = await app.inject({
+        method: "POST",
+        url: "/api/v1/dice/roll",
+        headers: { "x-user-id": "usr_beta_player_2" },
+        payload: { campaignId: "camp_beta_ember_vault", formula: "1d20+4", label: "GM+3 Realtime Dice" }
+      });
+      expect(roll.statusCode).toBe(200);
+      await Promise.all(clients.map((client) => client.waitFor("dice.roll.created", roll.json().id)));
+
+      const chat = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: authHeaders,
+        payload: { campaignId: "camp_beta_ember_vault", sceneId: "scn_beta_vault", body: "GM+3 realtime chat checkpoint", visibility: "public" }
+      });
+      expect(chat.statusCode).toBe(200);
+      await Promise.all(clients.map((client) => client.waitFor("chat.message.created", chat.json().id)));
+
+      const journal = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_beta_ember_vault/journal",
+        headers: authHeaders,
+        payload: { title: "GM+3 Realtime Journal", body: "Public reconnect checkpoint.", visibility: "public", tags: ["realtime", "beta"] }
+      });
+      expect(journal.statusCode).toBe(200);
+      await Promise.all(clients.map((client) => client.waitFor("journal.created", journal.json().id)));
+
+      const combat = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_beta_ember_vault/combats",
+        headers: authHeaders,
+        payload: {
+          combatants: [
+            { id: "cmbt_realtime_valen", tokenId: "tok_beta_valen", actorId: "act_beta_valen", name: "Valen Ash", initiative: 21, defeated: false },
+            { id: "cmbt_realtime_nia", tokenId: "tok_beta_nia", actorId: "act_beta_nia", name: "Nia Reed", initiative: 17, defeated: false },
+            { id: "cmbt_realtime_orren", tokenId: "tok_beta_orren", actorId: "act_beta_orren", name: "Orren Vale", initiative: 13, defeated: false }
+          ]
+        }
+      });
+      expect(combat.statusCode).toBe(200);
+      await Promise.all(clients.map((client) => client.waitFor("combat.started", combat.json().id)));
+
+      clients[3]!.close();
+      const reconnectedPlayer = await openClient("usr_beta_player_3");
+      clients[3] = reconnectedPlayer;
+      const reconnectChat = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: authHeaders,
+        payload: { campaignId: "camp_beta_ember_vault", sceneId: "scn_beta_vault", body: "Reconnect checkpoint", visibility: "public" }
+      });
+      expect(reconnectChat.statusCode).toBe(200);
+      await reconnectedPlayer.waitFor("chat.message.created", reconnectChat.json().id);
+    } finally {
+      clients.forEach((client) => client.close());
+      await app.close();
+    }
+  });
+
+  it("loads and exports a beta-scale campaign with many actors, tokens, journals, and assets", async () => {
+    const archive = JSON.parse(readFileSync(join(process.cwd(), "..", "..", "docs", "demo", "ember-vault-beta-dogfood.ottx.json"), "utf8"));
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    expect(imported.statusCode).toBe(200);
+
+    for (let index = 0; index < 80; index += 1) {
+      const actor = createTimestamped("act", {
+        id: `act_beta_scale_${index}`,
+        campaignId: "camp_beta_ember_vault",
+        systemId: "dnd-5e-srd",
+        type: index % 5 === 0 ? "monster" : "npc",
+        name: `Scale Actor ${index}`,
+        data: { hp: { current: 10 + index, max: 10 + index }, challengeRating: index % 5 === 0 ? "1/4" : undefined },
+        permissions: { usr_demo_gm: ["actor.read", "actor.readPrivate", "actor.update"] }
+      }) satisfies Actor;
+      store.state.actors.push(actor);
+      store.state.tokens.push(
+        createTimestamped("tok", {
+          id: `tok_beta_scale_${index}`,
+          sceneId: "scn_beta_vault",
+          actorId: actor.id,
+          name: actor.name,
+          x: 100 + (index % 20) * 45,
+          y: 100 + Math.floor(index / 20) * 55,
+          width: 40,
+          height: 40,
+          rotation: 0,
+          hidden: index % 7 === 0,
+          locked: false,
+          visionEnabled: index % 4 === 0,
+          visionRadius: 180,
+          disposition: index % 5 === 0 ? "hostile" : "neutral",
+          metadata: { scaleSmoke: true }
+        }) satisfies Token
+      );
+      store.state.journals.push(
+        createTimestamped("jnl", {
+          id: `jnl_beta_scale_${index}`,
+          campaignId: "camp_beta_ember_vault",
+          title: `Scale Journal ${index}`,
+          body: `Large-campaign smoke journal ${index}.`,
+          visibility: index % 6 === 0 ? "gm_only" : "public",
+          visibleToUserIds: [],
+          visibleToActorIds: [],
+          tags: ["scale-smoke"],
+          createdBy: "usr_demo_gm",
+          updatedBy: "usr_demo_gm"
+        }) satisfies JournalEntry
+      );
+      store.state.assets.push(
+        createTimestamped("asset", {
+          id: `asset_beta_scale_${index}`,
+          campaignId: "camp_beta_ember_vault",
+          name: `Scale Asset ${index}.svg`,
+          url: `data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='10'%20height='10'%3E%3Crect%20width='10'%20height='10'%20fill='%23${(index % 9) + 1}${(index % 9) + 1}${(index % 9) + 1}'/%3E%3C/svg%3E`,
+          mimeType: "image/svg+xml",
+          sizeBytes: 120 + index,
+          checksum: `sha256:scale-${index}`,
+          lifecycle: { status: "active", updatedAt: "2026-05-11T00:00:00.000Z", updatedByUserId: "usr_demo_gm", reason: "beta scale smoke" },
+          security: { status: "clean", scanner: "fixture-review", scannedAt: "2026-05-11T00:00:00.000Z", findings: [] }
+        }) satisfies MapAsset
+      );
+    }
+
+    const [actors, tokens, journals, assets, exported] = await Promise.all([
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_beta_ember_vault/actors", headers: authHeaders }),
+      app.inject({ method: "GET", url: "/api/v1/scenes/scn_beta_vault/tokens", headers: authHeaders }),
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_beta_ember_vault/journal", headers: authHeaders }),
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_beta_ember_vault/assets", headers: authHeaders }),
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_beta_ember_vault/export", headers: authHeaders })
+    ]);
+    expect(actors.statusCode).toBe(200);
+    expect(tokens.statusCode).toBe(200);
+    expect(journals.statusCode).toBe(200);
+    expect(assets.statusCode).toBe(200);
+    expect(exported.statusCode).toBe(200);
+    expect(actors.json()).toHaveLength(86);
+    expect(tokens.json()).toHaveLength(85);
+    expect(journals.json()).toHaveLength(85);
+    expect(assets.json()).toHaveLength(82);
+    expect(exported.json().data.actors).toHaveLength(86);
+    expect(exported.json().data.tokens).toHaveLength(85);
+    expect(exported.json().data.journals).toHaveLength(85);
+    expect(exported.json().data.assets).toHaveLength(82);
+
+    await app.close();
+  });
+
+  it("imports alpha archives but rejects unsupported archive versions", async () => {
+    const alphaArchive = JSON.parse(readFileSync(join(process.cwd(), "..", "..", "docs", "demo", "ember-vault-public-alpha.ottx.json"), "utf8"));
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const importedAlpha = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: alphaArchive
+    });
+    expect(importedAlpha.statusCode).toBe(200);
+
+    const upgradedExport = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_public_alpha_ember_vault/export",
+      headers: authHeaders
+    });
+    expect(upgradedExport.statusCode).toBe(200);
+    expect(upgradedExport.json()).toEqual(
+      expect.objectContaining({
+        format: "ottx",
+        version: "0.2.0",
+        manifest: expect.objectContaining({ schemaVersion: "0.2.0" })
+      })
+    );
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { ...alphaArchive, version: "9.9.9" }
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json()).toEqual({ error: "unsupported_archive_version", version: "9.9.9" });
 
     await app.close();
   });

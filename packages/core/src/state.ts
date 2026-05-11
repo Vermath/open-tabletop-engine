@@ -36,6 +36,7 @@ export function emptyState(): EngineState {
     permissionGrants: [],
     pluginStorage: [],
     pluginReviews: [],
+    contentImports: [],
     fogPresets: []
   };
 }
@@ -218,16 +219,17 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     permissionGrants: state.permissionGrants.filter((item) => item.campaignId === campaignId),
     pluginStorage: state.pluginStorage.filter((item) => item.campaignId === campaignId),
     pluginReviews: [],
+    contentImports: state.contentImports.filter((item) => item.campaignId === campaignId && item.status !== "deleted"),
     fogPresets: state.fogPresets.filter((item) => item.campaignId === campaignId)
   };
   return {
     format: "ottx",
-    version: "0.1.0",
+    version: "0.2.0",
     exportedAt: nowIso(),
     manifest: {
       campaignId,
       name: campaign.name,
-      schemaVersion: "0.1.0",
+      schemaVersion: "0.2.0",
       assetCount: campaignData.assets.length
     },
     data: campaignData

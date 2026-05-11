@@ -66,7 +66,26 @@ To run it from a clean checkout:
 
 For a two-browser smoke test, open one browser as `Demo GM` and another as `Demo Player`. Verify the player can see public scene, chat, dice, handout, and owned-token state, while GM-only notes and pending AI proposal review remain permissioned.
 
-## Public Alpha Scope
+## Beta v0.2 Dogfood
+
+The beta dogfood archive is `docs/demo/ember-vault-beta-dogfood.ottx.json`. It is an original, SRD-only three-session campaign fixture for 1 GM and 3 players. Use `docs/demo/beta-dogfood-runbook.md` for the prep, live play, combat, journals, handouts, actor updates, rests, loot/items, recap, AI memory, and export/import checkpoints.
+
+Beta release and operations docs:
+
+- `docs/release/beta-v0.2.md`
+- `docs/deployment/upgrade-guide.md`
+- `docs/deployment/backup-restore.md`
+- `docs/deployment/beta-deployment-checklist.md`
+- `docs/deployment/admin-observability-checklist.md`
+- `docs/deployment/security-checklist.md`
+- `docs/system-sdk/dnd-srd-beta-support.md`
+- `docs/verification/beta-readiness.md`
+- `docs/verification/beta-progress.md`
+- `docs/verification/beta-acceptance.md`
+
+Beta adds archive `0.2.0` exports while preserving alpha `0.1.0` import support. Safe content imports are preview/apply/rollback/delete flows for user-provided actor, item, journal, and handout content with provenance and license metadata.
+
+## Current Scope
 
 Ready for alpha verification:
 
@@ -75,18 +94,13 @@ Ready for alpha verification:
 - Local/dev AI provider flow with proposal/approval semantics; OpenAI Responses and Codex loopback providers are documented in `docs/ai/overview.md`.
 - Permissioned plugin and system SDK examples documented under `docs/api/rest.md`, `docs/plugin-sdk/overview.md`, and `docs/system-sdk/overview.md`.
 - Public-alpha extension smoke path: install `plugins/example-macro-plugin` on the imported demo with only `chat.write`, run `/spark`, and inspect installed systems or switch through `generic-fantasy` before restoring `dnd-5e-srd`.
-
-Still being hardened for public alpha:
-
-- Fresh current-head browser proof for GM/player realtime sync across scene, token movement, chat, dice, and combat.
-- Final clean-checkout acceptance artifact at `docs/verification/public-alpha-acceptance.md`.
-- Final `pnpm check` after all launch documentation and verification updates.
+- Beta dogfood path: import the beta archive, run the three-session runbook, prove GM+3 realtime, and record final proof in `docs/verification/beta-acceptance.md`.
 
 ## Content Safety
 
 This repository must not ship proprietary Roll20, D&D Beyond, or non-SRD D&D content, assets, marketplace data, sheets, or branded workflows. Use only original, SRD, open, or otherwise legally reusable content.
 
-D&D Beyond import is not implemented for public alpha. Do not scrape it or bypass access controls. Safe future adapter work should rely on user-provided exports or documented, permitted APIs and must keep proprietary content out of this repository.
+D&D Beyond import is not implemented as a scraper or auth-bypass flow. Do not scrape it or bypass access controls. Safe adapter work must rely on user-provided exports or documented, permitted APIs and must keep proprietary content out of this repository.
 
 ## Licensing
 

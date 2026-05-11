@@ -18,6 +18,21 @@ function clearResetUrl(): void {
   window.history.replaceState(null, "", nextPath || "/");
 }
 
+type CampaignImportResult = {
+  importedCampaignIds: string[];
+  counts: Record<string, number>;
+  conflicts: Array<{ collection: string; id: string }>;
+  assetFiles: number;
+};
+
+function summarizeImport(result: CampaignImportResult): string {
+  const collections = ["campaigns", "members", "scenes", "tokens", "actors", "journals", "handouts", "chat", "rolls", "combats", "contentImports"];
+  const changed = collections.map((collection) => [collection, result.counts[collection] ?? 0] as const).filter(([, count]) => count > 0);
+  const summary = changed.slice(0, 5).map(([collection, count]) => `${count} ${collection}`).join(", ");
+  const suffix = result.assetFiles > 0 ? `; restored ${result.assetFiles} asset files` : "";
+  return summary ? `${summary}${suffix}` : `No campaign records changed${suffix}`;
+}
+
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
     campaigns: [],
@@ -69,6 +84,8 @@ export function App() {
   const [adminStatus, setAdminStatus] = useState("Admin idle");
   const [encounterPlan, setEncounterPlan] = useState<EncounterPlanInfo>();
   const [importedActor, setImportedActor] = useState<Actor>();
+  const [importStatus, setImportStatus] = useState("No archive imported this session");
+  const [isImportingArchive, setIsImportingArchive] = useState(false);
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const selectedScene = snapshot.scenes.find((scene) => scene.id === sceneId);
@@ -221,6 +238,27 @@ export function App() {
     });
     setSelectedTokenId(token.id);
     await refresh();
+  }
+
+  async function importCampaignArchive(file: File, input: HTMLInputElement) {
+    setIsImportingArchive(true);
+    setImportStatus(`Importing ${file.name}`);
+    setStatus("Importing archive");
+    try {
+      const archive = JSON.parse(await file.text()) as unknown;
+      const result = await apiPost<CampaignImportResult>("/api/v1/import/campaign", archive);
+      const nextCampaignId = result.importedCampaignIds[0] ?? campaignId;
+      setImportStatus(`${file.name}: ${summarizeImport(result)}`);
+      setStatus(result.conflicts.length > 0 ? `Imported with ${result.conflicts.length} conflicts` : "Archive imported");
+      await refresh(nextCampaignId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setImportStatus(`${file.name}: ${message}`);
+      setStatus("Archive import failed");
+    } finally {
+      setIsImportingArchive(false);
+      input.value = "";
+    }
   }
 
   async function updateSelectedTokenVision(patch: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>) {
@@ -940,28 +978,28 @@ export function App() {
             <ChevronRight size={16} /> Join
           </button>
         </form>
-        <button className="ghost-button" onClick={createScene} disabled={!hasPermission("scene.create")}>
+        <button className="ghost-button" onClick={createScene} disabled={!hasPermission("scene.create")} title={hasPermission("scene.create") ? "Create scene" : "Requires scene.create"}>
           <Plus size={16} /> Scene
         </button>
         <button className="ghost-button" onClick={exportCampaign}>
           <Download size={16} /> Export
         </button>
-        <button className="ghost-button" onClick={() => document.getElementById("import-file")?.click()}>
-          <Upload size={16} /> Import
+        <button className="ghost-button" onClick={() => document.getElementById("import-file")?.click()} disabled={isImportingArchive} aria-describedby="import-status" title="Import .ottx JSON archive">
+          {isImportingArchive ? <RefreshCw size={16} /> : <Upload size={16} />} Import
         </button>
-        <button className="ghost-button" onClick={() => document.getElementById("map-upload-file")?.click()} disabled={!hasPermission("scene.create") || !hasPermission("scene.update")}>
+        <button className="ghost-button" onClick={() => document.getElementById("map-upload-file")?.click()} disabled={!hasPermission("scene.create") || !hasPermission("scene.update")} title={hasPermission("scene.create") && hasPermission("scene.update") ? "Upload map" : "Requires scene.create and scene.update"}>
           <Upload size={16} /> Map
         </button>
         <input
           id="import-file"
           type="file"
           accept="application/json"
+          aria-label="Import campaign archive"
           hidden
           onChange={async (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
-            await apiPost("/api/v1/import/campaign", JSON.parse(await file.text()));
-            await refresh();
+            await importCampaignArchive(file, event.currentTarget);
           }}
         />
         <input
@@ -976,7 +1014,11 @@ export function App() {
             event.target.value = "";
           }}
         />
-        <div className="status">{status}</div>
+        <div id="import-status" className="import-status" role="status" aria-live="polite">
+          <strong>Import</strong>
+          <span>{importStatus}</span>
+        </div>
+        <div className="status" role="status" aria-live="polite">{status}</div>
       </aside>
 
       <section className="workspace">
@@ -987,13 +1029,13 @@ export function App() {
           </div>
           <div className="scene-tabs">
             {snapshot.scenes.map((scene) => (
-              <button key={scene.id} className={scene.id === sceneId ? "scene-tab active" : "scene-tab"} onClick={() => setSceneId(scene.id)}>
+              <button key={scene.id} className={scene.id === sceneId ? "scene-tab active" : "scene-tab"} onClick={() => setSceneId(scene.id)} aria-pressed={scene.id === sceneId}>
                 {scene.active ? <Eye size={14} /> : <FileText size={14} />}
                 {scene.name}
               </button>
             ))}
           </div>
-          <button className="primary-button" onClick={createToken} disabled={!hasPermission("token.create")}>
+          <button className="primary-button" onClick={createToken} disabled={!hasPermission("token.create")} title={hasPermission("token.create") ? "Create token" : "Requires token.create"}>
             <Plus size={16} /> Token
           </button>
         </header>

@@ -11,11 +11,21 @@
 
 ## Post-Alpha
 
+- Ship beta v0.2 dogfood with the three-session Ember Vault beta fixture, GM+3 realtime smoke, archive `0.2.0` export, alpha archive upgrade proof, safe content import primitives, and release/ops documentation.
 - Broaden hosted deployment hardening, observability, and admin operations.
 - Expand rules-system depth outside the primary `dnd-5e-srd` slice.
 - Add safe importer adapters only where users provide legally reusable data or a documented permitted API exists.
 - Mature plugin distribution with stronger signing, review, and registry workflows.
 - Continue accessibility, mobile layout, and large-campaign performance work.
+
+## Beta v0.2
+
+- Prove `docs/demo/ember-vault-beta-dogfood.ottx.json` through `docs/demo/beta-dogfood-runbook.md`.
+- Preserve alpha `0.1.0` archive imports and emit beta `0.2.0` exports.
+- Keep D&D/SRD dogfood on `dnd-5e-srd` with supported/unsupported beta scope in `docs/system-sdk/dnd-srd-beta-support.md` and no proprietary content.
+- Keep safe content imports as preview/apply/rollback/delete flows with provenance, license metadata, selective import, and audit logs.
+- Keep AI and plugins permissioned, proposal-based, and auditable.
+- Finish final beta acceptance only after clean checkout, frozen install, `pnpm check`, API/web runtime, dogfood walkthrough, GM+3 realtime, export/import, AI eval, plugin/system smoke, and GitHub push proof.
 
 ## Out Of Scope
 

@@ -1,0 +1,55 @@
+name: Beta dogfood report
+description: Report a beta v0.2 dogfood issue with enough context to reproduce.
+title: "[beta dogfood] "
+labels:
+  - beta
+  - dogfood
+body:
+  - type: input
+    id: campaign
+    attributes:
+      label: Campaign id
+      description: Example: camp_beta_ember_vault
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - GM/player UX
+        - Realtime
+        - Archive import/export
+        - Safe content import
+        - D&D/SRD rules
+        - AI proposal/eval
+        - Plugin/system
+        - Deployment/ops
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Include user/session, browser, API/web commit, and exact action sequence.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Link screenshots, audit ids, API responses, console logs, or exported archive names. Do not paste secrets.
+    validations:
+      required: false

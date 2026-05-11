@@ -671,9 +671,74 @@ export interface PluginReview extends Timestamps {
   reviewedAt?: string;
 }
 
+export type ContentImportStatus = "previewed" | "applied" | "rolled_back" | "deleted";
+
+export type ContentImportEntityKind = "actor" | "item" | "journal" | "handout";
+
+export interface ContentImportSourceAdapter {
+  id: ID;
+  name: string;
+  version: string;
+  inputMimeTypes: string[];
+  outputKinds: ContentImportEntityKind[];
+  provenanceRequired: true;
+}
+
+export interface ContentImportSource {
+  sourceType: "user_upload" | "adapter" | "manual";
+  adapterId?: ID;
+  sourceName: string;
+  sourceUrl?: string;
+  submittedByUserId: ID;
+  submittedAt: string;
+  license: ContentImportLicense;
+  notes?: string;
+}
+
+export interface ContentImportLicense {
+  name: string;
+  url?: string;
+  usage: "srd" | "open" | "user_provided" | "private_home_game";
+  attribution?: string;
+}
+
+export interface ContentImportEntity {
+  id: ID;
+  kind: ContentImportEntityKind;
+  name: string;
+  selectedByDefault: boolean;
+  provenance: ContentImportSource;
+  data: Record<string, unknown>;
+  warnings: string[];
+}
+
+export interface ContentImportAppliedRecord {
+  collection: "actors" | "items" | "journals" | "handouts";
+  id: ID;
+  entityId: ID;
+}
+
+export interface ContentImportBatch extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  status: ContentImportStatus;
+  source: ContentImportSource;
+  entities: ContentImportEntity[];
+  selectedEntityIds: ID[];
+  appliedRecords: ContentImportAppliedRecord[];
+  appliedAt?: string;
+  appliedByUserId?: ID;
+  rolledBackAt?: string;
+  rolledBackByUserId?: ID;
+  deletedAt?: string;
+  deletedByUserId?: ID;
+}
+
+export type CampaignArchiveVersion = "0.1.0" | "0.2.0";
+
 export interface CampaignArchive {
   format: "ottx";
-  version: "0.1.0";
+  version: CampaignArchiveVersion;
   exportedAt: string;
   manifest: {
     campaignId: ID;
@@ -730,5 +795,6 @@ export interface EngineState {
   permissionGrants: PermissionGrant[];
   pluginStorage: PluginStorageEntry[];
   pluginReviews: PluginReview[];
+  contentImports: ContentImportBatch[];
   fogPresets: FogPreset[];
 }

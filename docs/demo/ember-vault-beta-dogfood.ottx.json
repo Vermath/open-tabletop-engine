@@ -1,0 +1,1011 @@
+{
+  "format": "ottx",
+  "version": "0.2.0",
+  "exportedAt": "2026-05-11T00:00:00.000Z",
+  "manifest": {
+    "campaignId": "camp_beta_ember_vault",
+    "name": "The Ember Vault: Beta Dogfood Campaign",
+    "schemaVersion": "0.2.0",
+    "assetCount": 2,
+    "assetFileCount": 0
+  },
+  "files": [],
+  "data": {
+    "users": [
+      {
+        "id": "usr_demo_gm",
+        "displayName": "Demo GM",
+        "email": "gm@example.test",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "usr_demo_player",
+        "displayName": "Demo Player",
+        "email": "player@example.test",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "usr_beta_player_2",
+        "displayName": "Beta Player Two",
+        "email": "player2@example.test",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "usr_beta_player_3",
+        "displayName": "Beta Player Three",
+        "email": "player3@example.test",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "sessions": [],
+    "identities": [],
+    "oauthStates": [],
+    "passwordResetTokens": [],
+    "emailOutbox": [],
+    "scimGroups": [],
+    "scimGroupRoleMappings": [],
+    "invites": [],
+    "campaigns": [
+      {
+        "id": "camp_beta_ember_vault",
+        "ownerUserId": "usr_demo_gm",
+        "name": "The Ember Vault: Beta Dogfood Campaign",
+        "description": "SRD-only beta dogfood fixture covering prep and three play sessions.",
+        "defaultSystemId": "dnd-5e-srd",
+        "visibility": "private",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "members": [
+      {
+        "id": "mem_beta_gm",
+        "campaignId": "camp_beta_ember_vault",
+        "userId": "usr_demo_gm",
+        "role": "owner",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "mem_beta_player_1",
+        "campaignId": "camp_beta_ember_vault",
+        "userId": "usr_demo_player",
+        "role": "player",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "mem_beta_player_2",
+        "campaignId": "camp_beta_ember_vault",
+        "userId": "usr_beta_player_2",
+        "role": "player",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "mem_beta_player_3",
+        "campaignId": "camp_beta_ember_vault",
+        "userId": "usr_beta_player_3",
+        "role": "player",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "worlds": [],
+    "scenes": [
+      {
+        "id": "scn_beta_camp",
+        "campaignId": "camp_beta_ember_vault",
+        "name": "Session Camp",
+        "width": 1000,
+        "height": 700,
+        "gridType": "square",
+        "gridSize": 50,
+        "backgroundAssetId": "asset_beta_camp_map",
+        "active": false,
+        "sortOrder": 1,
+        "fog": [],
+        "fogHistory": [],
+        "walls": [],
+        "lights": [
+          {
+            "id": "light_beta_campfire",
+            "x": 500,
+            "y": 340,
+            "radius": 240,
+            "brightRadius": 80,
+            "dimRadius": 240,
+            "color": "#f59e0b",
+            "intensity": 0.8
+          }
+        ],
+        "metadata": {
+          "betaSession": "session-1",
+          "purpose": "prep, roleplay, long rest"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "scn_beta_vault",
+        "campaignId": "camp_beta_ember_vault",
+        "name": "Ember Vault Crossing",
+        "width": 1400,
+        "height": 900,
+        "gridType": "square",
+        "gridSize": 50,
+        "backgroundAssetId": "asset_beta_vault_map",
+        "active": true,
+        "sortOrder": 2,
+        "fog": [
+          {
+            "id": "fog_beta_revealed_bridge",
+            "x": 650,
+            "y": 430,
+            "radius": 260,
+            "hidden": false,
+            "shape": "circle",
+            "mode": "reveal"
+          }
+        ],
+        "fogHistory": [
+          {
+            "id": "fh_beta_bridge_reveal",
+            "sceneId": "scn_beta_vault",
+            "action": "create",
+            "fogId": "fog_beta_revealed_bridge",
+            "actorUserId": "usr_demo_gm",
+            "createdAt": "2026-05-11T00:00:00.000Z",
+            "updatedAt": "2026-05-11T00:00:00.000Z"
+          }
+        ],
+        "walls": [
+          {
+            "id": "wall_beta_north",
+            "x1": 210,
+            "y1": 180,
+            "x2": 1180,
+            "y2": 180,
+            "blocksVision": true,
+            "blocksMovement": true,
+            "kind": "wall"
+          },
+          {
+            "id": "wall_beta_bridge_gap",
+            "x1": 690,
+            "y1": 500,
+            "x2": 760,
+            "y2": 610,
+            "blocksVision": false,
+            "blocksMovement": true,
+            "kind": "terrain"
+          }
+        ],
+        "lights": [
+          {
+            "id": "light_beta_ember_rune",
+            "x": 720,
+            "y": 380,
+            "radius": 300,
+            "brightRadius": 100,
+            "dimRadius": 300,
+            "color": "#f97316",
+            "intensity": 0.9
+          }
+        ],
+        "metadata": {
+          "betaSession": "session-2",
+          "purpose": "combat, movement, hidden monster visibility"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "assets": [
+      {
+        "id": "asset_beta_camp_map",
+        "campaignId": "camp_beta_ember_vault",
+        "name": "Beta Camp Map",
+        "url": "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='1000'%20height='700'%3E%3Crect%20width='1000'%20height='700'%20fill='%2326382f'/%3E%3Ccircle%20cx='500'%20cy='340'%20r='70'%20fill='%23f97316'/%3E%3Ctext%20x='430'%20y='345'%20fill='white'%3ECamp%3C/text%3E%3C/svg%3E",
+        "mimeType": "image/svg+xml",
+        "sizeBytes": 214,
+        "checksum": "sha256:beta-camp-inline",
+        "lifecycle": {
+          "status": "active",
+          "updatedAt": "2026-05-11T00:00:00.000Z",
+          "updatedByUserId": "usr_demo_gm",
+          "reason": "beta dogfood fixture"
+        },
+        "security": {
+          "status": "clean",
+          "scanner": "fixture-review",
+          "scannedAt": "2026-05-11T00:00:00.000Z",
+          "findings": []
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "asset_beta_vault_map",
+        "campaignId": "camp_beta_ember_vault",
+        "name": "Beta Vault Map",
+        "url": "data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='1400'%20height='900'%3E%3Crect%20width='1400'%20height='900'%20fill='%231f2937'/%3E%3Crect%20x='420'%20y='260'%20width='520'%20height='320'%20fill='%23374151'/%3E%3Cpath%20d='M200%20460H1200'%20stroke='%23f97316'%20stroke-width='20'/%3E%3Ctext%20x='600'%20y='440'%20fill='white'%3EVault%20Crossing%3C/text%3E%3C/svg%3E",
+        "mimeType": "image/svg+xml",
+        "sizeBytes": 342,
+        "checksum": "sha256:beta-vault-inline",
+        "lifecycle": {
+          "status": "active",
+          "updatedAt": "2026-05-11T00:00:00.000Z",
+          "updatedByUserId": "usr_demo_gm",
+          "reason": "beta dogfood fixture"
+        },
+        "security": {
+          "status": "clean",
+          "scanner": "fixture-review",
+          "scannedAt": "2026-05-11T00:00:00.000Z",
+          "findings": []
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "tokens": [
+      {
+        "id": "tok_beta_valen",
+        "sceneId": "scn_beta_vault",
+        "actorId": "act_beta_valen",
+        "name": "Valen Ash",
+        "x": 420,
+        "y": 430,
+        "width": 50,
+        "height": 50,
+        "rotation": 0,
+        "hidden": false,
+        "locked": false,
+        "visionEnabled": true,
+        "visionRadius": 300,
+        "brightVisionRadius": 100,
+        "dimVisionRadius": 300,
+        "disposition": "friendly",
+        "metadata": {
+          "betaPlayer": "usr_demo_player",
+          "sessionMovementVerified": ["session-1", "session-2", "session-3"]
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "tok_beta_nia",
+        "sceneId": "scn_beta_vault",
+        "actorId": "act_beta_nia",
+        "name": "Nia Reed",
+        "x": 480,
+        "y": 490,
+        "width": 50,
+        "height": 50,
+        "rotation": 0,
+        "hidden": false,
+        "locked": false,
+        "visionEnabled": true,
+        "visionRadius": 260,
+        "brightVisionRadius": 80,
+        "dimVisionRadius": 260,
+        "disposition": "friendly",
+        "metadata": {
+          "betaPlayer": "usr_beta_player_2"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "tok_beta_orren",
+        "sceneId": "scn_beta_vault",
+        "actorId": "act_beta_orren",
+        "name": "Orren Vale",
+        "x": 540,
+        "y": 460,
+        "width": 50,
+        "height": 50,
+        "rotation": 0,
+        "hidden": false,
+        "locked": false,
+        "visionEnabled": true,
+        "visionRadius": 240,
+        "brightVisionRadius": 60,
+        "dimVisionRadius": 240,
+        "disposition": "friendly",
+        "metadata": {
+          "betaPlayer": "usr_beta_player_3"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "tok_beta_warden",
+        "sceneId": "scn_beta_vault",
+        "actorId": "act_beta_ember_warden",
+        "name": "Ember Warden",
+        "x": 810,
+        "y": 390,
+        "width": 50,
+        "height": 50,
+        "rotation": 0,
+        "hidden": false,
+        "locked": false,
+        "visionEnabled": false,
+        "visionRadius": 0,
+        "disposition": "hostile",
+        "metadata": {
+          "condition": "grappled"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "tok_beta_hidden_scout",
+        "sceneId": "scn_beta_vault",
+        "actorId": "act_beta_cinder_scout",
+        "name": "Hidden Cinder Scout",
+        "x": 920,
+        "y": 510,
+        "width": 50,
+        "height": 50,
+        "rotation": 0,
+        "hidden": true,
+        "locked": false,
+        "visionEnabled": false,
+        "visionRadius": 0,
+        "disposition": "hostile",
+        "metadata": {
+          "revealTrigger": "session-3"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "actors": [
+      {
+        "id": "act_beta_valen",
+        "campaignId": "camp_beta_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "ownerUserId": "usr_demo_player",
+        "type": "character",
+        "name": "Valen Ash",
+        "data": {
+          "level": 3,
+          "class": "fighter",
+          "xp": 900,
+          "hp": { "current": 24, "max": 28, "temp": 0 },
+          "armorClass": 17,
+          "proficiencyBonus": 2,
+          "conditions": [],
+          "resources": {
+            "hitDice": { "current": 2, "max": 3 },
+            "secondWind": { "current": 1, "max": 1 }
+          },
+          "rests": [
+            { "type": "long", "session": "session-1", "result": "resources restored" },
+            { "type": "short", "session": "session-2", "result": "spent 1 hit die" }
+          ],
+          "leveling": { "readyForLevel4AtXp": 2700 },
+          "export": { "format": "open-tabletop-character-json", "version": "0.2.0" }
+        },
+        "permissions": {
+          "usr_demo_player": ["actor.read", "actor.updateOwned"],
+          "usr_demo_gm": ["actor.read", "actor.readPrivate", "actor.update"]
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "act_beta_nia",
+        "campaignId": "camp_beta_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "ownerUserId": "usr_beta_player_2",
+        "type": "character",
+        "name": "Nia Reed",
+        "data": {
+          "level": 3,
+          "class": "cleric",
+          "hp": { "current": 19, "max": 22, "temp": 0 },
+          "armorClass": 16,
+          "conditions": ["blessed"],
+          "resources": {
+            "spellSlots": { "1": { "current": 2, "max": 4 }, "2": { "current": 1, "max": 2 } },
+            "channelDivinity": { "current": 1, "max": 1 }
+          },
+          "preparedSpells": ["bless", "cure wounds", "guiding bolt", "lesser restoration"],
+          "rests": [{ "type": "long", "session": "session-1", "result": "prepared spells updated" }]
+        },
+        "permissions": {
+          "usr_beta_player_2": ["actor.read", "actor.updateOwned"],
+          "usr_demo_gm": ["actor.read", "actor.readPrivate", "actor.update"]
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "act_beta_orren",
+        "campaignId": "camp_beta_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "ownerUserId": "usr_beta_player_3",
+        "type": "character",
+        "name": "Orren Vale",
+        "data": {
+          "level": 3,
+          "class": "wizard",
+          "hp": { "current": 12, "max": 17, "temp": 0 },
+          "armorClass": 13,
+          "conditions": [],
+          "resources": {
+            "spellSlots": { "1": { "current": 2, "max": 4 }, "2": { "current": 0, "max": 2 } },
+            "arcaneRecovery": { "current": 0, "max": 1 }
+          },
+          "preparedSpells": ["detect magic", "magic missile", "shield", "web"],
+          "characterImport": { "source": "user-provided-json", "status": "accepted", "provenance": "player owned export" }
+        },
+        "permissions": {
+          "usr_beta_player_3": ["actor.read", "actor.updateOwned"],
+          "usr_demo_gm": ["actor.read", "actor.readPrivate", "actor.update"]
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "act_beta_mira",
+        "campaignId": "camp_beta_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "type": "npc",
+        "name": "Mira the Archivist",
+        "data": {
+          "role": "quest-giver",
+          "secret": "Mira knows the vault key was split into three asterite shards."
+        },
+        "permissions": {
+          "usr_demo_gm": ["actor.read", "actor.readPrivate", "actor.update"]
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "act_beta_ember_warden",
+        "campaignId": "camp_beta_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "type": "monster",
+        "name": "Ember Warden",
+        "data": {
+          "challengeRating": "2",
+          "armorClass": 14,
+          "hp": { "current": 13, "max": 45 },
+          "conditions": ["grappled"],
+          "actions": ["slam", "ember burst"],
+          "lootTable": ["asterite shard", "silvered key"]
+        },
+        "permissions": {
+          "usr_demo_gm": ["actor.read", "actor.readPrivate", "actor.update"]
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "act_beta_cinder_scout",
+        "campaignId": "camp_beta_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "type": "monster",
+        "name": "Cinder Scout",
+        "data": {
+          "challengeRating": "1/2",
+          "armorClass": 13,
+          "hp": { "current": 18, "max": 18 },
+          "conditions": [],
+          "actions": ["scimitar", "shortbow"],
+          "stealth": 5
+        },
+        "permissions": {
+          "usr_demo_gm": ["actor.read", "actor.readPrivate", "actor.update"]
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "items": [
+      {
+        "id": "item_beta_valen_longsword",
+        "campaignId": "camp_beta_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "actorId": "act_beta_valen",
+        "type": "weapon",
+        "name": "Longsword",
+        "data": { "damage": "1d8+3 slashing", "equipped": true },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "item_beta_nia_spell_focus",
+        "campaignId": "camp_beta_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "actorId": "act_beta_nia",
+        "type": "equipment",
+        "name": "Asterite Holy Symbol",
+        "data": { "attuned": true, "source": "session-2-loot" },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "item_beta_orren_scroll",
+        "campaignId": "camp_beta_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "actorId": "act_beta_orren",
+        "type": "spell",
+        "name": "Scroll of Detect Magic",
+        "data": { "level": 1, "consumed": true, "session": "session-1" },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "item_beta_party_loot",
+        "campaignId": "camp_beta_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "type": "loot",
+        "name": "Asterite Shard Cache",
+        "data": { "coins": { "gp": 45, "sp": 120 }, "items": ["asterite shard", "silvered key"], "claimedInSession": "session-3" },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "journals": [
+      {
+        "id": "jnl_beta_prep",
+        "campaignId": "camp_beta_ember_vault",
+        "title": "Prep: Ember Vault Beta Arc",
+        "body": "Prep notes for a three-session SRD-only dogfood arc. Start at camp, travel to the vault, run the warden combat, then resolve loot and memory.",
+        "visibility": "gm_only",
+        "visibleToUserIds": [],
+        "visibleToActorIds": [],
+        "tags": ["prep", "beta-dogfood"],
+        "createdBy": "usr_demo_gm",
+        "updatedBy": "usr_demo_gm",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "jnl_beta_session_1",
+        "campaignId": "camp_beta_ember_vault",
+        "title": "Session 1 Recap: Camp and Clues",
+        "body": "The party met Mira, reviewed the handout cipher, cast detect magic, and completed a long rest before entering the vault road.",
+        "visibility": "public",
+        "visibleToUserIds": [],
+        "visibleToActorIds": [],
+        "tags": ["session-1", "recap", "rest", "export-checkpoint"],
+        "createdBy": "usr_demo_gm",
+        "updatedBy": "usr_demo_gm",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "jnl_beta_session_2",
+        "campaignId": "camp_beta_ember_vault",
+        "title": "Session 2 Recap: Warden at the Crossing",
+        "body": "The party revealed the vault crossing, rolled initiative, fought the Ember Warden, spent resources, and took a short rest afterward.",
+        "visibility": "public",
+        "visibleToUserIds": [],
+        "visibleToActorIds": [],
+        "tags": ["session-2", "recap", "combat", "short-rest", "actor-updates", "export-checkpoint"],
+        "createdBy": "usr_demo_gm",
+        "updatedBy": "usr_demo_gm",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "jnl_beta_session_3",
+        "campaignId": "camp_beta_ember_vault",
+        "title": "Session 3 Recap: Asterite Cache",
+        "body": "The party found the hidden scout, resolved the final social beat, claimed the Asterite Shard Cache, and approved the AI memory recap.",
+        "visibility": "public",
+        "visibleToUserIds": [],
+        "visibleToActorIds": [],
+        "tags": ["session-3", "recap", "loot", "memory", "export-checkpoint"],
+        "createdBy": "usr_demo_gm",
+        "updatedBy": "usr_demo_gm",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "jnl_beta_cipher_handout",
+        "campaignId": "camp_beta_ember_vault",
+        "title": "Handout Notes: Asterite Cipher",
+        "body": "Public notes decoded from Mira's cipher. The door accepts an oath only after both braziers are lit.",
+        "visibility": "public",
+        "visibleToUserIds": [],
+        "visibleToActorIds": [],
+        "tags": ["handout", "clue"],
+        "createdBy": "usr_demo_gm",
+        "updatedBy": "usr_demo_gm",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "handouts": [
+      {
+        "id": "hnd_beta_cipher",
+        "campaignId": "camp_beta_ember_vault",
+        "title": "Asterite Cipher",
+        "body": "A player-facing cipher handout for the Ember Vault. Original SRD-compatible fixture content.",
+        "visibility": "public",
+        "assetIds": [],
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "hnd_beta_loot",
+        "campaignId": "camp_beta_ember_vault",
+        "title": "Loot Ledger",
+        "body": "45 gp, 120 sp, one asterite shard, and one silvered key. Assign ownership during session 3.",
+        "visibility": "public",
+        "assetIds": [],
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "chat": [
+      {
+        "id": "chat_beta_s1_start",
+        "campaignId": "camp_beta_ember_vault",
+        "sceneId": "scn_beta_camp",
+        "userId": "usr_demo_gm",
+        "type": "plain",
+        "body": "Session 1 starts at camp. Mira shares the Asterite Cipher handout.",
+        "visibility": "public",
+        "recipientUserIds": [],
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "chat_beta_detect_magic",
+        "campaignId": "camp_beta_ember_vault",
+        "sceneId": "scn_beta_camp",
+        "userId": "usr_beta_player_3",
+        "type": "roll",
+        "body": "Orren Detect Magic Arcana: 1d20+5 = 17",
+        "visibility": "public",
+        "recipientUserIds": [],
+        "rollId": "roll_beta_arcana",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "chat_beta_initiative",
+        "campaignId": "camp_beta_ember_vault",
+        "sceneId": "scn_beta_vault",
+        "userId": "usr_demo_player",
+        "type": "roll",
+        "body": "Valen Initiative: 1d20+1 = 18",
+        "visibility": "public",
+        "recipientUserIds": [],
+        "rollId": "roll_beta_initiative",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "chat_beta_warden_damage",
+        "campaignId": "camp_beta_ember_vault",
+        "sceneId": "scn_beta_vault",
+        "userId": "usr_demo_player",
+        "type": "roll",
+        "body": "Valen Longsword Damage: 1d8+3 = 9",
+        "visibility": "public",
+        "recipientUserIds": [],
+        "rollId": "roll_beta_damage",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "chat_beta_healing",
+        "campaignId": "camp_beta_ember_vault",
+        "sceneId": "scn_beta_vault",
+        "userId": "usr_beta_player_2",
+        "type": "roll",
+        "body": "Nia Cure Wounds: 1d8+3 = 8",
+        "visibility": "public",
+        "recipientUserIds": [],
+        "rollId": "roll_beta_healing",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "chat_beta_loot",
+        "campaignId": "camp_beta_ember_vault",
+        "sceneId": "scn_beta_vault",
+        "userId": "usr_demo_gm",
+        "type": "plain",
+        "body": "Session 3 loot assigned: Asterite Shard Cache added to the party ledger.",
+        "visibility": "public",
+        "recipientUserIds": [],
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "rolls": [
+      {
+        "id": "roll_beta_arcana",
+        "campaignId": "camp_beta_ember_vault",
+        "userId": "usr_beta_player_3",
+        "formula": "1d20+5",
+        "label": "Detect Magic Arcana",
+        "visibility": "public",
+        "terms": [{ "type": "die", "sides": 20, "count": 1, "results": [12] }, { "type": "modifier", "value": 5 }],
+        "total": 17,
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "roll_beta_initiative",
+        "campaignId": "camp_beta_ember_vault",
+        "userId": "usr_demo_player",
+        "formula": "1d20+1",
+        "label": "Valen Initiative",
+        "visibility": "public",
+        "terms": [{ "type": "die", "sides": 20, "count": 1, "results": [17] }, { "type": "modifier", "value": 1 }],
+        "total": 18,
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "roll_beta_damage",
+        "campaignId": "camp_beta_ember_vault",
+        "userId": "usr_demo_player",
+        "formula": "1d8+3",
+        "label": "Longsword Damage",
+        "visibility": "public",
+        "terms": [{ "type": "die", "sides": 8, "count": 1, "results": [6] }, { "type": "modifier", "value": 3 }],
+        "total": 9,
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "roll_beta_healing",
+        "campaignId": "camp_beta_ember_vault",
+        "userId": "usr_beta_player_2",
+        "formula": "1d8+3",
+        "label": "Cure Wounds",
+        "visibility": "public",
+        "terms": [{ "type": "die", "sides": 8, "count": 1, "results": [5] }, { "type": "modifier", "value": 3 }],
+        "total": 8,
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "encounters": [
+      {
+        "id": "enc_beta_warden",
+        "campaignId": "camp_beta_ember_vault",
+        "name": "Ember Warden Crossing",
+        "summary": "Three level-3 SRD characters against an Ember Warden plus a hidden Cinder Scout complication.",
+        "tokenIds": ["tok_beta_valen", "tok_beta_nia", "tok_beta_orren", "tok_beta_warden", "tok_beta_hidden_scout"],
+        "difficulty": "medium",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "combats": [
+      {
+        "id": "cmb_beta_warden",
+        "campaignId": "camp_beta_ember_vault",
+        "encounterId": "enc_beta_warden",
+        "active": true,
+        "round": 3,
+        "turnIndex": 2,
+        "combatants": [
+          { "id": "cmbt_beta_valen", "tokenId": "tok_beta_valen", "actorId": "act_beta_valen", "name": "Valen Ash", "initiative": 18, "defeated": false },
+          { "id": "cmbt_beta_nia", "tokenId": "tok_beta_nia", "actorId": "act_beta_nia", "name": "Nia Reed", "initiative": 15, "defeated": false },
+          { "id": "cmbt_beta_warden", "tokenId": "tok_beta_warden", "actorId": "act_beta_ember_warden", "name": "Ember Warden", "initiative": 14, "defeated": false },
+          { "id": "cmbt_beta_orren", "tokenId": "tok_beta_orren", "actorId": "act_beta_orren", "name": "Orren Vale", "initiative": 11, "defeated": false },
+          { "id": "cmbt_beta_scout", "tokenId": "tok_beta_hidden_scout", "actorId": "act_beta_cinder_scout", "name": "Cinder Scout", "initiative": 9, "defeated": false }
+        ],
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "compendia": [],
+    "proposals": [
+      {
+        "id": "prop_beta_ai_recap_memory",
+        "campaignId": "camp_beta_ember_vault",
+        "createdByUserId": "usr_demo_gm",
+        "createdByType": "ai",
+        "sourceId": "ait_beta_recap",
+        "title": "Approve Session 3 Memory",
+        "summary": "Store the approved memory that the party recovered one asterite shard and left the hidden scout alive.",
+        "status": "pending",
+        "changesJson": [
+          {
+            "entity": "journal",
+            "action": "update",
+            "id": "jnl_beta_session_3",
+            "data": { "body": "The party found the hidden scout, claimed the cache, and chose to parley before the next expedition." }
+          }
+        ],
+        "diffJson": { "safety": "proposal-only", "session": "session-3" },
+        "approvalRequired": true,
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "aiThreads": [
+      {
+        "id": "ait_beta_recap",
+        "campaignId": "camp_beta_ember_vault",
+        "userId": "usr_demo_gm",
+        "provider": "local-echo",
+        "title": "Session 3 Recap and Memory",
+        "status": "completed",
+        "startedAt": "2026-05-11T00:00:00.000Z",
+        "completedAt": "2026-05-11T00:00:01.000Z",
+        "durationMs": 1000,
+        "eventCount": 3,
+        "toolCallCount": 3,
+        "advertisedToolNames": ["create_proposal", "create_memory", "read_campaign", "read_compendium"],
+        "advertisedTools": [
+          { "name": "create_proposal", "requiredPermissions": ["ai.proposeChanges"], "permissionSafe": true },
+          { "name": "create_memory", "requiredPermissions": ["ai.readPublicMemory"], "permissionSafe": true },
+          { "name": "read_campaign", "requiredPermissions": ["campaign.read"], "permissionSafe": true },
+          { "name": "read_compendium", "requiredPermissions": ["campaign.read"], "permissionSafe": true }
+        ],
+        "assistantMessage": "Encounter design: medium difficulty for three level-3 SRD characters. Combat advice: explain options without mutating state. Recap memory: draft a proposal for GM approval. Rules lookup: SRD-only. Proposal safety: approval required before campaign changes.",
+        "usage": { "promptCharacters": 900, "contextCharacters": 2400, "responseCharacters": 320 },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:01.000Z"
+      }
+    ],
+    "aiEvaluations": [
+      {
+        "id": "aie_beta_quality_smoke",
+        "campaignId": "camp_beta_ember_vault",
+        "userId": "usr_demo_gm",
+        "threadId": "ait_beta_recap",
+        "provider": "local-echo",
+        "name": "beta-quality-smoke",
+        "status": "passed",
+        "score": 0.92,
+        "summary": "Encounter advice, recap memory, rules lookup, and proposal safety checks passed fixture thresholds.",
+        "checks": [
+          { "name": "encounter_design", "status": "passed", "expected": "medium difficulty", "actual": "medium difficulty with visible action economy note" },
+          { "name": "combat_advice", "status": "passed", "expected": "no hidden mutation", "actual": "advice only" },
+          { "name": "recap_memory", "status": "passed", "expected": "proposal required", "actual": "pending proposal" },
+          { "name": "rules_lookup", "status": "passed", "expected": "SRD-only", "actual": "SRD-only" },
+          { "name": "proposal_safety", "status": "passed", "expected": "approvalRequired true", "actual": true }
+        ],
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "aiMemory": [
+      {
+        "id": "aim_beta_party_goal",
+        "campaignId": "camp_beta_ember_vault",
+        "text": "The party recovered one asterite shard, left the hidden scout alive, and plans to return after a long rest.",
+        "visibility": "public",
+        "sourceIds": ["jnl_beta_session_3", "prop_beta_ai_recap_memory"],
+        "approvedByUserId": "usr_demo_gm",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "aiToolCalls": [
+      {
+        "id": "aitc_beta_read_campaign",
+        "threadId": "ait_beta_recap",
+        "toolName": "read_campaign",
+        "input": { "campaignId": "camp_beta_ember_vault" },
+        "output": { "visibleSessions": ["session-1", "session-2", "session-3"] },
+        "status": "completed",
+        "durationMs": 20,
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "aitc_beta_create_proposal",
+        "threadId": "ait_beta_recap",
+        "toolName": "create_proposal",
+        "input": { "title": "Approve Session 3 Memory" },
+        "output": { "proposalId": "prop_beta_ai_recap_memory", "approvalRequired": true },
+        "status": "completed",
+        "durationMs": 35,
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "aitc_beta_read_compendium",
+        "threadId": "ait_beta_recap",
+        "toolName": "read_compendium",
+        "input": { "systemId": "dnd-5e-srd", "query": "conditions and encounter difficulty" },
+        "output": { "systemId": "dnd-5e-srd", "source": "SRD", "matches": ["conditions", "encounter math"] },
+        "status": "completed",
+        "durationMs": 28,
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "auditLogs": [
+      {
+        "id": "aud_beta_import",
+        "campaignId": "camp_beta_ember_vault",
+        "actorUserId": "usr_demo_gm",
+        "actorType": "user",
+        "action": "campaign.import",
+        "targetType": "campaign",
+        "targetId": "camp_beta_ember_vault",
+        "after": { "source": "beta dogfood fixture", "schemaVersion": "0.2.0" },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "aud_beta_export_session_1",
+        "campaignId": "camp_beta_ember_vault",
+        "actorUserId": "usr_demo_gm",
+        "actorType": "user",
+        "action": "campaign.exportCheckpoint",
+        "targetType": "campaign",
+        "targetId": "camp_beta_ember_vault",
+        "after": { "session": "session-1", "collections": ["journals", "handouts", "actors", "chat"] },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "aud_beta_export_session_2",
+        "campaignId": "camp_beta_ember_vault",
+        "actorUserId": "usr_demo_gm",
+        "actorType": "user",
+        "action": "campaign.exportCheckpoint",
+        "targetType": "campaign",
+        "targetId": "camp_beta_ember_vault",
+        "after": { "session": "session-2", "collections": ["tokens", "combat", "rolls", "actor updates"] },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "aud_beta_export_session_3",
+        "campaignId": "camp_beta_ember_vault",
+        "actorUserId": "usr_demo_gm",
+        "actorType": "user",
+        "action": "campaign.exportCheckpoint",
+        "targetType": "campaign",
+        "targetId": "camp_beta_ember_vault",
+        "after": { "session": "session-3", "collections": ["loot", "recap", "ai memory", "proposals"] },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "permissionGrants": [
+      {
+        "id": "grant_beta_players_move",
+        "subjectType": "role",
+        "subjectId": "player",
+        "campaignId": "camp_beta_ember_vault",
+        "permissions": ["campaign.read", "scene.read", "token.read", "token.move", "actor.read", "actor.updateOwned", "journal.read", "chat.read", "chat.write", "dice.roll"],
+        "metadata": { "reason": "beta realtime GM+3 smoke" },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "pluginStorage": [
+      {
+        "id": "pst_beta_macro_counter",
+        "campaignId": "camp_beta_ember_vault",
+        "pluginId": "example-macro-plugin",
+        "key": "spark-count",
+        "value": 3,
+        "updatedByType": "plugin",
+        "updatedById": "example-macro-plugin",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "pluginReviews": [],
+    "fogPresets": []
+  }
+}

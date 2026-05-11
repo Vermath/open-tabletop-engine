@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OpenTabletop Engine">
+  <rect width="64" height="64" rx="12" fill="#101820" />
+  <path d="M14 18h36v28H14z" fill="#f2efe7" />
+  <path d="M18 22h28v20H18z" fill="#283c46" />
+  <path d="M22 28h8v8h-8zM34 28h8v8h-8z" fill="#e5b95f" />
+  <path d="M14 46h36l-7 6H21z" fill="#b95042" />
+</svg>
