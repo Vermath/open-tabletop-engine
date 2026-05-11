@@ -72,6 +72,54 @@ registerCommand("/probe", () => {
     }
   });
 
+  it("rejects unsafe plugin storage mutations inside sandboxed command handlers", () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(
+        pluginRoot,
+        "bad-storage-key-plugin",
+        `
+registerCommand("/probe", () => ({
+  body: "bad storage key",
+  visibility: "public",
+  storage: { set: { "../escape": true } }
+}));
+`
+      );
+      writePluginPackage(
+        pluginRoot,
+        "large-storage-plugin",
+        `
+registerCommand("/probe", () => ({
+  body: "large storage value",
+  visibility: "public",
+  storage: { set: { counter: "x".repeat(17 * 1024) } }
+}));
+`
+      );
+      writePluginPackage(
+        pluginRoot,
+        "bad-delete-key-plugin",
+        `
+registerCommand("/probe", () => ({
+  body: "bad delete key",
+  visibility: "public",
+  storage: { delete: ["../escape"] }
+}));
+`
+      );
+
+      const registry = loadPluginRegistry({ pluginRoot });
+
+      expect(registry.errors).toEqual([]);
+      expect(() => registry.executeChatCommand("bad-storage-key-plugin", sandboxInput())).toThrow("Invalid plugin storage key: ../escape");
+      expect(() => registry.executeChatCommand("large-storage-plugin", sandboxInput())).toThrow("Plugin storage value is limited to 16 KiB of JSON");
+      expect(() => registry.executeChatCommand("bad-delete-key-plugin", sandboxInput())).toThrow("Invalid plugin storage key: ../escape");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("tracks multiple package versions and executes the requested installed version", () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
     try {

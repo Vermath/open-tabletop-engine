@@ -95,6 +95,9 @@ describe("OpenAiResponsesProvider", () => {
     expect(body.instructions).toContain("The Ember Vault");
     expect(body.instructions).toContain("The door password is ember.");
     expect(body.instructions).toContain("Healing Word Healing [spell-item_healing_word-healing] 1d4+0");
+    expect(body.instructions).toContain("Campaign edit tools create reviewable proposals");
+    expect(body.instructions).toContain("choose only exact visible action ids");
+    expect(body.instructions).toContain("Do not fill missing rules, compendium, campaign, or character details from outside knowledge");
     expect(body.tools).toEqual([
       expect.objectContaining({
         type: "function",

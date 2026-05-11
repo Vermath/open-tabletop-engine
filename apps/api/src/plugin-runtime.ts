@@ -58,6 +58,16 @@ export interface PluginLoadError {
   errors: string[];
 }
 
+export interface PluginInventoryWarning {
+  code: "duplicate_plugin_package_version";
+  pluginId: string;
+  name: string;
+  version: string;
+  packageIds: string[];
+  sourceTypes: Array<LoadedPlugin["source"]["type"]>;
+  registryUrls: string[];
+}
+
 export interface PluginRegistrySyncResult {
   registryUrl: string;
   imported: LoadedPlugin[];
@@ -152,6 +162,7 @@ export class PluginRuntimeRegistry {
   readonly pluginRoot: string;
   readonly trustPolicy: PluginTrustPolicyConfig;
   readonly errors: PluginLoadError[] = [];
+  readonly inventoryWarnings: PluginInventoryWarning[] = [];
   private readonly plugins = new Map<string, RuntimePlugin[]>();
   private readonly runtimes = new Map<string, SandboxedPluginRuntime>();
 
@@ -239,10 +250,41 @@ export class PluginRuntimeRegistry {
   private upsertPlugin(plugin: RuntimePlugin): void {
     const versions = this.plugins.get(plugin.id) ?? [];
     const existingIndex = versions.findIndex((item) => item.version === plugin.version);
-    if (existingIndex >= 0) versions[existingIndex] = plugin;
-    else versions.push(plugin);
+    if (existingIndex >= 0) {
+      const existing = versions[existingIndex];
+      if (existing) this.recordDuplicatePackageVersion(existing, plugin);
+      versions[existingIndex] = plugin;
+    } else {
+      versions.push(plugin);
+    }
     versions.sort(comparePluginsByVersion);
     this.plugins.set(plugin.id, versions);
+  }
+
+  private recordDuplicatePackageVersion(existing: RuntimePlugin, incoming: RuntimePlugin): void {
+    const existingIndex = this.inventoryWarnings.findIndex((warning) => warning.pluginId === incoming.id && warning.version === incoming.version);
+    const existingWarning = existingIndex >= 0 ? this.inventoryWarnings[existingIndex] : undefined;
+    const packageIds = [...new Set([...(existingWarning?.packageIds ?? [existing.source.packageId]), incoming.source.packageId])].sort((left, right) => left.localeCompare(right));
+    const sourceTypes = [...new Set([...(existingWarning?.sourceTypes ?? [existing.source.type]), incoming.source.type])].sort((left, right) => left.localeCompare(right));
+    const registryUrls = [
+      ...new Set(
+        [
+          ...(existingWarning?.registryUrls ?? [existing.source.registryUrl]),
+          incoming.source.registryUrl
+        ].filter((registryUrl): registryUrl is string => typeof registryUrl === "string" && registryUrl.length > 0)
+      )
+    ].sort((left, right) => left.localeCompare(right));
+    const warning: PluginInventoryWarning = {
+      code: "duplicate_plugin_package_version",
+      pluginId: incoming.id,
+      name: incoming.name,
+      version: incoming.version,
+      packageIds,
+      sourceTypes,
+      registryUrls
+    };
+    if (existingWarning) this.inventoryWarnings[existingIndex] = warning;
+    else this.inventoryWarnings.push(warning);
   }
 
   private async importRegistryEntry(registryUrl: URL, entry: PluginRegistryEntry): Promise<LoadedPlugin> {
@@ -402,14 +444,32 @@ function normalizeCommandStorageMutation(value: unknown): PluginChatCommandStora
     if (!isRecord(value.set)) throw new Error("Plugin storage set mutation must be an object");
     const setEntries = Object.entries(value.set);
     if (setEntries.length > 10) throw new Error("Plugin storage set mutation is limited to 10 keys");
-    mutation.set = Object.fromEntries(setEntries);
+    mutation.set = Object.fromEntries(setEntries.map(([key, storedValue]) => [normalizePluginStorageMutationKey(key), normalizePluginStorageMutationValue(storedValue)]));
   }
   if (value.delete !== undefined) {
     if (!Array.isArray(value.delete) || !value.delete.every((item) => typeof item === "string")) throw new Error("Plugin storage delete mutation must be a string array");
     if (value.delete.length > 10) throw new Error("Plugin storage delete mutation is limited to 10 keys");
-    mutation.delete = [...new Set(value.delete)];
+    mutation.delete = [...new Set(value.delete.map((key) => normalizePluginStorageMutationKey(key)))];
   }
   return mutation.set || mutation.delete ? mutation : undefined;
+}
+
+function normalizePluginStorageMutationKey(value: string): string {
+  const key = value.trim();
+  if (/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,79}$/.test(key)) return key;
+  throw new Error(`Invalid plugin storage key: ${value}`);
+}
+
+function normalizePluginStorageMutationValue(value: unknown): unknown {
+  let text: string | undefined;
+  try {
+    text = JSON.stringify(value);
+  } catch {
+    throw new Error("Plugin storage value must be JSON serializable");
+  }
+  if (text === undefined) throw new Error("Plugin storage value must be JSON serializable");
+  if (Buffer.byteLength(text, "utf8") > 16 * 1024) throw new Error("Plugin storage value is limited to 16 KiB of JSON");
+  return JSON.parse(text) as unknown;
 }
 
 function validateEntrypoint(pluginRoot: string, packagePath: string, entrypoint: string | undefined, label: string, errors: string[]): string | undefined {

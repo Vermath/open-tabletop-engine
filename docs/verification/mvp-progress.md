@@ -498,6 +498,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Added email outbox records and optional webhook delivery through `OTTE_EMAIL_WEBHOOK_URL` and `OTTE_EMAIL_WEBHOOK_TOKEN`.
   - Added user password change and self-service session listing/revocation endpoints.
   - Added server-admin user/session/outbox endpoints gated by `OTTE_ADMIN_USER_IDS`.
+  - Added a server-admin session risk report for expired, stale, disabled-user, and unknown-user sessions without exposing token hashes or mutating session state.
   - Added account disable, password-reset-required flags, admin-triggered resets, all-session revocation, and disabled-user login blocking.
   - Disabled legacy `x-user-id` authentication outside tests unless `OTTE_ALLOW_LEGACY_USER_HEADER=true` is explicitly set.
   - Excluded password reset tokens and email outbox records from campaign archives.
@@ -506,7 +507,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - `pnpm --filter @open-tabletop/api typecheck` passed.
   - `pnpm --filter @open-tabletop/api test` passed with `25 passed`.
   - `pnpm check` passed across lint, typecheck, tests, and build.
-  - API tests cover password reset email delivery and confirmation, no account enumeration for unknown reset requests, hashed reset token storage, rejected token reuse, password change with stale-session revocation, self session deletion, admin user listing, admin-triggered reset without a JSON body, admin session listing/revocation, all-session revocation for a user, disabled-user login/OIDC blocking, password-reset-required login blocking, admin outbox reads, and the production legacy-header hard fence.
+  - API tests cover password reset email delivery and confirmation, no account enumeration for unknown reset requests, hashed reset token storage, rejected token reuse, password change with stale-session revocation, self session deletion, admin user listing, admin-triggered reset without a JSON body, admin session listing/revocation, admin session risk reporting, all-session revocation for a user, disabled-user login/OIDC blocking, password-reset-required login blocking, admin outbox reads, and the production legacy-header hard fence.
 - Manual API evidence:
   - API: `http://127.0.0.1:4439`
   - Email webhook: `http://127.0.0.1:4713/email`
@@ -522,6 +523,61 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Admin disabled `usr_demo_player`; passwordless login for that user then returned `403`.
   - Admin email outbox returned two delivered webhook messages, one for GM and one for player.
   - SQLite inspection showed reset tokens and session tokens stored as `sha256:` hashes, no raw reset token field on reset records, two email outbox rows, and the GM password stored as a `scrypt:` hash.
+
+### 2026-05-06 - Auth operations summary
+
+- Completed:
+  - Added `GET /api/v1/admin/auth/operations` for server-admin production auth monitoring.
+  - The summary combines effective auth runtime mode, user/password/MFA counts, session-risk totals and recent redacted risk sessions, active/expired reset counts, email outbox retry pressure, oldest retryable email age, recent retryable email metadata, identity provider counts, and an `actionRequired` flag.
+  - The response omits password hashes, reset token hashes, session token hashes, MFA secrets, recovery-code hashes, SCIM profiles, email bodies, and reset links.
+- Verification:
+  - API tests assert the endpoint reports disabled users, stale/unknown session risk, active password resets, pending email retry pressure with redacted recent retryable message metadata, legacy-header runtime mode, audit logging, and redaction of token material and reset links.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "server admins manage users and sessions"`
+
+### 2026-05-06 - Auth operations password-reset-required posture
+
+- Completed:
+  - `GET /api/v1/admin/auth/operations` now treats users flagged `passwordResetRequired` as action-required production auth pressure.
+  - The existing user summary count is reused without exposing password hashes or reset tokens.
+- Verification:
+  - API tests assert password-reset-required users mark auth operations actionable without unrelated session, email, disabled-user, or expired-reset pressure.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "users require password reset"`
+
+### 2026-05-06 - Auth operations action reasons
+
+- Completed:
+  - Added concrete `actionReasons` to `GET /api/v1/admin/auth/operations`.
+  - Reasons distinguish risk sessions, disabled users, password-reset-required users, failed or pending email delivery, expired password reset cleanup, and production legacy-header exposure.
+  - Auth operations inspections now append redacted server-admin audit logs with the same action reasons, stale-day setting, action-required state, risk-session count, and pending email count.
+  - The response remains redacted and does not expose password hashes, reset links, email bodies, session token hashes, MFA secrets, or SCIM profiles.
+- Verification:
+  - API tests assert password-reset-required-only pressure produces `password_reset_required_users` in the response and audit summary, while the broader auth operations scenario reports risk-session, disabled-user, and pending-email reasons.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "users require password reset"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "server admins manage users and sessions"`
+- Browser admin follow-up:
+  - The Admin tab now loads `GET /api/v1/admin/auth/operations` in its admin snapshot and displays auth action state, action reasons, legacy-header mode, email webhook posture, user/MFA/password counts, risk-session counts, retryable email pressure, and expired reset cleanup pressure.
+
+### 2026-05-06 - Bulk session risk revocation
+
+- Completed:
+  - Added `POST /api/v1/admin/sessions/risk/revoke` for server-admin operational cleanup of risky sessions.
+  - The endpoint reuses the session-risk classifier, supports `dryRun`, filters by risk reason (`expired`, `stale`, `disabled_user`, `unknown_user`), revokes matched sessions when not dry-running, and returns redacted matched-session metadata.
+  - Each run appends a server-admin audit log with stale-day threshold, dry-run state, selected reasons, matched count, and revoked count without exposing token hashes.
+  - The Admin tab can revoke the current auth-operations risk-session set directly from the Auth Operations section and refreshes the same operations summary afterward.
+- Verification:
+  - API tests cover invalid reason rejection, unknown-user dry-run behavior, expired/unknown bulk revocation, token-hash redaction, and audit logging.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "server admins manage users and sessions"`
+
+### 2026-05-06 - Password reset token pruning
+
+- Completed:
+  - Added `POST /api/v1/admin/password-resets/prune` for server-admin cleanup of expired and used password reset records.
+  - The endpoint supports `dryRun`, `includeExpired`, and `includeUsed`, returns matched reset metadata without token hashes, and appends a redacted server-admin audit log with matched/pruned counts.
+  - This gives production operators an explicit cleanup path instead of relying only on opportunistic pruning during reset issue/confirm flows.
+  - The Admin tab can prune expired password reset records directly from the Auth Operations section and refreshes expired-reset pressure afterward.
+- Verification:
+  - API tests cover non-admin denial, dry-run preservation, expired and used reset pruning, token-hash redaction, and audit logging.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "server admins manage users and sessions"`
 
 ### Production Auth Audit Export Slice
 
@@ -661,6 +717,8 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Added server-admin asset migration at `POST /api/v1/admin/assets/migrate`; it verifies readable asset bytes against metadata before rewriting them through the active storage provider.
   - Added server-admin asset cleanup at `POST /api/v1/admin/assets/cleanup`; it removes stored bytes for deleted or expired assets after a configurable grace period while preserving metadata.
   - Added `storageDeletedAt` and `cleanupReason` lifecycle audit fields so repeated cleanup is idempotent and visible in storage records.
+  - The Admin tab can run asset migration from the Asset Storage section and reports migrated/skipped/failed counts after refreshing storage posture.
+  - The Admin tab can run cleanup for the displayed eligible backlog from the Asset Storage section and refreshes storage/integrity posture afterward.
   - Added worker job types `asset.storage.migrate` and `asset.storage.cleanup` for running the admin operations outside request/response workflows.
   - Added Docker Compose and `.env.example` passthrough for `OTTE_ASSET_CLEANUP_GRACE_DAYS`.
 - Automated validation:
@@ -797,7 +855,8 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Added a shared core ray-cast vision engine that computes bounded polygons from token vision, revealed fog regions, and wall-clipped colored lights.
   - Replaced player token visibility's center-line wall shortcut with the shared polygon containment check.
   - Added `GET /api/v1/scenes/{sceneId}/vision` so clients render the same permission-filtered vision state the API uses for token filtering.
-  - Added terrain wall metadata with separate `blocksMovement` and `kind` fields, while preserving hard-wall defaults.
+  - Added `GET /api/v1/scenes/{sceneId}/vision/sample?x=...&y=...` so clients and operators can diagnose a specific scene point with `visible`, `fogActive`, `revealedBy`, `hiddenBy`, `illuminatedBy`, and `blockedBy` fields.
+  - Added terrain wall/thorn-wall/warding-bond/water-breathing/water-walk/weird/wind-walk/wind-wall/wish/word-of-recall/zone-of-truth metadata with separate `blocksMovement` and `kind` fields, while preserving hard-wall defaults.
   - Rendered clipped colored light polygons, terrain-wall styling, and player fog-of-war masks in the browser scene canvas.
 - Automated validation:
   - `pnpm --filter @open-tabletop/core build` passed.
@@ -808,6 +867,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - `pnpm check` passed across lint, typecheck, tests, and build.
   - Core tests verify token and light polygons are clipped by vision-blocking walls, including a terrain wall.
   - API tests verify player token filtering, the player vision endpoint's token/fog/light polygons, terrain wall authoring, and colored light polygons.
+  - API tests verify point-level vision diagnostics for a wall-blocked point, a visible owned-token point, and invalid sample coordinates.
 - Manual API and browser evidence:
   - API: `http://127.0.0.1:4442`
   - Web: `http://127.0.0.1:5188`
@@ -1461,6 +1521,22 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - GM `GET /api/v1/campaigns/camp_demo/ai/threads` listed the same thread.
   - Player `GET /api/v1/campaigns/camp_demo/ai/usage` returned `403`.
 
+### AI Deterministic Evaluation Slice
+
+- Implementation:
+  - Added persistent `aiEvaluations` state for telemetry-backed AI evaluation runs.
+  - Added `GET|POST /api/v1/campaigns/{campaignId}/ai/evaluations` for GM-facing deterministic thread checks.
+  - Evaluation checks can assert thread status, provider id, required tool calls, no failed tool calls, minimum completed tool-call count, maximum duration, and maximum estimated cost.
+  - Added evaluation totals and recent evaluations to `GET /api/v1/admin/ai/operations` so server admins can inspect cross-campaign AI regression status beside provider/runtime telemetry.
+  - Campaign archive and SQLite persistence paths include the evaluation collection, with compatibility initialization for existing state files.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "ai thread evaluations"` passed.
+  - API tests verify a passing evaluation over provider, status, roll tool usage, duration, and estimated cost; a failing missing-tool regression; GM listing of evaluation totals; server-admin operations exposure; and player denial for the evaluation endpoint.
+- Notes:
+  - This slice intentionally evaluates deterministic operational behavior and regression signals from persisted thread/tool telemetry. It does not claim to grade open-ended model-output quality.
+
 ### AI Operator Dashboard Slice
 
 - Implementation:
@@ -1691,6 +1767,15 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - The failed thread persisted with provider `openai-responses`, status `failed`, provider error `OpenAI Responses API request timed out after 50ms`, retry attempts `0`, and event count `0`.
   - `GET /api/v1/admin/ai/operations` returned `200` and reported OpenAI runtime `timeoutMs: 50`.
   - After shutdown, no listener remained on port `4722`.
+
+### AI Provider Error Operations Slice
+
+- Implementation:
+  - Expanded server-admin AI Operations provider-error rollups with bounded recent failed-thread context, including campaign name, provider, title, failure timestamp, retry attempts, and duration.
+  - Surfaced recent provider-error thread context in the browser Admin AI Operations section so operators can jump from an aggregate error message to affected campaigns/threads.
+- Automated validation:
+  - Focused API coverage verifies provider-error rollups include redacted recent thread context for the failed provider thread.
+  - API and web typechecks cover the updated operations contract.
 
 ### AI Tool Permission Regression Slice
 
@@ -2308,6 +2393,11 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - `pnpm --filter @open-tabletop/api build` passed.
   - `pnpm --filter @open-tabletop/web build` passed.
   - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed with `1 passed | 60 skipped`.
+  - `pnpm --filter @open-tabletop/system-sdk lint` passed.
+  - `pnpm --filter @open-tabletop/api lint` passed.
+  - `pnpm --filter @open-tabletop/web lint` passed.
+  - `git diff --check` passed with only the expected LF-to-CRLF working-copy warnings.
+  - `pnpm check` passed across repo-level lint, typecheck, tests, and build; API tests reported `68 passed`, and the D&D SRD first-class rules runtime test passed inside that run.
   - System SDK tests verify Paladin template data, Divine Smite compendium data, Paladin saves/skills/spells/items, variable Lay On Hands formulas, level-5 Paladin progression, half-caster spell slots, Divine Smite upcasting/free-use behavior, Faithful Steed use, Extra Attack metadata, resource depletion protection, and Long Rest restoration.
   - API tests verify the Paladin template appears in D&D SRD character templates, level-1 and level-5 Paladin sheet quick rolls expose Lay On Hands/Divine Smite/Faithful Steed/Extra Attack metadata, Lay On Hands can spend a chosen point amount and heal a target, Divine Smite consumes spell slots or the free Paladin's Smite resource, Faithful Steed consumes its resource, depletion returns `409`, and Long Rest restores Paladin resources and spell slots.
 - Manual API evidence:
@@ -2508,6 +2598,51 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - The GM bearer created player-owned `Manual SRD Dwarf Species`, returning `200`, actor `act_monvj3tr7489kvz4`, HP `{ current: 13, max: 13 }`, resources `{ stonecunning: { current: 2, max: 2, recovery: "long" } }`, and `species-dwarf-stonecunning` metadata with Tremorsense `60` feet; a player-bearer Stonecunning roll returned `200` and consumed Stonecunning to remaining `1`.
   - The GM bearer created player-owned `Manual SRD Dragonborn Species`, returning `200`, actor `act_monvj3twy4dnvjp3`; four player-bearer advances reached level `5` with resources `{ breathWeapon: { current: 2, max: 3, recovery: "long" }, draconicFlight: { current: 1, max: 1, recovery: "long" } }`, Breath Weapon formula `2d10`, Dexterity save DC `13`, and Draconic Flight fly speed `30`; a player-bearer Breath Weapon roll returned `200` and consumed Breath Weapon to remaining `1`.
   - The GM bearer created player-owned `Manual SRD Goliath Species`, returning `200`, actor `act_monvj3u9g1gzty7r`; four player-bearer advances reached level `5` with resources `{ giantAncestry: { current: 2, max: 3, recovery: "long" }, largeForm: { current: 1, max: 1, recovery: "long" } }`, Giant Ancestry options including Stone's Endurance reduction `1d12+2`, and Large Form speed `45`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Tiefling species legacy automation slice
+
+- Implementation:
+  - Added Tiefling Fiendish Legacy and Otherworldly Presence quick-roll entries with `species-tiefling-fiendish-legacy` and `species-tiefling-otherworldly-presence` roll ids.
+  - Extended D&D SRD origin application and the REST character creation payload with `tieflingLegacy` and `speciesSpellcastingAbility`, validating Abyssal/Chthonic/Infernal legacy choices and Intelligence/Wisdom/Charisma species spellcasting choices.
+  - Added Poison Spray, Chill Touch, Thaumaturgy, False Life, Hellish Rebuke, Hold Person, Darkness, and Ray of Enfeeblement compendium entries, plus `1d12` cantrip scaling for Poison Spray.
+  - Added level-gated Tiefling origin spell items, species spellcasting metadata, resistance metadata, and long-rest `tieflingLegacyLevel3`/`tieflingLegacyLevel5` free-cast resources; `useFreeResource` can spend the matching species spell resource.
+  - Added browser D&D action-menu entries for Tiefling Fiendish Legacy and Otherworldly Presence.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts -t "applies SRD character origin choices"` passed with `1 passed | 24 skipped`.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - `pnpm --filter @open-tabletop/web build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed with `1 passed | 60 skipped`.
+- Manual acceptance evidence:
+  - Direct SDK evidence created an Abyssal Tiefling Fighter with Charisma species spellcasting, producing origin metadata for the Abyssal legacy, poison resistance, Thaumaturgy, Poison Spray, Ray of Sickness, Hold Person, Tiefling species quick rolls, Poison Spray attack/damage rolls, Thaumaturgy effect metadata, and no level-3 legacy spell action at character level 1.
+  - After advancing the SDK actor to level 3, Ray of Sickness appeared with a `tieflingLegacyLevel3` resource; `useFreeResource` consumed that resource, and a Long Rest restored it.
+  - API acceptance evidence created a Chthonic Tiefling Fighter, returning origin metadata, necrotic resistance, Thaumaturgy/Chill Touch/False Life/Ray of Enfeeblement origin items, Tiefling trait rolls, Chill Touch attack/damage, and Thaumaturgy effect metadata. The level-1 sheet hid False Life; after two advances to level 3, the sheet exposed False Life and `tieflingLegacyLevel3`, and a player roll with `useFreeResource` consumed `{ key: "tieflingLegacyLevel3", label: "Tiefling Level 3 Legacy Spell", amount: 1, remaining: 0 }`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-04 - D&D SRD Human species origin automation slice
+
+- Implementation:
+  - Added Human Resourceful, Skillful, and Versatile quick-roll entries with `species-human-resourceful`, `species-human-skillful`, and `species-human-versatile` roll ids.
+  - Extended D&D SRD origin application and the REST character creation payload with Human `skillProficiency` and `originFeat` choices, storing the selected Skillful skill and Versatile origin feat on actor origin metadata.
+  - Wired Resourceful into Long Rest recovery so Human actors gain `heroicInspiration: true` when they finish a Long Rest without it.
+  - Added browser D&D action-menu entries for Human Resourceful, Skillful, and Versatile.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/system-sdk lint` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - `pnpm --filter @open-tabletop/api lint` passed.
+  - `pnpm --filter @open-tabletop/web lint` passed.
+  - `pnpm --filter @open-tabletop/web build` passed after rerunning outside the sandbox because Vite/esbuild hit sandbox `spawn EPERM`.
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts -t "applies SRD character origin choices"` passed after rerunning outside the sandbox because Vitest hit sandbox `spawn EPERM`.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed after rerunning outside the sandbox because Vitest hit sandbox `spawn EPERM`.
+  - `pnpm check` passed outside the sandbox as the final repo-level lint/typecheck/test/build gate.
+- Manual acceptance evidence:
+  - Direct SDK smoke created a Human Fighter with Skillful `perception` and Versatile `Skilled`, producing origin metadata `{ speciesId: "human", resourceful: true, humanSkillProficiency: "perception", humanOriginFeat: "Skilled" }`, skill proficiencies `["athletics","intimidation","perception"]`, feats `["Savage Attacker","Skilled"]`, `skill-perception` formula `1d20+2`, Human species rolls with formula `0`, no Resourceful action consumption, and Long Rest recovery `{ heroicInspiration: true }`.
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore` and real GM/player bearer tokens from `POST /api/v1/auth/login`; both logins returned `200`.
+  - `GET /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/character-origins` returned Human traits `["Resourceful","Skillful","Versatile"]`.
+  - The GM bearer created player-owned `Manual SRD Human Species`, returning `200`, actor `act_mosmx3diyck2z76m`, origin metadata `{ source: "SRD 5.2.1", backgroundId: "soldier", speciesId: "human", resourceful: true, humanSkillProficiency: "perception", humanOriginFeat: "Skilled" }`, skill proficiencies `["athletics","intimidation","perception"]`, feats `["Savage Attacker","Skilled"]`, Human quick rolls `species-human-resourceful`, `species-human-skillful`, and `species-human-versatile`, and `skill-perception` formula `1d20+2`.
+  - A player-bearer Long Rest for actor `act_mosmx3diyck2z76m` returned `200`, set `heroicInspiration` to `true`, and reported recovered `{ heroicInspiration: true }`.
   - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
 
 ### 2026-05-02 - D&D SRD expanded spell compendium slice
@@ -2716,7 +2851,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 - Implementation:
   - Expanded the D&D SRD monster catalog from `15` unique SRD stat blocks exposed as `16` threat ids to `27` unique SRD stat blocks exposed as `28` threat ids, including the existing `goblin-minion` alias.
-  - Added SRD-sourced Bandit Captain, Guard, Guard Captain, Knight, Spy, Warrior Veteran, Black Bear, Brown Bear, Giant Rat, Giant Spider, Giant Ape, and Giant Eagle stat blocks with CR, XP, AC, HP, ability scores, saves, senses, languages, gear, traits, and actions.
+  - Added SRD-sourced Bandit Captain, Guard, Guard Captain, Knight, Kobold Warrior, Spy, Warrior Veteran, Black Bear, Brown Bear, Giant Rat, Giant Spider, Giant Ape, Giant Eagle, Couatl, and Deva stat blocks with CR, XP, AC, HP, ability scores, saves, senses, languages, gear, traits, and actions.
   - Added encounter-threat and actor-sheet quick-roll coverage for practical humanoid NPCs and beast staples, including Bandit Captain Pistol, Giant Spider Bite/Web, and Giant Ape Fist/Boulder Toss metadata.
 - Automated validation:
   - `pnpm --filter @open-tabletop/system-sdk build` passed.
@@ -2734,6 +2869,259 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Rolling Giant Spider `monster-bite-damage` with `applyEffect: true` against `SRD Spider Bite Target` returned `200`, formula `1d8+3+2d6`, and effect `{ type: "damage", before: 20, after: 7, max: 20 }`.
   - Giant Ape threat metadata returned budget `2900`, CR `7`, AC `12`, HP `168`; planning `1x Giant Ape` for a level `7` party actor returned `difficulty: "deadly"`, `partyRating: 1700`, `threatBudget: 2900`, and budgets `{ easy: 750, standard: 1300, hard: 1700 }`.
   - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-04 - D&D SRD monster damage action metadata slice
+
+- Implementation:
+  - Added metadata to save/recharge/rider monster damage quick rolls without changing simple damage roll shapes for attacks such as Bite, Fist, Rend, Scimitar, Shortbow, or Pistol.
+  - Young Red Dragon and Red Dragon Wyrmling Fire Breath damage rolls now carry action, range, fire damage type, Dexterity save, half-damage success, and recharge metadata.
+  - Giant Ape Boulder Toss damage now carries action, range, bludgeoning damage type, Dexterity save, half-damage success, Prone rider condition, recharge `6`, and rider summary metadata.
+- Automated validation:
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/system-sdk lint` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - `pnpm --filter @open-tabletop/api lint` passed.
+  - Focused System SDK and API test assertions were updated for Fire Breath and Boulder Toss metadata; Vitest was not rerun in this sandbox because worker startup has been blocked by `spawn EPERM` in the current environment.
+- Manual SDK/API evidence:
+  - Direct System SDK smoke created Young Red Dragon and Giant Ape actors from `dnd5eSrdMonsterActorData`; `monster-fire-breath-damage` returned formula `16d6` with metadata `{ action: "action", range: "30-foot cone", damageType: "fire", save: { ability: "dexterity", dc: 17, success: "half" }, recharge: "5-6" }`, and `monster-boulder-toss-damage` returned formula `7d6` with metadata `{ action: "action", range: "90 ft.", damageType: "bludgeoning", save: { ability: "dexterity", dc: 17, success: "half" }, condition: "Prone", recharge: "6" }`.
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore` and a GM bearer token from `POST /api/v1/auth/login`.
+  - Creating `Manual Metadata Young Red Dragon` returned actor `act_mos5e9htsdp1msnh` with `monster-fire-breath-damage` metadata matching the SDK smoke.
+  - Creating `Manual Metadata Giant Ape` returned actor `act_mos5e9i10pj11hh0` with `monster-boulder-toss-damage` metadata matching the SDK smoke.
+  - Rolling `monster-fire-breath-damage` with `applyEffect: true` against `Manual Fire Breath Target` actor `act_mos5e9i36iqmjzqd` returned `200`, formula `16d6`, and effect `{ type: "damage", pool: "hp", amount: 69, before: 120, after: 51, max: 120 }`.
+
+### 2026-05-05 - D&D SRD Adult Red Dragon monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `27` unique SRD stat blocks exposed as `28` threat ids to `28` unique SRD stat blocks exposed as `29` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Adult Red Dragon stat block as a Huge CR `17` / `18000 XP` threat with AC `19`, HP `256`, Fire immunity, Legendary Resistance, Spellcasting summary metadata, Rend, and Fire Breath.
+  - Adult Red Dragon sheets expose `monster-rend-attack`, `monster-rend-damage`, and `monster-fire-breath-damage` quick rolls; Fire Breath carries range `60-foot cone`, Dexterity save DC `21`, Fire damage type, recharge `5-6`, and half-damage success metadata.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts` passed.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - System SDK tests verify Adult Red Dragon threat metadata, level-17 deadly encounter planning, stat-block actor data, Legendary Resistance trait metadata, Rend quick rolls, Fire Breath quick-roll metadata, and `dnd5eSrdActionFormula(...) === "17d6"`.
+  - API tests verify Adult Red Dragon threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payload, and returned Rend/Fire Breath quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore` and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Adult Red Dragon` from `adult-red-dragon` returned actor `act_moswxgf7i864j0rl` with HP `{ current: 256, max: 256 }`, AC `19`, CR `17`, and XP `18000`.
+  - The returned sheet exposed quick rolls `monster-rend-attack: 1d20+14`, `monster-rend-damage: 1d10+8+2d4`, and `monster-fire-breath-damage: 17d6` with metadata `{ action: "action", range: "60-foot cone", damageType: "fire", save: { ability: "dexterity", dc: 21, success: "half" }, recharge: "5-6" }`.
+  - Rolling `monster-fire-breath-damage` returned `200` and formula `17d6`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Ancient Red Dragon monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `28` unique SRD stat blocks exposed as `29` threat ids to `29` unique SRD stat blocks exposed as `30` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Ancient Red Dragon stat block as a Gargantuan CR `24` / `62000 XP` threat with AC `22`, HP `507`, Fire immunity, Legendary Resistance, Spellcasting summary metadata, legendary-action summary metadata, Rend, and Fire Breath.
+  - Ancient Red Dragon sheets expose `monster-rend-attack`, `monster-rend-damage`, and `monster-fire-breath-damage` quick rolls; Fire Breath carries range `90-foot cone`, Dexterity save DC `24`, Fire damage type, recharge `5-6`, and half-damage success metadata.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts` passed.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - System SDK tests verify Ancient Red Dragon threat metadata, level-20 deadly encounter planning, stat-block actor data, Legendary Actions summary metadata, Rend quick rolls, Fire Breath quick-roll metadata, and `dnd5eSrdActionFormula(...) === "26d6"`.
+  - API tests verify Ancient Red Dragon threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payload, and returned Rend/Fire Breath quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore` and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Ancient Red Dragon` from `ancient-red-dragon` returned actor `act_mosx6kizl6xj5sxt` with HP `{ current: 507, max: 507 }`, AC `22`, CR `24`, and XP `62000`.
+  - The returned sheet exposed quick rolls `monster-rend-attack: 1d20+17`, `monster-rend-damage: 2d8+10+3d6`, and `monster-fire-breath-damage: 26d6` with metadata `{ action: "action", range: "90-foot cone", damageType: "fire", save: { ability: "dexterity", dc: 24, success: "half" }, recharge: "5-6" }`.
+  - Rolling `monster-fire-breath-damage` returned `200` and formula `26d6`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Remorhaz monster action slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `29` unique SRD stat blocks exposed as `30` threat ids to `30` unique SRD stat blocks exposed as `31` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Remorhaz stat block as a Huge CR `11` / `7200 XP` monstrosity with AC `17`, HP `195`, Cold and Fire immunity, Heat Aura trait metadata, Bite, and Swallow.
+  - Remorhaz sheets expose `monster-bite-attack`, `monster-bite-damage`, and `monster-swallow-damage` quick rolls; Swallow carries Bonus Action metadata, range `one Large or smaller Grappled creature`, Strength save DC `19`, Acid/Fire damage type, and swallowed-state summary text.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts` passed.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - System SDK tests verify Remorhaz threat metadata, level-11 deadly encounter planning, stat-block actor data, Heat Aura trait metadata, Bite quick rolls, Swallow quick-roll metadata, and `dnd5eSrdActionFormula(...) === "3d6+3d6"`.
+  - API tests verify Remorhaz threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payload, and returned Bite/Swallow quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore` and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Remorhaz` from `remorhaz` returned actor `act_mosxektshywtoyh3` with HP `{ current: 195, max: 195 }`, AC `17`, CR `11`, and XP `7200`.
+  - The returned sheet exposed quick rolls `monster-bite-attack: 1d20+11`, `monster-bite-damage: 2d10+7+4d6`, and `monster-swallow-damage: 3d6+3d6` with metadata `{ action: "bonusAction", range: "one Large or smaller Grappled creature", damageType: "acid/fire", save: { ability: "strength", dc: 19 } }`.
+  - Rolling `monster-swallow-damage` returned `200` and formula `3d6+3d6`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Purple Worm monster action slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `30` unique SRD stat blocks exposed as `31` threat ids to `39` unique SRD stat blocks exposed as `40` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Purple Worm stat block as a Gargantuan CR `15` / `13000 XP` monstrosity with AC `18`, HP `247`, Tunneler trait metadata, Bite, Tail Stinger, and Swallow.
+  - Purple Worm sheets expose `monster-bite-attack`, `monster-bite-damage`, `monster-tail-stinger-attack`, `monster-tail-stinger-damage`, and `monster-swallow-damage` quick rolls; Swallow carries Bonus Action metadata, range `one Large or smaller Grappled creature`, Strength save DC `19`, Acid damage type, and swallowed-state summary text.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts` passed.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - System SDK tests verify Purple Worm threat metadata, level-15 deadly encounter planning, stat-block actor data, Tunneler trait metadata, Bite and Tail Stinger quick rolls, Swallow quick-roll metadata, and action formulas for Tail Stinger and Swallow.
+  - API tests verify Purple Worm threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payload, and returned Bite/Tail Stinger/Swallow quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore` and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Purple Worm` from `purple-worm` returned actor `act_mosxme5y8bxrp6sa` with HP `{ current: 247, max: 247 }`, AC `18`, CR `15`, and XP `13000`.
+  - The returned sheet exposed quick rolls `monster-bite-attack: 1d20+14`, `monster-bite-damage: 3d8+9`, `monster-tail-stinger-attack: 1d20+14`, `monster-tail-stinger-damage: 2d6+9+10d6`, and `monster-swallow-damage: 5d6` with metadata `{ action: "bonusAction", range: "one Large or smaller Grappled creature", damageType: "acid", save: { ability: "strength", dc: 19 } }`.
+  - Rolling `monster-tail-stinger-damage` returned `200` and formula `2d6+9+10d6`; rolling `monster-swallow-damage` returned `200` and formula `5d6`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Mummy undead control slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `39` unique SRD stat blocks exposed as `40` threat ids to `39` unique SRD stat blocks exposed as `40` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Mummy stat block as a Medium or Small CR `3` / `700 XP` undead with AC `11`, HP `58`, Fire Vulnerability and Undead Immunities trait metadata, Rotting Fist, and Dreadful Glare.
+  - Added the SRD 5.2.1 Mummy Lord stat block as a Medium or Small CR `15` / `13000 XP` undead cleric with AC `17`, HP `187`, Legendary Resistance, Magic Resistance, Undead Restoration, Rotting Fist, Channel Negative Energy, Dreadful Glare, and Legendary Actions summary metadata.
+  - Mummy sheets expose `monster-rotting-fist-attack`, `monster-rotting-fist-damage`, and `monster-dreadful-glare-effect`; Mummy Lord sheets expose `monster-rotting-fist-attack`, `monster-rotting-fist-damage`, `monster-channel-negative-energy-attack`, `monster-channel-negative-energy-damage`, and `monster-dreadful-glare-damage`.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts` passed.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed after rebuilding the System SDK dist consumed by the API tests.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - System SDK tests verify Mummy and Mummy Lord threat metadata, level-15 deadly encounter planning for Mummy Lord, stat-block actor data, vulnerability/resistance trait metadata, Rotting Fist quick rolls, Dreadful Glare fear/paralysis metadata, Channel Negative Energy quick rolls, and action formulas for Mummy Rotting Fist/Dreadful Glare and Mummy Lord Channel Negative Energy/Dreadful Glare.
+  - API tests verify Mummy and Mummy Lord threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore`, `NODE_ENV=test`, and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Mummy` from `mummy` returned actor `act_mosy036fr0ctmjl1` with HP `{ current: 58, max: 58 }`, AC `11`, CR `3`, and XP `700`.
+  - The returned Mummy sheet exposed quick rolls `monster-rotting-fist-attack: 1d20+5`, `monster-rotting-fist-damage: 1d10+3+3d6`, and `monster-dreadful-glare-effect: 0` with metadata `{ effectType: "condition", action: "action", range: "60 ft.", save: { ability: "wisdom", dc: 11 }, condition: "Frightened" }`.
+  - Creating `Manual SRD Mummy Lord` from `mummy-lord` returned actor `act_mosy036se4gqamr2` with HP `{ current: 187, max: 187 }`, AC `17`, CR `15`, and XP `13000`.
+  - The returned Mummy Lord sheet exposed quick rolls `monster-rotting-fist-attack: 1d20+9`, `monster-rotting-fist-damage: 2d10+4+3d6`, `monster-channel-negative-energy-attack: 1d20+9`, `monster-channel-negative-energy-damage: 6d6+4`, and `monster-dreadful-glare-damage: 6d6+4` with metadata `{ action: "action", range: "60 ft.", damageType: "psychic", save: { ability: "wisdom", dc: 17 }, condition: "Paralyzed" }`.
+  - Rolling `monster-rotting-fist-damage`, `monster-dreadful-glare-effect`, `monster-channel-negative-energy-damage`, and `monster-dreadful-glare-damage` returned `200` with formulas `1d10+3+3d6`, `0`, `6d6+4`, and `6d6+4`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Lich legendary caster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `33` unique SRD stat blocks exposed as `34` threat ids to `39` unique SRD stat blocks exposed as `40` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Lich stat block as a Medium CR `21` / `33000 XP` undead wizard with AC `20`, HP `315`, Truesight, Legendary Resistance, Spirit Jar, Undead Immunities, damage resistance summary metadata, Paralyzing Touch, Spellcasting, Protective Magic, Legendary Actions, Deathly Teleport, Disrupt Life, and Frightening Gaze.
+  - Lich sheets expose `monster-paralyzing-touch-attack`, `monster-paralyzing-touch-damage`, `monster-deathly-teleport-damage`, `monster-disrupt-life-damage`, and `monster-frightening-gaze-effect`; Disrupt Life carries Constitution save DC `20` and half-damage metadata, while Frightening Gaze carries Wisdom save DC `20` and Frightened condition metadata.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts` passed.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - System SDK tests verify Lich threat metadata, level-20 deadly encounter planning, stat-block actor data, Legendary Resistance and Spirit Jar trait metadata, Paralyzing Touch quick rolls, Deathly Teleport quick rolls, Disrupt Life quick-roll metadata, Frightening Gaze condition-effect metadata, and action formulas for Paralyzing Touch, Deathly Teleport, Disrupt Life, and Frightening Gaze.
+  - API tests verify Lich threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payload, and returned Paralyzing Touch/Deathly Teleport/Disrupt Life/Frightening Gaze quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore`, `NODE_ENV=test`, and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Lich` from `lich` returned actor `act_mosy8c12wyj0nzy2` with HP `{ current: 315, max: 315 }`, AC `20`, CR `21`, and XP `33000`.
+  - The returned Lich sheet exposed quick rolls `monster-paralyzing-touch-attack: 1d20+12`, `monster-paralyzing-touch-damage: 3d6+5`, `monster-deathly-teleport-damage: 2d10`, `monster-disrupt-life-damage: 9d6`, and `monster-frightening-gaze-effect: 0`.
+  - Paralyzing Touch metadata included action `action`, range `reach 5 ft.`, damage type `cold`, and condition `Paralyzed`; Disrupt Life metadata included range `20-foot emanation`, damage type `necrotic`, and Constitution save DC `20` with half damage on success; Frightening Gaze metadata included range `Fear spell`, Wisdom save DC `20`, and condition `Frightened`.
+  - Rolling `monster-paralyzing-touch-damage`, `monster-deathly-teleport-damage`, `monster-disrupt-life-damage`, and `monster-frightening-gaze-effect` returned `200` with formulas `3d6+5`, `2d10`, `9d6`, and `0`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD vampire undead slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `34` unique SRD stat blocks exposed as `35` threat ids to `39` unique SRD stat blocks exposed as `40` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Vampire Spawn stat block as a Medium or Small CR `5` / `1800 XP` undead with AC `16`, HP `90`, Necrotic resistance, Spider Climb, Vampire Weakness, Claw grapple pressure, Bite drain metadata, and Deathless Agility.
+  - Added the SRD 5.2.1 Vampire stat block as a Medium or Small CR `13` / `10000 XP` undead with AC `16`, HP `195`, Necrotic resistance, Legendary Resistance, Misty Escape, Spider Climb, Vampire Weakness, Grave Strike grapple pressure, Bite drain metadata, Charm, Shape-Shift, and Legendary Actions summary metadata.
+  - Vampire Spawn sheets expose `monster-claw-attack`, `monster-claw-damage`, and `monster-bite-damage`; Vampire sheets expose `monster-grave-strike-attack`, `monster-grave-strike-damage`, `monster-bite-damage`, and `monster-charm-effect`.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts` passed.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - System SDK tests verify Vampire Spawn and Vampire threat metadata, level-5 and level-13 deadly encounter planning, stat-block actor data, Spider Climb/Vampire Weakness/Legendary Resistance/Misty Escape trait metadata, Claw/Grave Strike grapple metadata, Bite save and damage metadata, Charm condition-effect metadata, and action formulas for Vampire Spawn Claw/Bite and Vampire Grave Strike/Bite/Charm.
+  - API tests verify Vampire Spawn and Vampire threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payloads, and returned Claw/Grave Strike/Bite/Charm quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore`, `NODE_ENV=test`, and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Vampire Spawn` from `vampire-spawn` returned actor `act_mosyju6c22hr8ukd` with HP `{ current: 90, max: 90 }`, AC `16`, CR `5`, and XP `1800`.
+  - The returned Vampire Spawn sheet exposed quick rolls `monster-claw-attack: 1d20+6`, `monster-claw-damage: 2d4+3`, and `monster-bite-damage: 1d4+3+3d6`; Claw damage metadata included action `action`, range `reach 5 ft.`, damage type `slashing`, condition `Grappled`, and the escape DC summary, while Bite metadata included range `5 ft.; willing, Grappled, Incapacitated, or Restrained creature`, damage type `piercing/necrotic`, and Constitution save DC `14`.
+  - Rolling Vampire Spawn `monster-claw-damage` and `monster-bite-damage` returned `200` with formulas `2d4+3` and `1d4+3+3d6`.
+  - Creating `Manual SRD Vampire` from `vampire` returned actor `act_mosyju73ruiid0nh` with HP `{ current: 195, max: 195 }`, AC `16`, CR `13`, and XP `10000`.
+  - The returned Vampire sheet exposed quick rolls `monster-grave-strike-attack: 1d20+9`, `monster-grave-strike-damage: 1d8+4+2d6`, `monster-bite-damage: 1d4+4+3d8`, and `monster-charm-effect: 0`; Grave Strike metadata included Grappled condition metadata, Bite metadata included Constitution save DC `17`, and Charm metadata included Wisdom save DC `17`, Charmed condition metadata, and recharge `5-6`.
+  - Rolling Vampire `monster-grave-strike-damage`, `monster-bite-damage`, and `monster-charm-effect` returned `200` with formulas `1d8+4+2d6`, `1d4+4+3d8`, and `0`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Medusa condition slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `36` unique SRD stat blocks exposed as `37` threat ids to `39` unique SRD stat blocks exposed as `40` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Medusa stat block as a Medium CR `6` / `2300 XP` monstrosity with AC `15`, HP `127`, Darkvision 150 ft., Deception/Perception/Stealth skills, Claw, Snake Hair, Poison Ray, and Petrifying Gaze.
+  - Medusa sheets expose `monster-claw-attack`, `monster-claw-damage`, `monster-snake-hair-attack`, `monster-snake-hair-damage`, `monster-poison-ray-attack`, `monster-poison-ray-damage`, and `monster-petrifying-gaze-effect`; Petrifying Gaze carries Constitution save DC `13`, Restrained condition metadata, recharge `5-6`, and a second-failure Petrified summary.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts` passed.
+  - `pnpm --filter @open-tabletop/system-sdk build` passed.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+  - System SDK tests verify Medusa threat metadata, level-6 deadly encounter planning, stat-block actor data, Snake Hair and Poison Ray quick rolls, Petrifying Gaze condition-effect metadata, and action formulas for Snake Hair, Poison Ray, and Petrifying Gaze.
+  - API tests verify Medusa threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payload, and returned Claw/Snake Hair/Poison Ray/Petrifying Gaze quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore`, `NODE_ENV=test`, and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Medusa` from `medusa` returned actor `act_mosysn12oxdtw14r` with HP `{ current: 127, max: 127 }`, AC `15`, CR `6`, and XP `2300`.
+  - The returned Medusa sheet exposed quick rolls `monster-snake-hair-attack: 1d20+6`, `monster-snake-hair-damage: 1d4+3+4d6`, `monster-poison-ray-attack: 1d20+5`, `monster-poison-ray-damage: 2d8+2`, and `monster-petrifying-gaze-effect: 0`; Petrifying Gaze metadata included action `bonusAction`, range `30-foot cone`, Constitution save DC `13`, condition `Restrained`, recharge `5-6`, and the second-failure Petrified summary.
+  - Rolling `monster-snake-hair-damage`, `monster-poison-ray-damage`, and `monster-petrifying-gaze-effect` returned `200` with formulas `1d4+3+4d6`, `2d8+2`, and `0`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Hydra multihead slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `37` unique SRD stat blocks exposed as `38` threat ids to `38` unique SRD stat blocks exposed as `39` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Hydra stat block as a Huge CR `8` / `3900 XP` monstrosity with AC `15`, HP `184`, Swim 40 ft., Darkvision 60 ft., Perception, Hold Breath, Multiple Heads, Reactive Heads, Multiattack, and Bite.
+  - Hydra sheets expose `monster-bite-attack` and `monster-bite-damage`; the stat-block traits preserve Multiple Heads head-loss/regrowth/Fire suppression/20 HP recovery metadata and Reactive Heads extra Opportunity Attack reaction metadata.
+- Verification:
+  - System SDK tests verify Hydra threat metadata, level-8 deadly encounter planning, stat-block actor data, Multiple Heads and Reactive Heads traits, Bite quick rolls, and the Bite action formula.
+  - API tests verify Hydra threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payload, and returned Bite quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore`, `NODE_ENV=test`, and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Hydra` from `hydra` returned actor `act_mosz4he13zf6j9xx` with HP `{ current: 184, max: 184 }`, AC `15`, CR `8`, and XP `3900`.
+  - The returned Hydra sheet exposed quick rolls `monster-bite-attack: 1d20+8` and `monster-bite-damage: 1d10+5`.
+  - Rolling `monster-bite-damage` returned `200` with formula `1d10+5`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Wyvern poison-flight slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `38` unique SRD stat blocks exposed as `39` threat ids to `39` unique SRD stat blocks exposed as `40` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Wyvern stat block as a Large CR `6` / `2300 XP` dragon with AC `14`, HP `127`, Fly 80 ft., Darkvision 120 ft., Perception, Multiattack, Bite, and Sting.
+  - Wyvern sheets expose `monster-bite-attack`, `monster-bite-damage`, `monster-sting-attack`, and `monster-sting-damage`; Sting carries Piercing/Poison damage metadata and Poisoned condition summary metadata.
+- Verification:
+  - System SDK tests verify Wyvern threat metadata, level-6 deadly encounter planning, stat-block actor data, Bite and Sting quick rolls, Poisoned Sting metadata, and action formulas for Bite and Sting.
+  - API tests verify Wyvern threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payload, and returned Bite/Sting quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore`, `NODE_ENV=test`, and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Wyvern` from `wyvern` returned actor `act_moszbdbigwvj6rlf` with HP `{ current: 127, max: 127 }`, AC `14`, CR `6`, and XP `2300`.
+  - The returned Wyvern sheet exposed quick rolls `monster-bite-attack: 1d20+7`, `monster-bite-damage: 2d8+4`, `monster-sting-attack: 1d20+7`, and `monster-sting-damage: 2d6+4+7d6`; Sting metadata included action `action`, range `reach 10 ft.`, damage type `piercing/poison`, condition `Poisoned`, and the until-start-of-next-turn summary.
+  - Rolling `monster-sting-damage` returned `200` with formula `2d6+4+7d6`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Gelatinous Cube engulf slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `39` unique SRD stat blocks exposed as `40` threat ids to `40` unique SRD stat blocks exposed as `41` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Gelatinous Cube stat block as a Large CR `2` / `450 XP` ooze with AC `6`, HP `63`, Blindsight 60 ft., Acid immunity, Ooze Cube, Transparent, Pseudopod, and Engulf.
+  - Gelatinous Cube sheets expose `monster-pseudopod-attack`, `monster-pseudopod-damage`, and `monster-engulf-damage`; Engulf carries Acid damage, Dexterity save DC `12`, half-damage success metadata, and Restrained condition summary metadata.
+- Verification:
+  - System SDK tests verify Gelatinous Cube threat metadata, level-2 deadly encounter planning, stat-block actor data, Pseudopod and Engulf quick rolls, Engulf save/condition metadata, and action formulas for Pseudopod and Engulf.
+  - API tests verify Gelatinous Cube threat listing, encounter planning, monster actor creation, HP/AC/CR/XP payload, and returned Pseudopod/Engulf quick rolls.
+- Manual built-API evidence:
+  - Built-API smoke used `apps/api/dist` with `MemoryStateStore`, `NODE_ENV=test`, and `x-user-id: usr_demo_gm`.
+  - Creating `Manual SRD Gelatinous Cube` from `gelatinous-cube` returned actor `act_moszmbgfbslwpzfs` with HP `{ current: 63, max: 63 }`, AC `6`, CR `2`, and XP `450`.
+  - The returned Gelatinous Cube sheet exposed quick rolls `monster-pseudopod-attack: 1d20+4`, `monster-pseudopod-damage: 3d6+2`, and `monster-engulf-damage: 3d6`; Engulf metadata included action `action`, range `Speed`, damage type `acid`, Dexterity save DC `12`, success `half`, condition `Restrained`, and the suffocation/no-verbal-components/start-of-turn-acid summary.
+  - Rolling `monster-engulf-damage` returned `200` with formula `3d6` and total `9`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Ghoul and Ghast paralysis slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `40` unique SRD stat blocks exposed as `41` threat ids to `42` unique SRD stat blocks exposed as `43` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Ghoul stat block as a Medium CR `1` / `200 XP` undead with AC `12`, HP `22`, Darkvision 60 ft., Undead immunities, Multiattack, Bite, and paralyzing Claw.
+  - Added the SRD 5.2.1 Ghast stat block as a Medium CR `2` / `450 XP` undead with AC `13`, HP `36`, Darkvision 60 ft., Necrotic resistance, Stench, Undead immunities, Bite, and paralyzing Claw.
+  - Ghoul and Ghast sheets expose `monster-bite-attack`, `monster-bite-damage`, `monster-claw-attack`, and `monster-claw-damage`; Claw carries Constitution save DC `10` and Paralyzed condition summary metadata.
+- Verification:
+  - System SDK tests verify Ghoul and Ghast threat metadata, Ghast level-2 deadly encounter planning, Ghast stat-block actor data, Bite and Claw quick rolls, Paralyzed Claw metadata, and action formulas for Bite and Claw.
+  - API tests verify Ghoul and Ghast threat listing, Ghast encounter planning, Ghast monster actor creation, HP/AC/CR/XP payload, and returned Bite/Claw quick rolls.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD Ghast` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; response status was `200` and actor id was `act_moszuvwa3aqh46rd`.
+  - The built API returned HP `{ current: 36, max: 36 }`, AC `13`, CR `2`, XP `450`, and traits `Necrotic Resistance`, `Undead Immunities`, and `Stench`.
+  - Returned Ghast quick rolls were `monster-bite-attack` as `1d20+5`, `monster-bite-damage` as `1d8+3+2d8`, `monster-claw-attack` as `1d20+5`, and `monster-claw-damage` as `2d6+3`.
+  - `monster-claw-damage` carried action `action`, range `reach 5 ft.`, damage type `slashing`, Constitution save DC `10`, condition `Paralyzed`, and the non-Undead paralysis summary.
+  - Rolling `monster-claw-damage` through the built API returned status `200`, formula `2d6+3`, and total `13`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
 
 ### 2026-05-02 - D&D SRD condition catalog slice
 
@@ -2784,19 +3172,2773 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Creating `SRD Condition Smoke Goblin Boss` returned monster actor `act_moo189uopxicif06`; applying Poisoned and rolling `monster-scimitar-attack` returned formula `2d20kl1+4` with Poisoned condition metadata.
   - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
 
+### 2026-05-02 - D&D SRD player attack roll automation slice
+
+- Completed:
+  - Added D&D-only player attack quick rolls for owned weapons and spell-attack spells while leaving the generic fantasy runtime's damage/healing/effect rolls unchanged.
+  - Weapon attacks now expose `item-{itemId}-attack` formulas using the actor ability modifier, D&D proficiency, item attack bonuses such as Staff of Striking, weapon metadata, condition D20 automation, and Extra Attack metadata where applicable.
+  - Spell attacks now expose `spell-{itemId}-attack` formulas using the actor's spellcasting ability, D&D proficiency, non-consumable spell attack item bonuses, spell metadata, and condition D20 automation.
+  - Marked Chromatic Orb, Ice Knife, and Ray of Sickness as SRD spell attacks so their attached spell entries expose matching attack quick rolls.
+  - Prevented consumable Spell Scroll attack bonuses from globally increasing ordinary spell attack formulas; scroll attack bonuses remain scroll metadata.
+- Verification:
+  - System SDK tests cover Staff of Striking attack bonuses, Wand of the War Mage spell-attack bonuses, Chromatic Orb and Shortbow attack quick rolls, level-5 Fighter Longsword attack with Extra Attack metadata, Poisoned and Exhaustion condition formulas on Shortbow attacks, D&D action-formula lookup for spell and weapon attack ids, and that a level-9 Spell Scroll does not add `+11` to Chromatic Orb.
+  - API tests cover Sorcerous Burst, Chromatic Orb, and Eldritch Blast attack quick rolls on created characters, compendium-added Chromatic Orb attack quick rolls, Staff of Striking and purchased Handaxe attack quick rolls, level-5 Fighter Longsword attack roll/chat behavior, and roll-endpoint Chromatic Orb attack behavior.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk lint`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api lint`.
+  - Direct SDK and built-API smokes verified the player attack behavior because Vitest worker startup is blocked in this sandbox by `spawn EPERM`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and explicit legacy-header opt-in returned `compendiumStatus: 200`, `compendiumCount: 323`, and created `Manual SRD Attack Wizard` with actor `act_moo1rufdehouc7dy`.
+  - Adding Chromatic Orb plus a level-9 Spell Scroll, applying Poisoned, and rolling `spell-itm_moo1rufoawtvimyi-attack` returned formula `2d20kl1+5` with `conditionRollMode: "disadvantage"`, `conditionSources: ["poisoned"]`, `attackType: "spell"`, and no scroll-derived `itemBonus`.
+  - The same smoke confirmed the level-9 Spell Scroll item retained `spellAttackBonus: 11` and `consumable: true`.
+  - Adding Staff of Striking under Poisoned exposed `item-itm_moo1rugyxvv1z0tm-attack` as `2d20kl1+4` with `attackType: "weapon"`, `proficiencyBonus: 2`, and `itemBonus: 3`.
+  - Advancing a Fighter to level 5 exposed `item-itm_moo1ruh7cl22q8vz-attack` as `1d20+8` with `attacksPerAction: 2` and `feature: "Extra Attack"`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-02 - D&D SRD save and effect spell automation slice
+
+- Completed:
+  - Added D&D-only `spell-{itemId}-effect` quick rolls for owned spells whose primary table action is a save, bonus, penalty, condition, utility, or non-dice healing effect instead of direct damage/healing.
+  - Bane, Bless, Color Spray, Command, Charm Monster, and other eligible save/effect spells now expose formulas and metadata such as spell level, save DC, target counts, upcast targeting, affected rolls, command options, conditions, durations, concentration, and hostile-target save advantage.
+  - Added REST roll-endpoint target condition application for supported condition effect rolls such as Color Spray while leaving AI tool condition effects unsupported rather than expanding direct AI state mutation.
+  - Preserved existing generic damage/healing rolls and did not change Generic Fantasy runtime behavior.
+- Verification:
+  - System SDK tests cover Bane, Bless, Color Spray, Command, and Charm Monster effect quick rolls plus D&D action-formula lookup for effect ids.
+  - System SDK tests cover Bane effect-roll spell-slot consumption at level 1 and explicit level-2 upcast slot selection.
+  - API tests cover compendium-added Bane and Color Spray exposing `spell-{itemId}-effect` quick rolls, the roll endpoint posting the Bane effect formula and metadata, `consumeResources: true` spending level-1 spell slots for effect rolls, and `applyEffect: true` applying Color Spray's Blinded condition to a target actor.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk lint`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api lint`.
+  - Direct SDK and built-API smokes verified the effect roll behavior because Vitest worker startup is blocked in this sandbox by `spawn EPERM`.
+- Manual API evidence:
+  - Direct SDK smoke verified Bane as formula `1d4`, `effectType: "penalty"`, Charisma save DC `13`, and upcast targets `{ base: 3, perSlotAbove: 1 }`.
+  - The same SDK smoke verified Bless as formula `1d4`, `effectType: "bonus"`, affected rolls `["attack", "save"]`, and target count `3`.
+  - The same SDK smoke verified Command as formula `0`, `effectType: "utility"`, Wisdom save DC `13`, and command options `["Approach", "Drop", "Flee", "Grovel", "Halt"]`.
+  - Direct SDK effect-use smoke verified Bane effect slot consumption at `slotLevel: 1` with `level1` remaining `0`, and explicit `spellSlotLevel: 2` upcast consumption with `level2` remaining `0`.
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and explicit legacy-header opt-in created `Manual SRD Effect Wizard` with actor `act_moodec06hcn4x18q`.
+  - Adding Bane exposed `spell-itm_moodec0nb3t4kys2-effect` as formula `1d4` with `effectType: "penalty"`, Charisma save DC `13`, and upcast targets `{ base: 3, perSlotAbove: 1 }`.
+  - Rolling `spell-itm_moodec0nb3t4kys2-effect` returned formula `1d4` and posted chat body `Manual SRD Effect Wizard Bane Effect: 1d4 = 4`.
+  - A second built-API smoke created `Manual SRD Effect Use Wizard` with actor `act_moodlck37lqioid3`, added Bane, and rolled `spell-itm_moodlckgvifxkg3s-effect` with `consumeResources: true`.
+  - That effect-use smoke returned formula `1d4`, Charisma save DC `13`, usage `slotLevel: 1`, consumed `{ type: "spellSlot", key: "level1", amount: 1, remaining: 1 }`, persisted actor `level1` slots `{ current: 1, max: 2, recovery: "long" }`, and posted chat body `Manual SRD Effect Use Wizard Bane Effect: 1d4 = 3`.
+  - A third built-API smoke created `Manual SRD Condition Caster` actor `act_moodqew7vh34cnj7` and `Manual SRD Condition Target` actor `act_moodqewjtilrozc3`, added Color Spray, and rolled `spell-itm_moodqewlpfaptqzr-effect` with `consumeResources: true`, `applyEffect: true`, and the target actor id.
+  - That condition-effect smoke returned formula `0`, `effectType: "condition"`, condition `Blinded`, usage `slotLevel: 1`, consumed `{ type: "spellSlot", key: "level1", amount: 1, remaining: 1 }`, returned effect `{ type: "condition", conditionId: "blinded", before: [], after: ["blinded"] }`, persisted the target condition `{ id: "blinded" }`, and posted chat body `Manual SRD Condition Caster Color Spray Effect: 0 = 0`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-02 - D&D SRD consumable item action slice
+
+- Completed:
+  - Consumable item quick rolls now spend item quantity through the shared action-use path when callers pass `consumeResources: true`.
+  - D&D SRD potion actions such as Potion of Healing (superior) now persist the consumed inventory item at `quantity: 0` after use while preserving existing damage/healing effect behavior.
+- Verification:
+  - System SDK tests cover D&D consumable potion use returning `itemQuantity` consumption, item data with `quantity: 0`, and depletion errors when quantity is already `0`.
+  - API tests cover a compendium-attached Potion of Healing (superior) roll returning `itemQuantity` usage and persisting the stored item quantity at `0`.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk lint`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api lint`.
+  - Direct SDK and built-API smokes verified consumable item quantity behavior because Vitest worker startup is blocked in this sandbox by `spawn EPERM`.
+- Manual API evidence:
+  - Direct SDK smoke used Potion of Healing (superior) with `quantity: 1` and verified `useDnd5eSrdAction` returned `{ type: "itemQuantity", key: "itm_potion", amount: 1, remaining: 0 }` plus an updated item with `quantity: 0`.
+  - Built-API smoke created `Manual SRD Consumable Cleric` actor `act_moodwcvsadzdjam4`, added Potion of Healing (superior), and rolled `item-itm_moodwcw97yluaalt-healing` with `consumeResources: true`.
+  - That consumable smoke returned formula `8d4+8`, consumed `{ type: "itemQuantity", key: "itm_moodwcw97yluaalt", amount: 1, remaining: 0 }`, persisted item `itm_moodwcw97yluaalt` with `quantity: 0`, and posted chat body `Manual SRD Consumable Cleric Potion of Healing (superior) Healing: 8d4+8 = 25`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-02 - D&D SRD item condition effect action slice
+
+- Completed:
+  - D&D SRD item entries with condition/effect metadata now expose `item-{itemId}-effect` quick rolls alongside spell effect rolls.
+  - Potion of Invisibility exposes a consumable item effect roll with Invisible condition, duration, action, and ending-trigger metadata.
+  - Ball Bearings exposes an item effect roll with prone condition metadata and Dexterity save DC `10`, without defaulting item saves to the actor's spell save DC.
+  - REST roll `applyEffect: true` can apply supported item condition effects through the same permissioned target-actor update path as spell condition effects.
+- Verification:
+  - System SDK tests cover Potion of Invisibility and Ball Bearings item effect quick rolls, Ball Bearings item save DC metadata, Potion of Invisibility item-quantity consumption, persisted `quantity: 0`, and depletion errors.
+  - API tests cover compendium-added Potion of Invisibility exposing `item-{itemId}-effect`, roll-endpoint item quantity consumption, Invisible condition application, persisted item quantity, and chat roll behavior.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk lint`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api lint`.
+  - Direct SDK and built-API smokes verified item condition-effect behavior because Vitest worker startup is blocked in this sandbox by `spawn EPERM`.
+- Manual API evidence:
+  - Direct SDK smoke verified `item-itm_invisibility-effect` as formula `0`, `effectType: "condition"`, action `bonus`, duration `1 hour`, condition `Invisible`, and ending triggers `["make an attack roll", "deal damage", "cast a spell"]`.
+  - The same SDK smoke verified `item-itm_ball_bearings-effect` as formula `0`, `effectType: "condition"`, action `utilize`, area `10-foot square`, condition `prone`, save `{ ability: "dexterity", dc: 10 }`, and top-level `saveDc: 10`.
+  - The same SDK smoke verified Potion of Invisibility use consumed `{ type: "itemQuantity", key: "itm_invisibility", amount: 1, remaining: 0 }` and returned an updated item with `quantity: 0`.
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Item Effect Wizard` with actor `act_mookc9k9kdjlq3l5`.
+  - Adding Potion of Invisibility exposed `item-itm_mookc9kx6fz508kq-effect` with formula `0`, `effectType: "condition"`, action `bonus`, duration `1 hour`, and condition `Invisible`.
+  - Rolling `item-itm_mookc9kx6fz508kq-effect` with `consumeResources: true`, `applyEffect: true`, and self-targeting consumed `{ type: "itemQuantity", key: "itm_mookc9kx6fz508kq", amount: 1, remaining: 0 }`, returned effect `{ type: "condition", conditionId: "invisible", before: [], after: ["invisible"] }`, persisted actor condition `{ id: "invisible" }`, persisted item `quantity: 0`, and posted chat body `Manual SRD Item Effect Wizard Potion of Invisibility Effect: 0 = 0`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-02 - D&D SRD monster save/condition action slice
+
+- Completed:
+  - Monster stat block actions with condition/effect metadata now expose `monster-{actionId}-effect` quick rolls in addition to existing monster attack and damage rolls.
+  - Giant Spider Web now exposes a `monster-web-effect` quick roll with formula `0`, Dexterity save DC `13`, Restrained condition metadata, range, recharge, and summary metadata.
+  - REST roll `applyEffect: true` can apply supported monster condition effects through the same permissioned target-actor update path as spell and item condition effects.
+- Verification:
+  - System SDK tests cover Giant Spider Web condition metadata, `monster-web-effect` sheet quick roll metadata, and `dnd5eSrdActionFormula` lookup for the monster effect id.
+  - API tests cover Giant Spider monster creation exposing `monster-web-effect`, roll-endpoint Web condition application, persisted target condition data, and chat roll behavior.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk lint`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api lint`.
+  - Direct SDK and built-API smokes verified monster condition-effect behavior because Vitest worker startup is blocked in this sandbox by `spawn EPERM`.
+- Manual API evidence:
+  - Direct SDK smoke verified `monster-web-effect` as formula `0`, `effectType: "condition"`, action `action`, range `60 ft.`, save `{ ability: "dexterity", dc: 13 }`, condition `Restrained`, recharge `5-6`, and `dnd5eSrdActionFormula(...) === "0"`.
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Web Spider` with actor `act_mookj90zmusu6m8e` and `Manual SRD Web Target` with actor `act_mookj91ge8x5g35z`.
+  - Rolling `monster-web-effect` with `applyEffect: true` and the target actor id returned effect `{ type: "condition", conditionId: "restrained", before: [], after: ["restrained"] }`, persisted target condition `{ id: "restrained" }`, and posted chat body `Manual SRD Web Spider Web Effect: 0 = 0`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Elf/Gnome/Halfling species lineage slice
+
+- Completed:
+  - Added Elf lineage origin automation for Drow, High Elf, and Wood Elf, including Drow 120 ft. Darkvision, Wood Elf 35 ft. Speed, High Elf compendium-backed Wizard cantrip selection, lineage cantrip/level-3/level-5 spell items, and `elfLineageLevel3`/`elfLineageLevel5` Long Rest free-cast resources.
+  - Added Gnome lineage origin automation for Forest Gnome and Rock Gnome, including Forest Gnome Minor Illusion, Speak with Animals proficiency-bonus free casts, `gnomeSpeakWithAnimals` Long Rest recovery, Rock Gnome Mending/Prestidigitation, clockwork-device metadata, and Gnomish Cunning save metadata.
+  - Added Halfling Luck, Brave, Halfling Nimbleness, and Naturally Stealthy quick rolls, plus browser action-list coverage for Elf, Gnome, and Halfling species traits.
+  - Added SRD spell entries used by those lineages: Dancing Lights, Detect Magic, Druidcraft, Faerie Fire, Longstrider, Mending, Minor Illusion, Misty Step, Pass without Trace, Prestidigitation, and Speak with Animals.
+- Verification:
+  - System SDK tests cover Drow, High Elf, Wood Elf, Forest Gnome, Rock Gnome, and Halfling origin/quick-roll behavior, Elf/Gnome free-resource consumption and Long Rest recovery, Gnomish Cunning save metadata, and invalid lineage/cantrip validation.
+  - API tests cover create-time `elfLineage`, `elfCantrip`, `gnomeLineage`, and `speciesSpellcastingAbility` payload handling for High Elf and Forest Gnome characters, Forest Gnome Speak with Animals free-cast consumption, and Halfling species quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts -t "applies SRD character origin choices"`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD High Elf` actor `act_mospahggawar9twl`, `Manual SRD Forest Gnome` actor `act_mospahh1huagwdxr`, and `Manual SRD Halfling` actor `act_mospahh7w7gler6k`.
+  - The High Elf smoke returned lineage `high-elf`, cantrip `minor-illusion`, and species quick-roll ids `species-elf-elven-lineage`, `species-elf-fey-ancestry`, and `species-elf-trance`.
+  - The Forest Gnome smoke returned lineage `forest-gnome`, resource `gnomeSpeakWithAnimals` as `{ current: 2, max: 2, recovery: "long" }`, and rolling Speak with Animals with `useFreeResource` consumed `{ type: "resource", key: "gnomeSpeakWithAnimals", label: "Gnome Speak with Animals", amount: 1, remaining: 1 }`.
+  - The Halfling smoke returned species quick-roll ids `species-halfling-luck`, `species-halfling-brave`, `species-halfling-nimbleness`, and `species-halfling-naturally-stealthy`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Fighter Champion subclass slice
+
+- Completed:
+  - Added SRD Champion subclass feature progression for Fighters at levels 3, 7, 10, 15, and 18, including Champion, Improved Critical, Remarkable Athlete, Additional Fighting Style, Heroic Warrior, Superior Critical, and Survivor.
+  - Added Champion quick rolls for `feature-champion-critical-range`, `feature-champion-remarkable-athlete`, `feature-champion-heroic-warrior`, and `feature-champion-survivor`.
+  - Added Improved Critical and Superior Critical metadata to weapon attack quick rolls, with `criticalHitOn` ranges `19-20` and `18-20`.
+  - Added Remarkable Athlete advantage metadata to Initiative and Athletics checks, Survivor rally/death-save metadata, and browser action-list coverage for the Champion feature quick rolls.
+- Verification:
+  - System SDK tests cover level-5, level-15, and level-18 Champion feature progression, quick-roll metadata, attack critical ranges, and no-resource Survivor action usage.
+  - API tests cover level-5 Fighter Champion quick rolls, Improved Critical weapon metadata, and roll-endpoint attack metadata.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts -t "exposes first-class SRD templates"`, `pnpm --filter @open-tabletop/api build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Champion Fighter` actor `act_mosqpvxswjbrizvt`.
+  - At level 5, the sheet returned Champion, Improved Critical, and Remarkable Athlete; Initiative `2d20kh1+1`; Athletics `2d20kh1+8`; `feature-champion-critical-range` as Improved Critical with `minimumD20: 19` and range `19-20`; `feature-champion-remarkable-athlete`; and Longsword Attack `criticalHitOn: "19-20"`.
+  - At level 15, the sheet returned Additional Fighting Style, Heroic Warrior, and Superior Critical; Longsword Attack `criticalHitOn: "18-20"` with `attacksPerAction: 3`; and `feature-champion-heroic-warrior`.
+  - At level 18, the sheet returned Survivor and `feature-champion-survivor` formula `7` with death-save advantage and `18-20` d20-counts-as-20 metadata.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Rogue Thief subclass slice
+
+- Completed:
+  - Added SRD Thief subclass feature progression for Rogues at levels 3, 9, 13, and 17, including Thief, Fast Hands, Second-Story Work, Supreme Sneak, Use Magic Device, and Thief's Reflexes.
+  - Added Thief quick rolls for `feature-thief-fast-hands`, `feature-thief-second-story-work`, `feature-thief-supreme-sneak`, `feature-thief-use-magic-device`, and `feature-thief-reflexes`.
+  - Added metadata for Fast Hands Bonus Action options, Second-Story Work climb/jump handling, Supreme Sneak stealth condition, Use Magic Device charge/attunement/scroll handling, and Thief's Reflexes first-round initiative timing.
+  - Added browser action-list coverage for the Thief subclass feature quick rolls.
+- Verification:
+  - System SDK tests cover level-5, level-13, and level-17 Thief feature progression, quick-roll formulas, metadata, and no-resource Thief's Reflexes action usage.
+  - API tests cover level-5 and level-17 Thief quick rolls and metadata without mutating the existing level-5 Rogue roll fixture.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts -t "exposes first-class SRD templates"`, `pnpm --filter @open-tabletop/api build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Thief Rogue` actor `act_mosrezlwlimvi6rf`.
+  - At level 5, the sheet returned Thief, Fast Hands, and Second-Story Work; `feature-thief-fast-hands` formula `0` with Bonus Action/Cunning Action metadata; and `feature-thief-second-story-work` formula `0` with `climbSpeedFt: 30`.
+  - At level 13, the sheet returned Supreme Sneak and Use Magic Device; `feature-thief-supreme-sneak` formula `0` with `stealthAdvantage: true` and `movementLimitFt: 15`; and `feature-thief-use-magic-device` formula `1d6` with `attunementLimit: 4` and no-charge-on-6 metadata.
+  - At level 17, the sheet returned Thief's Reflexes and `feature-thief-reflexes` formula `0` with first-round two-turn initiative metadata.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Cleric Life Domain subclass slice
+
+- Completed:
+  - Added SRD Life Domain subclass feature progression for Clerics at levels 3, 6, and 17, including Life Domain, Disciple of Life, Life Domain Spells, Preserve Life, Blessed Healer, and Supreme Healing.
+  - Added Life Domain quick rolls for `feature-life-disciple-of-life`, `feature-life-preserve-life`, `feature-life-blessed-healer`, and `feature-life-supreme-healing`.
+  - Added healing automation for Life Clerics: Disciple of Life adds `2 + spell slot level` to leveled healing spells, Preserve Life calculates `level * 5` and consumes Channel Divinity, Blessed Healer exposes self-healing metadata, and Supreme Healing maximizes healing dice while preserving flat bonuses.
+  - Added browser action-list coverage for the Life Domain feature quick rolls.
+- Verification:
+  - System SDK tests cover level-3, level-5, level-6, and level-17 Life Cleric feature progression, quick-roll formulas, Cure Wounds Life Domain healing bonuses, Supreme Healing dice maximization, and no-resource Disciple/Blessed action usage.
+  - API tests cover level-3, level-5, and level-17 Life Cleric quick rolls and Preserve Life roll-endpoint Channel Divinity consumption.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts -t "exposes first-class SRD templates"`, `pnpm --filter @open-tabletop/api build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Life Cleric` actor `act_moss42b9iy37c317`.
+  - At level 3, the sheet returned Life Domain, Disciple of Life, Life Domain Spells, and Preserve Life; `feature-life-disciple-of-life` formula `3`; `feature-life-preserve-life` formula `15`; and Cure Wounds formula `2d8+4+3`.
+  - At level 6, the sheet returned Blessed Healer; `feature-life-blessed-healer` formula `3`; Preserve Life formula `30`; and Cure Wounds formula `2d8+5+3`.
+  - At level 17, the sheet returned Supreme Healing; `feature-life-supreme-healing` formula `0` with `maximizeHealingDice: true`; Preserve Life formula `85`; and Cure Wounds formula `16+11+3`.
+  - Separate built-API smoke created `Manual SRD Preserve Life Cleric` actor `act_moss4lxkr6h0ckjl`; rolling `feature-life-preserve-life` at level 3 returned formula `15`, posted chat body `Manual SRD Preserve Life Cleric Preserve Life: 15 = 15`, and consumed Channel Divinity from `2` to `1`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Barbarian Berserker subclass slice
+
+- Completed:
+  - Added SRD Path of the Berserker subclass feature progression for Barbarians at levels 3, 6, 10, and 14, including Path of the Berserker, Frenzy, Mindless Rage, Retaliation, and Intimidating Presence.
+  - Added Berserker quick rolls for `feature-berserker-frenzy-damage`, `feature-berserker-mindless-rage`, `feature-berserker-retaliation`, and `feature-berserker-intimidating-presence`.
+  - Added Frenzy damage dice equal to the actor's Rage Damage bonus, Mindless Rage Charmed/Frightened immunity metadata, Retaliation reaction metadata, and Intimidating Presence Wisdom-save/emanation/recovery metadata.
+  - Added browser action-list coverage for the Berserker feature quick rolls.
+- Verification:
+  - System SDK tests cover level-3, level-6, level-10, and level-14 Berserker feature progression, quick-roll formulas, metadata, and no-resource Berserker action usage.
+  - API tests cover level-5 and level-14 Berserker quick rolls plus Frenzy and Intimidating Presence roll-endpoint metadata.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts -t "exposes first-class SRD templates"`, `pnpm --filter @open-tabletop/api build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Berserker Barbarian` actor `act_mossoc5uw0kkgmwp`.
+  - At level 3, the sheet returned Path of the Berserker and Frenzy; `feature-berserker-frenzy-damage` formula `2d6` with `diceEqualToRageDamageBonus: 2` and Rage/Reckless requirements.
+  - At level 6, the sheet returned Mindless Rage and `feature-berserker-mindless-rage` formula `0` with Charmed/Frightened immunity and condition-end metadata.
+  - At level 10, the sheet returned Retaliation; Frenzy scaled to `3d6`; and `feature-berserker-retaliation` formula `0` with Reaction and 5 ft. trigger metadata.
+  - At level 14, the sheet returned Intimidating Presence and `feature-berserker-intimidating-presence` formula `0` with 30 ft. Emanation, Wisdom save DC `22` for the advanced smoke actor, Frightened condition, Long Rest recovery, and Rage-spend restoration metadata.
+  - Rolling `feature-berserker-frenzy-damage` and `feature-berserker-intimidating-presence` through the built API both returned status `200` with formulas `3d6` and `0`, respectively.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Bard College of Lore subclass slice
+
+- Completed:
+  - Added SRD College of Lore subclass feature progression for Bards at levels 3, 6, and 14, including College of Lore, Bonus Proficiencies, Cutting Words, Magical Discoveries, and Peerless Skill.
+  - Added Lore quick rolls for `feature-lore-cutting-words`, `feature-lore-magical-discoveries`, and `feature-lore-peerless-skill`.
+  - Added Cutting Words and Peerless Skill Bardic Inspiration die formulas, Cutting Words Bardic Inspiration resource consumption, Magical Discoveries spell-source/max-slot metadata, and Peerless Skill conditional-expenditure metadata.
+  - Added browser action-list coverage for the College of Lore feature quick rolls.
+- Verification:
+  - System SDK tests cover level-3, level-6, and level-14 Lore Bard feature progression, quick-roll formulas, metadata, and Cutting Words resource consumption.
+  - API tests cover level-5 and level-14 Lore Bard quick rolls plus Cutting Words roll-endpoint Bardic Inspiration consumption.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts -t "exposes first-class SRD templates"`, `pnpm --filter @open-tabletop/api build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Lore Bard` actor `act_most73dd7ystx3cp`.
+  - At level 14, the sheet returned College of Lore, Bonus Proficiencies, Cutting Words, Magical Discoveries, and Peerless Skill.
+  - The sheet returned `feature-lore-cutting-words` formula `1d10` with Reaction, 60 ft. range, Bardic Inspiration resource, and subtract-die metadata; `feature-lore-magical-discoveries` formula `0` with two Cleric/Druid/Wizard spells and max spell level `7`; and `feature-lore-peerless-skill` formula `1d10` with conditional Bardic Inspiration expenditure metadata.
+  - Rolling `feature-lore-cutting-words` through the built API returned status `200`, formula `1d10`, and consumed Bardic Inspiration from `3` to `2`; rolling `feature-lore-peerless-skill` returned status `200` and formula `1d10`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Paladin Oath of Devotion subclass slice
+
+- Completed:
+  - Added SRD Oath of Devotion subclass feature progression for Paladins at levels 3, 7, 15, and 20, including Oath of Devotion, Oath of Devotion Spells, Sacred Weapon, Aura of Devotion, Smite of Protection, and Holy Nimbus.
+  - Added Devotion quick rolls for `feature-devotion-sacred-weapon`, `feature-devotion-aura`, `feature-devotion-smite-of-protection`, and `feature-devotion-holy-nimbus-damage`.
+  - Added Sacred Weapon Channel Divinity consumption and Charisma attack-bonus metadata, Aura of Devotion Charmed immunity metadata, Smite of Protection Divine Smite rider metadata, and Holy Nimbus radiant-aura/resource/restore metadata.
+  - Split Cleric-only Channel Divinity quick rolls from generic Channel Divinity resources so Paladins no longer expose Divine Spark or Turn Undead.
+  - Added browser action-list coverage for the Oath of Devotion feature quick rolls.
+- Verification:
+  - System SDK tests cover level-5, level-7, level-15, and level-20 Devotion Paladin feature progression, quick-roll formulas, metadata, Divine Smite Smite of Protection metadata, and Sacred Weapon/Holy Nimbus resource consumption.
+  - API tests cover level-5 and level-20 Devotion Paladin quick rolls plus Sacred Weapon and Holy Nimbus roll-endpoint resource consumption.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts -t "exposes first-class SRD templates"`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Devotion Paladin` actor `act_mosts0jde50rdyje`.
+  - At level 20, the sheet returned Oath of Devotion, Sacred Weapon, Aura of Devotion, Smite of Protection, and Holy Nimbus.
+  - The sheet returned `feature-devotion-sacred-weapon` formula `0` with Channel Divinity resource, attack bonus `11`, Radiant damage choice, and light metadata; `feature-devotion-aura` formula `0` with Charmed immunity; `feature-devotion-smite-of-protection` formula `0` with Half Cover Divine Smite rider metadata; and `feature-devotion-holy-nimbus-damage` formula `17` with Radiant damage, Holy Nimbus resource, Fiend/Undead save advantage metadata, and level-5 spell-slot restore metadata.
+  - Rolling `feature-devotion-sacred-weapon` through the built API returned status `200`, formula `0`, and consumed Channel Divinity from `2` to `1`; rolling `feature-devotion-holy-nimbus-damage` returned status `200`, formula `17`, and consumed Holy Nimbus from `1` to `0`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Wizard Evoker subclass slice
+
+- Completed:
+  - Added SRD Evoker subclass feature progression for Wizards at levels 3, 6, 10, and 14, including Evoker, Evocation Savant, Potent Cantrip, Sculpt Spells, Empowered Evocation, and Overchannel.
+  - Added Evoker quick rolls for `feature-evoker-potent-cantrip`, `feature-evoker-sculpt-spells`, `feature-evoker-empowered-evocation`, and `feature-evoker-overchannel`.
+  - Added Empowered Evocation damage-formula automation for Wizard Evocation spell damage, Sculpt Spells and Potent Cantrip save metadata, and stateful Overchannel Long Rest resource consumption.
+  - Added browser action-list coverage for the Evoker feature quick rolls.
+- Verification:
+  - System SDK tests cover level-14 Evoker feature progression, quick-roll metadata, Magic Missile Empowered Evocation damage, upcast damage formulas, and Overchannel resource consumption.
+  - API tests cover level-14 Evoker advancement, Fire Bolt Empowered Evocation damage, Evoker quick-roll metadata, and Overchannel roll-endpoint resource consumption.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test`, `pnpm --filter @open-tabletop/api build`, `pnpm --filter @open-tabletop/api test`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Evoker Wizard` actor `act_mosuifjg1a6ub6kt`.
+  - At level 14, the sheet returned Evoker, Potent Cantrip, Sculpt Spells, Empowered Evocation, and Overchannel, with resources `{ arcaneRecovery: { current: 1, max: 1, recovery: "long" }, overchannel: { current: 1, max: 1, recovery: "long" } }`.
+  - The sheet returned `feature-evoker-potent-cantrip` with save DC `22`, `feature-evoker-sculpt-spells` with `1 + spell level` protection metadata, `feature-evoker-empowered-evocation` formula `9`, `feature-evoker-overchannel` with Long Rest resource and maximized-damage metadata, and Fire Bolt damage `3d10+9`.
+  - Rolling `feature-evoker-overchannel` through the built API returned status `200`, formula `0`, and consumed Overchannel from `1` to `0`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Ranger Hunter subclass slice
+
+- Completed:
+  - Added SRD Hunter subclass feature progression for Rangers at levels 3, 7, 11, and 15, including Hunter, Hunter's Lore, Hunter's Prey, Defensive Tactics, Superior Hunter's Prey, and Superior Hunter's Defense.
+  - Added Hunter quick rolls for `feature-hunter-lore`, `feature-hunter-prey`, `feature-hunter-defensive-tactics`, `feature-hunter-superior-prey`, and `feature-hunter-superior-defense`.
+  - Added SRD 5.2.1 Hunter metadata for Hunter's Mark target lore, rest-swappable Hunter's Prey and Defensive Tactics choices, Superior Hunter's Prey secondary Hunter's Mark damage, and Superior Hunter's Defense reaction resistance.
+  - Added browser action-list coverage for the Hunter feature quick rolls.
+- Verification:
+  - System SDK tests cover level-15 Hunter feature progression, quick-roll metadata, Hunter's Prey and Superior Hunter's Prey formulas, and no-resource Superior Hunter's Defense action use.
+  - API tests cover level-15 Hunter advancement, Hunter quick-roll metadata, and the Superior Hunter's Defense roll endpoint.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api build`, `pnpm --filter @open-tabletop/api test`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Hunter Ranger` actor `act_mosuuo9da30l22ik`.
+  - At level 15, the sheet returned Hunter, Hunter's Lore, Hunter's Prey, Defensive Tactics, Superior Hunter's Prey, and Superior Hunter's Defense.
+  - The level-15 sheet exposed `feature-hunter-lore` formula `0`, `feature-hunter-prey` formula `1d8`, `feature-hunter-defensive-tactics` formula `0`, `feature-hunter-superior-prey` formula `1d6`, and `feature-hunter-superior-defense` formula `0`.
+  - Hunter metadata included Hunter's Lore immunity/resistance/vulnerability reveal data, Hunter's Prey Colossus Slayer/Horde Breaker choices, Defensive Tactics Escape the Horde/Multiattack Defense choices, Superior Hunter's Prey secondary target `{ rangeFt: 30, requiresSight: true }`, and Superior Hunter's Defense reaction resistance.
+  - Rolling `feature-hunter-superior-defense` through the built API returned status `200`, formula `0`, and consumed no resources.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Druid Circle of the Moon subclass slice
+
+- Completed:
+  - Added SRD Circle of the Moon subclass feature progression for Druids at levels 3, 6, 10, and 14, including Circle of the Moon, Circle Forms, Circle of the Moon Spells, Improved Circle Forms, Moonlight Step, and Lunar Form.
+  - Added Moon Druid quick rolls for `feature-moon-circle-forms`, `feature-moon-improved-circle-forms`, `feature-moon-moonlight-step`, and `feature-moon-lunar-form-damage`.
+  - Updated Wild Shape metadata for Moon Druids with Circle Forms Challenge Rating, Armor Class floor, triple-level temporary HP, Circle of the Moon spell metadata, Improved Circle Forms Radiant damage and Concentration-save metadata, Moonlight Step resource/teleport/advantage metadata, and Lunar Form Radiant damage/shared teleport metadata.
+  - Added stateful `moonlightStep` Long Rest resource creation and consumption, plus spell-slot restoration metadata for Moonlight Step uses.
+  - Added browser action-list coverage for the Moon Druid feature quick rolls.
+- Verification:
+  - System SDK tests cover level-14 Moon Druid feature progression, Wild Shape Circle Forms metadata, Improved Circle Forms metadata, Moonlight Step metadata/resource consumption/restoration, and Lunar Form damage formula.
+  - API tests cover level-14 Moon Druid advancement, Moon feature quick-roll metadata, and Moonlight Step roll-endpoint resource consumption.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test`, `pnpm --filter @open-tabletop/api build`, `pnpm --filter @open-tabletop/api test`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Moon Druid` actor `act_mosv7mni50h4aj98`.
+  - At level 14, the sheet returned Circle of the Moon, Circle Forms, Circle of the Moon Spells, Improved Circle Forms, Moonlight Step, and Lunar Form.
+  - The level-14 sheet exposed Wild Shape with max CR `4`, AC floor `22`, temporary HP `42`, Circle of the Moon spells `cure-wounds`, `moonbeam`, `starry-wisp`, `vampiric-touch`, `fount-of-moonlight`, and `dawn`; `feature-moon-circle-forms` formula `0`; `feature-moon-improved-circle-forms` formula `0`; `feature-moon-moonlight-step` formula `0`; and `feature-moon-lunar-form-damage` formula `2d10`.
+  - The level-14 actor had resources `{ wildShape: { current: 2, max: 3, recovery: "short" }, wildResurgence: { current: 1, max: 1, recovery: "long" }, moonlightStep: { current: 7, max: 9, recovery: "long" } }`.
+  - Rolling `feature-moon-moonlight-step` through the built API returned status `200`, formula `0`, and consumed Moonlight Step from `7` to `6`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Warlock Fiend Patron subclass slice
+
+- Completed:
+  - Added SRD Fiend Patron subclass feature progression for Warlocks at levels 3, 6, 10, and 14, including Fiend Patron, Dark One's Blessing, Fiend Spells, Dark One's Own Luck, Fiendish Resilience, and Hurl Through Hell.
+  - Added Fiend Patron quick rolls for `feature-fiend-dark-ones-blessing`, `feature-fiend-dark-ones-own-luck`, `feature-fiendish-resilience`, and `feature-fiend-hurl-through-hell-damage`.
+  - Added Dark One's Blessing temporary-HP formula and Fiend Spells metadata; Dark One's Own Luck `1d10` resource metadata; Fiendish Resilience non-Force damage resistance choice metadata; and Hurl Through Hell `8d10` Psychic damage, Charisma save, Incapacitated, Fiend exclusion, and Pact Magic restoration metadata.
+  - Added stateful `fiendLuck` and `hurlThroughHell` Long Rest resources, plus Hurl Through Hell resource consumption and Pact Magic spell-slot restoration behavior.
+  - Added browser action-list coverage for the Fiend Patron feature quick rolls.
+- Verification:
+  - System SDK tests cover level-14 Fiend Warlock feature progression, Fiend quick-roll metadata, Dark One's Own Luck consumption, Hurl Through Hell consumption, and Pact Magic restoration.
+  - API tests cover level-14 Fiend Warlock advancement, Fiend feature quick-roll metadata, and Hurl Through Hell roll-endpoint resource consumption.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test`, `pnpm --filter @open-tabletop/api build`, `pnpm --filter @open-tabletop/api test`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Fiend Warlock` actor `act_mosvovye9dkyhd6k`.
+  - At level 14, the sheet returned Fiend Patron, Dark One's Blessing, Fiend Spells, Dark One's Own Luck, Fiendish Resilience, and Hurl Through Hell.
+  - The level-14 sheet exposed `feature-fiend-dark-ones-blessing` formula `23` with Fiend Spells for Warlock levels 3, 5, 7, and 9; `feature-fiend-dark-ones-own-luck` formula `1d10`; `feature-fiendish-resilience` formula `0`; and `feature-fiend-hurl-through-hell-damage` formula `8d10` with Psychic damage and Charisma save DC `22`.
+  - The level-14 actor had resources `{ magicalCunning: { current: 1, max: 1, recovery: "long" }, fiendLuck: { current: 5, max: 9, recovery: "long" }, hurlThroughHell: { current: 1, max: 1, recovery: "long" } }` and Pact Magic spell slots `{ level5: { current: 2, max: 3, recovery: "short" } }`.
+  - Rolling `feature-fiend-hurl-through-hell-damage` through the built API returned status `200`, formula `8d10`, and consumed Hurl Through Hell from `1` to `0`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Sorcerer Draconic Sorcery subclass slice
+
+- Completed:
+  - Added SRD Draconic Sorcery subclass feature progression for Sorcerers at levels 3, 6, 14, and 18, including Draconic Sorcery, Draconic Resilience, Draconic Spells, Elemental Affinity, Dragon Wings, and Dragon Companion.
+  - Added Draconic quick rolls for `feature-draconic-resilience`, `feature-draconic-elemental-affinity`, `feature-draconic-wings`, and `feature-draconic-companion`.
+  - Added Draconic Resilience hit-point maximum and unarmored Armor Class metadata, Draconic Spells metadata, Elemental Affinity damage/resistance metadata, Dragon Wings fly-speed/resource/restoration metadata, and Dragon Companion Summon Dragon metadata.
+  - Added stateful `dragonWings` and `dragonCompanion` Long Rest resources, Dragon Wings resource consumption, Dragon Companion resource consumption, and Dragon Wings Sorcery Point restoration behavior.
+  - Added browser action-list coverage for the Draconic Sorcery feature quick rolls.
+- Verification:
+  - System SDK tests cover level-18 Draconic Sorcerer feature progression, Draconic Resilience Armor Class automation, Draconic quick-roll metadata, Dragon Wings consumption, Dragon Companion consumption, and Dragon Wings Sorcery Point restoration.
+  - API tests cover level-18 Draconic Sorcerer advancement, Draconic feature quick-roll metadata, Draconic Resilience Armor Class details, and Dragon Wings roll-endpoint resource consumption.
+  - Ran `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/system-sdk test`, `pnpm --filter @open-tabletop/api build`, `pnpm --filter @open-tabletop/api test`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Draconic Sorcerer` actor `act_mosw2u2puokexcpb`.
+  - At level 18, the sheet returned Draconic Sorcery, Draconic Resilience, Draconic Spells, Elemental Affinity, Dragon Wings, and Dragon Companion.
+  - The level-18 sheet returned Draconic Resilience Armor Class details with `armorName` `Draconic Resilience` and value `23`.
+  - The level-18 sheet exposed `feature-draconic-resilience` formula `0` with hit-point maximum bonus `18`, unarmored Armor Class `23`, and Draconic Spells for Sorcerer levels 3, 5, 7, and 9; `feature-draconic-elemental-affinity` formula `11` with Acid, Cold, Fire, Lightning, and Poison choices; `feature-draconic-wings` formula `0` with 60 ft. fly speed and 3-Sorcery-Point restoration metadata; and `feature-draconic-companion` formula `0` with Summon Dragon free-casting and no-Concentration option metadata.
+  - The level-18 actor had resources `{ innateSorcery: { current: 2, max: 2, recovery: "long" }, sorceryPoints: { current: 2, max: 18, recovery: "long" }, sorcerousRestoration: { current: 1, max: 1, recovery: "long" }, dragonWings: { current: 1, max: 1, recovery: "long" }, dragonCompanion: { current: 1, max: 1, recovery: "long" } }`.
+  - Rolling `feature-draconic-wings` through the built API returned status `200`, formula `0`, and consumed Dragon Wings from `1` to `0`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Monk Warrior of the Open Hand subclass slice
+
+- Completed:
+  - Added SRD Warrior of the Open Hand subclass feature progression for Monks at levels 3, 6, 11, and 17, including Warrior of the Open Hand, Open Hand Technique, Wholeness of Body, Fleet Step, and Quivering Palm.
+  - Added Open Hand quick rolls for `feature-open-hand-technique`, `feature-open-hand-wholeness-of-body`, `feature-open-hand-fleet-step`, and `feature-open-hand-quivering-palm-damage`.
+  - Added Open Hand Technique Flurry of Blows rider metadata for Addle, Push, and Topple; Wholeness of Body Martial Arts die healing and Long Rest resource metadata; Fleet Step follow-up Step of the Wind metadata; and Quivering Palm Focus cost, duration, save, Force damage, and active-target-limit metadata.
+  - Added stateful `wholenessOfBody` Long Rest resource creation and consumption plus Quivering Palm 4-Focus consumption.
+  - Added browser action-list coverage for the Open Hand feature quick rolls.
+- Verification:
+  - System SDK tests cover level-5 Open Hand Technique metadata, level-17 Open Hand feature progression, Wholeness of Body/Fleet Step/Quivering Palm quick-roll metadata, Wholeness of Body resource consumption, Quivering Palm Focus consumption, and Long Rest restoration.
+  - API tests cover level-5 Open Hand Technique exposure, level-17 Open Hand feature progression and quick-roll metadata, Open Hand Technique no-resource roll behavior, Wholeness of Body roll-endpoint resource consumption, and Quivering Palm roll-endpoint Focus consumption.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/web build`.
+- Manual API evidence:
+  - Built-API smoke with `apps/api/dist`, `MemoryStateStore`, and `NODE_ENV=test` created `Manual SRD Open Hand Monk` actor `act_moswje7cxgaopmfo`.
+  - At level 17 after Long Rest, the sheet returned Warrior of the Open Hand, Open Hand Technique, Wholeness of Body, Fleet Step, and Quivering Palm with resources `{ focus: { current: 17, max: 17, recovery: "short" }, uncannyMetabolism: { current: 1, max: 1, recovery: "long" }, wholenessOfBody: { current: 2, max: 2, recovery: "long" } }`.
+  - The level-17 sheet exposed `feature-open-hand-technique` formula `0` with Addle, Push DC `16` Strength, and Topple DC `16` Dexterity metadata; `feature-open-hand-wholeness-of-body` formula `1d12+2`; `feature-open-hand-fleet-step` formula `0`; and `feature-open-hand-quivering-palm-damage` formula `10d12` with Focus cost `4`, Constitution save DC `16`, Force damage, and 17-day setup duration metadata.
+  - Rolling `feature-open-hand-wholeness-of-body` through the built API returned status `200`, formula `1d12+2`, and consumed Wholeness of Body from `2` to `1`.
+  - Rolling `feature-open-hand-quivering-palm-damage` through the built API returned status `200`, formula `10d12`, and consumed Focus from `17` to `13`.
+  - Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Specter and Wraith incorporeal undead slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `42` unique SRD stat blocks exposed as `43` threat ids to `44` unique SRD stat blocks exposed as `45` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Specter stat block as a Medium CR `1` / `200 XP` incorporeal undead with AC `12`, HP `22`, fly-hover movement, broad damage resistances, incorporeal immunities, Incorporeal Movement, Sunlight Sensitivity, and Life Drain.
+  - Added the SRD 5.2.1 Wraith stat block as a Medium or Small CR `5` / `1,800 XP` incorporeal undead with AC `13`, HP `67`, fly-hover movement, broad damage resistances, incorporeal immunities, Incorporeal Movement, Sunlight Sensitivity, Life Drain, and Create Specter.
+  - Specter and Wraith Life Drain expose attack/damage quick rolls with Necrotic damage and Hit Point maximum decrease summary metadata; Wraith Create Specter exposes `monster-create-specter-effect` utility metadata for raising a controlled Specter from a recently dead Humanoid corpse.
+- Verification:
+  - System SDK tests verify Specter and Wraith threat metadata, Wraith level-5 deadly encounter planning, Wraith stat-block actor data, Life Drain quick rolls, Create Specter effect metadata, and action formulas for Life Drain and Create Specter.
+  - API tests verify Specter and Wraith threat listing, Wraith monster actor creation, HP/AC/CR/XP payload, and returned Life Drain/Create Specter quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD Wraith` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; response status was `200` and actor id was `act_mot04ec7hktuahid`.
+  - The built API returned HP `{ current: 67, max: 67 }`, AC `13`, CR `5`, XP `1,800`, and traits `Damage Resistances`, `Incorporeal Immunities`, `Incorporeal Movement`, and `Sunlight Sensitivity`.
+  - Returned Wraith quick rolls were `monster-life-drain-attack` as `1d20+6`, `monster-life-drain-damage` as `4d8+3`, and `monster-create-specter-effect` as `0`.
+  - `monster-life-drain-damage` carried action `action`, range `reach 5 ft.`, damage type `necrotic`, and Hit Point maximum decrease summary metadata.
+  - `monster-create-specter-effect` carried utility effect metadata, action `action`, range `10 ft.; Humanoid corpse dead no longer than 1 minute`, and the controlled-Specter effect summary.
+  - Rolling `monster-life-drain-damage` through the built API returned status `200`, formula `4d8+3`, and total `19`; rolling `monster-create-specter-effect` returned status `200`, formula `0`, and total `0`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD Xorn earth-glide elemental slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `44` unique SRD stat blocks exposed as `45` threat ids to `45` unique SRD stat blocks exposed as `46` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Xorn stat block as a Medium CR `5` / `1,800 XP` elemental with AC `19`, HP `84`, Burrow Speed, Poison immunity, Paralyzed/Petrified/Poisoned immunity, Earth Glide, Treasure Sense, Bite, Claw, Multiattack, and Charge.
+  - Xorn Bite and Claw expose attack/damage quick rolls, and Charge exposes `monster-charge-effect` utility metadata for bonus-action straight-line movement toward a sensed enemy.
+- Verification:
+  - System SDK tests verify Xorn threat metadata, level-5 deadly encounter planning, stat-block actor data, Bite/Claw quick rolls, Charge effect metadata, and action formulas for Bite, Claw, and Charge.
+  - API tests verify Xorn threat listing, monster actor creation, HP/AC/CR/XP payload, and returned Bite/Claw/Charge quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD Xorn` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; response status was `200` and actor id was `act_mot0emtsg2ihf3ye`.
+  - The built API returned HP `{ current: 84, max: 84 }`, AC `19`, CR `5`, XP `1,800`, and traits `Elemental Immunities`, `Earth Glide`, and `Treasure Sense`.
+  - Returned Xorn quick rolls were `monster-bite-attack` as `1d20+6`, `monster-bite-damage` as `4d6+3`, `monster-claw-attack` as `1d20+6`, `monster-claw-damage` as `1d10+3`, and `monster-charge-effect` as `0`.
+  - `monster-charge-effect` carried utility effect metadata, action `bonusAction`, range `Speed or Burrow Speed`, and the straight-line movement effect summary.
+  - Rolling `monster-bite-damage` through the built API returned status `200`, formula `4d6+3`, and total `16`; rolling `monster-charge-effect` returned status `200`, formula `0`, and total `0`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD CR 5 elemental quartet slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `45` unique SRD stat blocks exposed as `46` threat ids to `49` unique SRD stat blocks exposed as `50` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Air Elemental, Earth Elemental, Fire Elemental, and Water Elemental stat blocks as Large CR `5` / `1,800 XP` elementals with SRD AC, HP, speeds, senses, language, trait, immunity/resistance/vulnerability summaries, and action metadata.
+  - Air Elemental exposes Thunderous Slam attack/damage quick rolls and Whirlwind damage with Strength save DC `13`, Prone, push, recharge `4-6`, and half-damage success metadata.
+  - Earth Elemental exposes Slam and Rock Launch attack/damage quick rolls plus Earth Glide, Siege Monster, Thunder Vulnerability, and Rock Launch Prone metadata.
+  - Fire Elemental exposes Burn attack/damage quick rolls plus Fire Aura, Fire Form, Illumination, Water Susceptibility, and burning-target summary metadata.
+  - Water Elemental exposes Slam attack/damage quick rolls and Whelm damage with Strength save DC `15`, Grappled/Restrained/suffocating summary, recharge `4-6`, and half-damage success metadata.
+- Verification:
+  - System SDK tests verify the four elemental threat ids, stat-block metadata, level-5 Air Elemental encounter planning, actor HP/AC/CR/XP payloads, trait/action metadata, quick-roll ids, and Whirlwind/Rock Launch/Burn/Whelm formulas.
+  - API tests verify the four elemental threat listings, monster actor creation, HP/AC/CR/XP payloads, and returned action quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD Air Elemental`, `Manual SRD Earth Elemental`, `Manual SRD Fire Elemental`, and `Manual SRD Water Elemental` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot0sg2ung4mwbas` for Air Elemental, `act_mot0sg3da1molxfe` for Earth Elemental, `act_mot0sg3ixn5uyfja` for Fire Elemental, and `act_mot0sg3nnbu7a6ys` for Water Elemental.
+  - The built API returned Air Elemental HP `{ current: 90, max: 90 }`, AC `15`, CR `5`, XP `1,800`; Earth Elemental HP `{ current: 147, max: 147 }`, AC `17`, CR `5`, XP `1,800`; Fire Elemental HP `{ current: 93, max: 93 }`, AC `13`, CR `5`, XP `1,800`; and Water Elemental HP `{ current: 114, max: 114 }`, AC `14`, CR `5`, XP `1,800`.
+  - Rolling representative actions through the built API returned status `200`: Air Elemental `monster-whirlwind-damage` formula `4d10+2`, total `22`; Earth Elemental `monster-rock-launch-damage` formula `1d6+5`, total `7`; Fire Elemental `monster-burn-damage` formula `2d6+3`, total `7`; and Water Elemental `monster-whelm-damage` formula `4d8+4`, total `19`.
+  - Returned quick-roll metadata preserved Whirlwind Strength save DC `13`, Prone, recharge `4-6`, and push summary; Rock Launch Prone summary; Burn burning-target summary; and Whelm Strength save DC `15`, Grappled, recharge `4-6`, and Restrained/suffocating ongoing-damage summary.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD petrifying monstrosity slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `49` unique SRD stat blocks exposed as `50` threat ids to `53` unique SRD stat blocks exposed as `54` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Basilisk, Cockatrice, Manticore, and Minotaur of Baphomet stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills where present, and action metadata.
+  - Basilisk exposes Bite attack/damage quick rolls and Petrifying Gaze condition-effect metadata with Constitution save DC `12`, Restrained/Petrified summary, and recharge `4-6`.
+  - Cockatrice exposes Petrifying Bite attack/damage quick rolls with Constitution save DC `11`, Restrained/Petrified-for-24-hours summary metadata, and Petrified immunity trait metadata.
+  - Manticore exposes Rend and Tail Spike attack/damage quick rolls, including the SRD `100/200 ft.` Tail Spike range.
+  - Minotaur of Baphomet exposes Abyssal Glaive and Gore attack/damage quick rolls with Necrotic rider damage, Gore Prone metadata, recharge `5-6`, and charge extra-damage summary metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, Basilisk encounter planning, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/condition/recharge metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD Basilisk`, `Manual SRD Cockatrice`, `Manual SRD Manticore`, and `Manual SRD Minotaur of Baphomet` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot14dq6enns324i` for Basilisk, `act_mot14dqqcbv12euv` for Cockatrice, `act_mot14dqveu1dkswd` for Manticore, and `act_mot14dr1jpmzemly` for Minotaur of Baphomet.
+  - The built API returned Basilisk HP `{ current: 52, max: 52 }`, AC `15`, CR `3`, XP `700`; Cockatrice HP `{ current: 22, max: 22 }`, AC `11`, CR `1/2`, XP `100`; Manticore HP `{ current: 68, max: 68 }`, AC `14`, CR `3`, XP `700`; and Minotaur of Baphomet HP `{ current: 85, max: 85 }`, AC `14`, CR `3`, XP `700`.
+  - Rolling representative actions through the built API returned status `200`: Basilisk `monster-petrifying-gaze-effect` formula `0`, total `0`; Cockatrice `monster-petrifying-bite-damage` formula `1d4+1`, total `5`; Manticore `monster-tail-spike-damage` formula `1d8+3`, total `5`; and Minotaur of Baphomet `monster-gore-damage` formula `4d6+4`, total `16`.
+  - Returned quick-roll metadata preserved Basilisk Petrifying Gaze Constitution save DC `12`, Restrained, recharge `4-6`, and Petrified/reflection summary; Cockatrice Petrifying Bite Constitution save DC `11`, Restrained, and Petrified-for-24-hours summary; and Minotaur Gore Prone, recharge `5-6`, and charge extra-damage summary.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD corrosion and fire-aura monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `53` unique SRD stat blocks exposed as `54` threat ids to `57` unique SRD stat blocks exposed as `58` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Rust Monster, Sahuagin Warrior, Salamander, and Satyr stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills where present, traits, and action metadata.
+  - Rust Monster exposes Bite attack/damage quick rolls plus Antennae, Destroy Metal, and Reflexive Antennae utility-effect metadata with Dexterity save DC `11`, metal penalty summary, and reaction metadata.
+  - Sahuagin Warrior exposes Claw attack/damage quick rolls, Blood Frenzy and aquatic trait metadata, and Aquatic Charge bonus-action utility metadata.
+  - Salamander exposes Flame Spear attack/damage quick rolls, Fire Aura/Cold Vulnerability/Fire Immunity trait metadata, and Constrict damage metadata with Strength save DC `15`, Grappled condition, and Restrained summary.
+  - Satyr exposes Hooves attack/damage quick rolls with push summary metadata, Mockery psychic damage with Wisdom save DC `12`, and Magic Resistance trait metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/condition/effect metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, `pnpm --filter @open-tabletop/api build`, and `git diff --check`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD Rust Monster`, `Manual SRD Sahuagin Warrior`, `Manual SRD Salamander`, and `Manual SRD Satyr` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot1ii1wg28hvaxs` for Rust Monster, `act_mot1ii2iyj02gqtl` for Sahuagin Warrior, `act_mot1ii2nhr1526cs` for Salamander, and `act_mot1ii2ss7gf43qg` for Satyr.
+  - The built API returned Rust Monster HP `{ current: 33, max: 33 }`, AC `14`, CR `1/2`, XP `100`; Sahuagin Warrior HP `{ current: 22, max: 22 }`, AC `12`, CR `1/2`, XP `100`; Salamander HP `{ current: 90, max: 90 }`, AC `15`, CR `5`, XP `1,800`; and Satyr HP `{ current: 31, max: 31 }`, AC `13`, CR `1/2`, XP `100`.
+  - Rolling representative actions through the built API returned status `200`: Rust Monster `monster-antennae-effect` formula `0`, total `0`; Sahuagin Warrior `monster-aquatic-charge-effect` formula `0`, total `0`; Salamander `monster-constrict-damage` formula `2d6+4+2d6`, total `20`; and Satyr `monster-mockery-damage` formula `1d6+2`, total `8`.
+  - Returned quick-roll metadata preserved Rust Monster Antennae Dexterity save DC `11`, metal penalty effect, and Mending/destruction summary; Sahuagin Warrior Aquatic Charge bonus-action Swim Speed movement; Salamander Constrict Strength save DC `15`, Grappled, and Restrained summary; and Satyr Mockery Wisdom save DC `12` with Psychic damage metadata.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD shadow and guardian monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `57` unique SRD stat blocks exposed as `58` threat ids to `61` unique SRD stat blocks exposed as `62` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Shadow, Shambling Mound, Shield Guardian, and Sprite stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills where present, traits, and action metadata.
+  - Shadow exposes Draining Swipe attack/damage quick rolls with Strength-score drain summary metadata plus Shadow Stealth bonus-action utility metadata.
+  - Shambling Mound exposes Charged Tendril attack/damage quick rolls with pull summary metadata, Lightning Absorption trait metadata, and Engulf damage metadata with Strength save DC `15`, Grappled, Blinded/Restrained summary, ongoing Lightning damage, and escape DC `14`.
+  - Shield Guardian exposes Fist attack/damage quick rolls, Bound/Regeneration/Spell Storing trait metadata, and Protection reaction utility metadata for the amulet wearer's `+5` AC rider.
+  - Sprite exposes Needle Sword and Enchanting Bow attack/damage quick rolls, Charmed metadata, Heart Sight Charisma save DC `10` utility metadata, and Invisibility utility metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/condition/effect metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD shadow`, `Manual SRD shambling-mound`, `Manual SRD shield-guardian`, and `Manual SRD sprite` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot1xzc1ofuo19ih` for Shadow, `act_mot1xzci30ye3i7s` for Shambling Mound, `act_mot1xzcl99rgwq2r` for Shield Guardian, and `act_mot1xzcpv5o1u3tt` for Sprite.
+  - The built API returned Shadow HP `{ current: 27, max: 27 }`, AC `12`, CR `1/2`, XP `100`; Shambling Mound HP `{ current: 110, max: 110 }`, AC `15`, CR `5`, XP `1,800`; Shield Guardian HP `{ current: 142, max: 142 }`, AC `17`, CR `7`, XP `2,900`; and Sprite HP `{ current: 10, max: 10 }`, AC `15`, CR `1/4`, XP `50`.
+  - Rolling representative actions through the built API returned status `200`: Shadow `monster-draining-swipe-damage` formula `1d6+2`, total `5`; Shambling Mound `monster-engulf-damage` formula `3d6`, total `4`; Shield Guardian `monster-protection-effect` formula `0`, total `0`; and Sprite `monster-heart-sight-effect` formula `0`, total `0`.
+  - Returned quick-roll metadata preserved Shadow Draining Swipe Strength-drain summary; Shambling Mound Engulf Strength save DC `15`, Grappled, Blinded/Restrained, ongoing Lightning damage, and escape DC `14` summary; Shield Guardian Protection reaction `+5` AC effect; and Sprite Heart Sight Charisma save DC `10` plus automatic Celestial/Fiend/Undead failure summary.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD giants and fiend monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `61` unique SRD stat blocks exposed as `62` threat ids to `65` unique SRD stat blocks exposed as `66` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Stone Giant, Stone Golem, Storm Giant, and Succubus stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills where present, traits, and action metadata.
+  - Stone Giant exposes Stone Club and Boulder attack/damage quick rolls, Prone metadata, and Deflect Missile reaction damage metadata with Dexterity save DC `17` and recharge `5-6`.
+  - Stone Golem exposes Slam and Force Bolt attack/damage quick rolls, Construct Immunities, Immutable Form, Magic Resistance, and Slow bonus-action utility metadata with recharge `5-6`.
+  - Storm Giant exposes Storm Sword, Thunderbolt, and Lightning Storm quick rolls, Blinded/Deafened metadata, Dexterity save DC `18`, recharge `5-6`, Amphibious, and spellcasting summary metadata.
+  - Succubus exposes Fiendish Touch, Charm, Draining Kiss, and Shape-Shift quick rolls with Dominate Person summary metadata, Constitution save DC `15`, half-damage success metadata, HP-maximum decrease summary, and bonus-action Shape-Shift metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/condition/effect metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD stone-giant`, `Manual SRD stone-golem`, `Manual SRD storm-giant`, and `Manual SRD succubus` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot2a546dkvygl8r` for Stone Giant, `act_mot2a54qo9ye7r9x` for Stone Golem, `act_mot2a54uvi7dxgkr` for Storm Giant, and `act_mot2a54yf7w47xvw` for Succubus.
+  - The built API returned Stone Giant HP `{ current: 126, max: 126 }`, AC `17`, CR `7`, XP `2,900`; Stone Golem HP `{ current: 220, max: 220 }`, AC `18`, CR `10`, XP `5,900`; Storm Giant HP `{ current: 230, max: 230 }`, AC `16`, CR `13`, XP `10,000`; and Succubus HP `{ current: 71, max: 71 }`, AC `15`, CR `4`, XP `1,100`.
+  - Rolling representative actions through the built API returned status `200`: Stone Giant `monster-deflect-missile-damage` formula `1d10+6`, total `13`; Stone Golem `monster-slow-effect` formula `0`, total `0`; Storm Giant `monster-lightning-storm-damage` formula `10d10`, total `59`; and Succubus `monster-draining-kiss-damage` formula `3d8`, total `13`.
+  - Returned quick-roll metadata preserved Stone Giant Deflect Missile reaction/recharge/save metadata; Stone Golem Slow bonus-action utility/recharge metadata; Storm Giant Lightning Storm Dexterity save DC `18`, half-damage success, and recharge metadata; and Succubus Draining Kiss Constitution save DC `15`, half-damage success, and HP-maximum decrease summary.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD lycanthrope monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `65` unique SRD stat blocks exposed as `66` threat ids to `70` unique SRD stat blocks exposed as `71` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Werebear, Wereboar, Wererat, Weretiger, and Werewolf stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, gear, ability saves, skills where present, traits, and action metadata.
+  - Werebear exposes Bite curse save metadata with Constitution save DC `14`, Handaxe and Rend attack/damage quick rolls, and Shape-Shift utility metadata.
+  - Wereboar exposes Gore curse save metadata with Constitution save DC `12`, Javelin attack/damage quick rolls, Tusk Prone charge summary metadata, and Shape-Shift utility metadata.
+  - Wererat exposes Bite curse save metadata with Constitution save DC `11`, Scratch and Hand Crossbow attack/damage quick rolls, and Shape-Shift utility metadata.
+  - Weretiger exposes Bite curse save metadata with Constitution save DC `13`, Scratch and Longbow attack/damage quick rolls, Prowl bonus-action utility metadata, and Shape-Shift utility metadata.
+  - Werewolf exposes Pack Tactics trait metadata, Bite curse save metadata with Constitution save DC `12`, Scratch and Longbow attack/damage quick rolls, and Shape-Shift utility metadata.
+- Verification:
+  - System SDK tests verify the five new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/condition/effect metadata, and action formulas.
+  - API tests verify the five new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD werebear`, `Manual SRD wereboar`, `Manual SRD wererat`, `Manual SRD weretiger`, and `Manual SRD werewolf` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot2t7xreuhpb3z4` for Werebear, `act_mot2t7yccn38nd0h` for Wereboar, `act_mot2t7yhnud9lavv` for Wererat, `act_mot2t7ylu3t8egom` for Weretiger, and `act_mot2t7yr9glol2eh` for Werewolf.
+  - The built API returned Werebear HP `{ current: 135, max: 135 }`, AC `15`, CR `5`, XP `1,800`; Wereboar HP `{ current: 97, max: 97 }`, AC `15`, CR `4`, XP `1,100`; Wererat HP `{ current: 60, max: 60 }`, AC `13`, CR `2`, XP `450`; Weretiger HP `{ current: 120, max: 120 }`, AC `12`, CR `4`, XP `1,100`; and Werewolf HP `{ current: 71, max: 71 }`, AC `15`, CR `3`, XP `700`.
+  - Rolling representative actions through the built API returned status `200`: Werebear `monster-bite-damage` formula `2d12+4`, total `19`; Wereboar `monster-tusk-damage` formula `2d6+3`, total `10`; Wererat `monster-hand-crossbow-damage` formula `1d6+3`, total `6`; Weretiger `monster-prowl-effect` formula `0`, total `0`; and Werewolf `monster-bite-damage` formula `2d8+3`, total `12`.
+  - Returned sheets included the representative roll ids used for the smoke: `monster-bite-damage`, `monster-tusk-damage`, `monster-hand-crossbow-damage`, `monster-prowl-effect`, and `monster-bite-damage`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD white dragon monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `70` unique SRD stat blocks exposed as `71` threat ids to `74` unique SRD stat blocks exposed as `75` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 White Dragon Wyrmling, Young White Dragon, Adult White Dragon, and Ancient White Dragon stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills, Cold Immunity, Ice Walk, and action metadata.
+  - White Dragon Wyrmling exposes Rend attack/damage quick rolls and Cold Breath `5d8` with Constitution save DC `12`, half-damage success metadata, cold damage type, cone range, and recharge `5-6`.
+  - Young White Dragon exposes Rend attack/damage quick rolls and Cold Breath `9d8` with Constitution save DC `15`, half-damage success metadata, cold damage type, cone range, and recharge `5-6`.
+  - Adult White Dragon exposes Legendary Resistance, Rend attack/damage quick rolls, Cold Breath `12d8` with Constitution save DC `19`, and Legendary Actions utility metadata.
+  - Ancient White Dragon exposes Legendary Resistance, Rend attack/damage quick rolls, Cold Breath `14d8` with Constitution save DC `22`, and Legendary Actions utility metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/recharge metadata, legendary action metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `SRD White Dragon Wyrmling`, `SRD Young White Dragon`, `SRD Adult White Dragon`, and `SRD Ancient White Dragon` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot37qtim5kalf08` for White Dragon Wyrmling, `act_mot37qu38c0dxoh4` for Young White Dragon, `act_mot37qu88y1dstix` for Adult White Dragon, and `act_mot37qudiur1ydfk` for Ancient White Dragon.
+  - The built API returned White Dragon Wyrmling HP `{ current: 32, max: 32 }`, AC `16`, CR `2`, XP `450`; Young White Dragon HP `{ current: 123, max: 123 }`, AC `17`, CR `6`, XP `2,300`; Adult White Dragon HP `{ current: 200, max: 200 }`, AC `18`, CR `13`, XP `10,000`; and Ancient White Dragon HP `{ current: 333, max: 333 }`, AC `20`, CR `20`, XP `25,000`.
+  - Rolling representative actions through the built API returned status `200`: White Dragon Wyrmling `monster-cold-breath-damage` formula `5d8`, total `20`; Young White Dragon `monster-cold-breath-damage` formula `9d8`, total `34`; Adult White Dragon `monster-legendary-actions-effect` formula `0`, total `0`; and Ancient White Dragon `monster-cold-breath-damage` formula `14d8`, total `66`.
+  - Returned sheets included `monster-cold-breath-damage` for all four White Dragons and `monster-legendary-actions-effect` for Adult and Ancient White Dragons.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD black dragon monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `74` unique SRD stat blocks exposed as `75` threat ids to `86` unique SRD stat blocks exposed as `87` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Black Dragon Wyrmling, Young Black Dragon, Adult Black Dragon, and Ancient Black Dragon stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills, Acid Immunity, Amphibious, spellcasting summaries for adult/ancient dragons, and action metadata.
+  - Black Dragon Wyrmling exposes Rend attack/damage quick rolls and Acid Breath `5d8` with Dexterity save DC `11`, half-damage success metadata, acid damage type, line range, and recharge `5-6`.
+  - Young Black Dragon exposes Rend attack/damage quick rolls and Acid Breath `14d6` with Dexterity save DC `14`, half-damage success metadata, acid damage type, line range, and recharge `5-6`.
+  - Adult Black Dragon exposes Legendary Resistance, Spellcasting summary metadata, Rend attack/damage quick rolls, Acid Breath `12d8` with Dexterity save DC `18`, and Legendary Actions utility metadata.
+  - Ancient Black Dragon exposes Legendary Resistance, Spellcasting summary metadata, Rend attack/damage quick rolls, Acid Breath `15d8` with Dexterity save DC `22`, and Legendary Actions utility metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/recharge metadata, legendary action metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `SRD Black Dragon Wyrmling`, `SRD Young Black Dragon`, `SRD Adult Black Dragon`, and `SRD Ancient Black Dragon` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot3m0opei9t4nxj` for Black Dragon Wyrmling, `act_mot3m0pa35rrehtg` for Young Black Dragon, `act_mot3m0pfwvsdnmap` for Adult Black Dragon, and `act_mot3m0plqu2d24id` for Ancient Black Dragon.
+  - The built API returned Black Dragon Wyrmling HP `{ current: 33, max: 33 }`, AC `17`, CR `2`, XP `450`; Young Black Dragon HP `{ current: 127, max: 127 }`, AC `18`, CR `7`, XP `2,900`; Adult Black Dragon HP `{ current: 195, max: 195 }`, AC `19`, CR `14`, XP `11,500`; and Ancient Black Dragon HP `{ current: 367, max: 367 }`, AC `22`, CR `21`, XP `33,000`.
+  - Rolling representative actions through the built API returned status `200`: Black Dragon Wyrmling `monster-acid-breath-damage` formula `5d8`, total `27`; Young Black Dragon `monster-acid-breath-damage` formula `14d6`, total `44`; Adult Black Dragon `monster-legendary-actions-effect` formula `0`, total `0`; and Ancient Black Dragon `monster-acid-breath-damage` formula `15d8`, total `61`.
+  - Returned sheets included `monster-acid-breath-damage` for all four Black Dragons and `monster-legendary-actions-effect` for Adult and Ancient Black Dragons.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD blue dragon monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `78` unique SRD stat blocks exposed as `79` threat ids to `82` unique SRD stat blocks exposed as `83` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Blue Dragon Wyrmling, Young Blue Dragon, Adult Blue Dragon, and Ancient Blue Dragon stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills, Lightning Immunity, spellcasting summaries for adult/ancient dragons, and action metadata.
+  - Blue Dragon Wyrmling exposes Rend attack/damage quick rolls and Lightning Breath `6d6` with Dexterity save DC `12`, half-damage success metadata, lightning damage type, line range, and recharge `5-6`.
+  - Young Blue Dragon exposes Rend attack/damage quick rolls and Lightning Breath `10d10` with Dexterity save DC `16`, half-damage success metadata, lightning damage type, line range, and recharge `5-6`.
+  - Adult Blue Dragon exposes Legendary Resistance, Spellcasting summary metadata, Rend attack/damage quick rolls, Lightning Breath `11d10` with Dexterity save DC `19`, and Legendary Actions utility metadata.
+  - Ancient Blue Dragon exposes Legendary Resistance, Spellcasting summary metadata, Rend attack/damage quick rolls, Lightning Breath `16d10` with Dexterity save DC `23`, and Legendary Actions utility metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/recharge metadata, legendary action metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `SRD Blue Dragon Wyrmling`, `SRD Young Blue Dragon`, `SRD Adult Blue Dragon`, and `SRD Ancient Blue Dragon` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot43ch06lanmh3f` for Blue Dragon Wyrmling, `act_mot43chgc24v4m8l` for Young Blue Dragon, `act_mot43chkxw2h65go` for Adult Blue Dragon, and `act_mot43choemw1frl4` for Ancient Blue Dragon.
+  - The built API returned Blue Dragon Wyrmling HP `{ current: 65, max: 65 }`, AC `17`, CR `3`, XP `700`; Young Blue Dragon HP `{ current: 152, max: 152 }`, AC `18`, CR `9`, XP `5,000`; Adult Blue Dragon HP `{ current: 212, max: 212 }`, AC `19`, CR `16`, XP `15,000`; and Ancient Blue Dragon HP `{ current: 481, max: 481 }`, AC `22`, CR `23`, XP `50,000`.
+  - Rolling representative actions through the built API returned status `200`: Blue Dragon Wyrmling `monster-lightning-breath-damage` formula `6d6`, total `25`; Young Blue Dragon `monster-lightning-breath-damage` formula `10d10`, total `54`; Adult Blue Dragon `monster-legendary-actions-effect` formula `0`, total `0`; and Ancient Blue Dragon `monster-lightning-breath-damage` formula `16d10`, total `113`.
+  - Returned sheets included `monster-lightning-breath-damage` for all four Blue Dragons and `monster-legendary-actions-effect` for Adult and Ancient Blue Dragons.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD green dragon monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `82` unique SRD stat blocks exposed as `83` threat ids to `86` unique SRD stat blocks exposed as `87` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Green Dragon Wyrmling, Young Green Dragon, Adult Green Dragon, and Ancient Green Dragon stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills, Poison Immunity, Amphibious, spellcasting summaries for adult/ancient dragons, and action metadata.
+  - Green Dragon Wyrmling exposes Rend attack/damage quick rolls and Poison Breath `6d6` with Constitution save DC `11`, half-damage success metadata, poison damage type, cone range, and recharge `5-6`.
+  - Young Green Dragon exposes Rend attack/damage quick rolls and Poison Breath `12d6` with Constitution save DC `14`, half-damage success metadata, poison damage type, cone range, and recharge `5-6`.
+  - Adult Green Dragon exposes Legendary Resistance, Spellcasting summary metadata, Rend attack/damage quick rolls, Poison Breath `16d6` with Constitution save DC `18`, and Legendary Actions utility metadata.
+  - Ancient Green Dragon exposes Legendary Resistance, Spellcasting summary metadata, Rend attack/damage quick rolls, Poison Breath `22d6` with Constitution save DC `22`, and Legendary Actions utility metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/recharge metadata, legendary action metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `SRD Green Dragon Wyrmling`, `SRD Young Green Dragon`, `SRD Adult Green Dragon`, and `SRD Ancient Green Dragon` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot4dkdqsoq1inql` for Green Dragon Wyrmling, `act_mot4dkeby1aq4g6a` for Young Green Dragon, `act_mot4dkehi571itka` for Adult Green Dragon, and `act_mot4dkeocraecomk` for Ancient Green Dragon.
+  - The built API returned Green Dragon Wyrmling HP `{ current: 38, max: 38 }`, AC `17`, CR `2`, XP `450`; Young Green Dragon HP `{ current: 136, max: 136 }`, AC `18`, CR `8`, XP `3,900`; Adult Green Dragon HP `{ current: 207, max: 207 }`, AC `19`, CR `15`, XP `13,000`; and Ancient Green Dragon HP `{ current: 402, max: 402 }`, AC `21`, CR `22`, XP `41,000`.
+  - Rolling representative actions through the built API returned status `200`: Green Dragon Wyrmling `monster-poison-breath-damage` formula `6d6`, total `23`; Young Green Dragon `monster-poison-breath-damage` formula `12d6`, total `26`; Adult Green Dragon `monster-legendary-actions-effect` formula `0`, total `0`; and Ancient Green Dragon `monster-poison-breath-damage` formula `22d6`, total `64`.
+  - Returned sheets included `monster-poison-breath-damage` for all four Green Dragons and `monster-legendary-actions-effect` for Adult and Ancient Green Dragons.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD devil monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `86` unique SRD stat blocks exposed as `87` threat ids to `90` unique SRD stat blocks exposed as `91` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Lemure, Imp, Incubus, Invisible Stalker, Iron Golem, Bearded Devil, and Barbed Devil stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills where present, devil resistances/immunities, Magic Resistance where present, restoration traits, and action metadata.
+  - Lemure exposes Hellish Restoration metadata and Vile Slime attack/damage quick rolls with Poison damage.
+  - Imp exposes Magic Resistance, Sting attack/damage quick rolls, Invisibility utility metadata, and Shape-Shift utility metadata.
+  - Bearded Devil exposes Beard poison/healing-denial metadata and Infernal Glaive wound metadata with Constitution save DC `12`.
+  - Barbed Devil exposes Barbed Hide, Diabolical Restoration, Magic Resistance, Claws grapple metadata, Tail damage, and Hurl Flame quick rolls.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/effect metadata, condition metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `SRD lemure`, `SRD imp`, `SRD bearded-devil`, and `SRD barbed-devil` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot4tumrh6esgboj` for Lemure, `act_mot4tune7lmxl9kz` for Imp, `act_mot4tunl7cagjonv` for Bearded Devil, and `act_mot4tunri7h6m4jo` for Barbed Devil.
+  - The built API returned Lemure HP `{ current: 9, max: 9 }`, AC `9`, CR `0`, XP `10`; Imp HP `{ current: 21, max: 21 }`, AC `13`, CR `1`, XP `200`; Bearded Devil HP `{ current: 58, max: 58 }`, AC `13`, CR `3`, XP `700`; and Barbed Devil HP `{ current: 110, max: 110 }`, AC `15`, CR `5`, XP `1,800`.
+  - Rolling representative actions through the built API returned status `200`: Lemure `monster-vile-slime-damage` formula `1d4`, total `4`; Imp `monster-sting-damage` formula `1d6+3+2d6`, total `13`; Bearded Devil `monster-infernal-glaive-damage` formula `1d10+3`, total `6`; and Barbed Devil `monster-hurl-flame-damage` formula `5d6`, total `21`.
+  - Returned sheets included `monster-vile-slime-damage`, `monster-sting-damage`, `monster-invisibility-effect`, `monster-shape-shift-effect`, `monster-beard-damage`, `monster-infernal-glaive-damage`, `monster-claws-damage`, `monster-tail-damage`, and `monster-hurl-flame-damage` across the four devil actors.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD demon monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `90` unique SRD stat blocks exposed as `91` threat ids to `93` unique SRD stat blocks exposed as `94` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Dretch, Quasit, and Vrock stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills where present, demonic resistances/immunities, Magic Resistance where present, restoration traits, and action metadata.
+  - Dretch exposes Demonic Resistances, Demon Immunities, Rend attack/damage quick rolls, and Fetid Cloud save/effect metadata for Poisoned action denial.
+  - Quasit exposes Magic Resistance, Rend poison metadata, Invisibility, Scare save/effect metadata, and Shape-Shift utility metadata.
+  - Vrock exposes Demonic Restoration, Magic Resistance, Shred attack/damage quick rolls, Spores poison/recharge metadata, and Stunning Screech thunder/Stunned metadata.
+- Verification:
+  - System SDK tests verify the three new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/effect metadata, condition metadata, recharge metadata, and action formulas.
+  - API tests verify the three new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD Dretch`, `Manual SRD Quasit`, and `Manual SRD Vrock` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot5b283jgho7ypl` for Dretch, `act_mot5b28pouwqaxlq` for Quasit, and `act_mot5b28vjxy8i3ob` for Vrock.
+  - The built API returned Dretch HP `{ current: 18, max: 18 }`, AC `11`, CR `1/4`, XP `50`; Quasit HP `{ current: 25, max: 25 }`, AC `13`, CR `1`, XP `200`; and Vrock HP `{ current: 152, max: 152 }`, AC `15`, CR `6`, XP `2,300`.
+  - Rolling representative actions through the built API returned status `200`: Dretch `monster-fetid-cloud-effect` formula `0`, total `0`; Quasit `monster-scare-effect` formula `0`, total `0`; and Vrock `monster-stunning-screech-damage` formula `3d6`, total `16`.
+  - Returned sheets included `monster-rend-damage`, `monster-fetid-cloud-effect`, `monster-invisibility-effect`, `monster-scare-effect`, `monster-shape-shift-effect`, `monster-shred-damage`, `monster-spores-damage`, and `monster-stunning-screech-damage` across the three demon actors.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD greater devil monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `93` unique SRD stat blocks exposed as `94` threat ids to `107` unique SRD stat blocks exposed as `108` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Bone Devil, Chain Devil, Horned Devil, and Ice Devil stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills where present, devil resistances/immunities, Magic Resistance, Diabolical Restoration, and action metadata.
+  - Bone Devil exposes Claw attack/damage quick rolls and Infernal Sting poison/healing-denial metadata.
+  - Chain Devil exposes Chain grapple/restraint metadata, Conjure Infernal Chain fire/restraint metadata, and Unnerving Gaze reaction save/effect metadata.
+  - Horned Devil exposes Searing Fork, Hurl Flame, and Infernal Tail wound metadata with Dexterity save DC `17`.
+  - Ice Devil exposes Ice Spear slowing/action-denial metadata, Tail damage, and Ice Wall utility/recharge metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/effect metadata, condition metadata, recharge metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD Bone Devil`, `Manual SRD Chain Devil`, `Manual SRD Horned Devil`, and `Manual SRD Ice Devil` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot5r79zais0jxfk` for Bone Devil, `act_mot5r7aj5spafvo6` for Chain Devil, `act_mot5r7ap07g46leg` for Horned Devil, and `act_mot5r7au7b1tilg7` for Ice Devil.
+  - The built API returned Bone Devil HP `{ current: 161, max: 161 }`, AC `16`, CR `9`, XP `5,000`; Chain Devil HP `{ current: 85, max: 85 }`, AC `15`, CR `8`, XP `3,900`; Horned Devil HP `{ current: 199, max: 199 }`, AC `18`, CR `11`, XP `7,200`; and Ice Devil HP `{ current: 228, max: 228 }`, AC `18`, CR `14`, XP `11,500`.
+  - Rolling representative actions through the built API returned status `200`: Bone Devil `monster-infernal-sting-damage` formula `2d10+4+4d8`, total `34`; Chain Devil `monster-unnerving-gaze-effect` formula `0`, total `0`; Horned Devil `monster-infernal-tail-damage` formula `1d8+6`, total `8`; and Ice Devil `monster-ice-wall-effect` formula `0`, total `0`.
+  - Returned sheets included `monster-claw-damage`, `monster-infernal-sting-damage`, `monster-chain-damage`, `monster-conjure-infernal-chain-damage`, `monster-unnerving-gaze-effect`, `monster-searing-fork-damage`, `monster-hurl-flame-damage`, `monster-infernal-tail-damage`, `monster-ice-spear-damage`, `monster-tail-damage`, and `monster-ice-wall-effect` across the four greater devil actors.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD iconic outsider monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `107` unique SRD stat blocks exposed as `108` threat ids to `107` unique SRD stat blocks exposed as `108` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Balor, Erinyes, Couatl, and Deva stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, ability saves, skills where present, resistances/immunities, restoration traits, Magic Resistance where present, and action metadata.
+  - Balor exposes Flame Whip pull/prone metadata, Lightning Blade reaction-denial metadata, and Teleport utility metadata.
+  - Erinyes exposes Withering Sword, Entangling Rope Strength save/restraint metadata, Magic Rope trait metadata, and Parry reaction metadata.
+  - Couatl exposes Bite poison metadata, Constrict grapple/restraint metadata, Spellcasting utility metadata, and Divine Aid support metadata.
+  - Deva exposes Holy Mace radiant damage, Spellcasting utility metadata, Divine Aid support metadata, Exalted Restoration, and Magic Resistance.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/effect metadata, condition metadata, reaction/bonus-action metadata, and action formulas.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD Balor`, `Manual SRD Erinyes`, `Manual SRD Couatl`, and `Manual SRD Deva` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/monsters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; all responses returned status `200`.
+  - Actor ids were `act_mot6jnl9kvrgboke` for Balor, `act_mot6jnlr8w0lbm6d` for Erinyes, `act_mot6jnlve0nipx8f` for Couatl, and `act_mot6jnlzwrfpbd0e` for Deva.
+  - The built API returned Balor HP `{ current: 287, max: 287 }`, AC `19`, CR `19`, XP `22,000`; Erinyes HP `{ current: 178, max: 178 }`, AC `18`, CR `12`, XP `8,400`; Couatl HP `{ current: 60, max: 60 }`, AC `19`, CR `4`, XP `1,100`; and Deva HP `{ current: 229, max: 229 }`, AC `17`, CR `10`, XP `5,900`.
+  - Rolling representative actions through the built API returned status `200`: Balor `monster-flame-whip-damage` formula `3d6+8+5d6`, total `36`; Erinyes `monster-entangling-rope-damage` formula `4d6`, total `14`; Couatl `monster-divine-aid-effect` formula `0`, total `0`; and Deva `monster-holy-mace-damage` formula `1d6+4+4d8`, total `26`.
+  - Returned sheets included `monster-flame-whip-damage`, `monster-lightning-blade-damage`, `monster-teleport-effect`, `monster-withering-sword-damage`, `monster-entangling-rope-damage`, `monster-parry-effect`, `monster-bite-damage`, `monster-constrict-damage`, `monster-spellcasting-effect`, `monster-divine-aid-effect`, and `monster-holy-mace-damage` across the four outsider actors.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD iconic level 2-3 spell slice
+
+- Completed:
+  - Added SRD 5.2.1 Fireball, Invisibility, Lightning Bolt, Scorching Ray, Shatter, and Web as first-class D&D SRD compendium spell entries.
+  - Fireball and Lightning Bolt expose `8d6` damage formulas, Dexterity half-save metadata, area metadata, and `+1d6` per-slot upcast metadata.
+  - Scorching Ray exposes a spell attack quick roll, `2d6` fire damage, three-ray metadata, and upcast ray-count metadata without incorrectly increasing per-ray damage.
+  - Shatter exposes `3d8` thunder damage, Constitution half-save metadata, Construct save-disadvantage metadata, unattended-object metadata, and `+1d8` per-slot upcast metadata.
+  - Invisibility exposes a non-damage effect quick roll with Invisible condition metadata, concentration/duration metadata, early-ending trigger metadata, and upcast target metadata.
+  - Web exposes a non-damage effect quick roll with Restrained condition metadata, Dexterity save metadata, terrain/obscurement metadata, escape-check metadata, and a `2d4` fire secondary-damage quick roll for burning webs.
+- Verification:
+  - System SDK tests verify the six compendium entries, quick-roll ids/formulas, save/effect metadata, Scorching Ray attack formula, Invisibility/Web effect rolls, Web secondary damage, and Fireball/Lightning Bolt/Shatter upcast formulas.
+  - API tests verify the six entries appear through `GET /systems/dnd-5e-srd/compendium`, can be added to a D&D actor through the compendium endpoint, and return the expected sheet quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual SRD Spell Wizard` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; response status was `200`, actor id `act_mot712u2s73r3hgp`.
+  - `GET /systems/dnd-5e-srd/compendium` returned status `200` and `348` entries.
+  - Adding Fireball, Invisibility, Lightning Bolt, Scorching Ray, Shatter, and Web to the actor through `POST /actors/{actorId}/compendium` returned status `200` for every entry.
+  - Returned sheets exposed Fireball `spell-itm_mot712uu19nckaap-damage` formula `8d6`; Invisibility `spell-itm_mot712uxeagwlrr4-effect` formula `0`; Lightning Bolt `spell-itm_mot712v1kzg6215x-damage` formula `8d6`; Scorching Ray `spell-itm_mot712v4236ywt8d-attack` formula `1d20+5` and `spell-itm_mot712v4236ywt8d-damage` formula `2d6`; Shatter `spell-itm_mot712v62im7yrh6-damage` formula `3d8`; and Web `spell-itm_mot712v9htnl79ms-effect` formula `0` plus `spell-itm_mot712v9htnl79ms-secondary-damage` formula `2d4`.
+  - Rolling representative actions through the built API returned status `200`: Fireball damage formula `8d6`, total `36`; Invisibility effect formula `0`, total `0`; Lightning Bolt damage formula `8d6`, total `25`; Scorching Ray attack formula `1d20+5`, total `9`; Scorching Ray damage formula `2d6`, total `4`; Shatter damage formula `3d8`, total `13`; Web effect formula `0`, total `0`; and Web secondary damage formula `2d4`, total `5`.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD level-3 spell control and mobility slice
+
+- Completed:
+  - Added SRD 5.2.1 Counterspell, Dispel Magic, Fly, Haste, Hypnotic Pattern, and Slow as first-class D&D SRD compendium spell entries.
+  - Counterspell exposes reaction timing, 60 ft. range, Constitution save DC metadata, spell interruption metadata, wasted-action metadata, and no-slot-expended-on-failure metadata.
+  - Dispel Magic exposes level-3 automatic dispel metadata, `10+spell level` spellcasting ability check metadata for higher-level spells, and upcast dispel-level metadata.
+  - Fly exposes touch range, concentration duration, Fly Speed `60`, hover metadata, fall-on-end metadata, and per-slot upcast target metadata.
+  - Haste exposes concentration duration, doubled speed, Dex save advantage, `+2` AC effect metadata, restricted extra-action metadata, and ending Incapacitated/Speed `0` penalty metadata. The compendium stores this as effect-only AC metadata so adding the spell to inventory does not passively increase sheet Armor Class.
+  - Hypnotic Pattern exposes 30-foot Cube area, Wisdom save DC metadata, Charmed plus Incapacitated table-state metadata, speed `0` metadata, concentration duration, and damage/shake-awake ending metadata.
+  - Slow exposes six-target 40-foot Cube metadata, Wisdom save DC metadata, speed-halving, `-2` AC, `-2` Dexterity save, no reactions, action-or-bonus-action-only, one-attack limit, 25 percent somatic spell failure, concentration duration, and repeat-save ending metadata.
+- Verification:
+  - System SDK tests verify the six compendium entries, effect quick-roll ids/formulas, save and table-action metadata, and `0` formulas for all six non-damage spell actions.
+  - API tests verify the six entries appear through `GET /systems/dnd-5e-srd/compendium`, can be added to a D&D actor through the compendium endpoint, return the expected sheet quick rolls, and keep Haste's `+2` AC as effect metadata instead of passive item AC.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `pnpm --filter @open-tabletop/api build`.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Smoke Wizard` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters` with `NODE_ENV=test`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; response status was `200`, actor id `act_mot7ty87jn6ond3m`.
+  - `GET /systems/dnd-5e-srd/compendium` returned status `200` and `354` entries; Counterspell, Dispel Magic, Fly, Haste, Hypnotic Pattern, and Slow were all present.
+  - Adding all six spells to the actor through `POST /actors/{actorId}/compendium` returned status `200` for every entry.
+  - Returned sheets exposed Counterspell, Dispel Magic, Fly, Haste, Hypnotic Pattern, and Slow `spell-{itemId}-effect` quick rolls, each with formula `0` and the expected save/effect metadata.
+  - Rolling the six exact `rollId` values through the built API returned status `200` with formula `0` and total `0` for all six effect actions.
+  - Haste's effect quick roll exposed `armorClassBonus: 2`, `speedMultiplier: 2`, Dex save advantage, extra-action choices, and ending-penalty metadata while the actor's passive sheet Armor Class stayed `12` before and after adding the spell.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD utility and defense spell slice
+
+- Completed:
+  - Added SRD 5.2.1 Identify, Mage Armor, Silence, Enhance Ability, and See Invisibility as first-class D&D SRD compendium spell entries, and upgraded the existing D&D SRD Shield spell entry without colliding with the separate `shield-armor` equipment id.
+  - Identify exposes 1-minute-or-ritual timing, touch range, 100 GP pearl material metadata, and effect metadata for magic-item properties, attunement, charges, ongoing spells, and creating-spell discovery.
+  - Mage Armor exposes touch range, 8-hour duration, base AC `13 + Dexterity modifier` metadata, no-armor restriction metadata, and armor-donning ending metadata.
+  - Shield exposes reaction timing, Magic Missile trigger metadata, `+5` AC effect metadata, triggering-attack inclusion metadata, and Magic Missile damage blocking metadata.
+  - Silence exposes action-or-ritual timing, 120 ft. range, 20-foot-radius sphere metadata, concentration duration, Deafened condition metadata, Thunder immunity metadata, and verbal-component blocking metadata.
+  - Enhance Ability exposes concentration duration, touch range, Strength/Dexterity/Intelligence/Wisdom/Charisma ability-check advantage metadata, and one-additional-target-per-slot upcast metadata.
+  - See Invisibility exposes self range, 1-hour duration, Invisible-creature/object visibility metadata, and Ethereal Plane visibility metadata.
+- Verification:
+  - System SDK tests verify the six spell entries, effect quick-roll ids/formulas, ritual/material/base-AC/reaction/immunity/verbal-component/ability-advantage metadata, and `0` formulas for all six non-damage utility actions.
+  - API tests verify the six entries appear through `GET /systems/dnd-5e-srd/compendium`, can be added to a D&D actor through the compendium endpoint, and return the expected sheet effect quick rolls through the REST surface.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual Utility Wizard` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters` with `NODE_ENV=test`, `OTTE_ALLOW_LEGACY_USER_HEADER=true`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; response status was `200`, actor id `act_mot99iay3ma6igtc`.
+  - `GET /systems/dnd-5e-srd/compendium` returned status `200` and `365` entries; Identify, Mage Armor, Shield, Silence, Enhance Ability, and See Invisibility were all present.
+  - Adding all six spells to the actor through `POST /actors/{actorId}/compendium` returned status `200` for every entry.
+  - Returned sheets exposed Identify `spell-itm_mot99ibuztmczdvg-effect`, Mage Armor `spell-itm_mot99ic26tcln7y1-effect`, Shield `spell-itm_mot99ic7h9idqtmr-effect`, Silence `spell-itm_mot99ice7dd88qw7-effect`, Enhance Ability `spell-itm_mot99icl141r4cdi-effect`, and See Invisibility `spell-itm_mot99icq7c3k9ma6-effect`; each had formula `0`.
+  - Rolling the exact six `rollId` values through the built API returned status `200`, formula `0`, and total `0` for all six utility effects.
+  - Returned quick-roll metadata preserved Identify's ritual/material/effect discovery data; Mage Armor's base AC and no-armor restriction; Shield's reaction, `+5` AC, Magic Missile block, and triggering-attack metadata; Silence's Deafened, Thunder immunity, concentration, ritual, and verbal-component blocking metadata; Enhance Ability's five ability-check advantage choices and upcast targeting; and See Invisibility's Invisible and Ethereal Plane visibility metadata.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD class-referenced spell slice
+
+- Completed:
+  - Added SRD 5.2.1 Suggestion, Fear, and Stinking Cloud as first-class D&D SRD compendium spell entries, filling spells already referenced by Sorcerer and Warlock class/subclass metadata.
+  - Strengthened Misty Step with explicit bonus-action teleport distance metadata so the existing High Elf lineage spell and Sorcerer/Warlock/Wizard spell reference has an actionable effect quick roll.
+  - Suggestion exposes Wisdom save, Charmed condition, 25-word suggestion limit, hear/understand requirement, harmful-suggestion exclusion, concentration, duration, and end-condition metadata.
+  - Fear exposes Wisdom save, 30-foot cone area, Frightened condition, drop-held-object/forced-Dash effects, concentration, duration, and line-of-sight save-to-end metadata.
+  - Stinking Cloud exposes Constitution save, 20-foot-radius sphere area, Poisoned condition, Heavily Obscured cloud metadata, action/Bonus Action prevention, concentration, duration, and strong-wind dispersal metadata.
+  - SDK and API tests now verify compendium data and actor quick-roll metadata for Misty Step, Fear, Stinking Cloud, and Suggestion.
+- Verification:
+  - System SDK tests verify the four compendium entries, effect quick-roll ids/formulas, teleport/Frightened/Poisoned/Charmed/obscurement/action-denial/suggestion metadata, and `0` formulas for all four non-damage spell effects.
+  - API tests verify the four entries appear through `GET /systems/dnd-5e-srd/compendium`, can be added to a D&D actor through the compendium endpoint, and return the expected sheet effect quick rolls through the REST surface.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Manual Class Spell Wizard` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters` with `NODE_ENV=test`, `OTTE_ALLOW_LEGACY_USER_HEADER=true`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; response status was `200`, actor id `act_mot9x42sp6r5dg6z`.
+  - `GET /systems/dnd-5e-srd/compendium` returned status `200` and `368` entries; Misty Step, Fear, Stinking Cloud, and Suggestion were all present.
+  - Adding all four spells to the actor through `POST /actors/{actorId}/compendium` returned status `200` for every entry.
+  - Returned sheets exposed Misty Step `spell-itm_mot9x43pyilyysh7-effect`, Fear `spell-itm_mot9x43tu6qq9cqr-effect`, Stinking Cloud `spell-itm_mot9x43yljn5xc7v-effect`, and Suggestion `spell-itm_mot9x442876ak2gl-effect`; each had formula `0`.
+  - Rolling the exact four `rollId` values through the built API returned status `200`, formula `0`, and total `0` for all four effects.
+  - Returned quick-roll metadata preserved Misty Step's bonus-action 30-foot teleport; Fear's 30-foot cone, Frightened condition, drop-object and forced-Dash effects, and line-of-sight save-to-end metadata; Stinking Cloud's Poisoned condition, Heavily Obscured cloud, action and Bonus Action denial, and strong-wind dispersal metadata; and Suggestion's Charmed condition, 25-word limit, hearing/understanding requirement, harmful-suggestion exclusion, and ending conditions.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD magic-item referenced spell backing slice
+
+- Completed:
+  - Added SRD 5.2.1 Animal Friendship, Clairvoyance, Detect Thoughts, Enlarge/Reduce, Gaseous Form, and Mass Cure Wounds as first-class D&D SRD compendium spell entries.
+  - Closed the magic-item spell references used by Potion of Animal Friendship, Potion of Clairvoyance, Potion of Diminution, Potion of Gaseous Form, Potion of Growth, Potion of Mind Reading, and Staff of Healing.
+  - Animal Friendship exposes Beast-only targeting, Wisdom save, Charmed condition, 24-hour duration, damage-to-end metadata, and upcast target scaling.
+  - Clairvoyance exposes 10-minute casting, 1-mile range, 100 GP focus metadata, remote invisible sensor metadata, seeing/hearing modes, and Bonus Action sense switching.
+  - Detect Thoughts exposes 30-foot thought detection, Wisdom save metadata for deeper probing, barrier blocking metadata, and Arcana contest ending metadata.
+  - Enlarge/Reduce exposes Constitution save, one-size-category change metadata, Strength check/save advantage and disadvantage choices, and `1d4` damage bonus/penalty metadata.
+  - Gaseous Form exposes 10-foot fly speed, hover, bludgeoning/piercing/slashing resistance, Prone immunity, Strength/Dexterity/Constitution save advantage, speech/object/attack/spellcasting prevention, narrow-opening movement, liquid-surface metadata, and upcast target scaling.
+  - Mass Cure Wounds exposes six-target area healing as `5d8+@spellcasting` with `1d8` per-slot upcasting.
+  - Added a System SDK guard test that all D&D SRD magic-item `data.spell` and `data.spells[].id` references resolve to compendium spell entries.
+- Verification:
+  - System SDK tests verify the six compendium entries, effect quick-roll ids/formulas for Animal Friendship, Clairvoyance, Detect Thoughts, Enlarge/Reduce, and Gaseous Form, Mass Cure Wounds healing quick-roll formula, action formulas including Mass Cure Wounds upcast, and the magic-item spell-reference guard.
+  - API tests verify the six entries appear through `GET /systems/dnd-5e-srd/compendium`, can be added to a D&D actor through the compendium endpoint, and return the expected sheet effect/healing quick rolls through the REST surface.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD potion utility effect slice
+
+- Completed:
+  - Added item effect quick-roll detection and metadata for SRD potion fields that were already present in the magic-item compendium but not yet actionable as table rolls.
+  - Potion of Climbing now exposes `item-{itemId}-effect` with climb-speed-equals-speed metadata, Strength (Athletics) climb advantage metadata, Bonus Action activation, and 1-hour duration.
+  - Potion of Flying now exposes fly-speed-equals-speed, hover, Bonus Action activation, and 1-hour duration metadata.
+  - Potion of Giant Strength (storm) now exposes Strength `29`, giant-type, Bonus Action activation, and 1-hour duration metadata.
+  - Potion of Invulnerability and Potion of Resistance now expose all-resistance and resistance-choice metadata.
+  - Potion of Speed now exposes Haste spell linkage, no-ending-lethargy metadata, Bonus Action activation, and 1-minute duration.
+  - Potion of Vitality now exposes exhaustion removal, Poisoned ending, maximized Hit Dice healing, Bonus Action activation, and 24-hour duration.
+  - Potion of Water Breathing now exposes water-breathing metadata and 24-hour duration.
+  - Confirmed consumable effect actions reuse the shared `itemQuantity` consumption path, so `consumeResources: true` spends potion quantity.
+- Verification:
+  - System SDK tests verify effect quick-roll ids, labels, formulas, and metadata for Potion of Climbing, Potion of Flying, Potion of Giant Strength (storm), Potion of Invulnerability, Potion of Resistance, Potion of Speed, Potion of Vitality, and Potion of Water Breathing.
+  - System SDK tests verify Potion of Climbing effect consumption decrements item quantity and rejects use at quantity `0`.
+  - API tests verify Potion of Climbing and Potion of Speed compendium add results expose the expected effect quick rolls through returned actor sheets, and Potion of Climbing effect rolling with `consumeResources: true` spends item quantity without applying a target effect.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD cleric/support spell slice
+
+- Completed:
+  - Added SRD 5.2.1 Lesser Restoration, Prayer of Healing, Spiritual Weapon, Spirit Guardians, Revivify, and Mass Healing Word as first-class D&D SRD compendium spell entries.
+  - Lesser Restoration exposes Bonus Action timing, touch range, and condition-ending metadata for Blinded, Deafened, Paralyzed, and Poisoned.
+  - Prayer of Healing exposes 10-minute casting, five-target healing, Short Rest benefit metadata, once-per-Long-Rest repeat-limit metadata, and `1d8` per-slot upcasting.
+  - Spiritual Weapon exposes Bonus Action timing, melee spell attack automation, Force damage as `1d8+@spellcasting`, per-slot `1d8` upcasting, concentration duration, and 20-foot spectral-weapon movement metadata.
+  - Spirit Guardians exposes concentration duration, 15-foot Emanation metadata, Wisdom half-damage save metadata, speed-halving metadata, designated-unaffected-creature metadata, once-per-turn save metadata, and `1d8` per-slot upcasting.
+  - Revivify exposes touch range, one-minute revival window, revive-with-1-HP metadata, consumed 300 GP diamond metadata, and old-age/missing-body-part limitations.
+  - Mass Healing Word exposes Bonus Action timing, six-target ranged healing as `2d4+@spellcasting`, and `1d4` per-slot upcasting.
+- Verification:
+  - System SDK tests verify the six compendium entries, effect/damage/healing/spell-attack quick-roll ids and formulas, Revivify revival metadata, Lesser Restoration condition-ended metadata, and upcast formulas for Prayer of Healing, Spiritual Weapon, Spirit Guardians, and Mass Healing Word.
+  - API tests verify the six entries appear through `GET /systems/dnd-5e-srd/compendium`, can be added to a D&D actor through the compendium endpoint, and return the expected sheet quick rolls through the REST surface.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Manual built-API evidence:
+  - Built `apps/api/dist`, then created `Smoke Cleric` through `POST /api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters` with `NODE_ENV=test`, `OTTE_ALLOW_LEGACY_USER_HEADER=true`, `MemoryStateStore`, and `x-user-id: usr_demo_gm`; response status was `200`, actor id `act_mot8k05ncffpbwt9`.
+  - `GET /systems/dnd-5e-srd/compendium` returned status `200` and `360` entries; Lesser Restoration, Prayer of Healing, Spiritual Weapon, Spirit Guardians, Revivify, and Mass Healing Word were all present.
+  - Adding all six spells to the actor through `POST /actors/{actorId}/compendium` returned status `200` for every entry.
+  - Returned sheets exposed Lesser Restoration `spell-itm_mot8k06w59hmsm1k-effect` formula `0`; Prayer of Healing `spell-itm_mot8k0734j0c1qao-healing` formula `2d8`; Spiritual Weapon `spell-itm_mot8k076w7nvhk8o-attack` formula `1d20+5` and `spell-itm_mot8k076w7nvhk8o-damage` formula `1d8+3`; Spirit Guardians `spell-itm_mot8k07eie7w1gtg-damage` formula `3d8`; Revivify `spell-itm_mot8k07gynch71rg-effect` formula `0`; and Mass Healing Word `spell-itm_mot8k07lphx1hxje-healing` formula `2d4+3`.
+  - Rolling the exact `rollId` values through the built API returned status `200`: Lesser Restoration effect formula `0`, total `0`; Prayer of Healing formula `2d8`, total `5`; Spiritual Weapon attack formula `1d20+5`, total `8`; Spiritual Weapon damage formula `1d8+3`, total `9`; Spirit Guardians damage formula `3d8`, total `14`; Revivify effect formula `0`, total `0`; and Mass Healing Word formula `2d4+3`, total `6`.
+  - Lesser Restoration effect metadata included all four conditions ended; Spiritual Weapon attack metadata used Wisdom spellcasting, proficiency bonus `2`, range `60 ft`, and Force damage; Revivify effect metadata included `revivesDead: true`, `reviveWindow: 1 minute`, `reviveHitPoints: 1`, consumed material cost `300`, old-age exclusion, and missing-body-part exclusion.
+- Source rule reference for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-05 - D&D SRD A-Z monster threat slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `101` unique SRD stat blocks exposed as `102` threat ids to `107` unique SRD stat blocks exposed as `108` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Aboleth, Animated Armor, Flying Sword, Rug of Smothering, Ankheg, and Assassin stat blocks with SRD AC, HP, speed, CR/XP, senses, languages, saves, skills where present, traits, and action metadata.
+  - Aboleth exposes Tentacle disease metadata, Consume Memories, Dominate Mind Charmed save/effect metadata, and Legendary Actions utility metadata.
+  - Animated Armor and Flying Sword expose Antimagic Susceptibility, False Appearance, and their core Slam/Longsword action quick rolls.
+  - Rug of Smothering exposes Damage Transfer and Smother grapple/restrain metadata; Ankheg exposes Bite grapple metadata and Acid Spray save/recharge metadata; Assassin exposes Poison Resistance, poisoned weapon attacks, and Cunning Action utility metadata.
+- Verification:
+  - System SDK tests verify the six new threat ids, stat-block metadata, Aboleth encounter planning, monster actor HP/AC/CR/XP payloads, quick-roll ids, save/effect metadata, condition metadata, recharge metadata, and action formulas.
+  - API tests verify the six new threat ids, threat metadata, Aboleth encounter planning, Aboleth and Assassin monster actor creation, HP/AC/CR/XP payloads, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule reference for this slice: official SRD 5.2.1 A-Z listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z.
+
+### 2026-05-06 - D&D SRD blood hawk monster slice
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `114` unique SRD stat blocks exposed as `115` threat ids to `115` unique SRD stat blocks exposed as `116` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Blood Hawk stat block with SRD AC, HP, speed, CR/XP, Perception skill, Passive Perception, Pack Tactics, and Beak action metadata.
+  - Blood Hawk exposes Fly speed, Pack Tactics, Perception proficiency, and Beak attack/damage quick rolls.
+- Verification:
+  - System SDK tests verify the new threat id, stat-block metadata, monster actor HP/AC/CR/XP payload, skill proficiency mapping, Pack Tactics metadata, and quick-roll ids.
+  - API tests verify the new threat id, threat metadata, monster actor creation, HP/AC/CR/XP payload, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule reference for this slice: SRD 5.2.1 Animals listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD animal monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `115` unique SRD stat blocks exposed as `116` threat ids to `121` unique SRD stat blocks exposed as `122` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Boar, Camel, Cat, Constrictor Snake, Crab, and Crocodile stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, and action metadata.
+  - Boar exposes Bloodied Fury and charging Gore prone metadata; Camel exposes Darkvision and Bite quick rolls; Cat exposes Perception/Stealth, Jumper, and Scratch quick rolls.
+  - Constrictor Snake exposes Blindsight, Bite, and Strength-save Constrict grapple metadata; Crab exposes Amphibious, Blindsight, Stealth, and Claw quick rolls; Crocodile exposes Hold Breath and Bite grapple/restrain metadata.
+- Verification:
+  - System SDK tests verify the six new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the six new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule reference for this slice: SRD 5.2.1 Animals listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD deer-to-flying-snake monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `121` unique SRD stat blocks exposed as `122` threat ids to `127` unique SRD stat blocks exposed as `128` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Deer, Draft Horse, Eagle, Elephant, Elk, and Flying Snake stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, and action metadata.
+  - Corrected Blood Hawk action metadata from the earlier placeholder Rend action to the SRD Beak action with the Bloodied damage rider.
+  - Deer exposes Agile and Ram quick rolls; Draft Horse exposes Hooves quick rolls; Eagle exposes Perception and Talons quick rolls.
+  - Elephant exposes Gore multiattack/prone metadata and Trample bonus-action save metadata; Elk exposes charging Ram prone metadata; Flying Snake exposes Flyby and poison Bite metadata.
+- Verification:
+  - System SDK tests verify the six new threat ids, stat-block metadata, Blood Hawk Beak correction, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the six new threat ids, Blood Hawk Beak correction, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule reference for this slice: SRD 5.2.1 Animals listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD frog-to-giant-constrictor-snake monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `127` unique SRD stat blocks exposed as `128` threat ids to `133` unique SRD stat blocks exposed as `134` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Frog, Giant Badger, Giant Bat, Giant Boar, Giant Centipede, and Giant Constrictor Snake stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, and action metadata.
+  - Frog exposes Amphibious, Standing Leap, Perception/Stealth, and Bite quick rolls.
+  - Giant Badger exposes Poison Resistance, burrow movement, Perception, and Bite quick rolls; Giant Bat exposes long-range Blindsight, Fly speed, and Bite quick rolls.
+  - Giant Boar exposes Bloodied Fury and charging Gore prone metadata; Giant Centipede exposes Blindsight and Poisoned Bite metadata; Giant Constrictor Snake exposes reach Bite plus Strength-save Constrict grapple metadata.
+- Verification:
+  - System SDK tests verify the six new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the six new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule reference for this slice: SRD 5.2.1 Animals listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD giant-crab-to-giant-frog monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `133` unique SRD stat blocks exposed as `134` threat ids to `138` unique SRD stat blocks exposed as `139` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Giant Crab, Giant Crocodile, Giant Elk, Giant Fire Beetle, and Giant Frog stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, and action metadata.
+  - Giant Crab exposes Amphibious, Stealth, Blindsight, and Claw grapple metadata.
+  - Giant Crocodile exposes Hold Breath, Stealth, Bite grapple/restrain metadata, and Tail prone metadata.
+  - Giant Elk exposes Celestial typing, Radiant/Necrotic resistance, Perception, long-reach radiant Ram, and charging prone metadata.
+  - Giant Fire Beetle exposes Fire Resistance, Illumination, Blindsight, and Fire Bite quick rolls; Giant Frog exposes Amphibious, Standing Leap, Perception/Stealth, Bite grapple metadata, and Swallow condition/damage metadata.
+- Verification:
+  - System SDK tests verify the five new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the five new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: SRD 5.2.1 Animals listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/, and official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD giant-goat-to-giant-lizard monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `138` unique SRD stat blocks exposed as `139` threat ids to `141` unique SRD stat blocks exposed as `142` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Giant Goat, Giant Hyena, and Giant Lizard stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, and action metadata.
+  - Giant Goat exposes Perception, Darkvision, climb speed, and charging Ram prone metadata.
+  - Giant Hyena exposes Perception, Darkvision, Bite quick rolls, and Rampage as a bonus-action utility effect.
+  - Giant Lizard exposes Darkvision, Spider Climb, climb speed, and Bite quick rolls.
+- Verification:
+  - System SDK tests verify the three new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the three new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule reference for this slice: SRD 5.2.1 Animals listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD giant-octopus-to-giant-shark monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `141` unique SRD stat blocks exposed as `142` threat ids to `146` unique SRD stat blocks exposed as `147` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Giant Octopus, Giant Owl, Giant Scorpion, Giant Seahorse, and Giant Shark stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, and action metadata; Giant Rat was skipped because it already exists in the catalog.
+  - Giant Octopus exposes Water Breathing, Perception/Stealth, Tentacles grapple/restraint metadata, and Ink Cloud as a reaction utility effect.
+  - Giant Owl exposes Celestial typing, Flyby, Perception/Stealth, Talons quick rolls, and utility spellcasting metadata.
+  - Giant Scorpion exposes Blindsight, Multiattack, Claw grapple metadata, and Sting poison damage metadata.
+  - Giant Seahorse exposes Water Breathing, Ram quick rolls, and Bubble Dash as a bonus-action utility effect; Giant Shark exposes Water Breathing, Blindsight, Perception, Multiattack, and high-damage Bite quick rolls.
+- Verification:
+  - System SDK tests verify the five new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the five new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: SRD 5.2.1 Animals listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/, and official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD giant-toad-to-giant-wolf-spider monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `146` unique SRD stat blocks exposed as `147` threat ids to `152` unique SRD stat blocks exposed as `153` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Giant Toad, Giant Venomous Snake, Giant Vulture, Giant Wasp, Giant Weasel, and Giant Wolf Spider stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, and action metadata; Giant Spider was skipped because it already exists in the catalog.
+  - Giant Toad exposes Amphibious, Standing Leap, Bite grapple metadata, and Swallow acid/condition metadata.
+  - Giant Venomous Snake exposes Blindsight, Perception, Swim Speed, and poison Bite quick rolls.
+  - Giant Vulture exposes Monstrosity typing, Necrotic Resistance, Pack Tactics, Perception, darkvision, and poisoned Gouge quick rolls.
+  - Giant Wasp exposes Flyby and poison Sting quick rolls; Giant Weasel exposes Acrobatics/Perception/Stealth and Bite quick rolls; Giant Wolf Spider exposes Blindsight, darkvision, Spider Climb, Stealth, and poison Bite quick rolls.
+- Verification:
+  - System SDK tests verify the six new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the six new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: SRD 5.2.1 Animals listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/, SRD 5.2.1 Monsters A-Z listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/, and official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD gibbering-mouther-to-young-gold-dragon monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `152` unique SRD stat blocks exposed as `153` threat ids to `158` unique SRD stat blocks exposed as `159` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Gibbering Mouther, Glabrezu, Gladiator, Gnoll Warrior, Gold Dragon Wyrmling, and Young Gold Dragon stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, gear where relevant, and action metadata; existing Goblin Warrior, Goblin Boss, and Goblin Minion entries were skipped.
+  - Gibbering Mouther exposes Aberrant Ground, Gibbering, Bite quick rolls, and Blinding Spittle save/condition/recharge metadata.
+  - Glabrezu exposes Demonic Restoration, Legendary Resistance, Magic Resistance, Perception, Pincer grapple metadata, Fist quick rolls, and Spellcasting utility metadata.
+  - Gladiator exposes Athletics/Intimidation, Spear quick rolls, Shield Bash prone/save metadata, and Parry as a reaction utility effect.
+  - Gnoll Warrior exposes fiendish typing, darkvision, Spear and Longbow quick rolls; Gold Dragon Wyrmling and Young Gold Dragon expose metallic-dragon typing, Amphibious, Fire Immunity, and Fire Breath save/recharge metadata.
+- Verification:
+  - System SDK tests verify the six new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the six new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: SRD 5.2.1 Monsters A-Z listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/, and official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD adult-gold-dragon-to-gray-ooze monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `158` unique SRD stat blocks exposed as `159` threat ids to `162` unique SRD stat blocks exposed as `163` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Adult Gold Dragon, Ancient Gold Dragon, Gorgon, and Gray Ooze stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, and action metadata; already-covered Green Dragon entries were skipped.
+  - Adult Gold Dragon and Ancient Gold Dragon expose Amphibious, Fire Immunity, Legendary Resistance, Rend, Fire Breath save/recharge metadata, Weakening Breath save/condition metadata, Spellcasting utility metadata, and Legendary Actions utility metadata.
+  - Gorgon exposes construct typing, condition-immunity metadata, Gore prone metadata, Petrifying Breath save/condition/recharge metadata, and Trample bonus-action damage/save metadata.
+  - Gray Ooze exposes Blindsight, Stealth, damage resistance and condition-immunity metadata, Amorphous/Corrosive Form traits, and acid Pseudopod quick rolls.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: SRD 5.2.1 Monsters A-Z listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/, and official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD green-hag-to-griffon monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `162` unique SRD stat blocks exposed as `163` threat ids to `165` unique SRD stat blocks exposed as `166` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Green Hag, Grick, and Griffon stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, and action metadata.
+  - Green Hag exposes Amphibious, Coven Magic, Mimicry, poison Claw damage, and Spellcasting utility metadata.
+  - Grick exposes climbing movement, Stealth, Beak damage, and Tentacles grapple metadata.
+  - Griffon exposes high-Perception flying monstrosity metadata and grappling Rend quick rolls.
+- Verification:
+  - System SDK tests verify the three new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the three new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: SRD 5.2.1 Monsters A-Z listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/, and official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD grimlock-to-hill-giant monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `165` unique SRD stat blocks exposed as `166` threat ids to `172` unique SRD stat blocks exposed as `173` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Grimlock, Guardian Naga, Half-Dragon, Harpy, Hell Hound, Hezrou, and Hill Giant stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, and action metadata; already-covered Hobgoblin Captain, Horned Devil, Hydra, Ice Devil, and Imp entries were skipped.
+  - Grimlock exposes Blindsight, Athletics/Perception/Stealth metadata, and psychic Bone Cudgel damage.
+  - Guardian Naga exposes Celestial Restoration, poison and condition immunities, Bite, Poisonous Spittle save/condition metadata, and Spellcasting utility metadata.
+  - Half-Dragon exposes Draconic Origin metadata, Claw, Dragon's Breath save/recharge metadata, and Leap bonus-action utility metadata.
+  - Harpy exposes Luring Song charm/incapacitation metadata alongside Claw quick rolls.
+  - Hell Hound exposes Fire Immunity, Pack Tactics, Bite fire damage, and Fire Breath save/recharge metadata.
+  - Hezrou exposes Demonic Restoration, Magic Resistance, Stench, poison Rend damage, and Leap utility metadata.
+  - Hill Giant exposes Tree Club prone metadata and Trash Lob poison metadata.
+- Verification:
+  - System SDK tests verify the seven new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the seven new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: SRD 5.2.1 Monsters A-Z listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/, and official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD hippogriff-to-ice-mephit monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `172` unique SRD stat blocks exposed as `173` threat ids to `179` unique SRD stat blocks exposed as `180` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Hippogriff, Hippopotamus, Hobgoblin Warrior, Homunculus, Hunter Shark, Hyena, and Ice Mephit stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, gear where relevant, and action metadata.
+  - Hippogriff exposes Flyby and Rend multiattack quick rolls; Hippopotamus exposes Hold Breath and Bite quick rolls.
+  - Hobgoblin Warrior exposes Pack Tactics, armor/weapon gear, Longsword quick rolls, and poisoned Longbow quick rolls.
+  - Homunculus exposes poison/condition immunity, Telepathic Bond, Bite save metadata, and Poisoned/Unconscious condition metadata.
+  - Hunter Shark exposes Blindsight, Water Breathing, wounded-target Bite advantage summary metadata, and Bite quick rolls.
+  - Hyena exposes Pack Tactics and Bite quick rolls; Ice Mephit exposes Fire vulnerability, Cold/Poison immunity, Death Burst metadata, Claw cold damage, Fog Cloud utility metadata, and Frost Breath save/recharge metadata.
+- Verification:
+  - System SDK tests verify the seven new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, and quick-roll ids.
+  - API tests verify the seven new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: SRD 5.2.1 Monsters A-Z listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/, SRD 5.2.1 Animals listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/, and official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD magma-mephit-to-nightmare monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `179` unique SRD stat blocks exposed as `180` threat ids to `187` unique SRD stat blocks exposed as `188` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Magma Mephit, Steam Mephit, Merfolk Skirmisher, Merrow, Mimic, Nalfeshnee, Night Hag, and Nightmare stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, languages, and action metadata.
+  - Magma Mephit exposes Cold vulnerability, Fire/Poison immunity, Death Burst, Claw fire damage, and Fire Breath save/recharge metadata.
+  - Steam Mephit exposes Blurred Form, Fire/Poison immunity, Death Burst, Claw fire damage, and Steam Breath save/recharge/slow metadata.
+  - Merfolk Skirmisher exposes Amphibious and Ocean Spear cold damage with speed-reduction metadata; Merrow exposes Amphibious, Bite poison metadata, Claw, and Harpoon pull metadata.
+  - Mimic exposes Acid immunity, Adhesive, Bite advantage summary metadata, Pseudopod grapple metadata, and Shape-Shift utility metadata.
+  - Nalfeshnee exposes Demonic Restoration, Magic Resistance, Rend force damage, Teleport, Horror Nimbus fear metadata, and Pursuit reaction metadata.
+  - Night Hag exposes Cold/Fire resistance, Charmed immunity, Coven Magic, Magic Resistance, Soul Bag, Claw, Nightmare Haunting, Spellcasting, and Shape-Shift utility metadata.
+  - Nightmare exposes Fire immunity, Confer Fire Resistance, Illumination, Hooves fire damage, and Ethereal Stride utility metadata.
+- Verification:
+  - System SDK tests verify the eight new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the eight new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: SRD 5.2.1 Monsters A-Z listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/, and official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD noble-to-pirate-captain monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `187` unique SRD stat blocks exposed as `188` threat ids to `195` unique SRD stat blocks exposed as `196` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Noble, Ochre Jelly, Oni, Otyugh, Pegasus, Phase Spider, Pirate, and Pirate Captain stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, gear where relevant, languages, and action metadata.
+  - Noble exposes Deception/Insight/Persuasion skill metadata, Rapier quick rolls, and Parry reaction metadata.
+  - Ochre Jelly exposes Acid resistance, Lightning/Slashing and condition immunities, Amorphous, Spider Climb, Pseudopod acid damage, and Split reaction metadata.
+  - Oni exposes Cold resistance, Regeneration, Claw necrotic damage, Nightmare Ray fear metadata, Shape-Shift, Spellcasting, and Invisibility bonus-action metadata.
+  - Otyugh exposes Bite poison/disease metadata, Tentacle grapple metadata, and Tentacle Slam stun/save metadata.
+  - Pegasus exposes Perception, flight, and radiant Hooves quick rolls; Phase Spider exposes Ethereal Sight, Spider Climb, Web Walker, poisonous Bite paralysis metadata, and Ethereal Jaunt.
+  - Pirate exposes Dagger quick rolls and Enthralling Panache charm metadata; Pirate Captain exposes Rapier/Pistol quick rolls, Captain's Charm, and Riposte reaction metadata.
+- Verification:
+  - System SDK tests verify the eight new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the eight new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: SRD 5.2.1 Monsters A-Z listing, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/, and official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD planetar-to-rhinoceros monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `195` unique SRD stat blocks exposed as `196` threat ids to `203` unique SRD stat blocks exposed as `204` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Planetar, Plesiosaurus, Priest, Pseudodragon, Rat, Raven, Swarm of Bats, Swarm of Insects, Swarm of Rats, Swarm of Ravens, Swarm of Venomous Snakes, Reef Shark, and Rhinoceros stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, gear where relevant, languages, and action metadata.
+  - Planetar exposes Radiant Sword, Holy Burst, Spellcasting, Divine Aid, Exalted Restoration, Magic Resistance, and celestial immunity metadata.
+  - Plesiosaurus exposes Hold Breath, Perception/Stealth skill metadata, swim speed, and long-reach Bite quick rolls.
+  - Priest exposes Medicine/Perception/Religion skill metadata, Mace/Radiant Flame quick rolls, Spellcasting, and Divine Aid support metadata.
+  - Pseudodragon exposes Magic Resistance, Bite quick rolls, and Sting poison/unconsciousness save metadata.
+  - Rat, Raven, Swarm of Bats, Swarm of Insects, Swarm of Rats, Swarm of Ravens, Swarm of Venomous Snakes, Reef Shark, and Rhinoceros expose beast quick rolls plus Agile, Mimicry, Pack Tactics/Water Breathing, and Gore Prone charge metadata respectively.
+- Verification:
+  - System SDK tests verify the eight new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the eight new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD riding-horse-to-sea-hag monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `203` unique SRD stat blocks exposed as `204` threat ids to `216` unique SRD stat blocks exposed as `217` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Riding Horse, Roc, Roper, Saber-Toothed Tiger, Scorpion, Seahorse, Scout, and Sea Hag stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where present, traits, gear where relevant, languages, and action metadata.
+  - Riding Horse and Scorpion add low-CR beast attack coverage with Hooves and Sting quick rolls.
+  - Roc and Roper add high-threat control metadata for Grappled/Restrained Talons, Swoop, Grappled/Poisoned Tentacle, and Reel effects.
+  - Saber-Toothed Tiger, Seahorse, Scout, and Sea Hag add Rend/Nimble Escape, Bubble Dash, Shortsword/Longbow, and Claw/Death Glare/Illusory Appearance quick rolls with trait and save metadata.
+- Verification:
+  - System SDK tests verify the eight new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the eight new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: official SRD 5.2.1 PDF, https://media.dndbeyond.com/compendium-images/srd/5.2/SRD_CC_v5.2.1.pdf.
+
+### 2026-05-06 - D&D SRD silver-dragon-to-solar monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `211` unique SRD stat blocks exposed as `212` threat ids to `216` unique SRD stat blocks exposed as `217` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Silver Dragon Wyrmling, Young Silver Dragon, Adult Silver Dragon, Ancient Silver Dragon, and Solar stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills, traits, languages, and action metadata.
+  - Silver dragons add metallic dragon cold/paralysis coverage with Rend, Cold Breath, Paralyzing Breath, Spellcasting, and Legendary Actions quick-roll metadata across CR 2, 9, 16, and 23 tiers.
+  - Solar adds high-CR celestial coverage with Flying Sword, Slaying Bow, Spellcasting, Divine Aid, Legendary Resistance, Magic Resistance, Exalted Restoration, and Legendary Actions metadata.
+- Verification:
+  - System SDK tests verify the five new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the five new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD sphinx monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `216` unique SRD stat blocks exposed as `217` threat ids to `219` unique SRD stat blocks exposed as `220` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Sphinx of Wonder, Sphinx of Lore, and Sphinx of Valor stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills, traits, languages, and action metadata.
+  - Sphinx of Wonder adds low-CR celestial coverage with Magic Resistance, radiant Rend, and Burst of Ingenuity reaction support.
+  - Sphinx of Lore and Sphinx of Valor add higher-CR legendary celestial coverage with Claw attacks, Mind-Rending Roar or sequenced Roar control, Spellcasting, Inscrutable, Legendary Resistance, and Legendary Actions metadata.
+- Verification:
+  - System SDK tests verify the three new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the three new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD swarm monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `219` unique SRD stat blocks exposed as `220` threat ids to `224` unique SRD stat blocks exposed as `225` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Swarm of Bats, Swarm of Insects, Swarm of Rats, Swarm of Ravens, and Swarm of Venomous Snakes stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills, traits, languages, and Bloodied damage metadata.
+  - Swarm entries include Damage Resistances, Condition Immunities, Swarm trait text, Bites or Beaks attack rolls, primary damage formulas, and metadata summaries for reduced damage while Bloodied.
+- Verification:
+  - System SDK tests verify the five new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the five new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Animals mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD animal tail monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `224` unique SRD stat blocks exposed as `225` threat ids to `231` unique SRD stat blocks exposed as `232` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Tiger, Triceratops, Tyrannosaurus Rex, Venomous Snake, Vulture, Warhorse, and Weasel stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills, traits, languages, and action metadata.
+  - The batch adds predator, dinosaur, mount, scavenger, and scout-beast coverage with prone, grapple/restrain, Pack Tactics, poison damage, charge, and Nimble Escape metadata.
+- Verification:
+  - System SDK tests verify the seven new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the seven new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Animals mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD W-Z undead and predator monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `231` unique SRD stat blocks exposed as `232` threat ids to `236` unique SRD stat blocks exposed as `237` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Wight, Will-o'-Wisp, Winter Wolf, Worg, and Ogre Zombie stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills, traits, languages, and action metadata.
+  - The batch adds undead max-HP drain, incorporeal resistances and vanish utility, cold breath, Pack Tactics, advantage setup, and Undead Fortitude metadata.
+- Verification:
+  - System SDK tests verify the five new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the five new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Ran `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, and `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"` after this slice.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD brass dragon monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `236` unique SRD stat blocks exposed as `237` threat ids to `240` unique SRD stat blocks exposed as `241` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Brass Dragon Wyrmling, Young Brass Dragon, Adult Brass Dragon, and Ancient Brass Dragon stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills, traits, languages, and action metadata.
+  - The batch adds metallic dragon Fire immunity, burrow mobility, Fire Breath save/recharge metadata, Sleep Breath condition metadata, adult/ancient Spellcasting summaries, and adult/ancient Legendary Actions summaries.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD bronze dragon monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `240` unique SRD stat blocks exposed as `241` threat ids to `244` unique SRD stat blocks exposed as `245` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Bronze Dragon Wyrmling, Young Bronze Dragon, Adult Bronze Dragon, and Ancient Bronze Dragon stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills, traits, languages, and action metadata.
+  - The batch adds Amphibious/Lightning immunity traits, Lightning Breath save/recharge metadata, Repulsion Breath push/prone metadata, adult/ancient Spellcasting summaries, and adult/ancient Legendary Actions summaries.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the four new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD Ettercap-Ettin-Flesh Golem monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `256` unique SRD stat blocks exposed as `257` threat ids to `259` unique SRD stat blocks exposed as `260` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Ettercap, Ettin, and Flesh Golem stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills, traits, languages, and action metadata.
+  - The batch adds web restraint and Reel metadata, dual-weapon giant pressure, condition-immunity summaries, Fire aversion, Berserk, Lightning absorption, Magic Resistance, and lightning Slam damage metadata.
+- Verification:
+  - System SDK tests verify the three new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the three new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD Frost Giant monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `259` unique SRD stat blocks exposed as `260` threat ids to `260` unique SRD stat blocks exposed as `261` threat ids, including the existing `goblin-minion` alias.
+  - Added the SRD 5.2.1 Frost Giant stat block with SRD AC, HP, speed, CR/XP, saves, senses, skills, trait, language, and action metadata.
+  - The batch adds Cold immunity, Frost Axe mixed damage, Great Bow speed-reduction metadata, and War Cry temporary-hit-point/advantage support metadata.
+- Verification:
+  - System SDK tests verify the new threat id, stat-block metadata, monster actor HP/AC/CR/XP payload, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the new threat id, threat metadata, monster actor creation, HP/AC/CR/XP payload, skill proficiency mapping, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD Behir-Djinni monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `260` unique SRD stat blocks exposed as `261` threat ids to `278` unique SRD stat blocks exposed as `279` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Behir, Berserker, Black Pudding, Blink Dog, Bugbear Stalker, Bugbear Warrior, Bulette, Centaur Trooper, Chimera, Chuul, Clay Golem, Cloaker, Cloud Giant, Commoner, Swarm of Crawling Claws, Cultist, Cultist Fanatic, and Djinni stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills, traits, languages, and action metadata.
+  - The batch adds Lightning immunity, Constrict restraint, Lightning Breath, Swallow acid pressure, Bloodied Frenzy, corrosive ooze Split metadata, Blink Dog Teleport, Bugbear Abduct movement, Quick Grapple, grapple-advantage weapon metadata, Bulette Deadly Leap/Leap metadata, Centaur Trampling Charge, Chimera Fire Breath, Chuul Paralyzing Tentacles, Clay Golem Hasten, Cloaker Moan/Phantasms, Cloud Giant Thundercloud/Misty Step, Commoner Training/Club, Swarm of Crawling Claws prone pressure, Cultist Ritual Sickle, Cultist Fanatic Spiritual Weapon, and Djinni Create Whirlwind.
+- Verification:
+  - System SDK tests verify the eighteen new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the eighteen new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD Fire Giant-Ghost monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `278` unique SRD stat blocks exposed as `279` threat ids to `283` unique SRD stat blocks exposed as `284` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Fire Giant, Shrieker Fungus, Violet Fungus, Gargoyle, and Ghost stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where applicable, traits, languages, and action metadata.
+  - The batch adds Fire Giant Fire Immunity, Flame Sword, and Hammer Throw, fungus Blindsight, Condition Immunities, Shriek, and Rotting Touch, Gargoyle Poison Immunity, Flyby, and Claw, and Ghost Damage Resistances, Incorporeal Movement, Withering Touch, Etherealness, Horrific Visage, and Possession.
+- Verification:
+  - System SDK tests verify the five new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the five new threat ids, threat metadata, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping where applicable, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD Incubus-Kobold Warrior monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `283` unique SRD stat blocks exposed as `284` threat ids to `287` unique SRD stat blocks exposed as `288` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Incubus, Invisible Stalker, Iron Golem, and Kobold Warrior stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills where applicable, traits, languages, gear where applicable, and action metadata.
+  - The batch adds Incubus Damage Resistances, Succubus Form, Restless Touch, Spellcasting, and Nightmare, Invisible Stalker Air Form, Invisibility, Wind Swipe, and Vortex, Iron Golem Fire Absorption, Immutable Form, Magic Resistance, Bladed Arm, Fiery Bolt, and Poison Breath, and Kobold Warrior Pack Tactics, Sunlight Sensitivity, and Dagger.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping where applicable, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the four new threat ids, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping where applicable, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD Kraken-Lamia monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `287` unique SRD stat blocks exposed as `288` threat ids to `289` unique SRD stat blocks exposed as `290` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Kraken and Lamia stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills, traits where applicable, languages, and action metadata.
+  - The batch adds Kraken Amphibious, Legendary Resistance, Siege Monster, Tentacle, Fling, Lightning Strike, Swallow, Legendary Actions, Storm Bolt, and Toxic Ink, plus Lamia Claw, Corrupting Touch, Spellcasting, and Leap.
+- Verification:
+  - System SDK tests verify the two new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping, trait metadata where applicable, action metadata, and quick-roll ids.
+  - API tests verify the two new threat ids, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/.
+
+### 2026-05-06 - D&D SRD Mage-Mule monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `289` unique SRD stat blocks exposed as `290` threat ids to `293` unique SRD stat blocks exposed as `294` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Mage, Mammoth, Mastiff, and Mule stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills or traits where applicable, languages, gear where applicable, and action metadata.
+  - The batch adds Mage Arcane Burst and Spellcasting, Mammoth Gore and Trample, Mastiff Bite, and Mule Beast of Burden and Hooves metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping where applicable, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the four new threat ids, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping where applicable, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Monsters A-Z mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/monsters-a-z/; Fantasy Grounds SRD 5.2.1 Animals mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD Octopus-Piranha monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `293` unique SRD stat blocks exposed as `294` threat ids to `297` unique SRD stat blocks exposed as `298` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Octopus, Owl, Panther, and Piranha stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills or traits where applicable, languages, and action metadata.
+  - The batch adds Octopus Compression, Water Breathing, Tentacles, and Ink Cloud reaction metadata; Owl Flyby and Talons; Panther Rend and Nimble Escape; and Piranha Water Breathing and Bite metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping where applicable, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the four new threat ids, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping where applicable, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Animals mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD Polar Bear-Pteranodon monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `297` unique SRD stat blocks exposed as `298` threat ids to `300` unique SRD stat blocks exposed as `301` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Polar Bear, Pony, and Pteranodon stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills or traits where applicable, languages, and action metadata.
+  - The batch adds Polar Bear Cold Resistance, Perception, Stealth, and repeated Rend metadata; Pony Hooves metadata; and Pteranodon Flyby, Perception, and Bite metadata.
+- Verification:
+  - System SDK tests verify the three new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping where applicable, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the three new threat ids, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping where applicable, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Animals mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD Spider and Swarm of Piranhas monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `300` unique SRD stat blocks exposed as `301` threat ids to `302` unique SRD stat blocks exposed as `303` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Spider and Swarm of Piranhas stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills or traits where applicable, languages, and action metadata.
+  - The batch adds Spider darkvision, Spider Climb, Web Walker, Stealth, and poison Bite metadata; and Swarm of Piranhas Water Breathing, swarm defenses, wounded-target Bites, and Bloodied damage metadata.
+- Verification:
+  - System SDK tests verify the two new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping where applicable, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the two new threat ids, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping where applicable, trait metadata, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Animals mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+### 2026-05-06 - D&D SRD Allosaurus-Archelon monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `302` unique SRD stat blocks exposed as `303` threat ids to `306` unique SRD stat blocks exposed as `307` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Allosaurus, Ankylosaurus, Ape, and Archelon stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills or traits where applicable, languages, and action metadata.
+  - The batch adds Allosaurus charge-based Claws prone metadata, Ankylosaurus Tail prone metadata, Ape Athletics/Perception with Fist/Rock quick rolls, and Archelon Amphibious/Stealth/swim-speed Bite metadata.
+- Verification:
+  - System SDK tests verify the four new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping where applicable, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the four new threat ids, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping where applicable, trait metadata, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Animals mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD Goat-Lizard monster batch
+
+- Completed:
+  - Expanded the D&D SRD monster catalog from `306` unique SRD stat blocks exposed as `307` threat ids to `312` unique SRD stat blocks exposed as `313` threat ids, including the existing `goblin-minion` alias.
+  - Added SRD 5.2.1 Goat, Hawk, Jackal, Killer Whale, Lion, and Lizard stat blocks with SRD AC, HP, speed, CR/XP, saves, senses, skills or traits where applicable, languages, and action metadata.
+  - The batch adds Goat charging Ram summary metadata, Hawk Talons, Jackal darkvision/Stealth, Killer Whale Hold Breath/Blindsight/Bite, Lion Pack Tactics/Running Leap/Roar fear metadata, and Lizard Spider Climb/Bite metadata.
+- Verification:
+  - System SDK tests verify the six new threat ids, stat-block metadata, monster actor HP/AC/CR/XP payloads, skill proficiency mapping where applicable, trait metadata, action metadata, and quick-roll ids.
+  - API tests verify the six new threat ids, monster actor creation, HP/AC/CR/XP payloads, skill proficiency mapping where applicable, trait metadata, and returned quick rolls.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Animals mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/animals/.
+
+### 2026-05-06 - D&D SRD Alarm-Arcane Lock spell batch
+
+- Completed:
+  - Compared Fantasy Grounds SRD 5.2.1 spell-description headings against the runtime D&D SRD compendium: source spells `339`, local spell entries `88`, missing `252` before this slice.
+  - Expanded the D&D SRD compendium from `88` to `100` first-class spell entries.
+  - Added SRD 5.2.1 Alarm, Alter Self, Animal Messenger, Animal Shapes, Animate Dead, Animate Objects, Antilife Shell, Antimagic Field, Antipathy/Sympathy, Arcane Eye, Arcane Hand, and Arcane Lock with level, school, action, range, duration, class, ritual/concentration, save, summon, ward, sensor, shape-shift, antimagic, command, upcast, and spell-attack metadata where applicable.
+- Verification:
+  - System SDK tests verify the twelve new compendium entries and representative structured metadata.
+  - API tests verify the twelve new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Arcane Sword-Bestow Curse spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `100` to `110` first-class spell entries.
+  - Added SRD 5.2.1 Arcane Sword, Arcanist's Magic Aura, Astral Projection, Augury, Awaken, Banishment, Barkskin, Beacon of Hope, Befuddlement, and Bestow Curse with level, school, action, range, duration, class, material, ritual/concentration, save, attack, damage, travel, aura, curse, armor-class floor, healing-maximization, condition, upcast, and effect metadata where applicable.
+- Verification:
+  - System SDK tests verify the ten new compendium entries and representative structured metadata.
+  - API tests verify the ten new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Black Tentacles-Charm Person spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `110` to `120` first-class spell entries.
+  - Added SRD 5.2.1 Black Tentacles, Blade Barrier, Blight, Blindness/Deafness, Blink, Blur, Call Lightning, Calm Emotions, Chain Lightning, and Charm Person with level, school, action, range, duration, class, concentration, save, damage, upcast, terrain, cover, condition, repeat-save, planar, sight, charm, attitude, and repeat-action metadata where applicable.
+- Verification:
+  - System SDK tests verify the ten new compendium entries and representative structured metadata.
+  - API tests verify the ten new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Circle of Death-Conjure Animals spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `120` to `130` first-class spell entries.
+  - Added SRD 5.2.1 Circle of Death, Clone, Cloudkill, Commune, Commune with Nature, Comprehend Languages, Compulsion, Cone of Cold, Confusion, and Conjure Animals with level, school, action, range, duration, class, ritual/concentration, save, damage, upcast, area, material, clone soul-transfer, cloud movement, divine question, nature fact, language, forced-movement, random-behavior, and spectral-pack metadata where applicable.
+- Verification:
+  - System SDK tests verify the ten new compendium entries and representative structured metadata.
+  - API tests verify the ten new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Conjure Celestial-Control Water spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `130` to `140` first-class spell entries.
+  - Added SRD 5.2.1 Conjure Celestial, Conjure Elemental, Conjure Fey, Conjure Minor Elementals, Conjure Woodland Beings, Contact Other Plane, Contagion, Contingency, Continual Flame, and Control Water with level, school, action, range, duration, class, ritual/concentration, save, damage, healing, upcast, area, summon, spell-attack, restrained/fear/poisoned/incapacitated condition, terrain, question, contingency, light, and water-control metadata where applicable.
+- Verification:
+  - System SDK tests verify the ten new compendium entries and representative structured metadata.
+  - API tests verify the ten new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Control Weather-Demiplane spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `140` to `150` first-class spell entries.
+  - Added SRD 5.2.1 Control Weather, Create Food and Water, Create or Destroy Water, Create Undead, Creation, Darkvision, Daylight, Death Ward, Delayed Blast Fireball, and Demiplane with level, school, action, range, duration, class, concentration, save, damage, upcast, weather-stage, food/water, undead-control, temporary-object, vision, light/darkness, death-protection, delayed-damage, and demiplane persistence metadata where applicable.
+- Verification:
+  - System SDK tests verify the ten new compendium entries and representative structured metadata.
+  - API tests verify the ten new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Detect Evil and Good-Dominate Beast spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `150` to `160` first-class spell entries.
+  - Added SRD 5.2.1 Detect Evil and Good, Detect Poison and Disease, Dimension Door, Disguise Self, Disintegrate, Dispel Evil and Good, Divination, Divine Favor, Divine Word, and Dominate Beast with level, school, action, range, duration, class, ritual/concentration, save, damage, upcast/duration, sensing, teleport/failure, disguise/inspection, disintegration, banishment, divination, weapon-rider, Divine Word threshold, and domination metadata where applicable.
+- Verification:
+  - System SDK tests verify the ten new compendium entries and representative structured metadata.
+  - API tests verify the ten new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Dominate Monster-Eyebite spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `160` to `170` first-class spell entries.
+  - Added SRD 5.2.1 Dominate Monster, Dominate Person, Dream, Earthquake, Entangle, Enthrall, Etherealness, Expeditious Retreat, and Eyebite with level, school, action, range, duration, class, concentration, save, target type, condition, upcast/duration, dream-message, earthquake/fissure/structure, terrain/restraint, perception penalty, ethereal travel, Dash, and repeated Eyebite effect metadata where applicable.
+  - Added an SRD source-id-compatible `enlargereduce` compendium alias while preserving the existing `enlarge-reduce` id used by local callers and magic-item references.
+- Verification:
+  - System SDK tests verify the ten source-heading additions and representative structured metadata.
+  - API tests verify the ten source-heading additions are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Fabricate-Freedom of Movement spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `170` to `190` first-class spell entries.
+  - Added SRD 5.2.1 Fabricate, Faithful Hound, Feather Fall, Find Familiar, Find Steed, Find the Path, Find Traps, Finger of Death, Fire Shield, Fire Storm, Flame Blade, Flame Strike, Flaming Sphere, Flesh to Stone, Floating Disk, Fog Cloud, Forbiddance, Forcecage, Foresight, and Freedom of Movement with level, school, action, range, duration, class, ritual/concentration, save, damage, upcast, summoning, travel, trap sensing, retaliation, area, petrification, carrying, obscuring, planar ward, force-prison, foresight, and movement-protection metadata where applicable.
+- Verification:
+  - System SDK tests verify the twenty new compendium entries and representative structured metadata.
+  - API tests verify the twenty new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Freezing Sphere-Heal spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `190` to `210` first-class spell entries.
+  - Added SRD 5.2.1 Freezing Sphere, Gate, Geas, Gentle Repose, Giant Insect, Glibness, Globe of Invulnerability, Glyph of Warding, Goodberry, Grease, Greater Invisibility, Greater Restoration, Guardian of Faith, Guards and Wards, Guidance, Gust of Wind, Hallow, Hallucinatory Terrain, Harm, and Heal with level, school, action, range, duration, class, ritual/concentration, save, damage, healing, upcast, planar portal, command charm, remains preservation, summon stat-block, Charisma floor, spell-blocking globe, glyph trigger, food/healing, terrain/prone, invisibility, restoration, guardian, warded-area, guidance, wind, hallow, terrain illusion, hit-point maximum, and condition-ending metadata where applicable.
+- Verification:
+  - System SDK tests verify the twenty new compendium entries and representative structured metadata.
+  - API tests verify the twenty new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Heat Metal-Locate Animals or Plants spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `210` to `230` first-class spell entries.
+  - Added SRD 5.2.1 Heat Metal, Heroes' Feast, Heroism, Hideous Laughter, Hold Monster, Holy Aura, Ice Storm, Illusory Script, Imprisonment, Incendiary Cloud, Inflict Wounds, Insect Plague, Instant Summons, Irresistible Dance, Jump, Knock, Legend Lore, Levitate, Light, and Locate Animals or Plants with level, school, action, range, duration, class, ritual/concentration, save, damage, healing/temporary HP, upcast, charm/control, aura, terrain, script, imprisonment, cloud, summon-object, movement, unlocking, lore, levitation, light, and location metadata where applicable.
+- Verification:
+  - System SDK tests verify the twenty new compendium entries and representative structured metadata.
+  - API tests verify the twenty new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Locate Creature-Modify Memory spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `230` to `250` first-class spell entries.
+  - Added SRD 5.2.1 Locate Creature, Locate Object, Mage Hand, Magic Circle, Magic Jar, Magic Mouth, Magic Weapon, Magnificent Mansion, Major Image, Mass Heal, Mass Suggestion, Maze, Meld into Stone, Message, Meteor Swarm, Mind Blank, Mirage Arcane, Mirror Image, Mislead, and Modify Memory with level, school, action, range, duration, class, ritual/concentration, save, damage, healing, object-location, creature-location, spectral-hand, warding-circle, soul-possession, triggered-message, magic-weapon, extradimensional-mansion, major-illusion, mass-suggestion, maze, stone-melding, private-message, meteor, mind-blank, terrain-illusion, duplicate, decoy, and memory metadata where applicable.
+- Verification:
+  - System SDK tests verify the twenty new compendium entries and representative structured metadata.
+  - API tests verify the twenty new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Moonbeam-Protection from Energy spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `250` to `270` first-class spell entries.
+  - Added SRD 5.2.1 Moonbeam, Move Earth, Nondetection, Passwall, Phantasmal Killer, Phantom Steed, Planar Ally, Planar Binding, Plane Shift, Plant Growth, Polymorph, Power Word Kill, Power Word Stun, Prismatic Spray, Prismatic Wall, Private Sanctum, Produce Flame, Programmed Illusion, Project Image, and Protection from Energy with level, school, action, range, duration, class, ritual/concentration, save, damage, upcast, radiant cylinder, earth shaping, divination blocking, passage, nightmare illusion, mount, planar service, extraplanar binding, planar travel, plant overgrowth/enrichment, transformation, power word threshold, prismatic ray/wall, sanctum, cantrip flame, programmed illusion, remote image, and energy resistance metadata where applicable.
+- Verification:
+  - System SDK tests verify the twenty new compendium entries and representative structured metadata.
+  - API tests verify the twenty new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Protection from Evil and Good-Sequester spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `270` to `290` first-class spell entries.
+  - Added SRD 5.2.1 Protection from Evil and Good, Protection from Poison, Purify Food and Drink, Raise Dead, Ray of Frost, Regenerate, Reincarnate, Remove Curse, Resilient Sphere, Resistance, Resurrection, Reverse Gravity, Rope Trick, Sacred Flame, Sanctuary, Scrying, Secret Chest, Seeming, Sending, and Sequester with level, school, action, range, duration, class, ritual/concentration, save, damage, healing, protection, poison, purification, revival, cantrip scaling, regeneration, reincarnation, curse removal, resilient sphere, damage resistance, resurrection, reversed gravity, extradimensional rope refuge, radiant save, sanctuary ward, scrying sensor, Ethereal chest, mass disguise, cross-planar messaging, and suspended-animation metadata where applicable.
+- Verification:
+  - System SDK tests verify the twenty new compendium entries and representative structured metadata.
+  - API tests verify the twenty new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Shapechange-Symbol spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `290` to `310` first-class spell entries.
+  - Added SRD 5.2.1 Shapechange, Shield of Faith, Shillelagh, Shining Smite, Shocking Grasp, Silent Image, Simulacrum, Sleep, Sleet Storm, Spare the Dying, Speak with Dead, Speak with Plants, Spider Climb, Spike Growth, Stone Shape, Stoneskin, Storm of Vengeance, Sunbeam, Sunburst, and Symbol with level, school, action, range, duration, class, ritual/concentration, save, damage, upcast, shape-shifting, AC bonus, empowered weapon, smite rider, spell attack, visual illusion, duplicate construct, sleep conditions, storm terrain, stabilization, corpse questions, plant communication, climbing, spike terrain, stone shaping, physical resistance, storm phases, sunlight beam/burst, and symbol glyph metadata where applicable.
+- Verification:
+  - System SDK tests verify the twenty new compendium entries and representative structured metadata.
+  - API tests verify the twenty new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Telekinesis-Wall of Stone spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `310` to `330` first-class spell entries.
+  - Added SRD 5.2.1 Telekinesis, Telepathic Bond, Teleport, Teleportation Circle, Time Stop, Tiny Hut, Tongues, Transport via Plants, Tree Stride, True Polymorph, True Resurrection, True Seeing, True Strike, Unseen Servant, Vampiric Touch, Vicious Mockery, Wall of Fire, Wall of Force, Wall of Ice, and Wall of Stone with level, school, action, range, duration, class, ritual/concentration, save, damage, healing, upcast, telekinesis, telepathy, teleport, teleportation circle, time stop, protective hut, languages, plant transport, tree stride, transformation, resurrection, Truesight, weapon cantrip, servant, vampiric healing, mockery, and wall metadata where applicable.
+- Verification:
+  - System SDK tests verify the twenty new compendium entries and representative structured metadata.
+  - API tests verify the twenty new entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD Wall of Thorns-Zone of Truth final spell batch
+
+- Completed:
+  - Expanded the D&D SRD compendium from `330` to `340` first-class spell entries.
+  - Added SRD 5.2.1 Wall of Thorns, Warding Bond, Water Breathing, Water Walk, Weird, Wind Walk, Wind Wall, Wish, Word of Recall, and Zone of Truth with level, school, action, range, duration, class, ritual/concentration, save, damage, upcast, thorn-wall movement, defensive bond, water breathing, liquid traversal, frightened psychic-terror, cloud travel, wind-wall projectile blocking, wish option/stress, sanctuary teleport, and truth-zone metadata where applicable.
+- Verification:
+  - System SDK tests verify the ten final compendium entries and representative structured metadata.
+  - API tests verify the ten final entries are returned through the D&D SRD compendium endpoint.
+  - Validation commands for this slice: `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts`, `pnpm --filter @open-tabletop/system-sdk build`, `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "D&D 5.5e SRD"`, SRD spell source/local count comparison, and `git diff --check`.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Spells mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/spells/.
+
+### 2026-05-06 - D&D SRD A-B magic item expansion batch
+
+- Completed:
+  - Expanded first-class D&D SRD magic-item compendium coverage from `82` to `99` entries.
+  - Added SRD 5.2.1 Ammunition +1/+2/+3 source-heading alias, Amulet of the Planes, Apparatus of the Crab, Armor +1/+2/+3 source-heading alias, Armor of Vulnerability, Bag of Beans, Bag of Devouring, Bead of Force, Bead of Nourishment, Belt of Dwarvenkind, Belt of Giant Strength, Berserker Axe, Boots of Levitation, Bowl of Commanding Water Elementals, Brazier of Commanding Fire Elementals, Brooch of Shielding, and Broom of Flying with rarity, attunement, crafting, vehicle, curse, summon, spell-reference, force-sphere, planar-travel, strength-setting, resistance, flight, and source-heading alias metadata where applicable.
+- Verification:
+  - System SDK tests verify the new magic-item ids and representative structured metadata.
+  - API tests verify representative new magic-item entries are returned through the D&D SRD compendium endpoint.
+  - SRD magic-item source/local comparison reports `257` source magic-item headings after excluding general rules headings, `99` local first-class magic-item ids, and `189` direct source headings still missing.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Magic Items mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/magic-items/.
+
+### 2026-05-06 - D&D SRD C-D magic item expansion batch
+
+- Completed:
+  - Expanded first-class D&D SRD magic-item compendium coverage from `99` to `119` entries.
+  - Added SRD 5.2.1 Candle of Invocation, Cape of the Mountebank, Carpet of Flying, Censer of Controlling Air Elementals, Chime of Opening, Circlet of Blasting, Cloak of Arachnida, Cloak of the Bat, Cloak of the Manta Ray, Crystal Ball, Crystal Ball of Mind Reading, Crystal Ball of Telepathy, Crystal Ball of True Seeing, Cube of Force, Cubic Gate, Dagger of Venom, Dancing Sword, Decanter of Endless Water, Deck of Illusions, and Defender with rarity, attunement, charge, spell-reference, summon, flight, stealth, water movement, scrying, telepathy, Truesight, poison, illusion, curse/condition, and armor-class transfer metadata where applicable.
+- Verification:
+  - System SDK tests verify the new magic-item ids and representative structured metadata.
+  - API tests verify representative new magic-item entries are returned through the D&D SRD compendium endpoint.
+  - SRD magic-item source/local comparison reports `257` source magic-item headings after excluding general rules headings, `119` local first-class magic-item ids, and `169` direct source headings still missing.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Magic Items mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/magic-items/.
+
+### 2026-05-06 - D&D SRD D-E magic item expansion batch
+
+- Completed:
+  - Expanded first-class D&D SRD magic-item compendium coverage from `119` to `139` entries.
+  - Added SRD 5.2.1 Demon Armor, Dimensional Shackles, Dragon Orb, Dragon Scale Mail, Dragon Slayer, Dust of Disappearance, Dust of Dryness, Dust of Sneezing and Choking, Dwarven Plate, Dwarven Thrower, Efficient Quiver, Efreeti Bottle, Elemental Gem, Elixir of Health, Elven Chain, Energy Bow, Eversmoking Bottle, Eyes of Charming, Eyes of Minute Seeing, and Eyes of the Eagle with rarity, artifact, attunement, charge, spell-reference, armor bonus, curse, forced-movement, extradimensional storage, summon, teleport blocking, invisibility, condition, poison/necrotic/force damage, restraint, smoke, vision, and perception metadata where applicable.
+- Verification:
+  - System SDK tests verify the new magic-item ids and representative structured metadata.
+  - API tests verify representative new magic-item entries are returned through the D&D SRD compendium endpoint.
+  - SRD magic-item source/local comparison reports `257` source magic-item headings after excluding general rules headings, `139` local first-class magic-item ids, and `149` direct source headings still missing.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Magic Items mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/magic-items/.
+
+### 2026-05-06 - D&D SRD F-H magic item expansion batch
+
+- Completed:
+  - Expanded first-class D&D SRD magic-item compendium coverage from `139` to `159` entries.
+  - Added SRD 5.2.1 Feather Token, Figurine of Wondrous Power, Flame Tongue, Folding Boat, Frost Brand, Gauntlets of Ogre Power, Gem of Brightness, Gem of Seeing, Giant Slayer, Glamoured Studded Leather, Gloves of Missile Snaring, Gloves of Swimming and Climbing, Gloves of Thievery, Goggles of Night, Hammer of Thunderbolts, Handy Haversack, Hat of Disguise, Hat of Many Spells, Headband of Intellect, and Helm of Brilliance with rarity-varies source-heading, attunement, charge, spell-reference, summon, weapon bonus, armor bonus, ability-score setting, storage, light, condition, forced movement, fire/cold/force/radiant damage, Truesight, darkvision, skill bonus, storage hazard, and catastrophe metadata where applicable.
+- Verification:
+  - System SDK tests verify the new magic-item ids and representative structured metadata.
+  - API tests verify representative new magic-item entries are returned through the D&D SRD compendium endpoint.
+  - SRD magic-item source/local comparison reports `257` source magic-item headings after excluding general rules headings, `159` local first-class magic-item ids, and `129` direct source headings still missing.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Magic Items mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/magic-items/.
+
+### 2026-05-06 - D&D SRD H-M magic item expansion batch
+
+- Completed:
+  - Expanded first-class D&D SRD magic-item compendium coverage from `159` to `179` entries.
+  - Added SRD 5.2.1 Helm of Comprehending Languages, Helm of Telepathy, Helm of Teleportation, Holy Avenger, Horn of Blasting, Horn of Valhalla, Horseshoes of a Zephyr, Horseshoes of Speed, Immovable Rod, Instant Fortress, Ioun Stone, Iron Bands, Iron Flask, Javelin of Lightning, Lantern of Revealing, Luck Blade, Mace of Disruption, Mace of Smiting, Mace of Terror, and Mantle of Spell Resistance with rarity-varies source-heading, attunement, charge, spell-reference, aura, summon, storage, teleportation, force fixing, fortress, vehicle mount movement, thrown lightning, invisibility revealing, luck, saving throw, condition, and fiend/undead/construct rider metadata where applicable.
+- Verification:
+  - System SDK tests verify the new magic-item ids and representative structured metadata.
+  - API tests verify representative new magic-item entries are returned through the D&D SRD compendium endpoint.
+  - SRD magic-item source/local comparison reports `257` source magic-item headings after excluding general rules headings, `179` local first-class magic-item ids, and `109` direct source headings still missing.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Magic Items mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/magic-items/.
+
+### 2026-05-06 - D&D SRD M-P magic item expansion batch
+
+- Completed:
+  - Expanded first-class D&D SRD magic-item compendium coverage from `179` to `199` entries.
+  - Added SRD 5.2.1 Manual of Bodily Health, Manual of Gainful Exercise, Manual of Golems, Manual of Quickness of Action, Marvelous Pigments, Medallion of Thoughts, Mirror of Life Trapping, Mysterious Deck, Necklace of Adaptation, Necklace of Fireballs, Necklace of Prayer Beads, Nine Lives Stealer, Oathbow, Oil of Etherealness, Oil of Sharpness, Oil of Slipperiness, Pearl of Power, Periapt of Health, Periapt of Proof against Poison, and Periapt of Wound Closure with ability-score training, golem creation, painting creation, charge, extradimensional prison, deck table, spell-reference, bead, instant-death, sworn-enemy, oil application, spell-slot restoration, healing, immunity, and death-save metadata where applicable.
+- Verification:
+  - System SDK tests verify the new magic-item ids and representative structured metadata.
+  - API tests verify representative new magic-item entries are returned through the D&D SRD compendium endpoint.
+  - SRD magic-item source/local comparison reports `257` source magic-item headings after excluding general rules headings, `199` local first-class magic-item ids, and `89` direct source headings still missing.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Magic Items mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/magic-items/.
+
+### 2026-05-06 - D&D SRD P-R magic item expansion batch
+
+- Completed:
+  - Expanded first-class D&D SRD magic-item compendium coverage from `199` to `219` entries.
+  - Added SRD 5.2.1 Pipes of Haunting, Pipes of the Sewers, Plate Armor of Etherealness, Portable Hole, Potion of Giant Strength source-heading alias, Potions of Healing source-heading alias, Quarterstaff of the Acrobat, Ring of Animal Influence, Ring of Djinni Summoning, Ring of Elemental Command, Ring of Evasion, Ring of Feather Falling, Ring of Jumping, Ring of Mind Shielding, Ring of Shooting Stars, Ring of Spell Storing, Ring of Spell Turning, Ring of Swimming, Ring of Telekinesis, and Ring of the Ram with charge, save, condition, summon/control, extradimensional, variant alias, weapon-form, ring spell, elemental-plane, reaction, fall, movement, mind-shielding, spell-storage, reflection, swim-speed, telekinesis, and spectral-ram metadata where applicable.
+- Verification:
+  - System SDK tests verify the new magic-item ids and representative structured metadata.
+  - API tests verify representative new magic-item entries are returned through the D&D SRD compendium endpoint.
+  - SRD magic-item source/local comparison reports `257` source magic-item headings after excluding general rules headings, `219` local first-class magic-item ids, and `69` direct source headings still missing.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Magic Items mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/magic-items/.
+
+### 2026-05-06 - D&D SRD R-S magic item expansion batch
+
+- Completed:
+  - Expanded first-class D&D SRD magic-item compendium coverage from `219` to `239` entries.
+  - Added SRD 5.2.1 Ring of Three Wishes, Ring of Warmth, Ring of Water Walking, Ring of X-ray Vision, Robe of Eyes, Robe of Scintillating Colors, Robe of Stars, Robe of the Archmagi, Robe of Useful Items, Rod of Absorption, Rod of Alertness, Rod of Lordly Might, Rod of Resurrection, Rod of Rulership, Rod of Security, Rope of Climbing, Rope of Entanglement, Scarab of Protection, Scimitar of Speed, and Sending Stones with wish, cold-reduction, water-walk, X-ray/exhaustion, senses/drawback, stun/light, astral travel, spellcasting, useful-patch, spell-absorption, alertness aura, rod-form, resurrection, charm, demiplane, animated rope, restraint, protection, speed attack, and paired-sending metadata where applicable.
+- Verification:
+  - System SDK tests verify the new magic-item ids and representative structured metadata.
+  - API tests verify representative new magic-item entries are returned through the D&D SRD compendium endpoint.
+  - SRD magic-item source/local comparison reports `257` source magic-item headings after excluding general rules headings, `239` local first-class magic-item ids, and `49` direct source headings still missing.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Magic Items mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/magic-items/.
+
+### 2026-05-06 - D&D SRD shield-staff magic item expansion batch
+
+- Completed:
+  - Expanded first-class D&D SRD magic-item compendium coverage from `239` to `259` entries.
+  - Added SRD 5.2.1 Sentinel Shield, Shield +1/+2/+3 source-heading alias, Shield of Missile Attraction, Shield of the Cavalier, Slippers of Spider Climbing, Sovereign Glue, Spellguard Shield, Spell Scroll source-heading alias, Sphere of Annihilation, Staff of Charming, Staff of Fire, Staff of Frost, Staff of Swarming Insects, Staff of the Magi, Staff of the Python, Staff of the Woodlands, Staff of Thunder and Lightning, Staff of Withering, Stone of Controlling Earth Elementals, and Stone of Good Luck (Luckstone) with initiative/perception, shield-variant, curse/redirect, protective-field, climbing, permanent-bond, spellguard, scroll-variant, annihilation/control, staff charge/spell, absorption, summon, tree-form, thunder/lightning, withering, earth elemental, and luckstone metadata where applicable.
+- Verification:
+  - System SDK tests verify the new magic-item ids and representative structured metadata.
+  - API tests verify representative new magic-item entries are returned through the D&D SRD compendium endpoint.
+  - SRD magic-item source/local comparison reports `257` source magic-item headings after excluding general rules headings, `259` local first-class magic-item ids, and `29` direct source headings still missing.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Magic Items mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/magic-items/.
+
+### 2026-05-06 - D&D SRD final magic item source-heading completion batch
+
+- Completed:
+  - Expanded first-class D&D SRD magic-item compendium coverage from `259` to `288` entries.
+  - Added the remaining SRD 5.2.1 magic-item source headings: Sun Blade, Sword of Life Stealing, Sword of Sharpness, Sword of Wounding, Talisman of Pure Good, Talisman of the Sphere, Talisman of Ultimate Evil, Thunderous Greatclub, Tome of Clear Thought, Tome of Leadership and Influence, Tome of Understanding, Trident of Fish Command, Universal Solvent, Vicious Weapon, Vorpal Sword, Wand of Binding, Wand of Enemy Detection, Wand of Fear, Wand of Paralysis, Wand of Polymorph, Wand of Secrets, Wand of the War Mage +1/+2/+3 source-heading alias, Wand of Web, Wand of Wonder, Weapon +1/+2/+3 source-heading alias, Well of Many Worlds, Wind Fan, Winged Boots, and Wings of Flying.
+  - Covered final-batch metadata for radiant/light weapons, critical riders, healing prevention, talismans, ability-score tomes, fish command, solvent, vorpal criticals, wand charge/spell/effect tables, generic weapon/wand aliases, portals, wind-fan failure, and flight items.
+- Verification:
+  - System SDK tests verify the new magic-item ids and representative structured metadata.
+  - API tests verify representative new magic-item entries are returned through the D&D SRD compendium endpoint.
+  - SRD magic-item source/local comparison reports `257` source magic-item headings after excluding general rules headings, `288` local first-class magic-item ids including variant/source-alias entries, and `0` direct source headings still missing.
+- Source rule references for this slice: Fantasy Grounds SRD 5.2.1 Magic Items mirror, https://www.fantasygrounds.com/library/dnd5e/dd-srd-5-2-1/magic-items/.
+
+### 2026-05-06 - Mystic Noir investigation pressure automation slice
+
+- Completed:
+  - Added Mystic Noir pressure-aware condition automation for `exposed` and `bolstered`.
+  - `exposed` applies disadvantage metadata to Stealth and Influence checks without affecting unrelated skills.
+  - `bolstered` adds a `1d6` condition bonus to Resolve and Occult checks and records condition bonus sources.
+  - Added `informant-network` and `banishing-sigil` compendium entries with clue/ritual quick-roll metadata for resource costs, pressure conditions, and condition-clearing ritual actions.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- index.test.ts -t "mystic noir"` passed with `8` Mystic Noir tests.
+
+### 2026-05-06 - AI response-quality evaluation gates
+
+- Completed:
+  - Persisted assistant response text on AI thread records so evaluation runs can inspect the actual model output after the request lifecycle completes.
+  - Extended `POST /api/v1/campaigns/{campaignId}/ai/evaluations` with deterministic response gates: required substrings, forbidden substrings, minimum response characters, and maximum response characters.
+  - Kept the gates permissioned behind `ai.proposeChanges` and included them in the same evaluation summaries and server-admin operations surface as provider/tool/duration/cost checks.
+- Verification:
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "ai thread evaluations"` passed.
+  - `pnpm --filter @open-tabletop/core build` passed.
+  - `pnpm --filter @open-tabletop/api build` passed.
+
+### 2026-05-06 - AI approved memory search tool
+
+- Completed:
+  - Added a typed, read-only `search_memory` AI tool that searches approved campaign memory facts visible to the human caller.
+  - The tool is advertised to roles with public AI memory access, returns public memory by default, and denies `gm_only` or `any` scopes unless the caller has `ai.readGmMemory`.
+  - Tool output includes the matched memory text, visibility, source ids, approval user, and timestamps without mutating campaign state.
+- Verification:
+  - Expanded-tool tests cover GM approved public and GM-only memory search, plus player denial for provider-requested all-memory scope.
+  - Cross-role provider advertisement invariants treat `search_memory` as permission-safe alongside dice and compendium reads.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "expanded ai tools"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "tool advertisement"`
+  - `pnpm --filter @open-tabletop/api build`
+
+### 2026-05-06 - AI named response criteria evaluations
+
+- Completed:
+  - Extended deterministic AI evaluation payloads with named `responseCriteria` blocks.
+  - Each response criterion can require substrings, forbid substrings, and enforce minimum or maximum response length with check names scoped to the criterion.
+  - This records scenario-specific deterministic checks as optional historical telemetry rather than an active model-output evaluation program.
+- Verification:
+  - AI thread evaluation tests cover passing named response criteria and a failing required-phrase criterion.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "ai thread evaluations"`
+  - `pnpm --filter @open-tabletop/api build`
+
+### 2026-05-06 - AI tool-output evaluation gates
+
+- Completed:
+  - Extended deterministic AI evaluation payloads with `expectedToolOutputs`.
+  - Tool-output expectations can require a completed or failed tool call, assert structured output field values, assert output text is present, and assert disallowed output text is absent.
+  - This covers regressions where a model calls the right tool but produces an unsafe or incorrect persisted tool result.
+- Verification:
+  - AI thread evaluation tests cover passing dice-roll output field/text expectations plus failing tool-output field and text expectations.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "ai thread evaluations"`
+  - `pnpm --filter @open-tabletop/api build`
+
+### 2026-05-06 - AI evaluation failed-check rollups
+
+- Completed:
+  - Added failed-check frequency rollups to campaign and server-admin AI evaluation summaries.
+  - Rollups aggregate failed check names across recent persisted evaluations so operators can see recurring provider, tool-output, response-quality, duration, and cost failures without opening each evaluation run.
+- Verification:
+  - AI thread evaluation tests assert campaign and admin summaries expose failed checks for missing tool calls, forbidden response text, and structured tool-output mismatches.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "ai thread evaluations"`
+  - `pnpm --filter @open-tabletop/api build`
+
+### 2026-05-06 - AI advertised-tool evaluation telemetry
+
+- Completed:
+  - Persisted provider-advertised tool names on AI thread records after human permission filtering.
+  - Persisted advertised tool required permissions beside the advertised names so evaluations can catch policy-scope drift, not just accidental tool-name exposure.
+  - Added deterministic evaluation checks for required advertised tools and forbidden advertised tools.
+  - Added forbidden advertised-permission checks to fail runs when any provider-visible tool exposes a permission outside the expected policy boundary.
+  - This turns tool-advertisement permission regressions into production telemetry that can be evaluated after a thread runs, not only in isolated unit tests.
+- Verification:
+  - AI thread evaluation tests assert persisted advertised tool names and required permissions, passing required/forbidden advertised-tool checks, a passing forbidden advertised-permission check, and failing forbidden advertised-tool and advertised-permission checks.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "ai thread evaluations"`
+  - `pnpm --filter @open-tabletop/api build`
+
+### 2026-05-06 - Mystic Noir action side effects
+
+- Completed:
+  - Wired Mystic Noir clue and ritual action-use behavior to apply their system-specific condition side effects after resource validation.
+  - Informant Network now spends `lead` and adds `marked` pressure to the investigator's returned actor data.
+  - Banishing Sigil now spends `ward` and clears `exposed` pressure from the returned actor data.
+  - This deepens non-D&D rules behavior beyond static quick-roll metadata while keeping mutations inside the existing action-use proposal/API flow.
+- Verification:
+  - Mystic Noir SDK tests cover resource spending, Marked pressure application, Exposed cleanup, and existing pressure-aware quick-roll metadata.
+  - `pnpm --filter @open-tabletop/system-sdk test -- -t "mystic noir rules"`
+
+### 2026-05-06 - Email delivery retry operations
+
+- Completed:
+  - Added a server-admin retry endpoint for failed or pending email outbox messages.
+  - Retrying uses the configured email webhook and updates the existing outbox message delivery status instead of minting a new password reset token.
+  - Delivered messages are conflict-protected, non-admin callers are denied, and retry attempts append a redacted server-admin audit log entry.
+  - This closes an operational recovery gap for production password-reset email delivery failures.
+  - The Admin tab exposes retry actions for pending or failed outbox messages when the email webhook is configured.
+- Verification:
+  - API tests cover a failed password-reset email webhook delivery, non-admin retry denial, successful admin retry with webhook bearer token, delivered-message conflict protection, and the retry audit log.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "email outbox"`
+
+### 2026-05-06 - Vision sample source diagnostics
+
+- Completed:
+  - Enriched point-level vision samples with source-aware blocked-wall diagnostics.
+  - `blockedBy` entries now identify whether the obstructed source was an owned token vision polygon or a light polygon, plus the source id.
+  - `revealedBy`, `hiddenBy`, and `illuminatedBy` polygon diagnostics now include radius plus light color/opacity where applicable.
+  - This gives clients and operators enough data to explain why a coordinate is visible, illuminated, hidden, or blocked without changing visibility decisions.
+- Verification:
+  - API tests verify a wall-blocked coordinate reports both token and light source blockers, and a visible coordinate reports token radius plus colored-light opacity metadata.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "filters player token visibility"`
+
+### 2026-05-06 - AI operations risk summary
+
+- Completed:
+  - Added a redacted `risk` block to `GET /api/v1/admin/ai/operations`.
+  - The risk summary counts failed and running threads, failed tool calls, failed evaluations, provider error rollups, failed tool-call names/error codes, failed evaluation checks, and whether operator action is required.
+  - The summary keeps prompts, provider secrets, and raw tool payload details out of the server-admin operations response.
+- Verification:
+  - API tests create a completed AI thread plus synthetic failed provider thread, failed tool call, and failed evaluation, then assert the server-admin operations risk rollup.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "redacted ai operations"`
+
+### 2026-05-06 - AI operations service levels
+
+- Completed:
+  - Added a redacted `serviceLevels` block to `GET /api/v1/admin/ai/operations`.
+  - Service levels report thread completion/failure rates, tool failure rate, evaluation pass/failure rates, average evaluation score, and thread/tool duration count/average/p95/max summaries.
+  - The summary is derived from persisted thread, tool-call, and evaluation telemetry and does not include prompts, provider secrets, or raw tool inputs.
+- Verification:
+  - API tests create completed and failed AI telemetry, failed tool calls, and failed evaluations, then assert server-admin service-level rollups beside existing risk redaction.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "redacted ai operations"`
+
+### 2026-05-06 - AI evaluation coverage backlog
+
+- Completed:
+  - Added an `evaluationCoverage` block to `GET /api/v1/admin/ai/operations`.
+  - The summary reports evaluated versus unevaluated AI thread counts, coverage rate, failed-evaluation thread count, recurring failed checks, campaign-level backlog, and recent unevaluated threads.
+  - This gives operators a direct way to see whether AI prompt/tool behavior is actually under deterministic regression coverage without exposing prompts.
+- Verification:
+  - API tests assert coverage rate, unevaluated-thread backlog, failed-check rollups, per-campaign evaluation coverage, and redacted recent unevaluated threads in the server-admin AI operations response.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "redacted ai operations"`
+
+### 2026-05-06 - AI safety posture operations
+
+- Completed:
+  - Added a redacted `safetyPosture` block to `GET /api/v1/admin/ai/operations`.
+  - The summary groups deterministic evaluation checks into permission-boundary, tool-output, and response-safety categories so operators can distinguish policy regression failures from generic provider failures.
+  - The response reports evaluation coverage for safety checks, category totals, failed category totals, recurring safety failures, recent safety failures, and an action-required flag without exposing prompts or provider secrets.
+- Verification:
+  - API tests assert safety-check coverage, exact category counts, failed category counts, recurring failures, and redacted recent failures for a deterministic pass/fail evaluation pair.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "deterministic ai thread evaluations"`
+
+### 2026-05-06 - AI operations top-level actionability
+
+- Completed:
+  - Added top-level `actionRequired` to `GET /api/v1/admin/ai/operations`.
+  - The signal is true when runtime failures require operator attention, such as failed provider threads, provider error rollups, or failed tool calls.
+  - Evaluation and safety-posture summaries remain visible as telemetry, but they do not drive the top-level action-required state.
+  - The server-admin audit log records the top-level action state and action reasons without prompts, provider secrets, or raw tool payloads.
+- Verification:
+  - API tests assert failed evaluations and safety-posture failures remain non-actionable, while redacted failed provider threads and failed tool calls produce action reasons and summary-only audit logging with the same action reasons.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "deterministic ai thread evaluations"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "redacted ai operations"`
+
+### 2026-05-06 - AI stale running thread operations
+
+- Completed:
+  - Added stale-running AI thread detection to `GET /api/v1/admin/ai/operations`.
+  - Running threads older than 15 minutes now produce `stale_running_threads` in top-level `actionReasons`, increment `risk.staleRunningThreadCount`, and appear in redacted `risk.recentStaleRunningThreads` with thread id, campaign id, title, provider, start time, and age.
+  - Provider error rollups now also produce the dedicated `provider_errors` action reason so operators can distinguish upstream failures from generic failed-thread pressure.
+  - Added `POST /api/v1/admin/ai/threads/stale/fail` so server admins can dry-run or mark stale running threads as failed with optional campaign scoping, bounded batch size, cleanup reason, failed timestamp, duration preservation, provider-error annotation, and redacted audit logging.
+  - Evaluation and safety-posture summaries remain non-actionable; stale running detection is runtime/provider observability.
+- Verification:
+  - API tests assert a synthetic stale running provider thread is counted, included in recent stale-running summaries, and contributes the `stale_running_threads` action reason without exposing prompts or raw tool payloads.
+  - API tests assert non-admin denial, dry-run behavior without mutation, persisted stale-thread failure cleanup, redacted server-admin audit logging, and removal of the stale-running action reason after cleanup.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "lets server admins inspect redacted ai operations across campaigns"`
+
+### 2026-05-06 - AI stale started tool-call operations
+
+- Completed:
+  - Added stale-started AI tool-call detection to `GET /api/v1/admin/ai/operations`.
+  - Started tool calls older than 15 minutes now produce `stale_started_tool_calls` in top-level `actionReasons`, increment `risk.staleStartedToolCallCount`, and appear in redacted `risk.recentStaleStartedToolCalls` with tool-call id, thread id, campaign id, provider, tool name, created time, and age.
+  - Added `POST /api/v1/admin/ai/tool-calls/stale/fail` so server admins can dry-run or mark stale started tool calls as failed with optional campaign/thread scoping, bounded batch size, cleanup reason, duration preservation, redacted `stale_tool_call` output, and redacted audit logging.
+- Verification:
+  - API tests assert a synthetic stale started provider tool call is counted, included in recent stale-started summaries, and contributes the `stale_started_tool_calls` action reason without exposing prompts or raw tool inputs.
+  - API tests assert non-admin denial, dry-run behavior without mutation, persisted stale tool-call failure cleanup, redacted server-admin audit logging, and removal of the stale-started action reason after cleanup.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "lets server admins inspect redacted ai operations across campaigns"`
+
+### 2026-05-06 - AI cost budget operations
+
+- Completed:
+  - Added optional `OTTE_AI_COST_BUDGET_USD` runtime posture to server-admin AI operations.
+  - `GET /api/v1/admin/ai/operations` now reports configured AI cost budget, aggregate estimated cost, remaining budget, usage ratio, and exceeded state in `risk.costBudget`.
+  - Crossing the configured budget produces `cost_budget_exceeded` in top-level `actionReasons` and makes AI operations actionable without exposing prompts, provider secrets, or tool inputs.
+  - The browser Admin tab now shows configured AI cost budget and remaining budget beside aggregate token/cost metrics.
+- Verification:
+  - API tests assert configured cost rates and budget produce aggregate estimated cost, negative remaining budget, usage ratio, `costBudgetExceeded`, and `cost_budget_exceeded`.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "lets server admins inspect redacted ai operations across campaigns"`
+  - `pnpm --filter @open-tabletop/web typecheck`
+
+### 2026-05-06 - AI failed tool retry policy
+
+- Completed:
+  - Added an inspect-only failed-tool retry policy summary to `GET /api/v1/admin/ai/operations`.
+  - The risk block now reports retryable and non-retryable failed tool-call counts, per-tool retry classification, retry reasons, and recent retryable failed calls without exposing tool input payloads.
+  - `tool_failed` and `stale_tool_call` are classified as retryable. `missing_permission`, `invalid_tool_input`, and `unknown_tool` remain non-retryable until permissions, provider inputs, or tool advertisement changes.
+  - No automatic replay is performed; proposal and actor-action tools can carry side effects and still require an explicit future operator workflow.
+- Verification:
+  - API tests assert failed tool-call risk distinguishes a retryable `tool_failed` compendium failure from a non-retryable `missing_permission` scene-draft failure, including redacted recent retryable metadata.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "lets server admins inspect redacted ai operations across campaigns"`
+
+### 2026-05-06 - AI runtime actionability admin UI
+
+- Completed:
+  - The Admin tab now displays the `GET /api/v1/admin/ai/operations` runtime action state and concrete action reasons beside provider posture, retry budget, usage, campaign rollups, and recent tool-call rows.
+  - This keeps browser AI operations focused on runtime failures, stale running threads, provider errors, failed tool calls, usage, and cost posture instead of model-output evaluation workflows.
+- Verification:
+  - `pnpm --filter @open-tabletop/web build`
+
+### 2026-05-06 - Asset CDN purge operations
+
+- Completed:
+  - Added `POST /api/v1/admin/assets/{assetId}/purge-cache` so server admins can explicitly invalidate one uploaded asset from the configured CDN or edge cache.
+  - The purge operation calls `OTTE_ASSET_CDN_PURGE_WEBHOOK_URL` with the asset id, campaign id, blob path, CDN URL, checksum, lifecycle status, reason, and requesting admin id, while keeping purge tokens out of responses and audit logs.
+  - The global asset storage runtime report now exposes whether the CDN purge webhook is configured plus its timeout.
+  - Purge attempts append server-admin audit logs for success, failure, and unconfigured operation states without mutating asset lifecycle metadata.
+  - The Admin tab exposes CDN purge actions on asset integrity result rows when a purge webhook is configured.
+- Verification:
+  - API tests cover server-admin-only purge access, webhook bearer authorization, redacted webhook payload shape, audit logging, and runtime purge posture in `GET /api/v1/admin/assets/storage`.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "purge CDN cache"`
+
+### 2026-05-06 - Asset storage operations summary
+
+- Completed:
+  - Added an `operations` block to `GET /api/v1/admin/assets/storage` for production storage hygiene.
+  - The summary reports quota-at-risk campaigns, cleanup backlog counts/bytes, oldest cleanup-eligible age, missing storage references, unscanned managed assets, delivery configuration warnings, and an `actionRequired` flag.
+  - Quota-at-risk campaigns now make `actionRequired` true even before uploads are blocked, so operators can intervene before storage is exhausted.
+  - Delivery warnings call out missing production signing secrets, CDN delivery without a purge webhook, and local storage use in production without exposing secrets.
+- Verification:
+  - API tests assert deleted assets appear in the cleanup backlog with oldest cleanup-eligible age, and CDN delivery without purge configuration surfaces an operator warning in the admin storage response.
+  - API tests assert a campaign at 80% of its configured quota appears in `quota.atRiskCampaigns` and marks storage operations actionable without unrelated hygiene or delivery warnings.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "signed CDN asset URLs"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "campaigns approach quota"`
+
+### 2026-05-06 - Asset storage action reasons
+
+- Completed:
+  - Added concrete `actionReasons` to the `operations` block in `GET /api/v1/admin/assets/storage`.
+  - Reasons distinguish quota-at-risk campaigns, cleanup backlog, missing storage references, unscanned managed assets, and delivery configuration warnings.
+  - The response remains redacted and reports posture without storage-provider secrets or scanner credentials.
+- Verification:
+  - API tests assert cleanup backlog plus CDN purge configuration warnings produce separate action reasons, and quota-at-risk campaigns produce `quota_at_risk` without unrelated warnings.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "signed CDN asset URLs"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "campaigns approach quota"`
+
+### 2026-05-06 - Asset storage operation audit logs
+
+- Completed:
+  - Added redacted server-admin audit logs for `GET /api/v1/admin/assets/storage` inspections.
+  - Added server-admin audit logs for `POST /api/v1/admin/assets/migrate` and `POST /api/v1/admin/assets/cleanup`.
+  - Storage inspection audit entries include provider, active/total asset counts, used/all byte totals, action-required state, and action reasons while omitting provider secrets and signed URLs.
+  - Migration audit entries include dry-run state, target provider, asset count, changed state, planned/migrated/skipped/failed counts, and omit asset bytes or storage secrets.
+  - Cleanup audit entries include dry-run state, grace days, asset count, changed state, deleted/missing-marked/planned/skipped/failed counts, and omit object bytes or storage secrets.
+- Verification:
+  - API tests assert storage inspections append redacted provider/count/byte/action-posture audit summaries.
+  - API tests assert dry-run migration, real migration, real cleanup, and idempotent repeated cleanup append redacted server-admin audit summaries.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "signed CDN asset URLs"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "migrates stored assets"`
+
+### 2026-05-06 - Scheduled asset cleanup audit logs
+
+- Completed:
+  - Added redacted server-admin audit logs for API-hosted scheduled asset cleanup runs that plan work, mutate stored bytes, encounter object-level failures, or fail at the scheduler level.
+  - Scheduled cleanup audit entries include trigger, status, dry-run state, grace days, asset count, changed state, deleted/missing-marked/planned/failed counts, and omit object bytes or provider secrets.
+  - No-op recurring interval runs skip audit-log writes to avoid unbounded audit noise.
+- Verification:
+  - API tests assert interval cleanup deletes expired stored bytes, reports scheduler status, and appends a redacted `system.assets.cleanupScheduled` audit summary.
+  - API tests assert startup cleanup with an unsupported stored provider reports `failed: 1`, avoids marking storage deleted, and appends a redacted scheduled-cleanup audit summary.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "runs scheduled asset cleanup"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "audits failed scheduled asset cleanup"`
+
+### 2026-05-06 - Server-admin plugin registry sync
+
+- Completed:
+  - Added `POST /api/v1/admin/plugins/registry/sync` so production operators can sync configured plugin marketplaces without borrowing a campaign GM context.
+  - The admin sync path uses the same `OTTE_PLUGIN_REGISTRY_URLS` allowlist, URL validation, registry mirroring, package validation, sandbox/version/trust loading, and local provenance checks as the existing campaign-scoped registry sync.
+  - Sync attempts append server-admin audit logs with registry URLs, imported package versions, and registry errors.
+- Verification:
+  - API tests verify non-admin denial, server-admin allowlisted registry sync, registry-sourced package metadata, install and command execution from the synced package, and the server-admin registry-sync audit log.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "allowlisted remote plugin registry"`
+
+### 2026-05-06 - Plugin marketplace operations service levels
+
+- Completed:
+  - Added a `reviewOperations` block to `GET /api/v1/admin/plugins/operations`.
+  - Added top-level `actionRequired` and `actionReasons` for load errors, blocked installs, missing installed packages, permission drift, and marketplace-review backlog.
+  - The summary reports marketplace review action-required state, approval coverage rate, pending/approved/rejected/blocked counts, oldest pending review age, and local/registry source counts.
+  - This gives production operators a direct backlog and policy-health view alongside existing trust policy, install health, permission drift, storage, load-error, and command audit posture.
+- Verification:
+  - API tests assert mixed approved and pending package reviews report `approvalCoverageRate`, pending and blocked review counts, source counts, top-level action-required state, machine-readable action reasons, and redacted audit action-required state.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "plugin operations"`
+
+### 2026-05-06 - Plugin registry operations posture
+
+- Completed:
+  - Added a `registryOperations` block to `GET /api/v1/admin/plugins/operations`.
+  - The summary reports configured registry URLs, registry-sourced package counts, latest sync status from `plugin.registrySync` and `admin.pluginRegistry.sync` audit logs, last imported package versions, latest registry errors, and packages sourced from registries that are no longer configured.
+  - Top-level plugin action reasons now include `configured_registry_unsynced`, `registry_sync_errors`, and `unconfigured_registry_packages`.
+- Verification:
+  - API tests assert configured-but-never-synced and latest-error registries are surfaced in plugin operations, produce action reasons, and appear in the redacted server-admin audit summary.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "plugin operations"`
+- Browser admin follow-up:
+  - The Admin tab now loads `GET /api/v1/admin/plugins/operations` in its admin snapshot and displays plugin action state, action reasons, trust/review policy, package/install counts, pending review count, configured registry count, healthy/blocked/missing install counts, permission drift, storage entries, load errors, and registry action reasons.
+  - Server admins can trigger `POST /api/v1/admin/plugins/registry/sync` from the Admin tab for configured registries and then refresh plugin operations/review posture from the same console.
+
+### 2026-05-06 - Plugin core compatibility operations
+
+- Completed:
+  - Added a `compatibilityOperations` block to `GET /api/v1/admin/plugins/operations`.
+  - The summary reports the server core version, incompatible package count, incompatible installed count, and redacted package/install metadata for packages whose `compatibleCore` range does not match the current core.
+  - Top-level plugin action reasons now include `core_compatibility_drift`.
+  - Installed plugin operation rows include compatibility range, server core version, satisfied state, compatibility issue codes, and a block message when a package targets an incompatible core.
+  - The Admin tab now shows server core version and incompatible installed count in plugin operations.
+- Verification:
+  - API tests assert an installed package requiring `>=9.0.0` against server core `0.1.0` reports `core_compatibility_drift`, increments package/install incompatibility counts, includes redacted compatibility metadata, and appears in the server-admin audit action reasons.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "plugin operations"`
+  - `pnpm --filter @open-tabletop/web typecheck`
+
+### 2026-05-06 - Rules system operations summary
+
+- Completed:
+  - Added `GET /api/v1/admin/systems/operations` for server-admin rules ecosystem posture.
+  - The endpoint reports installed system manifests, active campaign counts, actor/item usage by system, template/compendium/condition/threat coverage, D&D-only capability flags, manifest completeness, content issue counts, and action-required state.
+  - Added production-readiness posture that marks D&D SRD as the primary production-ready runtime and flags active non-primary demo runtime campaigns, actors, or items as action-required migration/hardening pressure.
+  - Each inspection appends a server-admin audit log without mutating campaign or rules state.
+- Verification:
+  - API tests verify non-admin denial, default D&D active-campaign posture, Generic Fantasy actor usage, non-primary runtime action-required posture, SRD condition coverage, issue-free built-in manifests/content, and audit logging.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rules system operations"`
+
+### 2026-05-06 - Rules system operations action reasons
+
+- Completed:
+  - Added top-level `actionReasons` to `GET /api/v1/admin/systems/operations`.
+  - The summary now distinguishes manifest/content coverage pressure with `system_content_issues` from active demo/non-primary runtime pressure with `non_primary_runtime_in_use`.
+  - Server-admin system operations audit logs include the same action reasons without campaign content payloads.
+  - The Admin tab now loads `GET /api/v1/admin/systems/operations` in its admin snapshot and displays rules action state, action reasons, production-readiness counts, active non-primary usage, content issue counts, and per-system template/compendium/condition/threat coverage.
+- Verification:
+  - API tests assert Generic Fantasy actor usage produces `non_primary_runtime_in_use` in the response and redacted audit summary.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rules system operations"`
+
+### 2026-05-06 - Rules operations non-primary usage visibility
+
+- Completed:
+  - Expanded the browser Admin tab Rules Operations panel to show non-primary campaign counts alongside existing actor/item counts.
+  - Added a concrete "needs production depth" section listing the active non-primary runtime ids and their per-system campaign, actor, and item usage pressure.
+  - Kept the slice read-only and backed by the existing `GET /api/v1/admin/systems/operations` response.
+- Verification:
+  - `pnpm --filter @open-tabletop/web typecheck`
+
+### 2026-05-06 - Scene rendering diagnostics
+
+- Completed:
+  - Added `GET /api/v1/scenes/{sceneId}/rendering/diagnostics` for GM/operator scene-rendering checks.
+  - The read-only response summarizes scene dimensions, fog region counts, wall counts, terrain wall counts, light counts, token/light/fog polygon counts, generated polygon vertex counts, source-count complexity, and issue counts.
+  - Diagnostics report warning/error issue codes for invalid fog radius, undersized fog polygons, out-of-bounds fog origins or points, zero-length walls, duplicate wall segments, duplicate light sources, invalid token vision radius, out-of-bounds walls, invalid light radius, out-of-bounds lights, invalid light colors, invalid light intensity, and high-complexity generated vision geometry.
+  - The endpoint requires `scene.update` so player/observer sessions cannot inspect full scene-authoring internals.
+- Verification:
+  - API tests verify observer denial plus GM diagnostics for an intentionally malformed fog polygon, zero-length wall, invalid light, and a large generated vision polygon.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "authors walls and lights"`
+
+### 2026-05-06 - Rendering operations summary
+
+- Completed:
+  - Added `GET /api/v1/admin/rendering/operations` for server-admin rendering posture across all scenes.
+  - The read-only response rolls up scene, campaign, fog, wall, terrain-wall, light, token-vision-source, polygon vertex, max-polygon-vertex, issue severity, and issue code totals.
+  - The endpoint reports scenes requiring action when diagnostics include errors or high-complexity generated vision geometry, and each inspection appends a redacted server-admin audit log.
+- Verification:
+  - API tests verify non-admin denial, cross-scene totals, issue severity/code rollups, high-complexity scene ordering, action-required state, and audit logging.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rendering operations"`
+
+### 2026-05-06 - Scene rendering action posture
+
+- Completed:
+  - Added per-scene rendering diagnostics `issueSeverityCounts`, `issueCodeCounts`, `actionRequired`, and `actionReasons`.
+  - GM scene diagnostics now identify rendering errors, large generated polygons, and high total vision-vertex counts as direct action reasons before a server admin views the cross-scene operations rollup.
+  - Server-admin rendering operations now reuse the per-scene action posture so GM and admin diagnostics stay aligned.
+- Verification:
+  - API tests assert GM scene diagnostics include action-required state, action reasons, issue severity/code rollups, and that server-admin rendering operations carry the same scene action reasons.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "authors walls and lights"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rendering operations"`
+
+### 2026-05-06 - Rendering operations action reasons
+
+- Completed:
+  - Added top-level aggregated `actionReasons` to `GET /api/v1/admin/rendering/operations`.
+  - Server-admin rendering operations audit logs now include the same deduplicated action reasons as the response.
+- Verification:
+  - API tests assert cross-scene rendering operations and the audit summary include `rendering_errors`, `large_vision_polygon`, and `high_vision_vertex_count`.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rendering operations"`
+- Browser admin follow-up:
+  - The Admin tab now loads `GET /api/v1/admin/rendering/operations` in its admin snapshot and displays action state, action reasons, issue severity counts, scene/fog/wall/light/vision totals, polygon vertex totals, scenes requiring action, and top flagged scene summaries.
+
+### 2026-05-06 - Rendering budget posture
+
+- Completed:
+  - Added explicit max-polygon and total-polygon vertex budget metadata to per-scene rendering diagnostics and `GET /api/v1/admin/rendering/operations`.
+  - Server-admin rendering operations now report budget usage ratios, exceeded flags, and counts of scenes exceeding each geometry budget, and the audit summary records the same budget posture.
+  - The Admin tab now shows the max polygon threshold and total vertex budget usage so operators can interpret `large_vision_polygon` and `high_vision_vertex_count` without knowing hard-coded thresholds.
+- Verification:
+  - API tests assert server-admin rendering operations and the audit summary include rendering budget thresholds, exceeded flags, and scene-level budget posture.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rendering operations"`
+  - `pnpm --filter @open-tabletop/web typecheck`
+
+### 2026-05-06 - AI failed-tool manual retry
+
+- Completed:
+  - Added `POST /api/v1/admin/ai/tool-calls/retry` for server-admin dry-run and manual replay of retryable failed AI tool calls.
+  - Retry is limited to failures classified retryable by operations policy (`tool_failed` and `stale_tool_call`), resolves the original started tool-call input, rechecks the original thread user's current campaign permissions, and appends fresh started/result lifecycle records instead of rewriting the historical failed call.
+  - Retry audit logs record dry-run, scope, matched/retried/skipped/completed/failed counts, and never include prompts, provider secrets, or tool input payloads.
+  - The Admin tab now surfaces retryable failed-tool count and gives operators a retry control for eligible recent failed tool calls.
+- Verification:
+  - API tests verify non-admin denial, dry-run matching, successful replay of a retryable `read_compendium` failure, fresh completed tool-call output, and redacted server-admin audit logging.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "lets server admins inspect redacted ai operations across campaigns"`
+  - `pnpm --filter @open-tabletop/web typecheck`
+
+### 2026-05-06 - AI stale cleanup Admin controls
+
+- Completed:
+  - The Admin tab now exposes the stale-running-thread and stale-started-tool-call counts from `GET /api/v1/admin/ai/operations`.
+  - Server admins can trigger the audited stale cleanup endpoints from the browser: `POST /api/v1/admin/ai/threads/stale/fail` and `POST /api/v1/admin/ai/tool-calls/stale/fail`.
+  - Cleanup buttons are disabled when the corresponding stale backlog is zero, keeping the browser operations path tied to runtime actionability rather than evaluation workflows.
+  - The same Admin AI section now surfaces the top redacted provider error rollups and failed-tool rollups so operators can see the immediate failure modes without exporting evaluation artifacts.
+  - Failed-tool retry policy is also visible by tool, splitting retryable failures from blocked non-retryable failures such as permission, schema, and unknown-tool errors.
+  - Recent stale running threads and stale started tool calls are visible with provider and age before an operator triggers cleanup.
+  - Recent AI tool-call rows now show the redacted error code beside failed status, so operators can distinguish retryable runtime failures from permission, schema, and unknown-tool failures without opening raw records.
+  - Recent AI thread rows now show status, provider, and duration in the Admin tab without exposing prompts or response text.
+  - Runtime service-level metrics for thread failure rate, tool failure rate, thread p95 duration, and tool p95 duration are visible in the Admin tab without surfacing evaluation program metrics.
+- Verification:
+  - Web typechecking verifies the expanded AI operations response shape and the new stale cleanup controls.
+  - `pnpm --filter @open-tabletop/web typecheck`
+
+### 2026-05-06 - Hosted-model proposal-boundary prompt hardening
+
+- Completed:
+  - OpenAI Responses provider instructions now explicitly tell hosted models that campaign edit tools create reviewable proposals.
+  - The same instruction tells hosted models not to claim scenes, actors, journals, tokens, encounters, or memory changed until tool output confirms approval or creation.
+  - Actor-action prompt guidance now requires exact visible action ids and asks for clarification instead of guessing unavailable actors, targets, scenes, or actions.
+  - Hosted-model guidance now prohibits filling missing rules, compendium, campaign, or character details from outside knowledge and directs the model to visible compendium tools or clarification instead.
+- Verification:
+  - Provider tests assert the proposal-boundary, exact-visible-action-id, and no-outside-rules instructions are sent with the permission-filtered context.
+  - `pnpm --filter @open-tabletop/ai-core test -- src/openai-responses-provider.test.ts`
+
+### 2026-05-06 - Plugin registry posture UI
+
+- Completed:
+  - The Admin tab now surfaces configured plugin registry health from `GET /api/v1/admin/plugins/operations`.
+  - Operators can see per-registry sync status, synced package counts, last sync time, latest registry sync errors, and unconfigured registry-package drift beside the existing server-admin registry sync control.
+- Verification:
+  - Web typechecking verifies the expanded Admin plugin operations response shape and registry posture rendering.
+  - `pnpm --filter @open-tabletop/web typecheck`
+
+### 2026-05-06 - Light intensity rendering diagnostics
+
+- Completed:
+  - Added scene rendering diagnostics for invalid colored-light intensity values outside the supported 0-to-1 renderer range.
+  - Server-admin rendering operations now roll `invalid_light_intensity` into issue-code, severity, action-required, and audit summaries.
+- Verification:
+  - API tests assert scene diagnostics flag an invalid light intensity and server-admin rendering operations include the issue in global rollups.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rendering"`
+
+### 2026-05-06 - Duplicate wall rendering diagnostics
+
+- Completed:
+  - Added scene rendering diagnostics for exact duplicate or reversed duplicate wall segments.
+  - Server-admin rendering operations now include `duplicate_wall_segment` in issue-code, severity, action-required, and audit rollups.
+- Verification:
+  - API tests assert scene diagnostics flag duplicate terrain wall segments and server-admin rendering operations include the duplicate-wall issue in global rollups.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "authors walls and lights"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rendering"`
+
+### 2026-05-06 - Wall bounds rendering diagnostics
+
+- Completed:
+  - Covered scene rendering diagnostics for walls with endpoints outside scene bounds.
+  - Server-admin rendering operations now include `wall_out_of_bounds` in issue-code, severity, action-required, and audit rollups.
+- Verification:
+  - API tests assert scene diagnostics flag out-of-bounds wall endpoints and server-admin rendering operations include the wall-bounds issue in global rollups.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "authors walls and lights"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rendering"`
+
+### 2026-05-06 - Fog bounds rendering diagnostics
+
+- Completed:
+  - Covered scene rendering diagnostics for fog regions with non-positive radius or an origin outside scene bounds.
+  - Server-admin rendering operations now include `invalid_fog_radius` and `fog_origin_out_of_bounds` in issue-code, severity, action-required, and audit rollups.
+- Verification:
+  - API tests assert scene diagnostics flag invalid fog radius and out-of-bounds fog origins, and server-admin rendering operations include both fog issues in global rollups.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "authors walls and lights"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rendering"`
+
+### 2026-05-06 - Duplicate light rendering diagnostics
+
+- Completed:
+  - Added scene rendering diagnostics for duplicate colored light sources with matching position, radius, color, and intensity.
+  - Server-admin rendering operations now include `duplicate_light_source` in issue-code, severity, action-required, and audit rollups.
+- Verification:
+  - API tests assert scene diagnostics flag duplicate light sources and server-admin rendering operations include the duplicate-light issue in global rollups.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "authors walls and lights"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rendering"`
+
+### 2026-05-06 - Token vision rendering diagnostics
+
+- Completed:
+  - Added scene rendering diagnostics for tokens with vision enabled but a non-positive radius that cannot generate visible geometry.
+  - Added scene rendering diagnostics for token vision sources whose center is outside the scene bounds.
+  - Server-admin rendering operations now include `invalid_token_vision_radius` and `token_vision_origin_out_of_bounds` in issue-code, severity, action-required, and audit rollups.
+- Verification:
+  - API tests assert scene diagnostics flag invalid token vision radius and out-of-bounds token vision origins, and server-admin rendering operations include both token-vision issues in global rollups.
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "authors walls and lights"`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "rendering"`
+
+### 2026-05-06 - D&D SRD effective speed automation
+
+- Completed:
+  - Added exported `dnd5eSrdSpeed` details and D&D sheet `effectiveSpeed`/`speedDetails` fields.
+  - Effective speed now explains base speed, armor speed penalties, Exhaustion speed penalties, immobilizing condition caps, condition multipliers, and condition sources without mutating actor state.
+  - Restrained/Grappled/Paralyzed/Petrified/Unconscious condition metadata can now drive a sheet-visible speed of `0`, while Exhaustion and heavy-armor penalties stack before caps.
+- Verification:
+  - System SDK tests verify normal armor speed, heavy-armor speed penalty, Exhaustion stacking, and Restrained speed immobilization.
+  - `pnpm --filter @open-tabletop/system-sdk test -- -t "first-class SRD templates"`
+
+### 2026-05-06 - Mystic Noir composure action depth
+
+- Completed:
+  - Added `Midnight Stakeout` and `Grounding Mantra` as first-class Mystic Noir compendium actions.
+  - Mystic Noir action metadata now exposes composure costs and recovery beside resource costs, pressure conditions, tags, and condition-clearing rituals.
+  - Stateful Mystic Noir action use can spend Composure, add Exposed pressure, restore Composure, and clear Shaken after the normal clue/ritual resource spend.
+  - API coverage verifies the compendium entries, quick-roll metadata, `consumeResources: true` persistence, Composure consumption/recovery, and condition side effects through the campaign system endpoints.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- src/index.test.ts -t "mystic noir rules"`
+
+### 2026-05-06 - Stellar Frontiers resource action depth
+
+- Completed:
+  - Added `Evasive Burst` and `Hull Sealant` as first-class Stellar Frontiers compendium actions.
+  - Added `Field Repair` as a Ship Tech template talent that spends the long-rest `fieldRepair` resource, adds Tech to its repair formula, and clears Jammed.
+  - Stellar Frontiers action rolls now expose metadata for strain costs, resource costs, consumable use, tags, and condition cleanup.
+  - Stateful Stellar Frontiers action use can spend the short-rest `evasiveBurst` resource, spend the long-rest `fieldRepair` resource, decrement Hull Sealant quantity, clear Jammed, and clear Vacuum Exposed through the normal roll path.
+  - API coverage verifies compendium entries, quick-roll metadata, `consumeResources: true` persistence, resource spending, consumable decrement, and condition cleanup through campaign system endpoints.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- src/index.test.ts -t "stellar frontiers rules"`
+  - `pnpm --filter @open-tabletop/system-sdk build`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "supports a second rules system"`
+
+### 2026-05-06 - Generic Fantasy resource action depth
+
+- Completed:
+  - Added `Field Prayer` and `Guardian Rally` as first-class Generic Fantasy compendium actions.
+  - Generic Fantasy action rolls now expose metadata for resource costs, consumable use, tags, condition clearing, and condition application when action data carries those stateful hooks.
+  - Stateful Generic Fantasy action use can spend the `fieldPrayer` resource, clear Poisoned, spend the short-rest `secondWind` resource, and apply Blessed through the normal roll path.
+  - API coverage verifies compendium entries, quick-roll metadata, `consumeResources: true` persistence, resource spending, Poisoned cleanup, and Blessed application through campaign system endpoints.
+- Verification:
+  - `pnpm --filter @open-tabletop/system-sdk test -- src/index.test.ts -t "generic fantasy rules"`
+  - `pnpm --filter @open-tabletop/system-sdk build`
+  - `pnpm --filter @open-tabletop/api test -- src/app.test.ts -t "runs plugin and system runtime flows"`
+
 ## Known Post-MVP Gaps
 
 These are not blockers for the current PRD MVP acceptance, but remain if the project continues toward a broader production Roll20-class platform.
 
-- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, browser organization access administration, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification.
-- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, storage stats, migration tooling, deployed recurring cleanup scheduling for deleted or expired object bytes, built-in upload security scanning, and external AV/trust scanner webhooks before storage writes. Higher-assurance hosting may still need provider-specific compliance artifacts and operational certifications outside the app.
-- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, smoothed freehand reveal/hide brushes, fog region deletion, fog undo/history, and multi-scene fog presets now have verified controls and permission filtering. No fog-specific item remains in the current acceptance checklist.
-- Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, permission review, package path containment, VM-sandboxed server chat commands, campaign-scoped JSON storage APIs, command-returned storage mutations, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, server-admin marketplace review surfaces, optional approval-required review policy, storage/review audit logs, and browser/API acceptance evidence. Remaining plugin ecosystem work is external marketplace operations beyond the self-hosted review and registry workflow.
-- D&D 5.5e SRD is now the primary rules focus with SRD 5.2.1 system registration; Fighter, Barbarian, Bard, Cleric, Paladin, Druid, Ranger, Monk, Sorcerer, Warlock, Wizard, and Rogue templates; SRD character origins; SRD-oriented compendium entries; bounded spell/weapon/armor/tool/magic-item coverage; computed Armor Class; class automation for Fighter, Barbarian, Bard, Cleric, Paladin, Druid, Ranger, Monk, Sorcerer, Warlock, Wizard, and Rogue early-level slices; Dragonborn, Dwarf, Goliath, and Orc species trait automation; spell-slot-consuming actions; target damage/healing application; saving throw, skill, and tool quick rolls; SRD equipment purchasing; guided level advancement; character import normalization; official SRD condition catalog; SRD monster stat blocks; monster actor creation; monster action quick rolls; CR/XP threat budgets; 2024 Basic Rules encounter XP thresholds; hit dice; full-caster spell-slot progression through level 20; short/long rest recovery; API tests; and manual API acceptance evidence. Ranger coverage now includes Favored Enemy, Hunter's Mark, half-caster spell slots, Wisdom spellcasting, Extra Attack metadata, Favored Enemy Long Rest recovery, Longbow/Scimitar/Shortsword/Studded Leather entries, and bearer-token manual evidence. Monk coverage now includes Martial Arts, Unarmored Defense, Focus actions, Uncanny Metabolism, Deflect Attacks, Stunning Strike, Extra Attack metadata, Unarmored Movement, Musical Instrument tooling, Short Rest Focus recovery, Long Rest Uncanny Metabolism recovery, and bearer-token manual evidence. Sorcerer coverage now includes Innate Sorcery, Sorcery Points, Flexible Casting, Empowered Spell, Quickened Spell, Sorcerous Restoration, Charisma full-caster spellcasting, Sorcerous Burst/Arcane Focus entries, Short Rest Sorcerous Restoration recovery, Long Rest Sorcerer resource/spell-slot recovery, and bearer-token manual evidence. Warlock coverage now includes Eldritch Invocations, Pact Magic, Magical Cunning, Charisma pact spellcasting, Eldritch Blast/Hex/Sickle entries, default Pact Magic spell-slot consumption, Short Rest Pact Magic recovery, Long Rest Magical Cunning recovery, and bearer-token manual evidence. Species coverage now includes Dragonborn Breath Weapon/Draconic Flight, Dwarf Dwarven Toughness/Stonecunning, Goliath Giant Ancestry/Large Form, and Orc Adrenaline Rush/Relentless Endurance with bearer-token manual evidence. Expanded spell coverage now includes the SRD 5.2.1 added-spell set, including Dissonant Whispers, Dragon's Breath, Mind Spike, Ensnaring Strike, Starry Wisp, Aura of Life, Charm Monster, Elementalism, Phantasmal Force, Power Word Heal, Searing Smite, Summon Dragon, Tsunami, and Vitriolic Sphere with bearer-token manual evidence for compendium add/roll/upcast/slot-consumption behavior. Magic-item coverage now includes `82` first-class SRD magic entries plus existing Potion of Healing and low-level scroll entries, with protection-item AC/save automation, Bracers of Defense armor/shield exclusion, Staff of Striking weapon damage formulas, potion healing/damage quick rolls, higher-level Spell Scroll metadata, charge metadata, rarity, and attunement metadata. Remaining D&D rules ecosystem work is full SRD-scale spell/equipment/magic-item content coverage beyond the currently covered slices, broader class/subclass feature automation beyond the currently covered early-level slices, remaining species lineage/spell edge cases, and full SRD-scale monster/action coverage beyond this expanded current threat catalog. Generic Fantasy, Stellar Frontiers, and Mystic Noir remain available as demo systems for later expansion, but they are no longer the primary gap-closing direction.
-- D&D SRD core spell coverage now includes Acid Arrow, Acid Splash, Aid, Bane, Bless, Burning Hands, Color Spray, Command, Guiding Bolt, Magic Missile, and Thunderwave, with actor-level cantrip scaling and bearer-token manual evidence for compendium add, roll, upcast, and slot-consumption behavior.
+- Auth now has bearer sessions, password registration/login, campaign invites, OIDC SSO, password reset/email delivery with server-admin outbox retry operations in API and browser Admin operations, a first-class password reset screen, local TOTP MFA with recovery codes, account administration, production session administration with individual/user/bulk-risk revocation in API and browser Admin operations, expired password-reset pruning in API and browser Admin operations, server-admin audit export, SCIM v2 user/group provisioning, SCIM group-to-campaign role mapping, browser organization access administration, and a disabled-by-default legacy `x-user-id` fallback. Further enterprise identity depth is IdP-specific certification.
+- 2026-05-06 auth hard-fence follow-up: `x-user-id` compatibility auth is now ignored entirely when `NODE_ENV=production`, even if `OTTE_ALLOW_LEGACY_USER_HEADER=true`; the flag only works for non-production compatibility tooling, while tests retain local compatibility through `NODE_ENV=test`. Server admins can inspect `GET /api/v1/admin/auth/config` to verify the effective legacy-header mode and production hard-fence state.
+- 2026-05-06 auth OIDC operations follow-up: `GET /api/v1/admin/auth/operations` now reports redacted OIDC runtime posture, including configured issuer/client/secret/redirect booleans, invalid and insecure OIDC env variable names, token-auth mode, and a production missing-SSO action reason/remediation without exposing provider URLs, client ids, secrets, redirect URIs, or allowed return origins. The browser Admin tab surfaces OIDC configured/missing and invalid/insecure OIDC config status.
+- Uploaded maps now support local and S3/MinIO-backed storage, archive export/import through the active provider, per-campaign quotas, lifecycle state, signed CDN delivery URLs, deployable CDN edge configuration, server-admin CDN cache purge hooks, storage stats, redacted server-admin audit logs for migration, cleanup tooling, and meaningful scheduled cleanup runs, deployed recurring cleanup scheduling for deleted or expired object bytes, built-in upload security scanning, and external AV/trust scanner webhooks before storage writes. Higher-assurance hosting may still need provider-specific compliance artifacts and operational certifications outside the app.
+- 2026-05-06 asset operations follow-up: server-admin global storage stats now include runtime posture for the active storage provider, migration target provider, quota, retention, CDN/signed delivery, signing-secret configuration, built-in and external trust scanning, and cleanup scheduler status.
+- 2026-05-06 asset key hardening follow-up: derived local/S3 object keys now normalize campaign and asset id segments before storage writes so traversal-like identifiers cannot influence provider paths.
+- 2026-05-06 asset integrity follow-up: server admins can run `GET /api/v1/admin/assets/integrity` to read active storage objects without mutating asset records and report verified, missing, checksum/size-mismatched, cleanup-eligible, skipped, and failed assets. Integrity reports and audit summaries include concrete action reasons for missing bytes, integrity mismatches, cleanup-eligible assets, and scan failures while omitting checksums and object bytes from the audit log; focused API coverage verifies healthy, corrupt, missing, deleted cleanup-candidate, external URL, action-reason, and audit-summary cases.
+- 2026-05-06 asset admin UI follow-up: the browser Admin tab now loads `GET /api/v1/admin/assets/storage` and `GET /api/v1/admin/assets/integrity` in its admin snapshot and displays provider, delivery mode, action reasons, CDN purge posture, cleanup posture, asset counts, used bytes, cleanup backlog, unscanned count, delivery warnings, quota-risk count, verified/missing/mismatched/cleanup-eligible/skipped/failed integrity counts, and top non-verified asset results. It can also trigger `POST /api/v1/admin/assets/migrate` for uploaded asset bytes and `POST /api/v1/admin/assets/cleanup` for the eligible cleanup backlog so asset storage hygiene is visible and actionable without leaving the admin console.
+- 2026-05-06 asset admin contract follow-up: the browser Admin tab now matches the API's nested `operations.hygiene` and `operations.delivery.warnings` shape from `GET /api/v1/admin/assets/storage`, and surfaces missing storage references beside unscanned assets and delivery warnings.
+- 2026-05-06 asset CDN purge follow-up: server admins can run `POST /api/v1/admin/assets/{assetId}/purge-cache` to call a configured CDN purge webhook for one uploaded asset, with bearer-token webhook auth, runtime posture in the storage report, browser Admin purge actions on asset integrity rows, and redacted server-admin audit logs.
+- 2026-05-06 asset CDN purge operations visibility follow-up: `GET /api/v1/admin/assets/storage` now summarizes recent CDN purge audit outcomes with total, purged, failed, and not-configured counts plus bounded recent purge rows. The browser Admin Asset Storage panel surfaces CDN purge totals and failures so cache invalidation health is visible without manually exporting audit logs.
+- 2026-05-06 asset warning visibility follow-up: the browser Admin tab now shows the top delivery warning messages and quota-risk campaigns with usage ratio and remaining bytes instead of only aggregate warning and risk counts.
+- 2026-05-06 asset cleanup backlog visibility follow-up: the browser Admin tab now shows cleanup-eligible bytes and oldest eligible age beside the cleanup backlog count before operators run object-byte cleanup.
+- 2026-05-06 asset cleanup reason visibility follow-up: the browser Admin tab now splits cleanup backlog counts into deleted-asset and expired-asset backlogs before cleanup runs.
+- 2026-05-06 asset cleanup candidate visibility follow-up: `GET /api/v1/admin/assets/storage` now includes a bounded `cleanupBacklog.assets` list with asset id, name, campaign, provider, size, cleanup reason, lifecycle status, expiry, and eligible age for the top deleted or expired objects awaiting byte cleanup. The browser Admin tab surfaces the top cleanup candidates beside cleanup totals so operators can inspect what cleanup will affect before running the destructive storage operation.
+- 2026-05-06 asset migration backlog visibility follow-up: `GET /api/v1/admin/assets/storage` now includes `operations.migrationBacklog` with the active target provider, provider-drift asset count/bytes, source-provider counts, and a bounded list of top managed assets still stored on a non-active provider. The browser Admin tab surfaces migration backlog counts, bytes, and top drift candidates, and disables the migrate action when no provider-drift backlog exists.
+- 2026-05-06 asset campaign pressure follow-up: `GET /api/v1/admin/assets/storage` exposes bounded per-campaign storage rollups with used/all bytes, quota remaining, lifecycle/provider counts, and largest assets. The browser Admin tab now surfaces campaign count plus the top campaign storage rows and each campaign's largest asset so operators can find the source of quota or delivery pressure without exporting raw state.
+- 2026-05-06 asset remediation queue follow-up: `GET /api/v1/admin/assets/storage` now derives a bounded `operations.remediationQueue` with severity, operator action text, affected counts, bytes, and samples for delivery configuration, quota pressure, cleanup backlog, storage-provider migration, missing storage references, and unscanned uploads. The browser Admin Asset Storage panel surfaces those remediation rows before raw quota/cleanup/migration samples so storage hygiene work is actionable without decoding raw action reasons.
+- 2026-05-06 asset delivery posture follow-up: `GET /api/v1/admin/assets/storage` now includes `operations.delivery.posture` with active managed asset counts, deliverable and undeliverable active asset counts/bytes, delivery coverage, CDN/signed-URL eligible counts, and bounded samples. Active managed assets with missing storage references or deleted object bytes add `undeliverable_active_assets` and a `repair_asset_delivery_refs` remediation row. The browser Admin Asset Storage panel surfaces deliverable count, delivery coverage, undeliverable count, and top broken delivery samples.
+- 2026-05-06 asset integrity mismatch visibility follow-up: non-verified asset rows now show expected and actual byte sizes when available, while still keeping checksums and object bytes out of the browser UI.
+- 2026-05-06 asset integrity remediation queue follow-up: `GET /api/v1/admin/assets/integrity` now includes a bounded `remediationQueue` with severity, operator action text, affected counts, and safe samples for missing stored bytes, checksum/size mismatches, failed scans, and cleanup-eligible objects. The browser Admin Asset Integrity panel surfaces those remediation rows before raw non-verified asset results.
+- 2026-05-06 rendering issue-code visibility follow-up: the browser Admin tab now shows the top rendering issue-code rollups from `GET /api/v1/admin/rendering/operations` so operators can identify whether action is driven by geometry budget, invalid light intensity, or other renderer diagnostics.
+- 2026-05-06 rendering budget visibility follow-up: the browser Admin tab now shows counts of scenes exceeding max-polygon and total-scene geometry budgets beside the aggregate vertex budget usage.
+- 2026-05-06 rendering scene-detail visibility follow-up: flagged scene rows now show total polygon vertices, max polygon vertices, and terrain-wall counts so operators can see why a scene exceeded rendering posture budgets.
+- Fog, wall, light authoring, hidden-token visibility, player vision filtering, polygon line-of-sight, source-aware point-level vision diagnostics, GM-only scene rendering diagnostics, server-admin rendering operations posture, terrain walls, clipped colored lighting, browser vision masks, polygon fog reveal, hide/erase fog, smoothed freehand reveal/hide brushes, fog region deletion, fog undo/history, and multi-scene fog presets now have verified controls and permission filtering. No fog-specific item remains in the current acceptance checklist.
+- 2026-05-06 rendering hardening follow-up: the shared ray-cast vision engine now ignores zero-length vision wall segments before polygon computation while rendering diagnostics continue to flag those walls for operator cleanup.
+- 2026-05-06 rendering operations visibility follow-up: server-admin rendering operations now expose degenerate wall totals globally and per flagged scene, and the Admin tab surfaces those counts beside terrain walls and vertex budgets so geometry cleanup remains visible after the vision engine safely ignores zero-length blockers.
+- 2026-05-06 rendering scene issue visibility follow-up: server-admin rendering operations now include per-scene `topIssueCodes` for flagged scenes, and the Admin tab shows fog-region counts, light counts, and top issue-code rollups on each flagged scene row so operators can tell whether cleanup is driven by fog authoring, light configuration, wall geometry, or geometry budgets without leaving the console.
+- 2026-05-06 rendering issue sample visibility follow-up: server-admin rendering operations now include bounded global and per-scene issue samples with concrete scene, target type, target id, severity, code, and message metadata. The browser Admin tab surfaces the top issue samples so operators can identify the exact fog, wall, light, or token record behind a rendering posture warning.
+- 2026-05-06 rendering remediation visibility follow-up: server-admin rendering operations now derive a bounded remediation queue from existing diagnostics, grouping invalid fog, wall geometry, light source, token vision, and vision-budget problems into prioritized operator actions with affected-scene counts and sample targets; the browser Admin tab surfaces those remediation rows before raw issue samples.
+- 2026-05-07 rendering remediation issue-detail follow-up: rendering remediation sample scenes now include the top triggering issue code, severity, and message beside the sample target, so operators can tell whether a grouped remediation row is driven by crossing walls, invalid fog radius, or geometry budget pressure without expanding the full scene issue list.
+- 2026-05-07 rendering remediation diagnostic-detail follow-up: remediation sample `topIssue` rows now preserve safe diagnostic details such as intersecting/duplicate wall or light ids, invalid point or intensity values, and exceeded vertex-budget counts, so geometry cleanup can start from the top-level rendering queue without opening the full per-scene issue payload.
+- 2026-05-06 rendering feature coverage follow-up: server-admin rendering operations now include `featureCoverage` for polygon fog, smoothed fog, terrain walls, colored lights, and token vision scene usage, with bounded scene samples. The browser Admin Rendering Operations panel surfaces feature-scene, polygon-fog, colored-light, terrain-wall, and token-vision coverage so operators can tell whether production rendering capabilities are actively configured, not just whether diagnostics are clean.
+- 2026-05-07 rendering feature evidence follow-up: server-admin rendering operations now expose a required-feature evidence matrix for polygon fog, smoothed fog, terrain walls, colored lights, dimmed lights, and token vision, including per-feature presence, coverage rates, missing feature codes, and bounded scene samples. The browser Admin Rendering Operations panel surfaces each required feature as present or missing with concrete scene evidence so operators do not have to infer production rendering readiness from aggregate percentages.
+- 2026-05-07 rendering dual-zone lighting follow-up: light sources now support optional `brightRadius` and `dimRadius` in addition to the compatibility `radius`. Vision snapshots emit separate wall-clipped bright and dim polygons with `lightLevel`, point diagnostics carry that level with color/opacity, authoring rejects invalid zone radii, and server-admin rendering operations/browser feature evidence track bright/dim dual-zone light coverage.
+- 2026-05-06 rendering authoring operations follow-up: wall and light creation now append the same redacted scene audit events as fog/wall/light updates and deletes. Server-admin rendering operations include `authoringOperations` rollups for recent fog, wall, and light edits by action, target type, actor, and scene, and the browser Admin Rendering Operations panel surfaces rendering-change, wall-change, light-change, and recent-edit rows alongside diagnostics.
+- 2026-05-07 rendering wall-intersection diagnostics follow-up: scene rendering diagnostics now flag crossing vision-blocking wall segments that intersect away from shared endpoints. Server-admin rendering operations roll `crossing_wall_segments` into issue-code, severity, remediation, scene sample, and audit summaries so line-of-sight blocker cleanup is visible before intersecting wall geometry creates confusing player vision.
+- 2026-05-07 rendering stale issue operations follow-up: server-admin rendering operations now derive `staleIssueOperations` by cross-checking action-required scene diagnostics with fog/wall/light authoring audit activity. Flagged scenes with no rendering edits produce a `triage_stale_rendering_issues` remediation row, bounded scene samples, and Admin tab stale-scene metrics, so untouched rendering problems are visible without conflating them with scenes that are actively being repaired.
+- 2026-05-07 rendering failed-authoring operations follow-up: invalid fog, wall, and light authoring attempts now append redacted `scene.renderingAuthoring.failed` audit rows with scene, attempted action, target type/id, reason, and message but not brush geometry or map payloads. `GET /api/v1/admin/rendering/operations` exposes `failedAuthoringOperations`, emits `rendering_authoring_failures`, and adds `review_rendering_authoring_failures` remediation; the Admin Rendering Operations panel surfaces failed-change counts and recent failed authoring rows beside successful edit history.
+- Plugin runtime now supports local and allowlisted remote-registry manifest-packaged third-party modules, server-admin marketplace sync, permission review, package path containment, VM-sandboxed server chat commands, campaign-scoped JSON storage APIs, command-returned storage mutations, checksums, versioned installs, upgrade/rollback workflows, signed package trust policy, registry provenance metadata, server-admin marketplace review surfaces, optional approval-required review policy, server-admin plugin operations posture, browser marketplace sync, storage/review audit logs, and browser/API acceptance evidence. 2026-05-06 plugin operations follow-up: `GET /api/v1/admin/plugins/operations` reports trust/review policy, load errors, installed campaign grants, missing runtime packages, policy-blocked installs, permission drift, storage counts, and recent command audit summaries. 2026-05-06 plugin registry follow-up: `POST /api/v1/admin/plugins/registry/sync` lets server admins sync configured marketplace registries directly through the same allowlist and package validation path as campaign-scoped sync, including from the Admin tab. 2026-05-06 plugin compatibility visibility follow-up: the browser Admin tab now shows top incompatible plugin packages with required core range and source type, plus affected installed campaign grants and installed versions from the plugin operations response. 2026-05-06 plugin permission-drift visibility follow-up: `GET /api/v1/admin/plugins/operations` now returns a bounded `permissionDrift` list, and the browser Admin tab shows affected campaigns plus missing manifest permissions for the top drifted installs. 2026-05-06 plugin storage pressure visibility follow-up: `GET /api/v1/admin/plugins/operations` now returns bounded largest and near-limit plugin storage entries with campaign, plugin, key, size, writer type, and max-value thresholds, and the browser Admin tab surfaces those rows beside storage counts. Remaining plugin ecosystem work is external marketplace operations beyond the self-hosted review and allowlisted registry workflow.
+- D&D 5.5e SRD is now the primary rules focus with SRD 5.2.1 system registration; server-admin rules system operations posture and browser Admin rules operations visibility; Fighter, Barbarian, Bard, Cleric, Paladin, Druid, Ranger, Monk, Sorcerer, Warlock, Wizard, and Rogue templates; SRD character origins; SRD-oriented compendium entries; bounded spell/weapon/armor/tool/magic-item coverage; computed Armor Class; condition-aware effective speed; class automation for Fighter, Barbarian, Bard, Cleric, Paladin, Druid, Ranger, Monk, Sorcerer, Warlock, Wizard, and Rogue early-level slices; Dragonborn, Dwarf, Goliath, Human, Orc, and Tiefling species trait/origin automation; spell-slot-consuming actions; target damage/healing application; saving throw, skill, tool, player attack, monster attack, save/effect spell quick rolls, item condition-effect quick rolls, and monster condition-effect quick rolls; SRD equipment purchasing; guided level advancement; character import normalization; official SRD condition catalog; SRD monster stat blocks; monster actor creation; monster action quick rolls; CR/XP threat budgets; 2024 Basic Rules encounter XP thresholds; hit dice; full-caster spell-slot progression through level 20; short/long rest recovery; API tests; and manual API acceptance evidence. Barbarian coverage now includes Rage, Rage Damage, Danger Sense, Reckless Attack, Extra Attack, Fast Movement, Path of the Berserker, Frenzy, Mindless Rage, Retaliation, Intimidating Presence, and built-API manual evidence. Ranger coverage now includes Favored Enemy, Hunter's Mark, half-caster spell slots, Wisdom spellcasting, Extra Attack metadata, Favored Enemy Long Rest recovery, Longbow/Scimitar/Shortsword/Studded Leather entries, and bearer-token manual evidence. Monk coverage now includes Martial Arts, Unarmored Defense, Focus actions, Uncanny Metabolism, Deflect Attacks, Stunning Strike, Extra Attack metadata, Unarmored Movement, Musical Instrument tooling, Short Rest Focus recovery, Long Rest Uncanny Metabolism recovery, and bearer-token manual evidence. Sorcerer coverage now includes Innate Sorcery, Sorcery Points, Flexible Casting, Empowered Spell, Quickened Spell, Sorcerous Restoration, Charisma full-caster spellcasting, Sorcerous Burst/Arcane Focus entries, Short Rest Sorcerous Restoration recovery, Long Rest Sorcerer resource/spell-slot recovery, and bearer-token manual evidence. Warlock coverage now includes Eldritch Invocations, Pact Magic, Magical Cunning, Charisma pact spellcasting, Eldritch Blast/Hex/Sickle entries, default Pact Magic spell-slot consumption, Short Rest Pact Magic recovery, Long Rest Magical Cunning recovery, and bearer-token manual evidence. Species coverage now includes Dragonborn Breath Weapon/Draconic Flight, Dwarf Dwarven Toughness/Stonecunning, Goliath Giant Ancestry/Large Form, Human Resourceful/Skillful/Versatile, Orc Adrenaline Rush/Relentless Endurance, and Tiefling Fiendish Legacy/Otherworldly Presence with manual evidence. Expanded spell coverage now includes the SRD 5.2.1 added-spell set, including Dissonant Whispers, Dragon's Breath, Mind Spike, Ensnaring Strike, Starry Wisp, Aura of Life, Charm Monster, Elementalism, Phantasmal Force, Power Word Heal, Searing Smite, Summon Dragon, Tsunami, and Vitriolic Sphere, plus Counterspell, Dispel Magic, Fly, Haste, Hypnotic Pattern, and Slow control/mobility effect metadata with bearer-token manual evidence for compendium add/roll/upcast/slot-consumption/effect behavior. Magic-item coverage now includes `288` first-class SRD magic entries plus existing Potion of Healing and low-level scroll entries, with protection-item AC/save automation, Bracers of Defense armor/shield exclusion, Staff of Striking weapon attack/damage formulas, Wand of the War Mage spell-attack bonuses, potion healing/damage and condition-effect quick rolls, consumable quantity spending, higher-level Spell Scroll metadata, charge metadata, rarity, and attunement metadata. Monster coverage now reaches 312 unique SRD stat blocks exposed as 313 threat ids from CR `0` through CR `24`, including Aboleth, Animated Armor, Flying Sword, Rug of Smothering, Allosaurus, Ankylosaurus, Ape, Archelon, Ankheg, Assassin, Awakened Shrub, Awakened Tree, Axe Beak, Azer Sentinel, Behir, Baboon, Badger, Berserker, Bat, Blood Hawk, Black Pudding, Blink Dog, Boar, Bugbear Stalker, Bugbear Warrior, Bulette, Camel, Cat, Centaur Trooper, Chimera, Chuul, Clay Golem, Cloaker, Cloud Giant, Commoner, Swarm of Crawling Claws, Cultist, Cultist Fanatic, Constrictor Snake, Crab, Crocodile, Darkmantle, Death Dog, Djinni, Doppelganger, Dragon Turtle, Drider, Druid, Dryad, Efreeti, Ettercap, Ettin, Flesh Golem, Frost Giant, Fire Giant, Shrieker Fungus, Violet Fungus, Gargoyle, Deer, Draft Horse, Eagle, Elephant, Elk, Flying Snake, Frog, Giant Badger, Giant Bat, Giant Boar, Giant Centipede, Giant Constrictor Snake, Giant Crab, Giant Crocodile, Giant Elk, Giant Fire Beetle, Giant Frog, Giant Goat, Giant Hyena, Giant Lizard, Giant Octopus, Giant Owl, Giant Scorpion, Giant Seahorse, Giant Shark, Giant Toad, Giant Venomous Snake, Giant Vulture, Giant Wasp, Giant Weasel, Giant Wolf Spider, Goat, Hawk, Jackal, Killer Whale, Lion, Lizard, Ghost, Gibbering Mouther, Glabrezu, Gladiator, Gnoll Warrior, Gold Dragon Wyrmling, Young Gold Dragon, Adult Gold Dragon, Ancient Gold Dragon, Gorgon, Gray Ooze, Green Hag, Grick, Griffon, Grimlock, Guardian Naga, Half-Dragon, Harpy, Hell Hound, Hezrou, Hill Giant, Hippogriff, Hippopotamus, Hobgoblin Warrior, Homunculus, Hunter Shark, Hyena, Ice Mephit, Magma Mephit, Steam Mephit, Merfolk Skirmisher, Merrow, Mimic, Nalfeshnee, Night Hag, Nightmare, Noble, Ochre Jelly, Oni, Otyugh, Pegasus, Phase Spider, Pirate, Pirate Captain, Planetar, Plesiosaurus, Priest, Pseudodragon, Rat, Raven, Swarm of Bats, Swarm of Insects, Swarm of Piranhas, Swarm of Rats, Swarm of Ravens, Swarm of Venomous Snakes, Reef Shark, Rhinoceros, Riding Horse, Roc, Roper, Saber-Toothed Tiger, Scorpion, Seahorse, Spider, Tiger, Triceratops, Tyrannosaurus Rex, Venomous Snake, Vulture, Warhorse, Weasel, Wight, Will-o'-Wisp, Winter Wolf, Worg, Ogre Zombie, Scout, Sea Hag, Kraken, Lamia, Mage, Mammoth, Mastiff, Mule, Octopus, Owl, Panther, Piranha, Polar Bear, Pony, Pteranodon, Dretch/Quasit/Vrock/Balor demon traits and action metadata, Lemure/Imp/Bearded Devil/Barbed Devil/Bone Devil/Chain Devil/Horned Devil/Ice Devil/Erinyes devil traits and action metadata, Blue Dragon Wyrmling/Young/Adult/Ancient lightning breath, spellcasting summary, and legendary action metadata, Green Dragon Wyrmling/Young/Adult/Ancient poison breath, spellcasting summary, and legendary action metadata, Black Dragon Wyrmling/Young/Adult/Ancient acid breath, spellcasting summary, and legendary action metadata, Copper Dragon Wyrmling/Young/Adult/Ancient acid breath, slowing breath, spellcasting summary, and legendary action metadata, White Dragon Wyrmling/Young/Adult/Ancient cold breath and legendary action metadata, Werebear/Wereboar/Wererat/Weretiger/Werewolf curse saves and Shape-Shift actions, Stone Giant Deflect Missile, Stone Golem Slow, Storm Giant Lightning Storm, Succubus Draining Kiss/Shape-Shift, and the previously covered monster action metadata. Mystic Noir now includes pressure-aware condition automation, additional clue/ritual compendium actions, resource/pressure metadata, and stateful clue/ritual action-use side effects for Marked pressure and Exposed cleanup. Remaining rules ecosystem work is deeper D&D edge-case automation, richer character-builder choices, broader class/subclass feature interactions beyond the currently covered SRD subclass slices, and making non-D&D runtimes production-grade beyond the current Mystic Noir slice.
+- 2026-05-06 Mystic Noir composure follow-up: Midnight Stakeout and Grounding Mantra add composure spend/recovery, Exposed pressure, Shaken cleanup, quick-roll metadata, and API-persisted `consumeResources: true` side effects on top of the prior resource and pressure mechanics.
+- 2026-05-06 Stellar Frontiers resource follow-up: Evasive Burst, Hull Sealant, and Ship Tech Field Repair add resource-backed condition cleanup, consumable decrement, Tech-scaled healing, target strain-pool repair effects, quick-roll metadata, and API-persisted `consumeResources: true` side effects on top of prior strain/consumable mechanics.
+- 2026-05-06 Generic Fantasy resource follow-up: Field Prayer and Guardian Rally add resource-backed condition cleanup/application, quick-roll metadata, and API-persisted `consumeResources: true` side effects on top of prior spell-slot and consumable mechanics.
+- 2026-05-06 rules operations posture follow-up: `GET /api/v1/admin/systems/operations` now emits per-system `productionGaps` for non-primary runtime use, manifest/content gaps, and missing production features such as origins, monster creation, equipment purchase, encounter planning, and compendium support. The browser Admin tab surfaces total production-gap counts and top gap reasons beside each rules system so operators can distinguish production-ready D&D support from demo/runtime drift without inferring it from raw coverage counts.
+- 2026-05-06 rules production-gap rollup follow-up: `GET /api/v1/admin/systems/operations` now returns ranked `productionGapCounts` with bounded impacted-system samples and usage counts, and the browser Admin Rules Operations panel surfaces those ranked gap reasons directly. This keeps rules ecosystem hardening actionable by gap reason and affected runtime without adding AI evaluation work.
+- 2026-05-06 rules gap remediation follow-up: each ranked rules production gap now includes severity, an operator-readable message, and remediation guidance for non-primary runtime usage, missing origin builders, monster creation, equipment purchase, encounter planning, compendium support, and manifest/content gaps. The browser Admin Rules Operations panel surfaces those messages and remediation hints beside affected systems so runtime hardening work is actionable without decoding raw gap ids.
+- 2026-05-06 rules remediation queue follow-up: `GET /api/v1/admin/systems/operations` now includes a top-level `remediationQueue` derived from ranked production gaps, with severity, action text, affected counts, messages, and bounded runtime usage samples. The browser Admin Rules Operations panel surfaces the top queue rows before the detailed production-gap cards so rules ecosystem hardening follows the same operator workflow as auth, assets, rendering, plugins, and AI.
+- 2026-05-06 rules promotion blocker follow-up: `GET /api/v1/admin/systems/operations` now includes `promotionBlockers` for each non-production runtime, expanding per-system gap codes into operator-readable blocker messages and remediation guidance with usage pressure. The browser Admin Rules Operations panel surfaces the top blocker lists so Generic Fantasy, Stellar Frontiers, Mystic Noir, and future runtimes have concrete promotion work rather than only aggregate gap counts.
+- 2026-05-07 rules promotion blocker metric follow-up: the browser Admin Rules Operations metric grid now surfaces an aggregate `Promotion Blockers` count derived from existing per-runtime `promotionBlockers`, so non-primary runtime promotion pressure is visible beside production gaps and capability coverage before operators inspect individual blocker cards.
+- The previous Elf/Gnome/Halfling lineage edge-case gap is now closed by the 2026-05-05 species lineage slice above.
+- The previous Fighter Champion subclass-depth gap is now closed by the 2026-05-05 D&D SRD Fighter Champion slice above, including levels 3, 7, 10, 15, and 18 plus built-API manual acceptance evidence.
+- The previous Rogue Thief subclass-depth gap is now closed by the 2026-05-05 D&D SRD Rogue Thief slice above, including levels 3, 9, 13, and 17 plus built-API manual acceptance evidence.
+- The previous Cleric Life Domain subclass-depth gap is now closed by the 2026-05-05 D&D SRD Cleric Life Domain slice above, including levels 3, 6, and 17 plus built-API manual acceptance evidence.
+- The previous Barbarian Berserker subclass-depth gap is now closed by the 2026-05-05 D&D SRD Barbarian Berserker slice above, including levels 3, 6, 10, and 14 plus built-API manual acceptance evidence.
+- The previous Paladin Oath of Devotion subclass-depth gap is now closed by the 2026-05-05 D&D SRD Paladin Oath of Devotion slice above, including levels 3, 7, 15, and 20 plus built-API manual acceptance evidence.
+- The previous Wizard Evoker subclass-depth gap is now closed by the 2026-05-05 D&D SRD Wizard Evoker slice above, including levels 3, 6, 10, and 14 plus built-API manual acceptance evidence.
+- The previous Ranger Hunter subclass-depth gap is now closed by the 2026-05-05 D&D SRD Ranger Hunter slice above, including levels 3, 7, 11, and 15 plus built-API manual acceptance evidence.
+- The previous Warlock Fiend Patron subclass-depth gap is now closed by the 2026-05-05 D&D SRD Warlock Fiend Patron slice above, including levels 3, 6, 10, and 14 plus built-API manual acceptance evidence.
+- The previous Sorcerer Draconic Sorcery subclass-depth gap is now closed by the 2026-05-05 D&D SRD Sorcerer Draconic Sorcery slice above, including levels 3, 6, 14, and 18 plus built-API manual acceptance evidence.
+- The previous Monk Warrior of the Open Hand subclass-depth gap is now closed by the 2026-05-05 D&D SRD Monk Warrior of the Open Hand slice above, including levels 3, 6, 11, and 17 plus built-API manual acceptance evidence.
+- D&D SRD species coverage now also includes Human Resourceful, Skillful, and Versatile quick rolls, Human Skillful/Versatile origin choice persistence, Resourceful Long Rest Heroic Inspiration recovery, Elf Drow/High Elf/Wood Elf lineage selection, Elf lineage spells and free-cast resources, Gnome Forest/Rock lineage selection, Gnomish Cunning save metadata, Gnome Speak with Animals free casts, Rock Gnome clockwork-device metadata, Halfling Luck/Brave/Nimbleness/Naturally Stealthy quick rolls, Tiefling Fiendish Legacy/Otherworldly Presence quick rolls, Abyssal/Chthonic/Infernal legacy selection, Tiefling spellcasting ability selection, selected legacy resistance/spells, level-gated legacy resources, and Tiefling free-cast resource consumption with manual acceptance evidence.
+- D&D SRD core spell coverage now includes Acid Arrow, Acid Splash, Alarm, Aid, Alter Self, Animal Friendship, Animal Messenger, Animal Shapes, Animate Dead, Animate Objects, Antilife Shell, Antimagic Field, Antipathy/Sympathy, Arcane Eye, Arcane Hand, Arcane Lock, Arcane Sword, Arcanist's Magic Aura, Astral Projection, Augury, Awaken, Banishment, Barkskin, Beacon of Hope, Befuddlement, Bestow Curse, Black Tentacles, Blade Barrier, Blight, Blindness/Deafness, Blink, Blur, Call Lightning, Calm Emotions, Chain Lightning, Charm Person, Circle of Death, Clone, Cloudkill, Commune, Commune with Nature, Comprehend Languages, Compulsion, Cone of Cold, Confusion, Conjure Animals, Conjure Celestial, Conjure Elemental, Conjure Fey, Conjure Minor Elementals, Conjure Woodland Beings, Contact Other Plane, Contagion, Contingency, Continual Flame, Control Water, Control Weather, Create Food and Water, Create or Destroy Water, Create Undead, Creation, Darkvision, Daylight, Death Ward, Delayed Blast Fireball, Demiplane, Detect Evil and Good, Detect Poison and Disease, Dimension Door, Disguise Self, Disintegrate, Dispel Evil and Good, Divination, Divine Favor, Divine Word, Dominate Beast, Dominate Monster, Dominate Person, Dream, Earthquake, Enlarge/Reduce, Entangle, Enthrall, Etherealness, Expeditious Retreat, Eyebite, Fabricate, Faithful Hound, Feather Fall, Find Familiar, Find Steed, Find the Path, Find Traps, Finger of Death, Fire Shield, Fire Storm, Flame Blade, Flame Strike, Flaming Sphere, Flesh to Stone, Floating Disk, Fog Cloud, Forbiddance, Forcecage, Foresight, Freedom of Movement, Freezing Sphere, Gate, Geas, Gentle Repose, Giant Insect, Glibness, Globe of Invulnerability, Glyph of Warding, Goodberry, Grease, Greater Invisibility, Greater Restoration, Guardian of Faith, Guards and Wards, Guidance, Gust of Wind, Hallow, Hallucinatory Terrain, Harm, Heal, Heat Metal, Heroes' Feast, Heroism, Hideous Laughter, Hold Monster, Holy Aura, Ice Storm, Illusory Script, Imprisonment, Incendiary Cloud, Inflict Wounds, Insect Plague, Instant Summons, Irresistible Dance, Jump, Knock, Legend Lore, Levitate, Light, Locate Animals or Plants, Locate Creature, Locate Object, Mage Hand, Magic Circle, Magic Jar, Magic Mouth, Magic Weapon, Magnificent Mansion, Major Image, Mass Heal, Mass Suggestion, Maze, Meld into Stone, Message, Meteor Swarm, Mind Blank, Mirage Arcane, Mirror Image, Mislead, Modify Memory, Moonbeam, Move Earth, Nondetection, Passwall, Phantasmal Killer, Phantom Steed, Planar Ally, Planar Binding, Plane Shift, Plant Growth, Polymorph, Power Word Kill, Power Word Stun, Prismatic Spray, Prismatic Wall, Private Sanctum, Produce Flame, Programmed Illusion, Project Image, Protection from Energy, Protection from Evil and Good, Protection from Poison, Purify Food and Drink, Raise Dead, Ray of Frost, Regenerate, Reincarnate, Remove Curse, Resilient Sphere, Resistance, Resurrection, Reverse Gravity, Rope Trick, Sacred Flame, Sanctuary, Scrying, Secret Chest, Seeming, Sending, Sequester, Shapechange, Shield of Faith, Shillelagh, Shining Smite, Shocking Grasp, Silent Image, Simulacrum, Sleep, Sleet Storm, Spare the Dying, Speak with Dead, Speak with Plants, Spider Climb, Spike Growth, Stone Shape, Stoneskin, Storm of Vengeance, Sunbeam, Sunburst, Symbol, Telekinesis, Telepathic Bond, Teleport, Teleportation Circle, Time Stop, Tiny Hut, Tongues, Transport via Plants, Tree Stride, True Polymorph, True Resurrection, True Seeing, True Strike, Unseen Servant, Vampiric Touch, Vicious Mockery, Wall of Fire, Wall of Force, Wall of Ice, Wall of Stone, Wall of Thorns, Warding Bond, Water Breathing, Water Walk, Weird, Wind Walk, Wind Wall, Wish, Word of Recall, Zone of Truth, Bane, Bless, Burning Hands, Color Spray, Command, Guiding Bolt, Magic Missile, Thunderwave, Fireball, Invisibility, Lightning Bolt, Scorching Ray, Shatter, Web, Counterspell, Dispel Magic, Fly, Haste, Hypnotic Pattern, Slow, Lesser Restoration, Prayer of Healing, Spiritual Weapon, Spirit Guardians, Revivify, Mass Healing Word, Identify, Mage Armor, Shield, Silence, Enhance Ability, See Invisibility, Misty Step, Fear, Stinking Cloud, Suggestion, Animal Friendship, Clairvoyance, Detect Thoughts, Enlarge/Reduce, Gaseous Form, and Mass Cure Wounds, with actor-level cantrip scaling, non-damage save/effect quick rolls, spell-slot consumption, supported target condition application for Bane/Bless/Color Spray/Command/Charm Monster/Hypnotic Pattern-style table actions, iconic damage/effect/action rolls, damage/upcast metadata, difficult-terrain/cover/charm/control/cloud/summon/ritual/language/clone/random-behavior/contagion/contingency/light/water-control/weather/food/water/undead/object-creation/vision/death-protection/demiplane/sensing/teleport/disguise/disintegration/banishment/weapon-rider/divine-threshold/domination/dream/earthquake/entangle/perception-penalty/ethereal-travel/dash/eyebite/fabrication/familiar/steed/pathfinding/trap-sensing/fire-shield/petrification/floating-disk/forbiddance/forcecage/foresight/freedom/freezing-sphere/gate/geas/repose/insect/glibness/globe/glyph/goodberry/grease/restoration/guardian/guards/guidance/gust/hallow/hallucination/harm/heal/heat-metal/feast/heroism/laughter/hold-monster/holy-aura/ice-storm/script/imprisonment/incendiary/inflict/insect-plague/instant-summons/dance/jump/knock/lore/levitation/light/location/mage-hand/magic-circle/possession/triggered-message/magic-weapon/mansion/major-image/mass-heal/mass-suggestion/maze/stone-melding/message/meteor/mind-blank/mirage/mirror-image/mislead/memory/moonbeam/earth-moving/nondetection/passwall/phantasmal-killer/phantom-steed/planar-ally/planar-binding/plane-shift/plant-growth/polymorph/power-word/prismatic/private-sanctum/produce-flame/programmed-illusion/project-image/protection/protection-from-evil/poison/purify/raise-dead/ray-of-frost/regenerate/reincarnate/remove-curse/resilient-sphere/resistance/resurrection/reverse-gravity/rope-trick/sacred-flame/sanctuary/scrying/secret-chest/seeming/sending/sequester/shapechange/shield-of-faith/shillelagh/shining-smite/shocking-grasp/silent-image/simulacrum/sleep/sleet-storm/stabilize/speak-with-dead/speak-with-plants/spider-climb/spike-growth/stone-shape/stoneskin/storm/sunbeam/sunburst/symbol/telekinesis/telepathy/teleport/teleportation-circle/time-stop/tiny-hut/tongues/plant-transport/tree-stride/true-polymorph/true-resurrection/true-seeing/true-strike/unseen-servant/vampiric-touch/mockery/wall/thorn-wall/warding-bond/water-breathing/water-walk/weird/wind-walk/wind-wall/wish/word-of-recall/zone-of-truth metadata, control/mobility/summon/ward/sensor/curse/divination/travel effect metadata, cleric/support healing/revival/action spell metadata, utility/defense spell effect metadata, class-referenced spell metadata, magic-item referenced spell backing metadata, and manual evidence for compendium add, roll, upcast, slot-consumption, and Haste passive-AC non-leak behavior. Current SRD Spells A-Z comparison reports `340` local first-class spell ids against `339` source spell headings, with `0` source headings still missing; the local count includes the extra `enlarge-reduce` compatibility id while source-heading coverage is complete.
 - D&D SRD mundane equipment coverage now includes the full armor table and weapon table with armor AC metadata, weapon range/properties/mastery metadata, purchase behavior, sheet AC updates, and item quick-roll evidence.
 - D&D SRD tool and adventuring gear coverage now includes the remaining tool table, gaming set variants, musical instrument variants, ammunition variants, packs, focus variants, kits, consumables, lighting gear, containers, Potion of Healing, cantrip/level-1 Spell Scrolls, purchase behavior, inventory metadata, expanded tool quick rolls, and bearer-token manual evidence.
-- D&D SRD magic-item coverage now includes `82` first-class armor/ammunition/weapon/shield/ring/wand/staff/wondrous/potion/scroll entries, protection-item AC/save automation, Bracers of Defense armor/shield exclusion, Staff of Striking damage formulas, potion healing/damage quick rolls, higher-level Spell Scroll metadata, charges, rarity, attunement, and bearer-token manual evidence over `310` compendium entries. Remaining equipment content work is full SRD-scale magic item coverage beyond this current SRD-backed subset, plus deeper automation for item effects that currently remain metadata-only.
-- D&D SRD monster coverage now includes `27` unique SRD stat blocks exposed as `28` threat ids, covering humanoids, undead, beasts, a celestial, giants, a monstrosity, and red dragons from CR `1/8` through CR `10`, with actor creation, encounter planning, attack/damage quick rolls, Web/Boulder Toss/Fire Breath save metadata, and bearer-token manual effect evidence. Remaining monster content work is full SRD-scale monster/action coverage beyond this expanded current threat catalog.
-- D&D SRD condition coverage now includes all `15` official SRD conditions as first-class compendium entries with structured VTT metadata, REST apply/remove behavior, D&D character import normalization, and bearer-token manual evidence over `323` compendium entries; condition automation now affects ability/skill/tool checks, saving throws, and monster attack quick rolls for Poisoned, Restrained, Paralyzed/Petrified/Stunned/Unconscious save failure, Invisible attack advantage, and Exhaustion level penalties.
-- AI flows now cover provider-configured threads, richer permission-filtered prompt context with visible actor action ids, permission-filtered tool advertisement, typed OpenAI Responses tool schemas, Codex loopback proposal-tool and actor-action execution, encounter/journal/scene/token/actor/memory/dice/compendium/action tools, actor-action resource consumption and target effect application, provider retry/failure handling, provider request timeouts, cross-role tool-advertisement permission regression, thread status history, failed-tool observability, invalid tool-input rejection before side effects, provider-backed memory extraction, usage and estimated-cost metrics, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. Remaining Codex integration work is broader production provider edge cases and future-tool hardening as new tool classes are added. Model-output quality evaluation is intentionally out of scope for the Codex integration goal.
+- D&D SRD magic-item coverage now includes `288` first-class armor/ammunition/weapon/shield/ring/wand/staff/wondrous/potion/scroll entries, protection-item AC/save automation, Bracers of Defense armor/shield exclusion, Staff of Striking weapon attack and damage formulas, Wand of the War Mage spell-attack bonuses, potion healing/damage quick rolls, item condition-effect quick rolls, consumable item quantity spending, higher-level Spell Scroll metadata, charges, rarity, attunement, and bearer-token manual evidence over `310` compendium entries plus item-effect smoke evidence. Consumable Spell Scroll attack bonuses remain scroll-local and do not globally increase ordinary spell attack quick rolls. Current SRD magic-item source-heading comparison reports `257` source headings, `288` local first-class magic-item ids, and `0` missing source headings; remaining equipment work is deeper edge-case automation beyond source-heading coverage.
+- D&D SRD monster coverage now includes 312 unique SRD stat blocks exposed as 313 threat ids, covering aberrations, humanoids, undead, beasts, celestials, giants, lycanthropes, monstrosities, oozes, plants, constructs, fiends, fey, elementals, and chromatic and metallic dragons from CR `0` through CR `24`, with actor creation, encounter planning, attack/damage quick rolls, save/effect metadata, condition/recharge metadata, target HP damage application, and bearer-token/manual effect evidence. Newly covered metadata includes Aboleth Tentacle/Dominate Mind/Legendary Actions, Animated Armor Slam, Flying Sword Slash, Rug of Smothering Smother, Allosaurus Bite/Claws, Ankylosaurus Tail, Ape Fist/Rock, Archelon Amphibious/Bite, Ankheg Bite/Acid Spray, Assassin Shortsword/Light Crossbow/Cunning Action, Awakened Shrub Rake, Awakened Tree Slam, Axe Beak Beak, Azer Sentinel Fire Aura/Illumination/Burning Hammer, Behir Bite/Constrict/Lightning Breath/Swallow, Baboon Pack Tactics/Bite, Badger Poison Resistance/Bite, Berserker Bloodied Frenzy/Greataxe, Bat Blindsight/Bite, Blood Hawk Pack Tactics/Beak, Black Pudding Dissolving Pseudopod/Split, Blink Dog Bite/Teleport, Boar Bloodied Fury/Gore, Bugbear Stalker Javelin/Morningstar/Quick Grapple, Bugbear Warrior Grab/Light Hammer, Bulette Bite/Deadly Leap/Leap, Camel Bite, Cat Jumper/Scratch, Centaur Trooper Pike/Longbow/Trampling Charge, Chimera Ram/Bite/Claw/Fire Breath, Chuul Paralyzing Tentacles/Pincer, Clay Golem Slam/Hasten, Cloaker Attach/Moan/Phantasms, Cloud Giant Thundercloud/Misty Step, Commoner Training/Club, Swarm of Crawling Claws Grasping Hands, Cultist Ritual Sickle, Cultist Fanatic Pact Blade/Spellcasting/Spiritual Weapon, Constrictor Snake Constrict, Crab Amphibious/Claw, Crocodile Hold Breath/Bite, Darkmantle Crush/Darkness Aura, Death Dog Bite, Djinni Storm Blade/Storm Bolt/Create Whirlwind/Spellcasting, Doppelganger Slam/Read Thoughts/Unsettling Visage/Shape-Shift, Dragon Turtle Bite/Tail/Steam Breath, Drider Foreleg/Poison Burst/Magic of the Spider Queen, Druid Vine Staff/Verdant Wisp/Spellcasting, Dryad Vine Lash/Thorn Burst/Tree Stride, Efreeti Heated Blade/Hurl Flame/Spellcasting, Ettercap Bite/Web Strand/Reel, Ettin Battleaxe/Morningstar, Flesh Golem Slam/Lightning Absorption, Frost Giant Frost Axe/Great Bow/War Cry, Fire Giant Flame Sword/Hammer Throw, Shrieker Fungus Shriek, Violet Fungus Rotting Touch, Gargoyle Claw/Flyby, Deer Agile/Ram, Draft Horse Hooves, Eagle Talons, Elephant Gore/Trample, Elk Ram, Flying Snake Flyby/Bite, Frog Amphibious/Standing Leap/Bite, Giant Badger Poison Resistance/Bite, Giant Bat Blindsight/Bite, Giant Boar Bloodied Fury/Gore, Giant Centipede Poisoned Bite, Giant Constrictor Snake Bite/Constrict, Giant Crab Amphibious/Claw, Giant Crocodile Hold Breath/Bite/Tail, Giant Elk Radiant and Necrotic Resistance/Ram, Giant Fire Beetle Fire Resistance/Illumination/Bite, Giant Frog Amphibious/Standing Leap/Bite/Swallow, Giant Goat charging Ram, Giant Hyena Bite/Rampage, Giant Lizard Spider Climb/Bite, Giant Octopus Tentacles/Ink Cloud, Giant Owl Flyby/Talons/Spellcasting, Giant Scorpion Claw/Sting, Giant Seahorse Ram/Bubble Dash, Giant Shark Water Breathing/Bite, Giant Toad Bite/Swallow, Giant Venomous Snake Bite, Giant Vulture Gouge, Giant Wasp Sting, Giant Weasel Bite, Giant Wolf Spider Bite, Goat Ram, Hawk Talons, Jackal Bite, Killer Whale Hold Breath/Bite, Lion Pack Tactics/Roar, Lizard Spider Climb/Bite, Ghost Withering Touch/Etherealness/Horrific Visage/Possession, Gibbering Mouther Bite/Blinding Spittle, Glabrezu Pincer/Fist/Spellcasting, Gladiator Spear/Shield Bash/Parry, Gnoll Warrior Spear/Longbow, Gold Dragon Wyrmling Bite/Fire Breath, Young Gold Dragon Rend/Fire Breath, Adult Gold Dragon Rend/Fire Breath/Weakening Breath/Legendary Actions, Ancient Gold Dragon Rend/Fire Breath/Weakening Breath/Legendary Actions, Gorgon Gore/Petrifying Breath/Trample, Gray Ooze Pseudopod, Green Hag Claw/Spellcasting, Grick Beak/Tentacles, Griffon Rend, Grimlock Bone Cudgel, Guardian Naga Bite/Poisonous Spittle/Spellcasting, Half-Dragon Claw/Dragon's Breath/Leap, Harpy Claw/Luring Song, Hell Hound Bite/Fire Breath, Hezrou Rend/Leap, Hill Giant Tree Club/Trash Lob, Hippogriff Rend, Hippopotamus Bite, Hobgoblin Warrior Longsword/Longbow, Homunculus Bite, Hunter Shark Bite, Hyena Bite, Ice Mephit Claw/Fog Cloud/Frost Breath, Magma Mephit Claw/Fire Breath, Steam Mephit Blurred Form/Steam Breath, Merfolk Skirmisher Ocean Spear speed reduction, Merrow Bite/Claw/Harpoon, Mimic Bite/Pseudopod/Shape-Shift, Nalfeshnee Rend/Horror Nimbus/Pursuit, Night Hag Claw/Nightmare Haunting/Spellcasting/Shape-Shift, Nightmare Hooves/Ethereal Stride, Noble Rapier/Parry, Ochre Jelly Pseudopod/Split, Oni Claw/Nightmare Ray/Spellcasting/Invisibility, Otyugh Bite/Tentacle/Tentacle Slam, Pegasus Hooves, Phase Spider Bite/Ethereal Jaunt, Pirate Dagger/Enthralling Panache, Pirate Captain Rapier/Pistol/Captain's Charm/Riposte, Planetar Radiant Sword/Holy Burst/Spellcasting/Divine Aid, Plesiosaurus Bite, Priest Mace/Radiant Flame/Spellcasting/Divine Aid, Pseudodragon Bite/Sting, Rat Bite, Raven Beak, Swarm of Bats Bites, Swarm of Insects Bites, Swarm of Piranhas Bites, Swarm of Rats Bites, Swarm of Ravens Beaks, Swarm of Venomous Snakes Bites, Reef Shark Bite, Rhinoceros Gore, Riding Horse Hooves, Roc Beak/Talons/Swoop, Roper Bite/Tentacle/Reel, Saber-Toothed Tiger Rend/Nimble Escape, Scorpion Sting, Seahorse Bubble Dash, Spider Bite, Tiger Rend/Nimble Escape, Triceratops Gore, Tyrannosaurus Rex Bite/Tail, Venomous Snake Bite, Vulture Beak/Pack Tactics, Warhorse Hooves, Weasel Bite, Scout Shortsword/Longbow, Sea Hag Claw/Death Glare/Illusory Appearance, Dretch Rend/Fetid Cloud, Quasit Magic Resistance/Rend/Invisibility/Scare/Shape-Shift, Vrock Demonic Restoration/Shred/Spores/Stunning Screech, Lemure Hellish Restoration and Vile Slime, Imp Magic Resistance/Sting/Invisibility/Shape-Shift, Incubus Restless Touch/Spellcasting/Nightmare, Invisible Stalker Air Form/Wind Swipe/Vortex, Iron Golem Fire Absorption/Bladed Arm/Fiery Bolt/Poison Breath, Kraken Tentacle/Fling/Lightning Strike/Swallow/Toxic Ink, Lamia Claw/Corrupting Touch/Spellcasting/Leap, Mage Arcane Burst/Spellcasting, Mammoth Gore/Trample, Mastiff Bite, Mule Hooves, Octopus Tentacles/Ink Cloud, Owl Talons, Panther Rend/Nimble Escape, Piranha Bite, Polar Bear Cold Resistance/Rend, Pony Hooves, Pteranodon Flyby/Bite, Bearded Devil Beard poison and Infernal Glaive wound metadata, Barbed Devil Barbed Hide/Claws grapple/Tail/Hurl Flame metadata, Bone Devil Claw/Infernal Sting healing denial, Chain Devil Chain/Conjure Infernal Chain/Unnerving Gaze restraint and fear metadata, Horned Devil Searing Fork/Hurl Flame/Infernal Tail wound metadata, Ice Devil Ice Spear/Tail/Ice Wall slow and utility metadata, Erinyes Entangling Rope/Parry metadata, Couatl Bite/Constrict/Divine Aid metadata, Deva Holy Mace/Divine Aid metadata, Balor Flame Whip/Lightning Blade/Teleport metadata, Blue Dragon Wyrmling/Young/Adult/Ancient Lightning Breath save/recharge metadata, Adult/Ancient Blue Dragon Legendary Actions utility metadata, Green Dragon Wyrmling/Young/Adult/Ancient Poison Breath save/recharge metadata, Adult/Ancient Green Dragon Legendary Actions utility metadata, Black Dragon Wyrmling/Young/Adult/Ancient Acid Breath save/recharge metadata, Adult/Ancient Black Dragon Legendary Actions utility metadata, White Dragon Wyrmling/Young/Adult/Ancient Cold Breath save/recharge metadata, Adult/Ancient White Dragon Legendary Actions utility metadata, Werebear/Wereboar/Wererat/Weretiger/Werewolf curse saves and Shape-Shift actions, Wereboar Tusk Prone metadata, Weretiger Prowl metadata, Werewolf Pack Tactics, Stone Giant Deflect Missile, Stone Golem Slow, Storm Giant Lightning Storm, Sphinx of Wonder Rend/Burst of Ingenuity, Sphinx of Lore Mind-Rending Roar/Legendary Actions, Sphinx of Valor Roar/Legendary Actions, Swarm Bloodied bite/beak metadata, Tiger Rend/Nimble Escape, Triceratops Gore, Tyrannosaurus Rex Bite/Tail, Venomous Snake Bite, Vulture Beak/Pack Tactics, Warhorse Hooves, Weasel Bite, Wight Necrotic Sword/Necrotic Bow/Life Drain, Will-o'-Wisp Shock/Consume Life/Vanish, Winter Wolf Bite/Cold Breath, Worg Bite, Ogre Zombie Slam/Undead Fortitude, and Succubus Draining Kiss/Shape-Shift. Current SRD monster source-heading coverage is complete by the local A-Z comparison; remaining monster work is deeper action/effect automation, encounter behavior, and edge-case table resolution beyond stat-block presence.
+- D&D SRD condition coverage now includes all `15` official SRD conditions as first-class compendium entries with structured VTT metadata, REST apply/remove behavior, D&D character import normalization, and bearer-token manual evidence over `374` compendium entries; condition automation now affects ability/skill/tool checks, saving throws, and player/monster attack quick rolls for Poisoned, Blinded, Prone, Restrained, Invisible attack advantage, Paralyzed/Petrified/Stunned/Unconscious save failure, and Exhaustion level penalties.
+- AI flows now cover provider-configured threads, richer permission-filtered prompt context with visible actor action ids, permission-filtered tool advertisement, persisted advertised-tool and advertised-permission telemetry, typed OpenAI Responses tool schemas, Codex loopback proposal-tool and actor-action execution, encounter/journal/scene/token/actor/memory/search-memory/dice/compendium/action tools, actor-action resource consumption and target effect application, provider retry/failure handling, provider request timeouts, cross-role tool-advertisement permission regression, thread status history, failed-tool observability, invalid tool-input rejection before side effects, failed-tool retry classification, provider-backed memory extraction, usage and estimated-cost metrics, configured AI cost-budget actionability, deterministic telemetry, structured tool-output, bounded response-quality evaluations with named response criteria, advertised-tool and advertised-permission evaluation checks, failed-check rollups, server-admin JSON/NDJSON AI evaluation export, GM-only front-end operator telemetry, server-admin cross-campaign AI/Codex operations telemetry with redacted risk, service-level, evaluation-coverage, and safety-posture summaries, browser Admin runtime action state and action reasons, audited stale-running thread cleanup, audited stale-started tool-call cleanup, approval/application, generic proposal underlying-permission checks, and deterministic recap memory. 2026-05-06 AI evaluation export follow-up: `GET /api/v1/admin/ai/evaluations` filters cross-campaign evaluation evidence by campaign/status and emits JSON or NDJSON artifacts with campaign/thread context and failed-check details. 2026-05-06 AI operations risk follow-up: `GET /api/v1/admin/ai/operations` now reports failed/running threads, stale started tool calls, cost-budget posture, provider error rollups, failed tool-call names/error codes, failed-tool retry policy, failed evaluation checks, and `actionRequired` without exposing prompts or provider secrets. 2026-05-06 AI operations service-level follow-up: `GET /api/v1/admin/ai/operations` also reports thread completion/failure rates, tool failure rate, evaluation pass/failure rates, average score, and thread/tool duration summaries without exposing prompts or provider secrets. 2026-05-06 AI evaluation coverage follow-up: `GET /api/v1/admin/ai/operations` reports evaluated and unevaluated thread counts, coverage rate, campaign backlog, and recent unevaluated threads. 2026-05-06 AI safety posture follow-up: `GET /api/v1/admin/ai/operations` groups permission-boundary, tool-output, and response-safety regression checks with coverage and failure rollups. 2026-05-06 AI stale-thread cleanup follow-up: `POST /api/v1/admin/ai/threads/stale/fail` supports non-mutating dry runs and audited server-admin cleanup for stale running threads. 2026-05-06 AI stale-tool-call cleanup follow-up: `POST /api/v1/admin/ai/tool-calls/stale/fail` supports non-mutating dry runs and audited server-admin cleanup for stale started tool calls. 2026-05-06 AI cost-budget follow-up: `OTTE_AI_COST_BUDGET_USD` makes server-admin AI operations actionable with `cost_budget_exceeded` when aggregate estimated cost exceeds the configured budget. Remaining Codex integration work is broader production provider edge cases, permission-safe tool expansion, proposal review hardening, and an explicit manual replay workflow for retryable failed tool calls.
+- 2026-05-06 plugin storage hardening follow-up: VM command results now validate storage mutation keys and JSON payload size before returning plugin output, matching the API persistence boundary so untrusted plugin code cannot hand path-like keys or oversized campaign-scoped storage values to later layers.
+- 2026-05-07 plugin storage remediation context follow-up: `trim_plugin_storage_pressure` remediation samples now include the near-limit entry's last writer type and update timestamp, preserving the existing redacted campaign/plugin/key/size shape while helping operators distinguish plugin-written cache pressure from user-authored configuration before cleanup.
+- 2026-05-06 plugin registry drift visibility follow-up: `GET /api/v1/admin/plugins/operations` now returns a bounded `registryOperations.unconfiguredPackages` list with plugin id, package id, version, registry URL, and sync timestamp for registry-sourced packages whose source registry is no longer configured. The browser Admin tab surfaces the top unconfigured registry packages beside registry status and drift counts so marketplace drift is actionable without inspecting the plugin root.
+- 2026-05-06 plugin command operations visibility follow-up: `GET /api/v1/admin/plugins/operations` now returns a `commandOperations` block plus bounded recent command rows with plugin id, command, package id, sandbox, version, campaign, timestamp, and storage mutation counts. The browser Admin tab surfaces total command executions, storage-mutating command count, and recent command activity so operators can verify installed plugin runtime usage without opening raw audit logs.
+- 2026-05-06 plugin review remediation visibility follow-up: `GET /api/v1/admin/plugins/operations` now includes review action reasons, remediation guidance, and bounded pending/blocked package samples with review age, package id, source type, and install-block reason. The browser Admin tab surfaces that review queue so marketplace moderation work points to concrete packages instead of only aggregate backlog counts.
+- 2026-05-06 plugin operations remediation queue follow-up: `GET /api/v1/admin/plugins/operations` now includes a top-level remediation queue with severity, action text, affected counts, and bounded samples for load errors, blocked installs, missing packages, permission drift, core drift, marketplace review backlog, registry sync drift, unconfigured registry packages, and near-limit plugin storage. The browser Admin tab surfaces the top actions before the detailed plugin operations rows.
+- 2026-05-06 plugin security posture follow-up: `GET /api/v1/admin/plugins/operations` now includes `securityPosture` with VM-sandboxed versus manifest-only package counts, command-capable package counts, unsigned/untrusted/trust-blocked package inventory, and non-VM command package samples. The browser Admin tab surfaces these sandbox/trust counts so third-party plugin distribution has an operator-visible security posture beyond raw review and registry state.
+- 2026-05-07 plugin sandbox posture UI follow-up: the browser Admin Plugin Operations metric grid now surfaces the `Non-VM Commands` count from `securityPosture.manifestOnlyCommandPackageCount`, making command-capable packages that are not VM-sandboxed visible in the top-level plugin operations posture before operators expand the detailed security card.
+- 2026-05-07 plugin security remediation follow-up: sandbox/trust findings now feed a top-level `review_plugin_security_posture` remediation with bounded package samples and issue labels for command-capable non-VM packages plus unsigned or untrusted inventory, so third-party package exposure appears in the same prioritized operations queue as registry, review, command, storage, and compatibility work.
+- 2026-05-06 plugin registry freshness follow-up: `GET /api/v1/admin/plugins/operations` now reports configured registry sync age, stale threshold, stale configured-registry counts, and bounded stale registry samples. Stale successful syncs add `stale_plugin_registry_sync` and a `refresh_stale_plugin_registries` remediation, and the browser Admin tab shows stale registry counts plus sync-age rows beside registry drift.
+- 2026-05-06 AI scope correction: model-output evaluation suites are no longer part of the active product goal. Existing deterministic evaluation endpoints remain documented as optional historical telemetry, but production actionability now comes from runtime failures such as failed provider threads, stale running threads, stale started tool calls, failed tool calls, provider error rollups, permission-safe tool execution, proposal review, and configured usage/cost budget visibility. Remaining AI product depth should focus on provider edge cases and future-tool hardening, not new eval coverage.
+- 2026-05-06 AI provider health visibility follow-up: `GET /api/v1/admin/ai/operations` now returns a bounded `providerHealth` rollup with each provider's thread counts, completion/failure rates, stale-running count, provider-error count, duration summary, usage/cost totals, and recent sanitized provider errors. The browser Admin AI Operations panel surfaces those provider rows so runtime migrations and mixed-provider deployments can compare reliability without exposing prompts or adding evaluation work.
+- 2026-05-06 rendering light remediation follow-up: scene editors can now `PATCH` and `DELETE /api/v1/scenes/{sceneId}/lights/{lightId}` with explicit `scene.update` checks, finite/positive radius validation, six-digit hex color validation, 0-1 intensity validation, audited before/after light snapshots, and realtime scene update broadcasts. This closes the authoring loop for rendering diagnostics that flag invalid or duplicate light sources.
+- 2026-05-06 rendering wall remediation follow-up: scene editors can now `PATCH` and `DELETE /api/v1/scenes/{sceneId}/walls/{wallId}` with explicit `scene.update` checks, finite endpoint validation, zero-length prevention, terrain/wall kind validation, default movement-blocking behavior for wall kind changes, audited before/after wall snapshots, and realtime scene update broadcasts. This closes the authoring loop for diagnostics that flag zero-length, out-of-bounds, duplicate, or wrong wall-kind geometry.
+- 2026-05-06 rendering fog remediation follow-up: scene editors can now `PATCH /api/v1/scenes/{sceneId}/fog/{fogId}` with explicit `token.reveal` checks and the same circle, polygon, brush, reveal/hide, point, and radius normalization used by fog creation. Updates audit before/after fog snapshots and broadcast realtime scene updates so invalid-radius, invalid-polygon, or wrong-mode fog diagnostics can be repaired without deleting and recreating blind.
+- 2026-05-06 AI proposal review hardening follow-up: proposal creation now ignores client-supplied `status`, `approvalRequired`, and `approvedByUserId`, stores proposals as pending review records, requires approved status before apply, and rejects re-approval/replay of already-applied proposals. Focused core and API tests cover forged approval payloads, pending-apply denial, applied-proposal replay denial, and single mutation application.
+- 2026-05-06 AI proposal review operations follow-up: `GET /api/v1/admin/ai/operations` now includes a redacted `proposalReview` posture with AI-created proposal counts by pending/approved/applied/rejected state, apply-ready count, oldest pending age, changed-entity counts, campaign pending queues, and bounded pending/approved samples without exposing full diffs. Pending and approved-but-unapplied AI proposals now contribute `pending_ai_proposals` and `approved_ai_proposals_waiting_apply` action reasons, and the browser Admin AI Operations panel surfaces pending/apply-ready proposal pressure beside runtime failure operations.
+- 2026-05-07 AI stale proposal review follow-up: `GET /api/v1/admin/ai/operations` now flags AI-created pending or approved-but-unapplied proposals older than 24 hours through `stale_pending_ai_proposals` and `stale_approved_ai_proposals`, reports stale counts and bounded stale samples without full diffs, and escalates proposal-review remediation severity when stale queues exist. The browser Admin AI Operations panel surfaces stale pending/approved counts and rows so proposal review drift is visible without adding model-output evaluation work or bypassing the proposal approval/apply boundary.
+- 2026-05-07 AI stale proposal rejection follow-up: `POST /api/v1/admin/ai/proposals/stale/reject` now gives server admins a dry-run-capable, bounded cleanup action for AI-created pending proposals older than 24 hours, optionally scoped by campaign. The endpoint rejects stale pending proposals without applying campaign state, returns only redacted proposal samples and aggregate counts, appends a redacted server-admin audit log, and the browser Admin AI Operations panel exposes the control when stale pending proposal pressure exists.
+- 2026-05-06 AI future-tool permission hardening follow-up: provider-visible AI tools now fail closed unless they either require `ai.proposeChanges` or are explicitly classified in the server allowlist of permission-safe read/roll tools (`search_memory`, `roll_dice`, `read_compendium`). AI thread telemetry persists that server-owned `permissionSafe` classification beside advertised tool permissions, and the cross-role tool-advertisement regression asserts GM and player exposure match the allowlist.
+- 2026-05-06 AI tool catalog operations visibility follow-up: `GET /api/v1/admin/ai/operations` now includes a redacted `toolCatalog` with executable tool count, proposal-gated count, permission-safe allowlist count, fail-closed future-tool count, strict schema posture, and per-tool required permissions. The browser Admin AI Operations panel surfaces that tool policy posture so operators can verify provider-visible tools remain proposal-gated or explicitly read/roll-safe without adding evaluation work.
+- 2026-05-06 rules capability matrix follow-up: `GET /api/v1/admin/systems/operations` now returns per-system `productionCapability` coverage with supported/missing capabilities, evidence counts, coverage rate, and remediation for character templates, compendium, conditions, encounter threats, origin building, monster creation, equipment purchase, import, advancement, rest recovery, and encounter planning. The browser Admin Rules Operations panel surfaces primary capability coverage and missing capability labels so non-primary runtime promotion work is visible as a concrete capability checklist, not just raw gap codes.
+- 2026-05-06 asset delivery runtime visibility follow-up: asset blob delivery now appends redacted `asset.delivery` audit logs for served, denied, unavailable, and missing-byte outcomes without storing signatures, session tokens, or object bytes. `GET /api/v1/admin/assets/storage` summarizes those runtime delivery events with served/failure counts, status/access-mode rollups, recent failures, `asset_delivery_failures`, and an `investigate_asset_delivery_failures` remediation. The browser Admin Asset Storage panel surfaces delivery event and failure counts plus recent delivery failures beside delivery coverage and CDN purge posture.
+- 2026-05-06 AI failed-tool retry hardening follow-up: server-admin tool-call retry now marks the original failed call with retry result metadata and excludes already-retried failures from future replay matches, keeping manual recovery idempotent while preserving the retry audit trail.
+- 2026-05-06 AI retry queue visibility follow-up: `GET /api/v1/admin/ai/operations` now includes campaign name, thread title/status, provider, tool, error, and retry reason on recent retryable failed tool calls. The browser Admin AI Operations panel surfaces that dedicated retryable failed-tool queue with replay buttons, so manual recovery is available even when the failed call is not in the generic recent-tool list.
+- 2026-05-07 AI retry remediation context follow-up: the `replay_retryable_ai_tools` remediation samples now carry the same redacted campaign name, thread title/status, provider, tool error, retry reason, and failure timestamp as the dedicated retryable failed-tool risk queue, so the top-level remediation row points operators to the exact replay target without opening raw tool-call records.
+- 2026-05-07 AI replay operations follow-up: `GET /api/v1/admin/ai/operations` now includes redacted `replayOperations` for manual failed-tool replay attempts, including replayed/completed/failed counts, latest replay time, recent retried tool-call ids/statuses/result errors, and recent dry-run or real replay audit runs. Failed replay outcomes emit `failed_ai_tool_replays` and `review_failed_ai_tool_replays` remediation without exposing prompts, tool inputs, tool outputs, or provider secrets, and the browser Admin AI Operations panel surfaces replay-run and failed-replay counts plus recent replay rows.
+- 2026-05-06 AI provider health remediation follow-up: per-provider rows in `GET /api/v1/admin/ai/operations` now include action-required state, action reasons, and remediation guidance for provider failures, sanitized provider errors, stale running threads, and provider-specific cost-budget pressure. The browser Admin AI Operations panel surfaces those reasons and remediation hints directly in provider health rows.
+- 2026-05-06 AI operations remediation queue follow-up: `GET /api/v1/admin/ai/operations` now includes a top-level remediation queue with severity, action text, affected counts, and redacted samples for provider health investigation, stale thread cleanup, stale tool-call cleanup, retryable failed-tool replay, non-retryable tool failure review, cost-budget pressure, pending AI proposal review, and approved proposal application. The browser Admin AI Operations panel surfaces the top remediation rows before detailed provider, risk, and proposal samples without adding evaluation work.
+- 2026-05-06 AI runtime config posture follow-up: `GET /api/v1/admin/ai/operations` now includes a redacted `runtimePosture` block and `review_ai_runtime_config` remediation queue item for provider configuration risks such as missing OpenAI credentials when OpenAI is selected, disabled OpenAI request timeouts, and a zero retry budget. The browser Admin AI Operations panel surfaces this posture before provider health rows so operators can fix risky runtime configuration without relying on later failed or stale thread symptoms.
+- 2026-05-06 AI provider degradation threshold follow-up: `GET /api/v1/admin/ai/operations` now marks provider health degraded when a provider's thread failure rate meets or exceeds `OTTE_AI_PROVIDER_FAILURE_RATE_THRESHOLD` after at least three provider threads. The default threshold is `0.25`, provider rows expose the active threshold and degraded boolean, `provider_degraded_failure_rate` contributes to top-level action reasons, and the browser Admin AI Operations panel shows whether a provider is above the configured threshold without adding evaluation work.
+- 2026-05-06 AI provider latency threshold follow-up: `GET /api/v1/admin/ai/operations` now marks provider health degraded when p95 thread duration exceeds `OTTE_AI_PROVIDER_P95_DURATION_THRESHOLD_MS` after at least three timed provider threads. Provider rows expose the threshold and degraded boolean, `provider_degraded_latency` contributes to action reasons, remediation samples include p95 posture, and the browser Admin AI Operations panel shows the configured p95 threshold beside provider failure-rate posture without adding evaluation work.
+- 2026-05-06 AI provider running-pressure follow-up: `GET /api/v1/admin/ai/operations` now marks provider health under pressure when active running thread count reaches `OTTE_AI_PROVIDER_RUNNING_THREAD_THRESHOLD`, defaulting to `10`. Provider rows expose the threshold and pressure boolean, `provider_running_thread_pressure` contributes to action reasons, remediation samples include running backlog posture, and the browser Admin AI Operations panel shows active running pressure before those threads age into stale failures.
+- 2026-05-06 auth operations UI follow-up: the Admin tab now renders the redacted `recentRiskSessions` already returned by `GET /api/v1/admin/auth/operations`, showing user, risk reasons, last-seen age, and expiry context beside the bulk risk-session revoke action without exposing session token hashes.
+- 2026-05-07 auth session cleanup operations follow-up: `GET /api/v1/admin/auth/operations` now includes redacted `sessions.cleanupOperations` history from server-admin audit logs, including risk-session dry-run and mutation counts, matched/revoked totals, latest cleanup time, single-session/user-session revocation counts, and recent cleanup runs with reason codes. The browser Admin Auth Operations panel surfaces risk-cleanup run and revoked-session counts plus recent cleanup rows without exposing session token hashes or raw session tokens.
+- 2026-05-07 auth session cleanup count follow-up: the auth operations cleanup rollup now counts the actual `admin.user.sessionsRevoke` audit action emitted by user-wide session revocation, and the focused server-admin auth test asserts both direct single-session and user-session revocation counts. The browser Admin Auth Operations metric grid now surfaces direct revoke and user revoke run counts beside bulk risk cleanup so production session administration is not underreported.
+- 2026-05-06 auth MFA posture visibility follow-up: `GET /api/v1/admin/auth/operations` now returns a redacted bounded list of active password users without MFA, including display name, email, session count, identity count, and password-reset-required status, while omitting password hashes, TOTP secrets, and recovery-code hashes. The browser Admin tab surfaces MFA coverage, no-MFA account count, and the top unprotected active password users so account-hardening work is actionable from the auth operations console.
+- 2026-05-06 auth email retry visibility follow-up: the browser Admin Auth Operations section now surfaces the redacted `recentRetryableMessages` returned by `GET /api/v1/admin/auth/operations`, showing subject, recipient, status, and delivery error while still omitting email bodies and reset links.
+- 2026-05-06 auth disabled-account visibility follow-up: `GET /api/v1/admin/auth/operations` now returns a bounded redacted `users.disabledUsers` list with display name, email, disabled timestamp, session count, membership count, identity count, and password-reset-required state, while still omitting password hashes, TOTP secrets, and recovery-code hashes. The browser Admin Auth Operations section surfaces the top disabled accounts beside risk-session and no-MFA rows so disabled-user action reasons point to concrete accounts.
+- 2026-05-06 auth remediation queue follow-up: `GET /api/v1/admin/auth/operations` now derives a bounded `remediationQueue` with severity, action text, affected counts, and redacted samples for risk-session revocation, disabled-account review, required password resets, retryable email delivery, expired reset pruning, MFA enrollment, and production legacy-header exposure. The browser Admin Auth Operations panel surfaces those remediation rows before raw auth samples so account-hardening work is actionable without decoding raw action reasons.
+- 2026-05-06 auth legacy-header usage follow-up: requests that authenticate through legacy `x-user-id` compatibility now append redacted `auth.legacyUserHeader` audit logs. `GET /api/v1/admin/auth/operations` aggregates those logs into `legacyUserHeaderUsage`, adds `legacy_user_header_recent_usage` to action reasons, and adds a `replace_legacy_user_header_clients` remediation row with bounded samples so operators can identify remaining compatibility clients before disabling the header. The browser Admin Auth Operations panel surfaces the legacy-auth usage count and recent samples.
+- 2026-05-06 auth legacy-header blocked-attempt follow-up: denied legacy `x-user-id` attempts now append redacted `auth.legacyUserHeader` audit logs with `status: blocked`, including production hard-fence mode. `GET /api/v1/admin/auth/operations` separates accepted compatibility usage from blocked attempts, adds `legacy_user_header_blocked_attempts`, and emits an `investigate_blocked_legacy_user_header_clients` remediation row with bounded samples. The browser Admin Auth Operations panel surfaces blocked legacy-attempt counts and samples beside accepted legacy usage.
+- 2026-05-06 audit export operations follow-up: JSON `GET /api/v1/admin/audit-logs` responses now include a summary with top action, target-type, actor-type, and campaign rollups plus truncation posture. When the requested export limit is reached, the summary emits `audit_export_limit_reached` and a remediation queue entry advising narrower action, target, actor, campaign, or time filters before treating the sample as complete. The browser Admin Audit panel surfaces the rollups and truncation guidance for production incident review.
+- 2026-05-06 plugin command failure operations follow-up: failed VM chat-command execution and invalid storage mutations now append redacted `plugin.chatCommand.failed` audit rows. `GET /api/v1/admin/plugins/operations` reports failed command counts, plugin/reason rollups, recent failure samples, `plugin_command_failures`, and `investigate_plugin_command_failures` remediation, while the browser Admin Plugin Operations panel surfaces command failures and recent failed command rows beside successful command activity.
+- 2026-05-07 plugin inventory hygiene follow-up: the plugin runtime records duplicate package ids that declare the same plugin id and version before the effective runtime package replaces the shadowed entry. `GET /api/v1/admin/plugins/operations` now exposes `inventoryOperations` with duplicate package-version counts and bounded package id/source samples, emits `duplicate_plugin_packages`, and adds `dedupe_plugin_package_versions` remediation so marketplace review, install, and command resolution ambiguity is visible from the Admin tab.
+- 2026-05-07 plugin registry URL posture follow-up: `GET /api/v1/admin/plugins/operations` now reports malformed and production-insecure `OTTE_PLUGIN_REGISTRY_URLS` entries through redacted env-name/count posture, emits `plugin_registry_url_config_invalid` and `plugin_registry_url_insecure`, and folds those samples into `sync_plugin_registries` remediation so marketplace configuration mistakes are visible before registry sync silently ignores bad entries. The browser Admin Plugin Operations panel surfaces valid/configured registry entry counts plus invalid and insecure URL counts without exposing raw malformed values.
+- 2026-05-07 plugin install operations follow-up: `GET /api/v1/admin/plugins/operations` now includes `installOperations`, derived from redacted `plugin.install` audit rows, with install, upgrade, rollback, permission-review, per-plugin, and per-campaign counts plus bounded recent package/version/permission-change rows. The browser Admin Plugin Operations panel surfaces install/version-change/rollback counts and recent install/change rows so operators can audit plugin exposure changes without opening raw audit logs.
+- 2026-05-07 plugin registry numeric-config posture follow-up: plugin operations now reports malformed `OTTE_PLUGIN_REGISTRY_STALE_SECONDS` and `OTTE_PLUGIN_REGISTRY_TIMEOUT_MS` through `registryOperations.runtimeConfig.invalidNumericConfig`, emits `plugin_registry_numeric_config_invalid`, and surfaces those redacted env names in both the registry remediation queue and browser Admin Plugin Operations panel before marketplace freshness or fetch timeout controls silently fall back.
+- 2026-05-07 plugin trust-policy runtime posture follow-up: plugin operations security posture now includes trust policy, trust-key count, production unsigned-package exposure, and trusted-mode-without-keys exposure without returning `OTTE_PLUGIN_TRUST_KEYS` material. Production `allow_unsigned` emits `plugin_trust_policy_allows_unsigned_in_production`, trusted mode with no keys emits `plugin_trust_keys_missing`, and the browser Admin Plugin Operations panel surfaces trust policy and trust-key count beside sandbox/trust inventory.
+- 2026-05-06 asset signed-delivery failure operations follow-up: signed asset delivery URL issuance now appends redacted `asset.delivery` audit rows with `status: signing_failed` when signing configuration is unavailable. `GET /api/v1/admin/assets/storage` includes those failures in runtime delivery counts, failure samples, and `asset_delivery_failures`, and the browser Admin Asset Storage panel surfaces a signing-failure metric beside delivery failures.
+- 2026-05-06 AI provider base-url posture follow-up: `GET /api/v1/admin/ai/operations` now validates the selected OpenAI provider base URL in the redacted runtime posture, emits `openai_base_url_invalid` with bounded remediation samples when `OPENAI_BASE_URL` is malformed or unsupported, and the browser Admin AI Operations panel surfaces valid versus invalid base URL posture beside key, timeout, retry, and provider health signals.
+- 2026-05-06 AI production base-url posture follow-up: production `GET /api/v1/admin/ai/operations` now flags syntactically valid but insecure HTTP OpenAI base URLs with `openai_base_url_insecure`, keeps localhost HTTP usable for local smoke testing, and includes the insecure-production boolean in redacted remediation samples and Admin UI runtime posture.
+- 2026-05-06 AI cost-rate posture follow-up: `GET /api/v1/admin/ai/operations` now reports `costRatesComplete` in runtime and runtime posture, emits `ai_cost_rates_partial` when only one token-cost rate is configured, and includes the redacted input/output rate booleans in `review_ai_runtime_config` samples so operators can fix undercounted AI cost dashboards before relying on budget posture.
+- 2026-05-06 AI invalid cost-config posture follow-up: AI runtime posture now reports `ai_cost_config_invalid` when token cost rates or `OTTE_AI_COST_BUDGET_USD` are configured with non-numeric or negative values. Admin operations expose only the affected environment variable names in `invalidCostConfig`, not raw values or secrets, so operators can fix malformed cost settings instead of seeing them silently treated as unconfigured.
+- 2026-05-06 AI provider-threshold config posture follow-up: AI runtime posture now reports `ai_provider_threshold_config_invalid` when provider failure-rate, p95 duration, or running-thread thresholds are configured with non-numeric or negative values. Admin operations expose only affected environment variable names in `invalidProviderThresholdConfig`, so malformed provider-health thresholds no longer silently fall back without operator visibility.
+- 2026-05-06 AI runtime-control config posture follow-up: AI runtime posture now reports `ai_runtime_control_config_invalid` when provider timeout or retry-attempt controls are configured with non-numeric or negative values. Admin operations expose only affected environment variable names in `invalidRuntimeControlConfig`, so malformed timeout/retry settings are visible separately from intentional disabled timeout or zero-retry posture.
+- 2026-05-07 AI provider mismatch posture follow-up: `GET /api/v1/admin/ai/operations` now reports `runtimePosture.providerMismatch` and emits `ai_provider_mismatch` when the selected provider from `OTTE_AI_PROVIDER` differs from the active provider serving requests. The runtime remediation sample and browser Admin AI Operations panel expose selected and active provider ids without prompts or provider secrets, so fallback or injected-provider drift is visible before operators misread health rows.
+- 2026-05-07 AI OpenAI model default posture follow-up: production `GET /api/v1/admin/ai/operations` now reports whether `OPENAI_MODEL` is explicitly configured, emits `openai_model_default_in_production` when OpenAI would use the built-in default model, and includes redacted model/configured posture in remediation samples and the browser Admin AI Operations panel without exposing provider credentials or prompts.
+- 2026-05-06 asset invalid runtime-config posture follow-up: `GET /api/v1/admin/assets/storage` now reports malformed or negative numeric asset runtime settings through `runtime.invalidConfig` and an `asset_runtime_config_invalid` delivery warning. The API and Admin tab expose only affected environment variable names for quota, retention, signed URL TTL, purge timeout, trust scanner timeout, and cleanup scheduler numeric knobs, so invalid asset settings no longer silently fall back without operator visibility.
+- 2026-05-06 asset invalid URL-config posture follow-up: `GET /api/v1/admin/assets/storage` now validates CDN base, public base, CDN purge webhook, and external trust-scanner URL settings for HTTP(S) URL shape. Invalid values produce `runtime.invalidUrlConfig` and an `asset_runtime_url_config_invalid` delivery warning while exposing only affected environment variable names, so malformed asset delivery/scanner URLs become visible before they fail during upload, signing, or purge execution.
+- 2026-05-06 asset insecure production URL posture follow-up: production `GET /api/v1/admin/assets/storage` now flags non-local HTTP asset CDN, public, purge webhook, and trust-scanner URLs through `runtime.insecureUrlConfig` and an `asset_runtime_url_insecure` delivery warning. Localhost HTTP remains usable for development smoke tests, while production operators get redacted environment-variable-name visibility before asset URLs or webhook traffic rely on plaintext HTTP.
+- 2026-05-06 asset S3 storage posture follow-up: `GET /api/v1/admin/assets/storage` now includes redacted `runtime.s3` posture when S3/MinIO asset storage is selected, covering bucket, endpoint, region, force-path-style mode, explicit credential completeness, endpoint URL validity, and production HTTP endpoint risk. Risky S3 posture emits `asset_s3_bucket_missing`, `asset_s3_endpoint_invalid`, `asset_s3_endpoint_insecure`, or `asset_s3_credentials_partial` delivery warnings while exposing only affected environment variable names, not bucket names, endpoints, access keys, or secrets.
+- 2026-05-06 auth runtime URL posture follow-up: `GET /api/v1/admin/auth/operations` now exposes redacted password-reset, web-origin, and email-webhook URL posture with invalid and insecure-production environment variable name lists, email webhook token presence, timeout, and reset TTL. Malformed URL settings emit `auth_runtime_url_config_invalid`; production non-local HTTP settings emit `auth_runtime_url_insecure`; and the remediation queue points operators to auth runtime URL configuration without exposing raw reset URLs, webhook URLs, reset links, or webhook tokens.
+- 2026-05-06 auth runtime numeric-config posture follow-up: `GET /api/v1/admin/auth/operations` now reports malformed or negative `OTTE_PASSWORD_RESET_TTL_MINUTES` and `OTTE_EMAIL_WEBHOOK_TIMEOUT_MS` through `runtime.authUrls.invalidNumericConfig`, `auth_runtime_numeric_config_invalid`, and a dedicated numeric-configuration remediation item. Responses expose only affected environment variable names and clamped effective TTL/timeout values, not raw malformed values.
+- 2026-05-07 auth email webhook token posture follow-up: production `GET /api/v1/admin/auth/operations` now flags a configured email webhook that lacks `OTTE_EMAIL_WEBHOOK_TOKEN` with `auth_email_webhook_token_missing` and a critical `configure_auth_email_webhook_token` remediation item. The API and Admin tab expose only token-presence posture and the affected environment variable name, not webhook URLs or token material.
+- 2026-05-07 auth password-reset link posture follow-up: production `GET /api/v1/admin/auth/operations` now flags missing password-reset link configuration when neither `OTTE_PASSWORD_RESET_URL` nor `OTTE_WEB_ORIGIN` is configured. The new `auth_password_reset_link_unconfigured` action reason and `configure_auth_password_reset_link` remediation tell operators to provide a browser reset-link base before reset emails fall back to raw reset tokens, while responses continue to omit reset tokens, reset links, and raw URL values.
+- 2026-05-07 auth session TTL posture follow-up: bearer session lifetime is now configurable with `OTTE_SESSION_TTL_DAYS`, clamped from 1 to 90 days with a 7-day default. `GET /api/v1/admin/auth/operations` exposes the effective session TTL and reports malformed or negative session TTL settings through `runtime.sessions.invalidNumericConfig`, `auth_session_numeric_config_invalid`, and `fix_auth_session_numeric_configuration` without returning raw environment values.
+- 2026-05-07 auth server-admin posture follow-up: `GET /api/v1/auth/session` and `GET /api/v1/admin/auth/operations` now expose redacted server-admin runtime posture with configured/count/missing-production booleans. Production deployments with no `OTTE_ADMIN_USER_IDS` configured become visible through `auth_server_admins_unconfigured` and `configure_server_admins` remediation without exposing raw admin id lists or weakening admin endpoint authorization.
+- 2026-05-07 auth remediation visibility follow-up: `GET /api/v1/admin/auth/operations` now returns up to twelve sorted remediation rows instead of eight, with regression coverage for a crowded production auth posture so concrete lower-priority cleanup such as expired reset pruning remains visible beside critical reset-link, webhook-token, legacy-header, and MFA enrollment work.
+- 2026-05-07 auth email recovery follow-up: server admins can now call `POST /api/v1/admin/email-outbox/retry-all` to dry-run or retry bounded batches of pending/failed password-reset email webhook deliveries. The Admin tab exposes the same bulk retry from Auth Operations and Email Outbox, and audit logs capture only aggregate retry counts.
+- 2026-05-07 auth login-failure operations follow-up: failed password and MFA login attempts now append redacted `auth.login.failed` audit rows with only known user id, reason code, HTTP status, and timestamp. `GET /api/v1/admin/auth/operations` aggregates those rows into `loginFailures`, emits `auth_login_failures`, and adds a `review_auth_login_failures` remediation row; the Admin tab surfaces failure counts, reason rollups, and recent samples without exposing attempted email addresses, passwords, MFA codes, or session tokens.
+- 2026-05-07 rendering line-of-sight diagnostics follow-up: `GET /api/v1/scenes/:sceneId/vision/sample` now reports the exact wall intersection point, distance from the vision source, and remaining distance to the sampled point for each token/light blocker. This keeps the player-safe point sample response actionable for debugging polygon line-of-sight without exposing hidden tokens or changing visibility behavior.
+- 2026-05-07 AI evaluation observability UI follow-up: the Admin AI Operations panel now surfaces existing server-admin evaluation telemetry from `GET /api/v1/admin/ai/operations`, including evaluation coverage, unevaluated thread backlog, failed evaluation counts, recurring failed checks, safety-check coverage, failed safety categories, recent safety failures, and campaign evaluation rollups. This remains read-only operational telemetry rather than a new action-required policy.
+- 2026-05-07 rules capability evidence follow-up: `GET /api/v1/admin/systems/operations` now derives origin-builder, monster-creation, and equipment-purchase capability support from actual D&D SRD catalogs and functions instead of only from the primary system id. The response and Admin tab expose bounded evidence samples such as background/species origins, monster threat ids with actor-data support, and purchasable compendium entries.
+- 2026-05-07 asset webhook token posture follow-up: production `GET /api/v1/admin/assets/storage` now reports configured CDN purge or external trust scanner webhooks that lack bearer tokens through `runtime.missingTokenConfig`, `asset_runtime_token_missing`, and the existing delivery-configuration remediation path. The API and Admin tab expose purge/scanner token presence and affected environment variable names without returning raw webhook URLs or token material.
+- 2026-05-07 asset delivery remediation env visibility follow-up: delivery-configuration remediation samples in `GET /api/v1/admin/assets/storage` now preserve the redacted affected environment variable names from warning rows, including missing purge/trust webhook token settings and ineffective cleanup scheduler knobs, so operators can act from the remediation queue without expanding raw warning details or exposing webhook URLs, bucket names, tokens, or numeric values.
+- 2026-05-07 asset trust fail-open posture follow-up: production `GET /api/v1/admin/assets/storage` now emits `asset_trust_fail_open_in_production` when an external trust scanner is configured with `OTTE_ASSET_TRUST_FAIL_CLOSED=false`. The warning reuses the delivery-configuration remediation path and exposes only the controlling environment variable name, not scanner URLs or token material.
+- 2026-05-07 asset cleanup scheduler posture follow-up: production `GET /api/v1/admin/assets/storage` now reports scheduled cleanup jobs that cannot reclaim bytes because they are dry-run-only or include neither deleted nor expired assets. The response exposes `runtime.cleanup.riskyConfig`, `asset_cleanup_scheduler_dry_run_in_production`, and `asset_cleanup_scheduler_no_targets` through the existing delivery-configuration warning/remediation path without returning raw environment values.
+- 2026-05-07 asset cleanup scheduler remediation follow-up: production cleanup backlog now adds a dedicated `configure_asset_cleanup_scheduler` remediation row when no startup or interval scheduler is enabled, while preserving the manual `run_asset_cleanup` row. The remediation samples reuse the redacted cleanup candidate shape and avoid storage bucket names, signing secrets, or object bytes.
+- 2026-05-07 asset retention policy posture follow-up: production `GET /api/v1/admin/assets/storage` now reports missing `OTTE_ASSET_RETENTION_DAYS` through `runtime.lifecycle.retentionPolicyMissingInProduction` and `asset_retention_policy_missing_in_production`. The warning uses the existing delivery-configuration remediation path and exposes only the environment variable name, so operators can tell when new uploads will not receive default expiries for cleanup.
+- 2026-05-07 asset quota policy posture follow-up: production `GET /api/v1/admin/assets/storage` now reports missing `OTTE_ASSET_QUOTA_BYTES` through `runtime.quota.quotaPolicyMissingInProduction` and `asset_quota_policy_missing_in_production`. The warning uses the existing delivery-configuration remediation path and exposes only the environment variable name, so operators can tell when uploads have no campaign storage ceiling.
+- 2026-05-07 asset hygiene remediation samples follow-up: `repair_missing_asset_storage_refs` and `scan_unverified_assets` remediation rows now include bounded asset samples with asset id, campaign id, name, size, lifecycle status, provider, and repair reason, so operators can identify the exact uploads that need storage repair or trust scanning without exporting raw state.
+- 2026-05-07 asset trust-warning operations follow-up: `GET /api/v1/admin/assets/storage` now distinguishes unscanned uploads from active managed assets that carry persisted medium/high trust-scan findings, including fail-open external scanner failures. Those assets emit `asset_trust_warnings`, add a `review_asset_trust_warnings` remediation row, and appear in the browser Admin Asset Storage panel with bounded asset/scanner/finding-code samples without exposing scanner URLs, tokens, object bytes, or checksums.
+- 2026-05-07 asset integrity quarantine follow-up: server admins can now call `POST /api/v1/admin/assets/integrity/quarantine` to dry-run or archive active managed assets whose stored bytes are missing or checksum/size-mismatched after a fresh integrity check. The operation preserves metadata for restore/re-upload, emits redacted `admin.assets.integrityQuarantine` audit logs with matched/archived/planned/skipped/failed counts, and the browser Admin Asset Integrity panel exposes an archive action for missing or mismatched assets.
+- 2026-05-07 asset migration operations UI follow-up: the browser Admin Asset Storage metric grid now surfaces migration run counts from the existing redacted `maintenanceOperations.migration` rollup beside cleanup and quarantine runs, so production storage migration tooling is visible in the same operator view as lifecycle cleanup and integrity quarantine.
+- 2026-05-07 asset maintenance operations history follow-up: `GET /api/v1/admin/assets/storage` now summarizes redacted migration, cleanup, and integrity-quarantine run history from server-admin audit logs, including dry-run/mutation counts, changed and failed run counts, latest run time, per-operation totals, and recent run rows. Failed maintenance runs emit `asset_maintenance_failures` and `review_asset_maintenance_failures`, and the browser Admin Asset Storage panel surfaces maintenance run/failure metrics plus recent runs without exposing bucket names, object keys, signatures, tokens, or bytes.
+- 2026-05-07 AI proposal apply failure operations follow-up: failed proposal apply attempts now append redacted `ai.proposal.apply.failed` audit rows with proposal id, campaign, actor, status, source id, change count, entity names, and failure reason. `GET /api/v1/admin/ai/operations` rolls those rows into `proposalReview.applyFailureCount`, `recentApplyFailures`, `ai_proposal_apply_failures`, and `review_ai_proposal_apply_failures`; the Admin tab surfaces apply-failure counts and recent failed proposal rows without exposing proposal diffs, prompts, provider secrets, or tool inputs.
+- 2026-05-07 rules activity operations follow-up: system actor rolls, rests, and advancement now append redacted `system.actor.roll`, `system.actor.rest`, and `system.actor.advance` audit rows with campaign, actor, actor type, system id, action/rest/advancement metadata, and mutation booleans, but not formulas, actor data, item data, or roll totals. `GET /api/v1/admin/systems/operations` now exposes `activityOperations`, `non_primary_runtime_recent_activity`, and a remediation row for recent demo-runtime table activity; the Admin tab surfaces rules activity and demo activity counts plus recent non-primary activity rows.
+- 2026-05-07 plugin storage operation visibility follow-up: `GET /api/v1/admin/plugins/operations` now rolls redacted `plugin.storageSet`, `plugin.storageDelete`, and `plugin.storageMutation` audit rows into `storageOperations` with direct set/delete counts, command-mutation counts, set/delete mutation totals, plugin/campaign rollups, and bounded recent rows without exposing stored JSON values. The browser Admin Plugin Operations panel surfaces storage-operation and delete totals plus recent storage rows beside storage pressure and command activity.
+- 2026-05-07 AI read-journal tool follow-up: provider-visible AI tools now include a typed read-only `read_journal` tool that searches visible campaign journal titles, bodies, and tags without creating proposals or mutating state. It is permission-safe only behind normal `journal.read`; `gm_only` or all-visibility searches require `journal.readSecret`, and the cross-role tool-advertisement regression treats it as safe beside memory search, dice, and compendium reads.
+- 2026-05-07 AI read-scene tool follow-up: provider-visible AI tools now include a typed read-only `read_scene` tool behind normal `scene.read`. It returns active or id-scoped scene dimensions, grid posture, fog/wall/light counts, and bounded geometry samples without exposing token state or diagnostics, and the permission-safe tool catalog now treats it as safe beside memory, journal, dice, and compendium reads.
+- 2026-05-07 rendering token vision zones follow-up: tokens now support optional `brightVisionRadius` and `dimVisionRadius` beside the compatibility `visionRadius`. Player vision snapshots emit separate wall-clipped bright and dim token polygons with `lightLevel`, point diagnostics include those levels in `revealedBy`, token create/update rejects invalid zone radii, and server-admin rendering operations/browser feature evidence track bright/dim token vision coverage.
+- 2026-05-07 rendering token vision authoring follow-up: the browser Actor panel now exposes selected-token vision controls for enabling/disabling token vision and setting dim and bright radii. The controls update the token through the normal `PATCH /api/v1/tokens/{tokenId}` permission path, so bright/dim vision can be authored from the tabletop instead of only through API payloads.
+- 2026-05-07 rendering token vision canvas follow-up: the tabletop canvas now preserves `VisionPolygon.lightLevel` in rendered outline classes, so dim token vision draws as a blue dashed boundary while bright token vision draws as a stronger amber boundary. Fog masking behavior stays unchanged, but GMs can visually distinguish the authored bright/dim zones during play.
+- 2026-05-07 rendering dual-zone lighting canvas follow-up: clipped light polygons now preserve `VisionPolygon.lightLevel` in browser canvas classes as well as server opacity/color, so dim light zones render with softer saturation/brightness and bright light zones render with stronger saturation/brightness instead of relying only on raw fill opacity.
+- 2026-05-07 rendering dual-zone lighting authoring follow-up: the browser tabletop Add Light action now creates a valid dual-zone colored light by default, posting `brightRadius` and `dimRadius` through the existing `scene.update`-guarded light authoring endpoint instead of leaving bright/dim lighting as an API-only capability.
+- 2026-05-07 rendering terrain-wall authoring follow-up: the browser tabletop toolbar now exposes a dedicated Add Terrain Wall action that posts `kind: "terrain"` with `blocksMovement: false` through the existing `scene.update`-guarded wall endpoint, so terrain line-of-sight blockers can be authored directly from the tabletop instead of only through REST payloads.
+- 2026-05-07 rendering fog-preset workflow follow-up: the browser Apply Fog Preset action now lets GMs choose a saved campaign preset by list index, name, or id and choose `replace` or `append` mode before calling the existing scene fog preset endpoint, instead of always replacing with the most recently saved preset.
+- 2026-05-07 rendering fog-preset cleanup follow-up: the browser tabletop toolbar now exposes Delete Fog Preset, reusing the preset chooser and a confirmation prompt before calling the existing audited `DELETE /api/v1/campaigns/{campaignId}/fog-presets/{presetId}` endpoint, so GMs can remove stale dynamic-fog presets without raw REST calls.
+- 2026-05-07 rendering fog-history UI follow-up: the browser tabletop toolbar now exposes recent scene fog history through the existing `GET /api/v1/scenes/{sceneId}/fog/history` endpoint, summarizing the latest create/delete/undo entries with fog id, action target, shape, mode, and timestamp so GMs can audit dynamic fog changes before undoing or applying presets.
+- 2026-05-07 rendering point-vision diagnostics UI follow-up: the browser tabletop toolbar now exposes a Vision Sample action that calls `GET /api/v1/scenes/{sceneId}/vision/sample` for the selected token center, or scene center when no token is selected, and summarizes visibility, fog state, reveal/hide/light counts, blocker counts, wall ids, blocker source ids, intersection coordinates, and source distance for GM line-of-sight debugging.
+- 2026-05-07 rendering arbitrary-point vision diagnostics follow-up: the browser Vision Sample action now prompts for an `x,y` scene coordinate, defaulting to the selected token center or scene center, validates the point against scene bounds, and then calls the existing point-level diagnostics endpoint so GMs can debug visibility at the exact square or pixel under dispute.
+- 2026-05-07 AI read-combat tool follow-up: provider-visible AI tools now include a typed read-only `read_combat` tool behind `combat.manage`. It returns active or id-scoped combat round, turn index, current combatant id, and bounded combatant order metadata without mutating initiative or combat state; player tool advertisements omit it, and attempted player execution returns a missing `combat.manage` permission.
+- 2026-05-07 AI stale approved proposal cleanup follow-up: `POST /api/v1/admin/ai/proposals/stale/reject` now accepts `includeApproved: true` to dry-run or reject stale approved-but-unapplied AI proposals without applying their diffs. Responses and redacted `admin.aiProposals.rejectStale` audit logs include aggregate counts, the include-approved flag, proposal ids/titles/statuses/entity names/ages, and no proposal diffs, prompts, provider secrets, or tool inputs; the browser Admin AI Operations panel exposes separate stale pending and stale approved rejection controls.
+- 2026-05-07 AI read-actor tool follow-up: provider-visible AI tools now include a typed read-only `read_actor` tool behind normal `actor.read`. It returns bounded actor sheet metadata, tracked pools, condition ids, owned item summaries, and system quick-action ids/formulas without mutating actors or items, and the permission-safe tool catalog treats it as safe beside memory, journal, scene, combat, dice, and compendium reads.
+- 2026-05-07 AI read-encounter tool follow-up: provider-visible AI tools now include a typed read-only `read_encounter` tool behind normal `campaign.read`. It returns bounded encounter prep metadata, difficulty, token counts, and token id samples without mutating encounters or combat state, and the permission-safe tool catalog treats it as safe beside memory, journal, scene, combat, actor, dice, and compendium reads.
+- 2026-05-07 AI read-asset tool follow-up: provider-visible AI tools now include a typed read-only `read_asset` tool behind the existing `scene.read` asset-delivery boundary. It returns bounded asset metadata, mime type, size, lifecycle status, and security scan posture without serving object bytes, exposing storage keys, or generating signed delivery URLs, and the permission-safe tool catalog treats it as safe beside memory, journal, scene, combat, encounter, actor, dice, and compendium reads.
+- 2026-05-07 AI read-token tool follow-up: provider-visible AI tools now include a typed read-only `read_token` tool behind normal `token.read`. It returns bounded visible token placement, disposition, actor reference, image asset, and vision-radius metadata without mutating tokens, actors, or scenes; execution reuses the same hidden-token and fog visibility filtering as scene token reads, so players do not receive hidden GM-only tokens through AI tool calls.
+- 2026-05-07 AI read-chat tool follow-up: provider-visible AI tools now include a typed read-only `read_chat` tool behind normal `chat.read`. It returns bounded visible chat messages by body, scene, and visibility scope without posting messages, and execution reuses the same public, GM-only, and whisper visibility helper as `GET /api/v1/chat/messages`, so player AI calls cannot read GM-only chat or unrelated whispers.
+- 2026-05-07 AI read-roll tool follow-up: provider-visible AI tools now include a typed read-only `read_roll` tool behind normal `chat.read`. It returns bounded visible dice roll formulas, labels, totals, term counts, and linked roll-message ids without rolling dice or posting chat; execution reuses linked chat-message visibility when available, so player AI calls cannot read GM-only roll chat or unrelated whisper rolls.
+- 2026-05-07 AI proposal reviewer rejection follow-up: normal proposal review now includes `POST /api/v1/proposals/{proposalId}/reject` for pending or approved proposals, guarded by `ai.applyChanges`, broadcasting `proposal.rejected`, and never applying proposal diffs. Rejected or already-applied proposals cannot be approved or applied again, and the browser AI panel exposes a Reject action beside approve/apply for non-final proposals.
+- 2026-05-07 AI proposal rejection audit follow-up: normal proposal rejection now appends redacted `ai.proposal.rejected` audit rows with reviewer id, proposal id, previous/final status, creator type, source id, change count, and changed entity names. The audit row deliberately omits proposal diffs, provider prompts, and generated body text, giving operators reviewer accountability without leaking AI-created content.
+- 2026-05-07 AI operations risk metric follow-up: the browser Admin AI Operations metric grid now surfaces active running thread counts and non-retryable failed tool-call counts from the existing redacted operations rollup, so operators can distinguish provider backlog pressure and blocked tool failures before drilling into detailed provider or retry-policy rows.
+- 2026-05-07 rules ecosystem coverage UI follow-up: the browser Admin Rules Operations metric grid now surfaces the primary runtime's compendium-entry and character-template counts from the existing system operations rollup beside capability coverage, so operators can see rules-content depth without opening each per-system detail row.
+- 2026-05-07 asset delivery eligibility UI follow-up: the browser Admin Asset Storage metric grid now surfaces active expired-asset counts plus CDN-eligible and signed-URL-eligible asset counts from the existing delivery posture, so operators can distinguish lifecycle blocks from delivery-mode eligibility without opening raw delivery samples.
+- 2026-05-07 plugin marketplace coverage UI follow-up: the browser Admin Plugin Operations metric grid now surfaces catalog plugin count, synced registry package count, review approval coverage, and permission-review run count from the existing plugin operations rollup, so operators can assess marketplace distribution and permission-review posture without drilling into registry or review detail rows.
+- 2026-05-07 rendering geometry budget UI follow-up: the browser Admin Rendering Operations metric grid now surfaces max-single-polygon vertex budget usage and token-vision scene counts from the existing rendering operations rollup, so operators can spot pathological fog/vision geometry and token-vision coverage without drilling into per-scene diagnostics.
+- 2026-05-07 auth recovery timing UI follow-up: the browser Admin Auth Operations metric grid now surfaces active password reset token count and oldest retryable auth-email age from the existing redacted operations rollup, so operators can spot stale account-recovery work without opening individual email or reset rows.
+- 2026-05-07 AI evaluation quality UI follow-up: the browser Admin AI Operations metric grid now surfaces evaluation pass rate, average score, and passed-evaluation count from the existing evaluation rollup beside coverage and failure metrics, so operators can judge response-quality telemetry without opening the detailed evaluation section.
+- 2026-05-07 auth login-failure split UI follow-up: the browser Admin Auth Operations metric grid now separates known-user login failure impact from unknown-identity attempts using the existing redacted login-failure rollup, so operators can distinguish account-support work from anonymous credential-stuffing noise without expanding recent failure rows.
+- 2026-05-07 asset delivery failure-cause UI follow-up: the browser Admin Asset Storage metric grid now surfaces denied-delivery counts, missing-byte failures, served bytes, and failed bytes from the existing delivery runtime rollup, so operators can distinguish authorization denials from storage-integrity failures and quantify delivery impact without opening individual audit rows.
+- 2026-05-07 rules compendium type UI follow-up: the browser Admin Rules Operations metric grid now surfaces the primary runtime's condition, spell, and item compendium counts from the existing system operations rollup, so operators can see explicit rules-content depth for the Roll20-class spells/items/conditions gap without drilling into per-system detail rows.
+- 2026-05-07 auth session-risk split UI follow-up: the browser Admin Auth Operations metric grid now surfaces expired, stale, disabled-user, and unknown-user session counts from the existing redacted session-risk rollup, so operators can target production session cleanup by risk reason instead of relying only on the aggregate risk-session count.
+- 2026-05-07 plugin storage operation split UI follow-up: the browser Admin Plugin Operations metric grid now separates direct plugin-storage set/delete operations from command-driven storage mutations using the existing redacted storage-operations rollup, so operators can distinguish admin/API storage changes from third-party command side effects without expanding recent storage rows.
+- 2026-05-07 asset CDN purge result UI follow-up: the browser Admin Asset Storage metric grid now surfaces successful purge counts and purge-not-configured counts from the existing delivery purge rollup beside total and failed CDN purge attempts, so operators can distinguish working CDN invalidation from configuration gaps.
+- 2026-05-07 rendering fog-authoring UI follow-up: the browser Admin Rendering Operations metric grid now surfaces fog-authoring operation counts from the existing rendering authoring rollup beside wall and light changes, so operators can see dynamic-fog production usage without opening the authoring detail card.
+- 2026-05-07 AI safety coverage UI follow-up: the browser Admin AI Operations metric grid now surfaces safety-check count and safety-check coverage from the existing safety posture rollup beside safety failures, so operators can verify safety regression coverage is being applied before reading detailed failure rows.
+- 2026-05-07 rendering authoring-failure spread UI follow-up: the browser Admin Rendering Operations metric grid now surfaces distinct rendering authoring failure reason and target-type counts from the existing failed-authoring rollup, so operators can tell whether dynamic fog/wall/light edit failures are clustered or broad before expanding recent failure rows.
+- 2026-05-07 auth identity-provider UI follow-up: the browser Admin Auth Operations metric grid now surfaces linked identity count and identity-provider count from the existing redacted identity rollup, so operators can see password/OIDC account-link posture without relying on the summary sentence or raw user rows.
+- 2026-05-07 asset quota-risk UI follow-up: the browser Admin Asset Storage metric grid now surfaces quota-risk campaign count from the existing quota operations rollup beside asset and campaign totals, so operators can spot production storage quota pressure without relying on the separate quota status paragraph.
+- 2026-05-07 rules runtime-tier UI follow-up: the browser Admin Rules Operations metric grid now surfaces production-ready and demo runtime counts from the existing production-readiness rollup, so operators can see multi-system maturity posture beside usage, content, and promotion-gap metrics.
+- 2026-05-07 asset lifecycle status UI follow-up: the browser Admin Asset Storage metric grid now surfaces archived and deleted asset counts from the existing lifecycle-count rollup beside active asset totals, so operators can see lifecycle pressure before drilling into cleanup or integrity rows.
+- 2026-05-07 auth runtime posture UI follow-up: the browser Admin Auth Operations metric grid now surfaces configured server-admin count and OIDC runtime configuration error count from the existing redacted auth runtime rollup, so operators can spot missing production admin/OIDC posture beside account and session metrics.
+- 2026-05-07 plugin registry freshness UI follow-up: the browser Admin Plugin Operations metric grid now surfaces configured registry count and oldest registry sync age from the existing registry-operations rollup beside synced-package and drift metrics, so operators can see marketplace distribution freshness without opening registry detail rows.
+- 2026-05-07 rules runtime-activity spread UI follow-up: the browser Admin Rules Operations metric grid now surfaces counts of systems with recent rules activity and non-primary demo systems with recent activity from the existing activity rollup, so operators can judge multi-system runtime usage breadth beside aggregate action counts.
+- 2026-05-07 asset storage topology UI follow-up: the browser Admin Asset Storage metric grid now surfaces total stored bytes and storage-provider count from the existing storage rollup beside active/used asset totals, so operators can spot multi-provider migration posture without opening per-campaign provider rows.
+- 2026-05-07 AI provider-health summary UI follow-up: the browser Admin AI Operations metric grid now surfaces degraded provider count and aggregate provider-error count from the existing provider-health and risk rollups, so operators can spot hosted-model/provider instability before drilling into provider detail rows.
+- 2026-05-07 AI tool-failure spread UI follow-up: the browser Admin AI Operations metric grid now surfaces failed tool-call count and distinct failing-tool count from the existing tool risk rollup beside retryability metrics, so operators can distinguish broad tool instability from isolated retryable failures before expanding tool detail rows.
+- 2026-05-07 auth email-status UI follow-up: the browser Admin Auth Operations metric grid now surfaces pending, delivered, and failed password-reset email counts from the existing email status rollup beside retryable-email posture, so operators can distinguish backlog, success, and delivery failure states without opening the email outbox list.
+- 2026-05-07 rules encounter-threat UI follow-up: the browser Admin Rules Operations metric grid now surfaces the primary runtime's encounter threat count from the existing system operations rollup beside templates, conditions, spells, and items, so operators can see monster/encounter content depth without opening per-system detail rows.
+- 2026-05-07 plugin compatibility package UI follow-up: the browser Admin Plugin Operations metric grid now surfaces incompatible catalog package count from the existing compatibility rollup beside incompatible installed grants, so operators can catch package/core-version drift before install or upgrade decisions.
+- 2026-05-07 rendering issue-severity UI follow-up: the browser Admin Rendering Operations metric grid now surfaces rendering error and warning counts from the existing issue severity rollup beside geometry and feature metrics, so operators can distinguish hard rendering blockers from lower-priority scene hygiene warnings without opening issue detail rows.
+- 2026-05-07 AI cost-budget posture UI follow-up: the browser Admin AI Operations metric grid now surfaces cost-budget usage ratio and exceeded posture from the existing cost-budget rollup beside estimated cost and remaining budget, so operators can spot production AI spend pressure without expanding detailed risk rows.
+- 2026-05-07 AI tool-catalog safety UI follow-up: the browser Admin AI Operations metric grid now surfaces the unsafe-tool remainder from the existing tool-catalog rollup beside total and permission-safe AI tools, so operators can see whether new hosted-model tools still need explicit permission-safety hardening before production exposure.
+- 2026-05-07 AI tool-gating posture UI follow-up: the browser Admin AI Operations metric grid now surfaces proposal-gated and fail-closed AI tool counts from the existing tool-catalog rollup, so operators can distinguish tools safely constrained to proposals from provider-visible tools that still require permission policy work.
+- 2026-05-07 asset cleanup-scheduler posture UI follow-up: the browser Admin Asset Storage metric grid now surfaces scheduled cleanup interval, dry-run mode, and deleted/expired target coverage from the existing runtime cleanup posture, so operators can spot production lifecycle cleanup that is manual, simulation-only, or missing cleanup targets without relying on metadata text.
+- 2026-05-07 auth legacy-header enforcement UI follow-up: the browser Admin Auth Operations metric grid now surfaces legacy `x-user-id` mode, production hard-fence posture, and compatibility-flag state from the existing runtime auth posture beside legacy usage and blocked attempts, so operators can verify production legacy-auth fencing without relying on the summary row.
+- 2026-05-07 rules primary-automation UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary-system character import, advancement, and rest-recovery support from the existing rules coverage rollup beside compendium and template counts, so operators can verify core character-sheet automation posture without expanding per-system detail rows.
+- 2026-05-07 plugin review-queue posture UI follow-up: the browser Admin Plugin Operations metric grid now surfaces pending, rejected, blocked, and oldest plugin review counts from the existing review-operations rollup beside approval coverage, so operators can inspect marketplace/package review backlog shape without opening the review queue card.
+- 2026-05-07 asset delivery-mode runtime UI follow-up: the browser Admin Asset Storage metric grid now surfaces signed and session delivery event counts from the existing delivery runtime access-mode rollup beside total delivery events, so operators can see signed URL adoption and fallback session delivery usage without opening individual delivery audit rows.
+- 2026-05-07 rendering required-feature checklist UI follow-up: the browser Admin Rendering Operations metric grid now surfaces the missing required rendering feature count from the existing feature-coverage checklist beside production feature scenes, so operators can spot incomplete Roll20-class rendering coverage without opening the feature detail card.
+- 2026-05-07 plugin package-source mix UI follow-up: the browser Admin Plugin Operations metric grid now surfaces local and registry-sourced package counts from the existing review source-count rollup beside review backlog metrics, so operators can see whether marketplace-style registry distribution is populated or the platform is still relying on local packages.
+- 2026-05-07 auth reset-delivery config UI follow-up: the browser Admin Auth Operations metric grid now surfaces auth URL config error count, production reset-link readiness, and email webhook token posture from the existing runtime auth URL rollup beside password reset and email delivery metrics, so operators can verify reset-email production configuration without relying on metadata text.
+- 2026-05-07 AI proposal-source posture UI follow-up: the browser Admin AI Operations metric grid now surfaces tool/thread-created and manual AI proposal counts from the existing proposal-review source rollup beside proposal backlog metrics, so operators can see whether hosted-model tool flows are generating reviewable proposals versus manual proposal traffic.
+- 2026-05-07 rules primary-capability UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary-system origin builder, monster creation, equipment purchase, and encounter-planning support from the existing rules coverage rollup beside primary automation metrics, so operators can scan broader rules-runtime depth without opening per-system detail rows.
+- 2026-05-07 asset signed-delivery config UI follow-up: the browser Admin Asset Storage metric grid now surfaces signing-secret readiness, public URL readiness, and default signed URL TTL from the existing delivery runtime posture beside signed-delivery eligibility, so operators can verify presigned URL production configuration without relying on metadata text.
+- 2026-05-07 plugin registry-sync health UI follow-up: the browser Admin Plugin Operations metric grid now surfaces never-synced and failed configured registry counts from the existing registry-operations rollup beside stale and drift metrics, so operators can distinguish marketplace registries that have never imported packages from registries with active sync failures.
+- 2026-05-07 AI proposal-entity mix UI follow-up: the browser Admin AI Operations metric grid now surfaces scene, token, and actor proposal counts from the existing proposal-review entity rollup beside proposal source metrics, so operators can see what campaign-state surfaces hosted-model proposal flows are targeting without opening the proposal detail card.
+- 2026-05-07 auth session-runtime policy UI follow-up: the browser Admin Auth Operations metric grid now surfaces session TTL and invalid session numeric config count from the existing runtime session posture beside server-admin and auth URL metrics, so operators can verify production session lifetime policy without relying on metadata text.
+- 2026-05-07 asset CDN-purge config UI follow-up: the browser Admin Asset Storage metric grid now surfaces CDN purge webhook readiness, purge token readiness, and purge timeout from the existing delivery runtime posture beside signed-delivery configuration, so operators can verify production CDN invalidation configuration without relying on metadata text.
+- 2026-05-07 auth OIDC readiness UI follow-up: the browser Admin Auth Operations metric grid now surfaces OIDC configured and production-ready posture from the existing runtime OIDC rollup beside OIDC config errors, so operators can verify SSO production readiness without relying on metadata text.
+- 2026-05-07 rules activity-mix UI follow-up: the browser Admin Rules Operations metric grid now surfaces rules roll, rest, and advancement activity counts from the existing system activity action-count rollup beside total activity, so operators can see whether deeper rules automation is being used beyond static compendium and sheet coverage.
+- 2026-05-07 auth MFA-posture UI follow-up: the browser Admin Auth Operations metric grid now surfaces password-user count, MFA-enabled count, and MFA coverage from the existing user security rollup beside no-MFA counts, so operators can scan account hardening posture without relying on metadata text.
+- 2026-05-07 asset storage-policy readiness UI follow-up: the browser Admin Asset Storage metric grid now surfaces quota-policy and lifecycle retention-policy readiness from the existing runtime storage posture beside quota-risk metrics, so operators can verify production storage governance without relying on metadata text.
+- 2026-05-07 plugin install-spread UI follow-up: the browser Admin Plugin Operations metric grid now surfaces distinct install campaign and installed plugin counts from the existing install-operations rollup beside total installs, so operators can see whether packaging/versioning activity is isolated or broadly adopted across campaigns.
+- 2026-05-07 AI evaluation coverage detail UI follow-up: the browser Admin AI Operations metric grid now surfaces total evaluation count, unevaluated thread count, and failed-evaluation thread count from the existing evaluation rollups beside evaluation coverage and pass/fail metrics, so operators can scan AI eval coverage gaps without opening campaign evaluation cards.
+- 2026-05-07 AI evaluation campaign breadth UI follow-up: the browser Admin AI Operations metric grid now surfaces evaluation campaign count and recurring failed-check count from the existing evaluation coverage rollup beside evaluation coverage, thread backlog, and pass/fail metrics, so operators can scan eval breadth and repeated failure pressure without opening detail rows.
+- 2026-05-07 plugin duplicate-package inventory UI follow-up: the browser Admin Plugin Operations metric grid now surfaces duplicate package count from the existing inventory hygiene rollup beside duplicate version groups and registry package posture, so operators can scan package duplication pressure without waiting for the inventory hygiene detail card.
+- 2026-05-07 plugin trust guardrail UI follow-up: the browser Admin Plugin Operations metric grid now surfaces trust-key readiness, unsigned-package production allowance, and trusted-mode-without-keys posture from the existing security runtime config beside trust policy and trust-key count, so operators can scan third-party package enforcement hazards without opening the security posture card.
+- 2026-05-07 rendering budget breach UI follow-up: the browser Admin Rendering Operations metric grid now surfaces distinct issue-code count plus max-polygon and total-polygon budget breach flags from the existing rendering operations rollup beside vertex usage and exceeded-scene counts, so operators can scan production rendering pressure without opening per-scene details.
+- 2026-05-07 asset delivery byte-pressure UI follow-up: the browser Admin Asset Storage metric grid now surfaces active managed asset count plus deliverable and undeliverable active bytes from the existing delivery posture rollup beside delivery coverage and deliverable/undeliverable asset counts, so operators can scan production asset delivery byte pressure without opening sample rows.
+- 2026-05-07 rules ecosystem breadth UI follow-up: the browser Admin Rules Operations metric grid now surfaces installed system count, active system count, and systems-with-actors count from the existing rules operations rollup beside production/demo system counts, so operators can scan rules ecosystem breadth without relying on the section header or per-system cards.
+- 2026-05-07 auth risk-session cleanup UI follow-up: the browser Admin Auth Operations metric grid now surfaces risk-session cleanup run count, dry-run count, and matched-session count from the existing cleanup operations rollup beside mutation and revoked-session counts, so operators can scan session-admin execution history without opening recent cleanup rows.
+- 2026-05-07 asset delivery distribution UI follow-up: the browser Admin Asset Storage metric grid now surfaces distinct delivery status count and access-mode count from the existing runtime delivery rollup beside delivery events, served/unavailable counts, and signed/session delivery counts, so operators can scan runtime delivery distribution breadth without opening audit samples.
+- 2026-05-07 AI OpenAI endpoint guardrail UI follow-up: the browser Admin AI Operations metric grid now surfaces OpenAI base URL validity, production base-URL security, and timeout from the existing runtime posture beside key/model/org/project readiness, so operators can scan hosted-model endpoint guardrails without relying on runtime metadata text.
+- 2026-05-07 plugin synced-registry spread UI follow-up: the browser Admin Plugin Operations metric grid now surfaces the count of registries with synced package inventory from the existing registry package-count rollup beside configured registries, synced package count, stale registry count, and registry drift metrics, so operators can scan marketplace distribution spread without opening registry detail rows.
+- 2026-05-07 auth login-failure distribution UI follow-up: the browser Admin Auth Operations metric grid now surfaces distinct login-failure reason count and status-code count from the existing redacted login-failure rollup beside total, known-user, and unknown-identity failure counts, so operators can scan auth-failure distribution without opening recent failure rows.
+- 2026-05-07 rendering authoring distribution UI follow-up: the browser Admin Rendering Operations metric grid now surfaces changed scene count, distinct authoring action count, target-type count, and author count from the existing authoring operations rollup beside fog/wall/light change counts, so operators can scan advanced VTT authoring depth without opening the authoring activity card.
+- 2026-05-07 asset maintenance workload UI follow-up: the browser Admin Asset Storage metric grid now surfaces aggregate maintenance asset count, matched count, and failed asset count from the existing migration, cleanup, and quarantine rollups beside maintenance run counts, so operators can scan storage-hygiene workload scale without opening recent maintenance rows.
+- 2026-05-07 rules data-distribution UI follow-up: the browser Admin Rules Operations metric grid now surfaces actor-system count and item-system count from the existing rules operations distribution rollups beside installed, active, and systems-with-actors counts, so operators can scan whether rules ecosystem breadth covers actual character and item data.
+- 2026-05-07 AI tool-catalog action UI follow-up: the browser Admin AI Operations metric grid now surfaces tool-catalog action-required state and action-reason count from the existing tool catalog posture beside AI tool, safe-tool, unsafe-tool, proposal-gated, and fail-closed counts, so operators can scan permission/safety review pressure without opening the tool policy card.
+- 2026-05-07 plugin storage pressure UI follow-up: the browser Admin Plugin Operations metric grid now surfaces near-limit storage bytes and deleted storage entry count from the existing plugin storage rollups beside storage entry count, value limit, near-limit entries, and storage mutation counts, so operators can scan plugin storage pressure and cleanup churn without opening storage pressure rows.
+- 2026-05-07 plugin command distribution UI follow-up: the browser Admin Plugin Operations metric grid now surfaces command plugin count, command campaign count, failed-command plugin count, and command failure-reason count from the existing command operations rollup beside command totals and storage-mutation counts, so operators can scan third-party command execution spread without opening recent command rows.
+- 2026-05-07 auth legacy-header recency UI follow-up: the browser Admin Auth Operations metric grid now surfaces last legacy header usage time and last blocked legacy header time from the existing legacy-user-header rollup beside legacy mode, hard-fence state, compatibility flag, usage count, user count, and blocked-attempt count, so operators can scan x-user-id retirement readiness without opening sample rows.
+- 2026-05-07 AI replay lifecycle UI follow-up: the browser Admin AI Operations metric grid now surfaces replayed tool-call count, completed replay count, replay action-required state, and latest replay time from the existing replay operations rollup beside recent replay runs and failed replay count, so operators can scan failed-tool recovery lifecycle without opening replay detail rows.
+- 2026-05-07 asset cleanup scheduler posture UI follow-up: the browser Admin Asset Storage metric grid now surfaces cleanup scheduler enabled/running state, grace period, run-on-start state, and risky cleanup config count from the existing runtime cleanup posture beside cleanup interval, dry-run, target, backlog, and maintenance metrics, so operators can scan lifecycle cleanup automation safety without relying on metadata text.
+- 2026-05-07 rendering stale-issue action UI follow-up: the browser Admin Rendering Operations metric grid now surfaces stale issue action-required state and distinct stale-scene action-reason count from the existing stale issue operations rollup beside stale scene and issue counts, so operators can scan whether recent rendering authoring left scenes needing remediation without opening stale-scene rows.
+- 2026-05-07 AI safety distribution UI follow-up: the browser Admin AI Operations metric grid now surfaces safety category count, failed safety category count, and safety action-required state from the existing safety posture rollup beside safety checks, coverage, and failure totals, so operators can scan safety/permission regression breadth without opening evaluation telemetry rows.
+- 2026-05-07 asset integrity posture UI follow-up: the browser Admin Asset Integrity metric grid now surfaces healthy state, action-reason count, and remediation count from the existing integrity report beside scanned, actionable, missing, mismatched, cleanup-eligible, failed, verified, and skipped counts, so operators can scan storage-integrity posture without opening remediation rows.
+- 2026-05-07 auth email-status distribution UI follow-up: the browser Admin Auth Operations metric grid now surfaces distinct email delivery status count from the existing email outbox rollup beside webhook readiness, total message count, pending, retryable, delivered, failed, and oldest-retry metrics, so operators can scan password-reset/email delivery state breadth without opening retryable message rows.
+- 2026-05-07 auth email-provider distribution UI follow-up: the browser Admin Auth Operations metric grid now surfaces distinct email provider count from the loaded server-admin email outbox rows beside email webhook readiness, message count, delivery-status breadth, retryable, delivered, failed, and oldest-retry metrics, so operators can scan password-reset/email delivery provider spread without opening email rows.
+- 2026-05-07 AI provider-health distribution UI follow-up: the browser Admin AI Operations metric grid now surfaces provider count, failure-rate degraded provider count, p95-degraded provider count, and running-thread pressure provider count from the existing provider health rollup beside degraded-provider and provider-error totals, so operators can scan hosted-model health pressure without opening provider cards.
+- 2026-05-07 AI provider-health reason UI follow-up: the browser Admin AI Operations metric grid now surfaces distinct provider-health action reason count and recent sanitized provider-error message count from the existing provider health rollup beside degraded-provider and provider-error totals, so operators can scan hosted-model failure breadth before drilling into provider cards.
+- 2026-05-07 plugin install-audit posture UI follow-up: the browser Admin Plugin Operations metric grid now surfaces recent install audit count, install sandbox spread, and install-time missing-permission count from the existing install operations rollup beside install, version-change, rollback, and permission-review totals, so operators can scan third-party package rollout and permission drift pressure without opening recent install rows.
+- 2026-05-07 asset delivery recent-audit UI follow-up: the browser Admin Asset Storage metric grid now surfaces recent delivery event count, recent delivery failure count, and recent CDN purge count from the existing bounded delivery audit rollups beside delivery totals, failure totals, and purge outcomes, so operators can scan current asset-delivery pressure without opening individual audit rows.
+- 2026-05-07 rendering authoring recency UI follow-up: the browser Admin Rendering Operations metric grid now surfaces recent rendering-change count and recent failed-change count from the existing bounded authoring and failed-authoring rollups beside total changes, fog/wall/light changes, failure totals, and failure distribution, so operators can scan current advanced-VTT authoring pressure without opening activity rows.
+- 2026-05-07 auth login-failure recency UI follow-up: the browser Admin Auth Operations metric grid now surfaces recent redacted login-failure sample count from the existing login-failure rollup beside total failures, known-user impact, unknown-identity attempts, and reason/status distributions, so operators can scan current authentication pressure without opening recent failure rows.
+- 2026-05-07 rules activity recency UI follow-up: the browser Admin Rules Operations metric grid now surfaces recent rules activity count and recent non-primary/demo activity count from the existing bounded system activity rollups beside total activity, action mix, and runtime spread metrics, so operators can scan current rules-automation usage without opening recent activity rows.
+- 2026-05-07 plugin command recency UI follow-up: the browser Admin Plugin Operations metric grid now surfaces recent command count and recent command-failure count from the existing command operations rollup beside total commands, command failures, plugin/campaign spread, and failure distribution, so operators can scan current third-party command execution pressure without opening recent command rows.
+- 2026-05-07 auth legacy-header sample-count UI follow-up: the browser Admin Auth Operations metric grid now surfaces recent accepted legacy-header sample count and recent blocked legacy-header sample count from the existing bounded legacy-user-header rollup beside total usage, distinct users, blocked attempts, and last-seen timestamps, so operators can scan current x-user-id retirement pressure without opening sample rows.
+- 2026-05-07 AI activity recency UI follow-up: the browser Admin AI Operations metric grid now surfaces recent thread count and recent tool-call count from the existing bounded AI operations windows beside total threads, total tools, failure, retry, and provider-health metrics, so operators can scan current hosted-model activity without opening recent thread or tool rows.
+- 2026-05-07 asset maintenance recency UI follow-up: the browser Admin Asset Storage metric grid now surfaces recent maintenance run count and latest maintenance run time from the existing maintenance operations rollup beside total, dry-run, mutation, changed, failed, and per-operation run counts, so operators can scan storage-hygiene job recency without opening recent maintenance rows.
+- 2026-05-07 plugin storage-operation recency UI follow-up: the browser Admin Plugin Operations metric grid now surfaces recent storage-operation count from the existing bounded storage operations rollup beside total storage ops, direct set/delete counts, command-driven mutations, and deleted-entry totals, so operators can scan current third-party persistence churn without opening recent storage rows.
+- 2026-05-07 rules production-depth pressure UI follow-up: the browser Admin Rules Operations metric grid now surfaces systems-needing-production-depth count from the existing production-readiness rollup beside installed, production-ready, demo, active, and promotion-gap metrics, so operators can scan non-production runtime hardening pressure without relying on the section summary.
+- 2026-05-07 auth retry-email recency UI follow-up: the browser Admin Auth Operations metric grid now surfaces recent retryable email sample count from the existing bounded email outbox rollup beside total messages, status counts, retryable count, and oldest retry age, so operators can scan current password-reset/email delivery retry pressure without opening retryable message rows.
+- 2026-05-07 asset integrity status-distribution UI follow-up: the browser Admin Asset Integrity metric grid now surfaces distinct integrity-result status count from the existing per-asset result rollup beside healthy state, action reasons, remediations, scanned assets, and missing/mismatched/cleanup/failed totals, so operators can scan storage-integrity failure breadth without opening result rows.
+- 2026-05-07 AI proposal recency UI follow-up: the browser Admin AI Operations metric grid now surfaces recent pending proposal count, recent approved proposal count, and recent apply-failure count from the existing bounded proposal-review queues beside proposal lifecycle totals, stale counts, and apply-failure totals, so operators can scan current proposal-review pressure without opening proposal rows.
+- 2026-05-07 plugin review action UI follow-up: the browser Admin Plugin Operations metric grid now surfaces review action-required state and review action-reason count from the existing review operations rollup beside approval coverage, approved, pending, rejected, blocked, and oldest-review metrics, so operators can scan marketplace package review pressure without opening review queue cards.
+- 2026-05-07 rendering feature-checklist posture UI follow-up: the browser Admin Rendering Operations metric grid now surfaces required feature count and complete/incomplete checklist state from the existing required-feature evidence rollup beside coverage-scene, production-feature-scene, and missing-feature metrics, so operators can scan Roll20-class rendering readiness without opening feature evidence rows.
+- 2026-05-07 AI evaluation recency UI follow-up: the browser Admin AI Operations metric grid now surfaces recent evaluation run count from the existing bounded AI operations evaluation window beside total evaluations, coverage, unevaluated threads, failed evaluation threads, campaign breadth, and pass/fail metrics, so operators can scan current evaluation telemetry without opening evaluation rows.
+- 2026-05-07 asset delivery warning-severity UI follow-up: the browser Admin Asset Storage metric grid now surfaces error-grade and warning-grade delivery warning counts from the existing delivery warning rollup beside total warnings, delivery posture, and runtime delivery metrics, so operators can distinguish blocking production delivery configuration issues from lower-severity notices without opening warning rows.
+- 2026-05-07 AI safety recency UI follow-up: the browser Admin AI Operations metric grid now surfaces recent safety-failure count from the existing bounded safety posture rollup beside safety checks, coverage, total failures, category breadth, failed-category breadth, and action-required state, so operators can scan current safety/permission regression pressure without opening safety failure rows.
+- 2026-05-07 plugin registry error-message UI follow-up: the browser Admin Plugin Operations metric grid now surfaces latest registry error-message count from the existing configured-registry rows beside unsynced, failed, stale, drift, and registry config metrics, so operators can scan marketplace sync failure breadth without opening registry detail rows.
+- 2026-05-07 auth session cleanup recency UI follow-up: the browser Admin Auth Operations metric grid now surfaces recent risk-cleanup run count and latest risk-cleanup time from the existing session cleanup rollup beside risk cleanup totals, dry-run count, matched count, mutation count, revoked sessions, direct revokes, and user-wide revokes, so operators can scan current production session-administration activity without opening cleanup rows.
+- 2026-05-07 rules action posture UI follow-up: the browser Admin Rules Operations metric grid now surfaces rules action-required state and action-reason count from the existing systems operations posture beside installed, production-ready, demo, systems-needing-depth, production-gap, and promotion-blocker metrics, so operators can scan rules ecosystem hardening actionability without relying on the section summary.
+- 2026-05-07 asset storage action posture UI follow-up: the browser Admin Asset Storage metric grid now surfaces asset action-required state and action-reason count from the existing storage operations posture beside asset totals, lifecycle counts, provider posture, quota, cleanup, delivery, and hygiene metrics, so operators can scan production asset-storage actionability without relying on the section summary.
+- 2026-05-07 rendering action posture UI follow-up: the browser Admin Rendering Operations metric grid now surfaces rendering action-required state and action-reason count from the existing rendering operations posture beside scene totals, issue totals, severity counts, geometry budget metrics, feature coverage, and authoring metrics, so operators can scan advanced-VTT rendering actionability without relying on the section summary.
+- 2026-05-07 plugin action posture UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin action-required state and action-reason count from the existing plugin operations posture beside catalog/package totals, install health, permission drift, registry, review, storage, command, and security metrics, so operators can scan third-party plugin-platform actionability without relying on the section summary.
+- 2026-05-07 AI action posture UI follow-up: the browser Admin AI Operations metric grid now surfaces top-level AI action-required state and action-reason count from the existing AI operations posture beside provider selection, runtime config, provider health, tool risk, proposal, replay, safety, and evaluation metrics, so operators can scan hosted-model operations actionability without relying on the section summary.
+- 2026-05-07 auth action posture UI follow-up: the browser Admin Auth Operations metric grid now surfaces auth action-required state and action-reason count from the existing auth operations posture beside user, identity, server-admin, OIDC, session, email, reset, MFA, login-failure, and legacy-header metrics, so operators can scan production auth actionability without relying on the section summary.
+- 2026-05-07 auth remediation-count UI follow-up: the browser Admin Auth Operations metric grid now surfaces auth remediation queue count from the existing bounded auth remediation rollup beside action-required state, action reasons, user counts, session risk, reset/email delivery, MFA, login-failure, and legacy-header metrics, so operators can scan account-hardening queue size without opening remediation rows.
+- 2026-05-07 asset remediation-count UI follow-up: the browser Admin Asset Storage metric grid now surfaces asset remediation queue count from the existing bounded storage remediation rollup beside action-required state, action reasons, asset totals, lifecycle counts, quota, cleanup, delivery, hygiene, and maintenance metrics, so operators can scan storage-hygiene queue size without opening remediation rows.
+- 2026-05-07 rendering remediation-count UI follow-up: the browser Admin Rendering Operations metric grid now surfaces rendering remediation queue count from the existing bounded rendering remediation rollup beside action-required state, action reasons, scene totals, issue totals, severity counts, geometry budget, feature coverage, and authoring metrics, so operators can scan advanced-VTT rendering remediation queue size without opening remediation rows.
+- 2026-05-07 AI remediation-count UI follow-up: the browser Admin AI Operations metric grid now surfaces AI remediation queue count from the existing bounded AI remediation rollup beside action-required state, action reasons, provider posture, provider health, tool risk, proposals, replay, safety, and evaluation metrics, so operators can scan hosted-model operations remediation queue size without opening remediation rows.
+- 2026-05-07 rules/plugin remediation-count UI follow-up: the browser Admin Rules Operations and Plugin Operations metric grids now surface rules and plugin remediation queue counts from their existing bounded remediation rollups beside action-required state, action reasons, production system depth, package health, registry, review, security, install, command, and storage metrics, so operators can scan rules-ecosystem and plugin-platform remediation queue size without opening remediation rows.
+- 2026-05-07 rules/plugin remediation-severity UI follow-up: the browser Admin Rules Operations and Plugin Operations metric grids now surface critical rules remediation count and error-grade plugin remediation count from their existing bounded remediation queues beside total queue size, so operators can distinguish production blockers from lower-priority rules-ecosystem and plugin-platform cleanup without opening remediation rows.
+- 2026-05-07 auth/asset/rendering/AI remediation-severity UI follow-up: the browser Admin Auth, Asset Storage, Rendering Operations, and AI Operations metric grids now surface hard-blocker remediation counts from their existing bounded remediation queues beside total queue size, so operators can distinguish critical auth work and error-grade asset, rendering, and AI remediation pressure without opening remediation rows.
+- 2026-05-07 asset integrity remediation-severity UI follow-up: the browser Admin Asset Integrity metric grid now surfaces error-grade integrity remediation count from the existing bounded integrity remediation queue beside healthy state, action reasons, total remediations, status breadth, scanned assets, and failure totals, so operators can distinguish blocking storage-integrity work without opening remediation rows.
+- 2026-05-07 remediation warning-count UI follow-up: the browser Admin Auth, Asset Storage, Asset Integrity, Rendering Operations, Rules Operations, AI Operations, and Plugin Operations metric grids now surface warning-grade remediation counts from their existing bounded remediation queues beside total and hard-blocker counts, so operators can distinguish cleanup backlog from critical/error production blockers without opening remediation rows.
+- 2026-05-07 AI rejected-proposal recency follow-up: `GET /api/v1/admin/ai/operations` now includes a bounded redacted `proposalReview.recentRejected` queue, and the browser Admin AI Operations panel surfaces recent rejected proposal count plus recent rejected proposal rows beside pending, approved, stale, and apply-failure proposal telemetry, so operators can audit proposal-review churn without exposing raw proposal diffs.
+- 2026-05-07 AI applied-proposal recency follow-up: `GET /api/v1/admin/ai/operations` now includes a bounded redacted `proposalReview.recentApplied` queue, and the browser Admin AI Operations panel surfaces recent applied proposal count plus recent applied proposal rows beside pending, approved, rejected, stale, and apply-failure proposal telemetry, so operators can audit completed AI proposal-review outcomes without exposing raw proposal diffs.
+- 2026-05-07 plugin review recency follow-up: `GET /api/v1/admin/plugins/operations` now includes bounded approved and rejected review samples beside the existing pending and blocked review samples, and the browser Admin Plugin Operations panel surfaces recent approved/rejected review counts plus compact rows, so operators can audit marketplace moderation outcomes without opening the full review table.
+- 2026-05-07 rendering coverage denominator UI follow-up: the browser Admin Rendering Operations metric grid now surfaces the feature-coverage scene denominator from the existing rendering feature coverage rollup beside production feature scenes and coverage percentages, so operators can interpret advanced fog, lighting, terrain, and vision readiness against the actual coverage scope.
+- 2026-05-07 plugin approved-review UI follow-up: the browser Admin Plugin Operations metric grid now surfaces approved review count from the existing plugin review operations rollup beside review coverage, pending, rejected, blocked, and oldest-review metrics, so operators can scan marketplace package approval posture without opening review queue cards.
+- 2026-05-07 rendering baseline totals UI follow-up: the browser Admin Rendering Operations metric grid now surfaces total scene count and render issue count from the existing rendering totals beside fog, wall, light, vision, and feature coverage metrics, so operators can scan production rendering scope and issue pressure without relying on section heading text.
+- 2026-05-07 asset maintenance execution UI follow-up: the browser Admin Asset Storage metric grid now surfaces maintenance dry-run, mutation-run, and changed-run counts from the existing maintenance operations rollup beside total and failed maintenance runs, so operators can scan migration/cleanup tooling execution posture without opening recent run rows.
+- 2026-05-07 rules primary evidence counts UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary compendium support plus origin, monster-creation, and equipment-purchase evidence counts from the existing primary-system coverage rollup beside primary content and workflow metrics, so operators can scan rules ecosystem depth from concrete capability evidence without opening system cards.
+- 2026-05-07 plugin storage spread UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin-storage plugin spread, campaign spread, and per-value storage limit from the existing storage rollup beside total and near-limit storage entries, so operators can scan third-party plugin persistence isolation and pressure without opening storage sample rows.
+- 2026-05-07 auth OIDC guardrails UI follow-up: the browser Admin Auth Operations metric grid now surfaces OIDC redirect URI readiness, allowed return-origin readiness, token-auth mode, and insecure-issuer override state from the existing OIDC runtime posture beside issuer/client credentials and aggregate SSO readiness, so operators can scan production SSO guardrails without relying on metadata text.
+- 2026-05-07 AI OpenAI scoping UI follow-up: the browser Admin AI Operations metric grid now surfaces OpenAI organization and project readiness from the existing runtime provider config beside OpenAI key/model and provider posture metrics, so operators can scan hosted-model scoping configuration without relying on metadata text.
+- 2026-05-07 asset lifecycle policy values UI follow-up: the browser Admin Asset Storage metric grid now surfaces configured quota limit and retention-days values from the existing runtime quota/lifecycle posture beside quota-risk and missing-policy indicators, so operators can scan production asset lifecycle and quota guardrails without relying on metadata text.
+- 2026-05-07 auth legacy-user spread UI follow-up: the browser Admin Auth Operations metric grid now surfaces distinct legacy x-user-id users from the existing legacy header usage rollup beside legacy mode, hard-fence, compatibility flag, total legacy auth, and blocked legacy attempts, so operators can scan remaining compatibility-path spread before hard-fencing production auth.
+- 2026-05-07 plugin trust-policy UI follow-up: the browser Admin Plugin Operations metric grid now surfaces the active plugin trust policy from the existing security runtime config beside trust keys, package trust counts, and sandbox coverage metrics, so operators can scan third-party package enforcement mode without opening the security posture card.
+- 2026-05-07 AI provider-threshold config UI follow-up: the browser Admin AI Operations metric grid now surfaces invalid provider-threshold config count from the existing runtime posture beside provider mismatch, provider health, and runtime config errors, so operators can scan production AI provider alert-threshold readiness without relying on metadata text.
+- 2026-05-07 plugin registry config readiness UI follow-up: the browser Admin Plugin Operations metric grid now surfaces configured registry entry count and valid registry count from the existing registry runtime config beside configured, stale, unsynced, failed, and invalid registry metrics, so operators can scan marketplace-style distribution readiness without opening the registry config card.
+- 2026-05-07 auth server-admin readiness UI follow-up: the browser Admin Auth Operations metric grid now surfaces server-admin allowlist configured and production-ready posture from the existing server-admin runtime config beside server-admin count, so operators can scan account-admin deployability without relying on metadata text.
+- 2026-05-07 asset trust-scanner policy UI follow-up: the browser Admin Asset Storage metric grid now surfaces trust-scanner fail-closed behavior and scanner timeout from the existing runtime trust-scanner posture beside scanner availability and token readiness, so operators can scan production asset hygiene enforcement policy without relying on metadata text.
+- 2026-05-07 auth OIDC readiness UI follow-up: the browser Admin Auth Operations metric grid now surfaces OIDC issuer, client ID, and client secret readiness from the existing OIDC runtime posture beside aggregate OIDC configured/prod-ready/error metrics, so operators can scan SSO deployment readiness without relying on metadata text.
+- 2026-05-07 rules primary capability counts UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary-system supported capability count, total capability count, and missing capability count from the existing production-capability matrix beside the primary coverage percentage, so operators can scan rules ecosystem depth without opening each system card.
+- 2026-05-07 rendering secondary coverage UI follow-up: the browser Admin Rendering Operations metric grid now surfaces smooth-fog, dimmed-light, dual-zone-light, and token-vision coverage rates from the existing feature-coverage rollup beside their scene counts, so operators can scan production-grade fog, lighting, and vision readiness without opening the feature coverage card.
+- 2026-05-07 asset signed URL policy UI follow-up: the browser Admin Asset Storage metric grid now surfaces signing-secret requirement and maximum signed-URL TTL from the existing delivery runtime posture beside signing-secret readiness and default URL TTL, so operators can scan presigned-URL policy guardrails from the primary asset delivery grid.
+- 2026-05-07 asset delivery runtime UI follow-up: the browser Admin Asset Storage metric grid now surfaces served and unavailable asset-delivery event counts from the existing delivery runtime rollup beside total delivery events, signed/session delivery, denials, and failures, so operators can scan successful delivery volume and unavailable-byte pressure from the primary asset grid.
+- 2026-05-07 plugin sandbox coverage UI follow-up: the browser Admin Plugin Operations metric grid now surfaces command-capable package count and manifest-only package count from the existing security posture beside non-VM command and VM sandbox metrics, so operators can scan third-party plugin execution/sandbox coverage without relying on the security posture card.
+- 2026-05-07 AI cost-control posture UI follow-up: the browser Admin AI Operations metric grid now surfaces cost-rate completeness, input-token rate readiness, output-token rate readiness, and invalid cost config count from the existing runtime posture beside usage cost and budget metrics, so operators can scan production AI cost controls without relying on metadata text.
+- 2026-05-07 auth reset delivery config UI follow-up: the browser Admin Auth Operations metric grid now surfaces password-reset URL validity, reset TTL, web-origin validity, and email-webhook timeout from the existing auth URL runtime posture beside reset and email delivery metrics, so operators can scan production password-reset delivery configuration without relying on metadata text.
+- 2026-05-07 AI runtime posture UI follow-up: the browser Admin AI Operations metric grid now surfaces selected provider, active provider, provider mismatch, OpenAI key readiness, OpenAI model default/custom status, and runtime-control config error count from the existing runtime posture rollup, so operators can scan hosted-model readiness without relying on metadata text.
+- 2026-05-07 asset integrity coverage UI follow-up: the browser Admin Asset Integrity metric grid now surfaces total scanned assets and actionable integrity failures from the existing integrity report beside missing, mismatched, cleanup-eligible, failed, verified, and skipped counts, so operators can scan storage hygiene coverage and remediation pressure without relying on summary text.
+- 2026-05-07 auth baseline operations UI follow-up: the browser Admin Auth Operations metric grid now surfaces active users, total sessions, email webhook readiness, and total email message volume from the existing auth operations rollup beside risk-session, password-reset, and delivery-status metrics, so operators can scan production auth load and delivery readiness from the primary grid.
+- 2026-05-07 rules demo activity split UI follow-up: the browser Admin Rules Operations metric grid now surfaces non-primary/demo roll, rest, and advancement activity counts from the existing system activity rollup beside total rules activity, so operators can see whether demo runtimes are still carrying meaningful play automation while planning deeper production systems.
+- 2026-05-07 plugin inventory audit UI follow-up: the browser Admin Plugin Operations metric grid now surfaces package count, installed grant count, command audit count, and install audit count from the existing plugin operations totals beside catalog/install metrics, so operators can scan marketplace-style package inventory and audit-trail depth without relying on heading text.
+- 2026-05-07 rendering feature coverage UI follow-up: the browser Admin Rendering Operations metric grid now surfaces polygon-fog, colored-light, dual-zone-token-vision, and terrain-wall coverage rates from the existing feature-coverage rollup beside the feature scene counts, so operators can scan advanced VTT rendering readiness without opening the feature coverage card.
+- 2026-05-07 AI proposal lifecycle UI follow-up: the browser Admin AI Operations metric grid now surfaces total, approved, applied, rejected, and approval-required proposal counts from the existing proposal-review rollup beside pending/apply-ready/stale proposal metrics, so operators can audit AI proposal lifecycle health without waiting for an action-required card.
+- 2026-05-07 asset S3 runtime posture UI follow-up: the browser Admin Asset Storage metric grid now surfaces S3 bucket readiness, endpoint validity/defaulting, and explicit credential completeness from the existing runtime S3 posture next to storage provider metrics, so operators can see production blob-store configuration health without reading metadata text.
+- 2026-05-07 asset trust-scanner posture UI follow-up: the browser Admin Asset Storage metric grid now surfaces built-in scanner, external scanner, and scanner-token readiness from the existing runtime trust-scanner posture beside unscanned and trust-warning asset counts, so operators can verify production asset hygiene scanning without relying on metadata text.
+- 2026-05-07 plugin trust-status UI follow-up: the browser Admin Plugin Operations metric grid now surfaces trusted, untrusted, and trust-blocked package counts from the existing security posture rollup beside unsigned and sandbox metrics, so operators can see third-party package trust posture without opening security sample rows.
+- 2026-05-07 plugin storage sample/set UI follow-up: the browser Admin Plugin Operations metric grid now surfaces bounded largest storage-entry sample count and total storage set mutations from the existing storage and storage-operation rollups beside near-limit, delete, and command-mutating storage metrics, so operators can scan third-party persistence pressure without opening storage detail rows.
+- 2026-05-07 rules readiness gap-category UI follow-up: the browser Admin Rules Operations metric grid now surfaces production-readiness action-required state and distinct production-gap category count from the existing production-readiness and gap rollups beside systems-needing-depth, production-gap, and promotion-blocker metrics, so operators can scan rules ecosystem hardening breadth without opening gap detail cards.
+- 2026-05-07 auth reset-token total UI follow-up: the browser Admin Auth Operations metric grid now surfaces total password reset-token pressure from the existing active and expired-unused reset-token rollup beside reset delivery, reset cleanup, and email retry metrics, so operators can scan password-reset lifecycle load without manually adding separate reset counts.
+- 2026-05-07 asset purge-success UI follow-up: the browser Admin Asset Storage metric grid now surfaces CDN purge success rate from the existing purge operation totals beside purge counts, recent purge samples, failures, and not-configured outcomes, so operators can scan CDN cache invalidation reliability without manually comparing purge counters.
+- 2026-05-07 AI completion/schema UI follow-up: the browser Admin AI Operations metric grid now surfaces thread completion rate and strict tool-schema count from the existing service-level and tool-catalog rollups beside failure-rate, safety, and permission-gating metrics, so operators can scan hosted-model reliability and tool input-hardening coverage without opening detail cards.
+- 2026-05-07 rendering campaign/sample UI follow-up: the browser Admin Rendering Operations metric grid now surfaces campaign spread and bounded top-issue sample count from the existing rendering operations rollup beside scene, issue, severity, and issue-code metrics, so operators can scan advanced-rendering blast radius without opening issue rows.
+- 2026-05-07 AI Codex runtime UI follow-up: the browser Admin AI Operations metric grid now surfaces Codex adapter, transport, and approval-mode posture from the existing runtime rollup beside provider, OpenAI, cost, and runtime-config metrics, so operators can scan loopback/hosted integration mode without relying on metadata text.
+- 2026-05-07 plugin security-action UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin security-posture action-required state and action-reason count from the existing security rollup beside trust policy, trust keys, signed-package, and sandbox coverage metrics, so operators can scan third-party package enforcement risk without opening the security posture card.
+- 2026-05-07 auth disabled-user sample UI follow-up: the browser Admin Auth Operations metric grid now surfaces bounded disabled-user sample count from the existing user operations rollup beside disabled-user, session-risk, and account-admin metrics, so operators can scan account administration cleanup pressure without opening disabled-user rows.
+- 2026-05-07 asset integrity result-coverage UI follow-up: the browser Admin Asset Integrity metric grid now surfaces non-verified integrity result-row count and verified coverage rate from the existing integrity report beside status breadth, actionable failures, missing/mismatched bytes, and cleanup eligibility metrics, so operators can scan storage-hygiene review volume without opening result cards.
+- 2026-05-07 rules capability-row UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary-system capability row count from the existing production-capability matrix beside supported, total, missing, and coverage metrics, so operators can scan rules ecosystem capability checklist breadth without opening per-system cards.
+- 2026-05-07 admin audit summary UI follow-up: the browser Admin Audit section now includes a metric grid for returned audit rows, action-required/truncated state, remediation count, admin-action count, action/target/actor/campaign rollup breadth, and newest returned timestamp from the existing audit export summary, so operators can scan account and platform administration audit posture without reading each returned log row.
+- 2026-05-07 admin user summary UI follow-up: the browser Admin Users section now includes a metric grid derived from the loaded redacted user summaries for total users, disabled users, reset-required users, users with sessions, linked-identity users, aggregate sessions, memberships, and identities, so operators can scan account-administration posture before opening individual user cards.
+- 2026-05-07 admin session summary UI follow-up: the browser Admin Sessions section now includes a metric grid derived from loaded redacted session summaries for loaded session count, distinct session users, sessions expiring within 24 hours, and oldest/newest activity timestamps, so operators can scan production session administration pressure before opening individual session cards.
+- 2026-05-07 admin email outbox summary UI follow-up: the browser Admin Email Outbox section now includes a metric grid derived from loaded redacted outbox rows and auth operations rollups for loaded email count, status/provider breadth, loaded pending/failed/delivered counts, retryable total, and newest queued email timestamp, so operators can scan password-reset/email delivery posture before opening individual email rows.
+- 2026-05-07 organization access summary UI follow-up: the browser Admin Organization Access section now includes a metric grid derived from loaded SCIM group-role mappings for total mappings, matched and pending groups, mapped SCIM member count, mapped campaign breadth, and mapped role breadth, so operators can scan organization access posture before opening individual mapping rows.
+- 2026-05-07 plugin review snapshot UI follow-up: the browser Admin Plugin Reviews section now includes a metric grid derived from the loaded marketplace review snapshot for package count, review policy, pending/approved/rejected/blocked totals, source breadth, and trust-status breadth, so operators can scan marketplace review posture before opening individual package rows.
+- 2026-05-07 plugin registry action/import UI follow-up: the browser Admin Plugin Operations metric grid now surfaces registry action-required state, registry action-reason count, and bounded imported-package sample count from the existing registry operations rollup beside configured/synced/stale/failed registry metrics, so operators can scan marketplace distribution health without opening registry cards.
+- 2026-05-07 asset campaign-scope UI follow-up: the browser Admin Asset Storage metric grid now surfaces per-campaign provider breadth, lifecycle-status breadth, and bounded largest-asset sample count from the existing campaign storage rollups beside campaign count, quota risk, and byte usage metrics, so operators can scan production asset storage distribution without opening campaign rows.
+- 2026-05-07 rendering feature-sample UI follow-up: the browser Admin Rendering Operations metric grid now surfaces bounded required-feature evidence sample count from the existing feature-coverage rollup beside required/missing feature and coverage metrics, so operators can scan advanced VTT rendering evidence depth without opening every feature card.
+- 2026-05-07 AI failed-check UI follow-up: the browser Admin AI Operations metric grid now surfaces failed evaluation check breadth from the existing evaluations rollup beside failed-evaluation, recurring failed-check, pass-rate, and safety metrics, so operators can scan AI eval failure variety without opening evaluation detail rows.
+- 2026-05-07 plugin inventory-action UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin inventory action-required state and action-reason count from the existing inventory operations rollup beside duplicate package/version metrics, so operators can scan package hygiene risk without opening inventory detail cards.
+- 2026-05-07 plugin compatibility-action UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin compatibility action-required state from the existing compatibility operations rollup beside core-drift and incompatible package/install metrics, so operators can scan core-version upgrade risk without opening compatibility detail rows.
+- 2026-05-07 AI risk-action UI follow-up: the browser Admin AI Operations metric grid now surfaces AI risk action-required state from the existing risk rollup beside running threads, stale work, failed tool calls, provider errors, and cost-budget metrics, so operators can scan whether production AI risk posture needs intervention without opening risk detail rows.
+- 2026-05-07 asset maintenance planned/skipped UI follow-up: the browser Admin Asset Storage metric grid now surfaces planned and skipped asset maintenance totals from the existing migration, cleanup, and quarantine maintenance rollups beside matched, failed, changed, and per-operation run metrics, so operators can scan storage-hygiene job outcomes without opening maintenance rows.
+- 2026-05-07 auth email-webhook URL UI follow-up: the browser Admin Auth Operations metric grid now surfaces email webhook URL validity and production security state from the existing auth URL runtime posture beside webhook token, timeout, retry, and delivery-status metrics, so operators can scan password-reset/email delivery configuration without reading metadata text.
+- 2026-05-07 auth reset-link security UI follow-up: the browser Admin Auth Operations metric grid now surfaces password-reset URL and web-origin production security state from the existing auth URL runtime posture beside reset URL validity, reset TTL, webhook URL posture, and delivery metrics, so operators can scan reset-link deployment safety without reading metadata text.
+- 2026-05-07 asset delivery sample-count UI follow-up: the browser Admin Asset Storage metric grid now surfaces bounded deliverable and undeliverable asset sample counts from the existing delivery posture rollup beside coverage, deliverable/undeliverable asset counts, and byte totals, so operators can scan asset-delivery inspection depth without opening delivery detail rows.
+- 2026-05-07 rules capability-evidence UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary-system capability evidence total from the existing production-capability matrix beside supported, missing, row-count, and coverage metrics, so operators can scan rules ecosystem implementation depth without opening each capability card.
+- 2026-05-07 AI tool-schema type UI follow-up: the browser Admin AI Operations metric grid now surfaces advertised tool schema-type breadth from the existing tool catalog beside strict-schema, permission-safe, proposal-gated, and fail-closed tool metrics, so operators can scan AI tool-input hardening variety without opening each tool row.
+- 2026-05-07 AI replay sample UI follow-up: the browser Admin AI Operations metric grid now surfaces bounded recent replayed tool-call sample count from the existing replay operations rollup beside replay run, completed, failed, action, and latest replay metrics, so operators can scan AI tool-retry inspection depth without opening replay rows.
+- 2026-05-07 plugin permission-drift sample UI follow-up: the browser Admin Plugin Operations metric grid now surfaces bounded permission-drift sample count from the existing plugin operations rollup beside total drift, install, review, and compatibility metrics, so operators can scan plugin permission-review inspection depth without opening drift rows.
+- 2026-05-07 rendering failed-authoring action UI follow-up: the browser Admin Rendering Operations metric grid now surfaces failed-authoring action-required state from the existing failed authoring operations rollup beside failed-change counts, failure reasons, and target breadth, so operators can scan authoring reliability risk without opening failed-authoring rows.
+- 2026-05-07 asset trust-warning sample UI follow-up: the browser Admin Asset Storage metric grid now surfaces bounded trust-warning sample count from the existing storage hygiene rollup beside unscanned, missing-reference, trust-warning, scanner, and token metrics, so operators can scan asset trust-review inspection depth without opening hygiene rows.
+- 2026-05-07 AI recurring-safety UI follow-up: the browser Admin AI Operations metric grid now surfaces recurring safety-failure breadth from the existing safety posture rollup beside safety coverage, failure, category, and action-state metrics, so operators can scan safety regression recurrence without opening safety detail rows.
+- 2026-05-07 auth legacy-enabled UI follow-up: the browser Admin Auth Operations metric grid now surfaces explicit legacy x-user-id runtime enabled state from the existing legacy header posture beside mode, hard-fence, compatibility flag, accepted usage, distinct users, blocked attempts, and sample counts, so operators can scan compatibility-path retirement posture without opening legacy samples.
+- 2026-05-07 AI safety-evaluated-thread UI follow-up: the browser Admin AI Operations metric grid now surfaces evaluated threads with safety checks from the existing safety posture beside safety check volume, coverage, failures, recent failures, recurring failures, and category counts, so operators can distinguish broad evaluation volume from AI threads that actually exercised safety assertions.
+- 2026-05-07 AI approved-proposal-age UI follow-up: the browser Admin AI Operations metric grid now surfaces oldest approved proposal age from the existing proposal review operations beside approval-required, apply-ready, stale pending, stale approved, and apply-failure counts, so operators can catch approved AI proposals that are aging without being applied.
+- 2026-05-07 asset CDN-configured UI follow-up: the browser Admin Asset Storage metric grid now surfaces explicit CDN configured state from the existing delivery runtime beside expired active, CDN-eligible, signed-URL-eligible, signing-secret, public-URL, TTL, purge, and delivery-event metrics, so operators can scan CDN readiness without relying on the summary sentence.
+- 2026-05-07 rendering vertex-budget-limit UI follow-up: the browser Admin Rendering Operations metric grid now surfaces the configured total polygon vertex budget limit beside current vertices, max-vertex usage, total-budget usage, budget-exceeded flags, and scenes-over-budget counts, so operators can evaluate production vision-rendering pressure against the actual configured ceiling.
+- 2026-05-07 plugin review-policy UI follow-up: the browser Admin Plugin Operations metric grid now surfaces the active plugin review policy from the existing operations policy payload beside package counts, plugin action state, review coverage, pending/approved/rejected/blocked review counts, registry posture, security posture, and trust policy, so operators can verify whether third-party package approval is enforced without relying on the section header.
+- 2026-05-07 rules primary-actor-schema UI follow-up: the browser Admin Rules Operations metric grid now surfaces whether the primary production rules system declares an actor schema from the existing system manifest payload beside compendium, templates, conditions, spells, items, threats, capability coverage, and evidence metrics, so operators can distinguish content volume from deeper character-sheet schema readiness.
+- 2026-05-07 rules primary-item-schema UI follow-up: the browser Admin Rules Operations metric grid now surfaces whether the primary production rules system declares an item schema from the existing system manifest payload beside actor schema, compendium, templates, conditions, spells, items, threats, capability coverage, and evidence metrics, so operators can distinguish item/content volume from structured rules item readiness.
+- 2026-05-07 rules primary-client-entry UI follow-up: the browser Admin Rules Operations metric grid now surfaces whether the primary production rules system declares a client entrypoint from the existing system manifest payload beside actor/item schemas, compendium, templates, conditions, spells, items, threats, capability coverage, and evidence metrics, so operators can distinguish content readiness from browser rules-runtime integration readiness.
+- 2026-05-07 rules primary-server-entry UI follow-up: the browser Admin Rules Operations metric grid now surfaces whether the primary production rules system declares a server entrypoint from the existing system manifest payload beside client entrypoint, actor/item schemas, compendium, templates, conditions, spells, items, threats, capability coverage, and evidence metrics, so operators can distinguish content readiness from backend rules automation integration readiness.
+- 2026-05-07 auth risk-session-samples UI follow-up: the browser Admin Auth Operations metric grid now surfaces recent risk-session sample count from the existing session operations payload beside total sessions, risk sessions, expired/stale/disabled/unknown session counts, cleanup runs, matched/revoked totals, and cleanup timestamps, so admins can tell whether the snapshot includes actionable examples for the session cleanup queue.
+- 2026-05-07 auth no-MFA-samples UI follow-up: the browser Admin Auth Operations metric grid now surfaces active password-user-without-MFA sample count from the existing user operations payload beside password-user, MFA-enabled, MFA-coverage, and no-MFA totals, so account admins can tell whether the snapshot includes actionable users for MFA rollout cleanup.
+- 2026-05-07 asset quota-enabled UI follow-up: the browser Admin Asset Storage metric grid now surfaces explicit quota enabled state from the existing storage runtime beside quota risk, quota limit, quota policy, campaign provider/lifecycle spread, largest asset samples, used bytes, and stored bytes, so operators can scan whether production storage quota enforcement is active without relying on the conditional quota-risk status line.
+- 2026-05-07 asset retention-enabled UI follow-up: the browser Admin Asset Storage metric grid now surfaces explicit retention enabled state from the existing lifecycle runtime beside retention days, retention policy, quota enabled, quota risk, quota limit, cleanup backlog, cleanup runtime, lifecycle counts, and storage hygiene metrics, so operators can scan whether production asset lifecycle enforcement is active without inferring it from a numeric retention value.
+- 2026-05-07 asset migration-target UI follow-up: the browser Admin Asset Storage metric grid now surfaces the configured migration target provider from the existing storage runtime beside migration backlog count, migration bytes, retention settings, quota settings, cleanup backlog, provider counts, and storage hygiene metrics, so operators can see where asset migration work will move stored objects before running migration actions.
+- 2026-05-07 asset storage-provider UI follow-up: the browser Admin Asset Storage metric grid now surfaces the active storage provider from the existing runtime posture beside stored bytes, provider spread, migration target, quota settings, retention settings, cleanup backlog, delivery posture, and storage hygiene metrics, so operators can scan active asset backend posture without relying on the section header.
+- 2026-05-07 rendering failure-action UI follow-up: the browser Admin Rendering Operations metric grid now surfaces distinct failed authoring action count from the existing failed authoring operations payload beside failed-change totals, recent failures, failure reasons, failure targets, stale issue scenes, and stale issue reasons, so operators can separate one repeated failure mode from broad rendering authoring breakage.
+- 2026-05-07 AI safety-eval-runs UI follow-up: the browser Admin AI Operations metric grid now surfaces evaluation runs that include safety checks from the existing safety posture beside safety check volume, safety coverage, safety-evaluated threads, safety failures, recent failures, recurring failures, and category counts, so operators can distinguish checked eval runs from checked AI threads.
+- 2026-05-07 plugin registry-stale-threshold UI follow-up: the browser Admin Plugin Operations metric grid now surfaces registry stale-threshold duration from the existing registry operations payload beside configured registries, synced packages, synced registries, oldest registry sync age, stale registry count, registry action state, and registry reason counts, so operators can compare sync age against the policy threshold without opening per-registry sample rows.
+- 2026-05-07 plugin registry-drift-samples UI follow-up: the browser Admin Plugin Operations metric grid now surfaces unconfigured registry package sample count from the existing registry operations payload beside registry package totals, registry drift total, stale registries, registry entries, valid registries, sync freshness, and registry error counts, so operators can tell whether the snapshot includes concrete marketplace package examples to repair.
+- 2026-05-07 AI retry-budget UI follow-up: the browser Admin AI Operations metric grid now surfaces configured retry budget from the existing runtime posture beside selected/active provider, provider mismatch, OpenAI runtime settings, runtime/provider config errors, cost-rate posture, threads, failures, retries, and provider health metrics, so operators can scan AI retry policy without reading the runtime summary text.
+- 2026-05-07 AI cost-budget UI follow-up: the browser Admin AI Operations metric grid now surfaces configured AI cost budget from the existing runtime posture beside current estimated cost, remaining budget, budget usage, exceeded state, cost-rate completeness, input/output rate flags, cost config errors, provider usage, and risk metrics, so operators can scan budget policy and consumption together.
+- 2026-05-07 rendering stale-issue-samples UI follow-up: the browser Admin Rendering Operations metric grid now surfaces stale issue scene sample count from the existing stale issue operations payload beside stale issue scene totals, stale issue totals, stale issue action state, stale issue reason count, failed authoring diagnostics, and rendering issue samples, so operators can see whether stale production-vision issues include concrete scenes to inspect.
+- 2026-05-07 asset cleanup-samples UI follow-up: the browser Admin Asset Storage metric grid now surfaces cleanup backlog sample count from the existing cleanup backlog payload beside cleanup asset totals, cleanup bytes, oldest cleanup age, deleted/expired backlog counts, cleanup runtime flags, retention settings, quota settings, migration posture, and storage hygiene metrics, so operators can see whether cleanup work includes concrete assets to inspect before running cleanup actions.
+- 2026-05-07 asset migration-samples UI follow-up: the browser Admin Asset Storage metric grid now surfaces migration backlog sample count from the existing migration backlog payload beside migration target, migration asset totals, migration bytes, quota settings, retention settings, cleanup backlog, provider counts, and storage hygiene metrics, so operators can see whether migration work includes concrete assets to inspect before running migration actions.
+- 2026-05-07 auth no-MFA-session-exposure UI follow-up: the browser Admin Auth Operations metric grid now surfaces session exposure across sampled active password users without MFA from the existing user operations payload beside password-user, MFA-enabled, MFA-coverage, no-MFA total, and no-MFA sample counts, so account admins can prioritize MFA rollout gaps that also have live session exposure.
+- 2026-05-07 rules primary-permissions UI follow-up: the browser Admin Rules Operations metric grid now surfaces the primary production rules system manifest permission count beside client/server entrypoints, actor/item schemas, compendium, templates, conditions, spells, items, threats, capability coverage, and evidence metrics, so operators can scan rules-runtime permission surface alongside content and schema readiness.
+- 2026-05-07 rendering present-features UI follow-up: the browser Admin Rendering Operations metric grid now surfaces required rendering feature rows currently present from the existing feature coverage payload beside feature coverage scenes, production feature scenes, required feature count, missing feature count, feature samples, feature checklist state, and individual coverage rates, so operators can scan advanced VTT rendering readiness without reading every feature row.
+- 2026-05-07 plugin installable-reviews UI follow-up: the browser Admin Plugin Reviews metric grid now surfaces installable reviewed package count from the existing review snapshot beside review package totals, review policy, pending/approved/rejected/blocked review counts, review source spread, and trust-state spread, so marketplace operators can scan how many reviewed packages are actually installable without reading every package row.
+- 2026-05-07 rules critical-promotion-blockers UI follow-up: the browser Admin Rules Operations metric grid now surfaces critical promotion blocker count from the existing per-system promotion blocker rollup beside total promotion blockers, production gaps, gap categories, and primary capability metrics, so operators can separate hard-blocking rules runtime promotion issues from warning-grade production-depth work.
+- 2026-05-07 AI oldest-pending-proposal UI follow-up: the browser Admin AI Operations metric grid now surfaces oldest pending proposal age from the existing proposal review operations beside stale pending, stale approved, oldest approved, apply-ready, and apply-failure metrics, so operators can spot AI-generated proposal backlog aging before proposals cross stale thresholds.
+- 2026-05-07 asset S3 region UI follow-up: the browser Admin Asset Storage metric grid now surfaces S3 region readiness from the existing runtime S3 posture beside bucket, endpoint, and credential readiness, so operators can scan production blob-store configuration completeness without relying on the metadata line.
+- 2026-05-07 plugin load-error-samples UI follow-up: the browser Admin Plugin Operations metric grid now surfaces bounded load-error sample count from the existing plugin operations payload beside total load errors, command audits, install audits, package totals, install health, registry posture, and security posture, so operators can tell whether marketplace/package load failures include concrete package rows to inspect.
+- 2026-05-07 auth stale-session-threshold UI follow-up: the browser Admin Auth Operations metric grid now surfaces the stale-session risk threshold from the existing session operations payload beside session TTL, session config errors, total/risk/stale session counts, and risk-cleanup metrics, so operators can interpret production session-administration cleanup pressure against the active stale policy.
+- 2026-05-07 rendering flagged-scene-samples UI follow-up: the browser Admin Rendering Operations metric grid now surfaces bounded action-required scene sample count from the existing rendering operations payload beside total flagged scenes, render issue counts, severity counts, geometry budget pressure, and feature coverage metrics, so operators can see whether production-vision rendering issues include concrete scenes to inspect.
+- 2026-05-07 asset integrity-provider UI follow-up: the browser Admin Asset Integrity metric grid now surfaces the checked storage provider from the existing integrity report beside scanned assets, actionable failures, healthy state, result breadth, remediation severity, and verified coverage, so operators can tie storage-hygiene findings to the backend currently being verified.
+- 2026-05-07 rules system-row-samples UI follow-up: the browser Admin Rules Operations metric grid now surfaces loaded system row count from the existing systems operations payload beside installed systems, production/demo counts, production-depth pressure, activity, content, capability, and promotion metrics, so operators can tell how much concrete rules-runtime detail is available for inspection.
+- 2026-05-07 plugin review blocked-installs UI follow-up: the browser Admin Plugin Reviews metric grid now surfaces reviewed packages with install-block reasons from the existing review snapshot beside installable reviewed package count, review package totals, review policy, status totals, source breadth, and trust-state breadth, so marketplace operators can scan package-install blockers without opening every review row.
+- 2026-05-07 AI unevaluated-thread-samples UI follow-up: the browser Admin AI Operations metric grid now surfaces bounded unevaluated-thread sample count from the existing evaluation coverage payload beside evaluation coverage, total evaluations, recent evaluations, unevaluated thread backlog, failed-evaluation threads, campaign breadth, and recurring failed checks, so operators can tell whether AI eval gaps include concrete threads to inspect.
+- 2026-05-07 asset S3 active-provider UI follow-up: the browser Admin Asset Storage metric grid now surfaces whether S3 is the active storage provider from the existing runtime S3 posture beside active provider, provider spread, bucket, region, endpoint, and credential readiness, so operators can distinguish configured S3 support from the backend currently serving production asset storage.
+- 2026-05-07 auth URL numeric-config UI follow-up: the browser Admin Auth Operations metric grid now surfaces invalid auth URL numeric configuration count from the existing runtime auth URL posture beside URL validity/security errors, session TTL, stale-session threshold, and session numeric config errors, so operators can scan reset/email delivery configuration mistakes without relying on metadata text.
+- 2026-05-07 AI risk-failed-evaluations UI follow-up: the browser Admin AI Operations metric grid now surfaces failed-evaluation risk count from the existing AI risk payload beside risk action state, running threads, failed tool calls, failing tools, retryable/non-retryable tool counts, stale work, and service-level metrics, so operators can separate evaluation risk from provider/tool execution risk without opening evaluation detail rows.
+- 2026-05-07 plugin core-version UI follow-up: the browser Admin Plugin Operations metric grid now surfaces server core version from the existing compatibility operations payload beside compatibility action state, core drift, incompatible package counts, permission drift, install health, and registry posture, so operators can interpret plugin package compatibility against the active platform version without relying on metadata text.
+- 2026-05-07 rules primary-issues UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary production rules system issue count from the existing system operations row beside capability coverage, missing capabilities, capability evidence, manifest readiness, compendium counts, and automation support, so operators can separate primary runtime content/schema problems from broader multi-system production-depth pressure.
+- 2026-05-07 asset S3 path-style UI follow-up: the browser Admin Asset Storage metric grid now surfaces S3 path-style addressing posture from the existing runtime S3 configuration beside active provider, bucket, region, endpoint, and credential readiness, so operators can scan S3-compatible production storage configuration without relying on metadata text.
+- 2026-05-07 auth OIDC insecure-config UI follow-up: the browser Admin Auth Operations metric grid now surfaces insecure OIDC configuration count from the existing runtime OIDC posture beside aggregate OIDC config errors, configured/prod-ready state, issuer/client readiness, redirect and return-origin guardrails, token-auth mode, and insecure-issuer override state, so operators can separate malformed SSO settings from production-insecure SSO settings.
+- 2026-05-07 rendering coverage-samples UI follow-up: the browser Admin Rendering Operations metric grid now surfaces total feature-coverage sample rows from the existing polygon-fog, smooth-fog, terrain-wall, colored-light, dimmed-light, dual-zone-light, token-vision, and dual-zone-token-vision sample buckets beside required-feature evidence samples, feature coverage scene counts, missing/present features, and coverage rates, so operators can scan advanced-rendering evidence depth without opening every feature sample bucket.
+- 2026-05-07 rules primary-gaps UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary production rules system production-gap count from the existing system operations row beside primary issue count, capability coverage, missing capabilities, evidence, manifest readiness, compendium counts, and automation support, so operators can separate primary runtime hardening gaps from broader multi-system production-depth pressure.
+- 2026-05-07 AI evaluated-thread-count UI follow-up: the browser Admin AI Operations metric grid now surfaces evaluated AI thread count from the existing evaluation coverage payload beside evaluation coverage rate, evaluation run totals, recent evaluations, unevaluated backlog, unevaluated samples, failed-evaluation threads, campaign breadth, and recurring failed checks, so operators can read the coverage numerator without opening the evaluation telemetry card.
+- 2026-05-07 plugin command-action UI follow-up: the browser Admin Plugin Operations metric grid now surfaces command action-required state from the existing command operations posture beside command volume, recent commands, plugin/campaign spread, command failures, recent failures, failed plugin breadth, failure reasons, and storage-mutating command counts, so operators can scan third-party command reliability actionability without opening command failure cards.
+- 2026-05-07 asset S3 explicit-credentials UI follow-up: the browser Admin Asset Storage metric grid now surfaces explicit S3 credential configuration from the existing runtime S3 posture beside active provider, bucket, region, endpoint, path-style, and partial-credential readiness, so operators can distinguish explicit credential setup from default/environment credential resolution.
+- 2026-05-07 asset delivery-mode UI follow-up: the browser Admin Asset Storage metric grid now surfaces active asset delivery mode from the existing delivery runtime posture beside CDN readiness, CDN/signed eligibility, signing-secret readiness, public URL, URL TTLs, purge posture, and delivery event metrics, so operators can scan production asset-delivery strategy without relying on the section summary.
+- 2026-05-07 auth OIDC invalid-config UI follow-up: the browser Admin Auth Operations metric grid now surfaces malformed OIDC configuration count from the existing runtime OIDC posture beside aggregate OIDC config errors, insecure OIDC config count, configured/prod-ready state, issuer/client readiness, redirect and return-origin guardrails, token-auth mode, and insecure-issuer override state, so operators can distinguish invalid SSO settings from production-insecure SSO settings.
+- 2026-05-07 plugin storage-operation spread UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin and campaign breadth for storage operations from the existing storage operation rollup beside total/recent storage ops, direct sets/deletes, command mutations, set/delete mutation counts, deleted entries, and storage pressure metrics, so operators can scan third-party persistence mutation blast radius without opening recent operation rows.
+- 2026-05-07 rendering changed-scene-samples UI follow-up: the browser Admin Rendering Operations metric grid now surfaces bounded changed-scene sample count from the existing authoring operations rollup beside total/recent rendering changes, changed-scene totals, authoring action/target/author breadth, fog/wall/light changes, failed authoring, and stale issue metrics, so operators can tell whether advanced VTT authoring activity includes concrete scenes to inspect.
+- 2026-05-07 asset latest-migration UI follow-up: the browser Admin Asset Storage metric grid now surfaces latest asset migration maintenance run time from the existing migration maintenance rollup beside overall latest maintenance, migration run count, cleanup/quarantine run counts, dry-run/mutation/changed/failed runs, and planned/skipped/matched maintenance outcomes, so operators can scan production asset migration recency without opening maintenance rows.
+- 2026-05-07 asset latest-cleanup UI follow-up: the browser Admin Asset Storage metric grid now surfaces latest asset cleanup maintenance run time from the existing cleanup maintenance rollup beside overall latest maintenance, migration/cleanup/quarantine run counts, dry-run/mutation/changed/failed runs, and planned/skipped/matched maintenance outcomes, so operators can scan production lifecycle cleanup recency without opening maintenance rows.
+- 2026-05-07 asset latest-quarantine UI follow-up: the browser Admin Asset Storage metric grid now surfaces latest asset integrity quarantine maintenance run time from the existing quarantine maintenance rollup beside overall latest maintenance, migration/cleanup/quarantine run counts, dry-run/mutation/changed/failed runs, and planned/skipped/matched maintenance outcomes, so operators can scan broken-byte quarantine recency without opening maintenance rows.
+- 2026-05-07 AI eval-thread-scope UI follow-up: the browser Admin AI Operations metric grid now surfaces evaluation coverage thread denominator from the existing evaluation coverage payload beside coverage rate, evaluated thread count, unevaluated backlog, unevaluated samples, failed-evaluation threads, campaign breadth, and recurring failed checks, so operators can interpret AI evaluation coverage without opening the telemetry card.
+- 2026-05-07 AI provider-error-groups UI follow-up: the browser Admin AI Operations metric grid now surfaces grouped provider-error count from the existing AI risk rollup beside provider health reason breadth, recent provider error messages, total provider error occurrences, degraded providers, and provider failure/latency/running-pressure counts, so operators can distinguish one repeated hosted-model failure from broad provider error variety without opening provider cards.
+- 2026-05-07 auth disabled-user-session-exposure UI follow-up: the browser Admin Auth Operations metric grid now surfaces session exposure across sampled disabled users from the existing disabled-user rollup beside disabled-user totals, disabled-user sample count, disabled-user session risk total, total sessions, risk sessions, and account-administration metrics, so operators can prioritize disabled-account cleanup with live session context.
+- 2026-05-07 plugin recent-upgrades UI follow-up: the browser Admin Plugin Operations metric grid now surfaces recent upgrade sample count from the existing install operations window beside install totals, recent installs, installed grants, install campaign/plugin spread, sandbox spread, permission gaps, version changes, rollbacks, and permission review counts, so operators can scan third-party package upgrade activity without opening install rows.
+- 2026-05-07 plugin recent-rollbacks UI follow-up: the browser Admin Plugin Operations metric grid now surfaces recent rollback sample count from the existing install operations window beside recent upgrades, install totals, installed grants, install campaign/plugin spread, sandbox spread, permission gaps, version changes, rollback totals, and permission review counts, so operators can scan third-party package rollback activity without opening install rows.
+- 2026-05-07 plugin recent-permission-reviews UI follow-up: the browser Admin Plugin Operations metric grid now surfaces recent permission-review sample count from the existing install operations window beside recent upgrades, recent rollbacks, install totals, installed grants, install campaign/plugin spread, sandbox spread, permission gaps, version changes, rollback totals, and permission review totals, so operators can scan third-party package permission-review activity without opening install rows.
+- 2026-05-07 AI replay-dry-runs UI follow-up: the browser Admin AI Operations metric grid now surfaces recent replay dry-run count from the existing replay operations run window beside replay runs, replayed tools, completed/failed replay counts, replay action state, and latest replay time, so operators can distinguish inspection-only failed-tool replay checks from replay mutations without opening replay rows.
+- 2026-05-07 asset recent-purge-campaigns UI follow-up: the browser Admin Asset Storage metric grid now surfaces recent CDN purge campaign spread from the existing purge operations audit window beside purge totals, recent purge count, purged count, success rate, failure count, and not-configured count, so operators can scan asset-delivery purge blast radius without opening individual purge rows.
+- 2026-05-07 plugin sandbox-gap UI follow-up: the browser Admin Plugin Operations metric grid now surfaces command-capable packages without VM sandbox coverage from the existing security posture counts beside command package count, manifest-only packages, non-VM commands, trust policy, trust key readiness, unsigned/trust-blocked counts, and VM sandbox count, so operators can scan third-party execution isolation gaps without opening package security rows.
+- 2026-05-07 rules primary-actor-types UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules system actor-type breadth from the existing usage actor type counts beside primary compendium entries, templates, conditions, capabilities, manifest schema/entrypoint readiness, spell/item/threat counts, and automation support flags, so operators can scan character-sheet model depth without opening system rows.
+- 2026-05-07 auth undelivered-emails UI follow-up: the browser Admin Auth Operations metric grid now surfaces undelivered auth email backlog from the existing email outbox status counts beside webhook readiness, total messages, status/provider breadth, pending/retryable/recent retry emails, delivered/failed counts, and oldest retryable age, so operators can scan password-reset and account-email delivery backlog without combining status tiles manually.
+- 2026-05-07 rendering featureless-scenes UI follow-up: the browser Admin Rendering Operations metric grid now surfaces scene count without any production rendering feature from the existing feature coverage scene and production-feature scene counts beside required-feature coverage, present/missing feature counts, polygon fog, smooth fog, colored lighting, dual-zone lighting, token vision, dual-zone vision, and terrain-wall coverage, so operators can scan advanced VTT rendering rollout backlog without subtracting coverage totals manually.
+- 2026-05-07 AI safety-eval-gaps UI follow-up: the browser Admin AI Operations metric grid now surfaces evaluation runs without safety checks from the existing safety posture evaluation totals beside safety check count, safety coverage, safety-evaluated run/thread counts, safety failures, recurring safety failures, safety category breadth, and safety action state, so operators can scan AI safety regression coverage gaps without subtracting safety telemetry totals manually.
+- 2026-05-07 asset quota-risk-bytes UI follow-up: the browser Admin Asset Storage metric grid now surfaces total used bytes across quota-risk campaigns from the existing quota at-risk campaign rows beside quota enablement, at-risk campaign count, quota limit, quota policy readiness, cleanup backlog, migration backlog, and storage hygiene metrics, so operators can scan production storage quota exposure by size without opening campaign quota rows.
+- 2026-05-07 auth recent-risk-revoked UI follow-up: the browser Admin Auth Operations metric grid now surfaces recently revoked risk sessions from the existing risk-session cleanup audit window beside risk cleanup run count, recent cleanup samples, latest cleanup time, dry-run count, matched sessions, mutation cleanup count, total revoked sessions, direct revokes, and user revokes, so operators can scan recent production session-admin cleanup impact without opening cleanup rows.
+- 2026-05-07 plugin pending-review-samples UI follow-up: the browser Admin Plugin Operations metric grid now surfaces pending plugin review sample count from the existing review operations payload beside review coverage, review action state, approved/pending/rejected/blocked totals, approved/rejected sample counts, oldest review age, local/registry package source counts, and registry drift metrics, so operators can scan immediately inspectable third-party permission-review backlog without opening review rows.
+- 2026-05-07 auth legacy-block-rate UI follow-up: the browser Admin Auth Operations metric grid now surfaces legacy x-user-id header block rate from the existing allowed and blocked legacy usage counters beside legacy enablement, mode, production hard-fence state, compatibility flag state, allowed attempt count, distinct legacy users, blocked attempt count, blocked samples, and last seen/blocked timestamps, so operators can scan legacy-auth hard-fencing effectiveness without calculating it manually.
+- 2026-05-07 AI fail-closed-gaps UI follow-up: the browser Admin AI Operations metric grid now surfaces AI tool catalog fail-closed gap count from the existing total tool and fail-closed tool counts beside safe/unsafe tool counts, proposal-gated tools, strict schema tools, schema type breadth, tool catalog action state, and catalog remediation reasons, so operators can scan tool permission safety hardening gaps without subtracting catalog totals manually.
+- 2026-05-07 rules primary-campaigns UI follow-up: the browser Admin Rules Operations metric grid now surfaces active campaign count for the primary rules system from the existing primary system usage payload beside total campaigns, non-primary campaign pressure, primary capability coverage, capability counts, missing capability counts, compendium depth, actor-type breadth, and automation support flags, so operators can scan production rules-system adoption without opening system rows.
+- 2026-05-07 rendering failed-change-scenes UI follow-up: the browser Admin Rendering Operations metric grid now surfaces distinct scene count across recent failed rendering authoring changes from the existing failed authoring failure window beside failed-change totals, recent failed changes, failure action/reason/target breadth, stale issue metrics, authoring action breadth, and fog/wall/light change counts, so operators can scan advanced VTT authoring reliability blast radius without opening failure rows.
+- 2026-05-07 asset delivery-failure-campaigns UI follow-up: the browser Admin Asset Storage metric grid now surfaces campaign spread across recent asset delivery failures from the existing delivery runtime failure window beside delivery event totals, recent delivery events, served/unavailable assets, recent failure count, status/access-mode breadth, denied/missing-bytes/signing-failure counts, and served/failed bytes, so operators can scan production asset-delivery failure blast radius without opening failure rows.
+- 2026-05-07 plugin blocked-review-samples UI follow-up: the browser Admin Plugin Operations metric grid now surfaces blocked plugin review sample count from the existing review operations payload beside review coverage, review action state, approved/pending/rejected/blocked totals, approved/pending/rejected sample counts, oldest review age, local/registry package source counts, and registry drift metrics, so operators can scan immediately inspectable blocked third-party package-review evidence without opening review rows.
+- 2026-05-07 rules primary-actors UI follow-up: the browser Admin Rules Operations metric grid now surfaces actor count for the primary rules system from the existing primary system usage payload beside total actors, non-primary actor pressure, primary campaign count, primary actor-type breadth, capability coverage, compendium depth, manifest schema readiness, and automation support flags, so operators can scan production character-sheet adoption without opening system rows.
+- 2026-05-07 rules primary-system-items UI follow-up: the browser Admin Rules Operations metric grid now surfaces operational item count for the primary rules system from the existing primary system usage payload beside total items, non-primary item pressure, primary campaign/actor counts, primary actor-type breadth, compendium item entries, capability coverage, manifest schema readiness, and automation support flags, so operators can distinguish production item adoption from compendium item depth without opening system rows.
+- 2026-05-07 AI stale-proposals UI follow-up: the browser Admin AI Operations metric grid now surfaces combined stale proposal backlog from the existing stale pending and stale approved proposal counts beside proposal totals, pending/approved/applied/rejected counts, apply-ready count, oldest pending/approved age, apply failures, proposal source/entity spread, and stale proposal cleanup actions, so operators can scan AI proposal review debt without combining stale-state tiles manually.
+- 2026-05-07 rendering changed-campaigns UI follow-up: the browser Admin Rendering Operations metric grid now surfaces campaign spread across changed rendering scenes from the existing authoring scene sample rows beside total/recent rendering changes, changed scene totals, changed scene sample count, authoring action/target/author breadth, fog/wall/light edits, failed authoring metrics, and stale issue metrics, so operators can scan advanced VTT rendering rollout breadth without opening changed-scene rows.
+- 2026-05-07 asset cleanup-providers UI follow-up: the browser Admin Asset Storage metric grid now surfaces provider spread across cleanup backlog samples from the existing cleanup backlog asset rows beside cleanup backlog count, sample count, cleanup bytes, oldest eligible cleanup age, deleted/expired backlog counts, cleanup scheduler posture, and storage hygiene metrics, so operators can scan production lifecycle cleanup scope across storage backends without opening cleanup rows.
+- 2026-05-07 asset migration-providers UI follow-up: the browser Admin Asset Storage metric grid now surfaces provider spread across migration backlog candidates from the existing migration backlog provider counts beside migration target, migration backlog count, sample count, migration bytes, cleanup backlog metrics, lifecycle policy posture, quota posture, and storage hygiene metrics, so operators can scan production asset migration scope across storage backends without opening migration rows.
+- 2026-05-07 rendering terrain-walls UI follow-up: the browser Admin Rendering Operations metric grid now surfaces raw terrain wall count from the existing rendering totals beside total walls, degenerate walls, terrain scene coverage, terrain coverage rate, polygon fog, colored lighting, token vision, and rendering issue metrics, so operators can scan advanced VTT terrain-wall depth without inferring it from scene coverage alone.
+- 2026-05-07 AI OpenAI-model-name UI follow-up: the browser Admin AI Operations metric grid now surfaces the active OpenAI model name from the existing runtime posture beside OpenAI key readiness, custom/default model mode, base URL validity/security, timeout, org/project readiness, provider selection, retry budget, runtime config errors, and cost-rate posture, so operators can scan hosted-model configuration directly without opening runtime posture details.
+- 2026-05-07 auth unknown-login-rate UI follow-up: the browser Admin Auth Operations metric grid now surfaces unknown-identity login failure rate from the existing login failure and unknown-identity counters beside total/recent login failures, known-user failure count, unknown login count, login reason breadth, and login status breadth, so operators can scan account-access enumeration pressure without calculating the ratio manually.
+- 2026-05-07 auth email-delivery-rate UI follow-up: the browser Admin Auth Operations metric grid now surfaces delivered auth email rate from the existing email outbox delivered count and total message count beside webhook readiness, status/provider breadth, pending/retryable/recent retry emails, delivered/failed counts, undelivered backlog, and oldest retryable age, so operators can scan password-reset and account-email delivery health without calculating the ratio manually.
+- 2026-05-07 plugin registry-error-registries UI follow-up: the browser Admin Plugin Operations metric grid now surfaces configured registry count with sync/import errors from the existing registry operation rows beside configured/synced/stale registry counts, registry imports, registry error message count, invalid/insecure URL counts, registry config errors, registry action state, and registry drift metrics, so operators can distinguish one noisy package registry from broad marketplace distribution failure.
+- 2026-05-07 asset delivery-failure-rate UI follow-up: the browser Admin Asset Storage metric grid now surfaces asset delivery failure rate from the existing delivery runtime failure and total event counters beside delivery event totals, recent delivery events, served/unavailable assets, recent failures, failure campaign spread, access-mode/status breadth, denied/missing-byte/signing-failure counts, and served/failed bytes, so operators can scan production asset-delivery health without calculating the ratio manually.
+- 2026-05-07 plugin install-gap-installs UI follow-up: the browser Admin Plugin Operations metric grid now surfaces recent install operation count with missing permission gaps from the existing install operations window beside total install count, recent install count, recent upgrade/rollback/permission-review counts, install campaign/plugin/sandbox spread, total missing permissions, version changes, rollback count, and permission-review count, so operators can scan third-party install permission gap breadth without opening install rows.
+- 2026-05-07 AI budget-configured UI follow-up: the browser Admin AI Operations metric grid now surfaces whether a hosted-model cost budget is configured from the existing runtime cost budget value beside token usage, estimated cost, budget amount, remaining budget, budget usage ratio, exceeded state, cost-rate completeness, and cost config errors, so operators can scan AI cost guardrail readiness without interpreting `n/a` budget values.
+- 2026-05-07 plugin non-vm-command-samples UI follow-up: the browser Admin Plugin Operations metric grid now surfaces bounded sample count for command-capable packages without VM sandbox coverage from the existing security posture non-VM command samples beside command-capable package count, manifest-only packages, non-VM command count, VM sandbox count, sandbox gap count, trust policy, trust-key readiness, unsigned/untrusted counts, and trust-blocked counts, so operators can inspect third-party execution isolation gaps without opening security rows first.
+- 2026-05-07 auth no-MFA-rate UI follow-up: the browser Admin Auth Operations metric grid now surfaces active password-user no-MFA rate from the existing password user and active-password-without-MFA counters beside MFA enabled count, MFA coverage, no-MFA count, no-MFA samples, no-MFA session exposure, reset-required users, disabled users, and identity provider breadth, so operators can scan account-administration risk as a ratio without calculating it manually.
+- 2026-05-07 AI apply-failure-rate UI follow-up: the browser Admin AI Operations metric grid now surfaces proposal application failure rate from the existing applied proposal and apply failure counts beside approved/applied/rejected proposal totals, recent applied proposals, apply-ready count, stale proposal backlog, oldest approved age, apply failure count, recent apply failures, and proposal source/entity spread, so operators can scan AI proposal application reliability without calculating the ratio manually.
+- 2026-05-07 rendering error-rate UI follow-up: the browser Admin Rendering Operations metric grid now surfaces rendering issue error rate from the existing error severity count and total rendering issue count beside render issue totals, render action state, render error/warning counts, top issue samples, issue-code breadth, vertex budget metrics, terrain wall count, and production feature coverage metrics, so operators can distinguish blocking rendering defects from warning-heavy advanced VTT diagnostics without calculating the ratio manually.
+- 2026-05-07 rules missing-capability-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules system missing-capability rate from the existing missing capability count and capability total beside primary capability coverage, supported capability count, capability rows, capability evidence, compendium depth, actor/campaign/item usage, manifest schema readiness, and automation support flags, so operators can scan rules ecosystem depth gaps without calculating the ratio manually.
+- 2026-05-07 auth expired-reset-rate UI follow-up: the browser Admin Auth Operations metric grid now surfaces expired password-reset token rate from the existing active and expired reset token counts beside reset token totals, active resets, expired resets, reset URL readiness/security, reset TTL, web origin readiness/security, webhook readiness/security, and reset cleanup action state, so operators can scan password-reset cleanup pressure without calculating the ratio manually.
+- 2026-05-07 asset signing-failure-rate UI follow-up: the browser Admin Asset Storage metric grid now surfaces signed URL generation failure rate from the existing signing failure and delivery event counters beside signing-secret readiness, signing-required state, signed-eligible asset count, signed/session delivery counts, delivery failure rate, denied/missing-byte counts, served/failed bytes, and URL TTL posture, so operators can scan presigned asset-delivery health without calculating the ratio manually.
+- 2026-05-07 plugin unsigned-samples UI follow-up: the browser Admin Plugin Operations metric grid now surfaces bounded unsigned package sample count from the existing plugin security posture payload beside unsigned package count, untrusted/trust-blocked counts, trust policy, trust-key readiness, VM sandbox count, sandbox gap count, non-VM command samples, and command-capable package count, so operators can inspect package signing gaps without opening security rows first.
+- 2026-05-07 plugin untrusted-samples UI follow-up: the browser Admin Plugin Operations metric grid now surfaces bounded untrusted package sample count from the existing plugin security posture payload beside untrusted package count, unsigned package count/samples, trust-blocked count, trust policy, trust-key readiness, VM sandbox count, sandbox gap count, non-VM command samples, and command-capable package count, so operators can inspect third-party package trust gaps without opening security rows first.
+- 2026-05-07 auth disabled-user-rate UI follow-up: the browser Admin Auth Operations metric grid now surfaces disabled-user rate from the existing total-user and disabled-user counters beside disabled-user count, disabled-user samples, disabled-user session exposure, total/active users, session risk metrics, server-admin readiness, identity provider breadth, and MFA posture, so operators can scan account-administration cleanup pressure without calculating the ratio manually.
+- 2026-05-07 auth risk-session-rate UI follow-up: the browser Admin Auth Operations metric grid now surfaces risk-session rate from the existing total-session and risk-session counters beside session totals, risk-session count, risk-session samples, expired/stale/disabled/unknown session counts, risk cleanup runs, recent cleanup impact, direct revokes, and user revokes, so operators can scan production session-administration exposure without calculating the ratio manually.
+- 2026-05-07 AI degraded-provider-rate UI follow-up: the browser Admin AI Operations metric grid now surfaces degraded provider rate from the existing provider health list and degraded-provider count beside provider count, degraded provider count, failure-rate provider count, p95-degraded provider count, running-pressure provider count, provider health reason breadth, provider error message count, grouped provider errors, and total provider errors, so operators can scan hosted-model provider health proportionally without calculating the ratio manually.
+- 2026-05-07 rendering dual-light-gaps UI follow-up: the browser Admin Rendering Operations metric grid now surfaces scene count missing dual-zone lighting from the existing total feature-coverage scene count and dual-zone-light scene count beside colored/dimmed/dual-zone light counts and coverage rates, polygon fog, token vision, terrain walls, featureless scene backlog, and required-feature coverage, so operators can scan advanced lighting rollout gaps without calculating them manually.
+- 2026-05-07 rules recent-rule-campaigns UI follow-up: the browser Admin Rules Operations metric grid now surfaces campaign spread across the recent rules activity window from the existing rules activity rows beside total/recent rules activity, roll/rest/advance counts, active rule systems, demo activity metrics, primary rules adoption counts, capability coverage, and compendium depth, so operators can scan active rules-system usage breadth without opening activity rows.
+- 2026-05-07 asset delivery-denied-rate UI follow-up: the browser Admin Asset Storage metric grid now surfaces denied asset delivery rate from the existing denied delivery and total event counters beside delivery failure rate, denied count, signing failure rate, signed/session delivery counts, delivery status/access-mode breadth, served/unavailable assets, and served/failed bytes, so operators can scan production asset authorization health without calculating the ratio manually.
+- 2026-05-07 AI safety-failure-rate UI follow-up: the browser Admin AI Operations metric grid now surfaces safety check failure rate from the existing failed-safety-check and total safety-check counters beside safety check count, safety coverage, safety-evaluated run/thread counts, safety eval gaps, safety failure count, recent/recurring safety failures, safety category breadth, and safety action state, so operators can scan AI safety regression severity without calculating the ratio manually.
+- 2026-05-07 asset purge-failure-rate UI follow-up: the browser Admin Asset Storage metric grid now surfaces CDN purge failure rate from the existing purge failure and total purge operation counters beside CDN purge totals, recent purge count, purge campaign spread, purged count, purge success rate, purge failure count, and not-configured count, so operators can scan CDN cache invalidation reliability without calculating the ratio manually.
+- 2026-05-07 plugin storage-near-limit-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces near-limit plugin storage entry rate from the existing storage entry count and near-limit entry samples beside storage entry total, plugin/campaign storage spread, storage value limit, largest storage samples, near-limit bytes, storage operation counts, direct set/delete counts, and deleted storage entry count, so operators can scan third-party persistence pressure without calculating the ratio manually.
+- 2026-05-07 AI loose-schema-tools UI follow-up: the browser Admin AI Operations metric grid now surfaces loose-schema AI tool count from the existing tool catalog rows beside strict-schema tool count, tool schema type breadth, safe/unsafe tools, proposal-gated tools, fail-closed tools, fail-closed gaps, tool catalog action state, and catalog remediation reasons, so operators can scan AI tool input-validation hardening gaps without opening tool catalog rows.
+- 2026-05-07 rendering token-vision-gaps UI follow-up: the browser Admin Rendering Operations metric grid now surfaces scene count missing token vision from the existing total feature-coverage scene count and token-vision scene count beside token-vision coverage, dual-zone vision coverage, polygon fog, terrain walls, colored lighting, dual-light gaps, featureless scene backlog, and required-feature coverage, so operators can scan production vision rollout gaps without calculating them manually.
+- 2026-05-07 auth OIDC-complete UI follow-up: the browser Admin Auth Operations metric grid now surfaces aggregate OIDC credential/redirect completeness from the existing issuer, client ID, client secret, and redirect URI readiness flags beside OIDC configured state, production readiness, issuer/client/secret/redirect tiles, return-origin readiness, token auth mode, insecure issuer state, and OIDC config error counts, so operators can scan SSO setup completeness without mentally combining individual readiness tiles.
+- 2026-05-07 rules recent-demo-campaigns UI follow-up: the browser Admin Rules Operations metric grid now surfaces campaign spread across the recent non-primary/demo rules activity window from the existing recent demo activity rows beside demo activity totals, recent demo activity count, demo roll/rest/advance counts, active demo systems, non-primary campaign/actor/item pressure, primary adoption counts, and rules capability coverage, so operators can scan demo-system usage breadth without opening activity rows.
+- 2026-05-07 rendering polygon-fog-gaps UI follow-up: the browser Admin Rendering Operations metric grid now surfaces scene count missing polygon fog from the existing total feature-coverage scene count and polygon-fog scene count beside polygon fog coverage, smooth fog coverage, token vision gaps, dual-light gaps, terrain walls, featureless scene backlog, and required-feature coverage, so operators can scan polygon line-of-sight and fog rollout gaps without calculating them manually.
+- 2026-05-07 rendering smooth-fog-gaps UI follow-up: the browser Admin Rendering Operations metric grid now surfaces scene count missing smooth fog from the existing total feature-coverage scene count and smooth-fog scene count beside smooth fog coverage, polygon fog gaps, token vision gaps, dual-light gaps, terrain walls, featureless scene backlog, and required-feature coverage, so operators can scan advanced fog tooling rollout gaps without calculating them manually.
+- 2026-05-07 plugin command-failure-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces third-party command failure rate from the existing command count and failed command count beside command totals, recent commands, command plugin/campaign spread, command action state, recent command failures, failed plugin breadth, failure reason breadth, and storage-mutating command counts, so operators can scan plugin command reliability without calculating the ratio manually.
+- 2026-05-07 AI replay-failure-rate UI follow-up: the browser Admin AI Operations metric grid now surfaces failed-tool replay failure rate from the existing replay completed and replay failed counters beside replay run count, replay dry-run count, recent replayed tools, replayed tool count, completed/failed replay counts, replay action state, latest replay time, stale thread/tool counts, and tool retry policy metrics, so operators can scan AI failed-tool replay reliability without calculating the ratio manually.
+- 2026-05-07 asset unavailable-rate UI follow-up: the browser Admin Asset Storage metric grid now surfaces unavailable asset delivery rate from the existing unavailable delivery and total delivery event counters beside delivery event totals, served asset count, unavailable count, recent delivery failures, failure campaign spread, delivery failure/denied/signing failure rates, access-mode/status breadth, and served/failed bytes, so operators can scan production asset availability health without calculating the ratio manually.
+- 2026-05-07 asset purge-config-gap-rate UI follow-up: the browser Admin Asset Storage metric grid now surfaces CDN purge not-configured rate from the existing purge not-configured and total purge operation counters beside CDN purge totals, recent purge count, purge campaign spread, purged count, purge success/failure rates, purge failure count, and raw not-configured count, so operators can scan CDN invalidation configuration gaps without calculating the ratio manually.
+- 2026-05-07 auth retry-email-rate UI follow-up: the browser Admin Auth Operations metric grid now surfaces retryable auth email rate from the existing retryable email and total email message counters beside webhook readiness, email status/provider breadth, pending email count, retry email count, recent retry emails, delivered/failed counts, delivery rate, undelivered backlog, and oldest retryable age, so operators can scan password-reset and account-email retry pressure without calculating the ratio manually.
+- 2026-05-07 auth failed-email-rate UI follow-up: the browser Admin Auth Operations metric grid now surfaces failed auth email rate from the existing failed email and total email message counters beside webhook readiness, email status/provider breadth, pending/retry email counts, retry email rate, recent retry emails, delivered email count, delivery rate, undelivered backlog, and oldest retryable age, so operators can scan password-reset and account-email hard-failure pressure without calculating the ratio manually.
+- 2026-05-07 auth undelivered-email-rate UI follow-up: the browser Admin Auth Operations metric grid now surfaces combined undelivered auth email rate from the existing pending, failed, and total email message counters beside webhook readiness, email status/provider breadth, pending/retry/failed email counts, retry and failed email rates, recent retry emails, delivered email count, delivery rate, undelivered backlog, and oldest retryable age, so operators can scan password-reset and account-email delivery backlog pressure without calculating the ratio manually.
+- 2026-05-07 plugin storage-mutation-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces third-party command storage-mutation rate from the existing storage-mutating command and total command counters beside command totals, recent commands, command plugin/campaign spread, command action state, command failure rate, recent command failures, failed plugin breadth, failure reason breadth, and raw storage mutation count, so operators can scan plugin persistence side-effect pressure without calculating the ratio manually.
+- 2026-05-07 plugin direct-set-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces direct plugin storage set rate from the existing direct set and total storage operation counters beside storage operation totals, recent storage operations, storage plugin/campaign spread, direct set/delete counts, command storage operation count, storage set/delete mutation counts, deleted entry count, and storage mutation rate, so operators can scan third-party persistence write pressure without calculating the ratio manually.
+- 2026-05-07 plugin direct-delete-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces direct plugin storage delete rate from the existing direct delete and total storage operation counters beside storage operation totals, recent storage operations, storage plugin/campaign spread, direct set/delete counts, direct set rate, command storage operation count, storage set/delete mutation counts, deleted entry count, and storage mutation rate, so operators can scan third-party persistence deletion pressure without calculating the ratio manually.
+- 2026-05-07 plugin command-storage-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces command-mediated plugin storage operation rate from the existing command storage operation and total storage operation counters beside storage operation totals, recent storage operations, storage plugin/campaign spread, direct set/delete counts, direct set/delete rates, raw command storage operation count, storage set/delete mutation counts, deleted entry count, and storage mutation rate, so operators can scan third-party persistence writes routed through plugin commands without calculating the ratio manually.
+- 2026-05-07 plugin storage-set-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin storage set mutation rate from the existing storage set mutation and total storage operation counters beside storage operation totals, recent storage operations, storage plugin/campaign spread, direct set/delete counts and rates, command storage operation count/rate, raw storage set/delete mutation counts, deleted entry count, and storage mutation rate, so operators can scan third-party persistence write mutation pressure without calculating the ratio manually.
+- 2026-05-07 plugin storage-delete-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin storage delete mutation rate from the existing storage delete mutation and total storage operation counters beside storage operation totals, recent storage operations, storage plugin/campaign spread, direct set/delete counts and rates, command storage operation count/rate, storage set mutation count/rate, raw storage delete count, deleted entry count, and storage mutation rate, so operators can scan third-party persistence deletion mutation pressure without calculating the ratio manually.
+- 2026-05-07 plugin deleted-entry-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces deleted plugin storage entry rate from the existing deleted entry and total storage operation counters beside storage operation totals, recent storage operations, storage plugin/campaign spread, direct set/delete counts and rates, command storage operation count/rate, storage set/delete mutation counts and rates, raw deleted entry count, and storage mutation rate, so operators can scan third-party persistence cleanup pressure without calculating the ratio manually.
+- 2026-05-07 plugin pending-review-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces pending plugin permission-review rate from the existing approved, pending, rejected, and blocked review counters beside review coverage, review action/reason counts, approved/recent-approved counts, pending review count/samples, rejected and blocked review counts/samples, oldest review age, and local/registry package source counts, so operators can scan third-party permission-review backlog pressure without calculating the ratio manually.
+- 2026-05-07 plugin rejected-review-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces rejected plugin permission-review rate from the existing approved, pending, rejected, and blocked review counters beside review coverage, review action/reason counts, approved/recent-approved counts, pending review count/rate/samples, rejected review count/samples, blocked review count/samples, oldest review age, and local/registry package source counts, so operators can scan third-party permission-review denial pressure without calculating the ratio manually.
+- 2026-05-07 plugin blocked-review-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces blocked plugin permission-review rate from the existing approved, pending, rejected, and blocked review counters beside review coverage, review action/reason counts, approved/recent-approved counts, pending and rejected review rates, blocked review count/samples, oldest review age, and local/registry package source counts, so operators can scan third-party permission-review hard-block pressure without calculating the ratio manually.
+- 2026-05-07 plugin approved-review-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces approved plugin permission-review rate from the existing approved, pending, rejected, and blocked review counters beside review coverage, review action/reason counts, approved/recent-approved counts, pending/rejected/blocked review rates, pending/rejected/blocked samples, oldest review age, and local/registry package source counts, so operators can scan third-party permission-review approval posture without calculating the ratio manually.
+- 2026-05-07 plugin stale-registry-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces stale plugin registry rate from the existing stale configured registry and configured registry counters beside configured/synced/stale registry counts, registry entries, valid/unsynced/failed registries, registry imports, registry error message and error-registry counts, invalid/insecure URL counts, and registry config errors, so operators can scan marketplace-style package distribution sync drift without calculating the ratio manually.
+- 2026-05-07 plugin unsynced-registry-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces never-synced plugin registry rate from the existing never-synced configured registry rows and configured registry counter beside configured/synced/stale registry counts, registry entries, valid/unsynced/failed registries, stale registry rate, registry imports, registry error message and error-registry counts, invalid/insecure URL counts, and registry config errors, so operators can scan marketplace-style package distribution onboarding gaps without calculating the ratio manually.
+- 2026-05-07 plugin failed-registry-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces failed plugin registry rate from the existing failed configured registry rows and configured registry counter beside configured/synced/stale registry counts, registry entries, valid/unsynced/failed registries, unsynced and stale registry rates, registry imports, registry error message and error-registry counts, invalid/insecure URL counts, and registry config errors, so operators can scan marketplace-style package distribution sync failure pressure without calculating the ratio manually.
+- 2026-05-07 plugin valid-registry-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces valid plugin registry configuration rate from the existing valid configured registry and configured registry entry counters beside configured/synced/stale registry counts, registry entries, valid/unsynced/failed registries, unsynced/failed/stale registry rates, registry imports, registry error message and error-registry counts, invalid/insecure URL counts, and registry config errors, so operators can scan marketplace-style package distribution configuration health without calculating the ratio manually.
+- 2026-05-07 plugin invalid-registry-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces invalid plugin registry URL rate from the existing invalid registry URL and configured registry entry counters beside configured/synced/stale registry counts, registry entries, valid registry count/rate, unsynced/failed/stale registry rates, registry imports, registry error message and error-registry counts, insecure URL count, and registry config errors, so operators can scan marketplace-style package distribution configuration defects without calculating the ratio manually.
+- 2026-05-07 plugin insecure-registry-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces insecure plugin registry URL rate from the existing insecure registry URL and configured registry entry counters beside configured/synced/stale registry counts, registry entries, valid registry count/rate, invalid registry count/rate, unsynced/failed/stale registry rates, registry imports, registry error message and error-registry counts, and registry config errors, so operators can scan marketplace-style package distribution transport-security gaps without calculating the ratio manually.
+- 2026-05-07 plugin duplicate-package-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces duplicate plugin package rate from the existing duplicate package and total package counters beside inventory action/reason counts, duplicate version count, duplicate package count, trusted package count, security action/reason counts, package signing/trust metrics, registry health rates, and review posture rates, so operators can scan third-party package inventory collision pressure without calculating the ratio manually.
+- 2026-05-07 plugin duplicate-version-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces duplicate plugin version rate from the existing duplicate version and total package counters beside inventory action/reason counts, duplicate version count, duplicate package count/rate, trusted package count, security action/reason counts, package signing/trust metrics, registry health rates, and review posture rates, so operators can scan third-party package version collision pressure without calculating the ratio manually.
+- 2026-05-07 plugin trusted-package-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces trusted plugin package rate from the existing trusted package and total package counters beside inventory action/reason counts, duplicate package/version counts and rates, trusted package count, security action/reason counts, unsigned/untrusted/trust-blocked counts, command-capable package posture, registry health rates, and review posture rates, so operators can scan third-party package trust posture without calculating the ratio manually.
+- 2026-05-07 plugin unsigned-package-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces unsigned plugin package rate from the existing unsigned package and total package counters beside trusted package count/rate, security action/reason counts, unsigned count/samples, untrusted/trust-blocked counts, command-capable package posture, trust policy/key readiness, registry health rates, and review posture rates, so operators can scan third-party package signing gaps without calculating the ratio manually.
+- 2026-05-07 plugin untrusted-package-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces untrusted plugin package rate from the existing untrusted package and total package counters beside trusted package count/rate, security action/reason counts, unsigned count/rate/samples, untrusted count/samples, trust-blocked count, command-capable package posture, trust policy/key readiness, registry health rates, and review posture rates, so operators can scan third-party package trust gaps without calculating the ratio manually.
+- 2026-05-07 plugin trust-blocked-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces trust-blocked plugin package rate from the existing trust-blocked package and total package counters beside trusted package count/rate, security action/reason counts, unsigned and untrusted count/rate/sample metrics, trust-blocked count, command-capable package posture, trust policy/key readiness, registry health rates, and review posture rates, so operators can scan third-party package trust enforcement pressure without calculating the ratio manually.
+- 2026-05-07 plugin command-package-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces command-capable plugin package rate from the existing command-capable package and total package counters beside trusted/unsigned/untrusted/trust-blocked package rates, security action/reason counts, command-capable package count, manifest-only package count, non-VM command metrics, trust policy/key readiness, registry health rates, and review posture rates, so operators can scan third-party executable package exposure without calculating the ratio manually.
+- 2026-05-07 plugin manifest-only-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces manifest-only plugin package rate from the existing manifest-only package and total package counters beside trusted/unsigned/untrusted/trust-blocked package rates, security action/reason counts, command-capable package count/rate, manifest-only package count, non-VM command metrics, trust policy/key readiness, registry health rates, and review posture rates, so operators can scan third-party packages without module execution coverage without calculating the ratio manually.
+- 2026-05-07 plugin non-VM-command-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces non-VM command-capable package rate from the existing manifest-only command package and command-capable package counters beside trusted/unsigned/untrusted/trust-blocked package rates, security action/reason counts, command-capable package count/rate, manifest-only package count/rate, non-VM command count/samples, trust policy/key readiness, registry health rates, and review posture rates, so operators can scan third-party executable packages outside VM sandbox coverage without calculating the ratio manually.
+- 2026-05-07 plugin VM-sandbox-coverage UI follow-up: the browser Admin Plugin Operations metric grid now surfaces VM sandbox coverage from the existing VM sandbox package and command-capable package counters beside trusted/unsigned/untrusted/trust-blocked package rates, security action/reason counts, command-capable and manifest-only package rates, non-VM command rate/samples, trust policy/key readiness, unsigned-production posture, trusted-mode-without-keys posture, and sandbox gap count, so operators can scan third-party executable package isolation coverage without calculating the ratio manually.
+- 2026-05-07 plugin sandbox-gap-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces sandbox gap rate from the existing command-capable package and VM sandbox package counters beside VM sandbox coverage, sandbox gap count, trusted/unsigned/untrusted/trust-blocked package rates, security action/reason counts, command-capable and manifest-only package rates, non-VM command rate/samples, trust policy/key readiness, unsigned-production posture, and trusted-mode-without-keys posture, so operators can scan third-party executable package isolation gaps without calculating the ratio manually.
+- 2026-05-07 plugin load-error-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin package load error rate from the existing load error and total package counters beside command/install audit counts, load error count/samples, inventory collision rates, registry health rates, review posture rates, and package security rates, so operators can scan third-party package loading reliability without calculating the ratio manually.
+- 2026-05-07 plugin command-audit-coverage UI follow-up: the browser Admin Plugin Operations metric grid now surfaces command audit coverage from the existing command audit and total plugin command counters beside command/install audit counts, install/version/rollback/permission-review metrics, load error count/rate/samples, inventory collision rates, registry health rates, review posture rates, and package security rates, so operators can scan third-party command observability coverage without calculating the ratio manually.
+- 2026-05-07 plugin install-audit-coverage UI follow-up: the browser Admin Plugin Operations metric grid now surfaces install audit coverage from the existing install audit and total plugin install counters beside command/install audit counts, command audit coverage, install/version/rollback/permission-review metrics, load error count/rate/samples, inventory collision rates, registry health rates, review posture rates, and package security rates, so operators can scan third-party install and version-change observability coverage without calculating the ratio manually.
+- 2026-05-07 plugin version-change-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin install version-change rate from the existing version change and total install counters beside install totals, recent install/upgrade/rollback/permission-review counts, installed grant count, install campaign/plugin/sandbox spread, install permission gap metrics, rollback count, permission-review count, and install audit coverage, so operators can scan third-party package upgrade churn without calculating the ratio manually.
+- 2026-05-07 plugin rollback-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin install rollback rate from the existing rollback and total install counters beside install totals, recent install/upgrade/rollback/permission-review counts, installed grant count, install campaign/plugin/sandbox spread, install permission gap metrics, version change count/rate, permission-review count, and install audit coverage, so operators can scan third-party package rollback pressure without calculating the ratio manually.
+- 2026-05-07 plugin permission-review-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces plugin install permission-review rate from the existing permission-review and total install counters beside install totals, recent install/upgrade/rollback/permission-review counts, installed grant count, install campaign/plugin/sandbox spread, install permission gap metrics, version change and rollback rates, permission-review count, and install audit coverage, so operators can scan third-party permission review pressure during installs without calculating the ratio manually.
+- 2026-05-07 plugin install-gap-rate UI follow-up: the browser Admin Plugin Operations metric grid now surfaces recent install permission-gap rate from the existing recent install rows and install rows with missing permissions beside install totals, recent install/upgrade/rollback/permission-review counts, installed grant count, install campaign/plugin/sandbox spread, raw install permission gap count, install gap install count, version change/rollback/permission-review rates, and install audit coverage, so operators can scan third-party install permission mismatch pressure without calculating the ratio manually.
+- 2026-05-07 rules production-system-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces production-ready rules system rate from the existing production-ready system and installed system counters beside installed/system row counts, production and demo system counts, rules action/reason/remediation metrics, systems needing production depth, active system breadth, actor/item system breadth, campaign/actor/item totals, and primary rules capability metrics, so operators can scan rules ecosystem production readiness breadth without calculating the ratio manually.
+- 2026-05-07 rules demo-system-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces demo rules system rate from the existing demo system and installed system counters beside installed/system row counts, production and demo system counts, production system rate, rules action/reason/remediation metrics, systems needing production depth, active system breadth, actor/item system breadth, campaign/actor/item totals, and primary rules capability metrics, so operators can scan remaining non-production rules runtime breadth without calculating the ratio manually.
+- 2026-05-07 rules depth-gap-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces rules system production-depth gap rate from the existing systems-needing-depth and installed system counters beside installed/system row counts, production and demo system rates, rules action/reason/remediation metrics, systems needing production depth, active system breadth, actor/item system breadth, campaign/actor/item totals, and primary rules capability metrics, so operators can scan rules ecosystem depth backlog proportionally without calculating the ratio manually.
+- 2026-05-07 rules actor-system-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces rules system actor-adoption rate from the existing systems-with-actors and installed system counters beside installed/system row counts, production/demo/depth-gap rates, active system breadth, actor/item system breadth, campaign/actor/item totals, recent rules activity metrics, and primary rules capability metrics, so operators can scan character-sheet adoption breadth without calculating the ratio manually.
+- 2026-05-07 rules active-rule-system-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces recent active rules system rate from the existing systems-with-recent-activity and installed system counters beside rules activity totals, recent activity count, recent campaign spread, roll/rest/advance counts, active rule system count, demo activity metrics, production/demo/depth-gap rates, actor adoption rate, and primary rules capability metrics, so operators can scan runtime rules usage breadth without calculating the ratio manually.
+- 2026-05-07 rules non-primary-campaign-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces non-primary rules campaign rate from the existing non-primary active campaign and active campaign counters beside campaign/actor/item totals, non-primary campaign/actor/item counts, production/demo/depth-gap rates, actor adoption and active rules system rates, recent rules activity metrics, and primary rules capability metrics, so operators can scan remaining demo/non-production rules campaign usage without calculating the ratio manually.
+- 2026-05-07 rules non-primary-actor-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces non-primary rules actor rate from the existing non-primary actor and total actor counters beside campaign/actor/item totals, non-primary campaign count/rate, non-primary actor/item counts, production/demo/depth-gap rates, actor adoption and active rules system rates, recent rules activity metrics, and primary rules capability metrics, so operators can scan remaining demo/non-production character-sheet usage without calculating the ratio manually.
+- 2026-05-07 rules non-primary-item-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces non-primary rules item rate from the existing non-primary item and total item counters beside campaign/actor/item totals, non-primary campaign and actor rates, non-primary item count, production/demo/depth-gap rates, actor adoption and active rules system rates, recent rules activity metrics, and primary rules capability metrics, so operators can scan remaining demo/non-production item usage without calculating the ratio manually.
+- 2026-05-07 rules content-issue-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces rules system content-issue rate from the existing systems-with-content-issues and installed system counters beside demo activity metrics, active demo system breadth, systems with issues count, readiness action, production gap and promotion blocker metrics, production/demo/depth-gap rates, non-primary usage rates, and primary rules capability metrics, so operators can scan rules content hygiene pressure without calculating the ratio manually.
+- 2026-05-07 rules critical-blocker-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces critical promotion blocker rate from the existing critical promotion blocker and total promotion blocker counters beside production gap total, gap category count, promotion blocker count, critical blocker count, readiness action, content issue rate, production/demo/depth-gap rates, non-primary usage rates, and primary rules capability metrics, so operators can scan rules ecosystem promotion severity without calculating the ratio manually.
+- 2026-05-07 rules production-gap-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces production gap rate from the existing production gap total and installed system counters beside systems with issues count/rate, readiness action, production gap total, gap category count, promotion blocker counts, critical blocker rate, production/demo/depth-gap rates, non-primary usage rates, and primary rules capability metrics, so operators can scan rules ecosystem production backlog pressure without calculating the ratio manually.
+- 2026-05-07 rules promotion-blocker-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces promotion blocker rate from the existing promotion blocker total and installed system counters beside systems with issues count/rate, readiness action, production gap count/rate, gap category count, promotion blocker count, critical blocker count/rate, production/demo/depth-gap rates, non-primary usage rates, and primary rules capability metrics, so operators can scan rules ecosystem promotion-blocking backlog pressure without calculating the ratio manually.
+- 2026-05-07 rules primary-spell-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules spell compendium rate from the existing primary spell entry and total primary compendium entry counters beside primary compendium/template/condition counts, primary spell/item counts, primary rules manifest readiness, primary capability and evidence metrics, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan spell-content depth in the primary rules ecosystem without calculating the ratio manually.
+- 2026-05-07 rules primary-item-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules item compendium rate from the existing primary item entry and total primary compendium entry counters beside primary compendium/template/condition counts, primary spell count/rate, primary item count, primary threat count, primary rules manifest readiness, primary capability and evidence metrics, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan item-content depth in the primary rules ecosystem without calculating the ratio manually.
+- 2026-05-07 rules primary-condition-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules condition compendium rate from the existing primary condition entry and total primary compendium entry counters beside primary compendium/template/condition counts, primary spell/item rates, primary actor-type breadth, primary rules manifest readiness, primary capability and evidence metrics, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan condition-content depth in the primary rules ecosystem without calculating the ratio manually.
+- 2026-05-07 rules primary-template-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules character-template rate from the existing primary character template and total primary compendium entry counters beside primary compendium/template/condition counts, primary spell/item/condition rates, primary actor-type breadth, primary rules manifest readiness, primary capability and evidence metrics, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan character-template depth in the primary rules ecosystem without calculating the ratio manually.
+- 2026-05-07 rules primary-threat-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary encounter-threat rate from the existing encounter threat and total primary compendium entry counters beside primary compendium/template/condition counts, primary template/spell/item/condition rates, primary threat count, compendium support, primary rules manifest readiness, primary capability and evidence metrics, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan encounter-content depth in the primary rules ecosystem without calculating the ratio manually.
+- 2026-05-07 rules primary-manifest-coverage UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules manifest coverage from the existing client entrypoint, server entrypoint, actor schema, and item schema readiness flags beside the individual manifest readiness tiles, primary permission count, primary compendium depth rates, primary capability and evidence metrics, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan primary rules package completeness without mentally combining manifest booleans.
+- 2026-05-07 rules capability-evidence-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary capability evidence rate from the existing capability evidence count and primary capability row counters beside primary capability coverage, primary capability totals, missing capability metrics, primary issues/gaps, primary compendium depth rates, primary manifest coverage, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan how much of the primary rules capability surface is backed by evidence without calculating the ratio manually.
+- 2026-05-07 rules primary-issue-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules issue rate from the existing primary issue and primary capability row counters beside primary capability coverage, primary capability totals, missing capability metrics, primary issue/gap counts, capability evidence rate, primary compendium depth rates, primary manifest coverage, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan primary rules system issue pressure without calculating the ratio manually.
+- 2026-05-07 rules primary-gap-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules production-gap rate from the existing primary production gap and primary capability row counters beside primary capability coverage, primary capability totals, missing capability metrics, primary issue count/rate, primary gap count, capability evidence rate, primary compendium depth rates, primary manifest coverage, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan primary rules system production gap pressure without calculating the ratio manually.
+- 2026-05-11 rules primary-automation-coverage UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules automation coverage from the existing character import, advancement, rest, origins, monster creation, equipment purchase, and encounter planning support flags beside the individual automation support tiles, primary compendium depth rates, primary manifest coverage, primary capability evidence and gap rates, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan automation breadth in the primary rules ecosystem without mentally combining support booleans.
+- 2026-05-11 rules origin-evidence-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary origins evidence rate from the existing origins evidence and total capability evidence counters beside compendium support, origin/monster/purchase evidence counts, primary automation coverage, primary compendium depth rates, primary manifest coverage, primary capability evidence and gap rates, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan origin-support evidence depth without calculating the ratio manually.
+- 2026-05-11 rules monster-evidence-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary monster-creation evidence rate from the existing monster evidence and total capability evidence counters beside compendium support, origin evidence count/rate, monster/purchase evidence counts, primary automation coverage, primary compendium depth rates, primary manifest coverage, primary capability evidence and gap rates, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan monster-support evidence depth without calculating the ratio manually.
+- 2026-05-11 rules purchase-evidence-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary equipment-purchase evidence rate from the existing purchase evidence and total capability evidence counters beside compendium support, origin and monster evidence rates, purchase evidence count, primary automation coverage, primary compendium depth rates, primary manifest coverage, primary capability evidence and gap rates, production gap rates, non-primary usage rates, and promotion blocker rates, so operators can scan equipment-purchase support evidence depth without calculating the ratio manually.
+- 2026-05-11 rules roll-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces rules roll action rate from the existing roll action and total rules activity counters beside rules activity totals, recent activity count, recent campaign spread, roll/rest/advance counts, active rules system rate, demo activity metrics, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan rules runtime usage mix without calculating the ratio manually.
+- 2026-05-11 rules rest-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces rules rest action rate from the existing rest action and total rules activity counters beside rules activity totals, recent activity count, recent campaign spread, roll count/rate, rest/advance counts, active rules system rate, demo activity metrics, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan rules runtime rest usage mix without calculating the ratio manually.
+- 2026-05-11 rules advance-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces rules advance action rate from the existing advance action and total rules activity counters beside rules activity totals, recent activity count, recent campaign spread, roll/rest counts and rates, advance count, active rules system rate, demo activity metrics, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan rules runtime advancement usage mix without calculating the ratio manually.
+- 2026-05-11 rules demo-roll-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces demo rules roll action rate from the existing non-primary roll action and total non-primary rules activity counters beside demo activity totals, recent demo activity count, recent demo campaign spread, demo roll/rest/advance counts, active demo system count, main rules roll/rest/advance rates, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan demo rules runtime roll usage mix without calculating the ratio manually.
+- 2026-05-11 rules demo-rest-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces demo rules rest action rate from the existing non-primary rest action and total non-primary rules activity counters beside demo activity totals, recent demo activity count, recent demo campaign spread, demo roll count/rate, demo rest/advance counts, active demo system count, main rules roll/rest/advance rates, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan demo rules runtime rest usage mix without calculating the ratio manually.
+- 2026-05-11 rules demo-advance-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces demo rules advance action rate from the existing non-primary advance action and total non-primary rules activity counters beside demo activity totals, recent demo activity count, recent demo campaign spread, demo roll/rest rates, demo advance count, active demo system count, main rules roll/rest/advance rates, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan demo rules runtime advancement usage mix without calculating the ratio manually.
+- 2026-05-11 rules active-demo-system-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces active demo rules system rate from the existing non-primary active system map and installed system counters beside demo activity totals, recent demo activity/campaign spread, demo roll/rest/advance counts and rates, active demo system count, main rules activity rates, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan active demo-runtime breadth without calculating the ratio manually.
+- 2026-05-11 rules recent-demo-activity-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces recent demo rules activity rate from the existing recent non-primary activity count and total non-primary activity counters beside demo activity totals, recent demo activity count, recent demo campaign spread, demo roll/rest/advance counts and rates, active demo system count and rate, main rules activity rates, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan how much demo rules activity is recent without calculating the ratio manually.
+- 2026-05-11 rules recent-activity-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces recent rules activity rate from the existing recent rules activity count and total rules activity counters beside rules activity totals, recent rules activity count, recent campaign spread, roll/rest/advance counts and rates, active rules system count and rate, demo rules activity rates, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan how much rules runtime activity is recent without calculating the ratio manually.
+- 2026-05-11 rules recent-campaign-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces recent rules campaign rate from the existing recent rules campaign spread and active campaign counters beside rules activity totals, recent rules activity count/rate, recent campaign count, roll/rest/advance counts and rates, active rules system count and rate, demo rules activity rates, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan how broadly recent rules runtime activity spans active campaigns without calculating the ratio manually.
+- 2026-05-11 rules recent-demo-campaign-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces recent demo rules campaign rate from the existing recent demo campaign spread and non-primary active campaign counters beside demo activity totals, recent demo activity count/rate, recent demo campaign count, demo roll/rest/advance counts and rates, active demo system count and rate, main rules activity rates, production/demo/depth-gap rates, non-primary usage rates, and primary rules depth metrics, so operators can scan how broadly recent demo rules runtime activity spans demo campaigns without calculating the ratio manually.
+- 2026-05-11 rules primary-usage-rate UI follow-up: the browser Admin Rules Operations metric grid now surfaces primary rules campaign, actor, and item usage rates from the existing primary usage counters and total campaign/actor/item counters beside primary usage counts, primary capability coverage, production/demo/depth-gap rates, non-primary usage rates, recent rules/demo activity rates, and primary rules depth metrics, so operators can scan how much live rules usage is on the production-grade primary system without calculating the ratios manually.
+- 2026-05-11 AI failed-tool-retry-rate UI follow-up: the browser Admin AI Operations metric grid now surfaces retryable and non-retryable failed-tool rates from the existing failed-tool retry policy counters beside failed-tool counts, retry replay controls, replay success/failure totals, provider health, evaluation coverage, safety posture, and proposal review metrics, so operators can scan whether failed AI tool calls are mostly replayable or blocked without calculating the classification ratios manually.
+- 2026-05-11 AI proposal-status-rate UI follow-up: the browser Admin AI Operations metric grid now surfaces pending, approved, applied, and rejected proposal rates from the existing proposal status counters and total proposal counter beside proposal status counts, recent proposal review samples, stale review posture, apply failure rate, failed-tool retry rates, provider health, evaluation coverage, and safety posture, so operators can scan AI proposal review flow distribution without calculating status ratios manually.
+- 2026-05-11 AI proposal-review-risk-rate UI follow-up: the browser Admin AI Operations metric grid now surfaces approval-required, apply-ready, stale-pending, stale-approved, and total stale proposal rates from the existing proposal review counters beside proposal status counts and rates, stale review counts, oldest pending/approved ages, apply failure rate, failed-tool retry rates, provider health, evaluation coverage, and safety posture, so operators can scan AI proposal review backlog risk without calculating readiness and staleness ratios manually.
+- 2026-05-11 AI proposal-source-entity-rate UI follow-up: the browser Admin AI Operations metric grid now surfaces tool, manual, scene, token, and actor proposal rates from the existing proposal source/entity counters and total proposal counter beside proposal source/entity counts, proposal status and review-risk rates, stale review posture, apply failure rate, failed-tool retry rates, provider health, evaluation coverage, and safety posture, so operators can scan AI proposal origin and target mix without calculating distribution ratios manually.
+- 2026-05-11 AI tool-catalog-safety-rate UI follow-up: the browser Admin AI Operations metric grid now surfaces safe, unsafe, proposal-gated, fail-closed, strict-schema, and loose-schema tool rates from the existing AI tool catalog counters beside tool catalog counts, fail-closed gaps, proposal review rates, failed-tool retry rates, provider health, evaluation coverage, and safety posture, so operators can scan AI tool permission and schema hardening coverage without calculating catalog ratios manually.

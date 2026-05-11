@@ -36,11 +36,63 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, sce
 ## Development
 
 ```bash
-pnpm install
-pnpm dev
+pnpm install --frozen-lockfile
+pnpm check
 ```
 
 API defaults to `http://localhost:4000`. Web defaults to `http://localhost:5173`.
+
+Start the API and web client in separate terminals:
+
+```bash
+pnpm --filter @open-tabletop/api dev
+pnpm --filter @open-tabletop/web dev
+```
+
+## Public Alpha Demo
+
+The public-alpha demo archive is `docs/demo/ember-vault-public-alpha.ottx.json`. It is an original, SRD-only one-shot with a scene/map, player character, NPC, monster token, journal/handout, combat, initiative, damage, healing, one condition, and an AI GM-help proposal that is pending approval.
+
+To run it from a clean checkout:
+
+1. Run `pnpm install --frozen-lockfile`.
+2. Run `pnpm check`.
+3. Start the API with `pnpm --filter @open-tabletop/api dev`.
+4. Start the web client with `pnpm --filter @open-tabletop/web dev`.
+5. Open `http://localhost:5173`.
+6. Use the sidebar `Import` button and choose `docs/demo/ember-vault-public-alpha.ottx.json`.
+7. Select `The Ember Vault: Public Alpha One-Shot` from the campaign list.
+8. Use the session switcher to try the GM and player views. The imported demo users are `Demo GM` and `Demo Player`.
+
+For a two-browser smoke test, open one browser as `Demo GM` and another as `Demo Player`. Verify the player can see public scene, chat, dice, handout, and owned-token state, while GM-only notes and pending AI proposal review remain permissioned.
+
+## Public Alpha Scope
+
+Ready for alpha verification:
+
+- API-first campaign, scene, token, actor, journal, chat, dice, combat, proposal, plugin, system, and export/import surfaces.
+- `dnd-5e-srd` as the primary rules runtime for the demo slice.
+- Local/dev AI provider flow with proposal/approval semantics; OpenAI Responses and Codex loopback providers are documented in `docs/ai/overview.md`.
+- Permissioned plugin and system SDK examples documented under `docs/api/rest.md`, `docs/plugin-sdk/overview.md`, and `docs/system-sdk/overview.md`.
+- Public-alpha extension smoke path: install `plugins/example-macro-plugin` on the imported demo with only `chat.write`, run `/spark`, and inspect installed systems or switch through `generic-fantasy` before restoring `dnd-5e-srd`.
+
+Still being hardened for public alpha:
+
+- Fresh current-head browser proof for GM/player realtime sync across scene, token movement, chat, dice, and combat.
+- Final clean-checkout acceptance artifact at `docs/verification/public-alpha-acceptance.md`.
+- Final `pnpm check` after all launch documentation and verification updates.
+
+## Content Safety
+
+This repository must not ship proprietary Roll20, D&D Beyond, or non-SRD D&D content, assets, marketplace data, sheets, or branded workflows. Use only original, SRD, open, or otherwise legally reusable content.
+
+D&D Beyond import is not implemented for public alpha. Do not scrape it or bypass access controls. Safe future adapter work should rely on user-provided exports or documented, permitted APIs and must keep proprietary content out of this repository.
+
+## Licensing
+
+The platform core is AGPL-3.0-only. SDK packages such as `packages/api-client`, `packages/plugin-sdk`, and `packages/system-sdk` are MIT-licensed so third-party plugin and system authors can reuse them without inheriting the platform license. Documentation under `docs/` is CC BY 4.0.
+
+Example plugins and systems should keep clear license metadata and must not bundle proprietary tabletop content.
 
 ## Validation
 

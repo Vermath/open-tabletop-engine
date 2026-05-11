@@ -2,6 +2,9 @@ import { nowIso } from "./ids.js";
 import type { EngineState, Proposal } from "./types.js";
 
 export function approveProposal(proposal: Proposal, userId: string): Proposal {
+  if (proposal.status !== "pending") {
+    throw new Error("Proposal must be pending before approval");
+  }
   return {
     ...proposal,
     status: "approved",
@@ -10,8 +13,19 @@ export function approveProposal(proposal: Proposal, userId: string): Proposal {
   };
 }
 
+export function rejectProposal(proposal: Proposal): Proposal {
+  if (proposal.status !== "pending" && proposal.status !== "approved") {
+    throw new Error("Proposal must be pending or approved before rejection");
+  }
+  return {
+    ...proposal,
+    status: "rejected",
+    updatedAt: nowIso()
+  };
+}
+
 export function applyProposal(state: EngineState, proposal: Proposal): EngineState {
-  if (proposal.approvalRequired && proposal.status !== "approved") {
+  if (proposal.status !== "approved") {
     throw new Error("Proposal must be approved before applying");
   }
 

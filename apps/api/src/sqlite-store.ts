@@ -48,6 +48,7 @@ const stateCollections = [
   "compendia",
   "proposals",
   "aiThreads",
+  "aiEvaluations",
   "aiMemory",
   "aiToolCalls",
   "auditLogs",

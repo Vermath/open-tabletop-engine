@@ -5,8 +5,10 @@ OpenTabletop Engine is organized as a TypeScript monorepo. Keep changes API-firs
 ## Local Setup
 
 ```bash
-pnpm install
-pnpm dev
+pnpm install --frozen-lockfile
+pnpm check
+pnpm --filter @open-tabletop/api dev
+pnpm --filter @open-tabletop/web dev
 ```
 
 ## Expectations
@@ -14,4 +16,6 @@ pnpm dev
 - Add tests for shared package behavior and permission boundaries.
 - Keep campaign data portable.
 - Route AI and plugin changes through proposals unless a user explicitly approves mutation.
-- Do not bundle proprietary tabletop content.
+- Do not bundle proprietary tabletop content, Roll20 assets/workflows, D&D Beyond content, or non-SRD D&D material.
+- Keep public demo content original, SRD, open, or otherwise legally reusable.
+- Keep SDK packages reusable under their package licenses; do not pull AGPL-only platform code into MIT SDK surfaces.

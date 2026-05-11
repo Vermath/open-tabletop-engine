@@ -1,0 +1,759 @@
+{
+  "format": "ottx",
+  "version": "0.1.0",
+  "exportedAt": "2026-05-11T00:00:00.000Z",
+  "manifest": {
+    "campaignId": "camp_public_alpha_ember_vault",
+    "name": "The Ember Vault: Public Alpha One-Shot",
+    "schemaVersion": "0.1.0",
+    "assetCount": 1
+  },
+  "files": [],
+  "data": {
+    "users": [
+      {
+        "id": "usr_demo_gm",
+        "displayName": "Demo GM",
+        "email": "gm@example.test",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "usr_demo_player",
+        "displayName": "Demo Player",
+        "email": "player@example.test",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "sessions": [],
+    "identities": [],
+    "oauthStates": [],
+    "passwordResetTokens": [],
+    "emailOutbox": [],
+    "scimGroups": [],
+    "scimGroupRoleMappings": [],
+    "invites": [],
+    "campaigns": [
+      {
+        "id": "camp_public_alpha_ember_vault",
+        "ownerUserId": "usr_demo_gm",
+        "name": "The Ember Vault: Public Alpha One-Shot",
+        "description": "A clean SRD-only one-shot fixture for public alpha demos.",
+        "defaultSystemId": "dnd-5e-srd",
+        "visibility": "private",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "members": [
+      {
+        "id": "mem_alpha_gm",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "userId": "usr_demo_gm",
+        "role": "owner",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "mem_alpha_player",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "userId": "usr_demo_player",
+        "role": "player",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "worlds": [],
+    "scenes": [
+      {
+        "id": "scn_alpha_ember_vault",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "name": "Ember Vault Gate",
+        "width": 1200,
+        "height": 800,
+        "gridType": "square",
+        "gridSize": 50,
+        "backgroundAssetId": "asset_alpha_vault_map",
+        "active": true,
+        "sortOrder": 1,
+        "fog": [
+          {
+            "id": "fog_alpha_gate",
+            "x": 520,
+            "y": 350,
+            "radius": 220,
+            "hidden": false,
+            "shape": "circle",
+            "mode": "reveal"
+          }
+        ],
+        "fogHistory": [],
+        "walls": [
+          {
+            "id": "wall_alpha_north",
+            "x1": 250,
+            "y1": 180,
+            "x2": 930,
+            "y2": 180,
+            "blocksVision": true,
+            "blocksMovement": true,
+            "kind": "wall"
+          },
+          {
+            "id": "wall_alpha_terrain_rubble",
+            "x1": 610,
+            "y1": 430,
+            "x2": 760,
+            "y2": 520,
+            "blocksVision": false,
+            "blocksMovement": true,
+            "kind": "terrain"
+          }
+        ],
+        "lights": [
+          {
+            "id": "light_alpha_brazier",
+            "x": 330,
+            "y": 320,
+            "radius": 210,
+            "color": "#f59e0b",
+            "intensity": 0.35
+          }
+        ],
+        "metadata": {
+          "demoObjective": "Light both braziers, read the founder's oath, and survive the vault scout.",
+          "mapStyle": "original schematic"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "assets": [
+      {
+        "id": "asset_alpha_vault_map",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "name": "Ember Vault Sketch Map.svg",
+        "url": "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%201200%20800%22%3E%3Crect%20width%3D%221200%22%20height%3D%22800%22%20fill%3D%22%23231f20%22%2F%3E%3Crect%20x%3D%22220%22%20y%3D%22150%22%20width%3D%22760%22%20height%3D%22500%22%20fill%3D%22%23312b2d%22%20stroke%3D%22%23d7a84f%22%20stroke-width%3D%226%22%2F%3E%3Ccircle%20cx%3D%22330%22%20cy%3D%22320%22%20r%3D%2232%22%20fill%3D%22%23f59e0b%22%2F%3E%3Ccircle%20cx%3D%22870%22%20cy%3D%22320%22%20r%3D%2232%22%20fill%3D%22%2392400e%22%2F%3E%3Cpath%20d%3D%22M610%20430%20L760%20520%22%20stroke%3D%22%239ca3af%22%20stroke-width%3D%2218%22%2F%3E%3Ctext%20x%3D%22600%22%20y%3D%22720%22%20fill%3D%22%23f8fafc%22%20font-family%3D%22sans-serif%22%20font-size%3D%2232%22%20text-anchor%3D%22middle%22%3EEmber%20Vault%20Gate%3C%2Ftext%3E%3C%2Fsvg%3E",
+        "mimeType": "image/svg+xml",
+        "sizeBytes": 724,
+        "checksum": "public-alpha-inline-map",
+        "lifecycle": {
+          "status": "active",
+          "updatedAt": "2026-05-11T00:00:00.000Z",
+          "updatedByUserId": "usr_demo_gm"
+        },
+        "security": {
+          "status": "clean",
+          "scanner": "manual-public-alpha-fixture",
+          "scannedAt": "2026-05-11T00:00:00.000Z",
+          "findings": []
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "tokens": [
+      {
+        "id": "tok_alpha_valen",
+        "sceneId": "scn_alpha_ember_vault",
+        "actorId": "act_alpha_valen",
+        "name": "Valen Ash",
+        "x": 300,
+        "y": 350,
+        "width": 50,
+        "height": 50,
+        "rotation": 0,
+        "hidden": false,
+        "locked": false,
+        "visionEnabled": true,
+        "visionRadius": 180,
+        "brightVisionRadius": 60,
+        "dimVisionRadius": 180,
+        "disposition": "friendly",
+        "metadata": {
+          "demoRole": "player-owned hero"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "tok_alpha_mira",
+        "sceneId": "scn_alpha_ember_vault",
+        "actorId": "act_alpha_mira",
+        "name": "Mira the Archivist",
+        "x": 390,
+        "y": 350,
+        "width": 50,
+        "height": 50,
+        "rotation": 0,
+        "hidden": false,
+        "locked": true,
+        "visionEnabled": false,
+        "visionRadius": 0,
+        "disposition": "neutral",
+        "metadata": {
+          "demoRole": "SRD-friendly NPC guide"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "tok_alpha_vault_scout",
+        "sceneId": "scn_alpha_ember_vault",
+        "actorId": "act_alpha_vault_scout",
+        "name": "Vault Scout",
+        "x": 770,
+        "y": 360,
+        "width": 50,
+        "height": 50,
+        "rotation": 0,
+        "hidden": false,
+        "locked": false,
+        "visionEnabled": false,
+        "visionRadius": 0,
+        "disposition": "hostile",
+        "metadata": {
+          "threatId": "goblin-warrior",
+          "demoRole": "SRD monster opponent"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "actors": [
+      {
+        "id": "act_alpha_valen",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "ownerUserId": "usr_demo_player",
+        "type": "character",
+        "name": "Valen Ash",
+        "data": {
+          "level": 3,
+          "class": "Fighter",
+          "subclass": "Champion",
+          "background": "Soldier",
+          "species": "Human",
+          "attributes": {
+            "strength": 16,
+            "dexterity": 13,
+            "constitution": 14,
+            "intelligence": 10,
+            "wisdom": 12,
+            "charisma": 10
+          },
+          "hp": {
+            "current": 18,
+            "max": 28
+          },
+          "hitDice": {
+            "current": 2,
+            "max": 3,
+            "size": "d10"
+          },
+          "speed": 30,
+          "currency": {
+            "gp": 18
+          },
+          "resources": {
+            "secondWind": {
+              "current": 0,
+              "max": 1,
+              "recovery": "short"
+            },
+            "actionSurge": {
+              "current": 1,
+              "max": 1,
+              "recovery": "short"
+            }
+          },
+          "conditions": [],
+          "proficiencies": {
+            "savingThrows": ["strength", "constitution"],
+            "skills": ["athletics", "perception"],
+            "tools": ["playing-card-set"]
+          },
+          "origin": {
+            "backgroundId": "soldier",
+            "speciesId": "human",
+            "humanSkillProficiency": "perception",
+            "humanOriginFeat": "skilled"
+          }
+        },
+        "permissions": {},
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "act_alpha_mira",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "type": "npc",
+        "name": "Mira the Archivist",
+        "data": {
+          "level": 1,
+          "class": "Sage",
+          "attributes": {
+            "strength": 8,
+            "dexterity": 12,
+            "constitution": 10,
+            "intelligence": 15,
+            "wisdom": 14,
+            "charisma": 11
+          },
+          "hp": {
+            "current": 9,
+            "max": 9
+          },
+          "speed": 30,
+          "conditions": [],
+          "demoNotes": "Mira provides the founder's oath and warns that the second brazier attracts a scout."
+        },
+        "permissions": {},
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "act_alpha_vault_scout",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "type": "monster",
+        "name": "Vault Scout",
+        "data": {
+          "threatId": "goblin-warrior",
+          "creatureType": "humanoid",
+          "armorClass": 15,
+          "challengeRating": "1/4",
+          "xp": 50,
+          "attributes": {
+            "strength": 8,
+            "dexterity": 14,
+            "constitution": 10,
+            "intelligence": 10,
+            "wisdom": 8,
+            "charisma": 8
+          },
+          "hp": {
+            "current": 4,
+            "max": 7
+          },
+          "speed": 30,
+          "conditions": [
+            {
+              "id": "poisoned",
+              "appliedAt": "2026-05-11T00:00:00.000Z"
+            }
+          ],
+          "actions": [
+            {
+              "id": "monster-scimitar-damage",
+              "label": "Scimitar Damage",
+              "formula": "1d6+2"
+            },
+            {
+              "id": "monster-shortbow-damage",
+              "label": "Shortbow Damage",
+              "formula": "1d6+2"
+            }
+          ]
+        },
+        "permissions": {},
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "items": [
+      {
+        "id": "itm_alpha_longsword",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "actorId": "act_alpha_valen",
+        "type": "weapon",
+        "name": "Longsword",
+        "data": {
+          "entryId": "longsword",
+          "equipped": true,
+          "damage": "1d8",
+          "versatileDamage": "1d10",
+          "damageType": "slashing",
+          "ability": "strength"
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "itm_alpha_healing_potion",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "systemId": "dnd-5e-srd",
+        "actorId": "act_alpha_valen",
+        "type": "consumable",
+        "name": "Potion of Healing",
+        "data": {
+          "entryId": "potion-of-healing",
+          "quantity": 1,
+          "healingFormula": "2d4+2",
+          "consumable": true
+        },
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "journals": [
+      {
+        "id": "jnl_alpha_gm_oath",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "title": "GM Notes: Founder's Oath",
+        "body": "Secret: the second brazier wakes the Vault Scout. The oath is 'from ember, memory; from memory, mercy.'",
+        "visibility": "gm_only",
+        "visibleToUserIds": [],
+        "visibleToActorIds": [],
+        "tags": ["alpha-demo", "secret", "srd"],
+        "createdBy": "usr_demo_gm",
+        "updatedBy": "usr_demo_gm",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "jnl_alpha_player_handout",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "title": "Handout: Ember Vault Door",
+        "body": "The stone door shows two cold braziers and an open line for an oath. Mira asks for help lighting the way.",
+        "visibility": "public",
+        "visibleToUserIds": [],
+        "visibleToActorIds": [],
+        "tags": ["alpha-demo", "handout", "srd"],
+        "createdBy": "usr_demo_gm",
+        "updatedBy": "usr_demo_gm",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "handouts": [
+      {
+        "id": "hnd_alpha_vault_door",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "title": "Ember Vault Door",
+        "body": "Public handout for the door puzzle and first combat beat.",
+        "visibility": "public",
+        "assetIds": ["asset_alpha_vault_map"],
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "chat": [
+      {
+        "id": "msg_alpha_opening",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "sceneId": "scn_alpha_ember_vault",
+        "userId": "usr_demo_gm",
+        "type": "plain",
+        "body": "Mira points to the cold brazier. 'Light both flames, but keep your shield ready.'",
+        "visibility": "public",
+        "recipientUserIds": [],
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "msg_alpha_roll",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "sceneId": "scn_alpha_ember_vault",
+        "userId": "usr_demo_player",
+        "type": "roll",
+        "body": "Valen Ash Initiative: 1d20+1 = 15",
+        "visibility": "public",
+        "recipientUserIds": [],
+        "rollId": "roll_alpha_initiative",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "msg_alpha_damage",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "sceneId": "scn_alpha_ember_vault",
+        "userId": "usr_demo_player",
+        "type": "roll",
+        "body": "Valen Ash Longsword Damage: 1d8+3 = 8",
+        "visibility": "public",
+        "recipientUserIds": [],
+        "rollId": "roll_alpha_damage",
+        "createdAt": "2026-05-11T00:01:00.000Z",
+        "updatedAt": "2026-05-11T00:01:00.000Z"
+      },
+      {
+        "id": "msg_alpha_healing",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "sceneId": "scn_alpha_ember_vault",
+        "userId": "usr_demo_player",
+        "type": "roll",
+        "body": "Potion of Healing: 2d4+2 = 7",
+        "visibility": "public",
+        "recipientUserIds": [],
+        "rollId": "roll_alpha_healing",
+        "createdAt": "2026-05-11T00:02:00.000Z",
+        "updatedAt": "2026-05-11T00:02:00.000Z"
+      }
+    ],
+    "rolls": [
+      {
+        "id": "roll_alpha_initiative",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "userId": "usr_demo_player",
+        "formula": "1d20+1",
+        "label": "Valen Ash Initiative",
+        "visibility": "public",
+        "terms": [
+          {
+            "type": "die",
+            "sides": 20,
+            "count": 1,
+            "results": [14],
+            "kept": [14]
+          },
+          {
+            "type": "modifier",
+            "value": 1
+          }
+        ],
+        "total": 15,
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      },
+      {
+        "id": "roll_alpha_damage",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "userId": "usr_demo_player",
+        "formula": "1d8+3",
+        "label": "Valen Ash Longsword Damage",
+        "visibility": "public",
+        "terms": [
+          {
+            "type": "die",
+            "sides": 8,
+            "count": 1,
+            "results": [5],
+            "kept": [5]
+          },
+          {
+            "type": "modifier",
+            "value": 3
+          }
+        ],
+        "total": 8,
+        "createdAt": "2026-05-11T00:01:00.000Z",
+        "updatedAt": "2026-05-11T00:01:00.000Z"
+      },
+      {
+        "id": "roll_alpha_healing",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "userId": "usr_demo_player",
+        "formula": "2d4+2",
+        "label": "Potion of Healing",
+        "visibility": "public",
+        "terms": [
+          {
+            "type": "die",
+            "sides": 4,
+            "count": 2,
+            "results": [2, 3],
+            "kept": [2, 3]
+          },
+          {
+            "type": "modifier",
+            "value": 2
+          }
+        ],
+        "total": 7,
+        "createdAt": "2026-05-11T00:02:00.000Z",
+        "updatedAt": "2026-05-11T00:02:00.000Z"
+      }
+    ],
+    "encounters": [
+      {
+        "id": "enc_alpha_vault_scout",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "name": "Vault Scout at the Second Brazier",
+        "summary": "A low-stakes SRD combat beat with one poisoned scout and a wounded hero, suitable for testing initiative, damage, healing, and condition visibility.",
+        "tokenIds": ["tok_alpha_valen", "tok_alpha_vault_scout"],
+        "difficulty": "easy",
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "combats": [
+      {
+        "id": "cmb_alpha_vault_scout",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "encounterId": "enc_alpha_vault_scout",
+        "active": true,
+        "round": 1,
+        "turnIndex": 0,
+        "combatants": [
+          {
+            "id": "cmbt_alpha_valen",
+            "tokenId": "tok_alpha_valen",
+            "actorId": "act_alpha_valen",
+            "name": "Valen Ash",
+            "initiative": 15,
+            "defeated": false
+          },
+          {
+            "id": "cmbt_alpha_vault_scout",
+            "tokenId": "tok_alpha_vault_scout",
+            "actorId": "act_alpha_vault_scout",
+            "name": "Vault Scout",
+            "initiative": 12,
+            "defeated": false
+          }
+        ],
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "compendia": [],
+    "proposals": [
+      {
+        "id": "prop_alpha_ai_gm_help",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "createdByUserId": "usr_demo_gm",
+        "createdByType": "ai",
+        "sourceId": "ai_thread_alpha_help",
+        "title": "AI GM Help: Reveal Scout Pressure",
+        "summary": "Suggested combat advice: reveal the scout after the second brazier is lit, remind the GM that the scout is poisoned, and offer Mira's warning as public narration.",
+        "status": "pending",
+        "changesJson": [
+          {
+            "entity": "journal",
+            "action": "create",
+            "id": "jnl_alpha_ai_advice",
+            "data": {
+              "campaignId": "camp_public_alpha_ember_vault",
+              "title": "AI Combat Advice",
+              "body": "If the party is struggling, Mira can shout that the scout is poisoned and fighting defensively. Keep the advice as narration unless the GM approves a state change.",
+              "visibility": "gm_only",
+              "visibleToUserIds": [],
+              "visibleToActorIds": [],
+              "tags": ["ai", "combat-advice"]
+            }
+          }
+        ],
+        "diffJson": {
+          "review": "Creates a GM-only advice note; no campaign state changes are applied until approved."
+        },
+        "approvalRequired": true,
+        "createdAt": "2026-05-11T00:03:00.000Z",
+        "updatedAt": "2026-05-11T00:03:00.000Z"
+      }
+    ],
+    "aiThreads": [
+      {
+        "id": "ai_thread_alpha_help",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "userId": "usr_demo_gm",
+        "provider": "local-echo",
+        "title": "GM help for the Ember Vault opening combat",
+        "status": "completed",
+        "startedAt": "2026-05-11T00:03:00.000Z",
+        "completedAt": "2026-05-11T00:03:03.000Z",
+        "durationMs": 3000,
+        "retryAttempts": 0,
+        "eventCount": 3,
+        "toolCallCount": 1,
+        "advertisedToolNames": ["create_proposal", "read_combat", "read_actor", "read_compendium"],
+        "advertisedTools": [
+          {
+            "name": "create_proposal",
+            "requiredPermissions": ["ai.proposeChanges"],
+            "permissionSafe": false
+          },
+          {
+            "name": "read_combat",
+            "requiredPermissions": ["combat.manage"],
+            "permissionSafe": true
+          },
+          {
+            "name": "read_actor",
+            "requiredPermissions": ["actor.read"],
+            "permissionSafe": true
+          },
+          {
+            "name": "read_compendium",
+            "requiredPermissions": ["campaign.read"],
+            "permissionSafe": true
+          }
+        ],
+        "assistantMessage": "Drafted a GM-only advice proposal. I did not apply changes.",
+        "usage": {
+          "promptCharacters": 180,
+          "contextCharacters": 640,
+          "responseCharacters": 96
+        },
+        "createdAt": "2026-05-11T00:03:00.000Z",
+        "updatedAt": "2026-05-11T00:03:03.000Z"
+      }
+    ],
+    "aiEvaluations": [],
+    "aiMemory": [
+      {
+        "id": "mem_alpha_oath",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "text": "The founder's oath opens the Ember Vault only after both braziers are lit.",
+        "visibility": "gm_only",
+        "sourceIds": ["jnl_alpha_gm_oath"],
+        "approvedByUserId": "usr_demo_gm",
+        "createdAt": "2026-05-11T00:04:00.000Z",
+        "updatedAt": "2026-05-11T00:04:00.000Z"
+      }
+    ],
+    "aiToolCalls": [
+      {
+        "id": "tool_alpha_create_proposal",
+        "threadId": "ai_thread_alpha_help",
+        "toolName": "create_proposal",
+        "input": {
+          "title": "AI GM Help: Reveal Scout Pressure"
+        },
+        "output": {
+          "proposalId": "prop_alpha_ai_gm_help",
+          "status": "pending",
+          "applied": false
+        },
+        "status": "completed",
+        "durationMs": 80,
+        "createdAt": "2026-05-11T00:03:02.000Z",
+        "updatedAt": "2026-05-11T00:03:02.000Z"
+      }
+    ],
+    "auditLogs": [
+      {
+        "id": "aud_alpha_ai_proposal",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "actorUserId": "usr_demo_gm",
+        "actorType": "ai",
+        "action": "ai.proposal.created",
+        "targetType": "proposal",
+        "targetId": "prop_alpha_ai_gm_help",
+        "after": {
+          "status": "pending",
+          "approvalRequired": true
+        },
+        "createdAt": "2026-05-11T00:03:02.000Z",
+        "updatedAt": "2026-05-11T00:03:02.000Z"
+      }
+    ],
+    "permissionGrants": [
+      {
+        "id": "grant_alpha_player_valen",
+        "campaignId": "camp_public_alpha_ember_vault",
+        "subjectType": "user",
+        "subjectId": "usr_demo_player",
+        "permissions": ["actor.updateOwned", "token.move", "dice.roll", "chat.write", "journal.read"],
+        "createdAt": "2026-05-11T00:00:00.000Z",
+        "updatedAt": "2026-05-11T00:00:00.000Z"
+      }
+    ],
+    "pluginStorage": [],
+    "pluginReviews": [],
+    "fogPresets": []
+  }
+}

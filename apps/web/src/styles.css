@@ -387,6 +387,18 @@ input:disabled {
   mix-blend-mode: screen;
 }
 
+.light-polygon {
+  filter: saturate(1.08);
+}
+
+.light-polygon.dim {
+  filter: saturate(0.92) brightness(0.9);
+}
+
+.light-polygon.bright {
+  filter: saturate(1.25) brightness(1.15);
+}
+
 .wall-layer {
   position: absolute;
   z-index: 2;
@@ -430,6 +442,17 @@ input:disabled {
 
 .vision-outline.fog {
   stroke-dasharray: 14 10;
+}
+
+.vision-outline.token.dim {
+  stroke: rgba(96, 165, 250, 0.48);
+  stroke-dasharray: 12 9;
+  stroke-width: 2;
+}
+
+.vision-outline.token.bright {
+  stroke: rgba(250, 204, 21, 0.72);
+  stroke-width: 3.5;
 }
 
 .vision-outline.hide {

@@ -228,6 +228,8 @@ export interface LightSource {
   x: number;
   y: number;
   radius: number;
+  brightRadius?: number;
+  dimRadius?: number;
   color: string;
   intensity?: number;
 }
@@ -245,6 +247,7 @@ export interface VisionPolygon {
   sourceId: ID;
   points: VisionPoint[];
   radius?: number;
+  lightLevel?: "bright" | "dim";
   color?: string;
   opacity?: number;
   mode?: FogMode;
@@ -255,6 +258,40 @@ export interface VisionSnapshot {
   userId: ID;
   fogActive: boolean;
   polygons: VisionPolygon[];
+}
+
+export interface VisionPointSample {
+  sceneId: ID;
+  userId: ID;
+  point: VisionPoint;
+  fogActive: boolean;
+  visible: boolean;
+  revealedBy: VisionPointSamplePolygon[];
+  hiddenBy: VisionPointSamplePolygon[];
+  illuminatedBy: VisionPointSamplePolygon[];
+  blockedBy: VisionPointSampleWall[];
+}
+
+export interface VisionPointSamplePolygon {
+  polygonId: ID;
+  source: VisionPolygonSource;
+  sourceId: ID;
+  mode?: FogMode;
+  radius?: number;
+  lightLevel?: "bright" | "dim";
+  color?: string;
+  opacity?: number;
+}
+
+export interface VisionPointSampleWall {
+  wallId: ID;
+  kind?: WallKind;
+  blocksMovement?: boolean;
+  source: VisionPolygonSource;
+  sourceId: ID;
+  intersection?: VisionPoint;
+  distanceFromSource?: number;
+  distanceToPoint?: number;
 }
 
 export interface MapAsset extends Timestamps {
@@ -313,6 +350,8 @@ export interface Token extends Timestamps {
   locked: boolean;
   visionEnabled: boolean;
   visionRadius: number;
+  brightVisionRadius?: number;
+  dimVisionRadius?: number;
   disposition: "friendly" | "neutral" | "hostile";
   imageAssetId?: ID;
   metadata: Record<string, unknown>;
@@ -475,8 +514,37 @@ export interface AiThread extends Timestamps {
   retryAttempts?: number;
   eventCount?: number;
   toolCallCount?: number;
+  advertisedToolNames?: string[];
+  advertisedTools?: AiThreadAdvertisedTool[];
   providerError?: string;
+  assistantMessage?: string;
   usage?: AiUsageMetrics;
+}
+
+export interface AiThreadAdvertisedTool {
+  name: string;
+  requiredPermissions: string[];
+  permissionSafe?: boolean;
+}
+
+export interface AiEvaluationRun extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  userId: ID;
+  threadId: ID;
+  provider: string;
+  name: string;
+  status: "passed" | "failed";
+  score: number;
+  summary: string;
+  checks: AiEvaluationCheck[];
+}
+
+export interface AiEvaluationCheck {
+  name: string;
+  status: "passed" | "failed";
+  expected: unknown;
+  actual: unknown;
 }
 
 export interface AiUsageMetrics {
@@ -506,6 +574,12 @@ export interface AiToolCall extends Timestamps {
   output: unknown;
   status: "started" | "completed" | "failed";
   durationMs?: number;
+  retry?: {
+    retriedAt: string;
+    startedCallId: ID;
+    resultCallId: ID;
+    resultStatus: "completed" | "failed";
+  };
 }
 
 export interface AuditLog extends Timestamps {
@@ -649,6 +723,7 @@ export interface EngineState {
   compendia: CompendiumPack[];
   proposals: Proposal[];
   aiThreads: AiThread[];
+  aiEvaluations: AiEvaluationRun[];
   aiMemory: AiMemoryFact[];
   aiToolCalls: AiToolCall[];
   auditLogs: AuditLog[];

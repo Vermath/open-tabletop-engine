@@ -169,7 +169,11 @@ export class S3AssetStorage implements AssetStorage {
 }
 
 export function assetStorageKey(asset: MapAsset): string {
-  return `${asset.campaignId}/${asset.id}${extensionForMimeType(asset.mimeType)}`;
+  return `${assetStorageKeyPart(asset.campaignId)}/${assetStorageKeyPart(asset.id)}${extensionForMimeType(asset.mimeType)}`;
+}
+
+function assetStorageKeyPart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_") || "unknown";
 }
 
 function extensionForMimeType(mimeType: string): string {

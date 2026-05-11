@@ -20,3 +20,28 @@ Plugin packages can include `plugin.signature.json` next to the manifest. The si
 Campaign installation can grant all requested permissions or an explicit subset. Command execution checks both the human caller permission and the plugin grant before the sandbox receives context; token context is only passed when the plugin grant includes `token.read`.
 
 Plugin state mutation should happen through proposals unless the permission grant explicitly allows a direct API call.
+
+## Public Alpha Smoke Path
+
+The launch demo uses `plugins/example-macro-plugin` as the concrete plugin example. Its manifest requests only `chat.write` and `token.read`, exposes the VM-sandboxed `/spark` chat command, and is safe to install with a smaller permission grant.
+
+After importing `docs/demo/ember-vault-public-alpha.ottx.json`, a GM can install it on the demo campaign with only chat output permission:
+
+```http
+POST /api/v1/campaigns/camp_public_alpha_ember_vault/plugins/example-macro-plugin/install
+{
+  "permissions": ["chat.write"]
+}
+```
+
+Running the command:
+
+```http
+POST /api/v1/campaigns/camp_public_alpha_ember_vault/plugins/example-macro-plugin/chat-command
+{
+  "command": "/spark",
+  "args": "public alpha flare"
+}
+```
+
+creates a public plugin chat message. Because `token.read` was not granted, the sandbox receives no token context and the response does not include token names. The API regression `imports the public alpha demo archive with SRD play data and player permissions intact` covers this install, command execution, permission subset review, and plugin audit log.

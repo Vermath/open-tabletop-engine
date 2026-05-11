@@ -5,12 +5,12 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygon, computeTokenVisionPolygon, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, tokenCenter as centerOfToken, type Actor, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPolygon, type VisionSnapshot, type WallKind } from "@open-tabletop/core";
+import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
-import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginRuntimeRegistry } from "./plugin-runtime.js";
+import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginInventoryWarning, type PluginRuntimeRegistry } from "./plugin-runtime.js";
 import { installedSystems } from "./registries.js";
 import { RealtimeHub } from "./realtime.js";
 import { FileStateStore, type StateStore } from "./store.js";
@@ -42,6 +42,13 @@ type PluginReviewPolicyMode = "allow_unreviewed" | "require_approved";
 
 const MAX_FOG_HISTORY_ENTRIES = 100;
 const DEFAULT_SYSTEM_ID = DND_5E_SRD_SYSTEM_ID;
+const CORE_COMPATIBILITY_VERSION = "0.1.0";
+const AI_STALE_RUNNING_THREAD_MS = 15 * 60 * 1000;
+const AI_STALE_STARTED_TOOL_CALL_MS = 15 * 60 * 1000;
+const AI_STALE_PROPOSAL_REVIEW_MS = 24 * 60 * 60 * 1000;
+const RENDERING_MAX_POLYGON_VERTEX_BUDGET = 96;
+const RENDERING_TOTAL_POLYGON_VERTEX_BUDGET = 512;
+const PLUGIN_REGISTRY_STALE_SECONDS = 7 * 24 * 60 * 60;
 
 interface AdminPluginReviewInfo {
   review: PluginReview;
@@ -78,6 +85,67 @@ interface ScimGroupInput {
   displayName?: string;
   externalId?: string;
   members?: Array<{ value?: string }>;
+}
+
+interface AiEvaluationInput {
+  threadId?: string;
+  name?: string;
+  expectedStatus?: "completed" | "failed";
+  expectedProvider?: string;
+  requiredToolCalls?: string[];
+  requiredAdvertisedTools?: string[];
+  forbiddenAdvertisedTools?: string[];
+  forbiddenAdvertisedPermissions?: string[];
+  expectedToolOutputs?: AiToolOutputExpectationInput[];
+  requiredResponseSubstrings?: string[];
+  forbiddenResponseSubstrings?: string[];
+  responseCriteria?: AiResponseCriterionInput[];
+  requireNoFailedToolCalls?: boolean;
+  minToolCallCount?: number;
+  minResponseCharacters?: number;
+  maxResponseCharacters?: number;
+  maxDurationMs?: number;
+  maxEstimatedCostUsd?: number;
+}
+
+interface AiResponseCriterionInput {
+  name?: string;
+  requiredSubstrings?: string[];
+  forbiddenSubstrings?: string[];
+  minCharacters?: number;
+  maxCharacters?: number;
+}
+
+interface AiToolOutputExpectationInput {
+  toolName?: string;
+  status?: "completed" | "failed";
+  outputFields?: AiToolOutputFieldExpectationInput[];
+  outputContains?: string[];
+  outputOmits?: string[];
+}
+
+interface AiToolOutputFieldExpectationInput {
+  path?: string;
+  equals?: unknown;
+}
+
+interface AssetS3RuntimeConfig {
+  configuredProvider: string;
+  active: boolean;
+  bucketConfigured: boolean;
+  endpointConfigured: boolean;
+  endpointValid: boolean;
+  endpointInsecureInProduction: boolean;
+  regionConfigured: boolean;
+  forcePathStyle: boolean;
+  explicitCredentialsConfigured: boolean;
+  partialExplicitCredentials: boolean;
+}
+
+interface RuntimeUrlConfig {
+  configured: boolean;
+  valid: boolean;
+  insecureInProduction: boolean;
 }
 
 interface ScimPatchInput {
@@ -129,13 +197,37 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const body = request.body ?? {};
     pruneExpiredSessions(store);
     const user = findLoginUser(store, body);
-    if (!user) return unauthorized(reply, "Unknown login identity");
-    if (isDisabledUser(user)) return forbidden(reply, "User account is disabled");
-    if (user.passwordResetRequired) return forbidden(reply, "Password reset required");
-    if (user.passwordHash && !verifyPassword(body.password ?? "", user.passwordHash)) return unauthorized(reply, "Invalid login credentials");
+    if (!user) {
+      appendAuthLoginFailureAudit(store, { reason: "unknown_identity", statusCode: 401 });
+      store.save();
+      return unauthorized(reply, "Unknown login identity");
+    }
+    if (isDisabledUser(user)) {
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "disabled_user", statusCode: 403 });
+      store.save();
+      return forbidden(reply, "User account is disabled");
+    }
+    if (user.passwordResetRequired) {
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "password_reset_required", statusCode: 403 });
+      store.save();
+      return forbidden(reply, "Password reset required");
+    }
+    if (user.passwordHash && !verifyPassword(body.password ?? "", user.passwordHash)) {
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "invalid_credentials", statusCode: 401 });
+      store.save();
+      return unauthorized(reply, "Invalid login credentials");
+    }
     const mfaResult = verifyLoginMfa(user, body.mfaCode, body.recoveryCode);
-    if (mfaResult === "required") return reply.code(401).send({ error: "mfa_required", message: "MFA code required", mfaRequired: true, userId: user.id });
-    if (mfaResult === "invalid") return unauthorized(reply, "Invalid MFA code");
+    if (mfaResult === "required") {
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "mfa_required", statusCode: 401 });
+      store.save();
+      return reply.code(401).send({ error: "mfa_required", message: "MFA code required", mfaRequired: true, userId: user.id });
+    }
+    if (mfaResult === "invalid") {
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "invalid_mfa", statusCode: 401 });
+      store.save();
+      return unauthorized(reply, "Invalid MFA code");
+    }
     const { token, session } = createUserSession(store, user.id);
     store.save();
     return {
@@ -390,6 +482,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     };
   });
 
+  app.post<{ Body: AdminPasswordResetPruneBody }>("/api/v1/admin/password-resets/prune", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const result = prunePasswordResetTokensForAdmin(store, request.body ?? {});
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.passwordResets.prune",
+      targetType: "password_reset",
+      after: {
+        dryRun: result.dryRun,
+        includeExpired: result.includeExpired,
+        includeUsed: result.includeUsed,
+        matched: result.matched,
+        pruned: result.pruned
+      }
+    });
+    store.save();
+    return result;
+  });
+
   app.delete<{ Params: { userId: string } }>("/api/v1/admin/users/:userId/sessions", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
@@ -427,6 +538,50 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return sessions;
   });
 
+  app.get<{ Querystring: AdminSessionRiskQuery }>("/api/v1/admin/sessions/risk", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const staleDays = normalizeSessionRiskStaleDays(request.query.staleDays);
+    if (!staleDays) return badRequest(reply, "staleDays must be an integer from 1 to 365");
+    const report = adminSessionRiskReport(store, staleDays);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.sessions.riskInspect",
+      targetType: "session",
+      after: {
+        staleDays,
+        riskSessionCount: report.totals.riskSessionCount,
+        disabledUserSessionCount: report.totals.disabledUserSessionCount,
+        unknownUserSessionCount: report.totals.unknownUserSessionCount
+      }
+    });
+    store.save();
+    return report;
+  });
+
+  app.post<{ Body: AdminSessionRiskRevokeBody }>("/api/v1/admin/sessions/risk/revoke", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const staleDays = normalizeSessionRiskStaleDays(request.body?.staleDays);
+    if (!staleDays) return badRequest(reply, "staleDays must be an integer from 1 to 365");
+    const reasons = normalizeSessionRiskReasons(request.body?.reasons);
+    if (!reasons) return badRequest(reply, "reasons must contain only expired, stale, disabled_user, or unknown_user");
+    const dryRun = Boolean(request.body?.dryRun);
+    const result = revokeRiskSessions(store, staleDays, reasons, dryRun);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.sessions.riskRevoke",
+      targetType: "session",
+      after: {
+        staleDays,
+        dryRun,
+        reasons: [...reasons],
+        matched: result.matched,
+        revoked: result.revoked
+      }
+    });
+    store.save();
+    return result;
+  });
+
   app.delete<{ Params: { sessionId: string } }>("/api/v1/admin/sessions/:sessionId", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
@@ -445,6 +600,40 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { ok: true };
   });
 
+  app.get("/api/v1/admin/auth/config", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const config = publicAuthRuntimeConfig();
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.authConfig.inspect",
+      targetType: "auth_config",
+      after: { legacyUserHeader: config.legacyUserHeader }
+    });
+    store.save();
+    return config;
+  });
+
+  app.get<{ Querystring: AdminSessionRiskQuery }>("/api/v1/admin/auth/operations", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const staleDays = normalizeSessionRiskStaleDays(request.query.staleDays);
+    if (!staleDays) return badRequest(reply, "staleDays must be an integer from 1 to 365");
+    const operations = adminAuthOperationsSummary(store, staleDays);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.authOperations.inspect",
+      targetType: "auth_config",
+      after: {
+        staleDays,
+        actionRequired: operations.actionRequired,
+        actionReasons: operations.actionReasons,
+        riskSessionCount: operations.sessions.totals.riskSessionCount,
+        pendingEmailCount: operations.emailOutbox.statusCounts.pending ?? 0
+      }
+    });
+    store.save();
+    return operations;
+  });
+
   app.get("/api/v1/admin/email-outbox", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
@@ -456,6 +645,49 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     store.save();
     return messages;
+  });
+
+  app.post<{ Body: AdminEmailOutboxRetryAllBody }>("/api/v1/admin/email-outbox/retry-all", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    if (!emailWebhookUrl()) return badRequest(reply, "Email webhook is not configured");
+    const result = await retryEmailOutboxMessages(store, request.body ?? {});
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.emailOutbox.retryAll",
+      targetType: "email_outbox",
+      after: {
+        dryRun: result.dryRun,
+        matched: result.matched,
+        retried: result.retried,
+        delivered: result.delivered,
+        failed: result.failed,
+        skipped: result.skipped,
+        limit: result.limit,
+        statuses: result.statuses
+      }
+    });
+    store.save();
+    return result;
+  });
+
+  app.post<{ Params: { messageId: string } }>("/api/v1/admin/email-outbox/:messageId/retry", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const message = store.state.emailOutbox.find((item) => item.id === request.params.messageId);
+    if (!message) return notFound(reply, "Email message not found");
+    if (message.status === "delivered") return conflict(reply, "Email message has already been delivered");
+    if (!emailWebhookUrl()) return badRequest(reply, "Email webhook is not configured");
+    const before = publicEmailOutboxMessage(message);
+    await deliverEmailMessage(message);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.emailOutbox.retry",
+      targetType: "email_outbox",
+      targetId: message.id,
+      before,
+      after: publicEmailOutboxMessage(message)
+    });
+    store.save();
+    return publicEmailOutboxMessage(message);
   });
 
   app.get<{ Querystring: AdminAuditLogQuery }>("/api/v1/admin/audit-logs", async (request, reply) => {
@@ -476,10 +708,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       reply.header("content-disposition", `attachment; filename=\"opentabletop-audit-${exportedAt.replace(/[:.]/g, "-")}.ndjson\"`);
       return auditLogs.map((entry) => JSON.stringify(entry)).join("\n") + (auditLogs.length > 0 ? "\n" : "");
     }
+    const summary = adminAuditLogExportSummary(auditLogs, options);
     return {
       exportedAt,
       count: auditLogs.length,
       filters: options.filters,
+      summary,
       auditLogs
     };
   });
@@ -495,11 +729,113 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         provider: operations.provider.id,
         threadCount: operations.totals.threadCount,
         failedThreadCount: operations.totals.failedThreadCount,
-        toolCallCount: operations.totals.toolCallCount
+        toolCallCount: operations.totals.toolCallCount,
+        actionRequired: operations.actionRequired,
+        actionReasons: operations.actionReasons
       }
     });
     store.save();
     return operations;
+  });
+
+  app.post<{ Body: { dryRun?: boolean; campaignId?: string; limit?: number | string; reason?: string; includeApproved?: boolean } }>("/api/v1/admin/ai/proposals/stale/reject", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const result = rejectStaleAiProposals(store, request.body ?? {});
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.aiProposals.rejectStale",
+      targetType: "proposal",
+      after: {
+        dryRun: result.dryRun,
+        campaignId: result.campaignId,
+        includeApproved: result.includeApproved,
+        matched: result.matched,
+        updated: result.updated,
+        reason: result.reason
+      }
+    });
+    store.save();
+    return result;
+  });
+
+  app.post<{ Body: { dryRun?: boolean; campaignId?: string; limit?: number | string; reason?: string } }>("/api/v1/admin/ai/threads/stale/fail", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const result = failStaleAiThreads(store, request.body ?? {});
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.aiThreads.failStale",
+      targetType: "ai_thread",
+      after: {
+        dryRun: result.dryRun,
+        campaignId: result.campaignId,
+        matched: result.matched,
+        updated: result.updated,
+        reason: result.reason
+      }
+    });
+    store.save();
+    return result;
+  });
+
+  app.post<{ Body: { dryRun?: boolean; campaignId?: string; threadId?: string; limit?: number | string; reason?: string } }>("/api/v1/admin/ai/tool-calls/stale/fail", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const result = failStaleAiToolCalls(store, request.body ?? {});
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.aiToolCalls.failStale",
+      targetType: "ai_tool_call",
+      after: {
+        dryRun: result.dryRun,
+        campaignId: result.campaignId,
+        threadId: result.threadId,
+        matched: result.matched,
+        updated: result.updated,
+        reason: result.reason
+      }
+    });
+    store.save();
+    return result;
+  });
+
+  app.post<{ Body: { dryRun?: boolean; campaignId?: string; threadId?: string; toolCallId?: string; limit?: number | string } }>("/api/v1/admin/ai/tool-calls/retry", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const result = await retryFailedAiToolCalls(store, request.body ?? {});
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.aiToolCalls.retry",
+      targetType: "ai_tool_call",
+      after: {
+        dryRun: result.dryRun,
+        campaignId: result.campaignId,
+        threadId: result.threadId,
+        toolCallId: result.toolCallId,
+        matched: result.matched,
+        retried: result.retried,
+        skipped: result.skipped,
+        completed: result.completed,
+        failed: result.failed
+      }
+    });
+    store.save();
+    return result;
+  });
+
+  app.get<{ Querystring: { campaignId?: string; status?: string; limit?: string; format?: string } }>("/api/v1/admin/ai/evaluations", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const snapshot = adminAiEvaluationExport(store, request.query);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.aiEvaluations.export",
+      targetType: "ai_evaluation",
+      after: { count: snapshot.evaluations.length, filters: snapshot.filters, format: snapshot.format }
+    });
+    store.save();
+    if (snapshot.format === "ndjson") {
+      reply.header("content-type", "application/x-ndjson");
+      reply.header("content-disposition", `attachment; filename=\"opentabletop-ai-evaluations-${snapshot.exportedAt.replace(/[:.]/g, "-")}.ndjson\"`);
+      return snapshot.evaluations.map((entry) => JSON.stringify(entry)).join("\n") + (snapshot.evaluations.length > 0 ? "\n" : "");
+    }
+    return snapshot;
   });
 
   app.get("/api/v1/admin/plugins/reviews", async (request, reply) => {
@@ -513,6 +849,81 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     store.save();
     return reviewSnapshot;
+  });
+
+  app.get("/api/v1/admin/plugins/operations", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const operations = adminPluginOperations(store, pluginRegistry);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.pluginOperations.inspect",
+      targetType: "plugin_operations",
+      after: {
+        totals: operations.totals,
+        policy: operations.policy,
+        actionRequired: operations.actionRequired,
+        actionReasons: operations.actionReasons
+      }
+    });
+    store.save();
+    return operations;
+  });
+
+  app.get("/api/v1/admin/systems/operations", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const operations = adminSystemOperations(store);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.systemOperations.inspect",
+      targetType: "system_operations",
+      after: {
+        totals: operations.totals,
+        actionRequired: operations.actionRequired,
+        actionReasons: operations.actionReasons
+      }
+    });
+    store.save();
+    return operations;
+  });
+
+  app.get("/api/v1/admin/rendering/operations", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const operations = adminRenderingOperations(store);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.renderingOperations.inspect",
+      targetType: "rendering_operations",
+      after: {
+        totals: operations.totals,
+        budget: operations.budget,
+        authoringOperationCount: operations.authoringOperations.totalCount,
+        staleIssueSceneCount: operations.staleIssueOperations.sceneCount,
+        actionRequired: operations.actionRequired,
+        actionReasons: operations.actionReasons
+      }
+    });
+    store.save();
+    return operations;
+  });
+
+  app.post<{ Body: { registryUrl?: string } }>("/api/v1/admin/plugins/registry/sync", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const sync = await syncPluginRegistriesForRequest(pluginRegistry, request.body?.registryUrl, reply);
+    if ("statusCode" in sync) return sync;
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.pluginRegistry.sync",
+      targetType: "plugin_registry",
+      after: {
+        registries: sync.registries.map((registry) => ({
+          registryUrl: registry.registryUrl,
+          imported: registry.imported.map((plugin) => `${plugin.id}@${plugin.version}`),
+          errors: registry.errors
+        }))
+      }
+    });
+    store.save();
+    return sync;
   });
 
   app.patch<{
@@ -897,7 +1308,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       user: publicUser(user),
       session: session ? publicSession(session) : undefined,
       memberships: store.state.members.filter((member) => member.userId === userId),
-      serverAdmin: isServerAdminUserId(userId)
+      serverAdmin: isServerAdminUserId(userId),
+      serverAdmins: serverAdminRuntimePosture()
     };
   });
 
@@ -1284,6 +1696,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     try {
       return signedAssetDelivery(asset, request.headers, body.expiresInSeconds, body.disposition);
     } catch (error) {
+      appendAssetDeliveryAuditLog(store, asset, { status: "signing_failed", accessMode: "signed", reason: errorMessage(error) });
+      store.save();
       return reply.code(500).send({ error: "asset_signing_unavailable", message: errorMessage(error) });
     }
   });
@@ -1314,27 +1728,121 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { assetId: string }; Querystring: { userId?: string; expiresAt?: string; signature?: string; disposition?: "inline" | "attachment" } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
     const asset = store.state.assets.find((item) => item.id === request.params.assetId);
     if (!asset) return notFound(reply, "Asset not found");
-    if (!isAssetDeliverable(asset)) return assetUnavailable(reply, asset);
+    const accessMode = request.query.signature ? "signed" : "session";
+    if (!isAssetDeliverable(asset)) {
+      appendAssetDeliveryAuditLog(store, asset, {
+        status: "unavailable",
+        accessMode,
+        reason: asset.lifecycle?.status === "deleted" ? "deleted" : "expired_or_deleted",
+        lifecycleStatus: asset.lifecycle?.status ?? "active"
+      });
+      return assetUnavailable(reply, asset);
+    }
     const signedAccess = isValidAssetSignature(asset.id, request.query.expiresAt, request.query.signature, request.query.disposition);
     if (!signedAccess) {
       const userId = userIdFromRequest(store, request.url, request.headers);
-      if (!userId) return unauthorized(reply, "Missing asset session");
-      if (!canCampaign(store, userId, asset.campaignId, "scene.read")) return forbidden(reply, "Missing permission: scene.read");
+      if (!userId) {
+        appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "missing_session" });
+        return unauthorized(reply, "Missing asset session");
+      }
+      if (!canCampaign(store, userId, asset.campaignId, "scene.read")) {
+        appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "missing_permission" });
+        return forbidden(reply, "Missing permission: scene.read");
+      }
     }
     const cacheControl = signedAccess ? signedAssetCacheControl(request.query.expiresAt) : "private, max-age=60";
     const contentDisposition = request.query.disposition === "attachment" ? `attachment; filename="${safeDownloadFileName(asset.name)}"` : undefined;
     const stream = await assetStorage.stream?.(asset);
     if (contentDisposition) reply.header("content-disposition", contentDisposition);
-    if (stream) return reply.header("content-type", asset.mimeType).header("cache-control", cacheControl).send(stream);
+    if (stream) {
+      appendAssetDeliveryAuditLog(store, asset, { status: "served", accessMode: signedAccess ? "signed" : "session", bytes: asset.sizeBytes, cacheControl });
+      return reply.header("content-type", asset.mimeType).header("cache-control", cacheControl).send(stream);
+    }
     const body = await assetStorage.read(asset);
-    if (!body) return notFound(reply, "Asset file not found");
+    if (!body) {
+      appendAssetDeliveryAuditLog(store, asset, { status: "missing_bytes", accessMode: signedAccess ? "signed" : "session", reason: "asset_file_not_found" });
+      return notFound(reply, "Asset file not found");
+    }
+    appendAssetDeliveryAuditLog(store, asset, { status: "served", accessMode: signedAccess ? "signed" : "session", bytes: body.length, cacheControl });
     return reply.header("content-type", asset.mimeType).header("cache-control", cacheControl).send(body);
   });
 
   app.get("/api/v1/admin/assets/storage", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    return globalAssetStorageInfo(store, assetCleanupScheduler.status());
+    const storage = globalAssetStorageInfo(store, assetStorage, assetCleanupScheduler.status());
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.assets.storageInspect",
+      targetType: "asset_storage",
+      after: {
+        provider: storage.runtime.provider,
+        assetCount: storage.assetCount,
+        activeAssetCount: storage.activeAssetCount,
+        usedBytes: storage.usedBytes,
+        allBytes: storage.allBytes,
+        operations: {
+          actionRequired: storage.operations.actionRequired,
+          actionReasons: storage.operations.actionReasons
+        }
+      }
+    });
+    store.save();
+    return storage;
+  });
+
+  app.get<{ Querystring: { campaignId?: string; includeDeleted?: string; includeExpired?: string } }>("/api/v1/admin/assets/integrity", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const options = {
+      campaignId: request.query.campaignId,
+      includeDeleted: queryBoolean(request.query.includeDeleted, true),
+      includeExpired: queryBoolean(request.query.includeExpired, true)
+    };
+    const integrity = await auditStoredAssetIntegrity(store, assetStorage, uploadDir, options);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.assets.integrityInspect",
+      targetType: "asset_storage",
+      targetId: options.campaignId,
+      after: {
+        campaignId: options.campaignId,
+        includeDeleted: options.includeDeleted,
+        includeExpired: options.includeExpired,
+        provider: integrity.provider,
+        assetCount: integrity.assetCount,
+        verified: integrity.verified,
+        missing: integrity.missing,
+        mismatched: integrity.mismatched,
+        cleanupEligible: integrity.cleanupEligible,
+        skipped: integrity.skipped,
+        failed: integrity.failed,
+        actionRequired: integrity.actionRequired,
+        actionReasons: integrity.actionReasons,
+        healthy: integrity.healthy
+      }
+    });
+    store.save();
+    return integrity;
+  });
+
+  app.post<{
+    Body: {
+      campaignId?: string;
+      assetIds?: string[];
+      dryRun?: boolean;
+      reason?: string;
+    };
+  }>("/api/v1/admin/assets/integrity/quarantine", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const result = await quarantineAssetIntegrityFailures(store, assetStorage, uploadDir, request.body ?? {}, adminUserId);
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.assets.integrityQuarantine",
+      targetType: "asset_storage",
+      targetId: request.body?.campaignId,
+      after: assetOperationAuditSummary(result)
+    });
+    store.save();
+    return result;
   });
 
   app.post<{
@@ -1349,7 +1857,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
     const result = await migrateStoredAssets(store, assetStorage, uploadDir, request.body ?? {});
-    if (result.changed) store.save();
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.assets.migrate",
+      targetType: "asset_storage",
+      after: assetOperationAuditSummary(result)
+    });
+    store.save();
     return result;
   });
 
@@ -1366,7 +1879,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
     const result = await cleanupStoredAssets(store, assetStorage, uploadDir, request.body ?? {}, adminUserId);
-    if (result.changed) store.save();
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.assets.cleanup",
+      targetType: "asset_storage",
+      after: assetOperationAuditSummary(result)
+    });
+    store.save();
+    return result;
+  });
+
+  app.post<{ Params: { assetId: string }; Body: { reason?: string } }>("/api/v1/admin/assets/:assetId/purge-cache", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const asset = store.state.assets.find((item) => item.id === request.params.assetId);
+    if (!asset) return notFound(reply, "Asset not found");
+    const result = await purgeAssetCdnCache(store, asset, adminUserId, request.body ?? {});
+    store.save();
+    if (result.status === "not_configured") return reply.code(400).send(result);
+    if (result.status === "failed") return reply.code(502).send(result);
     return result;
   });
 
@@ -1387,6 +1917,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = currentUserId(store, request.headers)!;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     return visionSnapshotForUser(store, userId, campaignId, scene);
+  });
+
+  app.get<{ Params: { sceneId: string }; Querystring: { x?: string; y?: string } }>("/api/v1/scenes/:sceneId/vision/sample", async (request, reply): Promise<VisionPointSample | FastifyReply> => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.read");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const point = normalizeVisionSamplePoint(scene, request.query.x, request.query.y);
+    if (!point) return badRequest(reply, "x and y must be finite scene coordinates");
+    return visionPointSampleForUser(store, userId, campaignId, scene, point);
+  });
+
+  app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId/rendering/diagnostics", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    return sceneRenderingDiagnostics(store, scene);
   });
 
   app.patch<{ Params: { sceneId: string }; Body: Partial<Scene> }>("/api/v1/scenes/:sceneId", async (request, reply) => {
@@ -1420,7 +1971,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const fogRegion = normalizeFogRegion(body, scene);
-    if (!fogRegion) return badRequest(reply, "Invalid fog region");
+    if (!fogRegion) {
+      appendRenderingAuthoringFailureAudit(store, userId, {
+        campaignId,
+        sceneId: scene.id,
+        attemptedAction: "scene.fog.create",
+        targetType: "fog",
+        reason: "invalid_fog_region",
+        message: "Invalid fog region"
+      });
+      store.save();
+      return badRequest(reply, "Invalid fog region");
+    }
     const region: FogRegion = { id: createId("fog"), ...fogRegion };
     scene.fog.push(region);
     appendFogHistoryEntry(scene, {
@@ -1572,6 +2134,56 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return scene;
   });
 
+  app.patch<{
+    Params: { sceneId: string; fogId: string };
+    Body: Partial<Pick<FogRegion, "x" | "y" | "radius" | "hidden" | "shape" | "mode" | "points">> & { brushRadius?: number };
+  }>("/api/v1/scenes/:sceneId/fog/:fogId", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const fogRegion = scene.fog.find((region) => region.id === request.params.fogId);
+    if (!fogRegion) return notFound(reply, "Fog region not found");
+    const normalized = normalizeFogRegion({ ...fogRegion, ...(request.body ?? {}) }, scene);
+    if (!normalized) {
+      appendRenderingAuthoringFailureAudit(store, userId, {
+        campaignId,
+        sceneId: scene.id,
+        attemptedAction: "scene.fog.update",
+        targetType: "fog",
+        targetId: fogRegion.id,
+        reason: "invalid_fog_region",
+        message: "Invalid fog region"
+      });
+      store.save();
+      return badRequest(reply, "Invalid fog region");
+    }
+    const before = cloneFogRegion(fogRegion);
+    Object.assign(fogRegion, normalized);
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.fog.update",
+      targetType: "fog",
+      targetId: fogRegion.id,
+      before: { sceneId: scene.id, region: before },
+      after: { sceneId: scene.id, region: cloneFogRegion(fogRegion) }
+    });
+    scene.updatedAt = nowIso();
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        actorUserId: userId,
+        targetId: scene.id,
+        payload: scene
+      })
+    );
+    return scene;
+  });
+
   app.delete<{ Params: { sceneId: string; fogId: string } }>("/api/v1/scenes/:sceneId/fog/:fogId", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
@@ -1624,11 +2236,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }>("/api/v1/scenes/:sceneId/walls", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
-    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.update");
-    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const kind: WallKind = request.body.kind === "terrain" ? "terrain" : "wall";
-    scene.walls.push({
+    const wall = {
       id: createId("wall"),
       x1: request.body.x1,
       y1: request.body.y1,
@@ -1637,13 +2250,117 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       blocksVision: request.body.blocksVision ?? true,
       blocksMovement: request.body.blocksMovement ?? (kind === "wall"),
       kind
-    });
+    };
+    scene.walls.push(wall);
     scene.updatedAt = nowIso();
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.wall.create",
+      targetType: "wall",
+      targetId: wall.id,
+      after: { sceneId: scene.id, wall: { ...wall } }
+    });
     store.save();
     broadcast(
       createEvent({
         campaignId: scene.campaignId,
         type: "scene.updated",
+        actorUserId: userId,
+        targetId: scene.id,
+        payload: scene
+      })
+    );
+    return scene;
+  });
+
+  app.patch<{
+    Params: { sceneId: string; wallId: string };
+    Body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" | "blocksVision" | "blocksMovement" | "kind">>;
+  }>("/api/v1/scenes/:sceneId/walls/:wallId", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const wall = scene.walls.find((item) => item.id === request.params.wallId);
+    if (!wall) return notFound(reply, "Wall not found");
+    const normalized = normalizeWallPatch(request.body ?? {});
+    if ("error" in normalized) {
+      appendRenderingAuthoringFailureAudit(store, userId, {
+        campaignId,
+        sceneId: scene.id,
+        attemptedAction: "scene.wall.update",
+        targetType: "wall",
+        targetId: wall.id,
+        reason: "invalid_wall_update",
+        message: normalized.error
+      });
+      store.save();
+      return badRequest(reply, normalized.error);
+    }
+    const candidate = { ...wall, ...normalized.patch };
+    if (Math.hypot(candidate.x2 - candidate.x1, candidate.y2 - candidate.y1) < 0.001) {
+      appendRenderingAuthoringFailureAudit(store, userId, {
+        campaignId,
+        sceneId: scene.id,
+        attemptedAction: "scene.wall.update",
+        targetType: "wall",
+        targetId: wall.id,
+        reason: "invalid_wall_update",
+        message: "Wall endpoints must not be identical"
+      });
+      store.save();
+      return badRequest(reply, "Wall endpoints must not be identical");
+    }
+    const before = { ...wall };
+    Object.assign(wall, normalized.patch);
+    scene.updatedAt = nowIso();
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.wall.update",
+      targetType: "wall",
+      targetId: wall.id,
+      before: { sceneId: scene.id, wall: before },
+      after: { sceneId: scene.id, wall: { ...wall } }
+    });
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        actorUserId: userId,
+        targetId: scene.id,
+        payload: scene
+      })
+    );
+    return scene;
+  });
+
+  app.delete<{ Params: { sceneId: string; wallId: string } }>("/api/v1/scenes/:sceneId/walls/:wallId", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const index = scene.walls.findIndex((item) => item.id === request.params.wallId);
+    if (index < 0) return notFound(reply, "Wall not found");
+    const deleted = scene.walls.splice(index, 1)[0]!;
+    scene.updatedAt = nowIso();
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.wall.delete",
+      targetType: "wall",
+      targetId: deleted.id,
+      before: { sceneId: scene.id, wall: deleted }
+    });
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        actorUserId: userId,
         targetId: scene.id,
         payload: scene
       })
@@ -1653,27 +2370,123 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{
     Params: { sceneId: string };
-    Body: { x: number; y: number; radius?: number; color?: string; intensity?: number };
+    Body: { x: number; y: number; radius?: number; brightRadius?: number; dimRadius?: number; color?: string; intensity?: number };
   }>("/api/v1/scenes/:sceneId/lights", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
-    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.update");
-    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
-    scene.lights.push({
+    const light = {
       id: createId("light"),
       x: request.body.x,
       y: request.body.y,
       radius: request.body.radius ?? 180,
+      brightRadius: request.body.brightRadius,
+      dimRadius: request.body.dimRadius,
       color: request.body.color ?? "#facc15",
       intensity: clampLightIntensity(request.body.intensity ?? 0.28)
-    });
+    };
+    const normalized = normalizeLightSourcePatch(light);
+    if ("error" in normalized) return badRequest(reply, normalized.error);
+    Object.assign(light, normalized.patch);
+    scene.lights.push(light);
     scene.updatedAt = nowIso();
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.light.create",
+      targetType: "light",
+      targetId: light.id,
+      after: { sceneId: scene.id, light: { ...light } }
+    });
     store.save();
     broadcast(
       createEvent({
         campaignId: scene.campaignId,
         type: "scene.updated",
+        actorUserId: userId,
+        targetId: scene.id,
+        payload: scene
+      })
+    );
+    return scene;
+  });
+
+  app.patch<{
+    Params: { sceneId: string; lightId: string };
+    Body: Partial<Pick<LightSource, "x" | "y" | "radius" | "brightRadius" | "dimRadius" | "color" | "intensity">>;
+  }>("/api/v1/scenes/:sceneId/lights/:lightId", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const light = scene.lights.find((item) => item.id === request.params.lightId);
+    if (!light) return notFound(reply, "Light source not found");
+    const normalized = normalizeLightSourcePatch(request.body ?? {}, light);
+    if ("error" in normalized) {
+      appendRenderingAuthoringFailureAudit(store, userId, {
+        campaignId,
+        sceneId: scene.id,
+        attemptedAction: "scene.light.update",
+        targetType: "light",
+        targetId: light.id,
+        reason: "invalid_light_update",
+        message: normalized.error
+      });
+      store.save();
+      return badRequest(reply, normalized.error);
+    }
+    const before = { ...light };
+    Object.assign(light, normalized.patch);
+    scene.updatedAt = nowIso();
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.light.update",
+      targetType: "light",
+      targetId: light.id,
+      before: { sceneId: scene.id, light: before },
+      after: { sceneId: scene.id, light: { ...light } }
+    });
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        actorUserId: userId,
+        targetId: scene.id,
+        payload: scene
+      })
+    );
+    return scene;
+  });
+
+  app.delete<{ Params: { sceneId: string; lightId: string } }>("/api/v1/scenes/:sceneId/lights/:lightId", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const index = scene.lights.findIndex((item) => item.id === request.params.lightId);
+    if (index < 0) return notFound(reply, "Light source not found");
+    const deleted = scene.lights.splice(index, 1)[0]!;
+    scene.updatedAt = nowIso();
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.light.delete",
+      targetType: "light",
+      targetId: deleted.id,
+      before: { sceneId: scene.id, light: deleted }
+    });
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        actorUserId: userId,
         targetId: scene.id,
         payload: scene
       })
@@ -1729,10 +2542,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       locked: Boolean(request.body.locked),
       visionEnabled: request.body.visionEnabled ?? true,
       visionRadius: request.body.visionRadius ?? 160,
+      brightVisionRadius: request.body.brightVisionRadius,
+      dimVisionRadius: request.body.dimVisionRadius,
       disposition: request.body.disposition ?? "neutral",
       imageAssetId: request.body.imageAssetId,
       metadata: request.body.metadata ?? {}
     }) satisfies Token;
+    const normalizedVision = normalizeTokenVisionPatch(token, {});
+    if ("error" in normalizedVision) return badRequest(reply, normalizedVision.error);
+    Object.assign(token, normalizedVision.patch);
     store.state.tokens.push(token);
     store.save();
     broadcast(
@@ -1759,7 +2577,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!isTokenVisibleToUser(store, userId, campaignId, token)) return notFound(reply, "Token not found");
     if (moved && !canMoveToken(store, userId, campaignId, token)) return forbidden(reply, "Missing token ownership");
     const scene = store.state.scenes.find((item) => item.id === token.sceneId);
-    Object.assign(token, request.body, { updatedAt: nowIso() });
+    const normalizedVision = normalizeTokenVisionPatch(request.body, token);
+    if ("error" in normalizedVision) return badRequest(reply, normalizedVision.error);
+    Object.assign(token, request.body, normalizedVision.patch, { updatedAt: nowIso() });
     store.save();
     if (scene) {
       broadcast(
@@ -2096,6 +2916,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Params: { campaignId: string }; Body: Partial<Combat> }>("/api/v1/campaigns/:campaignId/combats", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "combat.manage");
     if (allowed !== true) return allowed;
+    for (const existingCombat of store.state.combats) {
+      if (existingCombat.campaignId === request.params.campaignId && existingCombat.active) {
+        existingCombat.active = false;
+        existingCombat.updatedAt = nowIso();
+      }
+    }
     const combat = createTimestamped("cmb", {
       campaignId: request.params.campaignId,
       encounterId: request.body.encounterId,
@@ -2136,11 +2962,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       sourceId: request.body.sourceId,
       title: request.body.title ?? "Untitled Proposal",
       summary: request.body.summary ?? "",
-      status: request.body.status ?? "pending",
+      status: "pending" as const,
       changesJson: request.body.changesJson ?? [],
       diffJson: request.body.diffJson ?? {},
-      approvalRequired: request.body.approvalRequired ?? true,
-      approvedByUserId: request.body.approvedByUserId
+      approvalRequired: true
     }) satisfies Proposal;
     store.state.proposals.push(proposal);
     store.save();
@@ -2162,8 +2987,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const approved = approveProposal(proposal, userId);
-    Object.assign(proposal, approved);
+    try {
+      const approved = approveProposal(proposal, userId);
+      Object.assign(proposal, approved);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Proposal could not be approved";
+      return reply.code(409).send({ error: "proposal_not_ready", message });
+    }
     store.save();
     broadcast(
       createEvent({
@@ -2176,15 +3006,85 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return proposal;
   });
 
+  app.post<{ Params: { proposalId: string } }>("/api/v1/proposals/:proposalId/reject", async (request, reply) => {
+    const proposal = store.state.proposals.find((item) => item.id === request.params.proposalId);
+    if (!proposal) return notFound(reply, "Proposal not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, proposal.campaignId, "ai.applyChanges");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const previousStatus = proposal.status;
+    try {
+      const rejected = rejectProposal(proposal);
+      Object.assign(proposal, rejected);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Proposal could not be rejected";
+      return reply.code(409).send({ error: "proposal_not_ready", message });
+    }
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: proposal.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "ai.proposal.rejected",
+        targetType: "proposal",
+        targetId: proposal.id,
+        before: { status: previousStatus },
+        after: {
+          proposalId: proposal.id,
+          status: proposal.status,
+          previousStatus,
+          createdByType: proposal.createdByType,
+          sourceId: proposal.sourceId,
+          changeCount: proposal.changesJson.length,
+          entities: [...new Set(proposal.changesJson.map((change) => change.entity))]
+        }
+      })
+    );
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: proposal.campaignId,
+        type: "proposal.rejected",
+        targetId: proposal.id,
+        payload: proposal
+      })
+    );
+    return proposal;
+  });
+
   app.post<{ Params: { proposalId: string } }>("/api/v1/proposals/:proposalId/apply", async (request, reply) => {
     const proposal = store.state.proposals.find((item) => item.id === request.params.proposalId);
     if (!proposal) return notFound(reply, "Proposal not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, proposal.campaignId, "ai.applyChanges");
     if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
     try {
       store.replace(applyProposal(store.state, proposal));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Proposal could not be applied";
+      store.state.auditLogs.push(
+        createTimestamped("audit", {
+          campaignId: proposal.campaignId,
+          actorUserId: userId,
+          actorType: "user" as const,
+          action: "ai.proposal.apply.failed",
+          targetType: "proposal",
+          targetId: proposal.id,
+          after: {
+            proposalId: proposal.id,
+            status: proposal.status,
+            createdByType: proposal.createdByType,
+            sourceId: proposal.sourceId,
+            changeCount: proposal.changesJson.length,
+            entities: [...new Set(proposal.changesJson.map((change) => change.entity))],
+            reason: "proposal_not_ready",
+            message
+          }
+        })
+      );
+      store.save();
       return reply.code(409).send({ error: "proposal_not_ready", message });
     }
     const applied = store.state.proposals.find((item) => item.id === request.params.proposalId);
@@ -2210,6 +3110,42 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const threads = store.state.aiThreads.filter((thread) => thread.campaignId === request.params.campaignId);
     return summarizeAiUsage(request.params.campaignId, threads);
+  });
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/ai/evaluations", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
+    if (allowed !== true) return allowed;
+    ensureAiEvaluations(store);
+    return aiEvaluationSnapshot(store, request.params.campaignId);
+  });
+
+  app.post<{ Params: { campaignId: string }; Body: AiEvaluationInput }>("/api/v1/campaigns/:campaignId/ai/evaluations", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const threadId = request.body.threadId?.trim();
+    if (!threadId) return badRequest(reply, "threadId is required");
+    const thread = store.state.aiThreads.find((item) => item.id === threadId && item.campaignId === request.params.campaignId);
+    if (!thread) return notFound(reply, "AI thread not found");
+    ensureAiEvaluations(store);
+    const evaluation = createAiEvaluationRun(store, request.params.campaignId, userId, thread, request.body);
+    store.state.aiEvaluations.push(evaluation);
+    appendServerAuditLog(store, userId, {
+      campaignId: request.params.campaignId,
+      action: "ai.evaluation.run",
+      targetType: "ai_evaluation",
+      targetId: evaluation.id,
+      after: {
+        threadId: thread.id,
+        provider: thread.provider,
+        status: evaluation.status,
+        score: evaluation.score,
+        checkCount: evaluation.checks.length
+      }
+    });
+    store.save();
+    return evaluation;
   });
 
   app.post<{ Params: { campaignId: string }; Body: { prompt: string } }>("/api/v1/campaigns/:campaignId/ai/threads", async (request, reply) => {
@@ -2243,6 +3179,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.aiThreads.push(thread);
     const tools = createAiThreadTools();
     const providerTools = tools.filter((tool) => aiToolAvailableToCaller(tool, permissions));
+    thread.advertisedToolNames = providerTools.map((tool) => tool.name);
+    thread.advertisedTools = providerTools.map((tool) => ({ name: tool.name, requiredPermissions: [...tool.requiredPermissions], permissionSafe: aiToolPermissionSafe(tool) }));
     const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions);
     let content = "";
     const events: AiProviderEvent[] = [];
@@ -2308,6 +3246,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           }
         }
         recordAiResponseUsage(thread, content);
+        thread.assistantMessage = content;
         completeAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount);
         break;
       } catch (error) {
@@ -2316,6 +3255,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           continue;
         }
         recordAiResponseUsage(thread, content);
+        thread.assistantMessage = content;
         failAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount, error);
         store.save();
         return reply.code(502).send({
@@ -2744,6 +3684,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         }
       }, plugin.version);
     } catch (error) {
+      appendPluginCommandFailureAudit(store, {
+        campaignId: request.params.campaignId,
+        userId,
+        plugin,
+        command,
+        reason: "runtime_error",
+        message: errorMessage(error)
+      });
+      store.save();
       return reply.code(500).send({
         error: "plugin_runtime_error",
         message: "Plugin command failed"
@@ -2753,7 +3702,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     let storageMutation: { set: Array<{ key: string; size: number }>; deleted: string[] };
     try {
       storageMutation = commandResult.storage ? applyPluginStorageMutation(store, request.params.campaignId, plugin.id, commandResult.storage, "plugin", plugin.id) : { set: [], deleted: [] };
-    } catch {
+    } catch (error) {
+      appendPluginCommandFailureAudit(store, {
+        campaignId: request.params.campaignId,
+        userId,
+        plugin,
+        command,
+        reason: "invalid_storage_mutation",
+        message: errorMessage(error)
+      });
+      store.save();
       return reply.code(500).send({
         error: "plugin_runtime_error",
         message: "Plugin command returned invalid storage mutations"
@@ -2805,6 +3763,33 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { pluginId: plugin.id, command, chat: message, storageMutation };
   });
 
+  function appendPluginCommandFailureAudit(
+    store: StateStore,
+    input: { campaignId: string; userId: string; plugin: LoadedPlugin; command: string; reason: string; message: string }
+  ) {
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: input.campaignId,
+        actorUserId: input.userId,
+        actorType: "plugin" as const,
+        action: "plugin.chatCommand.failed",
+        targetType: "plugin",
+        targetId: input.plugin.id,
+        after: {
+          pluginId: input.plugin.id,
+          command: input.command,
+          reason: input.reason,
+          message: input.message.slice(0, 200),
+          sandbox: input.plugin.source.sandbox,
+          packageId: input.plugin.source.packageId,
+          version: input.plugin.version,
+          checksum: input.plugin.source.checksum,
+          trustStatus: input.plugin.trust.status
+        }
+      })
+    );
+  }
+
   app.post<{
     Body: { campaignId?: string; packagePath?: string };
   }>("/api/v1/plugins/install", async (request, reply) => {
@@ -2826,21 +3811,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     Body: { campaignId?: string; registryUrl?: string };
   }>("/api/v1/plugins/registry/sync", async (request, reply) => {
     const body = request.body ?? {};
-    const configuredRegistries = configuredPluginRegistryUrls();
-    if (!configuredRegistries.length) return badRequest(reply, "No plugin registries are configured");
-    const requestedRegistry = body.registryUrl ? normalizeConfiguredPluginRegistryUrl(body.registryUrl) : undefined;
-    if (body.registryUrl && !requestedRegistry) return badRequest(reply, "Plugin registryUrl must be a valid http or https URL");
-    if (requestedRegistry && !configuredRegistries.includes(requestedRegistry)) return forbidden(reply, "Plugin registryUrl is not configured for this server");
     const campaignId = body.campaignId ?? store.state.members.find((member) => member.userId === currentUserId(store, request.headers))?.campaignId;
     if (!campaignId) return forbidden(reply, "Plugin registry sync requires a campaign context");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "plugin.install");
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const registryUrls = requestedRegistry ? [requestedRegistry] : configuredRegistries;
-    const registries = [];
-    for (const registryUrl of registryUrls) registries.push(await pluginRegistry.syncRemoteRegistry(registryUrl));
-    const imported = registries.flatMap((registry) => registry.imported);
+    const sync = await syncPluginRegistriesForRequest(pluginRegistry, body.registryUrl, reply);
+    if ("statusCode" in sync) return sync;
     store.state.auditLogs.push(
       createTimestamped("audit", {
         campaignId,
@@ -2849,7 +3827,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         action: "plugin.registrySync",
         targetType: "plugin",
         after: {
-          registries: registries.map((registry) => ({
+          registries: sync.registries.map((registry) => ({
             registryUrl: registry.registryUrl,
             imported: registry.imported.map((plugin) => `${plugin.id}@${plugin.version}`),
             errors: registry.errors
@@ -2858,11 +3836,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     store.save();
-    return {
-      syncedAt: nowIso(),
-      registries,
-      plugins: imported
-    };
+    return sync;
   });
   app.get("/api/v1/systems", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
@@ -2925,7 +3899,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{
     Params: { campaignId: string; systemId: string };
-    Body: { templateId?: string; name?: string; ownerUserId?: string; backgroundId?: string; speciesId?: string; abilityScoreIncreases?: unknown };
+    Body: { templateId?: string; name?: string; ownerUserId?: string; backgroundId?: string; speciesId?: string; abilityScoreIncreases?: unknown; skillProficiency?: string; originFeat?: string; elfLineage?: string; elfCantrip?: string; gnomeLineage?: string; tieflingLegacy?: string; speciesSpellcastingAbility?: string };
   }>("/api/v1/campaigns/:campaignId/systems/:systemId/characters", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.create");
     if (allowed !== true) return allowed;
@@ -2936,12 +3910,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const originOptions = {
       backgroundId: request.body.backgroundId,
       speciesId: request.body.speciesId,
-      abilityScoreIncreases: request.body.abilityScoreIncreases
+      abilityScoreIncreases: request.body.abilityScoreIncreases,
+      skillProficiency: request.body.skillProficiency,
+      originFeat: request.body.originFeat,
+      elfLineage: request.body.elfLineage,
+      elfCantrip: request.body.elfCantrip,
+      gnomeLineage: request.body.gnomeLineage,
+      tieflingLegacy: request.body.tieflingLegacy,
+      speciesSpellcastingAbility: request.body.speciesSpellcastingAbility
     };
     let characterData = cloneRecord(template.data);
     let templateItems = template.items;
     let origins: ReturnType<typeof dnd5eSrdApplyCharacterOrigins> | undefined;
-    if (request.params.systemId === DND_5E_SRD_SYSTEM_ID && (originOptions.backgroundId || originOptions.speciesId || originOptions.abilityScoreIncreases)) {
+    if (
+      request.params.systemId === DND_5E_SRD_SYSTEM_ID &&
+      (originOptions.backgroundId || originOptions.speciesId || originOptions.abilityScoreIncreases || originOptions.skillProficiency || originOptions.originFeat || originOptions.elfLineage || originOptions.elfCantrip || originOptions.gnomeLineage || originOptions.tieflingLegacy || originOptions.speciesSpellcastingAbility)
+    ) {
       try {
         origins = dnd5eSrdApplyCharacterOrigins(template, originOptions);
       } catch (error) {
@@ -3178,6 +4162,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!option) return badRequest(reply, "No advancement option is available for this actor");
     actor.data = applySystemAdvancement(actor, option.id);
     actor.updatedAt = nowIso();
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: request.params.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "system.actor.advance",
+        targetType: "actor",
+        targetId: actor.id,
+        after: {
+          systemId: actor.systemId,
+          actorId: actor.id,
+          optionId: option.id,
+          actorType: actor.type
+        }
+      })
+    );
     store.save();
     broadcastActorUpdated(broadcast, actor);
     return { advancement: option, actor, sheet: systemSheet(actor, actorItems(store, actor)) };
@@ -3201,6 +4201,22 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     actor.data = rest.data;
     actor.updatedAt = nowIso();
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: request.params.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "system.actor.rest",
+        targetType: "actor",
+        targetId: actor.id,
+        after: {
+          systemId: actor.systemId,
+          actorId: actor.id,
+          restType,
+          actorType: actor.type
+        }
+      })
+    );
     store.save();
     broadcastActorUpdated(broadcast, actor);
     return { rest, actor, sheet: systemSheet(actor, actorItems(store, actor)) };
@@ -3275,7 +4291,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (!targetActor) return notFound(reply, "Target actor not found");
       if (!canUpdateActorForUser(store, userId, targetActor)) return forbidden(reply, "Missing permission: actor.update");
       const targetForEffect = { ...targetActor, data: actorDataUpdates.get(targetActor.id) ?? targetActor.data };
-      const applied = applySystemRollEffect(targetForEffect, rollDefinition, rolled.total);
+      const applied = applySystemRollEffect(targetForEffect, rollDefinition, rolled.total, { allowConditionEffects: true });
       if ("error" in applied) return badRequest(reply, applied.message);
       actorDataUpdates.set(targetActor.id, applied.data);
       effect = applied.effect;
@@ -3319,6 +4335,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }) satisfies ChatMessage;
     store.state.rolls.push(roll);
     store.state.chat.push(message);
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: request.params.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "system.actor.roll",
+        targetType: "actor",
+        targetId: actor.id,
+        after: {
+          systemId: actor.systemId,
+          actorId: actor.id,
+          rollId: rollDefinition.id,
+          label: rollDefinition.label,
+          actorType: actor.type,
+          consumeResources: Boolean(request.body.consumeResources),
+          applyEffect: Boolean(request.body.applyEffect),
+          hasUsage: Boolean(usage),
+          hasEffect: Boolean(effect)
+        }
+      })
+    );
     store.save();
     for (const actorId of actorsToBroadcast) {
       const updatedActor = store.state.actors.find((item) => item.id === actorId && item.campaignId === request.params.campaignId);
@@ -3467,6 +4504,11 @@ function aiProviderErrorMessage(error: unknown): string {
   return message.slice(0, 500) || "AI provider failed";
 }
 
+function ensureAiEvaluations(store: StateStore): void {
+  const state = store.state as EngineState & { aiEvaluations?: AiEvaluationRun[] };
+  state.aiEvaluations ??= [];
+}
+
 function createInitialAiUsage(prompt: string, context: unknown): AiUsageMetrics {
   return {
     promptCharacters: prompt.length,
@@ -3527,7 +4569,232 @@ function summarizeAiUsage(campaignId: string, threads: AiThread[]) {
   };
 }
 
+function aiEvaluationSnapshot(store: StateStore, campaignId: string) {
+  ensureAiEvaluations(store);
+  const evaluations = store.state.aiEvaluations.filter((evaluation) => evaluation.campaignId === campaignId).sort(sortTimestampsDesc);
+  return {
+    campaignId,
+    ...summarizeAiEvaluations(evaluations),
+    evaluations
+  };
+}
+
+function createAiEvaluationRun(store: StateStore, campaignId: string, userId: string, thread: AiThread, input: AiEvaluationInput): AiEvaluationRun {
+  const toolCalls = store.state.aiToolCalls.filter((call) => call.threadId === thread.id);
+  const checks: AiEvaluationCheck[] = [];
+  const expectedStatus = input.expectedStatus ?? "completed";
+  checks.push(aiEvaluationCheck("thread_status", expectedStatus, thread.status ?? "running"));
+  if (input.expectedProvider?.trim()) checks.push(aiEvaluationCheck("provider", input.expectedProvider.trim(), thread.provider));
+  if (input.requireNoFailedToolCalls ?? true) {
+    const failedToolCalls = toolCalls.filter((call) => call.status === "failed").map((call) => call.toolName);
+    checks.push(aiEvaluationCheck("no_failed_tool_calls", [], failedToolCalls));
+  }
+  for (const toolName of input.requiredToolCalls ?? []) {
+    checks.push(aiEvaluationCheck(`tool_called:${toolName}`, true, toolCalls.some((call) => call.toolName === toolName && call.status !== "started")));
+  }
+  const advertisedToolNames = thread.advertisedToolNames ?? [];
+  for (const toolName of input.requiredAdvertisedTools ?? []) {
+    const expected = toolName.trim();
+    if (!expected) continue;
+    checks.push(aiEvaluationCheck(`tool_advertised:${expected}`, true, advertisedToolNames.includes(expected)));
+  }
+  for (const toolName of input.forbiddenAdvertisedTools ?? []) {
+    const expected = toolName.trim();
+    if (!expected) continue;
+    checks.push(aiEvaluationCheck(`tool_not_advertised:${expected}`, true, !advertisedToolNames.includes(expected)));
+  }
+  const advertisedPermissionNames = new Set((thread.advertisedTools ?? []).flatMap((tool) => tool.requiredPermissions));
+  for (const permissionName of input.forbiddenAdvertisedPermissions ?? []) {
+    const expected = permissionName.trim();
+    if (!expected) continue;
+    checks.push(aiEvaluationCheck(`advertised_permission_omitted:${expected}`, true, !advertisedPermissionNames.has(expected)));
+  }
+  const expectedToolOutputs = Array.isArray(input.expectedToolOutputs) ? input.expectedToolOutputs.filter(isRecord) : [];
+  for (const expectation of expectedToolOutputs) {
+    checks.push(...aiToolOutputExpectationChecks(expectation, toolCalls));
+  }
+  const response = thread.assistantMessage ?? "";
+  for (const substring of input.requiredResponseSubstrings ?? []) {
+    const expected = substring.trim();
+    if (!expected) continue;
+    checks.push(aiResponseSubstringCheck(`response_contains:${expected}`, expected, response, true));
+  }
+  for (const substring of input.forbiddenResponseSubstrings ?? []) {
+    const expected = substring.trim();
+    if (!expected) continue;
+    checks.push(aiResponseSubstringCheck(`response_omits:${expected}`, expected, response, false));
+  }
+  const responseCriteria = Array.isArray(input.responseCriteria) ? input.responseCriteria.filter(isRecord) : [];
+  for (const criterion of responseCriteria) {
+    checks.push(...aiResponseCriterionChecks(criterion, response));
+  }
+  if (input.minToolCallCount !== undefined) {
+    const min = Math.max(0, Math.floor(input.minToolCallCount));
+    const actual = toolCalls.filter((call) => call.status !== "started").length;
+    checks.push({ name: "min_tool_call_count", expected: `>=${min}`, actual, status: actual >= min ? "passed" : "failed" });
+  }
+  if (input.minResponseCharacters !== undefined) {
+    const min = Math.max(0, Math.floor(input.minResponseCharacters));
+    const actual = response.length;
+    checks.push({ name: "min_response_characters", expected: `>=${min}`, actual, status: actual >= min ? "passed" : "failed" });
+  }
+  if (input.maxResponseCharacters !== undefined) {
+    const max = Math.max(0, Math.floor(input.maxResponseCharacters));
+    const actual = response.length;
+    checks.push({ name: "max_response_characters", expected: `<=${max}`, actual, status: actual <= max ? "passed" : "failed" });
+  }
+  if (input.maxDurationMs !== undefined) {
+    const max = Math.max(0, Math.floor(input.maxDurationMs));
+    const actual = thread.durationMs;
+    checks.push({ name: "max_duration_ms", expected: `<=${max}`, actual, status: typeof actual === "number" && actual <= max ? "passed" : "failed" });
+  }
+  if (input.maxEstimatedCostUsd !== undefined) {
+    const max = Math.max(0, input.maxEstimatedCostUsd);
+    const actual = thread.usage?.estimatedCostUsd;
+    checks.push({ name: "max_estimated_cost_usd", expected: `<=${max}`, actual, status: typeof actual === "number" && actual <= max ? "passed" : "failed" });
+  }
+  const passed = checks.filter((check) => check.status === "passed").length;
+  const score = checks.length === 0 ? 1 : Math.round((passed / checks.length) * 1000) / 1000;
+  const status = checks.every((check) => check.status === "passed") ? "passed" : "failed";
+  return createTimestamped("eval", {
+    campaignId,
+    userId,
+    threadId: thread.id,
+    provider: thread.provider,
+    name: input.name?.trim().slice(0, 120) || "AI thread smoke evaluation",
+    status,
+    score,
+    summary: `${passed}/${checks.length} checks passed for ${thread.provider} thread ${thread.id}.`,
+    checks
+  }) satisfies AiEvaluationRun;
+}
+
+function aiToolOutputExpectationChecks(input: AiToolOutputExpectationInput, toolCalls: AiToolCall[]): AiEvaluationCheck[] {
+  const toolName = input.toolName?.trim();
+  if (!toolName) return [];
+  const expectedStatus = input.status ?? "completed";
+  const call = toolCalls.find((item) => item.toolName === toolName && item.status === expectedStatus);
+  const checks: AiEvaluationCheck[] = [aiEvaluationCheck(`tool_output:${toolName}:status`, expectedStatus, call?.status)];
+  if (!call) return checks;
+  const outputText = aiEvaluationText(call.output);
+  const outputFields = Array.isArray(input.outputFields) ? input.outputFields.filter(isRecord) : [];
+  for (const field of outputFields) {
+    const path = stringFromRecord(field, "path");
+    if (!path) continue;
+    const actual = aiEvaluationValueAtPath(call.output, path);
+    checks.push(aiEvaluationCheck(`tool_output:${toolName}:field:${path}`, field.equals, actual));
+  }
+  for (const substring of input.outputContains ?? []) {
+    const expected = substring.trim();
+    if (!expected) continue;
+    checks.push(aiResponseSubstringCheck(`tool_output:${toolName}:contains:${expected}`, expected, outputText, true));
+  }
+  for (const substring of input.outputOmits ?? []) {
+    const expected = substring.trim();
+    if (!expected) continue;
+    checks.push(aiResponseSubstringCheck(`tool_output:${toolName}:omits:${expected}`, expected, outputText, false));
+  }
+  return checks;
+}
+
+function aiResponseCriterionChecks(input: AiResponseCriterionInput, response: string): AiEvaluationCheck[] {
+  const criteriaName = input.name?.trim().slice(0, 80) || "response";
+  const checks: AiEvaluationCheck[] = [];
+  for (const substring of input.requiredSubstrings ?? []) {
+    const expected = substring.trim();
+    if (!expected) continue;
+    checks.push(aiResponseSubstringCheck(`response_criteria:${criteriaName}:contains:${expected}`, expected, response, true));
+  }
+  for (const substring of input.forbiddenSubstrings ?? []) {
+    const expected = substring.trim();
+    if (!expected) continue;
+    checks.push(aiResponseSubstringCheck(`response_criteria:${criteriaName}:omits:${expected}`, expected, response, false));
+  }
+  if (input.minCharacters !== undefined) {
+    const min = Math.max(0, Math.floor(input.minCharacters));
+    const actual = response.length;
+    checks.push({ name: `response_criteria:${criteriaName}:min_characters`, expected: `>=${min}`, actual, status: actual >= min ? "passed" : "failed" });
+  }
+  if (input.maxCharacters !== undefined) {
+    const max = Math.max(0, Math.floor(input.maxCharacters));
+    const actual = response.length;
+    checks.push({ name: `response_criteria:${criteriaName}:max_characters`, expected: `<=${max}`, actual, status: actual <= max ? "passed" : "failed" });
+  }
+  return checks;
+}
+
+function aiEvaluationCheck(name: string, expected: unknown, actual: unknown): AiEvaluationCheck {
+  return {
+    name,
+    expected,
+    actual,
+    status: aiEvaluationValuesEqual(expected, actual) ? "passed" : "failed"
+  };
+}
+
+function aiResponseSubstringCheck(name: string, substring: string, response: string, shouldContain: boolean): AiEvaluationCheck {
+  const contains = response.toLocaleLowerCase().includes(substring.toLocaleLowerCase());
+  return {
+    name,
+    expected: shouldContain ? "present" : "absent",
+    actual: contains ? "present" : "absent",
+    status: contains === shouldContain ? "passed" : "failed"
+  };
+}
+
+function aiEvaluationText(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function aiEvaluationValueAtPath(value: unknown, path: string): unknown {
+  let current = value;
+  for (const segment of path.split(".").map((item) => item.trim()).filter(Boolean)) {
+    if (Array.isArray(current) && /^\d+$/.test(segment)) {
+      current = current[Number(segment)];
+      continue;
+    }
+    if (!isRecord(current)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
+function aiEvaluationValuesEqual(expected: unknown, actual: unknown): boolean {
+  if (Array.isArray(expected) && Array.isArray(actual)) return expected.length === actual.length && expected.every((item, index) => aiEvaluationValuesEqual(item, actual[index]));
+  return expected === actual;
+}
+
+function summarizeAiEvaluations(evaluations: AiEvaluationRun[]) {
+  return {
+    evaluationCount: evaluations.length,
+    passedEvaluationCount: evaluations.filter((evaluation) => evaluation.status === "passed").length,
+    failedEvaluationCount: evaluations.filter((evaluation) => evaluation.status === "failed").length,
+    averageScore: evaluations.length > 0 ? Math.round((sumNumbers(evaluations.map((evaluation) => evaluation.score)) / evaluations.length) * 1000) / 1000 : 0,
+    failedChecks: summarizeAiEvaluationFailedChecks(evaluations)
+  };
+}
+
+function summarizeAiEvaluationFailedChecks(evaluations: AiEvaluationRun[]) {
+  const counts = new Map<string, number>();
+  for (const evaluation of evaluations) {
+    for (const check of evaluation.checks) {
+      if (check.status !== "failed") continue;
+      counts.set(check.name, (counts.get(check.name) ?? 0) + 1);
+    }
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, 20);
+}
+
 function adminAiOperations(store: StateStore, aiProvider: AiProvider) {
+  ensureAiEvaluations(store);
   const threadById = new Map(store.state.aiThreads.map((thread) => [thread.id, thread]));
   const campaigns = store.state.campaigns
     .map((campaign) => {
@@ -3541,20 +4808,1247 @@ function adminAiOperations(store: StateStore, aiProvider: AiProvider) {
     .filter((campaign) => campaign.threadCount > 0)
     .sort((a, b) => b.threadCount - a.threadCount || a.campaignName.localeCompare(b.campaignName));
 
+  const evaluationCoverage = summarizeAiEvaluationCoverage(store.state.aiThreads, store.state.aiEvaluations, store.state.campaigns);
+  const safetyPosture = summarizeAiSafetyPosture(store.state.aiEvaluations);
+  const risk = summarizeAiOperationsRisk(store);
+  const proposalReview = summarizeAiProposalReview(store);
+  const providerHealth = summarizeAiProviderHealth(store.state.aiThreads);
+  const toolCatalog = summarizeAiToolCatalog(createAiThreadTools());
+  const replayOperations = summarizeAiToolReplayOperations(store);
+  const runtime = aiProviderRuntimeConfig(aiProvider);
+  const runtimePosture = summarizeAiRuntimePosture(runtime);
+  const actionReasons = [...runtimePosture.actionReasons, ...aiOperationsActionReasons(risk), ...aiProviderHealthOperationsActionReasons(providerHealth), ...proposalReview.actionReasons, ...aiToolReplayOperationsActionReasons(replayOperations)];
   return {
     provider: {
       id: aiProvider.id,
       label: aiProvider.label
     },
-    runtime: aiProviderRuntimeConfig(aiProvider),
+    actionRequired: actionReasons.length > 0,
+    actionReasons,
+    remediationQueue: aiOperationsRemediationQueue({ runtimePosture, risk, proposalReview, providerHealth, replayOperations }),
+    runtime,
+    runtimePosture,
     totals: summarizeAiThreads(store.state.aiThreads),
+    evaluations: summarizeAiEvaluations(store.state.aiEvaluations),
+    evaluationCoverage,
+    serviceLevels: summarizeAiServiceLevels(store.state.aiThreads, store.state.aiToolCalls, store.state.aiEvaluations),
+    providerHealth,
+    toolCatalog,
+    replayOperations,
+    proposalReview,
+    safetyPosture,
+    risk,
     campaigns,
+    recentEvaluations: store.state.aiEvaluations.slice().sort(sortTimestampsDesc).slice(0, 20),
     recentThreads: store.state.aiThreads.slice().sort(sortTimestampsDesc).slice(0, 20),
     recentToolCalls: store.state.aiToolCalls
       .slice()
       .sort(sortTimestampsDesc)
       .slice(0, 50)
       .map((call) => adminAiToolCallInfo(call, threadById, store.state.campaigns))
+  };
+}
+
+function summarizeAiProposalReview(store: StateStore) {
+  const aiProposals = store.state.proposals.filter((proposal) => proposal.createdByType === "ai");
+  const pending = aiProposals.filter((proposal) => proposal.status === "pending");
+  const approved = aiProposals.filter((proposal) => proposal.status === "approved");
+  const applied = aiProposals.filter((proposal) => proposal.status === "applied");
+  const rejected = aiProposals.filter((proposal) => proposal.status === "rejected");
+  const failedApplyReady = aiProposals.filter((proposal) => proposal.status === "approved" && proposal.approvalRequired);
+  const stalePending = pending.filter((proposal) => ageMs(proposal.createdAt) >= AI_STALE_PROPOSAL_REVIEW_MS);
+  const staleApproved = failedApplyReady.filter((proposal) => ageMs(proposal.updatedAt) >= AI_STALE_PROPOSAL_REVIEW_MS);
+  const campaignById = new Map(store.state.campaigns.map((campaign) => [campaign.id, campaign]));
+  const sourceCounts = countBy(aiProposals, (proposal) => proposal.sourceId ? "tool_or_thread" : "manual");
+  const entityCounts = countBy(aiProposals.flatMap((proposal) => proposal.changesJson.map((change) => change.entity)), (entity) => entity);
+  const applyFailures = store.state.auditLogs
+    .filter((log) => log.action === "ai.proposal.apply.failed")
+    .sort(sortTimestampsDesc)
+    .map((log) => redactedAiProposalApplyFailureInfo(log, campaignById));
+  const pendingByCampaign = store.state.campaigns
+    .map((campaign) => {
+      const campaignPending = pending.filter((proposal) => proposal.campaignId === campaign.id);
+      const oldest = campaignPending.slice().sort(sortTimestampsAsc)[0];
+      return {
+        campaignId: campaign.id,
+        campaignName: campaign.name,
+        pendingCount: campaignPending.length,
+        oldestPendingAgeMs: oldest ? ageMs(oldest.createdAt) : 0,
+        oldestPendingAt: oldest?.createdAt
+      };
+    })
+    .filter((campaign) => campaign.pendingCount > 0)
+    .sort((left, right) => right.pendingCount - left.pendingCount || right.oldestPendingAgeMs - left.oldestPendingAgeMs || left.campaignName.localeCompare(right.campaignName));
+
+  return {
+    proposalCount: aiProposals.length,
+    pendingCount: pending.length,
+    approvedCount: approved.length,
+    appliedCount: applied.length,
+    rejectedCount: rejected.length,
+    applyReadyCount: failedApplyReady.length,
+    approvalRequiredCount: aiProposals.filter((proposal) => proposal.approvalRequired).length,
+    staleReviewThresholdMs: AI_STALE_PROPOSAL_REVIEW_MS,
+    stalePendingCount: stalePending.length,
+    staleApprovedCount: staleApproved.length,
+    applyFailureCount: applyFailures.length,
+    oldestPendingAgeMs: pending.length > 0 ? Math.max(...pending.map((proposal) => ageMs(proposal.createdAt))) : 0,
+    oldestApprovedAgeMs: failedApplyReady.length > 0 ? Math.max(...failedApplyReady.map((proposal) => ageMs(proposal.updatedAt))) : 0,
+    sourceCounts,
+    entityCounts,
+    actionRequired: pending.length > 0 || failedApplyReady.length > 0,
+    actionReasons: [
+      pending.length > 0 ? "pending_ai_proposals" : undefined,
+      failedApplyReady.length > 0 ? "approved_ai_proposals_waiting_apply" : undefined,
+      stalePending.length > 0 ? "stale_pending_ai_proposals" : undefined,
+      staleApproved.length > 0 ? "stale_approved_ai_proposals" : undefined,
+      applyFailures.length > 0 ? "ai_proposal_apply_failures" : undefined
+    ].filter((reason): reason is string => Boolean(reason)),
+    campaigns: pendingByCampaign.slice(0, 12),
+    recentPending: pending
+      .slice()
+      .sort(sortTimestampsDesc)
+      .slice(0, 12)
+      .map((proposal) => redactedAiProposalReviewInfo(proposal, campaignById)),
+    recentApproved: approved
+      .slice()
+      .sort(sortTimestampsDesc)
+      .slice(0, 8)
+      .map((proposal) => redactedAiProposalReviewInfo(proposal, campaignById)),
+    recentApplied: applied
+      .slice()
+      .sort(sortTimestampsDesc)
+      .slice(0, 8)
+      .map((proposal) => redactedAiProposalReviewInfo(proposal, campaignById)),
+    recentRejected: rejected
+      .slice()
+      .sort(sortTimestampsDesc)
+      .slice(0, 8)
+      .map((proposal) => redactedAiProposalReviewInfo(proposal, campaignById)),
+    stalePending: stalePending
+      .slice()
+      .sort(sortTimestampsAsc)
+      .slice(0, 8)
+      .map((proposal) => redactedAiProposalReviewInfo(proposal, campaignById)),
+    staleApproved: staleApproved
+      .slice()
+      .sort(sortTimestampsAsc)
+      .slice(0, 8)
+      .map((proposal) => redactedAiProposalReviewInfo(proposal, campaignById)),
+    recentApplyFailures: applyFailures.slice(0, 8)
+  };
+}
+
+function redactedAiProposalReviewInfo(proposal: Proposal, campaignById: Map<string, Campaign>) {
+  return {
+    id: proposal.id,
+    campaignId: proposal.campaignId,
+    campaignName: campaignById.get(proposal.campaignId)?.name,
+    title: proposal.title,
+    status: proposal.status,
+    createdByUserId: proposal.createdByUserId,
+    sourceId: proposal.sourceId,
+    changeCount: proposal.changesJson.length,
+    entities: [...new Set(proposal.changesJson.map((change) => change.entity))],
+    createdAt: proposal.createdAt,
+    updatedAt: proposal.updatedAt,
+    approvedByUserId: proposal.approvedByUserId
+  };
+}
+
+function rejectStaleAiProposals(store: StateStore, options: { dryRun?: boolean; campaignId?: string; limit?: number | string; reason?: string; includeApproved?: boolean }) {
+  const dryRun = options.dryRun === true;
+  const includeApproved = options.includeApproved === true;
+  const campaignId = typeof options.campaignId === "string" && options.campaignId.trim() ? options.campaignId.trim() : undefined;
+  const limit = normalizeAiThreadOperationLimit(options.limit);
+  const reason = typeof options.reason === "string" && options.reason.trim() ? options.reason.trim().slice(0, 240) : "Rejected by server-admin stale AI proposal cleanup";
+  const now = nowIso();
+  const campaignById = new Map(store.state.campaigns.map((campaign) => [campaign.id, campaign]));
+  const staleProposals = store.state.proposals
+    .filter((proposal) => proposal.createdByType === "ai")
+    .filter((proposal) => proposal.status === "pending" || (includeApproved && proposal.status === "approved" && proposal.approvalRequired))
+    .filter((proposal) => !campaignId || proposal.campaignId === campaignId)
+    .map((proposal) => ({
+      proposal,
+      previousStatus: proposal.status,
+      ageMs: ageMs(proposal.status === "approved" ? proposal.updatedAt : proposal.createdAt)
+    }))
+    .filter((item) => item.ageMs >= AI_STALE_PROPOSAL_REVIEW_MS)
+    .sort((left, right) => right.ageMs - left.ageMs || left.proposal.createdAt.localeCompare(right.proposal.createdAt))
+    .slice(0, limit);
+
+  if (!dryRun) {
+    for (const { proposal } of staleProposals) {
+      proposal.status = "rejected";
+      proposal.updatedAt = now;
+    }
+  }
+
+  return {
+    dryRun,
+    campaignId,
+    includeApproved,
+    limit,
+    reason,
+    staleReviewThresholdMs: AI_STALE_PROPOSAL_REVIEW_MS,
+    matched: staleProposals.length,
+    updated: dryRun ? 0 : staleProposals.length,
+    proposals: staleProposals.map(({ proposal, previousStatus, ageMs: proposalAgeMs }) => ({
+      ...redactedAiProposalReviewInfo(proposal, campaignById),
+      previousStatus,
+      status: dryRun ? proposal.status : "rejected",
+      ageMs: proposalAgeMs
+    }))
+  };
+}
+
+function redactedAiProposalApplyFailureInfo(log: AuditLog, campaignById: Map<string, Campaign>) {
+  const after = isRecord(log.after) ? log.after : {};
+  const entities = Array.isArray(after.entities) ? after.entities.filter((entity): entity is string => typeof entity === "string") : [];
+  return {
+    auditLogId: log.id,
+    proposalId: typeof after.proposalId === "string" ? after.proposalId : log.targetId,
+    campaignId: log.campaignId,
+    campaignName: log.campaignId ? campaignById.get(log.campaignId)?.name : undefined,
+    actorUserId: log.actorUserId,
+    status: typeof after.status === "string" ? after.status : undefined,
+    createdByType: typeof after.createdByType === "string" ? after.createdByType : undefined,
+    sourceId: typeof after.sourceId === "string" ? after.sourceId : undefined,
+    changeCount: typeof after.changeCount === "number" ? after.changeCount : 0,
+    entities,
+    reason: typeof after.reason === "string" ? after.reason : "proposal_apply_failed",
+    message: typeof after.message === "string" ? after.message : undefined,
+    createdAt: log.createdAt
+  };
+}
+
+function aiOperationsActionReasons(risk: ReturnType<typeof summarizeAiOperationsRisk>) {
+  return [
+    risk.failedThreadCount > 0 ? "failed_threads" : undefined,
+    risk.providerErrors.length > 0 ? "provider_errors" : undefined,
+    risk.failedToolCallCount > 0 ? "failed_tool_calls" : undefined,
+    risk.staleRunningThreadCount > 0 ? "stale_running_threads" : undefined,
+    risk.staleStartedToolCallCount > 0 ? "stale_started_tool_calls" : undefined,
+    risk.costBudgetExceeded ? "cost_budget_exceeded" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+function aiProviderHealthOperationsActionReasons(providerHealth: ReturnType<typeof summarizeAiProviderHealth>) {
+  return [
+    providerHealth.some((provider) => provider.failureRateDegraded) ? "provider_degraded_failure_rate" : undefined,
+    providerHealth.some((provider) => provider.p95DurationDegraded) ? "provider_degraded_latency" : undefined,
+    providerHealth.some((provider) => provider.runningThreadPressure) ? "provider_running_thread_pressure" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+function aiToolReplayOperationsActionReasons(replayOperations: ReturnType<typeof summarizeAiToolReplayOperations>) {
+  return [
+    replayOperations.failedReplayCount > 0 ? "failed_ai_tool_replays" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+function aiOperationsRemediationQueue(input: {
+  runtimePosture: ReturnType<typeof summarizeAiRuntimePosture>;
+  risk: ReturnType<typeof summarizeAiOperationsRisk>;
+  proposalReview: ReturnType<typeof summarizeAiProposalReview>;
+  providerHealth: ReturnType<typeof summarizeAiProviderHealth>;
+  replayOperations: ReturnType<typeof summarizeAiToolReplayOperations>;
+}) {
+  const remediations: Array<{
+    code: string;
+    severity: "warning" | "error";
+    action: string;
+    affectedCount: number;
+    samples?: Array<Record<string, unknown>>;
+  }> = [];
+  if (input.runtimePosture.actionRequired) {
+    const runtimeConfigErrorReasons = ["openai_api_key_missing", "openai_timeout_disabled", "openai_base_url_invalid", "openai_base_url_insecure"];
+    remediations.push({
+      code: "review_ai_runtime_config",
+      severity: input.runtimePosture.actionReasons.some((reason) => runtimeConfigErrorReasons.includes(reason)) ? "error" : "warning",
+      action: input.runtimePosture.remediation,
+      affectedCount: input.runtimePosture.actionReasons.length,
+      samples: [
+        {
+          selectedProvider: input.runtimePosture.selectedProvider,
+          activeProvider: input.runtimePosture.activeProvider,
+          providerMismatch: input.runtimePosture.providerMismatch,
+          retryAttempts: input.runtimePosture.retryAttempts,
+          openaiApiKeyConfigured: input.runtimePosture.openai?.apiKeyConfigured,
+          openaiTimeoutMs: input.runtimePosture.openai?.timeoutMs,
+          openaiModel: input.runtimePosture.openai?.model,
+          openaiModelConfigured: input.runtimePosture.openai?.modelConfigured,
+          openaiBaseUrl: input.runtimePosture.openai?.baseUrl,
+          openaiBaseUrlValid: input.runtimePosture.openai?.baseUrlValid,
+          openaiBaseUrlIssue: input.runtimePosture.openai?.baseUrlIssue,
+          openaiBaseUrlInsecureInProduction: input.runtimePosture.openai?.baseUrlInsecureInProduction,
+          costRatesConfigured: input.runtimePosture.costRatesConfigured,
+          costRatesComplete: input.runtimePosture.costRatesComplete,
+          invalidCostConfig: input.runtimePosture.invalidCostConfig,
+          invalidProviderThresholdConfig: input.runtimePosture.invalidProviderThresholdConfig,
+          invalidRuntimeControlConfig: input.runtimePosture.invalidRuntimeControlConfig,
+          actionReasons: input.runtimePosture.actionReasons
+        }
+      ]
+    });
+  }
+  const providerFailures = input.providerHealth.filter((provider) => provider.actionRequired);
+  if (providerFailures.length > 0) {
+    remediations.push({
+      code: "investigate_ai_provider_health",
+      severity: providerFailures.some((provider) => provider.providerErrorCount > 0 || provider.staleRunningThreadCount > 0) ? "error" : "warning",
+      action: "Inspect provider-specific failures, sanitized provider errors, stale running threads, and routing or timeout configuration.",
+      affectedCount: providerFailures.reduce((total, provider) => total + provider.failedThreadCount + provider.staleRunningThreadCount + provider.providerErrorCount, 0),
+      samples: providerFailures.slice(0, 3).map((provider) => ({
+        provider: provider.provider,
+        actionReasons: provider.actionReasons,
+        failedThreadCount: provider.failedThreadCount,
+        failureRate: provider.failureRate,
+        failureRateThreshold: provider.failureRateThreshold,
+        p95DurationMs: provider.durationMsSummary.p95,
+        p95DurationThresholdMs: provider.p95DurationThresholdMs,
+        runningThreadCount: provider.runningThreadCount,
+        runningThreadThreshold: provider.runningThreadThreshold,
+        staleRunningThreadCount: provider.staleRunningThreadCount,
+        providerErrorCount: provider.providerErrorCount,
+        recentError: provider.recentErrorMessages[0]
+      }))
+    });
+  }
+  if (input.risk.staleRunningThreadCount > 0) {
+    remediations.push({
+      code: "fail_stale_ai_threads",
+      severity: "error",
+      action: "Run stale AI thread cleanup to mark hung running threads failed after confirming provider timeout behavior.",
+      affectedCount: input.risk.staleRunningThreadCount,
+      samples: input.risk.recentStaleRunningThreads.slice(0, 3).map((thread) => ({
+        threadId: thread.id,
+        campaignId: thread.campaignId,
+        provider: thread.provider,
+        title: thread.title,
+        ageMs: thread.ageMs
+      }))
+    });
+  }
+  if (input.risk.staleStartedToolCallCount > 0) {
+    remediations.push({
+      code: "fail_stale_ai_tool_calls",
+      severity: "error",
+      action: "Run stale AI tool-call cleanup so hung started calls become explicit failures that can be reviewed or retried.",
+      affectedCount: input.risk.staleStartedToolCallCount,
+      samples: input.risk.recentStaleStartedToolCalls.slice(0, 3).map((call) => ({
+        toolCallId: call.id,
+        threadId: call.threadId,
+        campaignId: call.campaignId,
+        provider: call.provider,
+        toolName: call.toolName,
+        ageMs: call.ageMs
+      }))
+    });
+  }
+  const retryablePolicy = input.risk.failedToolRetryPolicy;
+  if (retryablePolicy && retryablePolicy.retryableCount > 0) {
+    remediations.push({
+      code: "replay_retryable_ai_tools",
+      severity: "warning",
+      action: "Replay retryable failed AI tool calls after confirming the original thread user still has the required campaign permissions.",
+      affectedCount: retryablePolicy.retryableCount,
+      samples: retryablePolicy.recentRetryable.slice(0, 3).map((call) => ({
+        toolCallId: call.id,
+        threadId: call.threadId,
+        campaignId: call.campaignId,
+        campaignName: call.campaignName,
+        provider: call.provider,
+        threadTitle: call.threadTitle,
+        threadStatus: call.threadStatus,
+        toolName: call.toolName,
+        error: call.error,
+        retryReason: call.retryReason,
+        createdAt: call.createdAt
+      }))
+    });
+  }
+  const nonRetryableTools = retryablePolicy?.byTool.filter((tool) => tool.nonRetryable > 0) ?? [];
+  if (nonRetryableTools.length > 0) {
+    remediations.push({
+      code: "review_blocked_ai_tool_failures",
+      severity: "warning",
+      action: "Review non-retryable AI tool failures for permission, invalid input, or unknown-tool regressions before expanding tool coverage.",
+      affectedCount: retryablePolicy?.nonRetryableCount ?? nonRetryableTools.reduce((total, tool) => total + tool.nonRetryable, 0),
+      samples: nonRetryableTools.slice(0, 3).map((tool) => ({
+        toolName: tool.toolName,
+        nonRetryable: tool.nonRetryable,
+        reasons: tool.reasons.slice(0, 3)
+      }))
+    });
+  }
+  if (input.replayOperations.failedReplayCount > 0) {
+    remediations.push({
+      code: "review_failed_ai_tool_replays",
+      severity: "error",
+      action: "Review failed manual AI tool replays before retrying again; repeated replay failures may indicate permission drift, stale inputs, or tool regressions.",
+      affectedCount: input.replayOperations.failedReplayCount,
+      samples: input.replayOperations.recentRetried
+        .filter((call) => call.resultStatus === "failed")
+        .slice(0, 3)
+        .map((call) => ({
+          toolCallId: call.id,
+          threadId: call.threadId,
+          campaignId: call.campaignId,
+          campaignName: call.campaignName,
+          provider: call.provider,
+          threadTitle: call.threadTitle,
+          toolName: call.toolName,
+          resultCallId: call.resultCallId,
+          resultError: call.resultError,
+          retriedAt: call.retriedAt
+        }))
+    });
+  }
+  if (input.risk.costBudgetExceeded) {
+    remediations.push({
+      code: "reduce_ai_cost_pressure",
+      severity: "error",
+      action: "Reduce AI provider usage, adjust model routing, or raise the configured AI cost budget.",
+      affectedCount: 1,
+      samples: input.risk.costBudget ? [{
+        budgetUsd: input.risk.costBudget.budgetUsd,
+        estimatedCostUsd: input.risk.costBudget.estimatedCostUsd,
+        remainingUsd: input.risk.costBudget.remainingUsd,
+        usageRatio: input.risk.costBudget.usageRatio
+      }] : undefined
+    });
+  }
+  if (input.proposalReview.pendingCount > 0) {
+    remediations.push({
+      code: "review_pending_ai_proposals",
+      severity: input.proposalReview.stalePendingCount > 0 ? "error" : "warning",
+      action: "Review pending AI-created proposals before any campaign state changes are applied.",
+      affectedCount: input.proposalReview.pendingCount,
+      samples: input.proposalReview.recentPending.slice(0, 3).map((proposal) => ({
+        proposalId: proposal.id,
+        campaignId: proposal.campaignId,
+        campaignName: proposal.campaignName,
+        title: proposal.title,
+        changeCount: proposal.changeCount,
+        entities: proposal.entities
+      }))
+    });
+  }
+  if (input.proposalReview.applyReadyCount > 0) {
+    remediations.push({
+      code: "apply_approved_ai_proposals",
+      severity: input.proposalReview.staleApprovedCount > 0 ? "error" : "warning",
+      action: "Apply approved AI-created proposals or reject them if the approved diff is no longer valid.",
+      affectedCount: input.proposalReview.applyReadyCount,
+      samples: input.proposalReview.recentApproved.slice(0, 3).map((proposal) => ({
+        proposalId: proposal.id,
+        campaignId: proposal.campaignId,
+        campaignName: proposal.campaignName,
+        title: proposal.title,
+        changeCount: proposal.changeCount,
+        entities: proposal.entities,
+        approvedByUserId: proposal.approvedByUserId
+      }))
+    });
+  }
+  if (input.proposalReview.applyFailureCount > 0) {
+    remediations.push({
+      code: "review_ai_proposal_apply_failures",
+      severity: "error",
+      action: "Review failed AI proposal apply attempts; stale or invalid approved diffs should be rejected, repaired, or regenerated before retry.",
+      affectedCount: input.proposalReview.applyFailureCount,
+      samples: input.proposalReview.recentApplyFailures.slice(0, 3).map((failure) => ({
+        auditLogId: failure.auditLogId,
+        proposalId: failure.proposalId,
+        campaignId: failure.campaignId,
+        campaignName: failure.campaignName,
+        actorUserId: failure.actorUserId,
+        status: failure.status,
+        changeCount: failure.changeCount,
+        entities: failure.entities,
+        reason: failure.reason,
+        message: failure.message,
+        createdAt: failure.createdAt
+      }))
+    });
+  }
+  return remediations.sort((left, right) => severityRank(right.severity) - severityRank(left.severity) || right.affectedCount - left.affectedCount || left.code.localeCompare(right.code)).slice(0, 12);
+}
+
+function summarizeAiEvaluationCoverage(threads: AiThread[], evaluations: AiEvaluationRun[], campaigns: Campaign[]) {
+  const evaluatedThreadIds = new Set(evaluations.map((evaluation) => evaluation.threadId));
+  const unevaluatedThreads = threads.filter((thread) => !evaluatedThreadIds.has(thread.id));
+  const campaignSummaries = campaigns
+    .map((campaign) => {
+      const campaignThreads = threads.filter((thread) => thread.campaignId === campaign.id);
+      const campaignEvaluations = evaluations.filter((evaluation) => evaluation.campaignId === campaign.id);
+      const campaignEvaluatedThreadIds = new Set(campaignEvaluations.map((evaluation) => evaluation.threadId));
+      const latestEvaluation = campaignEvaluations.slice().sort(sortTimestampsDesc)[0];
+      return {
+        campaignId: campaign.id,
+        campaignName: campaign.name,
+        threadCount: campaignThreads.length,
+        evaluatedThreadCount: campaignEvaluatedThreadIds.size,
+        unevaluatedThreadCount: campaignThreads.filter((thread) => !campaignEvaluatedThreadIds.has(thread.id)).length,
+        failedEvaluationCount: campaignEvaluations.filter((evaluation) => evaluation.status === "failed").length,
+        latestEvaluationAt: latestEvaluation?.createdAt
+      };
+    })
+    .filter((campaign) => campaign.threadCount > 0 || campaign.evaluatedThreadCount > 0)
+    .sort((left, right) => right.unevaluatedThreadCount - left.unevaluatedThreadCount || right.failedEvaluationCount - left.failedEvaluationCount || left.campaignName.localeCompare(right.campaignName));
+
+  return {
+    threadCount: threads.length,
+    evaluatedThreadCount: evaluatedThreadIds.size,
+    unevaluatedThreadCount: unevaluatedThreads.length,
+    evaluationCoverageRate: ratio(evaluatedThreadIds.size, threads.length),
+    failedEvaluationThreadCount: new Set(evaluations.filter((evaluation) => evaluation.status === "failed").map((evaluation) => evaluation.threadId)).size,
+    recurringFailedChecks: summarizeAiEvaluationFailedChecks(evaluations),
+    campaigns: campaignSummaries.slice(0, 20),
+    recentUnevaluatedThreads: unevaluatedThreads
+      .slice()
+      .sort(sortTimestampsDesc)
+      .slice(0, 20)
+      .map((thread) => ({
+        id: thread.id,
+        campaignId: thread.campaignId,
+        title: thread.title,
+        provider: thread.provider,
+        status: thread.status,
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt
+      }))
+  };
+}
+
+function summarizeAiServiceLevels(threads: AiThread[], toolCalls: AiToolCall[], evaluations: AiEvaluationRun[]) {
+  return {
+    threads: {
+      threadCount: threads.length,
+      completionRate: ratio(threads.filter((thread) => thread.status === "completed").length, threads.length),
+      failureRate: ratio(threads.filter((thread) => thread.status === "failed").length, threads.length),
+      durationMs: summarizeDurations(threads.map((thread) => thread.durationMs))
+    },
+    tools: {
+      toolCallCount: toolCalls.length,
+      failureRate: ratio(toolCalls.filter((call) => call.status === "failed").length, toolCalls.length),
+      durationMs: summarizeDurations(toolCalls.map((call) => call.durationMs))
+    },
+    evaluations: {
+      evaluationCount: evaluations.length,
+      passRate: ratio(evaluations.filter((evaluation) => evaluation.status === "passed").length, evaluations.length),
+      failureRate: ratio(evaluations.filter((evaluation) => evaluation.status === "failed").length, evaluations.length),
+      averageScore: evaluations.length > 0 ? Math.round((sumNumbers(evaluations.map((evaluation) => evaluation.score)) / evaluations.length) * 1000) / 1000 : 0
+    }
+  };
+}
+
+function summarizeAiProviderHealth(threads: AiThread[]) {
+  const providers = new Map<string, AiThread[]>();
+  const failureRateThreshold = aiProviderFailureRateThreshold();
+  const p95DurationThresholdMs = aiProviderP95DurationThresholdMs();
+  const runningThreadThreshold = aiProviderRunningThreadThreshold();
+  for (const thread of threads) {
+    const providerThreads = providers.get(thread.provider) ?? [];
+    providerThreads.push(thread);
+    providers.set(thread.provider, providerThreads);
+  }
+  return [...providers.entries()]
+    .map(([provider, providerThreads]) => {
+      const failedThreads = providerThreads.filter((thread) => thread.status === "failed");
+      const runningThreads = providerThreads.filter((thread) => thread.status === "running");
+      const staleRunningThreads = runningThreads.filter((thread) => aiRunningThreadAgeMs(thread) >= AI_STALE_RUNNING_THREAD_MS);
+      const usage = aggregateAiUsage(providerThreads.map((thread) => thread.usage));
+      const failureRate = ratio(failedThreads.length, providerThreads.length);
+      const failureRateDegraded = providerThreads.length >= 3 && failureRate >= failureRateThreshold;
+      const durationMsSummary = summarizeDurations(providerThreads.map((thread) => thread.durationMs));
+      const p95DurationDegraded = p95DurationThresholdMs !== undefined && durationMsSummary.count >= 3 && durationMsSummary.p95 > p95DurationThresholdMs;
+      const runningThreadPressure = runningThreads.length >= runningThreadThreshold;
+      const actionReasons = aiProviderHealthActionReasons({ failedThreads, staleRunningThreads, usage, failureRateDegraded, p95DurationDegraded, runningThreadPressure });
+      return {
+        provider,
+        ...summarizeAiThreads(providerThreads),
+        actionRequired: actionReasons.length > 0,
+        actionReasons,
+        remediation: aiProviderHealthRemediation(actionReasons),
+        failureRate,
+        failureRateThreshold,
+        failureRateDegraded,
+        p95DurationThresholdMs,
+        p95DurationDegraded,
+        runningThreadThreshold,
+        runningThreadPressure,
+        completionRate: ratio(providerThreads.filter((thread) => thread.status === "completed").length, providerThreads.length),
+        staleRunningThreadCount: staleRunningThreads.length,
+        providerErrorCount: failedThreads.filter((thread) => Boolean(sanitizeAiProviderError(thread.providerError))).length,
+        durationMsSummary,
+        recentErrorMessages: failedThreads
+          .map((thread) => sanitizeAiProviderError(thread.providerError))
+          .filter((message): message is string => Boolean(message))
+          .slice(0, 5)
+      };
+    })
+    .sort((left, right) => right.failureRate - left.failureRate || right.staleRunningThreadCount - left.staleRunningThreadCount || right.threadCount - left.threadCount || left.provider.localeCompare(right.provider))
+    .slice(0, 12);
+}
+
+function aiProviderFailureRateThreshold() {
+  const parsed = envNumber("OTTE_AI_PROVIDER_FAILURE_RATE_THRESHOLD");
+  if (parsed === undefined) return 0.25;
+  return Math.min(1, Math.max(0, parsed));
+}
+
+function aiProviderP95DurationThresholdMs() {
+  const parsed = envNumber("OTTE_AI_PROVIDER_P95_DURATION_THRESHOLD_MS");
+  if (parsed === undefined || parsed <= 0) return undefined;
+  return Math.round(parsed);
+}
+
+function aiProviderRunningThreadThreshold() {
+  const parsed = envNumber("OTTE_AI_PROVIDER_RUNNING_THREAD_THRESHOLD");
+  if (parsed === undefined) return 10;
+  return Math.max(1, Math.round(parsed));
+}
+
+function aiProviderHealthActionReasons(input: { failedThreads: AiThread[]; staleRunningThreads: AiThread[]; usage: AiUsageMetrics; failureRateDegraded: boolean; p95DurationDegraded: boolean; runningThreadPressure: boolean }) {
+  const costBudgetUsd = envNumber("OTTE_AI_COST_BUDGET_USD");
+  return [
+    input.failedThreads.length > 0 ? "provider_failed_threads" : undefined,
+    input.failureRateDegraded ? "provider_degraded_failure_rate" : undefined,
+    input.p95DurationDegraded ? "provider_degraded_latency" : undefined,
+    input.runningThreadPressure ? "provider_running_thread_pressure" : undefined,
+    input.failedThreads.some((thread) => Boolean(sanitizeAiProviderError(thread.providerError))) ? "provider_errors" : undefined,
+    input.staleRunningThreads.length > 0 ? "provider_stale_running_threads" : undefined,
+    costBudgetUsd !== undefined && input.usage.estimatedCostUsd !== undefined && input.usage.estimatedCostUsd > costBudgetUsd ? "provider_cost_budget_exceeded" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+function aiProviderHealthRemediation(actionReasons: string[]) {
+  if (actionReasons.includes("provider_stale_running_threads")) return "Fail stale running threads and inspect provider timeout or streaming configuration.";
+  if (actionReasons.includes("provider_running_thread_pressure")) return "Inspect active provider backlog, routing, rate limits, and worker capacity before the backlog becomes stale.";
+  if (actionReasons.includes("provider_errors")) return "Inspect recent sanitized provider errors and validate provider credentials, model, base URL, and rate limits.";
+  if (actionReasons.includes("provider_degraded_latency")) return "Review provider latency, model routing, timeout settings, and recent slow completions before sending more production traffic.";
+  if (actionReasons.includes("provider_degraded_failure_rate")) return "Review provider routing, model availability, timeout settings, and recent failures before sending more production traffic.";
+  if (actionReasons.includes("provider_failed_threads")) return "Review failed provider threads and retry only after the upstream or tool failure is understood.";
+  if (actionReasons.includes("provider_cost_budget_exceeded")) return "Reduce provider usage, adjust model routing, or raise the configured AI cost budget.";
+  return "No provider health action is required.";
+}
+
+function summarizeAiToolCatalog(tools: AiToolDefinition[]) {
+  const toolRows = tools.map((tool) => {
+    const permissionSafe = aiToolPermissionSafe(tool);
+    const proposalGated = tool.requiredPermissions.includes("ai.proposeChanges");
+    const failClosed = !permissionSafe && !proposalGated;
+    return {
+      name: tool.name,
+      requiredPermissions: [...tool.requiredPermissions],
+      permissionSafe,
+      proposalGated,
+      failClosed,
+      parameterSchemaType: tool.parameters?.type ?? "unknown",
+      rejectsAdditionalProperties: tool.parameters?.additionalProperties === false
+    };
+  });
+  const failClosedTools = toolRows.filter((tool) => tool.failClosed);
+  return {
+    toolCount: toolRows.length,
+    permissionSafeToolCount: toolRows.filter((tool) => tool.permissionSafe).length,
+    proposalGatedToolCount: toolRows.filter((tool) => tool.proposalGated).length,
+    failClosedToolCount: failClosedTools.length,
+    actionRequired: failClosedTools.length > 0,
+    actionReasons: failClosedTools.length > 0 ? ["ai_tool_fail_closed"] : [],
+    remediation: failClosedTools.length > 0
+      ? "Add ai.proposeChanges to mutating tools or explicitly classify read/roll-only tools as permission-safe before exposing them to providers."
+      : "All provider-visible AI tools are either proposal-gated or explicitly permission-safe.",
+    permissionSafeAllowlist: [...AI_PERMISSION_SAFE_TOOL_NAMES].sort(),
+    tools: toolRows.sort((left, right) => left.name.localeCompare(right.name))
+  };
+}
+
+function summarizeAiSafetyPosture(evaluations: AiEvaluationRun[]) {
+  const safetyChecks = evaluations.flatMap((evaluation) =>
+    evaluation.checks
+      .filter((check) => aiSafetyCheckCategory(check.name))
+      .map((check) => ({
+        evaluationId: evaluation.id,
+        evaluationName: evaluation.name,
+        campaignId: evaluation.campaignId,
+        threadId: evaluation.threadId,
+        provider: evaluation.provider,
+        check
+      }))
+  );
+  const failedSafetyChecks = safetyChecks.filter((entry) => entry.check.status === "failed");
+  const categoryCounts = countBy(safetyChecks, (entry) => aiSafetyCheckCategory(entry.check.name) ?? "unknown");
+  const failedCategoryCounts = countBy(failedSafetyChecks, (entry) => aiSafetyCheckCategory(entry.check.name) ?? "unknown");
+  const evaluationWithSafetyCheckIds = new Set(safetyChecks.map((entry) => entry.evaluationId));
+  const evaluatedThreadIds = new Set(safetyChecks.map((entry) => entry.threadId));
+
+  return {
+    evaluationCount: evaluations.length,
+    evaluationWithSafetyCheckCount: evaluationWithSafetyCheckIds.size,
+    evaluatedThreadWithSafetyCheckCount: evaluatedThreadIds.size,
+    safetyCheckCount: safetyChecks.length,
+    failedSafetyCheckCount: failedSafetyChecks.length,
+    safetyCheckCoverageRate: ratio(evaluationWithSafetyCheckIds.size, evaluations.length),
+    categoryCounts,
+    failedCategoryCounts,
+    actionRequired: failedSafetyChecks.length > 0,
+    recurringFailures: summarizeAiEvaluationFailedChecks(evaluations).filter((failure) => Boolean(aiSafetyCheckCategory(failure.name))),
+    recentFailures: failedSafetyChecks
+      .slice()
+      .reverse()
+      .slice(0, 20)
+      .map((entry) => ({
+        evaluationId: entry.evaluationId,
+        evaluationName: entry.evaluationName,
+        campaignId: entry.campaignId,
+        threadId: entry.threadId,
+        provider: entry.provider,
+        category: aiSafetyCheckCategory(entry.check.name),
+        name: entry.check.name,
+        expected: entry.check.expected,
+        actual: entry.check.actual
+      }))
+  };
+}
+
+function aiSafetyCheckCategory(name: string): string | undefined {
+  if (name.startsWith("tool_not_advertised:") || name.startsWith("advertised_permission_omitted:")) return "permission_boundary";
+  if (name.startsWith("tool_output:")) return "tool_output";
+  if (name.startsWith("response_omits:") || name.startsWith("response_criteria:")) return "response_safety";
+  return undefined;
+}
+
+function summarizeAiOperationsRisk(store: StateStore) {
+  const threadById = new Map(store.state.aiThreads.map((thread) => [thread.id, thread]));
+  const campaignById = new Map(store.state.campaigns.map((campaign) => [campaign.id, campaign]));
+  const failedThreads = store.state.aiThreads.filter((thread) => thread.status === "failed");
+  const runningThreads = store.state.aiThreads.filter((thread) => thread.status === "running");
+  const staleRunningThreads = runningThreads.filter((thread) => aiRunningThreadAgeMs(thread) >= AI_STALE_RUNNING_THREAD_MS);
+  const startedToolCalls = store.state.aiToolCalls.filter((call) => call.status === "started");
+  const staleStartedToolCalls = startedToolCalls.filter((call) => aiToolCallAgeMs(call) >= AI_STALE_STARTED_TOOL_CALL_MS);
+  const failedToolCalls = store.state.aiToolCalls.filter((call) => call.status === "failed");
+  const failedEvaluations = store.state.aiEvaluations.filter((evaluation) => evaluation.status === "failed");
+  const usage = aggregateAiUsage(store.state.aiThreads.map((thread) => thread.usage));
+  const costBudgetUsd = envNumber("OTTE_AI_COST_BUDGET_USD");
+  const costBudgetExceeded = costBudgetUsd !== undefined && (usage.estimatedCostUsd ?? 0) > costBudgetUsd;
+  return {
+    failedThreadCount: failedThreads.length,
+    runningThreadCount: runningThreads.length,
+    staleRunningThreadCount: staleRunningThreads.length,
+    staleRunningThresholdMs: AI_STALE_RUNNING_THREAD_MS,
+    startedToolCallCount: startedToolCalls.length,
+    staleStartedToolCallCount: staleStartedToolCalls.length,
+    staleStartedToolCallThresholdMs: AI_STALE_STARTED_TOOL_CALL_MS,
+    failedToolCallCount: failedToolCalls.length,
+    failedEvaluationCount: failedEvaluations.length,
+    costBudget: {
+      configured: costBudgetUsd !== undefined,
+      budgetUsd: costBudgetUsd,
+      estimatedCostUsd: usage.estimatedCostUsd ?? 0,
+      remainingUsd: costBudgetUsd === undefined ? undefined : roundCurrency(costBudgetUsd - (usage.estimatedCostUsd ?? 0)),
+      usageRatio: costBudgetUsd === undefined || costBudgetUsd === 0 ? undefined : ratio(usage.estimatedCostUsd ?? 0, costBudgetUsd),
+      exceeded: costBudgetExceeded
+    },
+    costBudgetExceeded,
+    recentStaleRunningThreads: staleRunningThreads
+      .slice()
+      .sort(sortTimestampsDesc)
+      .slice(0, 20)
+      .map((thread) => ({
+        id: thread.id,
+        campaignId: thread.campaignId,
+        title: thread.title,
+        provider: thread.provider,
+        startedAt: thread.startedAt,
+        ageMs: aiRunningThreadAgeMs(thread)
+      })),
+    recentStaleStartedToolCalls: staleStartedToolCalls
+      .slice()
+      .sort(sortTimestampsDesc)
+      .slice(0, 20)
+      .map((call) => {
+        const thread = threadById.get(call.threadId);
+        return {
+          id: call.id,
+          threadId: call.threadId,
+          campaignId: thread?.campaignId,
+          provider: thread?.provider,
+          toolName: call.toolName,
+          status: call.status,
+          createdAt: call.createdAt,
+          ageMs: aiToolCallAgeMs(call)
+        };
+      }),
+    providerErrors: summarizeAiProviderErrors(failedThreads, campaignById),
+    failedTools: summarizeAiFailedToolCalls(failedToolCalls),
+    failedToolRetryPolicy: summarizeAiFailedToolRetryPolicy(failedToolCalls, threadById, campaignById),
+    failedEvaluationChecks: summarizeAiEvaluationFailedChecks(failedEvaluations),
+    actionRequired: failedThreads.length > 0 || failedToolCalls.length > 0 || staleRunningThreads.length > 0 || staleStartedToolCalls.length > 0 || costBudgetExceeded
+  };
+}
+
+function aiRunningThreadAgeMs(thread: AiThread): number {
+  const timestamp = Date.parse(thread.startedAt ?? thread.updatedAt ?? thread.createdAt);
+  if (!Number.isFinite(timestamp)) return 0;
+  return Math.max(0, Date.now() - timestamp);
+}
+
+function aiToolCallAgeMs(call: AiToolCall): number {
+  const timestamp = Date.parse(call.createdAt);
+  if (!Number.isFinite(timestamp)) return 0;
+  return Math.max(0, Date.now() - timestamp);
+}
+
+function failStaleAiThreads(store: StateStore, options: { dryRun?: boolean; campaignId?: string; limit?: number | string; reason?: string }) {
+  const dryRun = options.dryRun === true;
+  const campaignId = typeof options.campaignId === "string" && options.campaignId.trim() ? options.campaignId.trim() : undefined;
+  const limit = normalizeAiThreadOperationLimit(options.limit);
+  const reason = typeof options.reason === "string" && options.reason.trim() ? options.reason.trim().slice(0, 240) : "Marked failed by server-admin stale thread cleanup";
+  const now = nowIso();
+  const staleThreads = store.state.aiThreads
+    .filter((thread) => thread.status === "running")
+    .filter((thread) => !campaignId || thread.campaignId === campaignId)
+    .filter((thread) => aiRunningThreadAgeMs(thread) >= AI_STALE_RUNNING_THREAD_MS)
+    .sort((left, right) => (left.startedAt ?? left.updatedAt ?? left.createdAt).localeCompare(right.startedAt ?? right.updatedAt ?? right.createdAt))
+    .slice(0, limit);
+
+  if (!dryRun) {
+    for (const thread of staleThreads) {
+      const ageMs = aiRunningThreadAgeMs(thread);
+      thread.status = "failed";
+      thread.failedAt = now;
+      thread.completedAt = undefined;
+      thread.durationMs = thread.durationMs ?? ageMs;
+      thread.providerError = thread.providerError ?? reason;
+      thread.updatedAt = now;
+    }
+  }
+
+  return {
+    dryRun,
+    campaignId,
+    limit,
+    reason,
+    staleRunningThresholdMs: AI_STALE_RUNNING_THREAD_MS,
+    matched: staleThreads.length,
+    updated: dryRun ? 0 : staleThreads.length,
+    threads: staleThreads.map((thread) => ({
+      id: thread.id,
+      campaignId: thread.campaignId,
+      userId: thread.userId,
+      provider: thread.provider,
+      title: thread.title,
+      previousStatus: "running",
+      status: dryRun ? thread.status : "failed",
+      startedAt: thread.startedAt,
+      failedAt: dryRun ? undefined : thread.failedAt,
+      ageMs: aiRunningThreadAgeMs(thread)
+    }))
+  };
+}
+
+function failStaleAiToolCalls(store: StateStore, options: { dryRun?: boolean; campaignId?: string; threadId?: string; limit?: number | string; reason?: string }) {
+  const dryRun = options.dryRun === true;
+  const campaignId = typeof options.campaignId === "string" && options.campaignId.trim() ? options.campaignId.trim() : undefined;
+  const threadId = typeof options.threadId === "string" && options.threadId.trim() ? options.threadId.trim() : undefined;
+  const limit = normalizeAiThreadOperationLimit(options.limit);
+  const reason = typeof options.reason === "string" && options.reason.trim() ? options.reason.trim().slice(0, 240) : "Marked failed by server-admin stale tool-call cleanup";
+  const now = nowIso();
+  const threadById = new Map(store.state.aiThreads.map((thread) => [thread.id, thread]));
+  const staleToolCalls = store.state.aiToolCalls
+    .filter((call) => call.status === "started")
+    .filter((call) => !threadId || call.threadId === threadId)
+    .filter((call) => !campaignId || threadById.get(call.threadId)?.campaignId === campaignId)
+    .filter((call) => aiToolCallAgeMs(call) >= AI_STALE_STARTED_TOOL_CALL_MS)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .slice(0, limit);
+
+  if (!dryRun) {
+    for (const call of staleToolCalls) {
+      const ageMs = aiToolCallAgeMs(call);
+      call.status = "failed";
+      call.output = { error: "stale_tool_call", message: reason };
+      call.durationMs = call.durationMs ?? ageMs;
+      call.updatedAt = now;
+    }
+  }
+
+  return {
+    dryRun,
+    campaignId,
+    threadId,
+    limit,
+    reason,
+    staleStartedToolCallThresholdMs: AI_STALE_STARTED_TOOL_CALL_MS,
+    matched: staleToolCalls.length,
+    updated: dryRun ? 0 : staleToolCalls.length,
+    toolCalls: staleToolCalls.map((call) => {
+      const thread = threadById.get(call.threadId);
+      return {
+        id: call.id,
+        threadId: call.threadId,
+        campaignId: thread?.campaignId,
+        provider: thread?.provider,
+        toolName: call.toolName,
+        previousStatus: "started",
+        status: dryRun ? call.status : "failed",
+        createdAt: call.createdAt,
+        ageMs: aiToolCallAgeMs(call)
+      };
+    })
+  };
+}
+
+async function retryFailedAiToolCalls(store: StateStore, options: { dryRun?: boolean; campaignId?: string; threadId?: string; toolCallId?: string; limit?: number | string }) {
+  const dryRun = options.dryRun === true;
+  const campaignId = typeof options.campaignId === "string" && options.campaignId.trim() ? options.campaignId.trim() : undefined;
+  const threadId = typeof options.threadId === "string" && options.threadId.trim() ? options.threadId.trim() : undefined;
+  const toolCallId = typeof options.toolCallId === "string" && options.toolCallId.trim() ? options.toolCallId.trim() : undefined;
+  const limit = normalizeAiThreadOperationLimit(options.limit);
+  const threadById = new Map(store.state.aiThreads.map((thread) => [thread.id, thread]));
+  const tools = createAiThreadTools();
+  const failedCalls = store.state.aiToolCalls
+    .filter((call) => call.status === "failed")
+    .filter((call) => aiToolFailureRetryPolicy(call).retryable)
+    .filter((call) => call.retry === undefined)
+    .filter((call) => !toolCallId || call.id === toolCallId)
+    .filter((call) => !threadId || call.threadId === threadId)
+    .filter((call) => {
+      const thread = threadById.get(call.threadId);
+      return Boolean(thread) && (!campaignId || thread?.campaignId === campaignId);
+    })
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+    .slice(0, limit);
+  const results = [];
+  let retried = 0;
+  let completed = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const call of failedCalls) {
+    const thread = threadById.get(call.threadId);
+    const originalInputCall = aiToolCallRetryInputCall(store, call);
+    const policy = aiToolFailureRetryPolicy(call);
+    if (!thread || !originalInputCall) {
+      skipped += 1;
+      results.push(aiToolRetrySummary(call, thread, { retryReason: policy.reason, status: "skipped", skipReason: "missing_original_input" }));
+      continue;
+    }
+
+    if (dryRun) {
+      results.push(aiToolRetrySummary(call, thread, { retryReason: policy.reason, status: "matched", inputCallId: originalInputCall.id }));
+      continue;
+    }
+
+    const permissions = permissionsForUser(store, thread.userId, thread.campaignId);
+    const startedAtMs = Date.now();
+    const started = createTimestamped("tool", {
+      threadId: thread.id,
+      toolName: call.toolName,
+      input: originalInputCall.input,
+      output: undefined,
+      status: "started" as const
+    });
+    store.state.aiToolCalls.push(started);
+    const result = await executeAiTool(tools, call.toolName, originalInputCall.input, createAiToolContext(store, thread.campaignId, thread.userId, permissions));
+    const completedCall = createTimestamped("tool", {
+      threadId: thread.id,
+      toolName: call.toolName,
+      input: undefined,
+      output: result.output,
+      status: result.failed ? ("failed" as const) : ("completed" as const),
+      durationMs: elapsedMs(startedAtMs)
+    });
+    store.state.aiToolCalls.push(completedCall);
+    retried += 1;
+    if (result.failed) {
+      failed += 1;
+    } else {
+      completed += 1;
+    }
+    call.retry = {
+      retriedAt: nowIso(),
+      startedCallId: started.id,
+      resultCallId: completedCall.id,
+      resultStatus: completedCall.status
+    };
+    results.push(aiToolRetrySummary(call, thread, { retryReason: policy.reason, status: completedCall.status, inputCallId: originalInputCall.id, startedCallId: started.id, resultCallId: completedCall.id, error: aiToolErrorCode(result.output) }));
+  }
+
+  return {
+    dryRun,
+    campaignId,
+    threadId,
+    toolCallId,
+    limit,
+    matched: failedCalls.length,
+    retried: dryRun ? 0 : retried,
+    skipped,
+    completed: dryRun ? 0 : completed,
+    failed: dryRun ? 0 : failed,
+    toolCalls: results
+  };
+}
+
+function aiToolCallRetryInputCall(store: StateStore, failedCall: AiToolCall): AiToolCall | undefined {
+  return store.state.aiToolCalls
+    .filter((call) => call.threadId === failedCall.threadId && call.toolName === failedCall.toolName && call.status === "started" && call.input !== undefined && call.createdAt <= failedCall.createdAt)
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .at(0);
+}
+
+function aiToolRetrySummary(call: AiToolCall, thread: AiThread | undefined, details: Record<string, unknown>) {
+  return {
+    id: call.id,
+    threadId: call.threadId,
+    campaignId: thread?.campaignId,
+    provider: thread?.provider,
+    toolName: call.toolName,
+    previousStatus: call.status,
+    error: aiToolErrorCode(call.output),
+    retry: call.retry,
+    ...details
+  };
+}
+
+function normalizeAiThreadOperationLimit(value: number | string | undefined): number {
+  if (value === undefined || value === "") return 50;
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 && numeric <= 500 ? numeric : 50;
+}
+
+function summarizeAiProviderErrors(threads: AiThread[], campaignById: Map<string, Campaign>) {
+  const counts = new Map<string, { message: string; count: number; recentThreads: AiThread[] }>();
+  for (const thread of threads) {
+    const key = sanitizeAiProviderError(thread.providerError);
+    if (!key) continue;
+    const entry = counts.get(key) ?? { message: key, count: 0, recentThreads: [] };
+    entry.count += 1;
+    entry.recentThreads.push(thread);
+    counts.set(key, entry);
+  }
+  return Array.from(counts.values())
+    .map((entry) => ({
+      message: entry.message,
+      count: entry.count,
+      recentThreads: entry.recentThreads
+        .slice()
+        .sort(sortTimestampsDesc)
+        .slice(0, 5)
+        .map((thread) => ({
+          id: thread.id,
+          campaignId: thread.campaignId,
+          campaignName: campaignById.get(thread.campaignId)?.name,
+          provider: thread.provider,
+          title: thread.title,
+          status: thread.status,
+          failedAt: thread.failedAt,
+          retryAttempts: thread.retryAttempts,
+          durationMs: thread.durationMs
+        }))
+    }))
+    .sort((left, right) => right.count - left.count || left.message.localeCompare(right.message))
+    .slice(0, 20);
+}
+
+function sanitizeAiProviderError(message: string | undefined): string | undefined {
+  const trimmed = message?.replace(/\s+/g, " ").trim();
+  return trimmed ? trimmed.slice(0, 160) : undefined;
+}
+
+function summarizeAiFailedToolCalls(toolCalls: AiToolCall[]) {
+  const counts = new Map<string, { toolName: string; count: number; errorCount: Map<string, number> }>();
+  for (const call of toolCalls) {
+    const entry = counts.get(call.toolName) ?? { toolName: call.toolName, count: 0, errorCount: new Map<string, number>() };
+    entry.count += 1;
+    const errorCode = aiToolErrorCode(call.output);
+    if (errorCode) entry.errorCount.set(errorCode, (entry.errorCount.get(errorCode) ?? 0) + 1);
+    counts.set(call.toolName, entry);
+  }
+  return Array.from(counts.values())
+    .map((entry) => ({
+      toolName: entry.toolName,
+      count: entry.count,
+      errors: Array.from(entry.errorCount.entries())
+        .map(([error, count]) => ({ error, count }))
+        .sort((left, right) => right.count - left.count || left.error.localeCompare(right.error))
+    }))
+    .sort((left, right) => right.count - left.count || left.toolName.localeCompare(right.toolName))
+    .slice(0, 20);
+}
+
+function summarizeAiFailedToolRetryPolicy(toolCalls: AiToolCall[], threadById: Map<string, AiThread>, campaignById: Map<string, Campaign>) {
+  const retryableCalls = toolCalls.filter((call) => aiToolFailureRetryPolicy(call).retryable);
+  return {
+    retryableCount: retryableCalls.length,
+    nonRetryableCount: Math.max(0, toolCalls.length - retryableCalls.length),
+    byTool: summarizeAiFailedToolRetryPolicyByTool(toolCalls),
+    recentRetryable: retryableCalls
+      .slice()
+      .sort(sortTimestampsDesc)
+      .slice(0, 20)
+      .map((call) => {
+        const thread = threadById.get(call.threadId);
+        const policy = aiToolFailureRetryPolicy(call);
+        return {
+          id: call.id,
+          threadId: call.threadId,
+          campaignId: thread?.campaignId,
+          campaignName: thread ? campaignById.get(thread.campaignId)?.name : undefined,
+          provider: thread?.provider,
+          threadTitle: thread?.title,
+          threadStatus: thread?.status,
+          toolName: call.toolName,
+          error: aiToolErrorCode(call.output),
+          retryReason: policy.reason,
+          createdAt: call.createdAt
+        };
+      })
+  };
+}
+
+function summarizeAiFailedToolRetryPolicyByTool(toolCalls: AiToolCall[]) {
+  const counts = new Map<string, { toolName: string; retryable: number; nonRetryable: number; reasons: Map<string, number> }>();
+  for (const call of toolCalls) {
+    const policy = aiToolFailureRetryPolicy(call);
+    const entry = counts.get(call.toolName) ?? { toolName: call.toolName, retryable: 0, nonRetryable: 0, reasons: new Map<string, number>() };
+    if (policy.retryable) {
+      entry.retryable += 1;
+    } else {
+      entry.nonRetryable += 1;
+    }
+    entry.reasons.set(policy.reason, (entry.reasons.get(policy.reason) ?? 0) + 1);
+    counts.set(call.toolName, entry);
+  }
+  return Array.from(counts.values())
+    .map((entry) => ({
+      toolName: entry.toolName,
+      retryable: entry.retryable,
+      nonRetryable: entry.nonRetryable,
+      reasons: Array.from(entry.reasons.entries())
+        .map(([reason, count]) => ({ reason, count }))
+        .sort((left, right) => right.count - left.count || left.reason.localeCompare(right.reason))
+    }))
+    .sort((left, right) => right.retryable - left.retryable || right.nonRetryable - left.nonRetryable || left.toolName.localeCompare(right.toolName))
+    .slice(0, 20);
+}
+
+function summarizeAiToolReplayOperations(store: StateStore) {
+  const threadById = new Map(store.state.aiThreads.map((thread) => [thread.id, thread]));
+  const campaignById = new Map(store.state.campaigns.map((campaign) => [campaign.id, campaign]));
+  const toolCallById = new Map(store.state.aiToolCalls.map((call) => [call.id, call]));
+  const retriedCalls = store.state.aiToolCalls.filter((call) => call.retry !== undefined);
+  const completedReplayCount = retriedCalls.filter((call) => call.retry?.resultStatus === "completed").length;
+  const failedReplayCount = retriedCalls.filter((call) => call.retry?.resultStatus === "failed").length;
+  const replayAuditLogs = store.state.auditLogs
+    .filter((log) => log.action === "admin.aiToolCalls.retry")
+    .slice()
+    .sort(sortTimestampsDesc);
+  return {
+    replayedToolCallCount: retriedCalls.length,
+    completedReplayCount,
+    failedReplayCount,
+    latestReplayAt: retriedCalls
+      .map((call) => call.retry?.retriedAt)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1),
+    actionRequired: failedReplayCount > 0,
+    recentRetried: retriedCalls
+      .slice()
+      .sort((left, right) => String(right.retry?.retriedAt ?? right.updatedAt).localeCompare(String(left.retry?.retriedAt ?? left.updatedAt)))
+      .slice(0, 20)
+      .map((call) => {
+        const thread = threadById.get(call.threadId);
+        const campaign = thread ? campaignById.get(thread.campaignId) : undefined;
+        const resultCall = call.retry?.resultCallId ? toolCallById.get(call.retry.resultCallId) : undefined;
+        return {
+          id: call.id,
+          threadId: call.threadId,
+          campaignId: thread?.campaignId,
+          campaignName: campaign?.name,
+          provider: thread?.provider,
+          threadTitle: thread?.title,
+          threadStatus: thread?.status,
+          toolName: call.toolName,
+          originalError: aiToolErrorCode(call.output),
+          retriedAt: call.retry?.retriedAt,
+          startedCallId: call.retry?.startedCallId,
+          resultCallId: call.retry?.resultCallId,
+          resultStatus: call.retry?.resultStatus,
+          resultError: resultCall ? aiToolErrorCode(resultCall.output) : undefined
+        };
+      }),
+    recentRuns: replayAuditLogs.slice(0, 12).map((log) => {
+      const after = isRecord(log.after) ? log.after : {};
+      return {
+        auditLogId: log.id,
+        actorUserId: log.actorUserId,
+        createdAt: log.createdAt,
+        dryRun: booleanFromRecord(after, "dryRun") ?? false,
+        campaignId: stringFromRecord(after, "campaignId"),
+        threadId: stringFromRecord(after, "threadId"),
+        toolCallId: stringFromRecord(after, "toolCallId"),
+        matched: numberFromRecord(after, "matched", 0, 1000000) ?? 0,
+        retried: numberFromRecord(after, "retried", 0, 1000000) ?? 0,
+        skipped: numberFromRecord(after, "skipped", 0, 1000000) ?? 0,
+        completed: numberFromRecord(after, "completed", 0, 1000000) ?? 0,
+        failed: numberFromRecord(after, "failed", 0, 1000000) ?? 0
+      };
+    })
+  };
+}
+
+function aiToolFailureRetryPolicy(call: AiToolCall): { retryable: boolean; reason: string } {
+  const errorCode = aiToolErrorCode(call.output);
+  if (errorCode === "tool_failed" || errorCode === "stale_tool_call") return { retryable: true, reason: errorCode };
+  if (errorCode === "missing_permission" || errorCode === "invalid_tool_input" || errorCode === "unknown_tool") return { retryable: false, reason: errorCode };
+  return { retryable: false, reason: errorCode ?? "unknown_failure" };
+}
+
+function aiToolErrorCode(output: unknown): string | undefined {
+  if (!isRecord(output)) return undefined;
+  const error = output.error;
+  return typeof error === "string" && error.trim() ? error.trim().slice(0, 120) : undefined;
+}
+
+function adminAiEvaluationExport(store: StateStore, query: { campaignId?: string; status?: string; limit?: string; format?: string }) {
+  ensureAiEvaluations(store);
+  const exportedAt = nowIso();
+  const status = query.status === "passed" || query.status === "failed" ? query.status : undefined;
+  const limit = normalizeExportLimit(query.limit, 500);
+  const threadById = new Map(store.state.aiThreads.map((thread) => [thread.id, thread]));
+  const evaluations = store.state.aiEvaluations
+    .filter((evaluation) => !query.campaignId || evaluation.campaignId === query.campaignId)
+    .filter((evaluation) => !status || evaluation.status === status)
+    .sort(sortTimestampsDesc)
+    .slice(0, limit)
+    .map((evaluation) => adminAiEvaluationInfo(evaluation, threadById, store.state.campaigns));
+  return {
+    exportedAt,
+    format: query.format === "ndjson" ? "ndjson" : "json",
+    filters: {
+      campaignId: query.campaignId,
+      status,
+      limit
+    },
+    ...summarizeAiEvaluations(evaluations),
+    evaluations
+  };
+}
+
+function adminAiEvaluationInfo(evaluation: AiEvaluationRun, threadById: Map<string, AiThread>, campaigns: Campaign[]): AiEvaluationRun & { campaignName?: string; threadTitle?: string; threadStatus?: AiThread["status"]; failedChecks: AiEvaluationCheck[] } {
+  const thread = threadById.get(evaluation.threadId);
+  const campaign = campaigns.find((item) => item.id === evaluation.campaignId);
+  return {
+    ...evaluation,
+    campaignName: campaign?.name,
+    threadTitle: thread?.title,
+    threadStatus: thread?.status,
+    failedChecks: evaluation.checks.filter((check) => check.status === "failed")
   };
 }
 
@@ -3571,23 +6065,66 @@ function adminAiToolCallInfo(call: AiToolCall, threadById: Map<string, AiThread>
   };
 }
 
+function openAiBaseUrlRuntimeConfig(): { baseUrl: string; valid: boolean; issue?: string; insecureInProduction: boolean } {
+  const rawBaseUrl = process.env.OPENAI_BASE_URL?.trim();
+  const baseUrl = rawBaseUrl || "https://api.openai.com/v1";
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return { baseUrl, valid: false, issue: "unsupported_protocol", insecureInProduction: false };
+    }
+    if (!parsed.hostname) {
+      return { baseUrl, valid: false, issue: "missing_hostname", insecureInProduction: false };
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    const localHttpHostnames = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+    const insecureInProduction = process.env.NODE_ENV === "production" && parsed.protocol === "http:" && !localHttpHostnames.has(hostname);
+    return { baseUrl, valid: true, insecureInProduction };
+  } catch {
+    return { baseUrl, valid: false, issue: "invalid_url", insecureInProduction: false };
+  }
+}
+
 function aiProviderRuntimeConfig(aiProvider: AiProvider) {
   const selectedProvider = process.env.OTTE_AI_PROVIDER?.trim() || "local-echo";
   const openAiSelected = aiProvider.id === "openai-responses" || selectedProvider === "openai" || selectedProvider === "openai-responses";
   const codexSelected = aiProvider.id === "codex-app-server" || selectedProvider === "codex-loopback";
+  const costBudget = aiRuntimeNumberEnv("OTTE_AI_COST_BUDGET_USD");
+  const openAiBaseUrl = openAiBaseUrlRuntimeConfig();
+  const inputCostRate = aiRuntimeNumberEnv("OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K");
+  const outputCostRate = aiRuntimeNumberEnv("OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K");
+  const providerThresholdConfig = [
+    aiRuntimeNumberEnv("OTTE_AI_PROVIDER_FAILURE_RATE_THRESHOLD"),
+    aiRuntimeNumberEnv("OTTE_AI_PROVIDER_P95_DURATION_THRESHOLD_MS"),
+    aiRuntimeNumberEnv("OTTE_AI_PROVIDER_RUNNING_THREAD_THRESHOLD")
+  ];
+  const runtimeControlConfig = [aiRuntimeNumberEnv("OTTE_AI_PROVIDER_TIMEOUT_MS"), aiRuntimeNumberEnv("OTTE_AI_PROVIDER_RETRY_ATTEMPTS")];
+  const costRatesConfigured = {
+    inputTokens: inputCostRate.value !== undefined,
+    outputTokens: outputCostRate.value !== undefined
+  };
+  const invalidCostConfig = [inputCostRate, outputCostRate, costBudget].filter((item) => item.configured && item.value === undefined).map((item) => item.name);
+  const invalidProviderThresholdConfig = providerThresholdConfig.filter((item) => item.configured && item.value === undefined).map((item) => item.name);
+  const invalidRuntimeControlConfig = runtimeControlConfig.filter((item) => item.configured && item.value === undefined).map((item) => item.name);
   return {
     selectedProvider,
     activeProvider: aiProvider.id,
     retryAttempts: aiProviderRetryAttempts(),
-    costRatesConfigured: {
-      inputTokens: envNumber("OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K") !== undefined,
-      outputTokens: envNumber("OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K") !== undefined
-    },
+    costRatesConfigured,
+    costRatesComplete: costRatesConfigured.inputTokens === costRatesConfigured.outputTokens,
+    invalidCostConfig,
+    invalidProviderThresholdConfig,
+    invalidRuntimeControlConfig,
+    costBudgetUsd: costBudget.value,
     openai: openAiSelected
       ? {
           apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
           model: process.env.OPENAI_MODEL?.trim() || "gpt-5-mini",
-          baseUrl: process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com/v1",
+          modelConfigured: Boolean(process.env.OPENAI_MODEL?.trim()),
+          baseUrl: openAiBaseUrl.baseUrl,
+          baseUrlValid: openAiBaseUrl.valid,
+          baseUrlIssue: openAiBaseUrl.issue,
+          baseUrlInsecureInProduction: openAiBaseUrl.insecureInProduction === true,
           timeoutMs: aiProviderTimeoutMs(),
           organizationConfigured: Boolean((process.env.OPENAI_ORGANIZATION ?? process.env.OPENAI_ORG_ID)?.trim()),
           projectConfigured: Boolean((process.env.OPENAI_PROJECT ?? process.env.OPENAI_PROJECT_ID)?.trim())
@@ -3603,8 +6140,67 @@ function aiProviderRuntimeConfig(aiProvider: AiProvider) {
   };
 }
 
+function summarizeAiRuntimePosture(runtime: ReturnType<typeof aiProviderRuntimeConfig>) {
+  const providerMismatch = runtime.selectedProvider !== runtime.activeProvider;
+  const actionReasons = [
+    providerMismatch ? "ai_provider_mismatch" : undefined,
+    runtime.openai && !runtime.openai.apiKeyConfigured ? "openai_api_key_missing" : undefined,
+    runtime.openai && runtime.openai.timeoutMs === 0 ? "openai_timeout_disabled" : undefined,
+    runtime.openai && process.env.NODE_ENV === "production" && !runtime.openai.modelConfigured ? "openai_model_default_in_production" : undefined,
+    runtime.openai && !runtime.openai.baseUrlValid ? "openai_base_url_invalid" : undefined,
+    runtime.openai && runtime.openai.baseUrlInsecureInProduction ? "openai_base_url_insecure" : undefined,
+    !runtime.costRatesComplete ? "ai_cost_rates_partial" : undefined,
+    runtime.invalidCostConfig.length > 0 ? "ai_cost_config_invalid" : undefined,
+    runtime.invalidProviderThresholdConfig.length > 0 ? "ai_provider_threshold_config_invalid" : undefined,
+    runtime.invalidRuntimeControlConfig.length > 0 ? "ai_runtime_control_config_invalid" : undefined,
+    runtime.retryAttempts === 0 ? "ai_provider_retries_disabled" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+  const remediation =
+    actionReasons.length === 0
+      ? "AI provider runtime configuration has the expected active provider, an API key when required, an explicit hosted model in production, a valid provider base URL, complete and numeric cost configuration when configured, numeric provider health thresholds, numeric timeout and retry controls, bounded provider timeouts, and at least one pre-event retry."
+      : "Configure the intended AI provider, missing provider credentials, an explicit OpenAI model for production, valid OpenAI provider base URLs with HTTPS in production, both AI token cost rates or neither, numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, enabled OpenAI provider timeouts outside local debugging, and a nonzero retry budget for transient provider failures.";
+  return {
+    selectedProvider: runtime.selectedProvider,
+    activeProvider: runtime.activeProvider,
+    providerMismatch,
+    retryAttempts: runtime.retryAttempts,
+    costRatesConfigured: runtime.costRatesConfigured,
+    costRatesComplete: runtime.costRatesComplete,
+    invalidCostConfig: runtime.invalidCostConfig,
+    invalidProviderThresholdConfig: runtime.invalidProviderThresholdConfig,
+    invalidRuntimeControlConfig: runtime.invalidRuntimeControlConfig,
+    openai: runtime.openai
+      ? {
+          apiKeyConfigured: runtime.openai.apiKeyConfigured,
+          timeoutMs: runtime.openai.timeoutMs,
+          model: runtime.openai.model,
+          modelConfigured: runtime.openai.modelConfigured,
+          baseUrl: runtime.openai.baseUrl,
+          baseUrlValid: runtime.openai.baseUrlValid,
+          baseUrlIssue: runtime.openai.baseUrlIssue,
+          baseUrlInsecureInProduction: runtime.openai.baseUrlInsecureInProduction
+        }
+      : undefined,
+    codex: runtime.codex,
+    actionRequired: actionReasons.length > 0,
+    actionReasons,
+    remediation
+  };
+}
+
 function sortTimestampsDesc(left: { createdAt: string }, right: { createdAt: string }): number {
   return right.createdAt.localeCompare(left.createdAt);
+}
+
+function sortTimestampsAsc(left: { createdAt: string }, right: { createdAt: string }): number {
+  return left.createdAt.localeCompare(right.createdAt);
+}
+
+function ageMs(timestamp: string | undefined): number {
+  if (!timestamp) return 0;
+  const parsed = Date.parse(timestamp);
+  if (Number.isNaN(parsed)) return 0;
+  return Math.max(0, Date.now() - parsed);
 }
 
 function summarizeAiThreads(threads: AiThread[]) {
@@ -3633,6 +6229,26 @@ function aggregateAiUsage(usages: Array<AiUsageMetrics | undefined>): AiUsageMet
   });
 }
 
+function summarizeDurations(values: Array<number | undefined>) {
+  const durations = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0).sort((left, right) => left - right);
+  return {
+    count: durations.length,
+    average: durations.length > 0 ? Math.round(sumNumbers(durations) / durations.length) : 0,
+    p95: percentile(durations, 0.95),
+    max: durations.at(-1) ?? 0
+  };
+}
+
+function percentile(sortedValues: number[], percentileValue: number): number {
+  if (sortedValues.length === 0) return 0;
+  const index = Math.max(0, Math.min(sortedValues.length - 1, Math.ceil(sortedValues.length * percentileValue) - 1));
+  return sortedValues[index]!;
+}
+
+function ratio(numerator: number, denominator: number): number {
+  return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 1000 : 0;
+}
+
 function sumNumbers(values: Array<number | undefined>): number {
   let total = 0;
   for (const value of values) {
@@ -3654,11 +6270,26 @@ function envNumber(name: string): number | undefined {
   return Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+function aiRuntimeNumberEnv(name: string): { name: string; configured: boolean; value?: number } {
+  const rawValue = process.env[name]?.trim();
+  if (!rawValue) return { name, configured: false };
+  const value = Number(rawValue);
+  return Number.isFinite(value) && value >= 0 ? { name, configured: true, value } : { name, configured: true };
+}
+
 function envBoolean(name: string, fallback: boolean): boolean {
   const value = process.env[name]?.trim().toLowerCase();
   if (!value) return fallback;
   if (["1", "true", "yes", "on"].includes(value)) return true;
   if (["0", "false", "no", "off"].includes(value)) return false;
+  return fallback;
+}
+
+function queryBoolean(value: string | undefined, fallback: boolean): boolean {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
   return fallback;
 }
 
@@ -3958,6 +6589,518 @@ function createAiThreadTools(): AiToolDefinition[] {
       }
     },
     {
+      name: "search_memory",
+      description: "Search approved campaign memory visible to the caller.",
+      requiredPermissions: ["ai.readPublicMemory"],
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Text to search for in approved campaign memory." },
+          visibility: { type: "string", description: "Memory visibility scope to search.", enum: ["public", "gm_only", "any"] },
+          limit: { type: "number", description: "Maximum memory facts to return, from 1 to 10." }
+        },
+        required: ["query"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<MemorySearchToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const query = stringFromRecord(request, "query") ?? "";
+        const requestedVisibility = enumStringFromRecord(request, "visibility", ["public", "gm_only", "any"] as const) ?? "public";
+        const canReadGm = context.permissions.includes("ai.readGmMemory");
+        if ((requestedVisibility === "gm_only" || requestedVisibility === "any") && !canReadGm) return missingPermissionToolOutput("ai.readGmMemory");
+        const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
+        const normalizedQuery = query.toLocaleLowerCase();
+        const memories = context.state.aiMemory
+          .filter((memory) => memory.campaignId === context.campaignId && memory.approvedByUserId)
+          .filter((memory) => {
+            if (requestedVisibility === "public") return memory.visibility === "public";
+            if (requestedVisibility === "gm_only") return memory.visibility === "gm_only";
+            return memory.visibility === "public" || memory.visibility === "gm_only";
+          })
+          .filter((memory) => memory.text.toLocaleLowerCase().includes(normalizedQuery) || memory.sourceIds.some((sourceId) => sourceId.toLocaleLowerCase().includes(normalizedQuery)))
+          .slice(0, limit)
+          .map((memory) => ({
+            id: memory.id,
+            text: memory.text,
+            visibility: memory.visibility,
+            sourceIds: memory.sourceIds,
+            approvedByUserId: memory.approvedByUserId,
+            createdAt: memory.createdAt,
+            updatedAt: memory.updatedAt
+          }));
+        return {
+          query,
+          visibility: requestedVisibility,
+          count: memories.length,
+          memories
+        };
+      }
+    },
+    {
+      name: "read_chat",
+      description: "Read bounded chat messages visible to the caller without posting messages or exposing hidden whispers.",
+      requiredPermissions: ["chat.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Optional text to search in visible chat bodies." },
+          sceneId: { type: "string", description: "Optional scene id to restrict chat results." },
+          visibility: { type: "string", description: "Visibility scope to search.", enum: ["public", "gm_only", "whisper", "any"] },
+          limit: { type: "number", description: "Maximum messages to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ChatReadToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const query = stringFromRecord(request, "query") ?? "";
+        const sceneId = stringFromRecord(request, "sceneId");
+        const requestedVisibility = enumStringFromRecord(request, "visibility", ["public", "gm_only", "whisper", "any"] as const) ?? "public";
+        const limit = numberFromRecord(request, "limit", 1, 20) ?? 10;
+        if (sceneId && !context.state.scenes.some((scene) => scene.campaignId === context.campaignId && scene.id === sceneId)) return toolError("not_found", { entity: "scene", id: sceneId });
+        const normalizedQuery = query.toLocaleLowerCase();
+        const visibilityStore = { state: context.state, save: () => undefined, replace: () => undefined } satisfies StateStore;
+        const messages = context.state.chat
+          .filter((message) => message.campaignId === context.campaignId)
+          .filter((message) => canReadChatMessage(visibilityStore, context.userId, message))
+          .filter((message) => !sceneId || message.sceneId === sceneId)
+          .filter((message) => requestedVisibility === "any" || message.visibility === requestedVisibility)
+          .filter((message) => !normalizedQuery || message.body.toLocaleLowerCase().includes(normalizedQuery))
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
+          .slice(0, limit)
+          .map((message) => ({
+            id: message.id,
+            sceneId: message.sceneId,
+            userId: message.userId,
+            type: message.type,
+            body: message.body,
+            visibility: message.visibility,
+            recipientUserIds: message.visibility === "whisper" ? message.recipientUserIds : [],
+            rollId: message.rollId,
+            createdAt: message.createdAt,
+            updatedAt: message.updatedAt
+          }));
+        return {
+          query,
+          sceneId,
+          visibility: requestedVisibility,
+          count: messages.length,
+          messages
+        };
+      }
+    },
+    {
+      name: "read_roll",
+      description: "Read bounded dice roll history visible to the caller without rolling dice or posting chat.",
+      requiredPermissions: ["chat.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Optional text to search in roll formula, label, or linked visible chat body." },
+          visibility: { type: "string", description: "Visibility scope to search.", enum: ["public", "gm_only", "whisper", "any"] },
+          limit: { type: "number", description: "Maximum rolls to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<RollReadToolOutput> {
+        const request = isRecord(input) ? input : {};
+        const query = stringFromRecord(request, "query") ?? "";
+        const requestedVisibility = enumStringFromRecord(request, "visibility", ["public", "gm_only", "whisper", "any"] as const) ?? "public";
+        const limit = numberFromRecord(request, "limit", 1, 20) ?? 10;
+        const normalizedQuery = query.toLocaleLowerCase();
+        const visibilityStore = { state: context.state, save: () => undefined, replace: () => undefined } satisfies StateStore;
+        const rolls = context.state.rolls
+          .filter((roll) => roll.campaignId === context.campaignId)
+          .map((roll) => ({ roll, message: context.state.chat.find((message) => message.rollId === roll.id && message.campaignId === roll.campaignId) }))
+          .filter(({ roll, message }) => canReadDiceRoll(visibilityStore, context.userId, roll, message))
+          .filter(({ roll }) => requestedVisibility === "any" || roll.visibility === requestedVisibility)
+          .filter(({ roll, message }) => {
+            if (!normalizedQuery) return true;
+            return roll.formula.toLocaleLowerCase().includes(normalizedQuery) || (roll.label?.toLocaleLowerCase().includes(normalizedQuery) ?? false) || (message?.body.toLocaleLowerCase().includes(normalizedQuery) ?? false);
+          })
+          .sort((left, right) => right.roll.createdAt.localeCompare(left.roll.createdAt) || right.roll.id.localeCompare(left.roll.id))
+          .slice(0, limit)
+          .map(({ roll, message }) => ({
+            id: roll.id,
+            userId: roll.userId,
+            formula: roll.formula,
+            label: roll.label,
+            visibility: roll.visibility,
+            total: roll.total,
+            termCount: roll.terms.length,
+            messageId: message?.id,
+            messageBody: message?.body,
+            createdAt: roll.createdAt,
+            updatedAt: roll.updatedAt
+          }));
+        return {
+          query,
+          visibility: requestedVisibility,
+          count: rolls.length,
+          rolls
+        };
+      }
+    },
+    {
+      name: "read_journal",
+      description: "Read campaign journal entries visible to the caller without creating or changing entries.",
+      requiredPermissions: ["journal.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Optional text to search for in visible journal title, body, or tags." },
+          visibility: { type: "string", description: "Journal visibility scope to search.", enum: ["public", "gm_only", "any"] },
+          limit: { type: "number", description: "Maximum journal entries to return, from 1 to 10." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<JournalReadToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const query = stringFromRecord(request, "query") ?? "";
+        const requestedVisibility = enumStringFromRecord(request, "visibility", ["public", "gm_only", "any"] as const) ?? "public";
+        const canReadSecret = context.permissions.includes("journal.readSecret");
+        if ((requestedVisibility === "gm_only" || requestedVisibility === "any") && !canReadSecret) return missingPermissionToolOutput("journal.readSecret");
+        const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
+        const normalizedQuery = query.toLocaleLowerCase();
+        const entries = context.state.journals
+          .filter((journal) => journal.campaignId === context.campaignId)
+          .filter((journal) => {
+            if (requestedVisibility === "public") return journal.visibility === "public" || journal.visibleToUserIds.includes(context.userId);
+            if (requestedVisibility === "gm_only") return journal.visibility === "gm_only";
+            return journal.visibility === "public" || journal.visibility === "gm_only" || journal.visibleToUserIds.includes(context.userId);
+          })
+          .filter((journal) => {
+            if (!normalizedQuery) return true;
+            return journal.title.toLocaleLowerCase().includes(normalizedQuery) || journal.body.toLocaleLowerCase().includes(normalizedQuery) || journal.tags.some((tag) => tag.toLocaleLowerCase().includes(normalizedQuery));
+          })
+          .slice(0, limit)
+          .map((journal) => ({
+            id: journal.id,
+            title: journal.title,
+            body: journal.body,
+            visibility: journal.visibility,
+            tags: journal.tags,
+            createdAt: journal.createdAt,
+            updatedAt: journal.updatedAt
+          }));
+        return {
+          query,
+          visibility: requestedVisibility,
+          count: entries.length,
+          entries
+        };
+      }
+    },
+    {
+      name: "read_scene",
+      description: "Read safe scene structure visible to the caller, including map dimensions, grid, fog/wall/light counts, and bounded geometry samples.",
+      requiredPermissions: ["scene.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          sceneId: { type: "string", description: "Optional scene id to inspect. When omitted, returns visible scenes for the campaign." },
+          activeOnly: { type: "boolean", description: "When true, return only active scenes." },
+          limit: { type: "number", description: "Maximum scenes to return, from 1 to 10." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<SceneReadToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const sceneId = stringFromRecord(request, "sceneId");
+        const activeOnly = booleanFromRecord(request, "activeOnly") ?? false;
+        const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
+        if (sceneId && !context.state.scenes.some((scene) => scene.campaignId === context.campaignId && scene.id === sceneId)) return toolError("not_found", { entity: "scene", id: sceneId });
+        const scenes = context.state.scenes
+          .filter((scene) => scene.campaignId === context.campaignId)
+          .filter((scene) => !sceneId || scene.id === sceneId)
+          .filter((scene) => !activeOnly || scene.active)
+          .sort((left, right) => Number(right.active) - Number(left.active) || left.sortOrder - right.sortOrder || left.name.localeCompare(right.name))
+          .slice(0, limit)
+          .map((scene) => ({
+            id: scene.id,
+            name: scene.name,
+            active: scene.active,
+            width: scene.width,
+            height: scene.height,
+            gridType: scene.gridType,
+            gridSize: scene.gridSize,
+            backgroundAssetId: scene.backgroundAssetId,
+            fogRegionCount: scene.fog.length,
+            wallCount: scene.walls.length,
+            terrainWallCount: scene.walls.filter((wall) => wall.kind === "terrain").length,
+            lightCount: scene.lights.length,
+            fogSamples: scene.fog.slice(0, 5).map((fog) => ({ id: fog.id, shape: fog.shape ?? "circle", mode: fog.mode ?? "reveal", hidden: fog.hidden, x: fog.x, y: fog.y, radius: fog.radius, pointCount: fog.points?.length ?? 0 })),
+            wallSamples: scene.walls.slice(0, 5).map((wall) => ({ id: wall.id, kind: wall.kind ?? "wall", x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2, blocksVision: wall.blocksVision, blocksMovement: wall.blocksMovement ?? wall.kind !== "terrain" })),
+            lightSamples: scene.lights.slice(0, 5).map((light) => ({ id: light.id, x: light.x, y: light.y, radius: light.radius, brightRadius: light.brightRadius, dimRadius: light.dimRadius, color: light.color, intensity: light.intensity })),
+            createdAt: scene.createdAt,
+            updatedAt: scene.updatedAt
+          }));
+        return {
+          sceneId,
+          activeOnly,
+          count: scenes.length,
+          scenes
+        };
+      }
+    },
+    {
+      name: "read_token",
+      description: "Read bounded visible token placement metadata for the caller without changing token, actor, or scene state.",
+      requiredPermissions: ["token.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          tokenId: { type: "string", description: "Optional visible token id to inspect. When omitted, returns visible campaign tokens." },
+          sceneId: { type: "string", description: "Optional scene id to restrict token results." },
+          query: { type: "string", description: "Optional token name, actor id, or disposition search." },
+          limit: { type: "number", description: "Maximum tokens to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<TokenReadToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const tokenId = stringFromRecord(request, "tokenId");
+        const sceneId = stringFromRecord(request, "sceneId");
+        const query = stringFromRecord(request, "query") ?? "";
+        const limit = numberFromRecord(request, "limit", 1, 20) ?? 10;
+        if (sceneId && !context.state.scenes.some((scene) => scene.campaignId === context.campaignId && scene.id === sceneId)) return toolError("not_found", { entity: "scene", id: sceneId });
+        const campaignSceneIds = new Set(context.state.scenes.filter((scene) => scene.campaignId === context.campaignId).map((scene) => scene.id));
+        if (tokenId && !context.state.tokens.some((token) => campaignSceneIds.has(token.sceneId) && token.id === tokenId)) return toolError("not_found", { entity: "token", id: tokenId });
+        const normalizedQuery = query.toLocaleLowerCase();
+        const visibleTokens = visibleTokensForUser({ state: context.state, save: () => undefined, replace: () => undefined } satisfies StateStore, context.userId, context.campaignId, context.state.tokens.filter((token) => campaignSceneIds.has(token.sceneId)));
+        const tokens = visibleTokens
+          .filter((token) => !tokenId || token.id === tokenId)
+          .filter((token) => !sceneId || token.sceneId === sceneId)
+          .filter((token) => {
+            if (!normalizedQuery) return true;
+            return token.name.toLocaleLowerCase().includes(normalizedQuery) || (token.actorId?.toLocaleLowerCase().includes(normalizedQuery) ?? false) || token.disposition.includes(normalizedQuery);
+          })
+          .sort((left, right) => left.sceneId.localeCompare(right.sceneId) || left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
+          .slice(0, limit)
+          .map((token) => ({
+            id: token.id,
+            sceneId: token.sceneId,
+            actorId: token.actorId,
+            name: token.name,
+            x: token.x,
+            y: token.y,
+            width: token.width,
+            height: token.height,
+            rotation: token.rotation,
+            hidden: token.hidden,
+            locked: token.locked,
+            visionEnabled: token.visionEnabled,
+            visionRadius: token.visionRadius,
+            brightVisionRadius: token.brightVisionRadius,
+            dimVisionRadius: token.dimVisionRadius,
+            disposition: token.disposition,
+            imageAssetId: token.imageAssetId,
+            createdAt: token.createdAt,
+            updatedAt: token.updatedAt
+          }));
+        return {
+          tokenId,
+          sceneId,
+          query,
+          count: tokens.length,
+          tokens
+        };
+      }
+    },
+    {
+      name: "read_asset",
+      description: "Read bounded campaign asset metadata visible to the caller, including mime type, size, lifecycle, and scan status without serving bytes or generating delivery URLs.",
+      requiredPermissions: ["scene.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          assetId: { type: "string", description: "Optional asset id to inspect. When omitted, returns campaign assets." },
+          query: { type: "string", description: "Optional asset name, mime type, lifecycle status, or security scan search." },
+          limit: { type: "number", description: "Maximum assets to return, from 1 to 10." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<AssetReadToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const assetId = stringFromRecord(request, "assetId");
+        const query = stringFromRecord(request, "query") ?? "";
+        const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
+        if (assetId && !context.state.assets.some((asset) => asset.campaignId === context.campaignId && asset.id === assetId)) return toolError("not_found", { entity: "asset", id: assetId });
+        const normalizedQuery = query.toLocaleLowerCase();
+        const assets = context.state.assets
+          .filter((asset) => asset.campaignId === context.campaignId)
+          .filter((asset) => !assetId || asset.id === assetId)
+          .filter((asset) => {
+            if (!normalizedQuery) return true;
+            const lifecycleStatus = asset.lifecycle?.status ?? "active";
+            const scanStatus = asset.security?.status ?? "unscanned";
+            return asset.name.toLocaleLowerCase().includes(normalizedQuery) || asset.mimeType.toLocaleLowerCase().includes(normalizedQuery) || lifecycleStatus.includes(normalizedQuery) || scanStatus.includes(normalizedQuery);
+          })
+          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.name.localeCompare(right.name))
+          .slice(0, limit)
+          .map((asset) => ({
+            id: asset.id,
+            name: asset.name,
+            mimeType: asset.mimeType,
+            sizeBytes: asset.sizeBytes,
+            checksum: asset.checksum,
+            url: asset.url,
+            storageProvider: asset.storage?.provider ?? "external",
+            lifecycleStatus: asset.lifecycle?.status ?? "active",
+            expiresAt: asset.lifecycle?.expiresAt,
+            storageDeletedAt: asset.lifecycle?.storageDeletedAt,
+            securityStatus: asset.security?.status ?? "unscanned",
+            securityScanner: asset.security?.scanner,
+            securityFindingCount: asset.security?.findings.length ?? 0,
+            highSecurityFindingCount: asset.security?.findings.filter((finding) => finding.severity === "high").length ?? 0,
+            createdAt: asset.createdAt,
+            updatedAt: asset.updatedAt
+          }));
+        return {
+          assetId,
+          query,
+          count: assets.length,
+          assets
+        };
+      }
+    },
+    {
+      name: "read_combat",
+      description: "Read active or recent combat state visible to a combat manager, including round, turn order, and bounded combatant metadata.",
+      requiredPermissions: ["combat.manage"],
+      parameters: {
+        type: "object",
+        properties: {
+          combatId: { type: "string", description: "Optional combat id to inspect. When omitted, returns campaign combats." },
+          activeOnly: { type: "boolean", description: "When true, return only active combats." },
+          limit: { type: "number", description: "Maximum combats to return, from 1 to 10." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<CombatReadToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const combatId = stringFromRecord(request, "combatId");
+        const activeOnly = booleanFromRecord(request, "activeOnly") ?? false;
+        const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
+        if (combatId && !context.state.combats.some((combat) => combat.campaignId === context.campaignId && combat.id === combatId)) return toolError("not_found", { entity: "combat", id: combatId });
+        const combats = context.state.combats
+          .filter((combat) => combat.campaignId === context.campaignId)
+          .filter((combat) => !combatId || combat.id === combatId)
+          .filter((combat) => !activeOnly || combat.active)
+          .sort((left, right) => Number(right.active) - Number(left.active) || right.updatedAt.localeCompare(left.updatedAt))
+          .slice(0, limit)
+          .map((combat) => ({
+            id: combat.id,
+            encounterId: combat.encounterId,
+            active: combat.active,
+            round: combat.round,
+            turnIndex: combat.turnIndex,
+            combatantCount: combat.combatants.length,
+            currentCombatantId: combat.combatants[combat.turnIndex]?.id,
+            combatants: combat.combatants.slice(0, 12).map((combatant) => ({
+              id: combatant.id,
+              tokenId: combatant.tokenId,
+              actorId: combatant.actorId,
+              name: combatant.name,
+              initiative: combatant.initiative,
+              defeated: combatant.defeated
+            })),
+            createdAt: combat.createdAt,
+            updatedAt: combat.updatedAt
+          }));
+        return {
+          combatId,
+          activeOnly,
+          count: combats.length,
+          combats
+        };
+      }
+    },
+    {
+      name: "read_encounter",
+      description: "Read bounded encounter prep metadata visible to the caller, including summary, difficulty, and token references without changing campaign state.",
+      requiredPermissions: ["campaign.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          encounterId: { type: "string", description: "Optional encounter id to inspect. When omitted, returns campaign encounters." },
+          query: { type: "string", description: "Optional encounter name, summary, or difficulty search." },
+          limit: { type: "number", description: "Maximum encounters to return, from 1 to 10." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<EncounterReadToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const encounterId = stringFromRecord(request, "encounterId");
+        const query = stringFromRecord(request, "query") ?? "";
+        const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
+        if (encounterId && !context.state.encounters.some((encounter) => encounter.campaignId === context.campaignId && encounter.id === encounterId)) return toolError("not_found", { entity: "encounter", id: encounterId });
+        const normalizedQuery = query.toLocaleLowerCase();
+        const encounters = context.state.encounters
+          .filter((encounter) => encounter.campaignId === context.campaignId)
+          .filter((encounter) => !encounterId || encounter.id === encounterId)
+          .filter((encounter) => {
+            if (!normalizedQuery) return true;
+            return encounter.name.toLocaleLowerCase().includes(normalizedQuery) || encounter.summary.toLocaleLowerCase().includes(normalizedQuery) || (encounter.difficulty?.toLocaleLowerCase().includes(normalizedQuery) ?? false);
+          })
+          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.name.localeCompare(right.name))
+          .slice(0, limit)
+          .map((encounter) => ({
+            id: encounter.id,
+            name: encounter.name,
+            summary: encounter.summary,
+            difficulty: encounter.difficulty,
+            tokenCount: encounter.tokenIds.length,
+            tokenIds: encounter.tokenIds.slice(0, 20),
+            createdAt: encounter.createdAt,
+            updatedAt: encounter.updatedAt
+          }));
+        return {
+          encounterId,
+          query,
+          count: encounters.length,
+          encounters
+        };
+      }
+    },
+    {
+      name: "read_actor",
+      description: "Read bounded actor sheet metadata visible to the caller, including tracked pools, conditions, owned item summaries, and system quick-action ids.",
+      requiredPermissions: ["actor.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          actorId: { type: "string", description: "Optional actor id to inspect. When omitted, returns visible campaign actors." },
+          query: { type: "string", description: "Optional actor name or type search." },
+          limit: { type: "number", description: "Maximum actors to return, from 1 to 10." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ActorReadToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const actorId = stringFromRecord(request, "actorId");
+        const query = stringFromRecord(request, "query") ?? "";
+        const limit = numberFromRecord(request, "limit", 1, 10) ?? 5;
+        if (actorId && !context.state.actors.some((actor) => actor.campaignId === context.campaignId && actor.id === actorId)) return toolError("not_found", { entity: "actor", id: actorId });
+        const normalizedQuery = query.toLocaleLowerCase();
+        const actors = context.state.actors
+          .filter((actor) => actor.campaignId === context.campaignId)
+          .filter((actor) => !actorId || actor.id === actorId)
+          .filter((actor) => {
+            if (!normalizedQuery) return true;
+            return actor.name.toLocaleLowerCase().includes(normalizedQuery) || actor.type.toLocaleLowerCase().includes(normalizedQuery) || actor.systemId.toLocaleLowerCase().includes(normalizedQuery);
+          })
+          .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
+          .slice(0, limit)
+          .map((actor) => actorReadToolSummary(context, actor));
+        return {
+          actorId,
+          query,
+          count: actors.length,
+          actors
+        };
+      }
+    },
+    {
       name: "roll_dice",
       description: "Roll dice through the campaign dice engine and add the result to chat.",
       requiredPermissions: ["dice.roll"],
@@ -3993,7 +7136,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           applyEffect: { type: "boolean", description: "When true, apply damage or healing roll totals to the target actor's tracked pool." },
           spellSlotLevel: { type: "number", description: "Optional spell slot level for upcasting a leveled spell action." },
           resourceAmount: { type: "number", description: "Optional rules-resource amount for variable-pool actions such as Lay On Hands." },
-          useFreeResource: { type: "boolean", description: "When true, use a class feature's free casting resource instead of a spell slot when supported." },
+          useFreeResource: { type: "boolean", description: "When true, use a class feature or species free casting resource instead of a spell slot when supported." },
           visibility: { type: "string", description: "Chat visibility for the action roll.", enum: ["public", "gm_only", "whisper"] }
         },
         required: ["actorId"],
@@ -4056,12 +7199,212 @@ interface MemoryToolOutput {
   visibility: Visibility;
 }
 
+interface MemorySearchToolOutput {
+  query: string;
+  visibility: "public" | "gm_only" | "any";
+  count: number;
+  memories: Array<{
+    id: string;
+    text: string;
+    visibility: Visibility;
+    sourceIds: string[];
+    approvedByUserId?: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+interface ChatReadToolOutput {
+  query: string;
+  sceneId?: string;
+  visibility: "public" | "gm_only" | "whisper" | "any";
+  count: number;
+  messages: Array<{
+    id: string;
+    sceneId?: string;
+    userId: string;
+    type: string;
+    body: string;
+    visibility: "public" | "gm_only" | "whisper";
+    recipientUserIds: string[];
+    rollId?: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+interface RollReadToolOutput {
+  query: string;
+  visibility: "public" | "gm_only" | "whisper" | "any";
+  count: number;
+  rolls: Array<{
+    id: string;
+    userId: string;
+    formula: string;
+    label?: string;
+    visibility: "public" | "gm_only" | "whisper";
+    total: number;
+    termCount: number;
+    messageId?: string;
+    messageBody?: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+interface JournalReadToolOutput {
+  query: string;
+  visibility: "public" | "gm_only" | "any";
+  count: number;
+  entries: Array<{
+    id: string;
+    title: string;
+    body: string;
+    visibility: Visibility;
+    tags: string[];
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+interface SceneReadToolOutput {
+  sceneId?: string;
+  activeOnly: boolean;
+  count: number;
+  scenes: Array<{
+    id: string;
+    name: string;
+    active: boolean;
+    width: number;
+    height: number;
+    gridType: string;
+    gridSize: number;
+    backgroundAssetId?: string;
+    fogRegionCount: number;
+    wallCount: number;
+    terrainWallCount: number;
+    lightCount: number;
+    fogSamples: Array<{ id: string; shape: FogShape; mode: FogMode; hidden: boolean; x: number; y: number; radius: number; pointCount: number }>;
+    wallSamples: Array<{ id: string; kind: WallKind; x1: number; y1: number; x2: number; y2: number; blocksVision: boolean; blocksMovement: boolean }>;
+    lightSamples: Array<{ id: string; x: number; y: number; radius: number; brightRadius?: number; dimRadius?: number; color: string; intensity?: number }>;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+interface TokenReadToolOutput {
+  tokenId?: string;
+  sceneId?: string;
+  query: string;
+  count: number;
+  tokens: Array<{
+    id: string;
+    sceneId: string;
+    actorId?: string;
+    name: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation: number;
+    hidden: boolean;
+    locked: boolean;
+    visionEnabled: boolean;
+    visionRadius: number;
+    brightVisionRadius?: number;
+    dimVisionRadius?: number;
+    disposition: "friendly" | "neutral" | "hostile";
+    imageAssetId?: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+interface AssetReadToolOutput {
+  assetId?: string;
+  query: string;
+  count: number;
+  assets: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    sizeBytes: number;
+    checksum?: string;
+    url: string;
+    storageProvider: string;
+    lifecycleStatus: string;
+    expiresAt?: string;
+    storageDeletedAt?: string;
+    securityStatus: string;
+    securityScanner?: string;
+    securityFindingCount: number;
+    highSecurityFindingCount: number;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+interface CombatReadToolOutput {
+  combatId?: string;
+  activeOnly: boolean;
+  count: number;
+  combats: Array<{
+    id: string;
+    encounterId?: string;
+    active: boolean;
+    round: number;
+    turnIndex: number;
+    combatantCount: number;
+    currentCombatantId?: string;
+    combatants: Array<{ id: string; tokenId: string; actorId?: string; name: string; initiative: number; defeated: boolean }>;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+interface EncounterReadToolOutput {
+  encounterId?: string;
+  query: string;
+  count: number;
+  encounters: Array<{
+    id: string;
+    name: string;
+    summary: string;
+    difficulty?: string;
+    tokenCount: number;
+    tokenIds: string[];
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
+interface ActorReadToolOutput {
+  actorId?: string;
+  query: string;
+  count: number;
+  actors: Array<{
+    id: string;
+    name: string;
+    type: string;
+    systemId: string;
+    ownerUserId?: string;
+    imageAssetId?: string;
+    pools: Record<string, { current?: number; max?: number }>;
+    conditions: string[];
+    itemCount: number;
+    items: Array<{ id: string; name: string; type: string; quantity?: number; equipped?: boolean }>;
+    actions: Array<{ rollId: string; label: string; formula: string }>;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+}
+
 interface CompendiumToolOutput {
   systemId: string;
   entries: Array<{ id: string; type: string; name: string; summary: string }>;
 }
 
-interface SystemRollEffectResult {
+interface SystemRollPoolEffectResult {
   type: "damage" | "healing";
   targetActorId: string;
   targetActorName: string;
@@ -4070,6 +7413,22 @@ interface SystemRollEffectResult {
   before: number;
   after: number;
   max: number;
+}
+
+interface SystemRollConditionEffectResult {
+  type: "condition";
+  targetActorId: string;
+  targetActorName: string;
+  conditionId: string;
+  conditionName: string;
+  before: string[];
+  after: string[];
+  alreadyPresent: boolean;
+}
+
+type SystemRollEffectResult = SystemRollPoolEffectResult | SystemRollConditionEffectResult;
+interface SystemRollEffectOptions {
+  allowConditionEffects?: boolean;
 }
 
 type SystemRollEffectApplication = { data: Record<string, unknown>; effect: SystemRollEffectResult } | { error: string; message: string };
@@ -4155,7 +7514,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       }
       const actorDataUpdates = new Map<string, Record<string, unknown>>();
       let itemUpdates: Item[] = [];
-      let effect: SystemRollEffectResult | undefined;
+      let effect: SystemRollPoolEffectResult | undefined;
       if (usage.consumed.length > 0 || usage.items.length > 0) {
         actorDataUpdates.set(actor.id, usage.data);
         itemUpdates = usage.items;
@@ -4169,7 +7528,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         const applied = applySystemRollEffect(targetForEffect, action, rolled.total);
         if ("error" in applied) return toolError(applied.error, { message: applied.message });
         actorDataUpdates.set(target.id, applied.data);
-        effect = applied.effect;
+        effect = applied.effect as SystemRollPoolEffectResult;
       }
       if (actorDataUpdates.size > 0 || itemUpdates.length > 0) {
         const updatedAt = nowIso();
@@ -4254,11 +7613,61 @@ function enrichAiContextWithSystemActions(context: PermissionFilteredContext, st
   };
 }
 
+function actorReadToolSummary(context: AiToolContext, actor: Actor): ActorReadToolOutput["actors"][number] {
+  const items = context.state.items.filter((item) => item.actorId === actor.id && item.campaignId === actor.campaignId);
+  return {
+    id: actor.id,
+    name: actor.name,
+    type: actor.type,
+    systemId: actor.systemId,
+    ownerUserId: actor.ownerUserId,
+    imageAssetId: actor.imageAssetId,
+    pools: actorReadToolPools(actor),
+    conditions: actorReadToolConditions(actor),
+    itemCount: items.length,
+    items: items.slice(0, 12).map(actorReadToolItemSummary),
+    actions: systemQuickRolls(actor, items)
+      .slice(0, 20)
+      .map((action) => ({ rollId: action.id, label: action.label, formula: action.formula })),
+    createdAt: actor.createdAt,
+    updatedAt: actor.updatedAt
+  };
+}
+
+function actorReadToolPools(actor: Actor): Record<string, { current?: number; max?: number }> {
+  const pools: Record<string, { current?: number; max?: number }> = {};
+  for (const key of ["hp", "stamina", "composure", "focus"]) {
+    const value = actor.data[key];
+    if (!isRecord(value)) continue;
+    const current = typeof value.current === "number" ? value.current : undefined;
+    const max = typeof value.max === "number" ? value.max : undefined;
+    if (current !== undefined || max !== undefined) pools[key] = { current, max };
+  }
+  return pools;
+}
+
+function actorReadToolConditions(actor: Actor): string[] {
+  const conditions = actor.data.conditions;
+  if (!Array.isArray(conditions)) return [];
+  return conditions.filter((condition): condition is string => typeof condition === "string").slice(0, 20);
+}
+
+function actorReadToolItemSummary(item: Item): ActorReadToolOutput["actors"][number]["items"][number] {
+  const data = isRecord(item.data) ? item.data : {};
+  return {
+    id: item.id,
+    name: item.name,
+    type: item.type,
+    quantity: typeof data.quantity === "number" ? data.quantity : undefined,
+    equipped: typeof data.equipped === "boolean" ? data.equipped : undefined
+  };
+}
+
 function resolveSystemActionRoll(
-  quickRolls: Array<{ id: string; label: string; formula: string }>,
+  quickRolls: Array<{ id: string; label: string; formula: string; metadata?: Record<string, unknown> }>,
   actionRollId: string | undefined,
   actionName: string | undefined
-): { id: string; label: string; formula: string } | undefined {
+): { id: string; label: string; formula: string; metadata?: Record<string, unknown> } | undefined {
   if (actionRollId) return quickRolls.find((action) => action.id === actionRollId);
   if (!actionName) return undefined;
   const normalized = normalizeActionLookup(actionName);
@@ -4269,9 +7678,13 @@ function normalizeActionLookup(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function applySystemRollEffect(actor: Actor, rollDefinition: { id: string; label: string }, total: number): SystemRollEffectApplication {
+function applySystemRollEffect(actor: Actor, rollDefinition: { id: string; label: string; metadata?: Record<string, unknown> }, total: number, options: SystemRollEffectOptions = {}): SystemRollEffectApplication {
   const type = systemRollEffectType(rollDefinition);
-  if (!type) return { error: "unsupported_effect", message: "Roll is not a damage or healing action" };
+  if (!type) {
+    const condition = options.allowConditionEffects ? systemRollConditionEffect(rollDefinition) : undefined;
+    if (condition) return applySystemConditionRollEffect(actor, condition);
+    return { error: "unsupported_effect", message: "Roll is not a damage, healing, or supported condition action" };
+  }
   const pool = systemEffectPool(actor);
   if (!pool) return { error: "unsupported_target", message: "Target actor does not expose a supported damage/healing pool" };
   const poolValue = actor.data[pool];
@@ -4302,12 +7715,55 @@ function applySystemRollEffect(actor: Actor, rollDefinition: { id: string; label
   };
 }
 
+function applySystemConditionRollEffect(actor: Actor, condition: { id: string; name: string }): SystemRollEffectApplication {
+  const before = systemConditionIds(actor.data.conditions);
+  try {
+    const data = applySystemCondition(actor, condition.id, nowIso());
+    return {
+      data,
+      effect: {
+        type: "condition",
+        targetActorId: actor.id,
+        targetActorName: actor.name,
+        conditionId: condition.id,
+        conditionName: condition.name,
+        before,
+        after: systemConditionIds(data.conditions),
+        alreadyPresent: before.includes(condition.id)
+      }
+    };
+  } catch (error) {
+    return { error: "unsupported_effect", message: error instanceof Error ? error.message : `Unknown condition: ${condition.name}` };
+  }
+}
+
 function systemRollEffectType(rollDefinition: { id: string; label: string }): "damage" | "healing" | undefined {
   const id = rollDefinition.id.toLowerCase();
   const label = rollDefinition.label.toLowerCase();
   if (id.endsWith("-healing") || /\bhealing\b/.test(label)) return "healing";
   if (id.endsWith("-damage") || /\bdamage\b/.test(label)) return "damage";
   return undefined;
+}
+
+function systemRollConditionEffect(rollDefinition: { id: string; metadata?: Record<string, unknown> }): { id: string; name: string } | undefined {
+  if (!rollDefinition.id.toLowerCase().endsWith("-effect")) return undefined;
+  const metadata = isRecord(rollDefinition.metadata) ? rollDefinition.metadata : {};
+  const conditionName = typeof metadata.condition === "string" ? metadata.condition : "";
+  if (!conditionName) return undefined;
+  return { id: slugConditionId(conditionName), name: conditionName };
+}
+
+function slugConditionId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function systemConditionIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((condition) => {
+    if (typeof condition === "string") return condition;
+    if (isRecord(condition) && typeof condition.id === "string") return condition.id;
+    return [];
+  });
 }
 
 function systemEffectPool(actor: Actor): "hp" | "strain" | "composure" | undefined {
@@ -4423,12 +7879,26 @@ function tokenForCampaign(context: AiToolContext, tokenId: string): Token | unde
 }
 
 function aiToolAvailableToCaller(tool: AiToolDefinition, permissions: PermissionName[]): boolean {
+  if (!aiToolPermissionSafe(tool) && !tool.requiredPermissions.includes("ai.proposeChanges")) return false;
   return tool.requiredPermissions.every((permission) => permissions.includes(permission));
+}
+
+const AI_PERMISSION_SAFE_TOOL_NAMES = new Set(["search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+
+function aiToolPermissionSafe(tool: AiToolDefinition): boolean {
+  return AI_PERMISSION_SAFE_TOOL_NAMES.has(tool.name);
 }
 
 async function executeAiTool(tools: AiToolDefinition[], toolName: string, input: unknown, context: AiToolContext): Promise<AiToolExecutionResult> {
   const tool = tools.find((item) => item.name === toolName);
   if (!tool) return failedToolOutput({ error: "unknown_tool", toolName });
+
+  if (!aiToolPermissionSafe(tool) && !tool.requiredPermissions.includes("ai.proposeChanges")) {
+    return failedToolOutput({
+      error: "missing_permission",
+      permission: "ai.proposeChanges"
+    });
+  }
 
   const missingPermission = tool.requiredPermissions.find((permission) => !context.permissions.includes(permission));
   if (missingPermission) {
@@ -4708,6 +8178,91 @@ function clampLightIntensity(value: number): number {
   return Math.max(0.05, Math.min(1, value));
 }
 
+function normalizeWallPatch(body: Partial<Pick<Wall, "x1" | "y1" | "x2" | "y2" | "blocksVision" | "blocksMovement" | "kind">>): { patch: Partial<Wall> } | { error: string } {
+  const patch: Partial<Wall> = {};
+  for (const key of ["x1", "y1", "x2", "y2"] as const) {
+    if (body[key] === undefined) continue;
+    if (!Number.isFinite(body[key])) return { error: `Wall ${key} must be a finite number` };
+    patch[key] = body[key];
+  }
+  if (body.blocksVision !== undefined) patch.blocksVision = Boolean(body.blocksVision);
+  if (body.blocksMovement !== undefined) patch.blocksMovement = Boolean(body.blocksMovement);
+  if (body.kind !== undefined) {
+    if (body.kind !== "wall" && body.kind !== "terrain") return { error: "Wall kind must be wall or terrain" };
+    patch.kind = body.kind;
+    if (body.blocksMovement === undefined) patch.blocksMovement = body.kind === "wall";
+  }
+  if (Object.keys(patch).length === 0) return { error: "Wall update must include at least one field" };
+  const next = { x1: body.x1, y1: body.y1, x2: body.x2, y2: body.y2 };
+  if (next.x1 !== undefined && next.y1 !== undefined && next.x2 !== undefined && next.y2 !== undefined && Math.hypot(next.x2 - next.x1, next.y2 - next.y1) < 0.001) {
+    return { error: "Wall endpoints must not be identical" };
+  }
+  return { patch };
+}
+
+function normalizeLightSourcePatch(body: Partial<Pick<LightSource, "x" | "y" | "radius" | "brightRadius" | "dimRadius" | "color" | "intensity">>, current?: LightSource): { patch: Partial<LightSource> } | { error: string } {
+  const patch: Partial<LightSource> = {};
+  if (body.x !== undefined) {
+    if (!Number.isFinite(body.x)) return { error: "Light x must be a finite number" };
+    patch.x = body.x;
+  }
+  if (body.y !== undefined) {
+    if (!Number.isFinite(body.y)) return { error: "Light y must be a finite number" };
+    patch.y = body.y;
+  }
+  if (body.radius !== undefined) {
+    if (!Number.isFinite(body.radius) || body.radius <= 0) return { error: "Light radius must be greater than zero" };
+    patch.radius = body.radius;
+  }
+  if (body.brightRadius !== undefined) {
+    if (!Number.isFinite(body.brightRadius) || body.brightRadius <= 0) return { error: "Light brightRadius must be greater than zero" };
+    patch.brightRadius = body.brightRadius;
+  }
+  if (body.dimRadius !== undefined) {
+    if (!Number.isFinite(body.dimRadius) || body.dimRadius <= 0) return { error: "Light dimRadius must be greater than zero" };
+    patch.dimRadius = body.dimRadius;
+  }
+  const nextBrightRadius = patch.brightRadius ?? current?.brightRadius;
+  const nextDimRadius = patch.dimRadius ?? current?.dimRadius ?? patch.radius ?? current?.radius;
+  if (nextBrightRadius !== undefined && nextDimRadius !== undefined && nextBrightRadius >= nextDimRadius) return { error: "Light brightRadius must be less than dimRadius" };
+  if (body.color !== undefined) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(body.color)) return { error: "Light color must be a six-digit hex color" };
+    patch.color = body.color;
+  }
+  if (body.intensity !== undefined) {
+    if (!Number.isFinite(body.intensity) || body.intensity < 0 || body.intensity > 1) return { error: "Light intensity must be between 0 and 1" };
+    patch.intensity = body.intensity;
+  }
+  if (Object.keys(patch).length === 0) return { error: "Light update must include at least one field" };
+  return { patch };
+}
+
+function normalizeTokenVisionPatch(body: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>, current?: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>): { patch: Partial<Token> } | { error: string } {
+  const patch: Partial<Token> = {};
+  if (body.visionRadius !== undefined) {
+    if (!Number.isFinite(body.visionRadius) || body.visionRadius < 0) return { error: "Token visionRadius must be a nonnegative number" };
+    patch.visionRadius = body.visionRadius;
+  }
+  if (body.brightVisionRadius !== undefined) {
+    if (!Number.isFinite(body.brightVisionRadius) || body.brightVisionRadius <= 0) return { error: "Token brightVisionRadius must be greater than zero" };
+    patch.brightVisionRadius = body.brightVisionRadius;
+  }
+  if (body.dimVisionRadius !== undefined) {
+    if (!Number.isFinite(body.dimVisionRadius) || body.dimVisionRadius <= 0) return { error: "Token dimVisionRadius must be greater than zero" };
+    patch.dimVisionRadius = body.dimVisionRadius;
+  }
+  const nextEnabled = body.visionEnabled ?? current?.visionEnabled ?? true;
+  const nextRadius = patch.visionRadius ?? current?.visionRadius ?? 0;
+  const nextBrightRadius = patch.brightVisionRadius ?? current?.brightVisionRadius;
+  const nextDimRadius = patch.dimVisionRadius ?? current?.dimVisionRadius ?? nextRadius;
+  if (nextEnabled && nextBrightRadius !== undefined && nextBrightRadius >= nextDimRadius) return { error: "Token brightVisionRadius must be less than dimVisionRadius" };
+  return { patch };
+}
+
+function tokenVisionOuterRadius(token: Pick<Token, "visionRadius" | "dimVisionRadius">): number {
+  return token.dimVisionRadius ?? token.visionRadius;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -4753,7 +8308,7 @@ function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): bo
 
 function visionSnapshotForUser(store: StateStore, userId: string, campaignId: string, scene: Scene): VisionSnapshot {
   const activeFog = scene.fog.filter((region) => !region.hidden);
-  const lightPolygons = scene.lights.map((light) => computeLightVisionPolygon(scene, light));
+  const lightPolygons = scene.lights.flatMap((light) => computeLightVisionPolygons(scene, light));
   if (canReadHiddenTokens(store, userId, campaignId) || activeFog.length === 0) {
     return {
       sceneId: scene.id,
@@ -4774,9 +8329,1014 @@ function visionSnapshotForUser(store: StateStore, userId: string, campaignId: st
 function ownedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[]): VisionPolygon[] {
   const tokens = sceneTokens ?? store.state.tokens.filter((item) => item.sceneId === scene.id);
   return tokens
-    .filter((item) => item.visionEnabled && item.visionRadius > 0 && isTokenOwnedByUser(store, userId, item))
-    .map((token) => computeTokenVisionPolygon(scene, token))
-    .filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+    .filter((item) => item.visionEnabled && tokenVisionOuterRadius(item) > 0 && isTokenOwnedByUser(store, userId, item))
+    .flatMap((token) => computeTokenVisionPolygons(scene, token));
+}
+
+function normalizeVisionSamplePoint(scene: Scene, x: string | undefined, y: string | undefined): VisionPoint | undefined {
+  const point = { x: Number(x), y: Number(y) };
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return undefined;
+  if (point.x < 0 || point.y < 0 || point.x > scene.width || point.y > scene.height) return undefined;
+  return point;
+}
+
+function visionPointSampleForUser(store: StateStore, userId: string, campaignId: string, scene: Scene, point: VisionPoint): VisionPointSample {
+  const snapshot = visionSnapshotForUser(store, userId, campaignId, scene);
+  const containingPolygons = snapshot.polygons.filter((polygon) => isPointInsideVisionPolygon(point, polygon)).map(visionPointSamplePolygon);
+  const hiddenBy = containingPolygons.filter((polygon) => polygon.mode === "hide");
+  const illuminatedBy = containingPolygons.filter((polygon) => polygon.source === "light");
+  const revealedBy = containingPolygons.filter((polygon) => polygon.source !== "light" && polygon.mode !== "hide");
+  const visible = !snapshot.fogActive || (revealedBy.length > 0 && hiddenBy.length === 0);
+  return {
+    sceneId: scene.id,
+    userId,
+    point,
+    fogActive: snapshot.fogActive,
+    visible,
+    revealedBy,
+    hiddenBy,
+    illuminatedBy,
+    blockedBy: visible ? [] : visionBlockersForPoint(store, userId, scene, point)
+  };
+}
+
+function visionPointSamplePolygon(polygon: VisionPolygon): VisionPointSamplePolygon {
+  return {
+    polygonId: polygon.id,
+    source: polygon.source,
+    sourceId: polygon.sourceId,
+    mode: polygon.mode,
+    radius: polygon.radius,
+    lightLevel: polygon.lightLevel,
+    color: polygon.color,
+    opacity: polygon.opacity
+  };
+}
+
+function visionBlockersForPoint(store: StateStore, userId: string, scene: Scene, point: VisionPoint): VisionPointSample["blockedBy"] {
+  const origins = [
+    ...store.state.tokens
+      .filter((token) => token.sceneId === scene.id && token.visionEnabled && tokenVisionOuterRadius(token) > 0 && isTokenOwnedByUser(store, userId, token))
+      .map((token) => ({ source: "token" as const, sourceId: token.id, origin: centerOfToken(token), radius: tokenVisionOuterRadius(token) })),
+    ...scene.lights.map((light) => ({ source: "light" as const, sourceId: light.id, origin: { x: light.x, y: light.y }, radius: light.dimRadius ?? light.radius }))
+  ];
+  const blockers = new Map<string, VisionPointSample["blockedBy"][number]>();
+  for (const source of origins) {
+    if (Math.hypot(point.x - source.origin.x, point.y - source.origin.y) > source.radius) continue;
+    for (const wall of scene.walls) {
+      if (!wall.blocksVision) continue;
+      const intersection = lineSegmentIntersection(source.origin, point, { x: wall.x1, y: wall.y1 }, { x: wall.x2, y: wall.y2 });
+      if (intersection) {
+        blockers.set(`${source.source}:${source.sourceId}:${wall.id}`, {
+          wallId: wall.id,
+          kind: wall.kind,
+          blocksMovement: wall.blocksMovement,
+          source: source.source,
+          sourceId: source.sourceId,
+          intersection: roundVisionPoint(intersection),
+          distanceFromSource: roundDistance(Math.hypot(intersection.x - source.origin.x, intersection.y - source.origin.y)),
+          distanceToPoint: roundDistance(Math.hypot(point.x - intersection.x, point.y - intersection.y))
+        });
+      }
+    }
+  }
+  return [...blockers.values()];
+}
+
+function sceneRenderingDiagnostics(store: StateStore, scene: Scene) {
+  const fogPolygons = scene.fog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+  const lightPolygons = scene.lights.flatMap((light) => computeLightVisionPolygons(scene, light)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+  const sceneTokens = store.state.tokens.filter((token) => token.sceneId === scene.id);
+  const tokenPolygons = sceneTokens
+    .filter((token) => token.visionEnabled && tokenVisionOuterRadius(token) > 0)
+    .flatMap((token) => computeTokenVisionPolygons(scene, token));
+  const polygons = [...fogPolygons, ...lightPolygons, ...tokenPolygons];
+  const complexity = sceneRenderingComplexity(polygons);
+  const issues = [...sceneRenderingDiagnosticIssues(scene, sceneTokens), ...sceneRenderingComplexityIssues(complexity)];
+  const issueSeverityCounts = countBy(issues, (issue) => String(issue.severity ?? "unknown"));
+  const issueCodeCounts = countBy(issues, (issue) => String(issue.code ?? "unknown"));
+  const actionReasons = sceneRenderingActionReasons(issueSeverityCounts, complexity);
+  const budget = sceneRenderingBudget(complexity);
+  return {
+    sceneId: scene.id,
+    generatedAt: nowIso(),
+    dimensions: {
+      width: scene.width,
+      height: scene.height,
+      gridSize: scene.gridSize
+    },
+    counts: {
+      fogRegionCount: scene.fog.length,
+      revealFogRegionCount: scene.fog.filter((region) => (region.mode ?? "reveal") === "reveal" && !region.hidden).length,
+      hideFogRegionCount: scene.fog.filter((region) => region.mode === "hide" && !region.hidden).length,
+      wallCount: scene.walls.length,
+      visionBlockingWallCount: scene.walls.filter((wall) => wall.blocksVision).length,
+      terrainWallCount: scene.walls.filter((wall) => wall.kind === "terrain").length,
+      degenerateWallCount: scene.walls.filter((wall) => Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1) < 0.001).length,
+      lightCount: scene.lights.length,
+      tokenVisionSourceCount: tokenPolygons.length,
+      polygonCount: polygons.length,
+      polygonVertexCount: complexity.polygonVertexCount,
+      maxPolygonVertexCount: complexity.maxPolygonVertexCount,
+      issueCount: issues.length
+    },
+    complexity,
+    budget,
+    issueSeverityCounts,
+    issueCodeCounts,
+    actionRequired: actionReasons.length > 0,
+    actionReasons,
+    issues
+  };
+}
+
+function adminRenderingOperations(store: StateStore) {
+  const diagnostics = store.state.scenes.map((scene) => {
+    const campaign = store.state.campaigns.find((item) => item.id === scene.campaignId);
+    const sceneDiagnostics = sceneRenderingDiagnostics(store, scene);
+    return {
+      sceneId: scene.id,
+      sceneName: scene.name,
+      campaignId: scene.campaignId,
+      campaignName: campaign?.name ?? "Unknown campaign",
+      counts: sceneDiagnostics.counts,
+      complexity: sceneDiagnostics.complexity,
+      budget: sceneDiagnostics.budget,
+      issueSeverityCounts: sceneDiagnostics.issueSeverityCounts,
+      issueCodes: sceneDiagnostics.issueCodeCounts,
+      topIssueCodes: topCountEntries(sceneDiagnostics.issueCodeCounts, 5),
+      topIssues: sceneDiagnostics.issues.slice(0, 5),
+      issues: sceneDiagnostics.issues,
+      featureCoverage: sceneRenderingFeatureCoverage(scene, store.state.tokens.filter((token) => token.sceneId === scene.id)),
+      actionRequired: sceneDiagnostics.actionRequired,
+      actionReasons: sceneDiagnostics.actionReasons
+    };
+  });
+  const topIssues = diagnostics.flatMap((scene) =>
+    scene.issues.map((issue) => ({
+      sceneId: scene.sceneId,
+      sceneName: scene.sceneName,
+      campaignId: scene.campaignId,
+      campaignName: scene.campaignName,
+      ...issue
+    }))
+  ) as RenderingIssueSample[];
+  const scenesRequiringAction = diagnostics.filter((scene) => scene.actionRequired);
+  const issueCodeCounts = diagnostics.reduce<Record<string, number>>((totals, scene) => {
+    for (const [code, count] of Object.entries(scene.issueCodes)) {
+      totals[code] = (totals[code] ?? 0) + count;
+    }
+    return totals;
+  }, {});
+  const issueSeverityCounts = diagnostics.reduce<Record<string, number>>((totals, scene) => {
+    for (const [severity, count] of Object.entries(scene.issueSeverityCounts)) {
+      totals[severity] = (totals[severity] ?? 0) + count;
+    }
+    return totals;
+  }, {});
+  const actionReasons = [...new Set(scenesRequiringAction.flatMap((scene) => scene.actionReasons))];
+  const authoringOperations = renderingAuthoringOperationsSummary(store);
+  const failedAuthoringOperations = renderingFailedAuthoringOperationsSummary(store);
+  const staleIssueOperations = renderingStaleIssueOperationsSummary(scenesRequiringAction, authoringOperations);
+  const operationActionReasons = failedAuthoringOperations.actionRequired ? ["rendering_authoring_failures"] : [];
+  const remediationQueue = renderingRemediationQueue(diagnostics, staleIssueOperations, failedAuthoringOperations);
+
+  return {
+    generatedAt: nowIso(),
+    budget: aggregateRenderingBudget(diagnostics.map((scene) => scene.budget)),
+    featureCoverage: renderingFeatureCoverageSummary(diagnostics),
+    authoringOperations,
+    failedAuthoringOperations,
+    staleIssueOperations,
+    totals: {
+      sceneCount: store.state.scenes.length,
+      campaignCount: new Set(store.state.scenes.map((scene) => scene.campaignId)).size,
+      sceneActionRequiredCount: scenesRequiringAction.length,
+      fogRegionCount: diagnostics.reduce((total, scene) => total + scene.counts.fogRegionCount, 0),
+      wallCount: diagnostics.reduce((total, scene) => total + scene.counts.wallCount, 0),
+      terrainWallCount: diagnostics.reduce((total, scene) => total + scene.counts.terrainWallCount, 0),
+      degenerateWallCount: diagnostics.reduce((total, scene) => total + scene.counts.degenerateWallCount, 0),
+      lightCount: diagnostics.reduce((total, scene) => total + scene.counts.lightCount, 0),
+      tokenVisionSourceCount: diagnostics.reduce((total, scene) => total + scene.counts.tokenVisionSourceCount, 0),
+      polygonVertexCount: diagnostics.reduce((total, scene) => total + scene.counts.polygonVertexCount, 0),
+      maxPolygonVertexCount: diagnostics.reduce((max, scene) => Math.max(max, scene.counts.maxPolygonVertexCount), 0),
+      issueCount: diagnostics.reduce((total, scene) => total + scene.counts.issueCount, 0)
+    },
+    issueSeverityCounts,
+    issueCodeCounts,
+    topIssues: topIssues
+      .sort((left, right) => renderingIssueSeverityRank(right.severity) - renderingIssueSeverityRank(left.severity) || String(left.code).localeCompare(String(right.code)) || left.sceneName.localeCompare(right.sceneName))
+      .slice(0, 20),
+    actionRequired: actionReasons.length > 0 || operationActionReasons.length > 0,
+    actionReasons: [...actionReasons, ...operationActionReasons],
+    remediationQueue,
+    scenesRequiringAction: scenesRequiringAction
+      .slice()
+      .sort((left, right) => right.counts.issueCount - left.counts.issueCount || right.counts.maxPolygonVertexCount - left.counts.maxPolygonVertexCount || left.sceneName.localeCompare(right.sceneName))
+      .slice(0, 20),
+    scenes: diagnostics
+      .slice()
+      .sort((left, right) => right.counts.issueCount - left.counts.issueCount || right.counts.polygonVertexCount - left.counts.polygonVertexCount || left.sceneName.localeCompare(right.sceneName))
+      .slice(0, 50)
+  };
+}
+
+function renderingAuthoringOperationsSummary(store: StateStore) {
+  const authoringActions = new Set([
+    "scene.fog.create",
+    "scene.fog.update",
+    "scene.fog.delete",
+    "scene.fog.undo",
+    "scene.fogPreset.apply",
+    "scene.wall.create",
+    "scene.wall.update",
+    "scene.wall.delete",
+    "scene.light.create",
+    "scene.light.update",
+    "scene.light.delete"
+  ]);
+  const logs = store.state.auditLogs.filter((log) => authoringActions.has(log.action)).sort(sortTimestampsDesc);
+  const events = logs.map((log) => {
+    const before = isRecord(log.before) ? log.before : {};
+    const after = isRecord(log.after) ? log.after : {};
+    const sceneId = stringFromRecord(after, "sceneId") ?? stringFromRecord(before, "sceneId");
+    const scene = sceneId ? store.state.scenes.find((item) => item.id === sceneId) : undefined;
+    const campaign = scene ? store.state.campaigns.find((item) => item.id === scene.campaignId) : undefined;
+    return {
+      id: log.id,
+      action: log.action,
+      targetType: log.targetType,
+      targetId: log.targetId,
+      sceneId,
+      sceneName: scene?.name,
+      campaignId: log.campaignId ?? scene?.campaignId,
+      campaignName: campaign?.name,
+      actorUserId: log.actorUserId,
+      createdAt: log.createdAt
+    };
+  });
+  const byScene = new Map<string, { sceneId: string; sceneName?: string; campaignId?: string; campaignName?: string; count: number; lastAuthoredAt?: string; actionCounts: Record<string, number> }>();
+  for (const event of events) {
+    const sceneId = event.sceneId ?? "unknown";
+    const entry = byScene.get(sceneId) ?? {
+      sceneId,
+      sceneName: event.sceneName,
+      campaignId: event.campaignId,
+      campaignName: event.campaignName,
+      count: 0,
+      lastAuthoredAt: event.createdAt,
+      actionCounts: {}
+    };
+    entry.count += 1;
+    entry.lastAuthoredAt = entry.lastAuthoredAt && sortTimestampsDesc({ createdAt: entry.lastAuthoredAt }, { createdAt: event.createdAt }) <= 0 ? entry.lastAuthoredAt : event.createdAt;
+    entry.actionCounts[event.action] = (entry.actionCounts[event.action] ?? 0) + 1;
+    byScene.set(sceneId, entry);
+  }
+  return {
+    totalCount: events.length,
+    fogOperationCount: events.filter((event) => event.action.startsWith("scene.fog")).length,
+    wallOperationCount: events.filter((event) => event.action.startsWith("scene.wall")).length,
+    lightOperationCount: events.filter((event) => event.action.startsWith("scene.light")).length,
+    sceneCount: byScene.size,
+    actionCounts: countBy(events, (event) => event.action),
+    targetTypeCounts: countBy(events, (event) => event.targetType ?? "unknown"),
+    actorUserCounts: countBy(events.filter((event) => event.actorUserId), (event) => event.actorUserId ?? "unknown"),
+    recent: events.slice(0, 10),
+    scenes: [...byScene.values()]
+      .sort((left, right) => right.count - left.count || String(right.lastAuthoredAt ?? "").localeCompare(String(left.lastAuthoredAt ?? "")) || String(left.sceneName ?? left.sceneId).localeCompare(String(right.sceneName ?? right.sceneId)))
+      .slice(0, 10)
+  };
+}
+
+function renderingFailedAuthoringOperationsSummary(store: StateStore) {
+  const logs = store.state.auditLogs.filter((log) => log.action === "scene.renderingAuthoring.failed").sort(sortTimestampsDesc);
+  const failures = logs.map((log) => {
+    const after = isRecord(log.after) ? log.after : {};
+    const sceneId = stringFromRecord(after, "sceneId");
+    const scene = sceneId ? store.state.scenes.find((item) => item.id === sceneId) : undefined;
+    const campaign = scene ? store.state.campaigns.find((item) => item.id === scene.campaignId) : undefined;
+    return {
+      id: log.id,
+      attemptedAction: stringFromRecord(after, "attemptedAction") ?? "unknown",
+      targetType: stringFromRecord(after, "targetType") ?? log.targetType,
+      targetId: stringFromRecord(after, "targetId") ?? log.targetId,
+      sceneId,
+      sceneName: scene?.name,
+      campaignId: log.campaignId ?? scene?.campaignId,
+      campaignName: campaign?.name,
+      actorUserId: log.actorUserId,
+      reason: stringFromRecord(after, "reason") ?? "unknown",
+      message: stringFromRecord(after, "message") ?? "Rendering authoring request failed validation",
+      createdAt: log.createdAt
+    };
+  });
+  return {
+    actionRequired: failures.length > 0,
+    failureCount: failures.length,
+    byAction: countBy(failures, (failure) => failure.attemptedAction),
+    byReason: countBy(failures, (failure) => failure.reason),
+    byTargetType: countBy(failures, (failure) => failure.targetType ?? "unknown"),
+    recentFailures: failures.slice(0, 10)
+  };
+}
+
+function renderingStaleIssueOperationsSummary(
+  scenesRequiringAction: Array<{
+    sceneId: string;
+    sceneName: string;
+    campaignId: string;
+    campaignName: string;
+    counts: { issueCount: number };
+    actionReasons: string[];
+    topIssueCodes: Array<{ code: string; count: number }>;
+    topIssues: Array<Record<string, unknown>>;
+  }>,
+  authoringOperations: ReturnType<typeof renderingAuthoringOperationsSummary>
+) {
+  const authorshipByScene = new Map(authoringOperations.scenes.map((scene) => [scene.sceneId, scene]));
+  const staleScenes = scenesRequiringAction
+    .map((scene) => {
+      const authoring = authorshipByScene.get(scene.sceneId);
+      return {
+        sceneId: scene.sceneId,
+        sceneName: scene.sceneName,
+        campaignId: scene.campaignId,
+        campaignName: scene.campaignName,
+        issueCount: scene.counts.issueCount,
+        actionReasons: scene.actionReasons,
+        topIssueCodes: scene.topIssueCodes,
+        topIssue: scene.topIssues[0],
+        lastAuthoredAt: authoring?.lastAuthoredAt,
+        authoringCount: authoring?.count ?? 0
+      };
+    })
+    .filter((scene) => scene.authoringCount === 0)
+    .sort((left, right) => right.issueCount - left.issueCount || left.sceneName.localeCompare(right.sceneName));
+  return {
+    sceneCount: staleScenes.length,
+    issueCount: staleScenes.reduce((total, scene) => total + scene.issueCount, 0),
+    actionRequired: staleScenes.length > 0,
+    scenes: staleScenes.slice(0, 10)
+  };
+}
+
+function sceneRenderingFeatureCoverage(scene: Scene, sceneTokens: Token[]) {
+  const polygonFogCount = scene.fog.filter((region) => region.shape === "polygon" && (region.points?.length ?? 0) >= 3).length;
+  const smoothFogCount = scene.fog.filter((region) => region.shape === "polygon" && (region.points?.length ?? 0) > 8).length;
+  const terrainWallCount = scene.walls.filter((wall) => wall.kind === "terrain").length;
+  const coloredLightCount = scene.lights.filter((light) => light.color.trim().toLowerCase() !== "#facc15").length;
+  const dimmedLightCount = scene.lights.filter((light) => light.intensity !== undefined && light.intensity !== 0.28).length;
+  const dualZoneLightCount = scene.lights.filter((light) => light.brightRadius !== undefined && (light.dimRadius ?? light.radius) > light.brightRadius).length;
+  const dualZoneTokenVisionCount = sceneTokens.filter((token) => token.brightVisionRadius !== undefined && (token.dimVisionRadius ?? token.visionRadius) > token.brightVisionRadius).length;
+  return {
+    polygonFogCount,
+    smoothFogCount,
+    terrainWallCount,
+    coloredLightCount,
+    dimmedLightCount,
+    dualZoneLightCount,
+    dualZoneTokenVisionCount
+  };
+}
+
+function renderingFeatureCoverageSummary(
+  diagnostics: Array<{
+    sceneId: string;
+    sceneName: string;
+    campaignId: string;
+    campaignName: string;
+    counts: { tokenVisionSourceCount: number };
+    featureCoverage: ReturnType<typeof sceneRenderingFeatureCoverage>;
+  }>
+) {
+  const sceneCount = diagnostics.length;
+  const scenesWithPolygonFog = diagnostics.filter((scene) => scene.featureCoverage.polygonFogCount > 0);
+  const scenesWithSmoothFog = diagnostics.filter((scene) => scene.featureCoverage.smoothFogCount > 0);
+  const scenesWithTerrainWalls = diagnostics.filter((scene) => scene.featureCoverage.terrainWallCount > 0);
+  const scenesWithColoredLights = diagnostics.filter((scene) => scene.featureCoverage.coloredLightCount > 0);
+  const scenesWithDimmedLights = diagnostics.filter((scene) => scene.featureCoverage.dimmedLightCount > 0);
+  const scenesWithDualZoneLights = diagnostics.filter((scene) => scene.featureCoverage.dualZoneLightCount > 0);
+  const scenesWithTokenVision = diagnostics.filter((scene) => scene.counts.tokenVisionSourceCount > 0);
+  const scenesWithDualZoneTokenVision = diagnostics.filter((scene) => scene.featureCoverage.dualZoneTokenVisionCount > 0);
+  const samples = (scenes: typeof diagnostics) =>
+    scenes
+      .slice()
+      .sort((left, right) => renderingFeatureCoverageWeight(right) - renderingFeatureCoverageWeight(left) || left.sceneName.localeCompare(right.sceneName))
+      .slice(0, 5)
+      .map((scene) => ({
+        sceneId: scene.sceneId,
+        sceneName: scene.sceneName,
+        campaignId: scene.campaignId,
+        campaignName: scene.campaignName,
+        polygonFogCount: scene.featureCoverage.polygonFogCount,
+        smoothFogCount: scene.featureCoverage.smoothFogCount,
+        terrainWallCount: scene.featureCoverage.terrainWallCount,
+        coloredLightCount: scene.featureCoverage.coloredLightCount,
+        dimmedLightCount: scene.featureCoverage.dimmedLightCount,
+        dualZoneLightCount: scene.featureCoverage.dualZoneLightCount,
+        dualZoneTokenVisionCount: scene.featureCoverage.dualZoneTokenVisionCount,
+        tokenVisionSourceCount: scene.counts.tokenVisionSourceCount
+      }));
+  const requiredFeatures = [
+    {
+      code: "polygon_fog",
+      label: "Polygon fog",
+      sceneCount: scenesWithPolygonFog.length,
+      coverageRate: ratio(scenesWithPolygonFog.length, sceneCount),
+      samples: samples(scenesWithPolygonFog)
+    },
+    {
+      code: "smooth_fog",
+      label: "Smoothed fog",
+      sceneCount: scenesWithSmoothFog.length,
+      coverageRate: ratio(scenesWithSmoothFog.length, sceneCount),
+      samples: samples(scenesWithSmoothFog)
+    },
+    {
+      code: "terrain_walls",
+      label: "Terrain walls",
+      sceneCount: scenesWithTerrainWalls.length,
+      coverageRate: ratio(scenesWithTerrainWalls.length, sceneCount),
+      samples: samples(scenesWithTerrainWalls)
+    },
+    {
+      code: "colored_lights",
+      label: "Colored lights",
+      sceneCount: scenesWithColoredLights.length,
+      coverageRate: ratio(scenesWithColoredLights.length, sceneCount),
+      samples: samples(scenesWithColoredLights)
+    },
+    {
+      code: "dimmed_lights",
+      label: "Dimmed lights",
+      sceneCount: scenesWithDimmedLights.length,
+      coverageRate: ratio(scenesWithDimmedLights.length, sceneCount),
+      samples: samples(scenesWithDimmedLights)
+    },
+    {
+      code: "dual_zone_lights",
+      label: "Bright/dim lights",
+      sceneCount: scenesWithDualZoneLights.length,
+      coverageRate: ratio(scenesWithDualZoneLights.length, sceneCount),
+      samples: samples(scenesWithDualZoneLights)
+    },
+    {
+      code: "token_vision",
+      label: "Token vision",
+      sceneCount: scenesWithTokenVision.length,
+      coverageRate: ratio(scenesWithTokenVision.length, sceneCount),
+      samples: samples(scenesWithTokenVision)
+    },
+    {
+      code: "dual_zone_token_vision",
+      label: "Bright/dim token vision",
+      sceneCount: scenesWithDualZoneTokenVision.length,
+      coverageRate: ratio(scenesWithDualZoneTokenVision.length, sceneCount),
+      samples: samples(scenesWithDualZoneTokenVision)
+    }
+  ].map((feature) => ({
+    ...feature,
+    present: feature.sceneCount > 0
+  }));
+  return {
+    sceneCount,
+    scenesWithPolygonFogCount: scenesWithPolygonFog.length,
+    scenesWithSmoothFogCount: scenesWithSmoothFog.length,
+    scenesWithTerrainWallsCount: scenesWithTerrainWalls.length,
+    scenesWithColoredLightsCount: scenesWithColoredLights.length,
+    scenesWithDimmedLightsCount: scenesWithDimmedLights.length,
+    scenesWithDualZoneLightsCount: scenesWithDualZoneLights.length,
+    scenesWithTokenVisionCount: scenesWithTokenVision.length,
+    scenesWithDualZoneTokenVisionCount: scenesWithDualZoneTokenVision.length,
+    polygonFogCoverageRate: ratio(scenesWithPolygonFog.length, sceneCount),
+    smoothFogCoverageRate: ratio(scenesWithSmoothFog.length, sceneCount),
+    terrainWallCoverageRate: ratio(scenesWithTerrainWalls.length, sceneCount),
+    coloredLightCoverageRate: ratio(scenesWithColoredLights.length, sceneCount),
+    dimmedLightCoverageRate: ratio(scenesWithDimmedLights.length, sceneCount),
+    dualZoneLightCoverageRate: ratio(scenesWithDualZoneLights.length, sceneCount),
+    tokenVisionCoverageRate: ratio(scenesWithTokenVision.length, sceneCount),
+    dualZoneTokenVisionCoverageRate: ratio(scenesWithDualZoneTokenVision.length, sceneCount),
+    productionFeatureSceneCount: diagnostics.filter(
+      (scene) =>
+        scene.featureCoverage.polygonFogCount > 0 ||
+        scene.featureCoverage.smoothFogCount > 0 ||
+        scene.featureCoverage.terrainWallCount > 0 ||
+        scene.featureCoverage.coloredLightCount > 0 ||
+        scene.featureCoverage.dimmedLightCount > 0 ||
+        scene.featureCoverage.dualZoneLightCount > 0 ||
+        scene.featureCoverage.dualZoneTokenVisionCount > 0 ||
+        scene.counts.tokenVisionSourceCount > 0
+    ).length,
+    requiredFeatures,
+    missingRequiredFeatureCodes: requiredFeatures.filter((feature) => !feature.present).map((feature) => feature.code),
+    complete: requiredFeatures.every((feature) => feature.present),
+    samples: {
+      polygonFog: samples(scenesWithPolygonFog),
+      smoothFog: samples(scenesWithSmoothFog),
+      terrainWalls: samples(scenesWithTerrainWalls),
+      coloredLights: samples(scenesWithColoredLights),
+      dimmedLights: samples(scenesWithDimmedLights),
+      dualZoneLights: samples(scenesWithDualZoneLights),
+      dualZoneTokenVision: samples(scenesWithDualZoneTokenVision),
+      tokenVision: samples(scenesWithTokenVision)
+    }
+  };
+}
+
+function renderingFeatureCoverageWeight(scene: { counts: { tokenVisionSourceCount: number }; featureCoverage: ReturnType<typeof sceneRenderingFeatureCoverage> }) {
+  return (
+    scene.featureCoverage.polygonFogCount +
+    scene.featureCoverage.smoothFogCount +
+    scene.featureCoverage.terrainWallCount +
+    scene.featureCoverage.coloredLightCount +
+    scene.featureCoverage.dimmedLightCount +
+    scene.featureCoverage.dualZoneLightCount +
+    scene.featureCoverage.dualZoneTokenVisionCount +
+    scene.counts.tokenVisionSourceCount
+  );
+}
+
+interface RenderingOperationsSceneDiagnostics {
+  sceneId: string;
+  sceneName: string;
+  campaignId: string;
+  campaignName: string;
+  counts: {
+    issueCount: number;
+    polygonVertexCount: number;
+    maxPolygonVertexCount: number;
+  };
+  budget: ReturnType<typeof sceneRenderingBudget>;
+  issues: Array<Record<string, unknown>>;
+}
+
+interface RenderingIssueSample {
+  sceneId: string;
+  sceneName: string;
+  campaignId: string;
+  campaignName: string;
+  code: string;
+  severity: "warning" | "error";
+  targetType: string;
+  targetId: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+function renderingRemediationQueue(
+  diagnostics: RenderingOperationsSceneDiagnostics[],
+  staleIssueOperations?: ReturnType<typeof renderingStaleIssueOperationsSummary>,
+  failedAuthoringOperations?: ReturnType<typeof renderingFailedAuthoringOperationsSummary>
+) {
+  const remediations = new Map<string, {
+    code: string;
+    severity: "warning" | "error";
+    action: string;
+    affectedSceneCount: number;
+    issueCount: number;
+    sampleScenes: Array<{
+      sceneId: string;
+      sceneName: string;
+      campaignId: string;
+      campaignName: string;
+      issueCount: number;
+      topTarget?: { targetType: string; targetId: string };
+      topIssue?: { code: string; severity: string; message: string; details?: Record<string, unknown> };
+    }>;
+  }>();
+
+  for (const scene of diagnostics) {
+    const sceneRemediations = new Set<string>();
+    const sceneIssuesByCode = countBy(scene.issues, (issue) => String(issue.code ?? "unknown"));
+    for (const [code, issueCount] of Object.entries(sceneIssuesByCode)) {
+      const issueSample = scene.issues.find((issue) => issue.code === code);
+      const remediation = renderingRemediationForCode(code, issueSample?.severity);
+      const existing = remediations.get(remediation.code) ?? {
+        code: remediation.code,
+        severity: remediation.severity,
+        action: remediation.action,
+        affectedSceneCount: 0,
+        issueCount: 0,
+        sampleScenes: []
+      };
+      if (!sceneRemediations.has(remediation.code)) {
+        existing.affectedSceneCount += 1;
+        sceneRemediations.add(remediation.code);
+      }
+      existing.issueCount += issueCount;
+      existing.severity = renderingIssueSeverityRank(remediation.severity) > renderingIssueSeverityRank(existing.severity) ? remediation.severity : existing.severity;
+      if (existing.sampleScenes.length < 5) {
+        existing.sampleScenes.push({
+          sceneId: scene.sceneId,
+          sceneName: scene.sceneName,
+          campaignId: scene.campaignId,
+          campaignName: scene.campaignName,
+          issueCount,
+          topTarget: issueSample ? { targetType: String(issueSample.targetType ?? "unknown"), targetId: String(issueSample.targetId ?? "unknown") } : undefined,
+          topIssue: issueSample
+            ? {
+                code: String(issueSample.code ?? "unknown"),
+                severity: String(issueSample.severity ?? "unknown"),
+                message: String(issueSample.message ?? ""),
+                details: renderingIssueDetails(issueSample)
+              }
+            : undefined
+        });
+      }
+      remediations.set(remediation.code, existing);
+    }
+
+    if (scene.budget.maxPolygonExceeded || scene.budget.totalPolygonExceeded) {
+      const key = "reduce_vision_geometry";
+      const existing = remediations.get(key) ?? {
+        code: key,
+        severity: "warning" as const,
+        action: "Reduce generated vision geometry by simplifying large fog polygons, lights, or token vision sources",
+        affectedSceneCount: 0,
+        issueCount: 0,
+        sampleScenes: []
+      };
+      if (!sceneRemediations.has(key)) {
+        existing.affectedSceneCount += 1;
+        sceneRemediations.add(key);
+      }
+      existing.issueCount += Number(scene.budget.maxPolygonExceeded) + Number(scene.budget.totalPolygonExceeded);
+      if (existing.sampleScenes.length < 5) {
+        existing.sampleScenes.push({
+          sceneId: scene.sceneId,
+          sceneName: scene.sceneName,
+          campaignId: scene.campaignId,
+          campaignName: scene.campaignName,
+          issueCount: scene.counts.issueCount,
+          topTarget: { targetType: "scene", targetId: "rendering" },
+          topIssue: scene.budget.maxPolygonExceeded
+            ? {
+                code: "large_vision_polygon",
+                severity: "warning",
+                message: "Scene generated vision geometry exceeds the per-polygon vertex budget.",
+                details: {
+                  maxPolygonVertexCount: scene.budget.maxPolygonVertexCount,
+                  maxPolygonVertexBudget: scene.budget.maxPolygonVertexBudget
+                }
+              }
+            : {
+                code: "high_vision_vertex_count",
+                severity: "warning",
+                message: "Scene generated vision geometry exceeds the total vertex budget.",
+                details: {
+                  polygonVertexCount: scene.budget.polygonVertexCount,
+                  totalPolygonVertexBudget: scene.budget.totalPolygonVertexBudget
+                }
+              }
+        });
+      }
+      remediations.set(key, existing);
+    }
+  }
+
+  if (staleIssueOperations && staleIssueOperations.sceneCount > 0) {
+    remediations.set("triage_stale_rendering_issues", {
+      code: "triage_stale_rendering_issues",
+      severity: "error",
+      action: "Triage rendering issue scenes that have no recent fog, wall, or light authoring activity.",
+      affectedSceneCount: staleIssueOperations.sceneCount,
+      issueCount: staleIssueOperations.issueCount,
+      sampleScenes: staleIssueOperations.scenes.slice(0, 5).map((scene) => ({
+        sceneId: scene.sceneId,
+        sceneName: scene.sceneName,
+        campaignId: scene.campaignId,
+        campaignName: scene.campaignName,
+        issueCount: scene.issueCount,
+        topTarget: scene.topIssue ? { targetType: String(scene.topIssue.targetType ?? "unknown"), targetId: String(scene.topIssue.targetId ?? "unknown") } : undefined,
+        topIssue: scene.topIssue
+          ? {
+              code: String(scene.topIssue.code ?? "unknown"),
+              severity: String(scene.topIssue.severity ?? "unknown"),
+              message: String(scene.topIssue.message ?? ""),
+              details: renderingIssueDetails(scene.topIssue)
+            }
+          : undefined
+      }))
+    });
+  }
+  if (failedAuthoringOperations && failedAuthoringOperations.failureCount > 0) {
+    remediations.set("review_rendering_authoring_failures", {
+      code: "review_rendering_authoring_failures",
+      severity: "warning",
+      action: "Review failed fog, wall, and light authoring attempts so invalid rendering tools or workflows can be corrected.",
+      affectedSceneCount: new Set(failedAuthoringOperations.recentFailures.map((failure) => failure.sceneId).filter(Boolean)).size,
+      issueCount: failedAuthoringOperations.failureCount,
+      sampleScenes: failedAuthoringOperations.recentFailures.slice(0, 5).map((failure) => ({
+        sceneId: failure.sceneId ?? "unknown",
+        sceneName: failure.sceneName ?? "Unknown scene",
+        campaignId: failure.campaignId ?? "unknown",
+        campaignName: failure.campaignName ?? "Unknown campaign",
+        issueCount: 1,
+        topTarget: { targetType: failure.targetType ?? "unknown", targetId: failure.targetId ?? failure.attemptedAction },
+        topIssue: {
+          code: failure.reason,
+          severity: "warning",
+          message: failure.message,
+          details: {
+            attemptedAction: failure.attemptedAction,
+            createdAt: failure.createdAt
+          }
+        }
+      }))
+    });
+  }
+
+  return [...remediations.values()]
+    .sort((left, right) => renderingIssueSeverityRank(right.severity) - renderingIssueSeverityRank(left.severity) || right.issueCount - left.issueCount || left.code.localeCompare(right.code))
+    .slice(0, 8);
+}
+
+function renderingIssueDetails(issue: Record<string, unknown>): Record<string, unknown> | undefined {
+  const omitted = new Set(["code", "severity", "targetType", "targetId", "message"]);
+  const details = Object.fromEntries(Object.entries(issue).filter(([key]) => !omitted.has(key)));
+  return Object.keys(details).length > 0 ? details : undefined;
+}
+
+function renderingRemediationForCode(code: string, severity: unknown): { code: string; severity: "warning" | "error"; action: string } {
+  const normalizedSeverity = severity === "error" ? "error" : "warning";
+  if (code.startsWith("invalid_fog") || code === "fog_polygon_too_small") {
+    return { code: "repair_invalid_fog", severity: normalizedSeverity, action: "Repair invalid fog regions so reveal and hide masks generate stable polygons" };
+  }
+  if (code.startsWith("fog_")) {
+    return { code: "review_fog_bounds", severity: normalizedSeverity, action: "Move fog origins and polygon points back inside scene bounds" };
+  }
+  if (code === "zero_length_wall" || code === "duplicate_wall_segment") {
+    return { code: "dedupe_wall_geometry", severity: normalizedSeverity, action: "Remove duplicate or zero-length wall segments before they inflate vision work" };
+  }
+  if (code === "crossing_wall_segments") {
+    return { code: "review_wall_intersections", severity: normalizedSeverity, action: "Review crossing vision-blocking wall segments so line-of-sight blockers are intentional and easy to debug" };
+  }
+  if (code.startsWith("wall_")) {
+    return { code: "repair_wall_bounds", severity: normalizedSeverity, action: "Move wall endpoints inside scene bounds and keep blockers finite" };
+  }
+  if (code.startsWith("invalid_light") || code === "duplicate_light_source") {
+    return { code: "repair_light_sources", severity: normalizedSeverity, action: "Fix light radius, color, intensity, and duplicate light sources" };
+  }
+  if (code.startsWith("light_")) {
+    return { code: "review_light_bounds", severity: normalizedSeverity, action: "Move light origins inside scene bounds" };
+  }
+  if (code.startsWith("invalid_token") || code.startsWith("token_")) {
+    return { code: "repair_token_vision", severity: normalizedSeverity, action: "Fix token vision radii and origins before players rely on line of sight" };
+  }
+  if (code === "large_vision_polygon" || code === "high_vision_vertex_count") {
+    return { code: "reduce_vision_geometry", severity: normalizedSeverity, action: "Reduce generated vision geometry by simplifying large fog polygons, lights, or token vision sources" };
+  }
+  return { code: "review_rendering_issue", severity: normalizedSeverity, action: "Review rendering diagnostics for affected scenes" };
+}
+
+function renderingIssueSeverityRank(severity: unknown): number {
+  if (severity === "error") return 2;
+  if (severity === "warning") return 1;
+  return 0;
+}
+
+function sceneRenderingComplexity(polygons: VisionPolygon[]) {
+  return {
+    polygonCount: polygons.length,
+    polygonVertexCount: polygons.reduce((total, polygon) => total + polygon.points.length, 0),
+    maxPolygonVertexCount: polygons.reduce((max, polygon) => Math.max(max, polygon.points.length), 0),
+    sourceCounts: countBy(polygons, (polygon) => polygon.source)
+  };
+}
+
+function sceneRenderingComplexityIssues(complexity: ReturnType<typeof sceneRenderingComplexity>): Array<Record<string, unknown>> {
+  const issues: Array<Record<string, unknown>> = [];
+  if (complexity.maxPolygonVertexCount > RENDERING_MAX_POLYGON_VERTEX_BUDGET) {
+    issues.push(
+      sceneRenderingIssue("large_vision_polygon", "warning", "scene", "rendering", "A generated vision polygon exceeds the recommended vertex budget", {
+        maxPolygonVertexCount: complexity.maxPolygonVertexCount,
+        maxPolygonVertexBudget: RENDERING_MAX_POLYGON_VERTEX_BUDGET
+      })
+    );
+  }
+  if (complexity.polygonVertexCount > RENDERING_TOTAL_POLYGON_VERTEX_BUDGET) {
+    issues.push(
+      sceneRenderingIssue("high_vision_vertex_count", "warning", "scene", "rendering", "Generated vision geometry exceeds the recommended total vertex budget", {
+        polygonVertexCount: complexity.polygonVertexCount,
+        totalPolygonVertexBudget: RENDERING_TOTAL_POLYGON_VERTEX_BUDGET
+      })
+    );
+  }
+  return issues;
+}
+
+function sceneRenderingActionReasons(issueSeverityCounts: Record<string, number>, complexity: ReturnType<typeof sceneRenderingComplexity>) {
+  return [
+    (issueSeverityCounts.error ?? 0) > 0 ? "rendering_errors" : undefined,
+    complexity.maxPolygonVertexCount > RENDERING_MAX_POLYGON_VERTEX_BUDGET ? "large_vision_polygon" : undefined,
+    complexity.polygonVertexCount > RENDERING_TOTAL_POLYGON_VERTEX_BUDGET ? "high_vision_vertex_count" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+function sceneRenderingBudget(complexity: ReturnType<typeof sceneRenderingComplexity>) {
+  return {
+    maxPolygonVertexBudget: RENDERING_MAX_POLYGON_VERTEX_BUDGET,
+    totalPolygonVertexBudget: RENDERING_TOTAL_POLYGON_VERTEX_BUDGET,
+    maxPolygonVertexCount: complexity.maxPolygonVertexCount,
+    polygonVertexCount: complexity.polygonVertexCount,
+    maxPolygonUsageRatio: ratio(complexity.maxPolygonVertexCount, RENDERING_MAX_POLYGON_VERTEX_BUDGET),
+    totalPolygonUsageRatio: ratio(complexity.polygonVertexCount, RENDERING_TOTAL_POLYGON_VERTEX_BUDGET),
+    maxPolygonExceeded: complexity.maxPolygonVertexCount > RENDERING_MAX_POLYGON_VERTEX_BUDGET,
+    totalPolygonExceeded: complexity.polygonVertexCount > RENDERING_TOTAL_POLYGON_VERTEX_BUDGET
+  };
+}
+
+function aggregateRenderingBudget(budgets: Array<ReturnType<typeof sceneRenderingBudget>>) {
+  const maxPolygonVertexCount = budgets.reduce((max, budget) => Math.max(max, budget.maxPolygonVertexCount), 0);
+  const polygonVertexCount = budgets.reduce((total, budget) => total + budget.polygonVertexCount, 0);
+  const scenesExceedingMaxPolygonBudget = budgets.filter((budget) => budget.maxPolygonExceeded).length;
+  const scenesExceedingTotalPolygonBudget = budgets.filter((budget) => budget.totalPolygonExceeded).length;
+  return {
+    maxPolygonVertexBudget: RENDERING_MAX_POLYGON_VERTEX_BUDGET,
+    totalPolygonVertexBudget: RENDERING_TOTAL_POLYGON_VERTEX_BUDGET,
+    maxPolygonVertexCount,
+    polygonVertexCount,
+    maxPolygonUsageRatio: ratio(maxPolygonVertexCount, RENDERING_MAX_POLYGON_VERTEX_BUDGET),
+    totalPolygonUsageRatio: ratio(polygonVertexCount, RENDERING_TOTAL_POLYGON_VERTEX_BUDGET),
+    maxPolygonExceeded: scenesExceedingMaxPolygonBudget > 0,
+    totalPolygonExceeded: scenesExceedingTotalPolygonBudget > 0,
+    scenesExceedingMaxPolygonBudget,
+    scenesExceedingTotalPolygonBudget
+  };
+}
+
+function sceneRenderingDiagnosticIssues(scene: Scene, sceneTokens: Token[]): Array<Record<string, unknown>> {
+  const issues: Array<Record<string, unknown>> = [];
+  for (const region of scene.fog) {
+    if (region.radius <= 0) {
+      issues.push(sceneRenderingIssue("invalid_fog_radius", "error", "fog", region.id, "Fog radius must be greater than zero"));
+    }
+    if (!pointWithinScene(scene, { x: region.x, y: region.y })) {
+      issues.push(sceneRenderingIssue("fog_origin_out_of_bounds", "warning", "fog", region.id, "Fog origin is outside the scene bounds"));
+    }
+    if ((region.shape === "polygon" || region.points) && (region.points?.length ?? 0) < 3) {
+      issues.push(sceneRenderingIssue("fog_polygon_too_small", "error", "fog", region.id, "Polygon fog regions need at least three points"));
+    }
+    for (const point of region.points ?? []) {
+      if (!pointWithinScene(scene, point)) {
+        issues.push(sceneRenderingIssue("fog_point_out_of_bounds", "warning", "fog", region.id, "Fog polygon point is outside the scene bounds", { point }));
+      }
+    }
+  }
+  for (const wall of scene.walls) {
+    const start = { x: wall.x1, y: wall.y1 };
+    const end = { x: wall.x2, y: wall.y2 };
+    if (Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1) < 0.001) {
+      issues.push(sceneRenderingIssue("zero_length_wall", "error", "wall", wall.id, "Wall endpoints must not be identical"));
+    }
+    if (!pointWithinScene(scene, start) || !pointWithinScene(scene, end)) {
+      issues.push(sceneRenderingIssue("wall_out_of_bounds", "warning", "wall", wall.id, "Wall endpoint is outside the scene bounds"));
+    }
+  }
+  const seenWallSegments = new Map<string, Wall>();
+  const finiteVisionWalls = scene.walls.filter((wall) => wall.blocksVision && Math.hypot(wall.x2 - wall.x1, wall.y2 - wall.y1) >= 0.001);
+  for (let leftIndex = 0; leftIndex < finiteVisionWalls.length; leftIndex += 1) {
+    const left = finiteVisionWalls[leftIndex]!;
+    for (let rightIndex = leftIndex + 1; rightIndex < finiteVisionWalls.length; rightIndex += 1) {
+      const right = finiteVisionWalls[rightIndex]!;
+      if (wallsShareEndpoint(left, right)) continue;
+      if (lineSegmentsIntersect({ x: left.x1, y: left.y1 }, { x: left.x2, y: left.y2 }, { x: right.x1, y: right.y1 }, { x: right.x2, y: right.y2 })) {
+        issues.push(
+          sceneRenderingIssue("crossing_wall_segments", "warning", "wall", right.id, "Vision-blocking wall crosses another wall segment away from endpoints", {
+            intersectsWith: left.id
+          })
+        );
+      }
+    }
+  }
+  for (const wall of scene.walls) {
+    const segmentKey = wallSegmentDiagnosticKey(wall);
+    const duplicate = seenWallSegments.get(segmentKey);
+    if (duplicate) {
+      issues.push(
+        sceneRenderingIssue("duplicate_wall_segment", "warning", "wall", wall.id, "Wall duplicates another wall segment and may create redundant vision blockers", {
+          duplicateOf: duplicate.id
+        })
+      );
+    } else {
+      seenWallSegments.set(segmentKey, wall);
+    }
+  }
+  for (const light of scene.lights) {
+    if (light.radius <= 0) {
+      issues.push(sceneRenderingIssue("invalid_light_radius", "error", "light", light.id, "Light radius must be greater than zero"));
+    }
+    if (!pointWithinScene(scene, light)) {
+      issues.push(sceneRenderingIssue("light_origin_out_of_bounds", "warning", "light", light.id, "Light origin is outside the scene bounds"));
+    }
+    if (!/^#[0-9a-f]{6}$/i.test(light.color)) {
+      issues.push(sceneRenderingIssue("invalid_light_color", "warning", "light", light.id, "Light color should be a six-digit hex color"));
+    }
+    if (light.intensity !== undefined && (!Number.isFinite(light.intensity) || light.intensity < 0 || light.intensity > 1)) {
+      issues.push(
+        sceneRenderingIssue("invalid_light_intensity", "warning", "light", light.id, "Light intensity should be a finite number between 0 and 1", {
+          intensity: light.intensity
+        })
+      );
+    }
+    if (light.brightRadius !== undefined && (!Number.isFinite(light.brightRadius) || light.brightRadius <= 0)) {
+      issues.push(sceneRenderingIssue("invalid_light_bright_radius", "warning", "light", light.id, "Light bright radius should be greater than zero"));
+    }
+    if (light.dimRadius !== undefined && (!Number.isFinite(light.dimRadius) || light.dimRadius <= 0)) {
+      issues.push(sceneRenderingIssue("invalid_light_dim_radius", "warning", "light", light.id, "Light dim radius should be greater than zero"));
+    }
+    if (light.brightRadius !== undefined && (light.dimRadius ?? light.radius) <= light.brightRadius) {
+      issues.push(sceneRenderingIssue("invalid_light_zone_radii", "warning", "light", light.id, "Light bright radius should be less than the dim or outer radius"));
+    }
+  }
+  for (const token of sceneTokens) {
+    if (token.visionEnabled && tokenVisionOuterRadius(token) <= 0) {
+      issues.push(sceneRenderingIssue("invalid_token_vision_radius", "warning", "token", token.id, "Token vision is enabled but the radius does not generate visible geometry"));
+    }
+    if (token.brightVisionRadius !== undefined && (!Number.isFinite(token.brightVisionRadius) || token.brightVisionRadius <= 0)) {
+      issues.push(sceneRenderingIssue("invalid_token_bright_vision_radius", "warning", "token", token.id, "Token bright vision radius should be greater than zero"));
+    }
+    if (token.dimVisionRadius !== undefined && (!Number.isFinite(token.dimVisionRadius) || token.dimVisionRadius <= 0)) {
+      issues.push(sceneRenderingIssue("invalid_token_dim_vision_radius", "warning", "token", token.id, "Token dim vision radius should be greater than zero"));
+    }
+    if (token.brightVisionRadius !== undefined && (token.dimVisionRadius ?? token.visionRadius) <= token.brightVisionRadius) {
+      issues.push(sceneRenderingIssue("invalid_token_vision_zone_radii", "warning", "token", token.id, "Token bright vision radius should be less than dim vision radius"));
+    }
+    if (token.visionEnabled && !pointWithinScene(scene, centerOfToken(token))) {
+      issues.push(sceneRenderingIssue("token_vision_origin_out_of_bounds", "warning", "token", token.id, "Token vision origin is outside the scene bounds"));
+    }
+  }
+  const seenLights = new Map<string, string>();
+  for (const light of scene.lights) {
+    const lightKey = lightDiagnosticKey(light);
+    const duplicateOf = seenLights.get(lightKey);
+    if (duplicateOf) {
+      issues.push(
+        sceneRenderingIssue("duplicate_light_source", "warning", "light", light.id, "Light duplicates another source and may create redundant colored-light geometry", {
+          duplicateOf
+        })
+      );
+    } else {
+      seenLights.set(lightKey, light.id);
+    }
+  }
+  return issues;
+}
+
+function sceneRenderingIssue(code: string, severity: "warning" | "error", targetType: string, targetId: string, message: string, extra?: Record<string, unknown>): Record<string, unknown> {
+  return { code, severity, targetType, targetId, message, ...extra };
+}
+
+function wallSegmentDiagnosticKey(wall: Wall): string {
+  const start = `${wall.x1},${wall.y1}`;
+  const end = `${wall.x2},${wall.y2}`;
+  return start < end ? `${start}|${end}` : `${end}|${start}`;
+}
+
+function lightDiagnosticKey(light: Scene["lights"][number]): string {
+  return [light.x, light.y, light.radius, light.brightRadius ?? "default", light.dimRadius ?? "default", light.color.toLowerCase(), light.intensity ?? "default"].join("|");
+}
+
+function wallsShareEndpoint(left: Wall, right: Wall): boolean {
+  const leftStart = { x: left.x1, y: left.y1 };
+  const leftEnd = { x: left.x2, y: left.y2 };
+  const rightStart = { x: right.x1, y: right.y1 };
+  const rightEnd = { x: right.x2, y: right.y2 };
+  return [rightStart, rightEnd].some((point) => Math.hypot(point.x - leftStart.x, point.y - leftStart.y) < 0.001 || Math.hypot(point.x - leftEnd.x, point.y - leftEnd.y) < 0.001);
+}
+
+function pointWithinScene(scene: Scene, point: VisionPoint): boolean {
+  return Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= 0 && point.y >= 0 && point.x <= scene.width && point.y <= scene.height;
+}
+
+function lineSegmentsIntersect(a: VisionPoint, b: VisionPoint, c: VisionPoint, d: VisionPoint): boolean {
+  return Boolean(lineSegmentIntersection(a, b, c, d));
+}
+
+function lineSegmentIntersection(a: VisionPoint, b: VisionPoint, c: VisionPoint, d: VisionPoint): VisionPoint | undefined {
+  const ab = { x: b.x - a.x, y: b.y - a.y };
+  const cd = { x: d.x - c.x, y: d.y - c.y };
+  const denominator = ab.x * cd.y - ab.y * cd.x;
+  if (Math.abs(denominator) < 0.000001) return undefined;
+  const ac = { x: c.x - a.x, y: c.y - a.y };
+  const t = (ac.x * cd.y - ac.y * cd.x) / denominator;
+  const u = (ac.x * ab.y - ac.y * ab.x) / denominator;
+  if (t <= 0.000001 || t >= 0.999999 || u <= 0.000001 || u >= 0.999999) return undefined;
+  return {
+    x: a.x + ab.x * t,
+    y: a.y + ab.y * t
+  };
+}
+
+function roundVisionPoint(point: VisionPoint): VisionPoint {
+  return {
+    x: Math.round(point.x * 1000) / 1000,
+    y: Math.round(point.y * 1000) / 1000
+  };
+}
+
+function roundDistance(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined): EngineEvent | undefined {
@@ -5099,7 +9659,9 @@ function base64Url(input: Buffer): string {
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  if (isRecord(error) && typeof error.message === "string") return error.message;
+  return String(error);
 }
 
 function findLoginUser(store: StateStore, input: { userId?: string; email?: string }): User | undefined {
@@ -5388,6 +9950,65 @@ async function deliverEmailMessage(message: EmailOutboxMessage): Promise<void> {
   message.updatedAt = nowIso();
 }
 
+async function retryEmailOutboxMessages(store: StateStore, body: AdminEmailOutboxRetryAllBody) {
+  const dryRun = body.dryRun === true;
+  const statuses = normalizeEmailOutboxRetryStatuses(body.status);
+  const limit = normalizeEmailOutboxRetryLimit(body.limit);
+  const retryable = store.state.emailOutbox
+    .filter((message) => statuses.has(message.status))
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  const selected = retryable.slice(0, limit);
+  const skipped = Math.max(0, retryable.length - selected.length);
+  const messages: Array<{
+    id: string;
+    to: string;
+    subject: string;
+    before: EmailOutboxMessage["status"];
+    after: EmailOutboxMessage["status"];
+    provider: EmailOutboxMessage["provider"];
+    error?: string;
+  }> = [];
+
+  for (const message of selected) {
+    const before = message.status;
+    if (!dryRun) await deliverEmailMessage(message);
+    messages.push({
+      id: message.id,
+      to: message.to,
+      subject: message.subject,
+      before,
+      after: dryRun ? before : message.status,
+      provider: message.provider,
+      error: dryRun ? message.error : message.error
+    });
+  }
+
+  return {
+    dryRun,
+    limit,
+    statuses: Array.from(statuses),
+    matched: retryable.length,
+    retried: dryRun ? 0 : selected.length,
+    planned: dryRun ? selected.length : 0,
+    delivered: dryRun ? 0 : selected.filter((message) => message.status === "delivered").length,
+    failed: dryRun ? 0 : selected.filter((message) => message.status === "failed").length,
+    skipped,
+    messages
+  };
+}
+
+function normalizeEmailOutboxRetryStatuses(status: AdminEmailOutboxRetryAllBody["status"]): Set<EmailOutboxMessage["status"]> {
+  if (status === "pending") return new Set(["pending"]);
+  if (status === "failed") return new Set(["failed"]);
+  return new Set(["pending", "failed"]);
+}
+
+function normalizeEmailOutboxRetryLimit(value: unknown): number {
+  const limit = Number(value ?? 25);
+  if (!Number.isFinite(limit)) return 25;
+  return Math.max(1, Math.min(100, Math.floor(limit)));
+}
+
 function emailWebhookUrl(): string | undefined {
   return process.env.OTTE_EMAIL_WEBHOOK_URL?.trim() || undefined;
 }
@@ -5403,13 +10024,807 @@ function passwordResetTtlMs(): number {
   return minutes * 60 * 1000;
 }
 
+function sessionTtlDays(): number {
+  const value = Number(process.env.OTTE_SESSION_TTL_DAYS);
+  return Number.isFinite(value) ? Math.max(1, Math.min(90, value)) : 7;
+}
+
+function authRuntimeNumberEnv(name: string): { name: string; configured: boolean; value?: number } {
+  const rawValue = process.env[name]?.trim();
+  if (!rawValue) return { name, configured: false };
+  const value = Number(rawValue);
+  return Number.isFinite(value) && value >= 0 ? { name, configured: true, value } : { name, configured: true };
+}
+
+function invalidAuthRuntimeNumericEnvNames(): string[] {
+  return ["OTTE_EMAIL_WEBHOOK_TIMEOUT_MS", "OTTE_PASSWORD_RESET_TTL_MINUTES"]
+    .map(authRuntimeNumberEnv)
+    .filter((item) => item.configured && item.value === undefined)
+    .map((item) => item.name);
+}
+
+function runtimeUrlConfig(name: string): RuntimeUrlConfig {
+  const value = envText(name);
+  if (!value) return { configured: false, valid: true, insecureInProduction: false };
+  try {
+    const url = new URL(value);
+    const valid = url.protocol === "http:" || url.protocol === "https:";
+    const insecureInProduction = process.env.NODE_ENV === "production" && url.protocol === "http:" && !isLocalhostUrl(url);
+    return { configured: true, valid, insecureInProduction };
+  } catch {
+    return { configured: true, valid: false, insecureInProduction: false };
+  }
+}
+
+function authRuntimeUrlPosture() {
+  const passwordResetUrl = runtimeUrlConfig("OTTE_PASSWORD_RESET_URL");
+  const webOrigin = runtimeUrlConfig("OTTE_WEB_ORIGIN");
+  const emailWebhookUrl = runtimeUrlConfig("OTTE_EMAIL_WEBHOOK_URL");
+  const emailWebhookTokenConfigured = Boolean(envText("OTTE_EMAIL_WEBHOOK_TOKEN"));
+  const invalidNumericConfig = invalidAuthRuntimeNumericEnvNames();
+  const invalidUrlConfig = [
+    passwordResetUrl.configured && !passwordResetUrl.valid ? "OTTE_PASSWORD_RESET_URL" : undefined,
+    webOrigin.configured && !webOrigin.valid ? "OTTE_WEB_ORIGIN" : undefined,
+    emailWebhookUrl.configured && !emailWebhookUrl.valid ? "OTTE_EMAIL_WEBHOOK_URL" : undefined
+  ].filter((name): name is string => Boolean(name));
+  const insecureUrlConfig = [
+    passwordResetUrl.insecureInProduction ? "OTTE_PASSWORD_RESET_URL" : undefined,
+    webOrigin.insecureInProduction ? "OTTE_WEB_ORIGIN" : undefined,
+    emailWebhookUrl.insecureInProduction ? "OTTE_EMAIL_WEBHOOK_URL" : undefined
+  ].filter((name): name is string => Boolean(name));
+  const passwordResetLinkMissingInProduction = process.env.NODE_ENV === "production" && !passwordResetUrl.configured && !webOrigin.configured;
+  const emailWebhookTokenMissingInProduction = process.env.NODE_ENV === "production" && emailWebhookUrl.configured && emailWebhookUrl.valid && !emailWebhookTokenConfigured;
+  return {
+    invalidUrlConfig,
+    insecureUrlConfig,
+    invalidNumericConfig,
+    passwordReset: {
+      configured: passwordResetUrl.configured,
+      valid: passwordResetUrl.valid,
+      insecureInProduction: passwordResetUrl.insecureInProduction,
+      webOriginConfigured: webOrigin.configured,
+      webOriginValid: webOrigin.valid,
+      webOriginInsecureInProduction: webOrigin.insecureInProduction,
+      linkMissingInProduction: passwordResetLinkMissingInProduction,
+      ttlMinutes: Math.floor(passwordResetTtlMs() / 60_000)
+    },
+    emailWebhook: {
+      configured: emailWebhookUrl.configured,
+      valid: emailWebhookUrl.valid,
+      insecureInProduction: emailWebhookUrl.insecureInProduction,
+      tokenConfigured: emailWebhookTokenConfigured,
+      tokenMissingInProduction: emailWebhookTokenMissingInProduction,
+      timeoutMs: emailWebhookTimeoutMs()
+    }
+  };
+}
+
+function authSessionRuntimePosture() {
+  const sessionTtl = authRuntimeNumberEnv("OTTE_SESSION_TTL_DAYS");
+  return {
+    ttlDays: sessionTtlDays(),
+    invalidNumericConfig: sessionTtl.configured && sessionTtl.value === undefined ? ["OTTE_SESSION_TTL_DAYS"] : []
+  };
+}
+
+function oidcRuntimePosture(): {
+  configured: boolean;
+  issuerConfigured: boolean;
+  clientIdConfigured: boolean;
+  clientSecretConfigured: boolean;
+  redirectUriConfigured: boolean;
+  allowedReturnOriginsConfigured: boolean;
+  allowInsecureIssuer: boolean;
+  tokenAuth: OidcProviderConfig["tokenAuth"];
+  invalidConfig: string[];
+  insecureConfig: string[];
+  missingInProduction: boolean;
+} {
+  const issuer = envText("OTTE_OIDC_ISSUER")?.replace(/\/+$/, "");
+  const clientId = envText("OTTE_OIDC_CLIENT_ID");
+  const clientSecret = envText("OTTE_OIDC_CLIENT_SECRET");
+  const redirectUri = runtimeUrlConfig("OTTE_OIDC_REDIRECT_URI");
+  const tokenAuthValue = envText("OTTE_OIDC_TOKEN_AUTH");
+  const tokenAuth = oidcTokenAuthMethod(tokenAuthValue, clientSecret);
+  const allowInsecureIssuer = process.env.OTTE_OIDC_ALLOW_INSECURE === "true";
+  const invalidConfig: string[] = [];
+  const insecureConfig: string[] = [];
+  let issuerAllowed = true;
+
+  if (issuer) {
+    try {
+      const issuerUrl = new URL(issuer);
+      const supportedProtocol = issuerUrl.protocol === "http:" || issuerUrl.protocol === "https:";
+      issuerAllowed = supportedProtocol && (issuerUrl.protocol === "https:" || isLocalhostUrl(issuerUrl) || allowInsecureIssuer);
+      if (!issuerAllowed) invalidConfig.push("OTTE_OIDC_ISSUER");
+      if (process.env.NODE_ENV === "production" && issuerUrl.protocol === "http:" && !isLocalhostUrl(issuerUrl)) insecureConfig.push("OTTE_OIDC_ISSUER");
+    } catch {
+      issuerAllowed = false;
+      invalidConfig.push("OTTE_OIDC_ISSUER");
+    }
+  }
+  if (issuer && !clientId) invalidConfig.push("OTTE_OIDC_CLIENT_ID");
+  if (clientId && !issuer) invalidConfig.push("OTTE_OIDC_ISSUER");
+  if (redirectUri.configured && !redirectUri.valid) invalidConfig.push("OTTE_OIDC_REDIRECT_URI");
+  if (redirectUri.insecureInProduction) insecureConfig.push("OTTE_OIDC_REDIRECT_URI");
+  if (tokenAuthValue && tokenAuthValue !== "client_secret_basic" && tokenAuthValue !== "client_secret_post" && tokenAuthValue !== "none") invalidConfig.push("OTTE_OIDC_TOKEN_AUTH");
+  if ((tokenAuthValue === "client_secret_basic" || tokenAuthValue === "client_secret_post") && !clientSecret) invalidConfig.push("OTTE_OIDC_CLIENT_SECRET");
+
+  const configured = Boolean(issuer && clientId && issuerAllowed);
+  return {
+    configured,
+    issuerConfigured: Boolean(issuer),
+    clientIdConfigured: Boolean(clientId),
+    clientSecretConfigured: Boolean(clientSecret),
+    redirectUriConfigured: redirectUri.configured,
+    allowedReturnOriginsConfigured: Boolean(envText("OTTE_OIDC_ALLOWED_RETURN_ORIGINS")),
+    allowInsecureIssuer,
+    tokenAuth,
+    invalidConfig: [...new Set(invalidConfig)],
+    insecureConfig: [...new Set(insecureConfig)],
+    missingInProduction: process.env.NODE_ENV === "production" && !configured
+  };
+}
+
 function publicPasswordResetToken(reset: PasswordResetToken): Omit<PasswordResetToken, "tokenHash"> {
   const { tokenHash: _tokenHash, ...safeReset } = reset;
   return safeReset;
 }
 
 function publicEmailOutboxMessage(message: EmailOutboxMessage): EmailOutboxMessage {
-  return message;
+  return {
+    ...message,
+    metadata: message.metadata ? { ...message.metadata } : undefined
+  };
+}
+
+interface AdminSessionRiskQuery {
+  staleDays?: string | number;
+}
+
+interface AdminSessionRiskRevokeBody {
+  staleDays?: string | number;
+  dryRun?: boolean;
+  reasons?: AdminSessionRiskReason[];
+}
+
+interface AdminPasswordResetPruneBody {
+  dryRun?: boolean;
+  includeExpired?: boolean;
+  includeUsed?: boolean;
+}
+
+interface AdminEmailOutboxRetryAllBody {
+  dryRun?: boolean;
+  status?: "pending" | "failed" | "retryable";
+  limit?: number;
+}
+
+type AdminSessionRiskReason = "expired" | "stale" | "disabled_user" | "unknown_user";
+
+interface AdminSessionRiskItem {
+  session: ReturnType<typeof publicSession>;
+  user: PublicUser | { id: string; displayName: string };
+  reasons: AdminSessionRiskReason[];
+  lastSeenAgeDays?: number;
+  expiresInMs: number;
+}
+
+function adminSessionRiskReport(store: StateStore, staleDays: number): {
+  generatedAt: string;
+  staleDays: number;
+  totals: {
+    totalSessionCount: number;
+    activeSessionCount: number;
+    expiredSessionCount: number;
+    staleSessionCount: number;
+    disabledUserSessionCount: number;
+    unknownUserSessionCount: number;
+    riskSessionCount: number;
+  };
+  sessions: AdminSessionRiskItem[];
+} {
+  const now = Date.now();
+  const staleMs = staleDays * 24 * 60 * 60 * 1000;
+  const sessions: AdminSessionRiskItem[] = [];
+  const totals = {
+    totalSessionCount: store.state.sessions.length,
+    activeSessionCount: 0,
+    expiredSessionCount: 0,
+    staleSessionCount: 0,
+    disabledUserSessionCount: 0,
+    unknownUserSessionCount: 0,
+    riskSessionCount: 0
+  };
+
+  for (const session of store.state.sessions) {
+    const user = store.state.users.find((item) => item.id === session.userId);
+    const expiresAt = Date.parse(session.expiresAt);
+    const lastSeenAt = Date.parse(session.lastSeenAt);
+    const expired = !Number.isFinite(expiresAt) || expiresAt <= now;
+    const lastSeenAgeMs = Number.isFinite(lastSeenAt) ? now - lastSeenAt : undefined;
+    const stale = !expired && lastSeenAgeMs !== undefined && lastSeenAgeMs >= staleMs;
+    const reasons: AdminSessionRiskReason[] = [];
+
+    if (expired) {
+      totals.expiredSessionCount += 1;
+      reasons.push("expired");
+    } else {
+      totals.activeSessionCount += 1;
+    }
+    if (stale) {
+      totals.staleSessionCount += 1;
+      reasons.push("stale");
+    }
+    if (user && isDisabledUser(user)) {
+      totals.disabledUserSessionCount += 1;
+      reasons.push("disabled_user");
+    }
+    if (!user) {
+      totals.unknownUserSessionCount += 1;
+      reasons.push("unknown_user");
+    }
+    if (reasons.length === 0) continue;
+
+    sessions.push({
+      session: publicSession(session),
+      user: user ? publicUser(user) : { id: session.userId, displayName: "Unknown user" },
+      reasons,
+      lastSeenAgeDays: lastSeenAgeMs === undefined ? undefined : Math.max(0, Math.floor(lastSeenAgeMs / (24 * 60 * 60 * 1000))),
+      expiresInMs: Number.isFinite(expiresAt) ? expiresAt - now : 0
+    });
+  }
+
+  totals.riskSessionCount = sessions.length;
+  return {
+    generatedAt: nowIso(),
+    staleDays,
+    totals,
+    sessions
+  };
+}
+
+function normalizeSessionRiskStaleDays(value: string | number | undefined): number | undefined {
+  if (value === undefined || value === "") return 30;
+  const staleDays = Number(value);
+  if (!Number.isInteger(staleDays) || staleDays < 1 || staleDays > 365) return undefined;
+  return staleDays;
+}
+
+function normalizeSessionRiskReasons(value: unknown): Set<AdminSessionRiskReason> | undefined {
+  const allowed: AdminSessionRiskReason[] = ["expired", "stale", "disabled_user", "unknown_user"];
+  if (value === undefined) return new Set(allowed);
+  if (!Array.isArray(value)) return undefined;
+  const reasons = new Set<AdminSessionRiskReason>();
+  for (const item of value) {
+    if (typeof item !== "string" || !allowed.includes(item as AdminSessionRiskReason)) return undefined;
+    reasons.add(item as AdminSessionRiskReason);
+  }
+  return reasons;
+}
+
+function revokeRiskSessions(store: StateStore, staleDays: number, reasons: Set<AdminSessionRiskReason>, dryRun: boolean) {
+  const report = adminSessionRiskReport(store, staleDays);
+  const matchedSessions = report.sessions.filter((item) => item.reasons.some((reason) => reasons.has(reason)));
+  const matchedSessionIds = new Set(matchedSessions.map((item) => item.session.id));
+  if (!dryRun && matchedSessionIds.size > 0) {
+    store.state.sessions = store.state.sessions.filter((session) => !matchedSessionIds.has(session.id));
+  }
+  return {
+    generatedAt: nowIso(),
+    staleDays,
+    dryRun,
+    reasons: [...reasons],
+    matched: matchedSessionIds.size,
+    revoked: dryRun ? 0 : matchedSessionIds.size,
+    remainingRiskSessionCount: dryRun ? report.totals.riskSessionCount : adminSessionRiskReport(store, staleDays).totals.riskSessionCount,
+    sessions: matchedSessions.map((item) => ({
+      session: item.session,
+      user: item.user,
+      reasons: item.reasons
+    }))
+  };
+}
+
+function summarizeSessionCleanupOperations(auditLogs: AuditLog[]) {
+  const riskRevokeRuns = auditLogs
+    .filter((log) => log.action === "admin.sessions.riskRevoke")
+    .slice()
+    .sort(sortTimestampsDesc)
+    .map((log) => {
+      const after = isRecord(log.after) ? log.after : {};
+      return {
+        auditLogId: log.id,
+        actorUserId: log.actorUserId,
+        createdAt: log.createdAt,
+        staleDays: numberFromRecord(after, "staleDays", 1, 365) ?? 30,
+        dryRun: booleanFromRecord(after, "dryRun") ?? false,
+        reasons: Array.isArray(after.reasons) ? after.reasons.filter((reason): reason is AdminSessionRiskReason => typeof reason === "string" && ["expired", "stale", "disabled_user", "unknown_user"].includes(reason)) : [],
+        matched: numberFromRecord(after, "matched", 0, 1000000) ?? 0,
+        revoked: numberFromRecord(after, "revoked", 0, 1000000) ?? 0
+      };
+    });
+  const singleSessionRevocations = auditLogs.filter((log) => log.action === "admin.session.revoke").length;
+  const userSessionRevocations = auditLogs.filter((log) => log.action === "admin.user.sessionsRevoke").length;
+  return {
+    riskRevokeRunCount: riskRevokeRuns.length,
+    riskRevokeDryRunCount: riskRevokeRuns.filter((run) => run.dryRun).length,
+    riskRevokeMutationCount: riskRevokeRuns.filter((run) => !run.dryRun).length,
+    riskRevokeMatchedCount: riskRevokeRuns.reduce((total, run) => total + run.matched, 0),
+    riskRevokeRevokedCount: riskRevokeRuns.reduce((total, run) => total + run.revoked, 0),
+    latestRiskRevokeAt: riskRevokeRuns[0]?.createdAt,
+    singleSessionRevocationCount: singleSessionRevocations,
+    userSessionRevocationRunCount: userSessionRevocations,
+    recentRiskRevokeRuns: riskRevokeRuns.slice(0, 10)
+  };
+}
+
+function adminAuthOperationsSummary(store: StateStore, staleDays: number) {
+  const nowMs = Date.now();
+  const runtime = publicAuthRuntimeConfig();
+  const sessionRisk = adminSessionRiskReport(store, staleDays);
+  const legacyHeaderUsage = summarizeLegacyUserHeaderUsage(store.state.auditLogs);
+  const loginFailures = summarizeAuthLoginFailures(store.state.auditLogs);
+  const pendingPasswordResets = store.state.passwordResetTokens.filter((reset) => !reset.usedAt && Date.parse(reset.expiresAt) > nowMs);
+  const expiredPasswordResets = store.state.passwordResetTokens.filter((reset) => !reset.usedAt && Date.parse(reset.expiresAt) <= nowMs);
+  const emailStatusCounts = countBy(store.state.emailOutbox, (message) => message.status);
+  const emailOutboxOperations = summarizeEmailOutboxOperations(store.state.emailOutbox, nowMs);
+  const failedEmailCount = emailStatusCounts.failed ?? 0;
+  const pendingEmailCount = emailStatusCounts.pending ?? 0;
+  const usersWithPassword = store.state.users.filter((user) => Boolean(user.passwordHash)).length;
+  const usersWithMfa = store.state.users.filter((user) => isTotpEnabled(user.mfa)).length;
+  const disabledUserSummaries = store.state.users
+    .filter(isDisabledUser)
+    .map((user) => ({
+      id: user.id,
+      displayName: user.displayName,
+      email: user.email,
+      disabledAt: user.disabledAt,
+      passwordResetRequired: Boolean(user.passwordResetRequired),
+      sessionCount: store.state.sessions.filter((session) => session.userId === user.id).length,
+      membershipCount: store.state.members.filter((member) => member.userId === user.id).length,
+      identityCount: store.state.identities.filter((identity) => identity.userId === user.id).length
+    }))
+    .sort((left, right) => right.sessionCount - left.sessionCount || left.displayName.localeCompare(right.displayName) || left.id.localeCompare(right.id));
+  const activePasswordUsersWithoutMfa = store.state.users
+    .filter((user) => !isDisabledUser(user) && Boolean(user.passwordHash) && !isTotpEnabled(user.mfa))
+    .map((user) => ({
+      id: user.id,
+      displayName: user.displayName,
+      email: user.email,
+      passwordResetRequired: Boolean(user.passwordResetRequired),
+      sessionCount: store.state.sessions.filter((session) => session.userId === user.id).length,
+      identityCount: store.state.identities.filter((identity) => identity.userId === user.id).length
+    }))
+    .sort((left, right) => right.sessionCount - left.sessionCount || left.displayName.localeCompare(right.displayName) || left.id.localeCompare(right.id));
+  const disabledUsers = store.state.users.filter(isDisabledUser).length;
+  const passwordResetRequiredUsers = store.state.users.filter((user) => user.passwordResetRequired).length;
+  const actionReasons = authOperationsActionReasons({
+    riskSessionCount: sessionRisk.totals.riskSessionCount,
+    disabledUserCount: disabledUsers,
+    passwordResetRequiredUserCount: passwordResetRequiredUsers,
+    failedEmailCount,
+    pendingEmailCount,
+    expiredPasswordResetCount: expiredPasswordResets.length,
+    legacyUserHeaderUsageCount: legacyHeaderUsage.usageCount,
+    blockedLegacyUserHeaderAttemptCount: legacyHeaderUsage.blockedAttemptCount,
+    loginFailureCount: loginFailures.failureCount,
+    productionLegacyHeaderEnabled: process.env.NODE_ENV === "production" && runtime.legacyUserHeader.enabled,
+    invalidAuthUrlConfigCount: runtime.authUrls.invalidUrlConfig.length,
+    insecureAuthUrlConfigCount: runtime.authUrls.insecureUrlConfig.length,
+    invalidAuthNumericConfigCount: runtime.authUrls.invalidNumericConfig.length,
+    invalidAuthSessionNumericConfigCount: runtime.sessions.invalidNumericConfig.length,
+    invalidOidcConfigCount: runtime.oidc.invalidConfig.length,
+    insecureOidcConfigCount: runtime.oidc.insecureConfig.length,
+    productionPasswordResetLinkMissing: runtime.authUrls.passwordReset.linkMissingInProduction,
+    productionEmailWebhookTokenMissing: runtime.authUrls.emailWebhook.tokenMissingInProduction,
+    productionOidcMissing: runtime.oidc.missingInProduction,
+    productionServerAdminsMissing: runtime.serverAdmins.missingInProduction
+  });
+
+  return {
+    generatedAt: nowIso(),
+    actionRequired: actionReasons.length > 0,
+    actionReasons,
+    remediationQueue: authOperationsRemediationQueue({
+      actionReasons,
+      sessionRisk,
+      disabledUsers: disabledUserSummaries,
+      activePasswordUsersWithoutMfa,
+      passwordResetRequiredUserCount: passwordResetRequiredUsers,
+      failedEmailCount,
+      pendingEmailCount,
+      expiredPasswordResetCount: expiredPasswordResets.length,
+      oldestRetryableEmailAgeSeconds: emailOutboxOperations.oldestRetryableAgeSeconds,
+      legacyUserHeaderMode: runtime.legacyUserHeader.mode,
+      legacyHeaderUsage,
+      loginFailures,
+      authUrls: runtime.authUrls,
+      authSessions: runtime.sessions,
+      oidc: runtime.oidc,
+      serverAdmins: runtime.serverAdmins
+    }),
+    runtime,
+    legacyUserHeaderUsage: legacyHeaderUsage,
+    loginFailures,
+    users: {
+      totalUserCount: store.state.users.length,
+      activeUserCount: store.state.users.length - disabledUsers,
+      disabledUserCount: disabledUsers,
+      disabledUsers: disabledUserSummaries.slice(0, 10),
+      passwordUserCount: usersWithPassword,
+      passwordResetRequiredUserCount: passwordResetRequiredUsers,
+      mfaEnabledUserCount: usersWithMfa,
+      mfaCoverageRate: ratio(usersWithMfa, store.state.users.length),
+      activePasswordUserWithoutMfaCount: activePasswordUsersWithoutMfa.length,
+      activePasswordUsersWithoutMfa: activePasswordUsersWithoutMfa.slice(0, 10)
+    },
+    sessions: {
+      staleDays,
+      totals: sessionRisk.totals,
+      recentRiskSessions: sessionRisk.sessions.slice(0, 10),
+      cleanupOperations: summarizeSessionCleanupOperations(store.state.auditLogs)
+    },
+    passwordResets: {
+      activeCount: pendingPasswordResets.length,
+      expiredUnusedCount: expiredPasswordResets.length
+    },
+    emailOutbox: {
+      messageCount: store.state.emailOutbox.length,
+      statusCounts: emailStatusCounts,
+      webhookConfigured: Boolean(emailWebhookUrl()),
+      retryableCount: pendingEmailCount + failedEmailCount,
+      oldestRetryableAgeSeconds: emailOutboxOperations.oldestRetryableAgeSeconds,
+      recentRetryableMessages: emailOutboxOperations.recentRetryableMessages
+    },
+    identities: {
+      identityCount: store.state.identities.length,
+      providerCounts: countBy(store.state.identities, (identity) => identity.provider)
+    }
+  };
+}
+
+function authOperationsActionReasons(input: {
+  riskSessionCount: number;
+  disabledUserCount: number;
+  passwordResetRequiredUserCount: number;
+  failedEmailCount: number;
+  pendingEmailCount: number;
+  expiredPasswordResetCount: number;
+  legacyUserHeaderUsageCount: number;
+  blockedLegacyUserHeaderAttemptCount: number;
+  loginFailureCount: number;
+  productionLegacyHeaderEnabled: boolean;
+  invalidAuthUrlConfigCount: number;
+  insecureAuthUrlConfigCount: number;
+  invalidAuthNumericConfigCount: number;
+  invalidAuthSessionNumericConfigCount: number;
+  invalidOidcConfigCount: number;
+  insecureOidcConfigCount: number;
+  productionPasswordResetLinkMissing: boolean;
+  productionEmailWebhookTokenMissing: boolean;
+  productionOidcMissing: boolean;
+  productionServerAdminsMissing: boolean;
+}) {
+  return [
+    input.invalidAuthUrlConfigCount > 0 ? "auth_runtime_url_config_invalid" : undefined,
+    input.insecureAuthUrlConfigCount > 0 ? "auth_runtime_url_insecure" : undefined,
+    input.invalidAuthNumericConfigCount > 0 ? "auth_runtime_numeric_config_invalid" : undefined,
+    input.invalidAuthSessionNumericConfigCount > 0 ? "auth_session_numeric_config_invalid" : undefined,
+    input.invalidOidcConfigCount > 0 ? "auth_oidc_config_invalid" : undefined,
+    input.insecureOidcConfigCount > 0 ? "auth_oidc_config_insecure" : undefined,
+    input.productionPasswordResetLinkMissing ? "auth_password_reset_link_unconfigured" : undefined,
+    input.productionEmailWebhookTokenMissing ? "auth_email_webhook_token_missing" : undefined,
+    input.productionOidcMissing ? "auth_oidc_unconfigured_in_production" : undefined,
+    input.productionServerAdminsMissing ? "auth_server_admins_unconfigured" : undefined,
+    input.riskSessionCount > 0 ? "risk_sessions" : undefined,
+    input.disabledUserCount > 0 ? "disabled_users" : undefined,
+    input.passwordResetRequiredUserCount > 0 ? "password_reset_required_users" : undefined,
+    input.failedEmailCount > 0 ? "failed_email_delivery" : undefined,
+    input.pendingEmailCount > 0 ? "pending_email_delivery" : undefined,
+    input.expiredPasswordResetCount > 0 ? "expired_password_resets" : undefined,
+    input.legacyUserHeaderUsageCount > 0 ? "legacy_user_header_recent_usage" : undefined,
+    input.blockedLegacyUserHeaderAttemptCount > 0 ? "legacy_user_header_blocked_attempts" : undefined,
+    input.loginFailureCount > 0 ? "auth_login_failures" : undefined,
+    input.productionLegacyHeaderEnabled ? "legacy_user_header_enabled_in_production" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+function authOperationsRemediationQueue(input: {
+  actionReasons: string[];
+  sessionRisk: ReturnType<typeof adminSessionRiskReport>;
+  disabledUsers: Array<{ id: string; displayName: string; email?: string; disabledAt?: string; passwordResetRequired: boolean; sessionCount: number; membershipCount: number; identityCount: number }>;
+  activePasswordUsersWithoutMfa: Array<{ id: string; displayName: string; email?: string; passwordResetRequired: boolean; sessionCount: number; identityCount: number }>;
+  passwordResetRequiredUserCount: number;
+  failedEmailCount: number;
+  pendingEmailCount: number;
+  expiredPasswordResetCount: number;
+  oldestRetryableEmailAgeSeconds: number;
+  legacyUserHeaderMode: string;
+  legacyHeaderUsage: ReturnType<typeof summarizeLegacyUserHeaderUsage>;
+  loginFailures: ReturnType<typeof summarizeAuthLoginFailures>;
+  authUrls: ReturnType<typeof authRuntimeUrlPosture>;
+  authSessions: ReturnType<typeof authSessionRuntimePosture>;
+  oidc: ReturnType<typeof oidcRuntimePosture>;
+  serverAdmins: ReturnType<typeof serverAdminRuntimePosture>;
+}) {
+  const remediations: Array<{
+    code: string;
+    severity: "warning" | "critical";
+    action: string;
+    affectedCount: number;
+    samples?: Array<Record<string, unknown>>;
+  }> = [];
+  if (input.authUrls.invalidUrlConfig.length > 0 || input.authUrls.insecureUrlConfig.length > 0) {
+    remediations.push({
+      code: "fix_auth_runtime_url_configuration",
+      severity: input.authUrls.invalidUrlConfig.length > 0 ? "critical" : "warning",
+      action: "Fix password-reset, web-origin, or email-webhook URL configuration so auth operations can issue secure reset links and deliver email reliably.",
+      affectedCount: input.authUrls.invalidUrlConfig.length + input.authUrls.insecureUrlConfig.length,
+      samples: [
+        ...input.authUrls.invalidUrlConfig.map((name) => ({ env: name, reason: "invalid_url" })),
+        ...input.authUrls.insecureUrlConfig.map((name) => ({ env: name, reason: "insecure_production_http" }))
+      ].slice(0, 5)
+    });
+  }
+  if (input.authUrls.invalidNumericConfig.length > 0) {
+    remediations.push({
+      code: "fix_auth_runtime_numeric_configuration",
+      severity: "warning",
+      action: "Keep password-reset TTL and email-webhook timeout settings numeric and nonnegative so auth operations do not silently fall back or clamp unexpectedly.",
+      affectedCount: input.authUrls.invalidNumericConfig.length,
+      samples: input.authUrls.invalidNumericConfig.map((name) => ({ env: name, reason: "invalid_number" })).slice(0, 5)
+    });
+  }
+  if (input.authSessions.invalidNumericConfig.length > 0) {
+    remediations.push({
+      code: "fix_auth_session_numeric_configuration",
+      severity: "warning",
+      action: "Keep session TTL settings numeric and nonnegative so production session lifetime does not silently fall back or clamp unexpectedly.",
+      affectedCount: input.authSessions.invalidNumericConfig.length,
+      samples: input.authSessions.invalidNumericConfig.map((name) => ({ env: name, reason: "invalid_number" })).slice(0, 5)
+    });
+  }
+  if (input.oidc.invalidConfig.length > 0 || input.oidc.insecureConfig.length > 0) {
+    remediations.push({
+      code: "fix_auth_oidc_configuration",
+      severity: input.oidc.invalidConfig.length > 0 ? "critical" : "warning",
+      action: "Fix OIDC issuer, client, redirect URI, token-auth, or secret configuration so production SSO can start reliably without exposing provider secrets.",
+      affectedCount: input.oidc.invalidConfig.length + input.oidc.insecureConfig.length,
+      samples: [
+        ...input.oidc.invalidConfig.map((name) => ({ env: name, reason: "invalid_oidc_config" })),
+        ...input.oidc.insecureConfig.map((name) => ({ env: name, reason: "insecure_production_http" }))
+      ].slice(0, 5)
+    });
+  }
+  if (input.authUrls.passwordReset.linkMissingInProduction) {
+    remediations.push({
+      code: "configure_auth_password_reset_link",
+      severity: "critical",
+      action: "Configure OTTE_PASSWORD_RESET_URL or OTTE_WEB_ORIGIN in production so password-reset emails contain browser reset links instead of raw reset tokens.",
+      affectedCount: 1,
+      samples: [{ env: "OTTE_PASSWORD_RESET_URL", fallbackEnv: "OTTE_WEB_ORIGIN", reason: "missing_production_reset_link" }]
+    });
+  }
+  if (input.authUrls.emailWebhook.tokenMissingInProduction) {
+    remediations.push({
+      code: "configure_auth_email_webhook_token",
+      severity: "critical",
+      action: "Configure OTTE_EMAIL_WEBHOOK_TOKEN for the production email webhook so password-reset delivery is authenticated.",
+      affectedCount: 1,
+      samples: [{ env: "OTTE_EMAIL_WEBHOOK_TOKEN", reason: "missing_production_webhook_token" }]
+    });
+  }
+  if (input.oidc.missingInProduction) {
+    remediations.push({
+      code: "configure_oidc_sso",
+      severity: "warning",
+      action: "Configure OTTE_OIDC_ISSUER and OTTE_OIDC_CLIENT_ID for production SSO, or document that this deployment intentionally relies on local password accounts.",
+      affectedCount: 1,
+      samples: [{ env: "OTTE_OIDC_ISSUER", companionEnv: "OTTE_OIDC_CLIENT_ID", reason: "missing_production_oidc" }]
+    });
+  }
+  if (input.serverAdmins.missingInProduction) {
+    remediations.push({
+      code: "configure_server_admins",
+      severity: "critical",
+      action: "Configure OTTE_ADMIN_USER_IDS in production so at least one trusted user can access server-admin operations.",
+      affectedCount: 1,
+      samples: [{ env: "OTTE_ADMIN_USER_IDS", reason: "missing_production_server_admins" }]
+    });
+  }
+  if (input.actionReasons.includes("legacy_user_header_enabled_in_production")) {
+    remediations.push({
+      code: "disable_legacy_user_header",
+      severity: "critical",
+      action: "Disable legacy x-user-id compatibility in production and require bearer or OIDC authentication.",
+      affectedCount: 1,
+      samples: [{ mode: input.legacyUserHeaderMode }]
+    });
+  }
+  if (input.legacyHeaderUsage.usageCount > 0) {
+    remediations.push({
+      code: "replace_legacy_user_header_clients",
+      severity: "warning",
+      action: "Identify recent x-user-id compatibility clients, migrate them to bearer or OIDC sessions, then disable legacy header compatibility.",
+      affectedCount: input.legacyHeaderUsage.usageCount,
+      samples: input.legacyHeaderUsage.recentSamples.slice(0, 5)
+    });
+  }
+  if (input.legacyHeaderUsage.blockedAttemptCount > 0) {
+    remediations.push({
+      code: "investigate_blocked_legacy_user_header_clients",
+      severity: "warning",
+      action: "Investigate clients still attempting x-user-id after compatibility was disabled and migrate them to bearer or OIDC sessions.",
+      affectedCount: input.legacyHeaderUsage.blockedAttemptCount,
+      samples: input.legacyHeaderUsage.blockedSamples.slice(0, 5)
+    });
+  }
+  if (input.loginFailures.failureCount > 0) {
+    const credentialOrMfaFailures = (input.loginFailures.reasonCounts.invalid_credentials ?? 0) + (input.loginFailures.reasonCounts.invalid_mfa ?? 0) + (input.loginFailures.reasonCounts.mfa_required ?? 0);
+    remediations.push({
+      code: "review_auth_login_failures",
+      severity: credentialOrMfaFailures >= 5 ? "critical" : "warning",
+      action: "Review recent failed login attempts for disabled accounts, reset-required users, credential failures, and MFA failures.",
+      affectedCount: input.loginFailures.failureCount,
+      samples: input.loginFailures.recentFailures.slice(0, 5).map((failure) => ({
+        userId: failure.userId,
+        reason: failure.reason,
+        statusCode: failure.statusCode,
+        createdAt: failure.createdAt
+      }))
+    });
+  }
+  if (input.sessionRisk.totals.riskSessionCount > 0) {
+    remediations.push({
+      code: "revoke_risk_sessions",
+      severity: input.sessionRisk.totals.unknownUserSessionCount > 0 || input.sessionRisk.totals.disabledUserSessionCount > 0 ? "critical" : "warning",
+      action: "Review recent risk-session samples, then dry-run and revoke expired, stale, disabled-user, or unknown-user sessions.",
+      affectedCount: input.sessionRisk.totals.riskSessionCount,
+      samples: input.sessionRisk.sessions.slice(0, 5).map((item) => ({
+        sessionId: item.session.id,
+        userId: item.user.id,
+        reasons: item.reasons,
+        lastSeenAgeDays: item.lastSeenAgeDays
+      }))
+    });
+  }
+  if (input.disabledUsers.length > 0) {
+    remediations.push({
+      code: "review_disabled_accounts",
+      severity: "warning",
+      action: "Review disabled accounts with active sessions or memberships and revoke sessions where access should remain blocked.",
+      affectedCount: input.disabledUsers.length,
+      samples: input.disabledUsers.slice(0, 5).map((user) => ({
+        userId: user.id,
+        displayName: user.displayName,
+        sessionCount: user.sessionCount,
+        membershipCount: user.membershipCount
+      }))
+    });
+  }
+  if (input.passwordResetRequiredUserCount > 0) {
+    remediations.push({
+      code: "complete_required_password_resets",
+      severity: "warning",
+      action: "Issue reset emails or coordinate password changes for users flagged as requiring a password reset.",
+      affectedCount: input.passwordResetRequiredUserCount
+    });
+  }
+  if (input.failedEmailCount > 0 || input.pendingEmailCount > 0) {
+    remediations.push({
+      code: "retry_auth_email_delivery",
+      severity: input.failedEmailCount > 0 ? "warning" : "warning",
+      action: "Configure the email webhook if needed and retry failed or pending password-reset delivery messages.",
+      affectedCount: input.failedEmailCount + input.pendingEmailCount,
+      samples: [{ failed: input.failedEmailCount, pending: input.pendingEmailCount, oldestRetryableAgeSeconds: input.oldestRetryableEmailAgeSeconds }]
+    });
+  }
+  if (input.expiredPasswordResetCount > 0) {
+    remediations.push({
+      code: "prune_expired_password_resets",
+      severity: "warning",
+      action: "Dry-run and prune expired password reset tokens so stale reset material does not accumulate.",
+      affectedCount: input.expiredPasswordResetCount
+    });
+  }
+  if (input.activePasswordUsersWithoutMfa.length > 0) {
+    remediations.push({
+      code: "enroll_password_users_in_mfa",
+      severity: "warning",
+      action: "Ask active password users without MFA to enroll TOTP or move them to SSO-only access.",
+      affectedCount: input.activePasswordUsersWithoutMfa.length,
+      samples: input.activePasswordUsersWithoutMfa.slice(0, 5).map((user) => ({
+        userId: user.id,
+        displayName: user.displayName,
+        sessionCount: user.sessionCount,
+        passwordResetRequired: user.passwordResetRequired
+      }))
+    });
+  }
+  return remediations.sort((left, right) => authRemediationSeverityRank(right.severity) - authRemediationSeverityRank(left.severity) || right.affectedCount - left.affectedCount || left.code.localeCompare(right.code)).slice(0, 12);
+}
+
+function authRemediationSeverityRank(severity: "warning" | "critical"): number {
+  return severity === "critical" ? 2 : 1;
+}
+
+function summarizeAuthLoginFailures(auditLogs: AuditLog[]) {
+  const logs = auditLogs.filter((log) => log.action === "auth.login.failed").sort(sortTimestampsDesc);
+  const failures = logs.map((log) => {
+    const after = isRecord(log.after) ? log.after : {};
+    const userId = log.actorUserId ?? log.targetId;
+    return {
+      auditLogId: log.id,
+      userId,
+      userKnown: Boolean(userId),
+      reason: stringFromRecord(after, "reason") ?? "unknown",
+      statusCode: numberFromRecord(after, "statusCode", 100, 599) ?? 0,
+      createdAt: log.createdAt
+    };
+  });
+  return {
+    failureCount: failures.length,
+    distinctKnownUserCount: new Set(failures.map((failure) => failure.userId).filter((userId): userId is string => Boolean(userId))).size,
+    unknownIdentityCount: failures.filter((failure) => !failure.userKnown || failure.reason === "unknown_identity").length,
+    reasonCounts: countBy(failures, (failure) => failure.reason),
+    statusCounts: countBy(failures, (failure) => String(failure.statusCode)),
+    recentFailures: failures.slice(0, 10)
+  };
+}
+
+function summarizeLegacyUserHeaderUsage(auditLogs: AuditLog[]) {
+  const logs = auditLogs.filter((log) => log.action === "auth.legacyUserHeader").sort(sortTimestampsDesc);
+  const acceptedLogs = logs.filter((log) => legacyUserHeaderAuditStatus(log) !== "blocked");
+  const blockedLogs = logs.filter((log) => legacyUserHeaderAuditStatus(log) === "blocked");
+  const userCounts = countBy(acceptedLogs, (log) => log.actorUserId ?? "unknown");
+  const sample = (log: AuditLog) => ({
+    auditLogId: log.id,
+    userId: log.actorUserId ?? log.targetId ?? "unknown",
+    createdAt: log.createdAt,
+    mode: (log.after as { mode?: string } | undefined)?.mode ?? "unknown",
+    source: (log.after as { source?: string } | undefined)?.source ?? "unknown"
+  });
+  return {
+    usageCount: acceptedLogs.length,
+    blockedAttemptCount: blockedLogs.length,
+    distinctUserCount: Object.keys(userCounts).length,
+    lastSeenAt: acceptedLogs[0]?.createdAt,
+    lastBlockedAt: blockedLogs[0]?.createdAt,
+    userCounts,
+    recentSamples: acceptedLogs.slice(0, 10).map(sample),
+    blockedSamples: blockedLogs.slice(0, 10).map(sample)
+  };
+}
+
+function legacyUserHeaderAuditStatus(log: AuditLog): string {
+  return (log.after as { status?: string } | undefined)?.status ?? "accepted";
+}
+
+function summarizeEmailOutboxOperations(messages: EmailOutboxMessage[], nowMs: number) {
+  const retryable = messages
+    .filter((message) => message.status === "pending" || message.status === "failed")
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  const oldestRetryableAt = retryable[0]?.createdAt;
+  return {
+    oldestRetryableAgeSeconds: oldestRetryableAt ? Math.max(0, Math.floor((nowMs - Date.parse(oldestRetryableAt)) / 1000)) : 0,
+    recentRetryableMessages: retryable.slice(-10).reverse().map(redactedEmailOutboxOperationMessage)
+  };
+}
+
+function redactedEmailOutboxOperationMessage(message: EmailOutboxMessage) {
+  return {
+    id: message.id,
+    to: message.to,
+    subject: message.subject,
+    status: message.status,
+    provider: message.provider,
+    createdAt: message.createdAt,
+    updatedAt: message.updatedAt,
+    sentAt: message.sentAt,
+    error: message.error,
+    metadata: message.metadata ? { ...message.metadata } : undefined
+  };
 }
 
 function adminUserInfo(store: StateStore, user: User): PublicUser & { disabled: boolean; membershipCount: number; identityCount: number; sessionCount: number } {
@@ -5461,6 +10876,67 @@ function appendServerAuditLog(store: StateStore, adminUserId: string, input: Ser
   return log;
 }
 
+function appendRenderingAuthoringFailureAudit(
+  store: StateStore,
+  userId: string,
+  input: {
+    campaignId: string;
+    sceneId: string;
+    attemptedAction: string;
+    targetType: "fog" | "wall" | "light";
+    targetId?: string;
+    reason: string;
+    message: string;
+  }
+): AuditLog {
+  return appendServerAuditLog(store, userId, {
+    campaignId: input.campaignId,
+    action: "scene.renderingAuthoring.failed",
+    targetType: input.targetType,
+    targetId: input.targetId,
+    after: {
+      sceneId: input.sceneId,
+      attemptedAction: input.attemptedAction,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      reason: input.reason,
+      message: input.message
+    }
+  });
+}
+
+function appendAssetDeliveryAuditLog(
+  store: StateStore,
+  asset: MapAsset,
+  input: {
+    status: "served" | "denied" | "unavailable" | "missing_bytes" | "signing_failed";
+    accessMode: "signed" | "session";
+    reason?: string;
+    bytes?: number;
+    cacheControl?: string;
+    lifecycleStatus?: string;
+  }
+): AuditLog {
+  const log = createTimestamped("audit", {
+    campaignId: asset.campaignId,
+    actorType: "system" as const,
+    action: "asset.delivery",
+    targetType: "asset",
+    targetId: asset.id,
+    after: {
+      status: input.status,
+      accessMode: input.accessMode,
+      reason: input.reason,
+      bytes: input.bytes,
+      cacheControl: input.cacheControl,
+      provider: asset.storage?.provider ?? "missing",
+      lifecycleStatus: input.lifecycleStatus ?? asset.lifecycle?.status ?? "active"
+    }
+  }) satisfies AuditLog;
+  store.state.auditLogs.push(log);
+  return log;
+}
+
 function normalizeAdminAuditLogQuery(query: AdminAuditLogQuery): AdminAuditLogOptions | { error: string } {
   const format = query.format === undefined || query.format === "" ? "json" : query.format;
   if (format !== "json" && format !== "ndjson") return { error: "Audit export format must be json or ndjson" };
@@ -5507,6 +10983,45 @@ function filterAuditLogs(auditLogs: AuditLog[], options: AdminAuditLogOptions): 
     })
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt) || right.id.localeCompare(left.id))
     .slice(0, options.limit);
+}
+
+function adminAuditLogExportSummary(auditLogs: AuditLog[], options: AdminAuditLogOptions) {
+  const truncated = auditLogs.length >= options.limit;
+  const oldest = auditLogs.at(-1);
+  const newest = auditLogs.at(0);
+  const adminActionCount = auditLogs.filter((entry) => entry.action.startsWith("admin.")).length;
+  return {
+    actionRequired: truncated,
+    actionReasons: truncated ? ["audit_export_limit_reached"] : [],
+    remediationQueue: truncated
+      ? [
+          {
+            code: "narrow_audit_export_filters",
+            severity: "warning" as const,
+            action: "Narrow audit export filters by action, target type, actor, campaign, or time range before treating this sample as complete.",
+            affectedCount: auditLogs.length,
+            samples: oldest
+              ? [
+                  {
+                    oldestReturnedAt: oldest.createdAt,
+                    newestReturnedAt: newest?.createdAt,
+                    limit: options.limit,
+                    filters: options.filters
+                  }
+                ]
+              : []
+          }
+        ]
+      : [],
+    byAction: topCountEntries(countBy(auditLogs, (entry) => entry.action), 8),
+    byTargetType: topCountEntries(countBy(auditLogs, (entry) => entry.targetType), 8),
+    byActorType: topCountEntries(countBy(auditLogs, (entry) => entry.actorType), 8),
+    byCampaign: topCountEntries(countBy(auditLogs.filter((entry) => entry.campaignId), (entry) => entry.campaignId ?? "unknown"), 8),
+    adminActionCount,
+    oldestReturnedAt: oldest?.createdAt,
+    newestReturnedAt: newest?.createdAt,
+    truncated
+  };
 }
 
 interface NormalizedScimUser {
@@ -5951,6 +11466,12 @@ function normalizeAuditLogLimit(value: string | undefined): number | undefined {
   return Number.isInteger(limit) && limit > 0 && limit <= 10_000 ? limit : undefined;
 }
 
+function normalizeExportLimit(value: string | undefined, fallback: number): number {
+  if (value === undefined || value.trim() === "") return fallback;
+  const limit = Number(value);
+  return Number.isInteger(limit) && limit > 0 && limit <= 10_000 ? limit : fallback;
+}
+
 function normalizeAuditLogDate(value: string | undefined, name: string): { value?: string } | { error: string } {
   if (value === undefined || value.trim() === "") return {};
   const parsed = new Date(value);
@@ -6038,28 +11559,56 @@ function canReadChatMessage(store: StateStore, userId: string, message: ChatMess
   return canCampaign(store, userId, message.campaignId, "chat.moderate") || canCampaign(store, userId, message.campaignId, "journal.readSecret") || canCampaign(store, userId, message.campaignId, "ai.readGmMemory");
 }
 
+function canReadDiceRoll(store: StateStore, userId: string, roll: DiceRoll, linkedMessage?: ChatMessage): boolean {
+  if (linkedMessage) return canReadChatMessage(store, userId, linkedMessage);
+  if (roll.visibility === "public") return true;
+  if (roll.visibility === "whisper") return roll.userId === userId || canCampaign(store, userId, roll.campaignId, "chat.moderate");
+  return canCampaign(store, userId, roll.campaignId, "chat.moderate") || canCampaign(store, userId, roll.campaignId, "journal.readSecret") || canCampaign(store, userId, roll.campaignId, "ai.readGmMemory");
+}
+
 function currentUserId(store: StateStore, headers: Record<string, string | string[] | undefined>): string | undefined {
   const session = sessionFromRequest(store, undefined, headers);
   if (session && isActiveUserId(store, session.userId)) return session.userId;
-  if (!legacyUserHeaderEnabled()) return undefined;
   const header = headers["x-user-id"];
   const userId = Array.isArray(header) ? header[0] : header;
-  return userId && isActiveUserId(store, userId) ? userId : undefined;
+  if (!legacyUserHeaderEnabled()) {
+    if (userId) appendLegacyUserHeaderAuditLog(store, userId, "header", "blocked");
+    return undefined;
+  }
+  if (userId && isActiveUserId(store, userId)) {
+    appendLegacyUserHeaderAuditLog(store, userId, "header", "accepted");
+    return userId;
+  }
+  return undefined;
 }
 
 function userIdFromRequest(store: StateStore, requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): string | undefined {
   const session = sessionFromRequest(store, requestUrl, headers);
   if (session && isActiveUserId(store, session.userId)) return session.userId;
-  if (!legacyUserHeaderEnabled()) return undefined;
   const url = new URL(requestUrl ?? "/api/v1/realtime", "http://localhost");
-  const userId = url.searchParams.get("userId") ?? currentUserId(store, headers);
-  return userId && isActiveUserId(store, userId) ? userId : undefined;
+  const queryUserId = url.searchParams.get("userId");
+  const header = headers["x-user-id"];
+  const headerUserId = Array.isArray(header) ? header[0] : header;
+  if (!legacyUserHeaderEnabled()) {
+    if (queryUserId) appendLegacyUserHeaderAuditLog(store, queryUserId, "query", "blocked");
+    else if (headerUserId) appendLegacyUserHeaderAuditLog(store, headerUserId, "header", "blocked");
+    return undefined;
+  }
+  if (queryUserId && isActiveUserId(store, queryUserId)) {
+    appendLegacyUserHeaderAuditLog(store, queryUserId, "query", "accepted");
+    return queryUserId;
+  }
+  if (headerUserId && isActiveUserId(store, headerUserId)) {
+    appendLegacyUserHeaderAuditLog(store, headerUserId, "header", "accepted");
+    return headerUserId;
+  }
+  return undefined;
 }
 
 function createUserSession(store: StateStore, userId: string): { token: string; session: UserSession } {
   const token = `ots_${randomBytes(32).toString("base64url")}`;
   const now = nowIso();
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + sessionTtlDays() * 24 * 60 * 60 * 1000).toISOString();
   const session = createTimestamped("sess", {
     userId,
     tokenHash: hashSessionToken(token),
@@ -6068,6 +11617,40 @@ function createUserSession(store: StateStore, userId: string): { token: string; 
   }) satisfies UserSession;
   store.state.sessions.push(session);
   return { token, session };
+}
+
+function appendLegacyUserHeaderAuditLog(store: StateStore, userId: string, source: "header" | "query", status: "accepted" | "blocked"): void {
+  store.state.auditLogs.push(
+    createTimestamped("audit", {
+      actorUserId: status === "accepted" ? userId : undefined,
+      actorType: "user" as const,
+      action: "auth.legacyUserHeader",
+      targetType: "auth_compatibility",
+      targetId: userId,
+      after: {
+        source,
+        status,
+        mode: publicAuthRuntimeConfig().legacyUserHeader.mode
+      }
+    }) satisfies AuditLog
+  );
+}
+
+function appendAuthLoginFailureAudit(store: StateStore, input: { userId?: string; reason: string; statusCode: number }): void {
+  store.state.auditLogs.push(
+    createTimestamped("audit", {
+      actorUserId: input.userId,
+      actorType: "user" as const,
+      action: "auth.login.failed",
+      targetType: "auth_login",
+      targetId: input.userId,
+      after: {
+        userKnown: Boolean(input.userId),
+        reason: input.reason,
+        statusCode: input.statusCode
+      }
+    }) satisfies AuditLog
+  );
 }
 
 function sessionFromRequest(store: StateStore, requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): UserSession | undefined {
@@ -6123,6 +11706,32 @@ function pruneExpiredPasswordResetTokens(store: StateStore): void {
   store.state.passwordResetTokens = store.state.passwordResetTokens.filter((reset) => !reset.usedAt && Date.parse(reset.expiresAt) > now);
 }
 
+function prunePasswordResetTokensForAdmin(store: StateStore, input: AdminPasswordResetPruneBody) {
+  const includeExpired = input.includeExpired ?? true;
+  const includeUsed = input.includeUsed ?? true;
+  const dryRun = Boolean(input.dryRun);
+  const now = Date.now();
+  const matchedResets = store.state.passwordResetTokens.filter((reset) => {
+    if (includeUsed && reset.usedAt) return true;
+    return includeExpired && Date.parse(reset.expiresAt) <= now;
+  });
+  if (!dryRun && matchedResets.length > 0) {
+    const matchedIds = new Set(matchedResets.map((reset) => reset.id));
+    store.state.passwordResetTokens = store.state.passwordResetTokens.filter((reset) => !matchedIds.has(reset.id));
+  }
+  return {
+    dryRun,
+    includeExpired,
+    includeUsed,
+    matched: matchedResets.length,
+    pruned: dryRun ? 0 : matchedResets.length,
+    activeRemaining: store.state.passwordResetTokens.filter((reset) => !reset.usedAt && Date.parse(reset.expiresAt) > now).length,
+    expiredRemaining: store.state.passwordResetTokens.filter((reset) => !reset.usedAt && Date.parse(reset.expiresAt) <= now).length,
+    usedRemaining: store.state.passwordResetTokens.filter((reset) => Boolean(reset.usedAt)).length,
+    resets: matchedResets.map(publicPasswordResetToken)
+  };
+}
+
 function publicSession(session: UserSession): Pick<UserSession, "id" | "userId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {
   return {
     id: session.id,
@@ -6176,6 +11785,15 @@ function serverAdminUserIds(): Set<string> {
   );
 }
 
+function serverAdminRuntimePosture(): { configured: boolean; count: number; missingInProduction: boolean } {
+  const count = serverAdminUserIds().size;
+  return {
+    configured: count > 0,
+    count,
+    missingInProduction: process.env.NODE_ENV === "production" && count === 0
+  };
+}
+
 function isActiveUserId(store: StateStore, userId: string): boolean {
   const user = store.state.users.find((item) => item.id === userId);
   return Boolean(user && !isDisabledUser(user));
@@ -6186,7 +11804,42 @@ function isDisabledUser(user: User): boolean {
 }
 
 function legacyUserHeaderEnabled(): boolean {
-  return process.env.OTTE_ALLOW_LEGACY_USER_HEADER === "true" || process.env.NODE_ENV === "test";
+  if (process.env.NODE_ENV === "test") return true;
+  if (process.env.NODE_ENV === "production") return false;
+  return process.env.OTTE_ALLOW_LEGACY_USER_HEADER === "true";
+}
+
+function publicAuthRuntimeConfig(): {
+  nodeEnv: string;
+  legacyUserHeader: {
+    enabled: boolean;
+    compatibilityFlagSet: boolean;
+    productionHardFence: boolean;
+    mode: "test" | "production_disabled" | "non_production_compatibility" | "disabled";
+  };
+  authUrls: ReturnType<typeof authRuntimeUrlPosture>;
+  sessions: ReturnType<typeof authSessionRuntimePosture>;
+  oidc: ReturnType<typeof oidcRuntimePosture>;
+  serverAdmins: ReturnType<typeof serverAdminRuntimePosture>;
+} {
+  const nodeEnv = process.env.NODE_ENV ?? "development";
+  const compatibilityFlagSet = process.env.OTTE_ALLOW_LEGACY_USER_HEADER === "true";
+  const productionHardFence = nodeEnv === "production";
+  const enabled = legacyUserHeaderEnabled();
+  const mode = nodeEnv === "test" ? "test" : productionHardFence ? "production_disabled" : enabled ? "non_production_compatibility" : "disabled";
+  return {
+    nodeEnv,
+    legacyUserHeader: {
+      enabled,
+      compatibilityFlagSet,
+      productionHardFence,
+      mode
+    },
+    authUrls: authRuntimeUrlPosture(),
+    sessions: authSessionRuntimePosture(),
+    oidc: oidcRuntimePosture(),
+    serverAdmins: serverAdminRuntimePosture()
+  };
 }
 
 function requireCampaignPermission(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>, campaignId: string, permission: PermissionName): true | FastifyReply {
@@ -6353,7 +12006,7 @@ function normalizePluginStorageKey(value: string): string | undefined {
 function normalizePluginStorageValue(value: unknown): { ok: true; value: unknown } | { ok: false; error: string } {
   const text = JSON.stringify(value);
   if (text === undefined) return { ok: false, error: "Plugin storage value must be JSON serializable" };
-  if (Buffer.byteLength(text, "utf8") > 16 * 1024) return { ok: false, error: "Plugin storage value is limited to 16 KiB of JSON" };
+  if (Buffer.byteLength(text, "utf8") > PLUGIN_STORAGE_MAX_VALUE_BYTES) return { ok: false, error: "Plugin storage value is limited to 16 KiB of JSON" };
   try {
     return { ok: true, value: JSON.parse(text) as unknown };
   } catch {
@@ -6367,6 +12020,24 @@ function pluginStorageValueSize(value: unknown): number {
 
 function cloneJsonValue(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value)) as unknown;
+}
+
+const PLUGIN_STORAGE_MAX_VALUE_BYTES = 16 * 1024;
+const PLUGIN_STORAGE_NEAR_LIMIT_BYTES = 12 * 1024;
+
+function pluginStoragePressureEntries(entries: PluginStorageEntry[]) {
+  return entries
+    .map((entry) => ({
+      id: entry.id,
+      campaignId: entry.campaignId,
+      pluginId: entry.pluginId,
+      key: entry.key,
+      sizeBytes: pluginStorageValueSize(entry.value),
+      updatedByType: entry.updatedByType,
+      updatedAt: entry.updatedAt
+    }))
+    .sort((left, right) => right.sizeBytes - left.sizeBytes || left.pluginId.localeCompare(right.pluginId) || left.key.localeCompare(right.key))
+    .slice(0, 10);
 }
 
 function adminPluginReviewSnapshot(store: StateStore, pluginRegistry: PluginRuntimeRegistry) {
@@ -6386,6 +12057,1493 @@ function adminPluginReviewSnapshot(store: StateStore, pluginRegistry: PluginRunt
     totals,
     plugins: reviewedPlugins.sort((left, right) => left.plugin.name.localeCompare(right.plugin.name) || right.plugin.version.localeCompare(left.plugin.version))
   };
+}
+
+function adminPluginOperations(store: StateStore, pluginRegistry: PluginRuntimeRegistry) {
+  const packages = pluginRegistry.listPackages();
+  const installed = store.state.permissionGrants
+    .filter((grant) => grant.subjectType === "plugin")
+    .map((grant) => pluginOperationalInstall(store, pluginRegistry, grant));
+  const storageEntries = store.state.pluginStorage;
+  const reviewSnapshot = adminPluginReviewSnapshot(store, pluginRegistry);
+  const commandAuditLogs = store.state.auditLogs.filter((log) => log.action === "plugin.chatCommand");
+  const failedCommandAuditLogs = store.state.auditLogs.filter((log) => log.action === "plugin.chatCommand.failed");
+  const storageAuditLogs = store.state.auditLogs.filter((log) => log.action === "plugin.storageSet" || log.action === "plugin.storageDelete" || log.action === "plugin.storageMutation");
+  const installAuditLogs = store.state.auditLogs.filter((log) => log.action === "plugin.install");
+  const compatibilityOperations = pluginCompatibilityOperationsSummary(packages, installed);
+  const installOperations = pluginInstallOperationsSummary(installAuditLogs);
+  const totals = {
+    catalogPluginCount: pluginRegistry.list().length,
+    packageCount: packages.length,
+    loadErrorCount: pluginRegistry.errors.length,
+    installedGrantCount: installed.length,
+    healthyInstalledCount: installed.filter((item) => item.status === "healthy").length,
+    blockedInstalledCount: installed.filter((item) => item.status === "blocked").length,
+    missingInstalledCount: installed.filter((item) => item.status === "missing_package").length,
+    permissionDriftCount: installed.filter((item) => item.missingManifestPermissions.length > 0).length,
+    incompatiblePackageCount: compatibilityOperations.incompatiblePackageCount,
+    incompatibleInstalledCount: compatibilityOperations.incompatibleInstalledCount,
+    storageEntryCount: storageEntries.length,
+    commandAuditCount: commandAuditLogs.length,
+    installAuditCount: installAuditLogs.length
+  };
+  const reviewOperations = pluginReviewOperationsSummary(reviewSnapshot.plugins);
+  const registryOperations = pluginRegistryOperationsSummary(store, packages);
+  const securityPosture = pluginSecurityPostureSummary(packages);
+  const commandOperations = pluginCommandOperationsSummary(commandAuditLogs, failedCommandAuditLogs);
+  const storageOperations = pluginStorageOperationsSummary(storageAuditLogs);
+  const inventoryOperations = pluginPackageInventoryOperationsSummary(pluginRegistry.inventoryWarnings);
+  const actionReasons = pluginOperationsActionReasons(totals, reviewOperations, registryOperations, compatibilityOperations, securityPosture, commandOperations, inventoryOperations);
+  const recentCommands = commandAuditLogs.slice(-10).reverse().map(pluginCommandAuditSummary);
+  const permissionDrift = installed
+    .filter((item) => item.missingManifestPermissions.length > 0)
+    .map((item) => ({
+      campaignId: item.campaignId,
+      pluginId: item.pluginId,
+      name: "name" in item && item.name ? item.name : item.pluginId,
+      installedVersion: item.installedVersion,
+      missingPermissions: [...item.missingManifestPermissions],
+      grantedPermissionCount: item.grantedPermissions.length,
+      requestedPermissionCount: "requestedPermissions" in item && item.requestedPermissions
+        ? item.requestedPermissions.length
+        : item.grantedPermissions.length
+    }))
+    .sort((left, right) => left.pluginId.localeCompare(right.pluginId) || left.campaignId.localeCompare(right.campaignId))
+    .slice(0, 20);
+  const storage = {
+    entryCount: storageEntries.length,
+    byPlugin: countBy(storageEntries, (entry) => entry.pluginId),
+    byCampaign: countBy(storageEntries, (entry) => entry.campaignId),
+    largestEntries: pluginStoragePressureEntries(storageEntries),
+    nearLimitEntries: pluginStoragePressureEntries(storageEntries.filter((entry) => pluginStorageValueSize(entry.value) >= PLUGIN_STORAGE_NEAR_LIMIT_BYTES)),
+    nearLimitBytes: PLUGIN_STORAGE_NEAR_LIMIT_BYTES,
+    maxValueBytes: PLUGIN_STORAGE_MAX_VALUE_BYTES
+  };
+  return {
+    generatedAt: nowIso(),
+    actionRequired: actionReasons.length > 0,
+    actionReasons,
+    policy: {
+      review: pluginReviewPolicyMode(),
+      trust: pluginRegistry.trustPolicy.policy
+    },
+    totals,
+    reviews: reviewSnapshot.totals,
+    reviewOperations,
+    securityPosture,
+    registryOperations,
+    compatibilityOperations,
+    installOperations,
+    remediationQueue: pluginOperationsRemediationQueue({
+      loadErrors: pluginRegistry.errors.map((error) => ({ packagePath: error.packagePath, errors: [...error.errors] })),
+      installed,
+      permissionDrift,
+      reviewOperations,
+      registryOperations,
+      compatibilityOperations,
+      securityPosture,
+      commandOperations,
+      inventoryOperations,
+      storage
+    }),
+    permissionDrift,
+    loadErrors: pluginRegistry.errors.map((error) => ({ packagePath: error.packagePath, errors: [...error.errors] })),
+    installed,
+    storage,
+    storageOperations,
+    commandOperations,
+    inventoryOperations,
+    recentCommands
+  };
+}
+
+function pluginStorageOperationsSummary(storageAuditLogs: AuditLog[]) {
+  const operations = storageAuditLogs.map(pluginStorageAuditSummary);
+  const setMutationCount = operations.reduce((sum, operation) => sum + operation.setCount, 0);
+  const deleteMutationCount = operations.reduce((sum, operation) => sum + operation.deleteCount, 0);
+  return {
+    operationCount: operations.length,
+    directSetCount: operations.filter((operation) => operation.operation === "set").length,
+    directDeleteCount: operations.filter((operation) => operation.operation === "delete").length,
+    commandMutationCount: operations.filter((operation) => operation.operation === "command_mutation").length,
+    setMutationCount,
+    deleteMutationCount,
+    deletedEntryCount: operations.reduce((sum, operation) => sum + (operation.deleted ? 1 : 0), 0) + operations.filter((operation) => operation.operation === "command_mutation").reduce((sum, operation) => sum + operation.deleteCount, 0),
+    byPlugin: countBy(operations, (operation) => operation.pluginId ?? "unknown"),
+    byCampaign: countBy(operations, (operation) => operation.campaignId ?? "unknown"),
+    recentOperations: operations.slice(-10).reverse()
+  };
+}
+
+function pluginStorageAuditSummary(log: AuditLog) {
+  const after = isRecord(log.after) ? log.after : {};
+  const setMutations = Array.isArray(after.set) ? after.set.length : log.action === "plugin.storageSet" ? 1 : 0;
+  const deleteMutations = Array.isArray(after.deleted) ? after.deleted.length : log.action === "plugin.storageDelete" ? 1 : 0;
+  const operation = log.action === "plugin.storageSet" ? "set" : log.action === "plugin.storageDelete" ? "delete" : "command_mutation";
+  return {
+    id: log.id,
+    campaignId: log.campaignId,
+    pluginId: typeof after.pluginId === "string" ? after.pluginId : log.targetId,
+    actorType: log.actorType,
+    actorUserId: log.actorUserId,
+    operation,
+    key: typeof after.key === "string" ? after.key : undefined,
+    sizeBytes: typeof after.size === "number" ? after.size : undefined,
+    deleted: typeof after.deleted === "boolean" ? after.deleted : undefined,
+    setCount: setMutations,
+    deleteCount: deleteMutations,
+    createdAt: log.createdAt
+  };
+}
+
+function pluginInstallOperationsSummary(installAuditLogs: AuditLog[]) {
+  const previousByGrant = new Map<string, { version?: string; grantedPermissionCount: number }>();
+  const chronological = [...installAuditLogs].sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt));
+  const operations = chronological.map((log) => {
+    const after = isRecord(log.after) ? log.after : {};
+    const pluginId = typeof after.pluginId === "string" ? after.pluginId : log.targetId;
+    const grantKey = `${log.campaignId ?? "unknown"}:${pluginId ?? "unknown"}`;
+    const version = typeof after.version === "string" ? after.version : undefined;
+    const previous = previousByGrant.get(grantKey);
+    const grantedPermissions = Array.isArray(after.grantedPermissions) ? after.grantedPermissions.filter((permission): permission is string => typeof permission === "string") : [];
+    const requestedPermissions = Array.isArray(after.requestedPermissions) ? after.requestedPermissions.filter((permission): permission is string => typeof permission === "string") : [];
+    const missingPermissions = Array.isArray(after.missingPermissions) ? after.missingPermissions.filter((permission): permission is string => typeof permission === "string") : [];
+    const grantedPermissionCount = grantedPermissions.length;
+    const operation =
+      previous && previous.version && version && previous.version !== version
+        ? compareVersionAscending(version, previous.version) < 0
+          ? "rollback"
+          : "upgrade"
+        : previous && previous.grantedPermissionCount !== grantedPermissionCount
+          ? "permission_review"
+          : "install";
+    previousByGrant.set(grantKey, { version, grantedPermissionCount });
+    return {
+      id: log.id,
+      campaignId: log.campaignId,
+      pluginId,
+      actorUserId: log.actorUserId,
+      operation,
+      packageId: typeof after.packageId === "string" ? after.packageId : undefined,
+      version,
+      sandbox: typeof after.sandbox === "string" ? after.sandbox : undefined,
+      grantedPermissionCount,
+      requestedPermissionCount: requestedPermissions.length,
+      missingPermissionCount: missingPermissions.length,
+      createdAt: log.createdAt
+    };
+  });
+  const versionChangeCount = operations.filter((operation) => operation.operation === "upgrade" || operation.operation === "rollback").length;
+  const rollbackCount = operations.filter((operation) => operation.operation === "rollback").length;
+  const permissionReviewCount = operations.filter((operation) => operation.operation === "permission_review" || operation.missingPermissionCount > 0).length;
+  return {
+    installCount: operations.length,
+    versionChangeCount,
+    rollbackCount,
+    permissionReviewCount,
+    byPlugin: countBy(operations, (operation) => operation.pluginId ?? "unknown"),
+    byCampaign: countBy(operations, (operation) => operation.campaignId ?? "unknown"),
+    recentInstalls: operations.slice(-10).reverse()
+  };
+}
+
+function pluginCommandAuditSummary(log: AuditLog) {
+  const after = isRecord(log.after) ? log.after : {};
+  const storageMutation = isRecord(after.storageMutation) ? after.storageMutation : {};
+  const setMutations = Array.isArray(storageMutation.set) ? storageMutation.set.length : 0;
+  const deleteMutations = Array.isArray(storageMutation.deleted) ? storageMutation.deleted.length : 0;
+  return {
+    id: log.id,
+    campaignId: log.campaignId,
+    pluginId: typeof after.pluginId === "string" ? after.pluginId : log.targetId,
+    command: typeof after.command === "string" ? after.command : undefined,
+    packageId: typeof after.packageId === "string" ? after.packageId : undefined,
+    version: typeof after.version === "string" ? after.version : undefined,
+    sandbox: typeof after.sandbox === "string" ? after.sandbox : undefined,
+    storageMutation: {
+      set: setMutations,
+      deleted: deleteMutations
+    },
+    createdAt: log.createdAt
+  };
+}
+
+function pluginCommandOperationsSummary(commandAuditLogs: AuditLog[], failedCommandAuditLogs: AuditLog[]) {
+  const recentCommands = commandAuditLogs.slice(-25).map(pluginCommandAuditSummary);
+  const recentFailures = failedCommandAuditLogs.slice(-25).map(pluginCommandFailureAuditSummary);
+  const storageMutatingCommandCount = recentCommands.filter((command) => command.storageMutation.set > 0 || command.storageMutation.deleted > 0).length;
+  return {
+    actionRequired: failedCommandAuditLogs.length > 0,
+    commandCount: commandAuditLogs.length,
+    failedCommandCount: failedCommandAuditLogs.length,
+    recentCommandCount: recentCommands.length,
+    recentFailureCount: recentFailures.length,
+    storageMutatingCommandCount,
+    byPlugin: countBy(recentCommands, (command) => command.pluginId ?? "unknown"),
+    failedByPlugin: countBy(recentFailures, (command) => command.pluginId ?? "unknown"),
+    failedByReason: countBy(recentFailures, (command) => command.reason ?? "unknown"),
+    byCampaign: countBy(recentCommands, (command) => command.campaignId ?? "unknown"),
+    recentFailures: recentFailures.slice(-10).reverse()
+  };
+}
+
+function pluginCommandFailureAuditSummary(log: AuditLog) {
+  const after = isRecord(log.after) ? log.after : {};
+  return {
+    id: log.id,
+    campaignId: log.campaignId,
+    pluginId: typeof after.pluginId === "string" ? after.pluginId : log.targetId,
+    command: typeof after.command === "string" ? after.command : undefined,
+    reason: typeof after.reason === "string" ? after.reason : undefined,
+    message: typeof after.message === "string" ? after.message : undefined,
+    packageId: typeof after.packageId === "string" ? after.packageId : undefined,
+    version: typeof after.version === "string" ? after.version : undefined,
+    sandbox: typeof after.sandbox === "string" ? after.sandbox : undefined,
+    createdAt: log.createdAt
+  };
+}
+
+function pluginSecurityPostureSummary(packages: LoadedPlugin[]) {
+  const commandCapablePackages = packages.filter((plugin) => (plugin.chatCommands?.length ?? 0) > 0);
+  const manifestOnlyCommandPackages = commandCapablePackages.filter((plugin) => plugin.source.sandbox !== "vm");
+  const unsignedPackages = packages.filter((plugin) => plugin.trust.status === "unsigned");
+  const untrustedPackages = packages.filter((plugin) => plugin.trust.status === "untrusted");
+  const trustBlockedPackages = packages.filter((plugin) => !plugin.trust.installable);
+  const trustPolicy = packages[0]?.trust.policy ?? (process.env.OTTE_PLUGIN_TRUST_POLICY === "require_trusted" ? "require_trusted" : "allow_unsigned");
+  const trustKeyCount = pluginTrustKeyCount();
+  const allowUnsignedInProduction = process.env.NODE_ENV === "production" && trustPolicy !== "require_trusted";
+  const trustedModeWithoutKeys = trustPolicy === "require_trusted" && trustKeyCount === 0;
+  const actionReasons = [
+    allowUnsignedInProduction ? "plugin_trust_policy_allows_unsigned_in_production" : undefined,
+    trustedModeWithoutKeys ? "plugin_trust_keys_missing" : undefined,
+    manifestOnlyCommandPackages.length > 0 ? "plugin_command_without_vm_sandbox" : undefined,
+    trustBlockedPackages.length > 0 ? "plugin_trust_policy_blocks" : undefined,
+    untrustedPackages.length > 0 ? "untrusted_plugin_packages" : undefined,
+    unsignedPackages.length > 0 ? "unsigned_plugin_packages" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+  const packageInfo = (plugin: LoadedPlugin) => ({
+    pluginId: plugin.id,
+    name: plugin.name,
+    version: plugin.version,
+    packageId: plugin.source.packageId,
+    sandbox: plugin.source.sandbox,
+    trustStatus: plugin.trust.status,
+    installable: plugin.trust.installable,
+    errors: plugin.trust.errors.slice(0, 3)
+  });
+  return {
+    actionRequired: actionReasons.length > 0,
+    actionReasons,
+    remediation:
+      actionReasons.length > 0
+        ? "Require reviewed and trusted packages for production deployments, keep command-capable packages in the VM sandbox, and resolve unsigned or untrusted package inventory."
+        : "Plugin packages are reviewed/trusted as required and command-capable packages use the VM sandbox.",
+    runtimeConfig: {
+      trustPolicy,
+      trustKeyCount,
+      trustKeysConfigured: trustKeyCount > 0,
+      allowUnsignedInProduction,
+      trustedModeWithoutKeys
+    },
+    vmSandboxPackageCount: packages.filter((plugin) => plugin.source.sandbox === "vm").length,
+    manifestOnlyPackageCount: packages.filter((plugin) => plugin.source.sandbox === "manifest-only").length,
+    commandCapablePackageCount: commandCapablePackages.length,
+    manifestOnlyCommandPackageCount: manifestOnlyCommandPackages.length,
+    trustedPackageCount: packages.filter((plugin) => plugin.trust.status === "trusted").length,
+    unsignedPackageCount: unsignedPackages.length,
+    untrustedPackageCount: untrustedPackages.length,
+    trustBlockedPackageCount: trustBlockedPackages.length,
+    unsignedSamples: unsignedPackages.slice(0, 5).map(packageInfo),
+    untrustedSamples: untrustedPackages.slice(0, 5).map(packageInfo),
+    nonVmCommandSamples: manifestOnlyCommandPackages.slice(0, 5).map(packageInfo)
+  };
+}
+
+function pluginTrustKeyCount() {
+  const value = process.env.OTTE_PLUGIN_TRUST_KEYS;
+  if (!value?.trim()) return 0;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (isRecord(parsed)) return Object.values(parsed).filter((secret) => typeof secret === "string" && secret.length > 0).length;
+  } catch {
+    // Fall through to comma-separated key=secret parsing for simple env files.
+  }
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => {
+      const separator = entry.includes("=") ? "=" : ":";
+      const [keyId, ...secretParts] = entry.split(separator);
+      return Boolean(keyId?.trim() && secretParts.join(separator).trim());
+    }).length;
+}
+
+function pluginPackageInventoryOperationsSummary(warnings: PluginInventoryWarning[]) {
+  const duplicateVersions = warnings
+    .filter((warning) => warning.code === "duplicate_plugin_package_version")
+    .map((warning) => ({
+      pluginId: warning.pluginId,
+      name: warning.name,
+      version: warning.version,
+      packageCount: warning.packageIds.length,
+      packageIds: warning.packageIds,
+      sourceTypes: warning.sourceTypes,
+      registryUrls: warning.registryUrls
+    }))
+    .sort((left, right) => left.pluginId.localeCompare(right.pluginId) || left.version.localeCompare(right.version))
+    .slice(0, 20);
+  return {
+    actionRequired: duplicateVersions.length > 0,
+    actionReasons: duplicateVersions.length > 0 ? ["duplicate_plugin_packages"] : [],
+    duplicateVersionCount: duplicateVersions.length,
+    duplicatePackageCount: duplicateVersions.reduce((sum, duplicate) => sum + duplicate.packageCount, 0),
+    duplicateVersions
+  };
+}
+
+function pluginOperationsActionReasons(
+  totals: {
+    loadErrorCount: number;
+    blockedInstalledCount: number;
+    missingInstalledCount: number;
+    permissionDriftCount: number;
+    incompatiblePackageCount: number;
+    incompatibleInstalledCount: number;
+  },
+  reviewOperations: ReturnType<typeof pluginReviewOperationsSummary>,
+  registryOperations: ReturnType<typeof pluginRegistryOperationsSummary>,
+  compatibilityOperations: ReturnType<typeof pluginCompatibilityOperationsSummary>,
+  securityPosture: ReturnType<typeof pluginSecurityPostureSummary>,
+  commandOperations: ReturnType<typeof pluginCommandOperationsSummary>,
+  inventoryOperations: ReturnType<typeof pluginPackageInventoryOperationsSummary>
+) {
+  return [
+    totals.loadErrorCount > 0 ? "load_errors" : undefined,
+    totals.blockedInstalledCount > 0 ? "blocked_installs" : undefined,
+    totals.missingInstalledCount > 0 ? "missing_installed_packages" : undefined,
+    totals.permissionDriftCount > 0 ? "permission_drift" : undefined,
+    compatibilityOperations.actionRequired ? "core_compatibility_drift" : undefined,
+    reviewOperations.actionRequired ? "review_backlog" : undefined,
+    commandOperations.actionRequired ? "plugin_command_failures" : undefined,
+    ...inventoryOperations.actionReasons,
+    ...securityPosture.actionReasons,
+    ...registryOperations.actionReasons
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+function pluginOperationsRemediationQueue(input: {
+  loadErrors: Array<{ packagePath: string; errors: string[] }>;
+  installed: ReturnType<typeof pluginOperationalInstall>[];
+  permissionDrift: Array<{
+    campaignId: string;
+    pluginId: string;
+    name: string;
+    installedVersion?: string;
+    missingPermissions: PermissionName[];
+  }>;
+  reviewOperations: ReturnType<typeof pluginReviewOperationsSummary>;
+  registryOperations: ReturnType<typeof pluginRegistryOperationsSummary>;
+  compatibilityOperations: ReturnType<typeof pluginCompatibilityOperationsSummary>;
+  securityPosture: ReturnType<typeof pluginSecurityPostureSummary>;
+  commandOperations: ReturnType<typeof pluginCommandOperationsSummary>;
+  inventoryOperations: ReturnType<typeof pluginPackageInventoryOperationsSummary>;
+  storage: {
+    nearLimitEntries: ReturnType<typeof pluginStoragePressureEntries>;
+    maxValueBytes: number;
+  };
+}) {
+  const remediations: Array<{
+    code: string;
+    severity: "warning" | "error";
+    action: string;
+    affectedCount: number;
+    samples?: Array<Record<string, unknown>>;
+  }> = [];
+  if (input.loadErrors.length > 0) {
+    remediations.push({
+      code: "fix_plugin_load_errors",
+      severity: "error",
+      action: "Fix plugin package load errors or remove broken packages from the configured plugin root.",
+      affectedCount: input.loadErrors.length,
+      samples: input.loadErrors.slice(0, 3).map((error) => ({ packagePath: error.packagePath, errors: error.errors.slice(0, 3) }))
+    });
+  }
+  const blockedInstalled = input.installed.filter((item) => item.status === "blocked");
+  if (blockedInstalled.length > 0) {
+    remediations.push({
+      code: "resolve_blocked_plugin_installs",
+      severity: "error",
+      action: "Resolve marketplace, trust, permission, or core compatibility blocks before installed plugins can execute.",
+      affectedCount: blockedInstalled.length,
+      samples: blockedInstalled.slice(0, 3).map((item) => ({ campaignId: item.campaignId, pluginId: item.pluginId, issues: item.issues.slice(0, 3) }))
+    });
+  }
+  const missingInstalled = input.installed.filter((item) => item.status === "missing_package");
+  if (missingInstalled.length > 0) {
+    remediations.push({
+      code: "restore_missing_plugin_packages",
+      severity: "error",
+      action: "Restore missing plugin packages or uninstall stale campaign grants that point at unavailable packages.",
+      affectedCount: missingInstalled.length,
+      samples: missingInstalled.slice(0, 3).map((item) => ({ campaignId: item.campaignId, pluginId: item.pluginId, installedVersion: item.installedVersion }))
+    });
+  }
+  if (input.permissionDrift.length > 0) {
+    remediations.push({
+      code: "repair_plugin_permission_drift",
+      severity: "warning",
+      action: "Review installed plugin grants whose manifest now requests permissions that were not granted.",
+      affectedCount: input.permissionDrift.length,
+      samples: input.permissionDrift.slice(0, 3).map((item) => ({
+        campaignId: item.campaignId,
+        pluginId: item.pluginId,
+        missingPermissions: item.missingPermissions.slice(0, 3)
+      }))
+    });
+  }
+  if (input.compatibilityOperations.actionRequired) {
+    remediations.push({
+      code: "resolve_plugin_core_drift",
+      severity: "error",
+      action: "Upgrade incompatible plugin packages or hold server upgrades until installed plugin core ranges are satisfied.",
+      affectedCount: input.compatibilityOperations.incompatiblePackageCount + input.compatibilityOperations.incompatibleInstalledCount,
+      samples: [
+        ...input.compatibilityOperations.packages.slice(0, 2).map((plugin) => ({
+          pluginId: plugin.pluginId,
+          version: plugin.version,
+          compatibleCore: plugin.compatibleCore
+        })),
+        ...input.compatibilityOperations.installed.slice(0, 2).map((plugin) => ({
+          campaignId: plugin.campaignId,
+          pluginId: plugin.pluginId,
+          installedVersion: plugin.installedVersion,
+          compatibleCore: plugin.compatibleCore
+        }))
+      ]
+    });
+  }
+  if (input.reviewOperations.actionRequired) {
+    remediations.push({
+      code: "review_marketplace_packages",
+      severity: input.reviewOperations.blockedCount > 0 ? "error" : "warning",
+      action: input.reviewOperations.remediation,
+      affectedCount: input.reviewOperations.pendingCount + input.reviewOperations.rejectedCount + input.reviewOperations.blockedCount,
+      samples: [...input.reviewOperations.pendingSamples, ...input.reviewOperations.blockedSamples].slice(0, 3).map((item) => ({
+        pluginId: item.pluginId,
+        version: item.version,
+        packageId: item.packageId,
+        status: item.status,
+        installBlock: item.installBlock
+      }))
+    });
+  }
+  if (input.commandOperations.actionRequired) {
+    remediations.push({
+      code: "investigate_plugin_command_failures",
+      severity: "error",
+      action: "Inspect failed plugin command audit rows and disable, upgrade, or reconfigure plugins that fail at runtime.",
+      affectedCount: input.commandOperations.failedCommandCount,
+      samples: input.commandOperations.recentFailures.slice(0, 3).map((failure) => ({
+        campaignId: failure.campaignId,
+        pluginId: failure.pluginId,
+        command: failure.command,
+        reason: failure.reason,
+        message: failure.message,
+        packageId: failure.packageId,
+        version: failure.version
+      }))
+    });
+  }
+  if (input.securityPosture.actionRequired) {
+    const commandSandboxRisk = input.securityPosture.manifestOnlyCommandPackageCount > 0;
+    const blockedTrustRisk = input.securityPosture.trustBlockedPackageCount > 0 || input.securityPosture.untrustedPackageCount > 0;
+    remediations.push({
+      code: "review_plugin_security_posture",
+      severity: commandSandboxRisk || blockedTrustRisk ? "error" : "warning",
+      action: input.securityPosture.remediation,
+      affectedCount: input.securityPosture.manifestOnlyCommandPackageCount + input.securityPosture.trustBlockedPackageCount + input.securityPosture.untrustedPackageCount + input.securityPosture.unsignedPackageCount,
+      samples: [
+        ...input.securityPosture.nonVmCommandSamples.map((plugin) => ({ ...plugin, issue: "command_without_vm_sandbox" })),
+        ...input.securityPosture.untrustedSamples.map((plugin) => ({ ...plugin, issue: "untrusted_package" })),
+        ...input.securityPosture.unsignedSamples.map((plugin) => ({ ...plugin, issue: "unsigned_package" }))
+      ].slice(0, 3)
+    });
+  }
+  if (input.inventoryOperations.actionRequired) {
+    remediations.push({
+      code: "dedupe_plugin_package_versions",
+      severity: "warning",
+      action: "Remove or rename duplicate plugin package versions so marketplace review, install, and command resolution select one package per plugin version.",
+      affectedCount: input.inventoryOperations.duplicateVersionCount,
+      samples: input.inventoryOperations.duplicateVersions.slice(0, 3).map((duplicate) => ({
+        pluginId: duplicate.pluginId,
+        version: duplicate.version,
+        packageCount: duplicate.packageCount,
+        packageIds: duplicate.packageIds.slice(0, 5),
+        sourceTypes: duplicate.sourceTypes
+      }))
+    });
+  }
+  const registrySyncIssues = input.registryOperations.configured.filter((registry) => registry.status !== "synced");
+  const registryConfigSamples = [
+    ...input.registryOperations.runtimeConfig.invalidUrlConfig.map((env) => ({
+      env,
+      reason: "invalid_url",
+      count: input.registryOperations.runtimeConfig.invalidUrlCount
+    })),
+    ...input.registryOperations.runtimeConfig.insecureUrlConfig.map((env) => ({
+      env,
+      reason: "insecure_production_url",
+      count: input.registryOperations.runtimeConfig.insecureUrlCount
+    })),
+    ...input.registryOperations.runtimeConfig.invalidNumericConfig.map((env) => ({
+      env,
+      reason: "invalid_number"
+    }))
+  ];
+  if (registrySyncIssues.length > 0 || registryConfigSamples.length > 0) {
+    remediations.push({
+      code: "sync_plugin_registries",
+      severity: registrySyncIssues.some((registry) => registry.status === "failed") || input.registryOperations.runtimeConfig.invalidUrlConfig.length > 0 || input.registryOperations.runtimeConfig.invalidNumericConfig.length > 0 ? "error" : "warning",
+      action: "Fix plugin registry URL configuration, sync configured registries, and resolve fetch/import errors so marketplace inventory is current.",
+      affectedCount: registrySyncIssues.length + input.registryOperations.runtimeConfig.invalidUrlCount + input.registryOperations.runtimeConfig.insecureUrlCount + input.registryOperations.runtimeConfig.invalidNumericConfig.length,
+      samples: [
+        ...registryConfigSamples,
+        ...registrySyncIssues.slice(0, 3).map((registry) => ({
+        registryUrl: registry.registryUrl,
+        status: registry.status,
+        lastErrors: registry.lastErrors.slice(0, 3)
+        }))
+      ].slice(0, 3)
+    });
+  }
+  const staleRegistries = input.registryOperations.configured.filter((registry) => registry.status === "synced" && registry.stale);
+  if (staleRegistries.length > 0) {
+    remediations.push({
+      code: "refresh_stale_plugin_registries",
+      severity: "warning",
+      action: "Refresh stale plugin registries so marketplace package inventory and review state reflect the current upstream catalogs.",
+      affectedCount: staleRegistries.length,
+      samples: staleRegistries.slice(0, 3).map((registry) => ({
+        registryUrl: registry.registryUrl,
+        lastSyncAt: registry.lastSyncAt,
+        syncAgeSeconds: registry.syncAgeSeconds,
+        staleThresholdSeconds: input.registryOperations.staleThresholdSeconds
+      }))
+    });
+  }
+  if (input.registryOperations.unconfiguredRegistryPackageCount > 0) {
+    remediations.push({
+      code: "remove_unconfigured_registry_packages",
+      severity: "warning",
+      action: "Remove registry-sourced plugin packages whose origin registry is no longer configured, or restore that registry URL.",
+      affectedCount: input.registryOperations.unconfiguredRegistryPackageCount,
+      samples: input.registryOperations.unconfiguredPackages.slice(0, 3).map((plugin) => ({
+        pluginId: plugin.pluginId,
+        packageId: plugin.packageId,
+        registryUrl: plugin.registryUrl
+      }))
+    });
+  }
+  if (input.storage.nearLimitEntries.length > 0) {
+    remediations.push({
+      code: "trim_plugin_storage_pressure",
+      severity: "warning",
+      action: "Trim or migrate plugin storage entries near the per-value limit before command writes start failing.",
+      affectedCount: input.storage.nearLimitEntries.length,
+      samples: input.storage.nearLimitEntries.slice(0, 3).map((entry) => ({
+        campaignId: entry.campaignId,
+        pluginId: entry.pluginId,
+        key: entry.key,
+        sizeBytes: entry.sizeBytes,
+        maxValueBytes: input.storage.maxValueBytes,
+        updatedByType: entry.updatedByType,
+        updatedAt: entry.updatedAt
+      }))
+    });
+  }
+  return remediations.sort((left, right) => severityRank(right.severity) - severityRank(left.severity) || right.affectedCount - left.affectedCount || left.code.localeCompare(right.code)).slice(0, 12);
+}
+
+function pluginCompatibilityOperationsSummary(packages: LoadedPlugin[], installed: ReturnType<typeof pluginOperationalInstall>[]) {
+  const incompatiblePackages = packages.filter((plugin) => !pluginCoreRangeSatisfied(plugin.compatibleCore));
+  const incompatibleInstalled = installed.filter((plugin) => plugin.status !== "missing_package" && plugin.compatibleCore && !plugin.compatibleCore.satisfied);
+  return {
+    actionRequired: incompatiblePackages.length > 0 || incompatibleInstalled.length > 0,
+    coreVersion: CORE_COMPATIBILITY_VERSION,
+    incompatiblePackageCount: incompatiblePackages.length,
+    incompatibleInstalledCount: incompatibleInstalled.length,
+    packages: incompatiblePackages
+      .map((plugin) => ({
+        pluginId: plugin.id,
+        name: plugin.name,
+        version: plugin.version,
+        packageId: plugin.source.packageId,
+        sourceType: plugin.source.type,
+        compatibleCore: plugin.compatibleCore
+      }))
+      .sort((left, right) => left.pluginId.localeCompare(right.pluginId) || left.version.localeCompare(right.version))
+      .slice(0, 20),
+    installed: incompatibleInstalled
+      .map((plugin) => ({
+        campaignId: plugin.campaignId,
+        pluginId: plugin.pluginId,
+        installedVersion: plugin.installedVersion,
+        compatibleCore: plugin.compatibleCore?.range
+      }))
+      .sort((left, right) => left.pluginId.localeCompare(right.pluginId) || left.campaignId.localeCompare(right.campaignId))
+      .slice(0, 20)
+  };
+}
+
+function pluginRegistryOperationsSummary(store: StateStore, packages: LoadedPlugin[]) {
+  const configuredRegistries = configuredPluginRegistryUrls();
+  const runtimeConfig = pluginRegistryRuntimeConfig();
+  const configuredRegistrySet = new Set(configuredRegistries);
+  const registryPackages = packages.filter((plugin) => plugin.source.type === "registry" && plugin.source.registryUrl);
+  const packageCountByRegistry = countBy(registryPackages, (plugin) => plugin.source.registryUrl ?? "unknown");
+  const latestSyncByRegistry = latestPluginRegistrySyncByRegistry(store);
+  const staleThresholdSeconds = pluginRegistryStaleThresholdSeconds();
+  const nowMs = Date.now();
+  const configured = configuredRegistries.map((registryUrl) => {
+    const latestSync = latestSyncByRegistry.get(registryUrl);
+    const errorCount = latestSync?.errors.length ?? 0;
+    const syncAgeSeconds = latestSync ? timestampAgeSeconds(latestSync.createdAt, nowMs) : undefined;
+    const stale = latestSync && errorCount === 0 && typeof syncAgeSeconds === "number" ? syncAgeSeconds >= staleThresholdSeconds : false;
+    return {
+      registryUrl,
+      status: latestSync ? (errorCount > 0 ? "failed" : "synced") : "never_synced",
+      syncedPackageCount: packageCountByRegistry[registryUrl] ?? 0,
+      lastSyncAt: latestSync?.createdAt,
+      syncAgeSeconds,
+      stale,
+      lastImported: latestSync?.imported ?? [],
+      lastErrors: latestSync?.errors ?? []
+    };
+  });
+  const unconfiguredRegistryPackages = registryPackages.filter((plugin) => !configuredRegistrySet.has(plugin.source.registryUrl ?? ""));
+  const staleConfiguredRegistries = configured.filter((registry) => registry.stale);
+  const syncAges = configured.map((registry) => registry.syncAgeSeconds).filter((age): age is number => typeof age === "number");
+  const actionReasons = [
+    runtimeConfig.invalidUrlConfig.length > 0 ? "plugin_registry_url_config_invalid" : undefined,
+    runtimeConfig.insecureUrlConfig.length > 0 ? "plugin_registry_url_insecure" : undefined,
+    runtimeConfig.invalidNumericConfig.length > 0 ? "plugin_registry_numeric_config_invalid" : undefined,
+    configured.some((registry) => registry.status === "never_synced") ? "configured_registry_unsynced" : undefined,
+    configured.some((registry) => registry.status === "failed") ? "registry_sync_errors" : undefined,
+    staleConfiguredRegistries.length > 0 ? "stale_plugin_registry_sync" : undefined,
+    unconfiguredRegistryPackages.length > 0 ? "unconfigured_registry_packages" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+  return {
+    actionRequired: actionReasons.length > 0,
+    actionReasons,
+    runtimeConfig,
+    configuredRegistryCount: configuredRegistries.length,
+    syncedPackageCount: registryPackages.length,
+    staleThresholdSeconds,
+    staleConfiguredRegistryCount: staleConfiguredRegistries.length,
+    oldestSyncAgeSeconds: syncAges.length > 0 ? Math.max(...syncAges) : 0,
+    staleConfiguredRegistries: staleConfiguredRegistries
+      .map((registry) => ({
+        registryUrl: registry.registryUrl,
+        status: registry.status,
+        syncedPackageCount: registry.syncedPackageCount,
+        lastSyncAt: registry.lastSyncAt,
+        syncAgeSeconds: registry.syncAgeSeconds ?? 0
+      }))
+      .sort((left, right) => right.syncAgeSeconds - left.syncAgeSeconds || left.registryUrl.localeCompare(right.registryUrl))
+      .slice(0, 20),
+    packageCountByRegistry,
+    unconfiguredRegistryPackageCount: unconfiguredRegistryPackages.length,
+    unconfiguredPackages: unconfiguredRegistryPackages
+      .map((plugin) => ({
+        pluginId: plugin.id,
+        name: plugin.name,
+        version: plugin.version,
+        packageId: plugin.source.packageId,
+        registryUrl: plugin.source.registryUrl ?? "unknown",
+        syncedAt: plugin.source.syncedAt
+      }))
+      .sort((left, right) => left.registryUrl.localeCompare(right.registryUrl) || left.pluginId.localeCompare(right.pluginId) || left.version.localeCompare(right.version))
+      .slice(0, 20),
+    configured
+  };
+}
+
+function pluginRegistryStaleThresholdSeconds() {
+  return envNumber("OTTE_PLUGIN_REGISTRY_STALE_SECONDS") ?? PLUGIN_REGISTRY_STALE_SECONDS;
+}
+
+function pluginRegistryRuntimeConfig() {
+  const entries = (process.env.OTTE_PLUGIN_REGISTRY_URLS ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  let invalidCount = 0;
+  let insecureProductionCount = 0;
+  for (const entry of entries) {
+    try {
+      const url = new URL(entry);
+      const valid = url.protocol === "http:" || url.protocol === "https:";
+      if (!valid) {
+        invalidCount += 1;
+        continue;
+      }
+      if (process.env.NODE_ENV === "production" && url.protocol === "http:" && !isLocalhostRuntimeUrl(url)) insecureProductionCount += 1;
+    } catch {
+      invalidCount += 1;
+    }
+  }
+  const numericConfig = [
+    runtimeNumberEnv("OTTE_PLUGIN_REGISTRY_STALE_SECONDS"),
+    runtimeNumberEnv("OTTE_PLUGIN_REGISTRY_TIMEOUT_MS")
+  ];
+  const invalidNumericConfig = numericConfig.filter((item) => item.configured && item.value === undefined).map((item) => item.name);
+  return {
+    configuredEntryCount: entries.length,
+    validConfiguredCount: configuredPluginRegistryUrls().length,
+    invalidUrlConfig: invalidCount > 0 ? ["OTTE_PLUGIN_REGISTRY_URLS"] : [],
+    invalidUrlCount: invalidCount,
+    insecureUrlConfig: insecureProductionCount > 0 ? ["OTTE_PLUGIN_REGISTRY_URLS"] : [],
+    insecureUrlCount: insecureProductionCount,
+    invalidNumericConfig
+  };
+}
+
+function runtimeNumberEnv(name: string): { name: string; configured: boolean; value?: number } {
+  const rawValue = process.env[name]?.trim();
+  if (!rawValue) return { name, configured: false };
+  const value = Number(rawValue);
+  return Number.isFinite(value) && value >= 0 ? { name, configured: true, value } : { name, configured: true };
+}
+
+function timestampAgeSeconds(value: string, nowMs: number) {
+  const timestampMs = Date.parse(value);
+  return Number.isFinite(timestampMs) ? Math.max(0, Math.floor((nowMs - timestampMs) / 1000)) : undefined;
+}
+
+function latestPluginRegistrySyncByRegistry(store: StateStore) {
+  const latest = new Map<string, { registryUrl: string; createdAt: string; imported: string[]; errors: string[] }>();
+  const logs = store.state.auditLogs
+    .filter((log) => log.action === "admin.pluginRegistry.sync" || log.action === "plugin.registrySync")
+    .slice()
+    .sort(sortTimestampsDesc);
+  for (const log of logs) {
+    const registries = pluginRegistrySyncAuditRegistries(log.after);
+    for (const registry of registries) {
+      if (!latest.has(registry.registryUrl)) latest.set(registry.registryUrl, { ...registry, createdAt: log.createdAt });
+    }
+  }
+  return latest;
+}
+
+function pluginRegistrySyncAuditRegistries(value: unknown) {
+  if (!isRecord(value) || !Array.isArray(value.registries)) return [];
+  return value.registries
+    .filter(isRecord)
+    .map((registry) => {
+      const registryUrl = typeof registry.registryUrl === "string" ? registry.registryUrl : undefined;
+      if (!registryUrl) return undefined;
+      return {
+        registryUrl,
+        imported: Array.isArray(registry.imported) ? registry.imported.filter((entry): entry is string => typeof entry === "string") : [],
+        errors: Array.isArray(registry.errors)
+          ? registry.errors.map((error) => (isRecord(error) && Array.isArray(error.errors) ? error.errors.join("; ") : String(error))).filter(Boolean)
+          : []
+      };
+    })
+    .filter((registry): registry is { registryUrl: string; imported: string[]; errors: string[] } => Boolean(registry));
+}
+
+function pluginReviewOperationsSummary(plugins: ReturnType<typeof adminPluginReviewSnapshot>["plugins"]) {
+  const nowMs = Date.now();
+  const pending = plugins.filter((item) => item.review.status === "pending");
+  const approved = plugins.filter((item) => item.review.status === "approved");
+  const rejected = plugins.filter((item) => item.review.status === "rejected");
+  const blocked = plugins.filter((item) => !item.installable);
+  const pendingAges = pending
+    .map((item) => {
+      const createdAt = Date.parse(item.review.createdAt);
+      return Number.isFinite(createdAt) ? Math.max(0, Math.floor((nowMs - createdAt) / (24 * 60 * 60 * 1000))) : undefined;
+    })
+    .filter((age): age is number => age !== undefined);
+  return {
+    actionRequired: pending.length > 0 || rejected.length > 0 || blocked.length > 0,
+    actionReasons: pluginReviewOperationActionReasons(pending.length, rejected.length, blocked.length),
+    remediation: pluginReviewOperationRemediation(pending.length, rejected.length, blocked.length),
+    approvalCoverageRate: ratio(approved.length, plugins.length),
+    pendingCount: pending.length,
+    approvedCount: approved.length,
+    rejectedCount: rejected.length,
+    blockedCount: blocked.length,
+    oldestPendingAgeDays: pendingAges.length > 0 ? Math.max(...pendingAges) : 0,
+    sourceCounts: countBy(plugins, (item) => item.source.type),
+    pendingSamples: pluginReviewOperationSamples(pending, nowMs),
+    approvedSamples: pluginReviewOperationSamples(approved, nowMs),
+    rejectedSamples: pluginReviewOperationSamples(rejected, nowMs),
+    blockedSamples: pluginReviewOperationSamples(blocked, nowMs)
+  };
+}
+
+function pluginReviewOperationActionReasons(pendingCount: number, rejectedCount: number, blockedCount: number) {
+  return [
+    pendingCount > 0 ? "pending_marketplace_reviews" : undefined,
+    rejectedCount > 0 ? "rejected_marketplace_packages" : undefined,
+    blockedCount > 0 ? "blocked_marketplace_packages" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+function pluginReviewOperationRemediation(pendingCount: number, rejectedCount: number, blockedCount: number) {
+  if (pendingCount > 0) return "Approve trusted package versions or reject packages that should not install.";
+  if (rejectedCount > 0) return "Confirm rejected packages are intentionally blocked or reset them to pending for re-review.";
+  if (blockedCount > 0) return "Resolve trust or review blocks before allowing campaign installation or execution.";
+  return "No marketplace review action is required.";
+}
+
+function pluginReviewOperationSamples(plugins: ReturnType<typeof adminPluginReviewSnapshot>["plugins"], nowMs: number) {
+  return plugins
+    .map((item) => {
+      const createdAtMs = Date.parse(item.review.createdAt);
+      return {
+        reviewKey: item.review.reviewKey,
+        pluginId: item.plugin.id,
+        name: item.plugin.name,
+        version: item.plugin.version,
+        packageId: item.source.packageId,
+        sourceType: item.source.type,
+        status: item.review.status,
+        installBlock: item.installBlock,
+        createdAt: item.review.createdAt,
+        ageDays: Number.isFinite(createdAtMs) ? Math.max(0, Math.floor((nowMs - createdAtMs) / (24 * 60 * 60 * 1000))) : 0
+      };
+    })
+    .sort((left, right) => right.ageDays - left.ageDays || left.name.localeCompare(right.name) || left.version.localeCompare(right.version))
+    .slice(0, 5);
+}
+
+function adminSystemOperations(store: StateStore) {
+  const systems = installedSystems.map((system) => systemOperationsSummary(store, system));
+  const issueCount = systems.reduce((total, system) => total + system.issues.length, 0);
+  const productionReadiness = systemProductionReadinessSummary(systems);
+  const productionGapCounts = systemProductionGapCounts(systems);
+  const activityOperations = systemActivityOperationsSummary(store, systems);
+  const promotionBlockers = systemPromotionBlockers(systems);
+  const actionReasons = systemOperationsActionReasons(issueCount, productionReadiness, activityOperations);
+  return {
+    generatedAt: nowIso(),
+    actionRequired: actionReasons.length > 0,
+    actionReasons,
+    totals: {
+      installedSystemCount: installedSystems.length,
+      activeCampaignCount: store.state.campaigns.length,
+      actorCount: store.state.actors.length,
+      itemCount: store.state.items.length,
+      systemsWithActors: systems.filter((system) => system.usage.actorCount > 0).length,
+      systemsWithContentIssues: systems.filter((system) => system.issues.length > 0).length,
+      issueCount
+    },
+    productionReadiness,
+    activeSystemCounts: countBy(store.state.campaigns, (campaign) => campaign.defaultSystemId ?? DEFAULT_SYSTEM_ID),
+    actorSystemCounts: countBy(store.state.actors, (actor) => actor.systemId),
+    itemSystemCounts: countBy(store.state.items, (item) => item.systemId),
+    activityOperations,
+    productionGapCounts,
+    promotionBlockers,
+    remediationQueue: systemOperationsRemediationQueue(productionGapCounts, activityOperations),
+    systems
+  };
+}
+
+function systemOperationsActionReasons(issueCount: number, productionReadiness: ReturnType<typeof systemProductionReadinessSummary>, activityOperations: ReturnType<typeof systemActivityOperationsSummary>) {
+  return [
+    issueCount > 0 ? "system_content_issues" : undefined,
+    productionReadiness.actionRequired ? "non_primary_runtime_in_use" : undefined,
+    activityOperations.nonPrimaryActivityCount > 0 ? "non_primary_runtime_recent_activity" : undefined
+  ].filter(
+    (reason): reason is string => Boolean(reason)
+  );
+}
+
+function systemOperationsSummary(store: StateStore, system: (typeof installedSystems)[number]) {
+  const templates = characterTemplatesForSystem(system.id);
+  const compendium = compendiumEntriesForSystem(system.id);
+  const threats = encounterThreatsForSystem(system.id);
+  const activeCampaigns = store.state.campaigns.filter((campaign) => (campaign.defaultSystemId ?? DEFAULT_SYSTEM_ID) === system.id);
+  const actors = store.state.actors.filter((actor) => actor.systemId === system.id);
+  const items = store.state.items.filter((item) => item.systemId === system.id);
+  const issues = systemOperationsIssues(system, templates.length, compendium.length, threats.length);
+  const readiness = systemProductionReadiness(system.id, activeCampaigns.length, actors.length, items.length);
+  const capabilityEvidence = systemCapabilityEvidence(system.id, compendium, threats);
+  const coverage = {
+    characterTemplateCount: templates.length,
+    compendiumEntryCount: compendium.length,
+    compendiumTypeCounts: countBy([...compendium] as Array<{ type: string }>, (entry) => entry.type),
+    conditionEntryCount: compendium.filter((entry) => entry.type === "condition").length,
+    encounterThreatCount: threats.length,
+    supportsOrigins: capabilityEvidence.origins.count > 0,
+    supportsMonsterCreation: capabilityEvidence.monsterCreation.count > 0,
+    supportsEquipmentPurchase: capabilityEvidence.equipmentPurchase.count > 0,
+    supportsCharacterImport: true,
+    supportsAdvancement: true,
+    supportsRest: true,
+    supportsEncounterPlanning: threats.length > 0,
+    supportsCompendium: compendium.length > 0,
+    capabilityEvidence
+  };
+  const productionCapability = systemProductionCapabilitySummary(coverage);
+  const productionGaps = systemProductionGaps(readiness, coverage, issues);
+  return {
+    id: system.id,
+    name: system.name,
+    version: system.version,
+    compatibleCore: system.compatibleCore,
+    readiness,
+    usage: {
+      activeCampaignCount: activeCampaigns.length,
+      actorCount: actors.length,
+      itemCount: items.length,
+      actorTypeCounts: countBy(actors, (actor) => actor.type),
+      campaignIds: activeCampaigns.map((campaign) => campaign.id)
+    },
+    manifest: {
+      hasClientEntrypoint: Boolean(system.entrypoints.client),
+      hasServerEntrypoint: Boolean(system.entrypoints.server),
+      hasActorSchema: Boolean(system.schemas.actor),
+      hasItemSchema: Boolean(system.schemas.item),
+      permissionCount: system.permissions.length,
+      permissions: [...system.permissions]
+    },
+    coverage,
+    productionCapability,
+    issues,
+    productionGaps
+  };
+}
+
+function systemProductionCapabilitySummary(coverage: {
+  characterTemplateCount: number;
+  compendiumEntryCount: number;
+  conditionEntryCount: number;
+  encounterThreatCount: number;
+  supportsOrigins: boolean;
+  supportsMonsterCreation: boolean;
+  supportsEquipmentPurchase: boolean;
+  supportsCharacterImport: boolean;
+  supportsAdvancement: boolean;
+  supportsRest: boolean;
+  supportsEncounterPlanning: boolean;
+  supportsCompendium: boolean;
+  capabilityEvidence?: ReturnType<typeof systemCapabilityEvidence>;
+}) {
+  const capabilities = [
+    {
+      code: "character_templates",
+      label: "Character templates",
+      supported: coverage.characterTemplateCount > 0,
+      evidenceCount: coverage.characterTemplateCount,
+      remediation: "Add at least one production-ready character template with starting data and items."
+    },
+    {
+      code: "compendium",
+      label: "Compendium content",
+      supported: coverage.supportsCompendium,
+      evidenceCount: coverage.compendiumEntryCount,
+      remediation: "Add bounded compendium entries for actions, gear, conditions, and runtime-specific resources."
+    },
+    {
+      code: "conditions",
+      label: "Condition catalog",
+      supported: coverage.conditionEntryCount > 0,
+      evidenceCount: coverage.conditionEntryCount,
+      remediation: "Add condition entries plus apply/remove behavior and sheet/roll integration."
+    },
+    {
+      code: "encounter_threats",
+      label: "Encounter threats",
+      supported: coverage.encounterThreatCount > 0,
+      evidenceCount: coverage.encounterThreatCount,
+      remediation: "Add threat or bestiary entries with encounter math metadata."
+    },
+    {
+      code: "origin_builder",
+      label: "Origin builder",
+      supported: coverage.supportsOrigins,
+      evidenceCount: coverage.capabilityEvidence?.origins.count ?? 0,
+      evidenceSamples: coverage.capabilityEvidence?.origins.samples ?? [],
+      remediation: "Add guided background/species or equivalent origin choices with validation."
+    },
+    {
+      code: "monster_creation",
+      label: "Monster creation",
+      supported: coverage.supportsMonsterCreation,
+      evidenceCount: coverage.capabilityEvidence?.monsterCreation.count ?? 0,
+      evidenceSamples: coverage.capabilityEvidence?.monsterCreation.samples ?? [],
+      remediation: "Wire threat entries into adversary actor creation and action quick rolls."
+    },
+    {
+      code: "equipment_purchase",
+      label: "Equipment purchase",
+      supported: coverage.supportsEquipmentPurchase,
+      evidenceCount: coverage.capabilityEvidence?.equipmentPurchase.count ?? 0,
+      evidenceSamples: coverage.capabilityEvidence?.equipmentPurchase.samples ?? [],
+      remediation: "Add priced gear, currency mutation, inventory creation, and insufficient-funds checks."
+    },
+    {
+      code: "character_import",
+      label: "Character import",
+      supported: coverage.supportsCharacterImport,
+      evidenceCount: coverage.supportsCharacterImport ? 1 : 0,
+      remediation: "Add normalized import with compendium-backed items and conditions."
+    },
+    {
+      code: "advancement",
+      label: "Advancement",
+      supported: coverage.supportsAdvancement,
+      evidenceCount: coverage.supportsAdvancement ? 1 : 0,
+      remediation: "Add guided advancement options and validated level-up mutations."
+    },
+    {
+      code: "rest_recovery",
+      label: "Rest recovery",
+      supported: coverage.supportsRest,
+      evidenceCount: coverage.supportsRest ? 1 : 0,
+      remediation: "Add short/long rest recovery for HP and system resources."
+    },
+    {
+      code: "encounter_planning",
+      label: "Encounter planning",
+      supported: coverage.supportsEncounterPlanning,
+      evidenceCount: coverage.supportsEncounterPlanning ? coverage.encounterThreatCount : 0,
+      remediation: "Add party budget math, threat selection, and optional encounter persistence."
+    }
+  ];
+  const supportedCapabilityCount = capabilities.filter((capability) => capability.supported).length;
+  return {
+    capabilityCount: capabilities.length,
+    supportedCapabilityCount,
+    coverageRate: ratio(supportedCapabilityCount, capabilities.length),
+    missingCapabilities: capabilities.filter((capability) => !capability.supported).map((capability) => ({
+      code: capability.code,
+      label: capability.label,
+      remediation: capability.remediation
+    })),
+    capabilities
+  };
+}
+
+function systemActivityOperationsSummary(
+  store: StateStore,
+  systems: Array<{ id: string; name: string; readiness: ReturnType<typeof systemProductionReadiness> }>
+) {
+  const systemById = new Map(systems.map((system) => [system.id, system]));
+  const activityLogs = store.state.auditLogs
+    .filter((log) => log.action === "system.actor.roll" || log.action === "system.actor.rest" || log.action === "system.actor.advance")
+    .sort(sortTimestampsDesc);
+  const rows = activityLogs
+    .map((log) => {
+      const after = isRecord(log.after) ? log.after : {};
+      const systemId = typeof after.systemId === "string" ? after.systemId : undefined;
+      const system = systemId ? systemById.get(systemId) : undefined;
+      return {
+        auditLogId: log.id,
+        action: log.action,
+        campaignId: log.campaignId,
+        actorUserId: log.actorUserId,
+        systemId,
+        systemName: system?.name,
+        productionReady: system?.readiness.productionReady ?? false,
+        actorId: typeof after.actorId === "string" ? after.actorId : log.targetId,
+        actorType: typeof after.actorType === "string" ? after.actorType : undefined,
+        rollId: typeof after.rollId === "string" ? after.rollId : undefined,
+        label: typeof after.label === "string" ? after.label : undefined,
+        restType: typeof after.restType === "string" ? after.restType : undefined,
+        optionId: typeof after.optionId === "string" ? after.optionId : undefined,
+        consumeResources: after.consumeResources === true,
+        applyEffect: after.applyEffect === true,
+        hasUsage: after.hasUsage === true,
+        hasEffect: after.hasEffect === true,
+        createdAt: log.createdAt
+      };
+    })
+    .filter((row) => row.systemId);
+  const nonPrimaryRows = rows.filter((row) => !row.productionReady);
+  const systemsWithRecentActivity = [...new Set(nonPrimaryRows.map((row) => row.systemId).filter((systemId): systemId is string => Boolean(systemId)))];
+  return {
+    activityCount: rows.length,
+    nonPrimaryActivityCount: nonPrimaryRows.length,
+    systemsWithRecentActivity,
+    actionCounts: countBy(rows, (row) => row.action),
+    nonPrimaryActionCounts: countBy(nonPrimaryRows, (row) => row.action),
+    systemCounts: countBy(rows, (row) => row.systemId ?? "unknown"),
+    nonPrimarySystemCounts: countBy(nonPrimaryRows, (row) => row.systemId ?? "unknown"),
+    recentActivity: rows.slice(0, 12),
+    recentNonPrimaryActivity: nonPrimaryRows.slice(0, 12)
+  };
+}
+
+function systemCapabilityEvidence(systemId: string, compendium: ReadonlyArray<{ id: string; name: string; data?: Record<string, unknown> }>, threats: ReadonlyArray<{ id: string; name: string }>) {
+  if (systemId !== DND_5E_SRD_SYSTEM_ID) {
+    return {
+      origins: { count: 0, samples: [] as string[] },
+      monsterCreation: { count: 0, samples: [] as string[] },
+      equipmentPurchase: { count: 0, samples: [] as string[] }
+    };
+  }
+  const origins = dnd5eSrdCharacterOrigins();
+  const monsterCreationThreats = threats.filter((threat) => Boolean(dnd5eSrdMonsterActorData(threat.id)));
+  const purchasableEntries = compendium.filter((entry) => {
+    const data = entry.data ?? {};
+    return Number.isFinite(Number(data.costGp)) && Number(data.costGp) >= 0 && typeof data.equipmentCategory === "string";
+  });
+  return {
+    origins: {
+      count: origins.backgrounds.length + origins.species.length,
+      samples: [...origins.backgrounds.slice(0, 2).map((origin) => `background:${origin.id}`), ...origins.species.slice(0, 2).map((origin) => `species:${origin.id}`)]
+    },
+    monsterCreation: {
+      count: monsterCreationThreats.length,
+      samples: monsterCreationThreats.slice(0, 4).map((threat) => threat.id)
+    },
+    equipmentPurchase: {
+      count: purchasableEntries.length,
+      samples: purchasableEntries.slice(0, 4).map((entry) => entry.id ?? entry.name ?? "unknown")
+    }
+  };
+}
+
+function systemProductionGaps(
+  readiness: ReturnType<typeof systemProductionReadiness>,
+  coverage: {
+    supportsOrigins: boolean;
+    supportsMonsterCreation: boolean;
+    supportsEquipmentPurchase: boolean;
+    supportsEncounterPlanning: boolean;
+    supportsCompendium: boolean;
+  },
+  issues: string[]
+) {
+  if (readiness.productionReady) return [];
+  return [
+    ...readiness.reasons,
+    ...issues,
+    coverage.supportsOrigins ? undefined : "missing_origin_builder",
+    coverage.supportsMonsterCreation ? undefined : "missing_monster_creation",
+    coverage.supportsEquipmentPurchase ? undefined : "missing_equipment_purchase",
+    coverage.supportsEncounterPlanning ? undefined : "missing_encounter_planning",
+    coverage.supportsCompendium ? undefined : "missing_compendium_support"
+  ].filter((gap): gap is string => Boolean(gap));
+}
+
+function systemProductionReadiness(systemId: string, activeCampaignCount: number, actorCount: number, itemCount: number) {
+  const productionReady = systemId === DND_5E_SRD_SYSTEM_ID;
+  const used = activeCampaignCount > 0 || actorCount > 0 || itemCount > 0;
+  return {
+    tier: productionReady ? "primary" : "demo",
+    productionReady,
+    actionRequired: !productionReady && used,
+    reasons: productionReady || !used ? [] : ["non_primary_runtime_in_use"]
+  };
+}
+
+function systemProductionReadinessSummary(
+  systems: Array<{
+    id: string;
+    readiness: ReturnType<typeof systemProductionReadiness>;
+    usage: { activeCampaignCount: number; actorCount: number; itemCount: number };
+  }>
+) {
+  const nonPrimaryInUse = systems.filter((system) => system.readiness.actionRequired);
+  return {
+    primarySystemId: DND_5E_SRD_SYSTEM_ID,
+    productionReadySystemCount: systems.filter((system) => system.readiness.productionReady).length,
+    demoSystemCount: systems.filter((system) => !system.readiness.productionReady).length,
+    nonPrimaryActiveCampaignCount: nonPrimaryInUse.reduce((total, system) => total + system.usage.activeCampaignCount, 0),
+    nonPrimaryActorCount: nonPrimaryInUse.reduce((total, system) => total + system.usage.actorCount, 0),
+    nonPrimaryItemCount: nonPrimaryInUse.reduce((total, system) => total + system.usage.itemCount, 0),
+    systemsNeedingProductionDepth: nonPrimaryInUse.map((system) => system.id),
+    actionRequired: nonPrimaryInUse.length > 0
+  };
+}
+
+function systemProductionGapCounts(
+  systems: Array<{
+    id: string;
+    name: string;
+    productionGaps: string[];
+    usage: { activeCampaignCount: number; actorCount: number; itemCount: number };
+  }>
+) {
+  const gapCounts = new Map<
+    string,
+    {
+      code: string;
+      count: number;
+      systems: Array<{ id: string; name: string; activeCampaignCount: number; actorCount: number; itemCount: number }>;
+    }
+  >();
+  for (const system of systems) {
+    for (const gap of system.productionGaps) {
+      const entry = gapCounts.get(gap) ?? { code: gap, count: 0, systems: [] };
+      entry.count += 1;
+      entry.systems.push({
+        id: system.id,
+        name: system.name,
+        activeCampaignCount: system.usage.activeCampaignCount,
+        actorCount: system.usage.actorCount,
+        itemCount: system.usage.itemCount
+      });
+      gapCounts.set(gap, entry);
+    }
+  }
+  return [...gapCounts.values()]
+    .sort((left, right) => right.count - left.count || left.code.localeCompare(right.code))
+    .slice(0, 8)
+    .map((entry) => {
+      const detail = systemProductionGapDetail(entry.code);
+      return {
+        ...entry,
+        ...detail,
+        systems: entry.systems
+          .sort((left, right) => right.activeCampaignCount + right.actorCount + right.itemCount - (left.activeCampaignCount + left.actorCount + left.itemCount) || left.name.localeCompare(right.name))
+          .slice(0, 4)
+      };
+    });
+}
+
+function systemProductionGapDetail(code: string): { severity: "warning" | "critical"; message: string; remediation: string } {
+  switch (code) {
+    case "non_primary_runtime_in_use":
+      return {
+        severity: "critical",
+        message: "A demo rules runtime is being used by live campaign data.",
+        remediation: "Migrate the campaign or harden that runtime to primary-system depth before treating the deployment as Roll20-class."
+      };
+    case "missing_origin_builder":
+      return {
+        severity: "warning",
+        message: "The runtime does not expose guided character origin choices.",
+        remediation: "Add background/species or equivalent origin catalogs and creation-time validation."
+      };
+    case "missing_monster_creation":
+      return {
+        severity: "warning",
+        message: "The runtime cannot create adversary actors from threat or bestiary entries.",
+        remediation: "Add threat stat blocks plus actor creation and action quick-roll wiring."
+      };
+    case "missing_equipment_purchase":
+      return {
+        severity: "warning",
+        message: "The runtime lacks a first-class equipment purchase flow.",
+        remediation: "Add priced compendium entries, currency mutation, inventory creation, and insufficient-funds checks."
+      };
+    case "missing_encounter_planning":
+      return {
+        severity: "warning",
+        message: "The runtime has no encounter-planning threat budget support.",
+        remediation: "Add threat catalogs, party budget math, and optional encounter persistence."
+      };
+    case "missing_compendium_support":
+      return {
+        severity: "warning",
+        message: "The runtime lacks compendium-backed content.",
+        remediation: "Add bounded compendium entries for actions, gear, conditions, and runtime-specific resources."
+      };
+    default:
+      return {
+        severity: "warning",
+        message: "The runtime has an unresolved manifest or content issue.",
+        remediation: "Inspect the system manifest, schemas, templates, compendium entries, and encounter threats for this gap code."
+      };
+  }
+}
+
+function systemPromotionBlockers(
+  systems: Array<{
+    id: string;
+    name: string;
+    readiness: ReturnType<typeof systemProductionReadiness>;
+    usage: { activeCampaignCount: number; actorCount: number; itemCount: number };
+    productionGaps: string[];
+  }>
+) {
+  return systems
+    .filter((system) => !system.readiness.productionReady && system.productionGaps.length > 0)
+    .map((system) => {
+      const blockers = system.productionGaps.map((gap) => ({ code: gap, ...systemProductionGapDetail(gap) }));
+      return {
+        systemId: system.id,
+        name: system.name,
+        activeCampaignCount: system.usage.activeCampaignCount,
+        actorCount: system.usage.actorCount,
+        itemCount: system.usage.itemCount,
+        blockerCount: blockers.length,
+        criticalBlockerCount: blockers.filter((blocker) => blocker.severity === "critical").length,
+        blockers
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.criticalBlockerCount - left.criticalBlockerCount ||
+        right.activeCampaignCount + right.actorCount + right.itemCount - (left.activeCampaignCount + left.actorCount + left.itemCount) ||
+        right.blockerCount - left.blockerCount ||
+        left.name.localeCompare(right.name)
+    )
+    .slice(0, 8);
+}
+
+function systemOperationsRemediationQueue(gapCounts: ReturnType<typeof systemProductionGapCounts>, activityOperations?: ReturnType<typeof systemActivityOperationsSummary>) {
+  const remediations = gapCounts
+    .map((gap) => ({
+      code: gap.code,
+      severity: gap.severity,
+      action: gap.remediation,
+      affectedCount: gap.count,
+      message: gap.message,
+      samples: gap.systems.map((system) => ({
+        systemId: system.id,
+        name: system.name,
+        activeCampaignCount: system.activeCampaignCount,
+        actorCount: system.actorCount,
+        itemCount: system.itemCount
+      }))
+    }))
+  if (activityOperations && activityOperations.nonPrimaryActivityCount > 0) {
+    remediations.push({
+      code: "non_primary_runtime_recent_activity",
+      severity: "critical",
+      action: "Review recent demo-runtime rolls, rests, and advancement before promoting or migrating those campaigns.",
+      affectedCount: activityOperations.nonPrimaryActivityCount,
+      message: "A demo rules runtime is actively handling recent table operations.",
+      samples: activityOperations.recentNonPrimaryActivity.slice(0, 4).map((activity) => ({
+        systemId: activity.systemId ?? "unknown",
+        name: activity.systemName ?? activity.systemId ?? "Unknown system",
+        activeCampaignCount: activity.campaignId ? 1 : 0,
+        actorCount: activity.actorId ? 1 : 0,
+        itemCount: 0,
+        action: activity.action,
+        actorId: activity.actorId,
+        createdAt: activity.createdAt
+      }))
+    });
+  }
+  return remediations
+    .sort((left, right) => (right.severity === "critical" ? 2 : 1) - (left.severity === "critical" ? 2 : 1) || right.affectedCount - left.affectedCount || left.code.localeCompare(right.code))
+    .slice(0, 8);
+}
+
+function systemOperationsIssues(system: (typeof installedSystems)[number], templateCount: number, compendiumCount: number, threatCount: number): string[] {
+  return [
+    system.entrypoints.client ? undefined : "missing_client_entrypoint",
+    system.entrypoints.server ? undefined : "missing_server_entrypoint",
+    system.schemas.actor ? undefined : "missing_actor_schema",
+    system.schemas.item ? undefined : "missing_item_schema",
+    templateCount > 0 ? undefined : "missing_character_templates",
+    compendiumCount > 0 ? undefined : "missing_compendium_entries",
+    threatCount > 0 ? undefined : "missing_encounter_threats"
+  ].filter((issue): issue is string => Boolean(issue));
+}
+
+async function syncPluginRegistriesForRequest(pluginRegistry: PluginRuntimeRegistry, registryUrl: string | undefined, reply: FastifyReply) {
+  const configuredRegistries = configuredPluginRegistryUrls();
+  if (!configuredRegistries.length) return badRequest(reply, "No plugin registries are configured");
+  const requestedRegistry = registryUrl ? normalizeConfiguredPluginRegistryUrl(registryUrl) : undefined;
+  if (registryUrl && !requestedRegistry) return badRequest(reply, "Plugin registryUrl must be a valid http or https URL");
+  if (requestedRegistry && !configuredRegistries.includes(requestedRegistry)) return forbidden(reply, "Plugin registryUrl is not configured for this server");
+  const registryUrls = requestedRegistry ? [requestedRegistry] : configuredRegistries;
+  const registries = [];
+  for (const url of registryUrls) registries.push(await pluginRegistry.syncRemoteRegistry(url));
+  const imported = registries.flatMap((registry) => registry.imported);
+  return {
+    syncedAt: nowIso(),
+    registries,
+    plugins: imported
+  };
+}
+
+function pluginOperationalInstall(store: StateStore, pluginRegistry: PluginRuntimeRegistry, grant: PermissionGrant) {
+  const installedVersion = pluginVersionFromGrant(grant);
+  const plugin = pluginRegistry.find(grant.subjectId, installedVersion);
+  const storageEntryCount = store.state.pluginStorage.filter((entry) => entry.campaignId === grant.campaignId && entry.pluginId === grant.subjectId).length;
+  if (!plugin) {
+    return {
+      campaignId: grant.campaignId,
+      pluginId: grant.subjectId,
+      installedVersion,
+      status: "missing_package" as const,
+      grantedPermissions: [...grant.permissions],
+      missingManifestPermissions: [],
+      storageEntryCount,
+      issues: ["installed_plugin_package_missing"]
+    };
+  }
+  const compatibleCore = {
+    range: plugin.compatibleCore,
+    coreVersion: CORE_COMPATIBILITY_VERSION,
+    satisfied: pluginCoreRangeSatisfied(plugin.compatibleCore)
+  };
+  const reviewBlock = pluginReviewInstallBlock(store, plugin);
+  const trustBlock = plugin.trust.installable ? undefined : pluginTrustErrorMessage(plugin);
+  const missingManifestPermissions = plugin.permissions.filter((permission) => !grant.permissions.includes(permission));
+  const compatibilityBlock = compatibleCore.satisfied ? undefined : `Plugin requires core ${plugin.compatibleCore}; server core is ${CORE_COMPATIBILITY_VERSION}`;
+  const issues = [trustBlock ? "trust_policy_blocked" : undefined, reviewBlock ? "marketplace_review_blocked" : undefined, missingManifestPermissions.length > 0 ? "manifest_permission_not_granted" : undefined, compatibilityBlock ? "core_compatibility_drift" : undefined].filter((issue): issue is string => Boolean(issue));
+  return {
+    campaignId: grant.campaignId,
+    pluginId: plugin.id,
+    name: plugin.name,
+    installedVersion: plugin.version,
+    latestVersion: plugin.distribution.latestVersion,
+    updateAvailable: plugin.version !== plugin.distribution.latestVersion,
+    status: trustBlock || reviewBlock ? ("blocked" as const) : ("healthy" as const),
+    grantedPermissions: [...grant.permissions],
+    requestedPermissions: [...plugin.permissions],
+    missingManifestPermissions,
+    compatibleCore,
+    source: { ...plugin.source },
+    trust: { ...plugin.trust, errors: [...plugin.trust.errors], signature: plugin.trust.signature ? { ...plugin.trust.signature } : undefined },
+    marketplaceReview: publicPluginReviewInfo(plugin, pluginReviewForDisplay(store, plugin)),
+    storageEntryCount,
+    issues,
+    blocks: [trustBlock, reviewBlock, compatibilityBlock].filter((block): block is string => Boolean(block))
+  };
+}
+
+function pluginCoreRangeSatisfied(range: string): boolean {
+  const normalized = range.trim();
+  if (!normalized || normalized === "*" || normalized.toLowerCase() === "any") return true;
+  const constraints = normalized.split(/\s+/).filter(Boolean);
+  return constraints.every((constraint) => pluginCoreConstraintSatisfied(constraint));
+}
+
+function pluginCoreConstraintSatisfied(constraint: string): boolean {
+  const match = constraint.match(/^(>=|>|<=|<|=|\^|~)?\s*(\d+(?:\.\d+){0,2})$/);
+  if (!match) return false;
+  const operator = match[1] ?? "=";
+  const version = match[2]!;
+  const comparison = compareVersionAscending(CORE_COMPATIBILITY_VERSION, version);
+  if (operator === ">=") return comparison >= 0;
+  if (operator === ">") return comparison > 0;
+  if (operator === "<=") return comparison <= 0;
+  if (operator === "<") return comparison < 0;
+  if (operator === "^" || operator === "~") {
+    const [coreMajor, coreMinor] = semverPartsLocal(CORE_COMPATIBILITY_VERSION);
+    const [rangeMajor, rangeMinor] = semverPartsLocal(version);
+    return coreMajor === rangeMajor && (operator === "^" || coreMinor === rangeMinor) && comparison >= 0;
+  }
+  return comparison === 0;
+}
+
+function compareVersionAscending(left: string, right: string): number {
+  const leftParts = semverPartsLocal(left);
+  const rightParts = semverPartsLocal(right);
+  for (let index = 0; index < 3; index++) {
+    const diff = leftParts[index]! - rightParts[index]!;
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function semverPartsLocal(version: string): [number, number, number] {
+  const [major = "0", minor = "0", patch = "0"] = version.split(".", 3);
+  return [Number.parseInt(major, 10) || 0, Number.parseInt(minor, 10) || 0, Number.parseInt(patch, 10) || 0];
 }
 
 function publicPluginReviewInfo(plugin: LoadedPlugin, review: PluginReview): AdminPluginReviewInfo {
@@ -6609,7 +13767,7 @@ function createTemplateItems(campaignId: string, actor: Actor, template: Charact
         actorId: actor.id,
         type: entry.type,
         name: entry.name,
-        data: { ...cloneRecord(entry.data), compendiumId: entry.id, quantity: templateItem.quantity ?? 1 }
+        data: { ...cloneRecord(entry.data), ...(templateItem.data ? cloneRecord(templateItem.data) : {}), compendiumId: entry.id, quantity: templateItem.quantity ?? 1 }
       }) satisfies Item
     ];
   });
@@ -6633,7 +13791,7 @@ function createImportedItems(campaignId: string, actor: Actor, imported: Charact
         actorId: actor.id,
         type: entry.type,
         name: entry.name,
-        data: { ...cloneRecord(entry.data), compendiumId: entry.id, quantity: importedItem.quantity ?? 1 }
+        data: { ...cloneRecord(entry.data), ...(importedItem.data ? cloneRecord(importedItem.data) : {}), compendiumId: entry.id, quantity: importedItem.quantity ?? 1 }
       }) satisfies Item
     ];
   });
@@ -6978,6 +14136,138 @@ function assetTrustWebhookTimeoutMs(): number {
   return Number.isFinite(configured) && configured > 0 ? Math.min(Math.floor(configured), 30_000) : 5_000;
 }
 
+function assetRuntimeNumberEnv(name: string): { name: string; configured: boolean; value?: number } {
+  const rawValue = process.env[name]?.trim();
+  if (!rawValue) return { name, configured: false };
+  const value = Number(rawValue);
+  return Number.isFinite(value) && value >= 0 ? { name, configured: true, value } : { name, configured: true };
+}
+
+function invalidAssetRuntimeConfigEnvNames(): string[] {
+  return [
+    "OTTE_ASSET_QUOTA_BYTES",
+    "OTTE_ASSET_RETENTION_DAYS",
+    "OTTE_ASSET_URL_TTL_SECONDS",
+    "OTTE_ASSET_URL_MAX_TTL_SECONDS",
+    "OTTE_ASSET_CDN_PURGE_TIMEOUT_MS",
+    "OTTE_ASSET_TRUST_TIMEOUT_MS",
+    "OTTE_ASSET_CLEANUP_GRACE_DAYS",
+    "OTTE_ASSET_CLEANUP_INTERVAL_SECONDS"
+  ]
+    .map(assetRuntimeNumberEnv)
+    .filter((item) => item.configured && item.value === undefined)
+    .map((item) => item.name);
+}
+
+function assetRuntimeUrlEnv(name: string): { name: string; configured: boolean; valid: boolean } {
+  const rawValue = process.env[name]?.trim();
+  if (!rawValue) return { name, configured: false, valid: true };
+  try {
+    const url = new URL(rawValue);
+    return { name, configured: true, valid: url.protocol === "http:" || url.protocol === "https:" };
+  } catch {
+    return { name, configured: true, valid: false };
+  }
+}
+
+function isLocalhostRuntimeUrl(url: URL): boolean {
+  return url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1";
+}
+
+function invalidAssetRuntimeUrlEnvNames(): string[] {
+  return [
+    "OTTE_ASSET_CDN_BASE_URL",
+    "OTTE_PUBLIC_URL",
+    "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL",
+    "OTTE_ASSET_TRUST_WEBHOOK_URL"
+  ]
+    .map(assetRuntimeUrlEnv)
+    .filter((item) => item.configured && !item.valid)
+    .map((item) => item.name);
+}
+
+function insecureProductionAssetRuntimeUrlEnvNames(): string[] {
+  if (process.env.NODE_ENV !== "production") return [];
+  return [
+    "OTTE_ASSET_CDN_BASE_URL",
+    "OTTE_PUBLIC_URL",
+    "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL",
+    "OTTE_ASSET_TRUST_WEBHOOK_URL"
+  ].filter((name) => {
+    const rawValue = process.env[name]?.trim();
+    if (!rawValue) return false;
+    try {
+      const url = new URL(rawValue);
+      return url.protocol === "http:" && !isLocalhostRuntimeUrl(url);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function assetRuntimeTokenMissingEnvNames(): string[] {
+  if (process.env.NODE_ENV !== "production") return [];
+  const tokenPairs = [
+    { urlEnv: "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL", tokenEnv: "OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN" },
+    { urlEnv: "OTTE_ASSET_TRUST_WEBHOOK_URL", tokenEnv: "OTTE_ASSET_TRUST_WEBHOOK_TOKEN" }
+  ];
+  return tokenPairs
+    .filter(({ urlEnv, tokenEnv }) => {
+      const urlConfig = assetRuntimeUrlEnv(urlEnv);
+      return urlConfig.configured && urlConfig.valid && !envText(tokenEnv);
+    })
+    .map(({ tokenEnv }) => tokenEnv);
+}
+
+function configuredAssetStorageProvider(): string {
+  return (process.env.OTTE_ASSET_STORAGE ?? "local").toLowerCase();
+}
+
+function assetS3RuntimeEnvRelevant(activeStorage: AssetStorage): boolean {
+  const configuredProvider = configuredAssetStorageProvider();
+  return (
+    activeStorage.provider === "s3" &&
+    (configuredProvider === "s3" ||
+      configuredProvider === "minio" ||
+      Boolean(envText("OTTE_S3_BUCKET")) ||
+      Boolean(envText("OTTE_S3_ENDPOINT")) ||
+      Boolean(envText("OTTE_S3_ACCESS_KEY_ID")) ||
+      Boolean(envText("OTTE_S3_SECRET_ACCESS_KEY")))
+  );
+}
+
+function assetS3EndpointRuntimeConfig(): { configured: boolean; valid: boolean; insecureInProduction: boolean } {
+  const endpoint = envText("OTTE_S3_ENDPOINT");
+  if (!endpoint) return { configured: false, valid: true, insecureInProduction: false };
+  try {
+    const url = new URL(endpoint);
+    const valid = url.protocol === "http:" || url.protocol === "https:";
+    const insecureInProduction = process.env.NODE_ENV === "production" && url.protocol === "http:" && !isLocalhostRuntimeUrl(url);
+    return { configured: true, valid, insecureInProduction };
+  } catch {
+    return { configured: true, valid: false, insecureInProduction: false };
+  }
+}
+
+function assetS3RuntimeConfig(activeStorage: AssetStorage): AssetS3RuntimeConfig | undefined {
+  if (activeStorage.provider !== "s3" && configuredAssetStorageProvider() !== "s3" && configuredAssetStorageProvider() !== "minio") return undefined;
+  const endpoint = assetS3EndpointRuntimeConfig();
+  const accessKeyConfigured = Boolean(envText("OTTE_S3_ACCESS_KEY_ID"));
+  const secretKeyConfigured = Boolean(envText("OTTE_S3_SECRET_ACCESS_KEY"));
+  return {
+    configuredProvider: configuredAssetStorageProvider(),
+    active: activeStorage.provider === "s3",
+    bucketConfigured: Boolean(envText("OTTE_S3_BUCKET")),
+    endpointConfigured: endpoint.configured,
+    endpointValid: endpoint.valid,
+    endpointInsecureInProduction: endpoint.insecureInProduction,
+    regionConfigured: Boolean(envText("OTTE_S3_REGION")),
+    forcePathStyle: envBoolean("OTTE_S3_FORCE_PATH_STYLE", endpoint.configured),
+    explicitCredentialsConfigured: accessKeyConfigured && secretKeyConfigured,
+    partialExplicitCredentials: accessKeyConfigured !== secretKeyConfigured
+  };
+}
+
 function assetTrustFailClosed(): boolean {
   return envBoolean("OTTE_ASSET_TRUST_FAIL_CLOSED", true);
 }
@@ -7020,6 +14310,17 @@ interface AssetCleanupOptions extends AssetOperationOptions {
   graceDays?: number;
 }
 
+interface AssetIntegrityOptions extends AssetOperationOptions {
+  includeDeleted?: boolean;
+  includeExpired?: boolean;
+}
+
+interface AssetCdnPurgeOptions {
+  reason?: string;
+}
+
+type AssetCdnPurgeStatus = "purged" | "failed" | "not_configured";
+
 type AssetCleanupSchedulerTrigger = "startup" | "interval";
 
 interface AssetCleanupSchedulerRun {
@@ -7057,16 +14358,162 @@ interface AssetCleanupScheduler {
   status(): AssetCleanupSchedulerStatus;
 }
 
+type AssetStorageOperationsSummary = Record<string, unknown> & {
+  actionRequired: boolean;
+  actionReasons: string[];
+};
+
+type AssetStorageRuntimeInfo = Record<string, unknown> & {
+  provider: string;
+};
+
+type GlobalAssetStorageInfo = Record<string, unknown> & {
+  assetCount: number;
+  activeAssetCount: number;
+  usedBytes: number;
+  allBytes: number;
+  runtime: AssetStorageRuntimeInfo;
+  operations: AssetStorageOperationsSummary;
+};
+
 interface AssetOperationItem {
   assetId: string;
   name: string;
   campaignId: string;
   fromProvider?: string;
   toProvider?: string;
-  status: "migrated" | "deleted" | "planned" | "skipped" | "failed" | "missing_marked";
+  status: "migrated" | "deleted" | "planned" | "skipped" | "failed" | "missing_marked" | "archived";
   reason?: string;
   sizeBytes?: number;
   storage?: MapAsset["storage"];
+}
+
+interface AssetIntegrityItem {
+  assetId: string;
+  name: string;
+  campaignId: string;
+  provider: string;
+  status: "verified" | "missing" | "mismatched" | "cleanup_eligible" | "skipped" | "failed";
+  reason?: string;
+  expectedSizeBytes?: number;
+  actualSizeBytes?: number;
+  expectedChecksum?: string;
+  actualChecksum?: string;
+  storage?: MapAsset["storage"];
+}
+
+type AssetIntegrityReport = Record<string, unknown> & {
+  provider: string;
+  assetCount: number;
+  verified: number;
+  missing: number;
+  mismatched: number;
+  cleanupEligible: number;
+  skipped: number;
+  failed: number;
+  actionRequired: number;
+  actionReasons: string[];
+  remediationQueue: Array<{
+    code: string;
+    severity: "warning" | "error";
+    action: string;
+    affectedCount: number;
+    samples?: Array<Record<string, unknown>>;
+  }>;
+  healthy: boolean;
+  results: AssetIntegrityItem[];
+};
+
+async function purgeAssetCdnCache(store: StateStore, asset: MapAsset, adminUserId: string, options: AssetCdnPurgeOptions): Promise<Record<string, unknown> & { status: AssetCdnPurgeStatus }> {
+  const webhookUrl = envText("OTTE_ASSET_CDN_PURGE_WEBHOOK_URL");
+  const cdnUrl = assetCdnBlobUrl(asset);
+  const reason = sanitizeAssetCdnPurgeReason(options.reason);
+  const base = {
+    assetId: asset.id,
+    campaignId: asset.campaignId,
+    name: asset.name,
+    cdnUrl,
+    reason
+  };
+  if (!webhookUrl) {
+    appendServerAuditLog(store, adminUserId, {
+      campaignId: asset.campaignId,
+      action: "admin.asset.cdnPurge",
+      targetType: "asset",
+      targetId: asset.id,
+      after: { status: "not_configured", cdnConfigured: Boolean(envText("OTTE_ASSET_CDN_BASE_URL")) }
+    });
+    return { ...base, status: "not_configured", error: "asset_cdn_purge_not_configured" };
+  }
+
+  try {
+    await postAssetCdnPurgeWebhook(webhookUrl, asset, adminUserId, reason, cdnUrl);
+    appendServerAuditLog(store, adminUserId, {
+      campaignId: asset.campaignId,
+      action: "admin.asset.cdnPurge",
+      targetType: "asset",
+      targetId: asset.id,
+      after: { status: "purged", cdnUrl, reason }
+    });
+    return { ...base, status: "purged", purgedAt: nowIso() };
+  } catch (error) {
+    const message = errorMessage(error).slice(0, 500);
+    appendServerAuditLog(store, adminUserId, {
+      campaignId: asset.campaignId,
+      action: "admin.asset.cdnPurge",
+      targetType: "asset",
+      targetId: asset.id,
+      after: { status: "failed", cdnUrl, reason, error: message }
+    });
+    return { ...base, status: "failed", error: message };
+  }
+}
+
+async function postAssetCdnPurgeWebhook(webhookUrl: string, asset: MapAsset, adminUserId: string, reason: string | undefined, cdnUrl: string | undefined): Promise<void> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  const token = envText("OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN");
+  if (token) headers.authorization = `Bearer ${token}`;
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers,
+    signal: AbortSignal.timeout(assetCdnPurgeWebhookTimeoutMs()),
+    body: JSON.stringify({
+      assetId: asset.id,
+      campaignId: asset.campaignId,
+      name: asset.name,
+      mimeType: asset.mimeType,
+      sizeBytes: asset.sizeBytes,
+      checksum: asset.checksum,
+      blobPath: `/api/v1/assets/${asset.id}/blob`,
+      cdnUrl,
+      lifecycleStatus: asset.lifecycle?.status ?? "active",
+      reason,
+      requestedByUserId: adminUserId,
+      requestedAt: nowIso()
+    })
+  });
+  if (!response.ok) throw new Error(`asset_cdn_purge_http_${response.status}`);
+}
+
+function assetCdnBlobUrl(asset: MapAsset): string | undefined {
+  const cdnBaseUrl = envText("OTTE_ASSET_CDN_BASE_URL");
+  if (!cdnBaseUrl) return undefined;
+  return `${cdnBaseUrl.replace(/\/+$/, "")}/api/v1/assets/${asset.id}/blob`;
+}
+
+function sanitizeAssetCdnPurgeReason(reason: string | undefined): string | undefined {
+  const value = reason?.replace(/\s+/g, " ").trim();
+  return value ? value.slice(0, 160) : undefined;
+}
+
+function sanitizeAssetQuarantineReason(reason: string | undefined): string | undefined {
+  const value = reason?.replace(/\s+/g, " ").trim();
+  return value ? value.slice(0, 160) : undefined;
+}
+
+function assetCdnPurgeWebhookTimeoutMs(): number {
+  const configured = Number(process.env.OTTE_ASSET_CDN_PURGE_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? Math.min(Math.max(Math.floor(configured), 500), 30_000) : 5_000;
 }
 
 async function migrateStoredAssets(store: StateStore, targetStorage: AssetStorage, uploadDir: string, options: AssetMigrationOptions): Promise<Record<string, unknown>> {
@@ -7220,6 +14667,264 @@ async function cleanupStoredAssets(store: StateStore, activeStorage: AssetStorag
   };
 }
 
+async function quarantineAssetIntegrityFailures(store: StateStore, activeStorage: AssetStorage, uploadDir: string, options: AssetOperationOptions & { reason?: string }, adminUserId: string): Promise<Record<string, unknown>> {
+  const integrity = await auditStoredAssetIntegrity(store, activeStorage, uploadDir, {
+    campaignId: options.campaignId,
+    assetIds: options.assetIds,
+    includeDeleted: false,
+    includeExpired: false
+  });
+  const actionable = new Map(integrity.results.filter((item) => item.status === "missing" || item.status === "mismatched").map((item) => [item.assetId, item]));
+  const assets = selectAssetOperationTargets(store, options);
+  const results: AssetOperationItem[] = [];
+  const reason = sanitizeAssetQuarantineReason(options.reason) ?? "asset_integrity_failure";
+  let archived = 0;
+  let planned = 0;
+  let skipped = 0;
+  let failed = 0;
+  let changed = false;
+
+  for (const asset of assets) {
+    const integrityItem = actionable.get(asset.id);
+    const base = assetOperationBase(asset, asset.storage?.provider ?? "unmanaged", activeStorage.provider);
+    if (!integrityItem) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "no_integrity_failure" });
+      continue;
+    }
+    if (asset.lifecycle?.status === "deleted") {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "deleted_asset" });
+      continue;
+    }
+    if (asset.lifecycle?.status === "archived") {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "already_archived" });
+      continue;
+    }
+    if (options.dryRun) {
+      planned++;
+      results.push({ ...base, status: "planned", reason: integrityItem.reason ?? integrityItem.status });
+      continue;
+    }
+
+    try {
+      asset.lifecycle = {
+        status: "archived",
+        expiresAt: asset.lifecycle?.expiresAt,
+        updatedAt: nowIso(),
+        updatedByUserId: adminUserId,
+        reason
+      };
+      asset.updatedAt = nowIso();
+      changed = true;
+      archived++;
+      results.push({ ...base, status: "archived", reason: integrityItem.reason ?? integrityItem.status });
+    } catch (error) {
+      failed++;
+      results.push({ ...base, status: "failed", reason: errorMessage(error) });
+    }
+  }
+
+  return {
+    dryRun: Boolean(options.dryRun),
+    assetCount: assets.length,
+    matched: actionable.size,
+    archived,
+    planned,
+    skipped,
+    failed,
+    changed,
+    reason,
+    results
+  };
+}
+
+function assetOperationAuditSummary(result: Record<string, unknown>) {
+  return {
+    dryRun: result.dryRun,
+    assetCount: result.assetCount,
+    matched: result.matched,
+    changed: result.changed,
+    migrated: result.migrated,
+    archived: result.archived,
+    planned: result.planned,
+    deleted: result.deleted,
+    missingMarked: result.missingMarked,
+    skipped: result.skipped,
+    failed: result.failed,
+    targetProvider: result.targetProvider,
+    graceDays: result.graceDays,
+    reason: result.reason
+  };
+}
+
+async function auditStoredAssetIntegrity(store: StateStore, activeStorage: AssetStorage, uploadDir: string, options: AssetIntegrityOptions): Promise<AssetIntegrityReport> {
+  const assets = selectAssetOperationTargets(store, options);
+  const results: AssetIntegrityItem[] = [];
+  const cutoffMs = Date.now();
+  let verified = 0;
+  let missing = 0;
+  let mismatched = 0;
+  let cleanupEligible = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const asset of assets) {
+    const base = assetIntegrityBase(asset);
+    const cleanupReason = assetCleanupReason(asset, { includeDeleted: options.includeDeleted ?? true, includeExpired: options.includeExpired ?? true }, cutoffMs);
+    if (!asset.url.startsWith("/api/v1/assets/")) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "external_asset_url" });
+      continue;
+    }
+    if (asset.lifecycle?.status === "deleted" && options.includeDeleted === false) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "deleted_asset" });
+      continue;
+    }
+    const expiresAt = asset.lifecycle?.expiresAt ? Date.parse(asset.lifecycle.expiresAt) : Number.NaN;
+    if (Number.isFinite(expiresAt) && expiresAt <= cutoffMs && options.includeExpired === false) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "expired_asset" });
+      continue;
+    }
+    if (asset.lifecycle?.storageDeletedAt) {
+      skipped++;
+      results.push({ ...base, status: "skipped", reason: "storage_already_deleted" });
+      continue;
+    }
+    if (cleanupReason) {
+      cleanupEligible++;
+      results.push({ ...base, status: "cleanup_eligible", reason: cleanupReason });
+      continue;
+    }
+    if (!asset.storage) {
+      missing++;
+      results.push({ ...base, status: "missing", reason: "no_storage_ref" });
+      continue;
+    }
+
+    try {
+      const sourceStorage = sourceStorageForAsset(asset, activeStorage, uploadDir);
+      const body = await sourceStorage.read(asset);
+      if (!body) {
+        missing++;
+        results.push({ ...base, status: "missing", reason: "asset_bytes_missing" });
+        continue;
+      }
+      const checksum = checksumForBuffer(body);
+      if (body.length !== asset.sizeBytes || (asset.checksum && asset.checksum !== checksum)) {
+        mismatched++;
+        results.push({
+          ...base,
+          status: "mismatched",
+          reason: "asset_integrity_mismatch",
+          actualSizeBytes: body.length,
+          actualChecksum: checksum
+        });
+        continue;
+      }
+      verified++;
+      results.push({ ...base, status: "verified", actualSizeBytes: body.length, actualChecksum: checksum });
+    } catch (error) {
+      failed++;
+      results.push({ ...base, status: "failed", reason: errorMessage(error) });
+    }
+  }
+
+  const actionRequired = missing + mismatched + cleanupEligible + failed;
+  const actionReasons = assetIntegrityActionReasons({ missing, mismatched, cleanupEligible, failed });
+  const remediationQueue = assetIntegrityRemediationQueue(results);
+  return {
+    provider: activeStorage.provider,
+    assetCount: assets.length,
+    verified,
+    missing,
+    mismatched,
+    cleanupEligible,
+    skipped,
+    failed,
+    actionRequired,
+    actionReasons,
+    remediationQueue,
+    healthy: missing === 0 && mismatched === 0 && failed === 0,
+    results
+  };
+}
+
+function assetIntegrityActionReasons(input: { missing: number; mismatched: number; cleanupEligible: number; failed: number }): string[] {
+  return [
+    input.missing > 0 ? "missing_asset_bytes" : undefined,
+    input.mismatched > 0 ? "asset_integrity_mismatches" : undefined,
+    input.cleanupEligible > 0 ? "cleanup_eligible_assets" : undefined,
+    input.failed > 0 ? "asset_integrity_scan_failures" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+function assetIntegrityRemediationQueue(results: AssetIntegrityItem[]) {
+  const remediations: Array<{
+    code: string;
+    severity: "warning" | "error";
+    action: string;
+    affectedCount: number;
+    samples?: Array<Record<string, unknown>>;
+  }> = [];
+  const missing = results.filter((item) => item.status === "missing");
+  if (missing.length > 0) {
+    remediations.push({
+      code: "restore_missing_asset_bytes",
+      severity: "error",
+      action: "Restore missing stored bytes from backup or re-upload affected managed assets before maps or handouts break for players.",
+      affectedCount: missing.length,
+      samples: missing.slice(0, 4).map(assetIntegrityRemediationSample)
+    });
+  }
+  const mismatched = results.filter((item) => item.status === "mismatched");
+  if (mismatched.length > 0) {
+    remediations.push({
+      code: "repair_asset_integrity_mismatches",
+      severity: "error",
+      action: "Re-upload or quarantine assets whose stored bytes no longer match recorded size or checksum metadata.",
+      affectedCount: mismatched.length,
+      samples: mismatched.slice(0, 4).map(assetIntegrityRemediationSample)
+    });
+  }
+  const failed = results.filter((item) => item.status === "failed");
+  if (failed.length > 0) {
+    remediations.push({
+      code: "resolve_asset_integrity_scan_failures",
+      severity: "error",
+      action: "Fix storage provider access or object read errors, then rerun asset integrity inspection.",
+      affectedCount: failed.length,
+      samples: failed.slice(0, 4).map(assetIntegrityRemediationSample)
+    });
+  }
+  const cleanupEligible = results.filter((item) => item.status === "cleanup_eligible");
+  if (cleanupEligible.length > 0) {
+    remediations.push({
+      code: "run_asset_byte_cleanup",
+      severity: "warning",
+      action: "Run asset byte cleanup for deleted or expired assets that are still occupying object storage.",
+      affectedCount: cleanupEligible.length,
+      samples: cleanupEligible.slice(0, 4).map(assetIntegrityRemediationSample)
+    });
+  }
+  return remediations.sort((left, right) => severityRank(right.severity) - severityRank(left.severity) || right.affectedCount - left.affectedCount || left.code.localeCompare(right.code)).slice(0, 6);
+}
+
+function assetIntegrityRemediationSample(item: AssetIntegrityItem): Record<string, unknown> {
+  return {
+    assetId: item.assetId,
+    campaignId: item.campaignId,
+    name: item.name,
+    provider: item.provider,
+    reason: item.reason,
+    expectedSizeBytes: item.expectedSizeBytes,
+    actualSizeBytes: item.actualSizeBytes
+  };
+}
+
 function createAssetCleanupScheduler(store: StateStore, activeStorage: AssetStorage, uploadDir: string): AssetCleanupScheduler {
   const intervalSeconds = assetCleanupIntervalSeconds();
   const runOnStart = envBoolean("OTTE_ASSET_CLEANUP_RUN_ON_START", false);
@@ -7245,9 +14950,31 @@ function createAssetCleanupScheduler(store: StateStore, activeStorage: AssetStor
     running = true;
     try {
       const result = await cleanupStoredAssets(store, activeStorage, uploadDir, options, updatedByUserId);
-      if (result.changed) store.save();
+      const shouldAudit = shouldAuditScheduledAssetCleanup(result);
+      if (shouldAudit) {
+        appendServerAuditLog(store, updatedByUserId, {
+          action: "system.assets.cleanupScheduled",
+          targetType: "asset_storage",
+          after: {
+            trigger,
+            status: "succeeded",
+            ...assetOperationAuditSummary(result)
+          }
+        });
+      }
+      if (result.changed || shouldAudit) store.save();
       lastRun = assetCleanupSchedulerSuccess(trigger, startedAt, result);
     } catch (error) {
+      appendServerAuditLog(store, updatedByUserId, {
+        action: "system.assets.cleanupScheduled",
+        targetType: "asset_storage",
+        after: {
+          trigger,
+          status: "failed",
+          error: errorMessage(error)
+        }
+      });
+      store.save();
       lastRun = {
         trigger,
         status: "failed",
@@ -7334,6 +15061,11 @@ function assetCleanupSchedulerSuccess(trigger: AssetCleanupSchedulerTrigger, sta
   return run;
 }
 
+function shouldAuditScheduledAssetCleanup(result: Record<string, unknown>): boolean {
+  if (result.changed === true) return true;
+  return [result.planned, result.deleted, result.missingMarked, result.failed].some((value) => typeof value === "number" && value > 0);
+}
+
 function resultNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -7364,6 +15096,18 @@ function assetOperationBase(asset: MapAsset, fromProvider: string, toProvider: s
     fromProvider,
     toProvider,
     sizeBytes: asset.sizeBytes,
+    storage: asset.storage
+  };
+}
+
+function assetIntegrityBase(asset: MapAsset): Omit<AssetIntegrityItem, "status"> {
+  return {
+    assetId: asset.id,
+    campaignId: asset.campaignId,
+    name: asset.name,
+    provider: asset.storage?.provider ?? "unmanaged",
+    expectedSizeBytes: asset.sizeBytes,
+    expectedChecksum: asset.checksum,
     storage: asset.storage
   };
 }
@@ -7407,9 +15151,9 @@ function defaultAssetLifecycle(): NonNullable<MapAsset["lifecycle"]> {
 }
 
 function assetRetentionExpiresAt(): string | undefined {
-  const value = Number(process.env.OTTE_ASSET_RETENTION_DAYS);
-  if (!Number.isFinite(value) || value <= 0) return undefined;
-  return new Date(Date.now() + Math.min(value, 3650) * 24 * 60 * 60 * 1000).toISOString();
+  const days = assetRetentionDays();
+  if (!days) return undefined;
+  return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function normalizeAssetLifecycleStatus(value: string | undefined): NonNullable<MapAsset["lifecycle"]>["status"] | undefined {
@@ -7459,6 +15203,12 @@ function assetQuotaBytes(): number | undefined {
   return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+function assetRetentionDays(): number | undefined {
+  const value = Number(process.env.OTTE_ASSET_RETENTION_DAYS);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  return Math.min(value, 3650);
+}
+
 function campaignAssetBytes(store: StateStore, campaignId: string): number {
   return store.state.assets.filter((asset) => asset.campaignId === campaignId && asset.lifecycle?.status !== "deleted").reduce((total, asset) => total + asset.sizeBytes, 0);
 }
@@ -7495,7 +15245,7 @@ function campaignAssetStorageInfo(store: StateStore, campaignId: string): Record
   };
 }
 
-function globalAssetStorageInfo(store: StateStore, cleanupScheduler?: AssetCleanupSchedulerStatus): Record<string, unknown> {
+function globalAssetStorageInfo(store: StateStore, activeStorage: AssetStorage, cleanupScheduler?: AssetCleanupSchedulerStatus): GlobalAssetStorageInfo {
   const campaignIds = [...new Set(store.state.assets.map((asset) => asset.campaignId))].sort();
   const campaigns = campaignIds.map((campaignId) => campaignAssetStorageInfo(store, campaignId));
   const usedBytes = store.state.assets.filter((asset) => asset.lifecycle?.status !== "deleted").reduce((total, asset) => total + asset.sizeBytes, 0);
@@ -7506,9 +15256,810 @@ function globalAssetStorageInfo(store: StateStore, cleanupScheduler?: AssetClean
     allBytes: store.state.assets.reduce((total, asset) => total + asset.sizeBytes, 0),
     providerCounts: countBy(store.state.assets, (asset) => asset.storage?.provider ?? "external"),
     lifecycleCounts: countBy(store.state.assets, (asset) => asset.lifecycle?.status ?? "active"),
+    runtime: assetStorageRuntimeInfo(activeStorage, cleanupScheduler),
+    operations: assetStorageOperationsSummary(store, activeStorage, cleanupScheduler),
     cleanupScheduler,
     campaigns
   };
+}
+
+function assetStorageOperationsSummary(store: StateStore, activeStorage: AssetStorage, cleanupScheduler?: AssetCleanupSchedulerStatus): AssetStorageOperationsSummary {
+  const nowMs = Date.now();
+  const quotaBytes = assetQuotaBytes();
+  const managedAssets = store.state.assets.filter((asset) => asset.url.startsWith("/api/v1/assets/"));
+  const migrationPendingAssets = managedAssets.filter((asset) => asset.storage?.provider && asset.storage.provider !== activeStorage.provider && !asset.lifecycle?.storageDeletedAt);
+  const cleanupPendingAssets = managedAssets.filter((asset) => Boolean(assetCleanupReason(asset, { includeDeleted: true, includeExpired: true }, nowMs)) && !asset.lifecycle?.storageDeletedAt);
+  const oldestCleanupEligibleAt = cleanupPendingAssets
+    .map((asset) => assetCleanupEligibilityTime(asset, nowMs))
+    .filter((eligibleAt): eligibleAt is number => eligibleAt !== undefined)
+    .sort((left, right) => left - right)[0];
+  const missingStorageRefAssets = managedAssets.filter((asset) => !asset.storage && !asset.lifecycle?.storageDeletedAt);
+  const unscannedAssetRows = managedAssets.filter((asset) => !asset.security);
+  const trustWarningAssetRows = managedAssets.filter(assetHasTrustWarnings);
+  const missingStorageRefs = missingStorageRefAssets.length;
+  const unscannedAssets = unscannedAssetRows.length;
+  const trustWarningAssets = trustWarningAssetRows.length;
+  const deliveryWarnings = assetDeliveryOperationWarnings(activeStorage, cleanupScheduler);
+  const deliveryPosture = assetDeliveryPostureSummary(managedAssets);
+  const deliveryRuntime = assetDeliveryRuntimeOperationsSummary(store);
+  const maintenanceOperations = assetMaintenanceOperationsSummary(store);
+  const quotaAtRiskCampaigns =
+    quotaBytes === undefined
+      ? []
+      : [...new Set(store.state.assets.map((asset) => asset.campaignId))]
+          .map((campaignId) => {
+            const usedBytes = campaignAssetBytes(store, campaignId);
+            return {
+              campaignId,
+              usedBytes,
+              quotaBytes,
+              usageRatio: ratio(usedBytes, quotaBytes),
+              remainingBytes: Math.max(0, quotaBytes - usedBytes)
+            };
+          })
+          .filter((campaign) => campaign.usageRatio >= 0.8)
+          .sort((left, right) => right.usageRatio - left.usageRatio)
+          .slice(0, 10);
+  const actionReasons = assetStorageOperationActionReasons({
+    quotaAtRiskCampaignCount: quotaAtRiskCampaigns.length,
+    cleanupBacklogCount: cleanupPendingAssets.length,
+    migrationBacklogCount: migrationPendingAssets.length,
+    missingStorageRefs,
+    unscannedAssets,
+    trustWarningAssets,
+    deliveryWarningCount: deliveryWarnings.length,
+    undeliverableActiveAssetCount: deliveryPosture.undeliverableActiveAssetCount,
+    deliveryFailureCount: deliveryRuntime.failureCount,
+    maintenanceFailureCount: maintenanceOperations.failedRunCount
+  });
+
+  return {
+    actionRequired: actionReasons.length > 0,
+    actionReasons,
+    remediationQueue: assetStorageRemediationQueue({
+      quotaAtRiskCampaigns,
+      cleanupPendingAssets,
+      migrationPendingAssets,
+      missingStorageRefAssets,
+      unscannedAssetRows,
+      trustWarningAssetRows,
+      missingStorageRefs,
+      unscannedAssets,
+      trustWarningAssets,
+      deliveryWarnings,
+      deliveryPosture,
+      deliveryRuntime,
+      maintenanceOperations,
+      activeStorage,
+      cleanupScheduler,
+      nowMs
+    }),
+    quota: {
+      enabled: quotaBytes !== undefined,
+      quotaBytes,
+      atRiskCampaigns: quotaAtRiskCampaigns
+    },
+    cleanupBacklog: {
+      assetCount: cleanupPendingAssets.length,
+      bytes: cleanupPendingAssets.reduce((total, asset) => total + asset.sizeBytes, 0),
+      oldestEligibleAgeSeconds: oldestCleanupEligibleAt === undefined ? undefined : Math.max(0, Math.floor((nowMs - oldestCleanupEligibleAt) / 1000)),
+      deletedAssetCount: cleanupPendingAssets.filter((asset) => asset.lifecycle?.status === "deleted").length,
+      expiredAssetCount: cleanupPendingAssets.filter((asset) => {
+        const expiresAt = asset.lifecycle?.expiresAt ? Date.parse(asset.lifecycle.expiresAt) : Number.NaN;
+        return Number.isFinite(expiresAt) && expiresAt <= nowMs;
+      }).length,
+      assets: cleanupPendingAssets
+        .map((asset) => {
+          const eligibleAt = assetCleanupEligibilityTime(asset, nowMs);
+          return {
+            assetId: asset.id,
+            name: asset.name,
+            campaignId: asset.campaignId,
+            provider: asset.storage?.provider ?? "external",
+            sizeBytes: asset.sizeBytes,
+            reason: assetCleanupReason(asset, { includeDeleted: true, includeExpired: true }, nowMs) ?? "unknown",
+            lifecycleStatus: asset.lifecycle?.status ?? "active",
+            expiresAt: asset.lifecycle?.expiresAt,
+            eligibleAgeSeconds: eligibleAt === undefined ? undefined : Math.max(0, Math.floor((nowMs - eligibleAt) / 1000))
+          };
+        })
+        .sort((left, right) => (right.eligibleAgeSeconds ?? 0) - (left.eligibleAgeSeconds ?? 0) || right.sizeBytes - left.sizeBytes || left.name.localeCompare(right.name))
+        .slice(0, 10)
+    },
+    migrationBacklog: {
+      targetProvider: activeStorage.provider,
+      assetCount: migrationPendingAssets.length,
+      bytes: migrationPendingAssets.reduce((total, asset) => total + asset.sizeBytes, 0),
+      providerCounts: countBy(migrationPendingAssets, (asset) => asset.storage?.provider ?? "unknown"),
+      assets: migrationPendingAssets
+        .map((asset) => ({
+          assetId: asset.id,
+          name: asset.name,
+          campaignId: asset.campaignId,
+          fromProvider: asset.storage?.provider ?? "unknown",
+          toProvider: activeStorage.provider,
+          sizeBytes: asset.sizeBytes,
+          lifecycleStatus: asset.lifecycle?.status ?? "active",
+          reason: "provider_drift"
+        }))
+        .sort((left, right) => right.sizeBytes - left.sizeBytes || left.fromProvider.localeCompare(right.fromProvider) || left.name.localeCompare(right.name))
+        .slice(0, 10)
+    },
+    hygiene: {
+      managedAssetCount: managedAssets.length,
+      missingStorageRefs,
+      unscannedAssets,
+      trustWarningAssets,
+      trustWarningSamples: trustWarningAssetRows
+        .slice()
+        .sort((left, right) => assetTrustWarningRank(right) - assetTrustWarningRank(left) || right.sizeBytes - left.sizeBytes || left.name.localeCompare(right.name))
+        .slice(0, 10)
+        .map(assetTrustWarningSample)
+    },
+    maintenanceOperations,
+    delivery: {
+      warnings: deliveryWarnings,
+      posture: deliveryPosture,
+      runtime: deliveryRuntime,
+      purgeOperations: assetCdnPurgeOperationsSummary(store)
+    }
+  };
+}
+
+function assetStorageRemediationQueue(input: {
+  quotaAtRiskCampaigns: Array<{ campaignId: string; usedBytes: number; quotaBytes: number; usageRatio: number; remainingBytes: number }>;
+  cleanupPendingAssets: MapAsset[];
+  migrationPendingAssets: MapAsset[];
+  missingStorageRefAssets: MapAsset[];
+  unscannedAssetRows: MapAsset[];
+  trustWarningAssetRows: MapAsset[];
+  missingStorageRefs: number;
+  unscannedAssets: number;
+  trustWarningAssets: number;
+  deliveryWarnings: Array<Record<string, unknown>>;
+  deliveryPosture: ReturnType<typeof assetDeliveryPostureSummary>;
+  deliveryRuntime: ReturnType<typeof assetDeliveryRuntimeOperationsSummary>;
+  maintenanceOperations: ReturnType<typeof assetMaintenanceOperationsSummary>;
+  activeStorage: AssetStorage;
+  cleanupScheduler?: AssetCleanupSchedulerStatus;
+  nowMs: number;
+}) {
+  const remediations: Array<{
+    code: string;
+    severity: "warning" | "error";
+    action: string;
+    affectedCount: number;
+    bytes?: number;
+    samples?: Array<Record<string, unknown>>;
+  }> = [];
+  if (input.deliveryWarnings.length > 0) {
+    remediations.push({
+      code: "fix_asset_delivery_configuration",
+      severity: input.deliveryWarnings.some((warning) => warning.severity === "error") ? "error" : "warning",
+      action: "Configure signing secrets, CDN purge webhooks, or production storage before relying on asset delivery in production.",
+      affectedCount: input.deliveryWarnings.length,
+      samples: input.deliveryWarnings.slice(0, 5).map((warning) => ({
+        code: warning.code,
+        severity: warning.severity,
+        message: warning.message,
+        env: Array.isArray(warning.env) ? warning.env : undefined
+      }))
+    });
+  }
+  if (input.deliveryPosture.undeliverableActiveAssetCount > 0) {
+    remediations.push({
+      code: "repair_asset_delivery_refs",
+      severity: "error",
+      action: "Repair active managed assets that cannot be served because their storage reference or object bytes have been removed.",
+      affectedCount: input.deliveryPosture.undeliverableActiveAssetCount,
+      bytes: input.deliveryPosture.undeliverableActiveBytes,
+      samples: input.deliveryPosture.undeliverableSamples.slice(0, 5)
+    });
+  }
+  if (input.deliveryRuntime.failureCount > 0) {
+    remediations.push({
+      code: "investigate_asset_delivery_failures",
+      severity: "error",
+      action: "Investigate recent denied, unavailable, or missing-byte asset delivery events before relying on CDN or signed delivery.",
+      affectedCount: input.deliveryRuntime.failureCount,
+      bytes: input.deliveryRuntime.failedBytes,
+      samples: input.deliveryRuntime.recentFailures.slice(0, 5).map((event) => ({
+        assetId: event.assetId,
+        campaignId: event.campaignId,
+        status: event.status,
+        accessMode: event.accessMode,
+        reason: event.reason,
+        createdAt: event.createdAt
+      }))
+    });
+  }
+  if (input.maintenanceOperations.failedRunCount > 0) {
+    remediations.push({
+      code: "review_asset_maintenance_failures",
+      severity: "error",
+      action: "Review failed asset migration, cleanup, or quarantine runs before retrying production storage maintenance.",
+      affectedCount: input.maintenanceOperations.failedRunCount,
+      samples: input.maintenanceOperations.recentRuns
+        .filter((run) => run.failed > 0)
+        .slice(0, 5)
+        .map((run) => ({
+          id: run.id,
+          operation: run.operation,
+          campaignId: run.campaignId,
+          dryRun: run.dryRun,
+          assetCount: run.assetCount,
+          failed: run.failed,
+          createdAt: run.createdAt
+        }))
+    });
+  }
+  if (input.quotaAtRiskCampaigns.length > 0) {
+    remediations.push({
+      code: "reduce_asset_quota_pressure",
+      severity: "warning",
+      action: "Review largest assets in quota-risk campaigns, remove unused uploads, or raise the configured campaign quota.",
+      affectedCount: input.quotaAtRiskCampaigns.length,
+      bytes: input.quotaAtRiskCampaigns.reduce((total, campaign) => total + campaign.usedBytes, 0),
+      samples: input.quotaAtRiskCampaigns.slice(0, 5).map((campaign) => ({
+        campaignId: campaign.campaignId,
+        usageRatio: campaign.usageRatio,
+        remainingBytes: campaign.remainingBytes
+      }))
+    });
+  }
+  if (input.cleanupPendingAssets.length > 0) {
+    if (process.env.NODE_ENV === "production" && !input.cleanupScheduler?.enabled) {
+      remediations.push({
+        code: "configure_asset_cleanup_scheduler",
+        severity: "warning",
+        action: "Configure scheduled asset cleanup so deleted or expired object bytes are reclaimed automatically in production.",
+        affectedCount: input.cleanupPendingAssets.length,
+        bytes: input.cleanupPendingAssets.reduce((total, asset) => total + asset.sizeBytes, 0),
+        samples: input.cleanupPendingAssets
+          .slice()
+          .sort((left, right) => (assetCleanupEligibilityTime(left, input.nowMs) ?? input.nowMs) - (assetCleanupEligibilityTime(right, input.nowMs) ?? input.nowMs))
+          .slice(0, 5)
+          .map((asset) => ({
+            assetId: asset.id,
+            campaignId: asset.campaignId,
+            name: asset.name,
+            reason: assetCleanupReason(asset, { includeDeleted: true, includeExpired: true }, input.nowMs) ?? "unknown",
+            sizeBytes: asset.sizeBytes
+          }))
+      });
+    }
+    remediations.push({
+      code: "run_asset_cleanup",
+      severity: "warning",
+      action: "Run stored-byte cleanup for deleted or expired assets after confirming the cleanup candidate list.",
+      affectedCount: input.cleanupPendingAssets.length,
+      bytes: input.cleanupPendingAssets.reduce((total, asset) => total + asset.sizeBytes, 0),
+      samples: input.cleanupPendingAssets
+        .slice()
+        .sort((left, right) => (assetCleanupEligibilityTime(left, input.nowMs) ?? input.nowMs) - (assetCleanupEligibilityTime(right, input.nowMs) ?? input.nowMs))
+        .slice(0, 5)
+        .map((asset) => ({
+          assetId: asset.id,
+          campaignId: asset.campaignId,
+          name: asset.name,
+          reason: assetCleanupReason(asset, { includeDeleted: true, includeExpired: true }, input.nowMs) ?? "unknown",
+          sizeBytes: asset.sizeBytes
+        }))
+    });
+  }
+  if (input.migrationPendingAssets.length > 0) {
+    remediations.push({
+      code: "migrate_asset_storage_provider",
+      severity: "warning",
+      action: `Migrate managed asset bytes to the active ${input.activeStorage.provider} storage provider.`,
+      affectedCount: input.migrationPendingAssets.length,
+      bytes: input.migrationPendingAssets.reduce((total, asset) => total + asset.sizeBytes, 0),
+      samples: input.migrationPendingAssets.slice(0, 5).map((asset) => ({
+        assetId: asset.id,
+        campaignId: asset.campaignId,
+        name: asset.name,
+        fromProvider: asset.storage?.provider ?? "unknown",
+        toProvider: input.activeStorage.provider,
+        sizeBytes: asset.sizeBytes
+      }))
+    });
+  }
+  if (input.missingStorageRefs > 0) {
+    remediations.push({
+      code: "repair_missing_asset_storage_refs",
+      severity: "error",
+      action: "Run asset integrity inspection and repair or re-upload managed assets that lack storage references.",
+      affectedCount: input.missingStorageRefs,
+      samples: input.missingStorageRefAssets
+        .slice()
+        .sort((left, right) => right.sizeBytes - left.sizeBytes || left.name.localeCompare(right.name))
+        .slice(0, 5)
+        .map((asset) => ({
+          assetId: asset.id,
+          campaignId: asset.campaignId,
+          name: asset.name,
+          sizeBytes: asset.sizeBytes,
+          lifecycleStatus: asset.lifecycle?.status ?? "active",
+          reason: asset.lifecycle?.storageDeletedAt ? "storage_deleted" : "missing_storage_ref"
+        }))
+    });
+  }
+  if (input.unscannedAssets > 0) {
+    remediations.push({
+      code: "scan_unverified_assets",
+      severity: "warning",
+      action: "Run asset trust scanning or re-upload assets so every managed upload has security scan metadata.",
+      affectedCount: input.unscannedAssets,
+      samples: input.unscannedAssetRows
+        .slice()
+        .sort((left, right) => right.sizeBytes - left.sizeBytes || left.name.localeCompare(right.name))
+        .slice(0, 5)
+        .map((asset) => ({
+          assetId: asset.id,
+          campaignId: asset.campaignId,
+          name: asset.name,
+          sizeBytes: asset.sizeBytes,
+          lifecycleStatus: asset.lifecycle?.status ?? "active",
+          provider: asset.storage?.provider ?? "missing"
+        }))
+    });
+  }
+  if (input.trustWarningAssets > 0) {
+    remediations.push({
+      code: "review_asset_trust_warnings",
+      severity: "warning",
+      action: "Review managed assets with persisted medium or high trust-scan findings, then rescan, replace, or archive risky uploads.",
+      affectedCount: input.trustWarningAssets,
+      samples: input.trustWarningAssetRows
+        .slice()
+        .sort((left, right) => assetTrustWarningRank(right) - assetTrustWarningRank(left) || right.sizeBytes - left.sizeBytes || left.name.localeCompare(right.name))
+        .slice(0, 5)
+        .map(assetTrustWarningSample)
+    });
+  }
+  return remediations.sort((left, right) => severityRank(right.severity) - severityRank(left.severity) || right.affectedCount - left.affectedCount || left.code.localeCompare(right.code)).slice(0, 8);
+}
+
+function assetHasTrustWarnings(asset: MapAsset): boolean {
+  if (!asset.url.startsWith("/api/v1/assets/")) return false;
+  if (asset.lifecycle?.status === "deleted") return false;
+  return (asset.security?.findings ?? []).some((finding) => finding.severity === "medium" || finding.severity === "high");
+}
+
+function assetTrustWarningRank(asset: MapAsset): number {
+  const findings = asset.security?.findings ?? [];
+  if (findings.some((finding) => finding.severity === "high")) return 2;
+  if (findings.some((finding) => finding.severity === "medium")) return 1;
+  return 0;
+}
+
+function assetTrustWarningSample(asset: MapAsset): Record<string, unknown> {
+  const findings = (asset.security?.findings ?? []).filter((finding) => finding.severity === "medium" || finding.severity === "high");
+  return {
+    assetId: asset.id,
+    campaignId: asset.campaignId,
+    name: asset.name,
+    sizeBytes: asset.sizeBytes,
+    lifecycleStatus: asset.lifecycle?.status ?? "active",
+    provider: asset.storage?.provider ?? "missing",
+    scanner: asset.security?.scanner,
+    scannedAt: asset.security?.scannedAt,
+    findingCount: findings.length,
+    highestSeverity: findings.some((finding) => finding.severity === "high") ? "high" : "medium",
+    findingCodes: [...new Set(findings.map((finding) => finding.code))].slice(0, 5)
+  };
+}
+
+function severityRank(severity: "warning" | "error"): number {
+  return severity === "error" ? 2 : 1;
+}
+
+function assetCdnPurgeOperationsSummary(store: StateStore) {
+  const purgeLogs = store.state.auditLogs.filter((log) => log.action === "admin.asset.cdnPurge").sort(sortTimestampsDesc);
+  const recent = purgeLogs.slice(0, 10).map((log) => {
+    const after = isRecord(log.after) ? log.after : {};
+    const status = stringFromRecord(after, "status") ?? "unknown";
+    const error = stringFromRecord(after, "error");
+    const reason = stringFromRecord(after, "reason");
+    const cdnUrl = stringFromRecord(after, "cdnUrl");
+    return {
+      id: log.id,
+      assetId: log.targetId,
+      campaignId: log.campaignId,
+      requestedByUserId: log.actorUserId,
+      status,
+      reason,
+      cdnUrl,
+      error,
+      createdAt: log.createdAt
+    };
+  });
+  return {
+    totalCount: purgeLogs.length,
+    purgedCount: purgeLogs.filter((log) => stringFromRecord(isRecord(log.after) ? log.after : {}, "status") === "purged").length,
+    failedCount: purgeLogs.filter((log) => stringFromRecord(isRecord(log.after) ? log.after : {}, "status") === "failed").length,
+    notConfiguredCount: purgeLogs.filter((log) => stringFromRecord(isRecord(log.after) ? log.after : {}, "status") === "not_configured").length,
+    recent
+  };
+}
+
+function assetMaintenanceOperationsSummary(store: StateStore) {
+  const logs = store.state.auditLogs.filter((log) => log.action === "admin.assets.migrate" || log.action === "admin.assets.cleanup" || log.action === "admin.assets.integrityQuarantine").sort(sortTimestampsDesc);
+  const runs = logs.map(assetMaintenanceRunFromAuditLog);
+  const migrationRuns = runs.filter((run) => run.operation === "migration");
+  const cleanupRuns = runs.filter((run) => run.operation === "cleanup");
+  const quarantineRuns = runs.filter((run) => run.operation === "quarantine");
+  return {
+    totalRunCount: runs.length,
+    dryRunCount: runs.filter((run) => run.dryRun).length,
+    mutationRunCount: runs.filter((run) => !run.dryRun).length,
+    changedRunCount: runs.filter((run) => run.changed).length,
+    failedRunCount: runs.filter((run) => run.failed > 0).length,
+    latestRunAt: runs[0]?.createdAt,
+    migration: assetMaintenanceOperationRollup(migrationRuns),
+    cleanup: assetMaintenanceOperationRollup(cleanupRuns),
+    quarantine: assetMaintenanceOperationRollup(quarantineRuns),
+    recentRuns: runs.slice(0, 10)
+  };
+}
+
+function assetMaintenanceOperationRollup(runs: ReturnType<typeof assetMaintenanceRunFromAuditLog>[]) {
+  return {
+    runCount: runs.length,
+    dryRunCount: runs.filter((run) => run.dryRun).length,
+    mutationRunCount: runs.filter((run) => !run.dryRun).length,
+    changedRunCount: runs.filter((run) => run.changed).length,
+    failedRunCount: runs.filter((run) => run.failed > 0).length,
+    assetCount: runs.reduce((total, run) => total + run.assetCount, 0),
+    matched: runs.reduce((total, run) => total + run.matched, 0),
+    migrated: runs.reduce((total, run) => total + run.migrated, 0),
+    archived: runs.reduce((total, run) => total + run.archived, 0),
+    deleted: runs.reduce((total, run) => total + run.deleted, 0),
+    missingMarked: runs.reduce((total, run) => total + run.missingMarked, 0),
+    planned: runs.reduce((total, run) => total + run.planned, 0),
+    skipped: runs.reduce((total, run) => total + run.skipped, 0),
+    failed: runs.reduce((total, run) => total + run.failed, 0),
+    latestRunAt: runs[0]?.createdAt,
+    recentRuns: runs.slice(0, 5)
+  };
+}
+
+function assetMaintenanceRunFromAuditLog(log: AuditLog) {
+  const after = isRecord(log.after) ? log.after : {};
+  return {
+    id: log.id,
+    operation: assetMaintenanceOperationFromAction(log.action),
+    campaignId: log.campaignId ?? log.targetId,
+    requestedByUserId: log.actorUserId,
+    dryRun: after.dryRun === true,
+    changed: after.changed === true,
+    assetCount: numberFromRecord(after, "assetCount", 0, Number.MAX_SAFE_INTEGER) ?? 0,
+    matched: numberFromRecord(after, "matched", 0, Number.MAX_SAFE_INTEGER) ?? 0,
+    migrated: numberFromRecord(after, "migrated", 0, Number.MAX_SAFE_INTEGER) ?? 0,
+    archived: numberFromRecord(after, "archived", 0, Number.MAX_SAFE_INTEGER) ?? 0,
+    deleted: numberFromRecord(after, "deleted", 0, Number.MAX_SAFE_INTEGER) ?? 0,
+    missingMarked: numberFromRecord(after, "missingMarked", 0, Number.MAX_SAFE_INTEGER) ?? 0,
+    planned: numberFromRecord(after, "planned", 0, Number.MAX_SAFE_INTEGER) ?? 0,
+    skipped: numberFromRecord(after, "skipped", 0, Number.MAX_SAFE_INTEGER) ?? 0,
+    failed: numberFromRecord(after, "failed", 0, Number.MAX_SAFE_INTEGER) ?? 0,
+    targetProvider: stringFromRecord(after, "targetProvider"),
+    graceDays: numberFromRecord(after, "graceDays", 0, Number.MAX_SAFE_INTEGER),
+    reason: stringFromRecord(after, "reason"),
+    createdAt: log.createdAt
+  };
+}
+
+function assetMaintenanceOperationFromAction(action: string): "migration" | "cleanup" | "quarantine" {
+  if (action === "admin.assets.migrate") return "migration";
+  if (action === "admin.assets.cleanup") return "cleanup";
+  return "quarantine";
+}
+
+function assetDeliveryRuntimeOperationsSummary(store: StateStore) {
+  const deliveryLogs = store.state.auditLogs.filter((log) => log.action === "asset.delivery").sort(sortTimestampsDesc);
+  const events = deliveryLogs.map(assetDeliveryAuditEvent);
+  const failures = events.filter((event) => event.status !== "served");
+  return {
+    totalCount: events.length,
+    servedCount: events.filter((event) => event.status === "served").length,
+    deniedCount: events.filter((event) => event.status === "denied").length,
+    unavailableCount: events.filter((event) => event.status === "unavailable").length,
+    missingBytesCount: events.filter((event) => event.status === "missing_bytes").length,
+    signingFailedCount: events.filter((event) => event.status === "signing_failed").length,
+    failureCount: failures.length,
+    servedBytes: events.filter((event) => event.status === "served").reduce((total, event) => total + event.bytes, 0),
+    failedBytes: failures.reduce((total, event) => total + event.bytes, 0),
+    statusCounts: countBy(events, (event) => event.status),
+    accessModeCounts: countBy(events, (event) => event.accessMode),
+    recent: events.slice(0, 10),
+    recentFailures: failures.slice(0, 10)
+  };
+}
+
+function assetDeliveryAuditEvent(log: AuditLog) {
+  const after = isRecord(log.after) ? log.after : {};
+  const status = stringFromRecord(after, "status") ?? "unknown";
+  const accessMode = stringFromRecord(after, "accessMode") ?? "unknown";
+  const bytes = numberFromRecord(after, "bytes", 0, Number.MAX_SAFE_INTEGER) ?? 0;
+  return {
+    id: log.id,
+    assetId: log.targetId,
+    campaignId: log.campaignId,
+    status,
+    accessMode,
+    reason: stringFromRecord(after, "reason"),
+    provider: stringFromRecord(after, "provider"),
+    lifecycleStatus: stringFromRecord(after, "lifecycleStatus"),
+    bytes,
+    createdAt: log.createdAt
+  };
+}
+
+function assetDeliveryPostureSummary(managedAssets: MapAsset[]) {
+  const nowMs = Date.now();
+  const activeAssets = managedAssets.filter((asset) => asset.lifecycle?.status !== "deleted");
+  const expiredActiveAssets = activeAssets.filter((asset) => {
+    const expiresAt = asset.lifecycle?.expiresAt ? Date.parse(asset.lifecycle.expiresAt) : Number.NaN;
+    return Number.isFinite(expiresAt) && expiresAt <= nowMs;
+  });
+  const deliverableAssets = activeAssets.filter((asset) => asset.storage && !asset.lifecycle?.storageDeletedAt && !expiredActiveAssets.includes(asset));
+  const undeliverableAssets = activeAssets.filter((asset) => !asset.storage || Boolean(asset.lifecycle?.storageDeletedAt));
+  const cdnBaseUrl = envText("OTTE_ASSET_CDN_BASE_URL");
+  const signingSecretConfigured = Boolean(envText("OTTE_ASSET_URL_SIGNING_SECRET"));
+  const samples = (assets: MapAsset[]) =>
+    assets
+      .slice()
+      .sort((left, right) => right.sizeBytes - left.sizeBytes || left.name.localeCompare(right.name))
+      .slice(0, 10)
+      .map((asset) => ({
+        assetId: asset.id,
+        name: asset.name,
+        campaignId: asset.campaignId,
+        provider: asset.storage?.provider ?? "missing",
+        sizeBytes: asset.sizeBytes,
+        lifecycleStatus: asset.lifecycle?.status ?? "active",
+        expiresAt: asset.lifecycle?.expiresAt,
+        storageDeletedAt: asset.lifecycle?.storageDeletedAt,
+        reason: !asset.storage ? "missing_storage_ref" : asset.lifecycle?.storageDeletedAt ? "storage_deleted" : "delivery_ready"
+      }));
+  return {
+    mode: cdnBaseUrl ? "cdn" : "signed_blob",
+    cdnConfigured: Boolean(cdnBaseUrl),
+    signingSecretConfigured,
+    activeManagedAssetCount: activeAssets.length,
+    deliverableActiveAssetCount: deliverableAssets.length,
+    undeliverableActiveAssetCount: undeliverableAssets.length,
+    expiredActiveAssetCount: expiredActiveAssets.length,
+    deliverableActiveBytes: deliverableAssets.reduce((total, asset) => total + asset.sizeBytes, 0),
+    undeliverableActiveBytes: undeliverableAssets.reduce((total, asset) => total + asset.sizeBytes, 0),
+    deliverableCoverageRate: ratio(deliverableAssets.length, activeAssets.length),
+    cdnEligibleAssetCount: cdnBaseUrl ? deliverableAssets.length : 0,
+    signedUrlEligibleAssetCount: signingSecretConfigured ? deliverableAssets.length : 0,
+    undeliverableSamples: samples(undeliverableAssets),
+    deliverableSamples: samples(deliverableAssets)
+  };
+}
+
+function assetStorageOperationActionReasons(input: {
+  quotaAtRiskCampaignCount: number;
+  cleanupBacklogCount: number;
+  migrationBacklogCount: number;
+  missingStorageRefs: number;
+  unscannedAssets: number;
+  trustWarningAssets: number;
+  deliveryWarningCount: number;
+  undeliverableActiveAssetCount: number;
+  deliveryFailureCount: number;
+  maintenanceFailureCount: number;
+}) {
+  return [
+    input.quotaAtRiskCampaignCount > 0 ? "quota_at_risk" : undefined,
+    input.cleanupBacklogCount > 0 ? "cleanup_backlog" : undefined,
+    input.migrationBacklogCount > 0 ? "migration_backlog" : undefined,
+    input.missingStorageRefs > 0 ? "missing_storage_refs" : undefined,
+    input.unscannedAssets > 0 ? "unscanned_assets" : undefined,
+    input.trustWarningAssets > 0 ? "asset_trust_warnings" : undefined,
+    input.deliveryWarningCount > 0 ? "delivery_configuration_warnings" : undefined,
+    input.undeliverableActiveAssetCount > 0 ? "undeliverable_active_assets" : undefined,
+    input.deliveryFailureCount > 0 ? "asset_delivery_failures" : undefined,
+    input.maintenanceFailureCount > 0 ? "asset_maintenance_failures" : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+}
+
+function assetCleanupEligibilityTime(asset: MapAsset, cutoffMs: number): number | undefined {
+  const cleanupReason = assetCleanupReason(asset, { includeDeleted: true, includeExpired: true }, cutoffMs);
+  if (cleanupReason === "deleted_asset") return lifecycleChangeTime(asset);
+  if (cleanupReason === "expired_asset") {
+    const expiresAt = asset.lifecycle?.expiresAt ? Date.parse(asset.lifecycle.expiresAt) : Number.NaN;
+    return Number.isFinite(expiresAt) ? expiresAt : undefined;
+  }
+  return undefined;
+}
+
+function assetDeliveryOperationWarnings(activeStorage: AssetStorage, cleanupScheduler?: AssetCleanupSchedulerStatus): Array<Record<string, unknown>> {
+  const warnings: Array<Record<string, unknown>> = [];
+  const invalidConfig = invalidAssetRuntimeConfigEnvNames();
+  const invalidUrlConfig = invalidAssetRuntimeUrlEnvNames();
+  const insecureUrlConfig = insecureProductionAssetRuntimeUrlEnvNames();
+  const missingTokenConfig = assetRuntimeTokenMissingEnvNames();
+  const s3Runtime = assetS3RuntimeConfig(activeStorage);
+  if (invalidConfig.length > 0) {
+    warnings.push({
+      code: "asset_runtime_config_invalid",
+      severity: "warning",
+      message: `Asset numeric runtime settings are invalid: ${invalidConfig.join(", ")}.`,
+      env: invalidConfig
+    });
+  }
+  if (invalidUrlConfig.length > 0) {
+    warnings.push({
+      code: "asset_runtime_url_config_invalid",
+      severity: "warning",
+      message: `Asset runtime URL settings are invalid: ${invalidUrlConfig.join(", ")}.`,
+      env: invalidUrlConfig
+    });
+  }
+  if (insecureUrlConfig.length > 0) {
+    warnings.push({
+      code: "asset_runtime_url_insecure",
+      severity: "warning",
+      message: `Production asset runtime URL settings should use HTTPS: ${insecureUrlConfig.join(", ")}.`,
+      env: insecureUrlConfig
+    });
+  }
+  if (missingTokenConfig.length > 0) {
+    warnings.push({
+      code: "asset_runtime_token_missing",
+      severity: "warning",
+      message: `Production asset webhook token settings are missing: ${missingTokenConfig.join(", ")}.`,
+      env: missingTokenConfig
+    });
+  }
+  if (process.env.NODE_ENV === "production" && !assetRuntimeNumberEnv("OTTE_ASSET_RETENTION_DAYS").configured) {
+    warnings.push({
+      code: "asset_retention_policy_missing_in_production",
+      severity: "warning",
+      message: "Production asset uploads do not have a default retention policy.",
+      env: ["OTTE_ASSET_RETENTION_DAYS"]
+    });
+  }
+  if (process.env.NODE_ENV === "production" && !assetRuntimeNumberEnv("OTTE_ASSET_QUOTA_BYTES").configured) {
+    warnings.push({
+      code: "asset_quota_policy_missing_in_production",
+      severity: "warning",
+      message: "Production asset uploads do not have a per-campaign quota policy.",
+      env: ["OTTE_ASSET_QUOTA_BYTES"]
+    });
+  }
+  if (process.env.NODE_ENV === "production" && cleanupScheduler?.enabled && cleanupScheduler.dryRun) {
+    warnings.push({
+      code: "asset_cleanup_scheduler_dry_run_in_production",
+      severity: "warning",
+      message: "Production scheduled asset cleanup is enabled in dry-run mode.",
+      env: ["OTTE_ASSET_CLEANUP_DRY_RUN"]
+    });
+  }
+  if (process.env.NODE_ENV === "production" && cleanupScheduler?.enabled && !cleanupScheduler.includeDeleted && !cleanupScheduler.includeExpired) {
+    warnings.push({
+      code: "asset_cleanup_scheduler_no_targets",
+      severity: "warning",
+      message: "Scheduled asset cleanup is enabled without deleted or expired asset targets.",
+      env: ["OTTE_ASSET_CLEANUP_INCLUDE_DELETED", "OTTE_ASSET_CLEANUP_INCLUDE_EXPIRED"]
+    });
+  }
+  if (process.env.NODE_ENV === "production" && assetRuntimeUrlEnv("OTTE_ASSET_TRUST_WEBHOOK_URL").configured && assetRuntimeUrlEnv("OTTE_ASSET_TRUST_WEBHOOK_URL").valid && !assetTrustFailClosed()) {
+    warnings.push({
+      code: "asset_trust_fail_open_in_production",
+      severity: "warning",
+      message: "Production external asset trust scanning is configured to fail open.",
+      env: ["OTTE_ASSET_TRUST_FAIL_CLOSED"]
+    });
+  }
+  if (assetS3RuntimeEnvRelevant(activeStorage) && s3Runtime?.bucketConfigured === false) {
+    warnings.push({
+      code: "asset_s3_bucket_missing",
+      severity: "error",
+      message: "S3 asset storage is selected without OTTE_S3_BUCKET.",
+      env: ["OTTE_S3_BUCKET"]
+    });
+  }
+  if (assetS3RuntimeEnvRelevant(activeStorage) && s3Runtime?.endpointValid === false) {
+    warnings.push({
+      code: "asset_s3_endpoint_invalid",
+      severity: "warning",
+      message: "S3 asset storage endpoint must be an HTTP(S) URL.",
+      env: ["OTTE_S3_ENDPOINT"]
+    });
+  }
+  if (assetS3RuntimeEnvRelevant(activeStorage) && s3Runtime?.endpointInsecureInProduction === true) {
+    warnings.push({
+      code: "asset_s3_endpoint_insecure",
+      severity: "warning",
+      message: "Production S3 asset storage endpoints should use HTTPS unless they are localhost.",
+      env: ["OTTE_S3_ENDPOINT"]
+    });
+  }
+  if (assetS3RuntimeEnvRelevant(activeStorage) && s3Runtime?.partialExplicitCredentials === true) {
+    warnings.push({
+      code: "asset_s3_credentials_partial",
+      severity: "warning",
+      message: "S3 asset storage has only one explicit credential variable configured.",
+      env: ["OTTE_S3_ACCESS_KEY_ID", "OTTE_S3_SECRET_ACCESS_KEY"]
+    });
+  }
+  if (process.env.NODE_ENV === "production" && !envText("OTTE_ASSET_URL_SIGNING_SECRET")) {
+    warnings.push({ code: "asset_signing_secret_missing", severity: "error", message: "Production asset delivery should configure OTTE_ASSET_URL_SIGNING_SECRET." });
+  }
+  if (envText("OTTE_ASSET_CDN_BASE_URL") && !envText("OTTE_ASSET_CDN_PURGE_WEBHOOK_URL")) {
+    warnings.push({ code: "asset_cdn_purge_unconfigured", severity: "warning", message: "CDN delivery is configured without a purge webhook." });
+  }
+  if (process.env.NODE_ENV === "production" && activeStorage.provider === "local") {
+    warnings.push({ code: "asset_local_storage_in_production", severity: "warning", message: "Production asset storage is still using the local provider." });
+  }
+  return warnings;
+}
+
+function assetStorageRuntimeInfo(activeStorage: AssetStorage, cleanupScheduler?: AssetCleanupSchedulerStatus): AssetStorageRuntimeInfo {
+  const cdnBaseUrl = envText("OTTE_ASSET_CDN_BASE_URL");
+  const publicUrl = envText("OTTE_PUBLIC_URL");
+  const quotaBytes = assetQuotaBytes();
+  return {
+    provider: activeStorage.provider,
+    migrationTargetProvider: activeStorage.provider,
+    invalidConfig: invalidAssetRuntimeConfigEnvNames(),
+    invalidUrlConfig: invalidAssetRuntimeUrlEnvNames(),
+    insecureUrlConfig: insecureProductionAssetRuntimeUrlEnvNames(),
+    missingTokenConfig: assetRuntimeTokenMissingEnvNames(),
+    s3: assetS3RuntimeConfig(activeStorage),
+    quota: {
+      enabled: quotaBytes !== undefined,
+      quotaBytes,
+      quotaPolicyMissingInProduction: process.env.NODE_ENV === "production" && !assetRuntimeNumberEnv("OTTE_ASSET_QUOTA_BYTES").configured
+    },
+    lifecycle: {
+      retentionDays: assetRetentionDays(),
+      retentionPolicyMissingInProduction: process.env.NODE_ENV === "production" && !assetRuntimeNumberEnv("OTTE_ASSET_RETENTION_DAYS").configured
+    },
+    delivery: {
+      mode: cdnBaseUrl ? "cdn" : "signed_blob",
+      cdnConfigured: Boolean(cdnBaseUrl),
+      publicUrlConfigured: Boolean(publicUrl),
+      signingSecretConfigured: Boolean(envText("OTTE_ASSET_URL_SIGNING_SECRET")),
+      signingSecretRequired: process.env.NODE_ENV === "production",
+      defaultTtlSeconds: assetUrlDefaultTtlSeconds(),
+      maxTtlSeconds: assetUrlMaxTtlSeconds(),
+      purgeWebhookConfigured: Boolean(envText("OTTE_ASSET_CDN_PURGE_WEBHOOK_URL")),
+      purgeWebhookTokenConfigured: Boolean(envText("OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN")),
+      purgeTimeoutMs: assetCdnPurgeWebhookTimeoutMs()
+    },
+    trustScanner: {
+      builtinEnabled: true,
+      externalConfigured: Boolean(envText("OTTE_ASSET_TRUST_WEBHOOK_URL")),
+      tokenConfigured: Boolean(envText("OTTE_ASSET_TRUST_WEBHOOK_TOKEN")),
+      failClosed: assetTrustFailClosed(),
+      timeoutMs: assetTrustWebhookTimeoutMs()
+    },
+    cleanup: {
+      enabled: Boolean(cleanupScheduler?.enabled),
+      running: Boolean(cleanupScheduler?.running),
+      dryRun: cleanupScheduler?.dryRun,
+      includeDeleted: cleanupScheduler?.includeDeleted,
+      includeExpired: cleanupScheduler?.includeExpired,
+      graceDays: cleanupScheduler?.graceDays,
+      intervalSeconds: cleanupScheduler?.intervalSeconds,
+      runOnStart: cleanupScheduler?.runOnStart,
+      riskyConfig: assetCleanupSchedulerRiskConfig(cleanupScheduler)
+    }
+  };
+}
+
+function assetCleanupSchedulerRiskConfig(cleanupScheduler?: AssetCleanupSchedulerStatus): string[] {
+  if (process.env.NODE_ENV !== "production" || !cleanupScheduler?.enabled) return [];
+  return [
+    cleanupScheduler.dryRun ? "OTTE_ASSET_CLEANUP_DRY_RUN" : undefined,
+    !cleanupScheduler.includeDeleted && !cleanupScheduler.includeExpired ? "OTTE_ASSET_CLEANUP_INCLUDE_DELETED" : undefined,
+    !cleanupScheduler.includeDeleted && !cleanupScheduler.includeExpired ? "OTTE_ASSET_CLEANUP_INCLUDE_EXPIRED" : undefined
+  ].filter((name): name is string => Boolean(name));
 }
 
 function countBy<T>(items: T[], keyForItem: (item: T) => string): Record<string, number> {
@@ -7518,6 +16069,13 @@ function countBy<T>(items: T[], keyForItem: (item: T) => string): Record<string,
     counts[key] = (counts[key] ?? 0) + 1;
   }
   return counts;
+}
+
+function topCountEntries(counts: Record<string, number>, limit: number): Array<{ code: string; count: number }> {
+  return Object.entries(counts)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, limit)
+    .map(([code, count]) => ({ code, count }));
 }
 
 function signedAssetDelivery(asset: MapAsset, headers: Record<string, string | string[] | undefined>, requestedTtlSeconds: number | undefined, disposition: "inline" | "attachment" | undefined): Record<string, string | number | undefined> {
@@ -7548,12 +16106,20 @@ function assetDeliveryBase(headers: Record<string, string | string[] | undefined
 }
 
 function assetUrlTtlSeconds(requested: number | undefined): number {
-  const defaultValue = Number(process.env.OTTE_ASSET_URL_TTL_SECONDS);
-  const maxValue = Number(process.env.OTTE_ASSET_URL_MAX_TTL_SECONDS);
-  const fallback = Number.isFinite(defaultValue) && defaultValue > 0 ? defaultValue : 300;
-  const max = Number.isFinite(maxValue) && maxValue > 0 ? maxValue : 3600;
+  const fallback = assetUrlDefaultTtlSeconds();
+  const max = assetUrlMaxTtlSeconds();
   const value = Number.isFinite(requested) && requested! > 0 ? requested! : fallback;
   return Math.max(30, Math.min(Math.floor(value), Math.min(max, 24 * 60 * 60)));
+}
+
+function assetUrlDefaultTtlSeconds(): number {
+  const value = Number(process.env.OTTE_ASSET_URL_TTL_SECONDS);
+  return Number.isFinite(value) && value > 0 ? value : 300;
+}
+
+function assetUrlMaxTtlSeconds(): number {
+  const value = Number(process.env.OTTE_ASSET_URL_MAX_TTL_SECONDS);
+  return Number.isFinite(value) && value > 0 ? value : 3600;
 }
 
 function signAssetUrl(assetId: string, expiresAt: string, disposition: string): string {
@@ -7687,6 +16253,7 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     compendia: upsertRecords(state.compendia, archive.data.compendia),
     proposals: upsertRecords(state.proposals, archive.data.proposals),
     aiThreads: upsertRecords(state.aiThreads, archive.data.aiThreads),
+    aiEvaluations: upsertRecords(state.aiEvaluations, archive.data.aiEvaluations ?? []),
     aiMemory: upsertRecords(state.aiMemory, archive.data.aiMemory),
     aiToolCalls: upsertRecords(state.aiToolCalls, archive.data.aiToolCalls),
     auditLogs: upsertRecords(state.auditLogs, archive.data.auditLogs),
