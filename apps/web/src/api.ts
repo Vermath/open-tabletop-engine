@@ -2130,8 +2130,15 @@ export async function apiUploadAsset(input: { campaignId: string; sceneId?: stri
 }
 
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
-  await ensureSessionToken();
-  const [session, campaigns] = await Promise.all([apiGet<SessionInfo>("/api/v1/auth/session"), apiGet<Campaign[]>("/api/v1/campaigns")]);
+  const snapshotHeaders = { authorization: `Bearer ${await ensureSessionToken()}` };
+  const snapshotGet = async <T,>(path: string): Promise<T> => {
+    const response = await fetch(`${baseUrl}${path}`, {
+      headers: snapshotHeaders
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json() as Promise<T>;
+  };
+  const [session, campaigns] = await Promise.all([snapshotGet<SessionInfo>("/api/v1/auth/session"), snapshotGet<Campaign[]>("/api/v1/campaigns")]);
   const selectedCampaignId = campaigns.find((campaign) => campaign.id === campaignId)?.id ?? campaigns[0]?.id;
   if (!selectedCampaignId) {
     return {
@@ -2158,33 +2165,33 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       characterTemplates: []
     };
   }
-  const scenes = await apiGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
+  const scenes = await snapshotGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
   const selectedSceneId = scenes.find((scene) => scene.id === sceneId)?.id ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
-  const members = await apiGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`);
+  const members = await snapshotGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`);
   const currentMember = members.find((member) => member.user.id === session.user.id);
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
   const [assets, fogPresets, tokens, vision, actors, items, journals, chat, encounters, combats, proposals, contentImports, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
-    apiGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
-    currentMember?.permissions.includes("token.reveal") ? apiGet<FogPreset[]>(`/api/v1/campaigns/${selectedCampaignId}/fog-presets`) : Promise.resolve([]),
-    selectedSceneId ? apiGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
-    selectedSceneId ? apiGet<VisionSnapshot>(`/api/v1/scenes/${selectedSceneId}/vision`) : Promise.resolve(undefined),
-    apiGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
-    apiGet<Item[]>(`/api/v1/campaigns/${selectedCampaignId}/items`),
-    apiGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`),
-    apiGet<ChatMessage[]>(`/api/v1/chat/messages?campaignId=${selectedCampaignId}`),
-    apiGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
-    apiGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
-    apiGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
-    apiGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`),
-    apiGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`),
-    canViewAiOperations ? apiGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
-    canViewAiOperations ? apiGet<AiUsageSummary>(`/api/v1/campaigns/${selectedCampaignId}/ai/usage`) : Promise.resolve(undefined),
-    canViewAiOperations ? apiGet<AiToolCall[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/tool-calls`) : Promise.resolve([]),
-    apiGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
-    apiGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)
+    snapshotGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
+    currentMember?.permissions.includes("token.reveal") ? snapshotGet<FogPreset[]>(`/api/v1/campaigns/${selectedCampaignId}/fog-presets`) : Promise.resolve([]),
+    selectedSceneId ? snapshotGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
+    selectedSceneId ? snapshotGet<VisionSnapshot>(`/api/v1/scenes/${selectedSceneId}/vision`) : Promise.resolve(undefined),
+    snapshotGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
+    snapshotGet<Item[]>(`/api/v1/campaigns/${selectedCampaignId}/items`),
+    snapshotGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`),
+    snapshotGet<ChatMessage[]>(`/api/v1/chat/messages?campaignId=${selectedCampaignId}`),
+    snapshotGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
+    snapshotGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
+    snapshotGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
+    snapshotGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`),
+    snapshotGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`),
+    canViewAiOperations ? snapshotGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
+    canViewAiOperations ? snapshotGet<AiUsageSummary>(`/api/v1/campaigns/${selectedCampaignId}/ai/usage`) : Promise.resolve(undefined),
+    canViewAiOperations ? snapshotGet<AiToolCall[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/tool-calls`) : Promise.resolve([]),
+    snapshotGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
+    snapshotGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)
   ]);
   const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
-  const characterTemplates = activeSystemId ? await apiGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
+  const characterTemplates = activeSystemId ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
   return {
     session,
     campaigns,

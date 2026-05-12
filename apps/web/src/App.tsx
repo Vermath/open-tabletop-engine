@@ -1039,7 +1039,7 @@ export function App() {
             }}
           >
             <div className="section-title">Invites</div>
-            <input aria-label="Invite email" value={inviteEmail} placeholder="player@example.com" onChange={(event) => setInviteEmail(event.target.value)} />
+            <input aria-label="Invite email" type="email" autoComplete="email" value={inviteEmail} placeholder="player@example.com" onChange={(event) => setInviteEmail(event.target.value)} />
             <select aria-label="Invite role" value={inviteRole} onChange={(event) => setInviteRole(event.target.value as UserRole)}>
               <option value="player">Player</option>
               <option value="observer">Observer</option>
@@ -1061,9 +1061,9 @@ export function App() {
         >
           <div className="section-title">Join</div>
           <input aria-label="Invite token" value={joinToken} placeholder="oti_..." onChange={(event) => setJoinToken(event.target.value)} />
-          <input aria-label="Join email" value={joinEmail} placeholder="player@example.com" onChange={(event) => setJoinEmail(event.target.value)} />
-          <input aria-label="Display name" value={joinName} placeholder="Display name" onChange={(event) => setJoinName(event.target.value)} />
-          <input aria-label="Password" type="password" value={joinPassword} placeholder="Password" onChange={(event) => setJoinPassword(event.target.value)} />
+          <input aria-label="Join email" type="email" autoComplete="email" value={joinEmail} placeholder="player@example.com" onChange={(event) => setJoinEmail(event.target.value)} />
+          <input aria-label="Display name" autoComplete="name" value={joinName} placeholder="Display name" onChange={(event) => setJoinName(event.target.value)} />
+          <input aria-label="Password" type="password" autoComplete="new-password" value={joinPassword} placeholder="Password" onChange={(event) => setJoinPassword(event.target.value)} />
           <button className="ghost-button wide" type="submit" disabled={!joinToken.trim() || !joinEmail.trim() || !joinPassword}>
             <ChevronRight size={16} /> Join
           </button>
