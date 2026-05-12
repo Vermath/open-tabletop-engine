@@ -17,8 +17,15 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
+  overflow: hidden;
   background: var(--ink);
   color: var(--paper);
 }
@@ -37,15 +44,19 @@ button {
 .shell {
   display: grid;
   grid-template-columns: 244px minmax(0, 1fr);
-  min-height: 100svh;
+  height: 100svh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .rail {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-height: 0;
   padding: 22px;
   border-right: 1px solid var(--line);
+  overflow: auto;
   background: #171512;
 }
 
@@ -286,6 +297,7 @@ textarea:focus-visible {
 .workspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) 164px;
+  min-height: 0;
   min-width: 0;
 }
 
@@ -558,15 +570,18 @@ textarea:focus-visible {
 
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 10px;
   border-bottom: 1px solid var(--line);
-  overflow: auto;
+  overflow: visible;
 }
 
 .tab {
-  min-width: max-content;
+  flex: 1 1 104px;
+  min-width: 0;
   padding: 0 9px;
+  white-space: nowrap;
   color: var(--muted);
 }
 
@@ -882,8 +897,10 @@ textarea {
 
 .console {
   grid-template-columns: 260px minmax(0, 1fr) 340px;
+  min-height: 0;
   border-top: 1px solid var(--line);
   border-bottom: 0;
+  overflow: hidden;
 }
 
 .dice-box,
@@ -931,12 +948,23 @@ input {
 }
 
 @media (max-width: 1040px) {
+  body {
+    overflow: auto;
+  }
+
   .shell {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100svh;
+    overflow: visible;
   }
 
   .rail {
-    display: none;
+    display: flex;
+    gap: 12px;
+    padding: 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
 
   .topbar,
@@ -947,6 +975,15 @@ input {
 
   .workspace {
     grid-template-rows: auto auto auto;
+  }
+
+  .table-area {
+    min-height: 360px;
+    padding: 12px;
+  }
+
+  .console {
+    min-height: 156px;
   }
 
   .inspector {
