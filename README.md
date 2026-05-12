@@ -68,7 +68,7 @@ For a two-browser smoke test, open one browser as `Demo GM` and another as `Demo
 
 ## Beta v0.2 Dogfood
 
-The beta dogfood archive is `docs/demo/ember-vault-beta-dogfood.ottx.json`. It is an original, SRD-only three-session campaign fixture for 1 GM and 3 players. Use `docs/demo/beta-dogfood-runbook.md` for the prep, live play, combat, journals, handouts, actor updates, rests, loot/items, recap, AI memory, and export/import checkpoints.
+Beta v0.2 is accepted and pushed. The beta dogfood archive is `docs/demo/ember-vault-beta-dogfood.ottx.json`. It is an original, SRD-only three-session campaign fixture for 1 GM and 3 players. Use `docs/demo/beta-dogfood-runbook.md` for the prep, live play, combat, journals, handouts, actor updates, rests, loot/items, recap, AI memory, and export/import checkpoints.
 
 Beta release and operations docs:
 
@@ -85,16 +85,32 @@ Beta release and operations docs:
 
 Beta adds archive `0.2.0` exports while preserving alpha `0.1.0` import support. Safe content imports are preview/apply/rollback/delete flows for user-provided actor, item, journal, and handout content with provenance and license metadata.
 
+## v0.3 Outside Dogfood
+
+v0.3 is the current outside-dogfood track. It keeps the beta archive schema at `0.2.0`, adds a redacted dogfood Report Bundle export, exposes safe content import preview/apply/rollback/delete in the web client, and adds outside-GM onboarding.
+
+Start here:
+
+- New GM: `docs/dogfood/first-run-gm-guide.md`
+- Player: `docs/dogfood/player-guide.md`
+- Invites and sessions: `docs/dogfood/invite-session-guide.md`
+- First live session: `docs/dogfood/run-your-first-session-checklist.md`
+- Troubleshooting: `docs/dogfood/troubleshooting.md`
+- Issue reports: `docs/dogfood/issue-reporting.md`
+- Known issues: `docs/dogfood/known-issues.md`
+- v0.3 proof: `docs/verification/v0.3-dogfood-readiness.md`, `docs/verification/v0.3-dogfood-progress.md`, and `docs/verification/v0.3-dogfood-acceptance.md`
+
 ## Current Scope
 
-Ready for alpha verification:
+Current release tracks:
 
 - API-first campaign, scene, token, actor, journal, chat, dice, combat, proposal, plugin, system, and export/import surfaces.
 - `dnd-5e-srd` as the primary rules runtime for the demo slice.
 - Local/dev AI provider flow with proposal/approval semantics; OpenAI Responses and Codex loopback providers are documented in `docs/ai/overview.md`.
 - Permissioned plugin and system SDK examples documented under `docs/api/rest.md`, `docs/plugin-sdk/overview.md`, and `docs/system-sdk/overview.md`.
 - Public-alpha extension smoke path: install `plugins/example-macro-plugin` on the imported demo with only `chat.write`, run `/spark`, and inspect installed systems or switch through `generic-fantasy` before restoring `dnd-5e-srd`.
-- Beta dogfood path: import the beta archive, run the three-session runbook, prove GM+3 realtime, and record final proof in `docs/verification/beta-acceptance.md`.
+- Beta dogfood path: accepted in `docs/verification/beta-acceptance.md`.
+- v0.3 outside dogfood path: import the beta archive, follow the dogfood guides, run the three-session runbook, export archives and Report Bundles, and record final proof in `docs/verification/v0.3-dogfood-acceptance.md`.
 
 ## Content Safety
 

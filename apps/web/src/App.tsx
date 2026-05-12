@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, ScimAssignableRole, Token, UserRole, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, Campaign, ChatMessage, Combat, ContentImportBatch, ContentImportEntityKind, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, ScimAssignableRole, Token, UserRole, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronRight, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MessageSquare, Paintbrush, Pentagon, Plus, RefreshCw, RotateCcw, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, confirmPasswordResetSession, consumeSsoRedirect, getSessionToken, getSessionUserId, loadAdminSnapshot, loadOidcConfig, loadSnapshot, loginSession, requestPasswordReset, setSessionUserId, startOidcLogin, type AdminAssetIntegrityQuarantineResult, type AdminEmailOutboxRetryAllResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminUserInfo, type AiUsageSummary, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
@@ -33,6 +33,45 @@ function summarizeImport(result: CampaignImportResult): string {
   return summary ? `${summary}${suffix}` : `No campaign records changed${suffix}`;
 }
 
+function downloadJson(fileName: string, payload: unknown): void {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json"
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function contentImportEntityData(kind: ContentImportEntityKind, body: string): Record<string, unknown> {
+  const trimmedBody = body.trim();
+  if (kind === "actor") {
+    return {
+      type: "npc",
+      data: {
+        notes: trimmedBody,
+        hp: { current: 1, max: 1 }
+      }
+    };
+  }
+  if (kind === "item") {
+    return {
+      type: "loot",
+      data: {
+        notes: trimmedBody,
+        quantity: 1
+      }
+    };
+  }
+  return {
+    body: trimmedBody,
+    visibility: "gm_only",
+    tags: ["content-import"]
+  };
+}
+
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
     campaigns: [],
@@ -48,6 +87,7 @@ export function App() {
     encounters: [],
     combats: [],
     proposals: [],
+    contentImports: [],
     memory: [],
     aiThreads: [],
     aiToolCalls: [],
@@ -61,7 +101,7 @@ export function App() {
   const [sceneId, setSceneId] = useState("scn_vault_entry");
   const [selectedTokenId, setSelectedTokenId] = useState("tok_valen");
   const [fogBrushMode, setFogBrushMode] = useState<FogMode | null>(null);
-  const [tab, setTab] = useState<"actors" | "journal" | "combat" | "ai" | "plugins" | "admin">("actors");
+  const [tab, setTab] = useState<"actors" | "journal" | "combat" | "content" | "ai" | "plugins" | "admin">("actors");
   const [status, setStatus] = useState("Loading campaign");
   const [diceFormula, setDiceFormula] = useState("1d20+5");
   const [chatBody, setChatBody] = useState("");
@@ -86,6 +126,10 @@ export function App() {
   const [importedActor, setImportedActor] = useState<Actor>();
   const [importStatus, setImportStatus] = useState("No archive imported this session");
   const [isImportingArchive, setIsImportingArchive] = useState(false);
+  const [contentImportKind, setContentImportKind] = useState<ContentImportEntityKind>("journal");
+  const [contentImportName, setContentImportName] = useState("");
+  const [contentImportBody, setContentImportBody] = useState("");
+  const [contentImportStatus, setContentImportStatus] = useState("No content import previewed this session");
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const selectedScene = snapshot.scenes.find((scene) => scene.id === sceneId);
@@ -833,15 +877,61 @@ export function App() {
 
   async function exportCampaign() {
     const archive = await apiGet<object>(`/api/v1/campaigns/${campaignId}/export`);
-    const blob = new Blob([JSON.stringify(archive, null, 2)], {
-      type: "application/json"
+    downloadJson(`${selectedCampaign?.name ?? "campaign"}.ottx.json`, archive);
+  }
+
+  async function exportDogfoodReportBundle() {
+    const report = await apiGet<object>(`/api/v1/campaigns/${campaignId}/dogfood-report-bundle`);
+    downloadJson(`${selectedCampaign?.name ?? "campaign"}-dogfood-report-bundle.json`, report);
+    setStatus("Dogfood report bundle exported");
+  }
+
+  async function previewContentImport() {
+    const trimmedName = contentImportName.trim();
+    if (!trimmedName) return;
+    const batch = await apiPost<ContentImportBatch>(`/api/v1/campaigns/${campaignId}/content-imports/preview`, {
+      source: {
+        sourceType: "manual",
+        sourceName: "Web manual content import",
+        license: {
+          name: "User-provided private table content",
+          usage: "private_home_game"
+        }
+      },
+      entities: [
+        {
+          kind: contentImportKind,
+          name: trimmedName,
+          selectedByDefault: true,
+          data: contentImportEntityData(contentImportKind, contentImportBody)
+        }
+      ]
     });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${selectedCampaign?.name ?? "campaign"}.ottx.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    setContentImportStatus(`Previewed ${batch.entities.length} ${batch.entities.length === 1 ? "record" : "records"}`);
+    setStatus("Content import previewed");
+    await refresh(campaignId, sceneId);
+  }
+
+  async function applyContentImport(batch: ContentImportBatch) {
+    const selectedEntityIds = batch.selectedEntityIds.length > 0 ? batch.selectedEntityIds : batch.entities.filter((entity) => entity.selectedByDefault).map((entity) => entity.id);
+    const updated = await apiPost<ContentImportBatch>(`/api/v1/content-imports/${batch.id}/apply`, { selectedEntityIds });
+    setContentImportStatus(`Applied ${updated.appliedRecords.length} ${updated.appliedRecords.length === 1 ? "record" : "records"}`);
+    setStatus("Content import applied");
+    await refresh(campaignId, sceneId);
+  }
+
+  async function rollbackContentImport(batch: ContentImportBatch) {
+    await apiPost<ContentImportBatch>(`/api/v1/content-imports/${batch.id}/rollback`, {});
+    setContentImportStatus(`Rolled back ${batch.source.sourceName}`);
+    setStatus("Content import rolled back");
+    await refresh(campaignId, sceneId);
+  }
+
+  async function deleteContentImport(batch: ContentImportBatch) {
+    await apiDelete<ContentImportBatch>(`/api/v1/content-imports/${batch.id}`);
+    setContentImportStatus(`Deleted ${batch.source.sourceName}`);
+    setStatus("Content import deleted");
+    await refresh(campaignId, sceneId);
   }
 
   if (resetMode) {
@@ -984,6 +1074,9 @@ export function App() {
         <button className="ghost-button" onClick={exportCampaign}>
           <Download size={16} /> Export
         </button>
+        <button className="ghost-button" onClick={() => exportDogfoodReportBundle().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))} title="Download a redacted issue report bundle">
+          <Download size={16} /> Report Bundle
+        </button>
         <button className="ghost-button" onClick={() => document.getElementById("import-file")?.click()} disabled={isImportingArchive} aria-describedby="import-status" title="Import .ottx JSON archive">
           {isImportingArchive ? <RefreshCw size={16} /> : <Upload size={16} />} Import
         </button>
@@ -1051,6 +1144,7 @@ export function App() {
               <TabButton active={tab === "actors"} icon={<Users size={15} />} label="Actors" onClick={() => setTab("actors")} />
               <TabButton active={tab === "journal"} icon={<ScrollText size={15} />} label="Journal" onClick={() => setTab("journal")} />
               <TabButton active={tab === "combat"} icon={<Swords size={15} />} label="Combat" onClick={() => setTab("combat")} />
+              <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Content" onClick={() => setTab("content")} />
               <TabButton active={tab === "ai"} icon={<Bot size={15} />} label="AI" onClick={() => setTab("ai")} />
               <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="SDK" onClick={() => setTab("plugins")} />
               {snapshot.session?.serverAdmin && <TabButton active={tab === "admin"} icon={<UserCog size={15} />} label="Admin" onClick={() => setTab("admin")} />}
@@ -1058,6 +1152,7 @@ export function App() {
             {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} items={selectedActorItems} updateActorHp={updateActorHp} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} onStart={startCombat} canManage={hasPermission("combat.manage")} />}
+            {tab === "content" && <ContentImportPanel imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} />}
             {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} rejectProposal={rejectProposalReview} approveMemory={approveMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} importedActor={importedActor} encounterPlan={encounterPlan} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onPlanEncounter={planSystemEncounter} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canPlanEncounter={hasPermission("combat.manage")} canRollSystem={hasPermission("dice.roll")} />}
             {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} campaigns={snapshot.campaigns} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onRevokeRiskSessions={revokeAdminRiskSessions} onPruneExpiredPasswordResets={pruneExpiredPasswordResets} onRetryEmail={retryAdminEmail} onRetryAllEmails={retryAllAdminEmails} onRetryAiToolCall={retryAdminAiToolCall} onFailStaleAiThreads={failStaleAiThreads} onFailStaleAiToolCalls={failStaleAiToolCalls} onRejectStaleAiProposals={rejectStaleAiProposals} onCleanupStoredAssetBytes={cleanupStoredAssetBytes} onMigrateStoredAssetBytes={migrateStoredAssetBytes} onQuarantineAssetIntegrityFailures={quarantineAssetIntegrityFailures} onPurgeAssetCdnCache={purgeAssetCdnCache} onUpdatePluginReview={updatePluginReview} onSyncPluginRegistries={syncAdminPluginRegistries} onCreateScimMapping={createScimGroupRoleMapping} onDeleteScimMapping={deleteScimGroupRoleMapping} />}
@@ -2983,6 +3078,89 @@ function CombatPanel(props: { combat?: Combat; onStart(): void; canManage: boole
           Start from scene tokens
         </button>
       )}
+    </div>
+  );
+}
+
+function ContentImportPanel(props: { imports: ContentImportBatch[]; kind: ContentImportEntityKind; setKind(kind: ContentImportEntityKind): void; name: string; setName(value: string): void; body: string; setBody(value: string): void; status: string; onPreview(): Promise<void>; onApply(batch: ContentImportBatch): Promise<void>; onRollback(batch: ContentImportBatch): Promise<void>; onDelete(batch: ContentImportBatch): Promise<void>; canManage: boolean }) {
+  const kinds: ContentImportEntityKind[] = ["journal", "handout", "actor", "item"];
+  return (
+    <div className="panel-stack">
+      <div className="panel-heading">
+        <div>
+          <div className="section-title">Content Import</div>
+        </div>
+      </div>
+      <form
+        className="operator-section content-import-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          props.onPreview().catch(console.error);
+        }}
+      >
+        <div className="admin-form-grid">
+          <label>
+            <span>Kind</span>
+            <select aria-label="Content import kind" value={props.kind} onChange={(event) => props.setKind(event.target.value as ContentImportEntityKind)}>
+              {kinds.map((kind) => (
+                <option key={kind} value={kind}>
+                  {titleCaseLabel(kind)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Name</span>
+            <input aria-label="Content import name" value={props.name} placeholder="Imported note" onChange={(event) => props.setName(event.target.value)} />
+          </label>
+        </div>
+        <label>
+          <span>{props.kind === "actor" || props.kind === "item" ? "Notes" : "Body"}</span>
+          <textarea aria-label="Content import body" value={props.body} placeholder="Content body" onChange={(event) => props.setBody(event.target.value)} />
+        </label>
+        <button className="primary-button wide" type="submit" disabled={!props.canManage || !props.name.trim()} title={props.canManage ? "Preview content import" : "Requires campaign.update"}>
+          <Upload size={16} /> Preview
+        </button>
+      </form>
+      <div className="admin-status" role="status" aria-live="polite">{props.status}</div>
+      <div className="operator-list">
+        {props.imports.length === 0 ? (
+          <div className="empty-state compact">No content imports for this campaign.</div>
+        ) : (
+          props.imports.map((batch) => (
+            <article className="operator-item" key={batch.id}>
+              <div className="operator-heading">
+                <div>
+                  <h3>{batch.source.sourceName}</h3>
+                  <p>{batch.status} - {batch.entities.length} {batch.entities.length === 1 ? "entity" : "entities"} - {batch.source.license.usage}</p>
+                </div>
+                <span className="status-pill">{batch.status}</span>
+              </div>
+              <div className="admin-meta">
+                {batch.entities.map((entity) => (
+                  <span key={entity.id}>{titleCaseLabel(entity.kind)}: {entity.name}</span>
+                ))}
+              </div>
+              {batch.entities.some((entity) => entity.warnings.length > 0) && (
+                <div className="admin-meta">
+                  {batch.entities.flatMap((entity) => entity.warnings.map((warning) => <span key={`${entity.id}-${warning}`}>{warning}</span>))}
+                </div>
+              )}
+              <div className="admin-actions">
+                <button className="ghost-button" onClick={() => props.onApply(batch).catch(console.error)} disabled={!props.canManage || batch.status === "applied"} title={props.canManage ? "Apply selected import entities" : "Requires campaign.update"}>
+                  <Check size={16} /> Apply
+                </button>
+                <button className="ghost-button" onClick={() => props.onRollback(batch).catch(console.error)} disabled={!props.canManage || batch.status !== "applied"} title={props.canManage ? "Rollback applied records" : "Requires campaign.update"}>
+                  <RotateCcw size={16} /> Rollback
+                </button>
+                <button className="ghost-button" onClick={() => props.onDelete(batch).catch(console.error)} disabled={!props.canManage || batch.status === "applied"} title={props.canManage ? "Delete import preview" : "Requires campaign.update"}>
+                  <X size={16} /> Delete
+                </button>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
     </div>
   );
 }

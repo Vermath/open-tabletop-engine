@@ -338,6 +338,6 @@ Validation:
 - Clean clone `pnpm install --frozen-lockfile --dir %TEMP%\otte-beta-clean-1778536962` passed.
 - Clean clone `pnpm --dir %TEMP%\otte-beta-clean-1778536962 check` passed.
 
-Gaps carried forward:
+Postscript:
 
-- Push the accepted beta v0.2 commit to GitHub.
+- The accepted beta v0.2 commit was pushed to GitHub on `main`; v0.3 outside dogfood work is tracked separately in `docs/verification/v0.3-dogfood-progress.md`.

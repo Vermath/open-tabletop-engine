@@ -138,6 +138,7 @@ OIDC SSO is enabled when `OTTE_OIDC_ISSUER` and `OTTE_OIDC_CLIENT_ID` are set. T
 - `GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet`
 - `POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll`
 - `GET /api/v1/campaigns/{campaignId}/export`
+- `GET /api/v1/campaigns/{campaignId}/dogfood-report-bundle`
 - `POST /api/v1/import/campaign`
 - `GET /api/v1/campaigns/{campaignId}/content-imports`
 - `POST /api/v1/campaigns/{campaignId}/content-imports/preview`
@@ -537,6 +538,8 @@ Scene layer authoring is split into focused endpoints. Fog reveal uses `token.re
 The default `upsert` mode replaces records with matching ids and inserts missing records, which supports round-tripping a campaign into a fresh instance or refreshing an existing imported campaign. Use `reject_conflicts` to return `409` when imported ids already exist. Archive imports accept schema versions `0.1.0` and `0.2.0`; new exports are written as `0.2.0`.
 
 Archives include uploaded asset files in a top-level `files` array, regardless of whether the active backend is local disk or S3-compatible object storage. Each entry stores base64 data plus size and `sha256` checksum metadata. Import validates the asset id, size, and checksum before restoring the file through the configured asset storage provider, so uploaded map backgrounds can round-trip into a fresh instance. Asset storage operations also separate unscanned uploads from managed assets with persisted medium/high trust-scan findings; those assets appear under `asset_trust_warnings` and `review_asset_trust_warnings` with bounded asset ids, scanner names, finding counts, severities, and finding codes but no scanner URLs, tokens, object bytes, or checksums.
+
+`GET /api/v1/campaigns/{campaignId}/dogfood-report-bundle` returns a redacted JSON report for outside dogfood issues. It requires `campaign.read` and includes counts, visibility summaries, scene/token/actor metadata, proposal/eval/tool-call status, content import metadata, and recent audit action ids while omitting emails, auth state, reset/invite tokens, journal and handout bodies, chat bodies, AI messages, AI memory text, AI tool inputs/outputs, raw content-import data, asset URLs, and asset bytes.
 
 Safe content import primitives are separate from campaign archive import. They are campaign-local preview records for user-provided or adapter-normalized content, not a scraper. `POST /api/v1/campaigns/{campaignId}/content-imports/preview` requires `campaign.update` and stores a batch with source adapter metadata, provenance, license usage, per-entity warnings, and default selections. Supported preview entity kinds are `actor`, `item`, `journal`, and `handout`. `POST /api/v1/content-imports/{importId}/apply` selectively creates only the requested records and audits `contentImport.applied`; it does not let AI or plugins secretly mutate campaign state. `POST /api/v1/content-imports/{importId}/rollback` removes records created by that batch and audits the removal. `DELETE /api/v1/content-imports/{importId}` deletes unapplied or rolled-back preview state; applied imports must be rolled back first. D&D Beyond and other external services remain adapter-boundaries only: no scraping, auth bypass, or proprietary payloads should be included, and source/license warnings are stored with the preview.
 

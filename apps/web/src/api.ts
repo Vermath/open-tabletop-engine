@@ -1,4 +1,4 @@
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, EmailOutboxMessage, Encounter, FogPreset, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, EmailOutboxMessage, Encounter, FogPreset, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -178,6 +178,7 @@ export interface Snapshot {
   encounters: Encounter[];
   combats: Combat[];
   proposals: Proposal[];
+  contentImports: ContentImportBatch[];
   memory: AiMemoryFact[];
   aiThreads: AiThread[];
   aiUsage?: AiUsageSummary;
@@ -2148,6 +2149,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       encounters: [],
       combats: [],
       proposals: [],
+      contentImports: [],
       memory: [],
       aiThreads: [],
       aiToolCalls: [],
@@ -2161,7 +2163,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   const members = await apiGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`);
   const currentMember = members.find((member) => member.user.id === session.user.id);
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
-  const [assets, fogPresets, tokens, vision, actors, items, journals, chat, encounters, combats, proposals, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
+  const [assets, fogPresets, tokens, vision, actors, items, journals, chat, encounters, combats, proposals, contentImports, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
     apiGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
     currentMember?.permissions.includes("token.reveal") ? apiGet<FogPreset[]>(`/api/v1/campaigns/${selectedCampaignId}/fog-presets`) : Promise.resolve([]),
     selectedSceneId ? apiGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
@@ -2173,6 +2175,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     apiGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
     apiGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
     apiGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
+    apiGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`),
     apiGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`),
     canViewAiOperations ? apiGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
     canViewAiOperations ? apiGet<AiUsageSummary>(`/api/v1/campaigns/${selectedCampaignId}/ai/usage`) : Promise.resolve(undefined),
@@ -2198,6 +2201,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     encounters,
     combats,
     proposals,
+    contentImports,
     memory,
     aiThreads,
     aiUsage,

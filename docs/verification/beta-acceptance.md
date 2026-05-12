@@ -8,7 +8,7 @@ Ship OpenTabletop Engine beta v0.2 from the public-alpha baseline as a dogfoodab
 
 ## Final Status
 
-Accepted for beta v0.2 publication. The final GitHub push happens after this proof is committed so the pushed commit includes the acceptance record.
+Accepted for beta v0.2 publication and pushed to GitHub on `main`.
 
 ## Prompt-To-Artifact Checklist
 
@@ -26,7 +26,7 @@ Accepted for beta v0.2 publication. The final GitHub push happens after this pro
 | Safe content import primitives exist | Core/API types and endpoints for preview/list/apply/rollback/delete, provenance/license metadata, audit logs, campaign-local records, REST/self-hosting docs, focused API regression | Ready. The boundary explicitly excludes D&D Beyond scraping/auth bypass and proprietary content. |
 | Release/ops docs are beta-ready | `docs/release/beta-v0.2.md`, upgrade, backup/restore, deployment/admin/security checklists, issue template, README and roadmap pointers | Ready. |
 | Final validation passes | Frozen install, focused checks, full workspace check, live API/web/browser smoke, clean temp clone install/check | Ready. |
-| Beta pushed to GitHub | Final `git push origin main` after this proof is committed | Ready for publication step. |
+| Beta pushed to GitHub | `origin/main` contains the accepted beta v0.2 commit | Ready. |
 
 ## Blocked Or Post-Beta
 

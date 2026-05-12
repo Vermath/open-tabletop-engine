@@ -251,7 +251,7 @@ export const openApiSpec = {
   openapi: "3.1.0",
   info: {
     title: "OpenTabletop Engine API",
-    version: "0.2.0"
+    version: "0.3.0"
   },
   paths
 };

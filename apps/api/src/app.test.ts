@@ -16361,7 +16361,7 @@ describe("api", () => {
           }),
           compatibilityOperations: expect.objectContaining({
             actionRequired: true,
-            coreVersion: "0.2.0",
+            coreVersion: "0.3.0",
             incompatiblePackageCount: 1,
             incompatibleInstalledCount: 1,
             packages: [expect.objectContaining({ pluginId: "future-plugin", version: "1.0.0", compatibleCore: ">=9.0.0" })],
@@ -16445,9 +16445,9 @@ describe("api", () => {
           expect.objectContaining({
             pluginId: "future-plugin",
             status: "blocked",
-            compatibleCore: { range: ">=9.0.0", coreVersion: "0.2.0", satisfied: false },
+            compatibleCore: { range: ">=9.0.0", coreVersion: "0.3.0", satisfied: false },
             issues: expect.arrayContaining(["marketplace_review_blocked", "core_compatibility_drift"]),
-            blocks: expect.arrayContaining(["Plugin requires core >=9.0.0; server core is 0.2.0"])
+            blocks: expect.arrayContaining(["Plugin requires core >=9.0.0; server core is 0.3.0"])
           }),
           expect.objectContaining({ pluginId: "missing-plugin", status: "missing_package", issues: ["installed_plugin_package_missing"] })
         ])
@@ -23933,6 +23933,159 @@ registerCommand("/state", (input) => {
     );
 
     await app.close();
+  });
+
+  it("exports a sanitized dogfood report bundle without table secrets", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const previewed = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/content-imports/preview",
+      headers: authHeaders,
+      payload: {
+        source: {
+          sourceType: "user_upload",
+          sourceName: "Private table notes",
+          sourceUrl: "https://private.example.test/export?token=very-private-secret",
+          license: {
+            name: "Private home table export",
+            usage: "private_home_game"
+          }
+        },
+        entities: [
+          {
+            id: "rumor_ember_key",
+            kind: "journal",
+            name: "Imported Rumor: Ember Key",
+            selectedByDefault: true,
+            data: {
+              body: "The ember key hums near a lit brazier.",
+              visibility: "public",
+              tags: ["content-import", "rumor"]
+            }
+          }
+        ]
+      }
+    });
+    expect(previewed.statusCode).toBe(200);
+
+    const reportResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/dogfood-report-bundle",
+      headers: authHeaders
+    });
+    expect(reportResponse.statusCode).toBe(200);
+    const report = reportResponse.json() as {
+      format: string;
+      version: string;
+      counts: { contentImports: number };
+      contentImports: Array<{ entities: Array<{ dataKeys: string[] }> }>;
+    };
+    expect(report).toEqual(
+      expect.objectContaining({
+        format: "otte-dogfood-report-bundle",
+        version: "0.3.0",
+        counts: expect.objectContaining({ contentImports: 1 })
+      })
+    );
+    expect(report.contentImports[0]?.entities[0]?.dataKeys).toEqual(["body", "tags", "visibility"]);
+    const serialized = JSON.stringify(report);
+    expect(serialized).not.toContain("gm@example.test");
+    expect(serialized).not.toContain("player@example.test");
+    expect(serialized).not.toContain("The ember key hums");
+    expect(serialized).not.toContain("very-private-secret");
+
+    await app.close();
+  });
+
+  it("restores beta archive state after sqlite restart and failed import recovery", async () => {
+    const archive = JSON.parse(readFileSync(join(process.cwd(), "..", "..", "docs", "demo", "ember-vault-beta-dogfood.ottx.json"), "utf8"));
+    const tempDir = mkdtempSync(join(tmpdir(), "otte-v03-"));
+    const dbPath = join(tempDir, "state.sqlite");
+
+    try {
+      let store = new SqliteStateStore(dbPath);
+      let app = await buildApp({ store });
+      const imported = await app.inject({
+        method: "POST",
+        url: "/api/v1/import/campaign",
+        headers: authHeaders,
+        payload: archive
+      });
+      expect(imported.statusCode).toBe(200);
+
+      const previewed = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_beta_ember_vault/content-imports/preview",
+        headers: authHeaders,
+        payload: {
+          source: {
+            sourceType: "manual",
+            sourceName: "Restart smoke note",
+            license: { name: "Private table note", usage: "private_home_game" }
+          },
+          entities: [
+            {
+              id: "restart_note",
+              kind: "journal",
+              name: "Restart Smoke Note",
+              selectedByDefault: true,
+              data: { body: "Restart-only private table detail.", visibility: "gm_only" }
+            }
+          ]
+        }
+      });
+      expect(previewed.statusCode).toBe(200);
+      await app.close();
+      store.close();
+
+      store = new SqliteStateStore(dbPath);
+      app = await buildApp({ store });
+      const campaigns = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: authHeaders
+      });
+      expect(campaigns.statusCode).toBe(200);
+      expect(campaigns.json().map((campaign: { id: string }) => campaign.id)).toContain("camp_beta_ember_vault");
+
+      const imports = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_beta_ember_vault/content-imports",
+        headers: authHeaders
+      });
+      expect(imports.statusCode).toBe(200);
+      expect(imports.json()).toEqual([expect.objectContaining({ id: previewed.json().id, status: "previewed" })]);
+
+      const rejected = await app.inject({
+        method: "POST",
+        url: "/api/v1/import/campaign",
+        headers: authHeaders,
+        payload: { ...archive, version: "9.9.9" }
+      });
+      expect(rejected.statusCode).toBe(400);
+
+      const exported = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_beta_ember_vault/export",
+        headers: authHeaders
+      });
+      expect(exported.statusCode).toBe(200);
+      expect(exported.json()).toEqual(
+        expect.objectContaining({
+          format: "ottx",
+          version: "0.2.0",
+          manifest: expect.objectContaining({ schemaVersion: "0.2.0" })
+        })
+      );
+      expect(store.state.contentImports.map((item) => item.id)).toContain(previewed.json().id);
+
+      await app.close();
+      store.close();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("imports the beta dogfood archive with three-session SRD campaign evidence intact", async () => {

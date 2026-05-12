@@ -42,7 +42,7 @@ type PluginReviewPolicyMode = "allow_unreviewed" | "require_approved";
 
 const MAX_FOG_HISTORY_ENTRIES = 100;
 const DEFAULT_SYSTEM_ID = DND_5E_SRD_SYSTEM_ID;
-const CORE_COMPATIBILITY_VERSION = "0.2.0";
+const CORE_COMPATIBILITY_VERSION = "0.3.0";
 const AI_STALE_RUNNING_THREAD_MS = 15 * 60 * 1000;
 const AI_STALE_STARTED_TOOL_CALL_MS = 15 * 60 * 1000;
 const AI_STALE_PROPOSAL_REVIEW_MS = 24 * 60 * 60 * 1000;
@@ -187,7 +187,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.get("/api/v1/health", async () => ({
     ok: true,
-    version: "0.2.0",
+    version: "0.3.0",
     service: "open-tabletop-api"
   }));
 
@@ -4607,6 +4607,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
     return await withArchivedAssetFiles(makeArchive(store.state, request.params.campaignId), assetStorage);
+  });
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/dogfood-report-bundle", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    return makeDogfoodReportBundle(store.state, request.params.campaignId);
   });
 
   app.post<{
@@ -16374,6 +16380,266 @@ function safeDecodeURIComponent(value: string): string {
   } catch {
     return value;
   }
+}
+
+function makeDogfoodReportBundle(state: EngineState, campaignId: string): Record<string, unknown> {
+  const archive = makeArchive(state, campaignId);
+  const data = archive.data;
+  const campaign = data.campaigns[0];
+  if (!campaign) throw new Error(`Campaign not found: ${campaignId}`);
+  const usersById = new Map(data.users.map((user) => [user.id, user]));
+  const tokensByScene = countOptionalBy(data.tokens, (token) => token.sceneId);
+  const journalsByVisibility = countOptionalBy(data.journals, (journal) => journal.visibility);
+  const handoutsByVisibility = countOptionalBy(data.handouts, (handout) => handout.visibility);
+
+  return {
+    format: "otte-dogfood-report-bundle",
+    version: "0.3.0",
+    exportedAt: nowIso(),
+    privacy: {
+      mode: "redacted",
+      omitted: [
+        "user emails",
+        "password hashes",
+        "sessions and auth identities",
+        "OAuth and reset tokens",
+        "invite tokens",
+        "journal and handout bodies",
+        "chat message bodies",
+        "AI assistant messages",
+        "AI memory text",
+        "AI tool inputs and outputs",
+        "content import raw entity data",
+        "asset bytes and URLs"
+      ],
+      note: "Attach this bundle to outside dogfood reports when the full campaign archive would expose table content or credentials."
+    },
+    sourceArchive: {
+      format: archive.format,
+      version: archive.version,
+      schemaVersion: archive.manifest.schemaVersion,
+      assetCount: archive.manifest.assetCount
+    },
+    campaign: {
+      id: campaign.id,
+      name: campaign.name,
+      defaultSystemId: campaign.defaultSystemId,
+      visibility: campaign.visibility,
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt
+    },
+    counts: {
+      users: data.users.length,
+      members: data.members.length,
+      scenes: data.scenes.length,
+      assets: data.assets.length,
+      tokens: data.tokens.length,
+      actors: data.actors.length,
+      items: data.items.length,
+      journals: data.journals.length,
+      handouts: data.handouts.length,
+      chat: data.chat.length,
+      rolls: data.rolls.length,
+      encounters: data.encounters.length,
+      combats: data.combats.length,
+      proposals: data.proposals.length,
+      aiThreads: data.aiThreads.length,
+      aiEvaluations: data.aiEvaluations.length,
+      aiMemory: data.aiMemory.length,
+      aiToolCalls: data.aiToolCalls.length,
+      auditLogs: data.auditLogs.length,
+      contentImports: data.contentImports.length,
+      pluginStorage: data.pluginStorage.length
+    },
+    members: data.members.map((member) => ({
+      id: member.id,
+      userId: member.userId,
+      displayName: usersById.get(member.userId)?.displayName,
+      role: member.role,
+      permissionCount: permissionsForRole(member.role).length
+    })),
+    scenes: data.scenes.map((scene) => ({
+      id: scene.id,
+      name: scene.name,
+      active: scene.active,
+      gridType: scene.gridType,
+      dimensions: { width: scene.width, height: scene.height, gridSize: scene.gridSize },
+      tokenCount: tokensByScene.get(scene.id) ?? 0,
+      wallCount: scene.walls.length,
+      lightCount: scene.lights.length,
+      fogRegionCount: scene.fog.length
+    })),
+    assets: data.assets.map((asset) => ({
+      id: asset.id,
+      name: asset.name,
+      mimeType: asset.mimeType,
+      sizeBytes: asset.sizeBytes,
+      lifecycleStatus: asset.lifecycle?.status,
+      securityStatus: asset.security?.status
+    })),
+    actors: data.actors.map((actor) => {
+      const hp = recordFromRecord(actor.data, "hp");
+      return {
+        id: actor.id,
+        name: actor.name,
+        type: actor.type,
+        systemId: actor.systemId,
+        ownerUserId: actor.ownerUserId,
+        itemCount: data.items.filter((item) => item.actorId === actor.id).length,
+        hp: hp
+          ? {
+              current: numberFromRecord(hp, "current", 0, 100000),
+              max: numberFromRecord(hp, "max", 0, 100000)
+            }
+          : undefined,
+        dataKeys: recordKeys(actor.data)
+      };
+    }),
+    tokens: data.tokens.map((token) => ({
+      id: token.id,
+      sceneId: token.sceneId,
+      actorId: token.actorId,
+      name: token.name,
+      disposition: token.disposition,
+      hidden: token.hidden,
+      locked: token.locked,
+      visionEnabled: token.visionEnabled,
+      hasStatusMarkers: recordKeys(isRecord(token.metadata.statusMarkers) ? token.metadata.statusMarkers : {}).length > 0
+    })),
+    journals: data.journals.map((journal) => ({
+      id: journal.id,
+      title: journal.title,
+      visibility: journal.visibility,
+      bodyLength: journal.body.length,
+      tags: journal.tags,
+      createdBy: journal.createdBy,
+      updatedBy: journal.updatedBy
+    })),
+    handouts: data.handouts.map((handout) => ({
+      id: handout.id,
+      title: handout.title,
+      visibility: handout.visibility,
+      bodyLength: handout.body.length,
+      assetCount: handout.assetIds.length
+    })),
+    visibilitySummary: {
+      journals: Object.fromEntries(journalsByVisibility),
+      handouts: Object.fromEntries(handoutsByVisibility)
+    },
+    recentChat: data.chat.slice(-20).map((message) => ({
+      id: message.id,
+      sceneId: message.sceneId,
+      userId: message.userId,
+      type: message.type,
+      visibility: message.visibility,
+      bodyLength: message.body.length,
+      rollId: message.rollId,
+      createdAt: message.createdAt
+    })),
+    combats: data.combats.map((combat) => ({
+      id: combat.id,
+      encounterId: combat.encounterId,
+      active: combat.active,
+      round: combat.round,
+      turnIndex: combat.turnIndex,
+      combatantCount: combat.combatants.length,
+      defeatedCount: combat.combatants.filter((combatant) => combatant.defeated).length
+    })),
+    proposals: data.proposals.map((proposal) => ({
+      id: proposal.id,
+      createdByType: proposal.createdByType,
+      sourceId: proposal.sourceId,
+      status: proposal.status,
+      approvalRequired: proposal.approvalRequired,
+      changeCount: proposal.changesJson.length,
+      entityTypes: [...new Set(proposal.changesJson.map((change) => change.entity))],
+      titleLength: proposal.title.length,
+      summaryLength: proposal.summary.length
+    })),
+    ai: {
+      threads: data.aiThreads.map((thread) => ({
+        id: thread.id,
+        provider: thread.provider,
+        status: thread.status,
+        durationMs: thread.durationMs,
+        retryAttempts: thread.retryAttempts,
+        eventCount: thread.eventCount,
+        toolCallCount: thread.toolCallCount,
+        advertisedToolNames: thread.advertisedToolNames ?? thread.advertisedTools?.map((tool) => tool.name) ?? [],
+        assistantMessageLength: thread.assistantMessage?.length ?? 0,
+        providerErrorLength: thread.providerError?.length ?? 0
+      })),
+      evaluations: data.aiEvaluations.map((evaluation) => ({
+        id: evaluation.id,
+        name: evaluation.name,
+        status: evaluation.status,
+        score: evaluation.score,
+        checkResults: evaluation.checks.map((check) => ({ name: check.name, status: check.status }))
+      })),
+      memory: data.aiMemory.map((memory) => ({
+        id: memory.id,
+        visibility: memory.visibility,
+        textLength: memory.text.length,
+        sourceCount: memory.sourceIds.length,
+        approved: Boolean(memory.approvedByUserId)
+      })),
+      toolCalls: data.aiToolCalls.map((toolCall) => ({
+        id: toolCall.id,
+        threadId: toolCall.threadId,
+        toolName: toolCall.toolName,
+        status: toolCall.status,
+        durationMs: toolCall.durationMs,
+        retried: Boolean(toolCall.retry)
+      }))
+    },
+    contentImports: data.contentImports.map((batch) => ({
+      id: batch.id,
+      status: batch.status,
+      source: {
+        sourceType: batch.source.sourceType,
+        adapterId: batch.source.adapterId,
+        sourceName: batch.source.sourceName,
+        license: batch.source.license
+      },
+      selectedEntityIds: batch.selectedEntityIds,
+      appliedRecords: batch.appliedRecords,
+      entities: batch.entities.map((entity) => ({
+        id: entity.id,
+        kind: entity.kind,
+        name: entity.name,
+        selectedByDefault: entity.selectedByDefault,
+        warnings: entity.warnings,
+        dataKeys: recordKeys(entity.data)
+      })),
+      createdAt: batch.createdAt,
+      updatedAt: batch.updatedAt,
+      appliedAt: batch.appliedAt,
+      rolledBackAt: batch.rolledBackAt
+    })),
+    recentAudit: data.auditLogs.slice(-50).map((log) => ({
+      id: log.id,
+      actorType: log.actorType,
+      actorUserId: log.actorUserId,
+      action: log.action,
+      targetType: log.targetType,
+      targetId: log.targetId,
+      createdAt: log.createdAt
+    }))
+  };
+}
+
+function countOptionalBy<T>(items: T[], keyFor: (item: T) => string | undefined): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const key = keyFor(item);
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function recordKeys(value: unknown): string[] {
+  return isRecord(value) ? Object.keys(value).sort() : [];
 }
 
 async function withArchivedAssetFiles(archive: CampaignArchive, assetStorage: AssetStorage): Promise<CampaignArchive> {

@@ -1,0 +1,65 @@
+name: v0.3 outside dogfood report
+description: Report a v0.3 outside dogfood issue with reproducible context.
+title: "[v0.3 dogfood] "
+labels:
+  - v0.3
+  - dogfood
+body:
+  - type: input
+    id: campaign
+    attributes:
+      label: Campaign id
+      description: Example: camp_beta_ember_vault
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - GM setup UX
+        - Player join/session UX
+        - Realtime
+        - Archive import/export
+        - Backup/restore/restart
+        - Safe content import
+        - D&D/SRD rules
+        - AI proposal/eval
+        - Plugin/system
+        - Deployment/ops
+        - Privacy/redaction
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Include role, browser, API/web commit, and exact action sequence.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: recovery
+    attributes:
+      label: Recovery tried
+      description: Note refresh, API restart, rollback, export/import, or backup restore attempts.
+    validations:
+      required: false
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Attach screenshots, console/API errors, audit ids, exported archive names, or the redacted Report Bundle. Do not paste secrets.
+    validations:
+      required: false

@@ -11,7 +11,8 @@
 
 ## Post-Alpha
 
-- Ship beta v0.2 dogfood with the three-session Ember Vault beta fixture, GM+3 realtime smoke, archive `0.2.0` export, alpha archive upgrade proof, safe content import primitives, and release/ops documentation.
+- Beta v0.2 is accepted and pushed with the three-session Ember Vault beta fixture, GM+3 realtime smoke, archive `0.2.0` export, alpha archive upgrade proof, safe content import primitives, and release/ops documentation.
+- Ship v0.3 outside dogfood so unaffiliated GMs can onboard, run multi-session games, recover from failures, and file useful reports.
 - Broaden hosted deployment hardening, observability, and admin operations.
 - Expand rules-system depth outside the primary `dnd-5e-srd` slice.
 - Add safe importer adapters only where users provide legally reusable data or a documented permitted API exists.
@@ -25,7 +26,16 @@
 - Keep D&D/SRD dogfood on `dnd-5e-srd` with supported/unsupported beta scope in `docs/system-sdk/dnd-srd-beta-support.md` and no proprietary content.
 - Keep safe content imports as preview/apply/rollback/delete flows with provenance, license metadata, selective import, and audit logs.
 - Keep AI and plugins permissioned, proposal-based, and auditable.
-- Finish final beta acceptance only after clean checkout, frozen install, `pnpm check`, API/web runtime, dogfood walkthrough, GM+3 realtime, export/import, AI eval, plugin/system smoke, and GitHub push proof.
+- Final beta acceptance is recorded in `docs/verification/beta-acceptance.md`.
+
+## v0.3 Outside Dogfood
+
+- Route non-expert GMs and players through `docs/dogfood/`.
+- Keep v0.3 issue reports reproducible through the redacted dogfood Report Bundle and the v0.3 issue template.
+- Keep safe content import usable in the web client with preview, apply, rollback, delete, provenance, license metadata, and audit logs.
+- Verify restart recovery, failed-import recovery, backup/export/import, and beta archive compatibility before acceptance.
+- Keep AI and plugins proposal-based, permissioned, and auditable.
+- Accept v0.3 only after `pnpm check`, API/web runtime, GM+3 dogfood proof, three-session runbook proof, export/import proof, AI eval, and plugin/system smoke are recorded in `docs/verification/v0.3-dogfood-acceptance.md`.
 
 ## Out Of Scope
 

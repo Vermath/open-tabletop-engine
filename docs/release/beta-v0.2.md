@@ -4,7 +4,7 @@ Date: 2026-05-11
 
 ## Summary
 
-Beta v0.2 moves OpenTabletop Engine from public-alpha one-shot proof toward outside dogfood for real multi-session campaigns. The beta baseline keeps the API-first shape, SRD-only content policy, proposal-based AI/plugins, and self-hostable default.
+Beta v0.2 moved OpenTabletop Engine from public-alpha one-shot proof toward outside dogfood for real multi-session campaigns. The beta baseline keeps the API-first shape, SRD-only content policy, proposal-based AI/plugins, and self-hostable default.
 
 ## Highlights
 
@@ -23,14 +23,14 @@ Beta v0.2 moves OpenTabletop Engine from public-alpha one-shot proof toward outs
 
 ## Known Beta Limits
 
-- The beta dogfood fixture has focused API proof; final acceptance still requires the full API/web walkthrough and GM+3 realtime smoke.
-- Safe content import primitives are API-first in this slice; web polish and import-status UX remain part of beta hardening.
-- AI quality has fixture-backed smoke evidence; final acceptance still needs the dedicated eval run/report.
+- Beta v0.2 acceptance is complete in `docs/verification/beta-acceptance.md`.
+- Safe content import primitives were API-first in beta v0.2; v0.3 adds web preview/apply/rollback/delete UX.
+- Outside-dogfood onboarding, redacted report bundles, and broader recovery proof are v0.3 work.
 - Marketplace-scale distribution, payments, and exhaustive rules-system coverage remain post-beta.
 
 ## Validation Targets
 
-Before tagging or announcing beta v0.2, run:
+For beta v0.2 maintenance, keep these checks green:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -39,4 +39,4 @@ pnpm --filter @open-tabletop/api dev
 pnpm --filter @open-tabletop/web dev
 ```
 
-Then record proof in `docs/verification/beta-acceptance.md` for the beta dogfood walkthrough, GM+3 realtime smoke, archive export/import, alpha archive upgrade, AI eval, plugin/system smoke, and clean-copy validation.
+The accepted beta proof is recorded in `docs/verification/beta-acceptance.md`. New outside-dogfood proof belongs in `docs/verification/v0.3-dogfood-acceptance.md`.

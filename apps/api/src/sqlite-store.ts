@@ -55,6 +55,7 @@ const stateCollections = [
   "permissionGrants",
   "pluginStorage",
   "pluginReviews",
+  "contentImports",
   "fogPresets"
 ] as const satisfies ReadonlyArray<keyof EngineState>;
 

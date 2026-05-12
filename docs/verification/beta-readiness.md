@@ -46,7 +46,7 @@ Ship OpenTabletop Engine beta v0.2 from the public-alpha baseline. Beta should m
 | 9. Safe content import primitives | Ready | Core defines content import source adapters, provenance/license metadata, preview entities, applied records, and campaign-local import batches. API endpoints preview, list, apply, roll back, and delete user-provided actor/item/journal/handout imports with audit logs. Focused API tests verify selective import, rollback/delete, provenance/license warnings, and no hidden plugin/AI mutation path. | Post-beta: more source adapters. |
 | 10. Release and ops | Ready | README points to the beta dogfood runbook and release/ops docs. Release notes, upgrade guide, backup/restore guide, deployment checklist, admin/observability checklist, security checklist, and issue template exist. | Post-beta: deployment-specific runbooks. |
 | 11. Final validation | Ready | Local and clean temp clone `pnpm install --frozen-lockfile`/`pnpm check` passed, plus focused API/web/runtime/browser checks. | Re-run before future releases. |
-| 12. GitHub publication | Ready for push | Public alpha commit was pushed to `origin/main`; beta acceptance proof is complete. | Push beta v0.2 changes to `origin/main`. |
+| 12. GitHub publication | Ready | Beta v0.2 acceptance proof is complete and pushed to `origin/main`. | Track v0.3 outside dogfood separately. |
 
 ## Prompt-To-Artifact Checklist
 
@@ -78,4 +78,4 @@ Ship OpenTabletop Engine beta v0.2 from the public-alpha baseline. Beta should m
 
 ## Next Concrete Work
 
-Push the accepted beta v0.2 commit to `origin/main`, then start collecting outside dogfood reports with `.github/ISSUE_TEMPLATE/beta-dogfood-report.yml`.
+Beta v0.2 is accepted and pushed. Collect new outside dogfood reports with `.github/ISSUE_TEMPLATE/v0.3-outside-dogfood-report.yml`.

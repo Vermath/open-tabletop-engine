@@ -109,6 +109,8 @@ curl -X POST \
 
 Campaign archives are JSON `.ottx` files. The import endpoint upserts every archive collection, including users, members, scenes, assets, tokens, actors, journals, encounters, combats, AI memory, audit logs, permission grants, plugin storage, and content-import preview records. Uploaded asset files are embedded as base64 archive `files` entries with size and `sha256` checksums; import validates and restores them through the active asset storage provider. Imports accept archive schema versions `0.1.0` and `0.2.0`; current exports are written as `0.2.0`, so importing an alpha archive and exporting it again is the supported upgrade path.
 
+For outside dogfood reports, use the browser Report Bundle button or `GET /api/v1/campaigns/{campaignId}/dogfood-report-bundle`. The bundle is designed for issue attachments and omits user emails, auth/session records, token-bearing records, journal/handout/chat bodies, AI message and tool payloads, raw content-import data, asset URLs, and asset bytes.
+
 Use the content import preview/apply/rollback endpoints for user-provided content that is not a full campaign archive. These records are campaign-local, include source adapter metadata plus provenance/license fields, support selective actor/item/journal/handout import, and can be rolled back or deleted with audit logs. They are not a D&D Beyond scraper or an auth-bypass mechanism; external-service adapters must use permitted APIs or user-provided exports and must not store proprietary content in this repository.
 
 Raw image uploads can be assigned directly to a scene background:

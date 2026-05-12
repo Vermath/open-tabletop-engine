@@ -738,6 +738,21 @@ textarea:focus-visible {
   background: #15130f;
 }
 
+.content-import-form > label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.content-import-form textarea {
+  min-height: 96px;
+  resize: vertical;
+  border-color: #463b2a;
+  background: #15130f;
+}
+
 .admin-meta,
 .admin-actions {
   display: flex;
