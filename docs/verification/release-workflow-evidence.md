@@ -47,6 +47,24 @@ Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are usefu
 - Blockers: live GitHub Pages publication still required after `main` publication or owner-approved equivalent
 - Notes: This is hosted build evidence only, not public Pages deployment evidence.
 
+## Hosted Workflow Evidence: Docs Site Publication Attempt
+
+- Date: 2026-05-14
+- Operator: Codex
+- Workflow file: `.github/workflows/docs-site.yml`
+- Trigger: configuration attempt before publication
+- Branch or ref: `v1-gap-closure-evidence`
+- Commit SHA: `cb6a033`
+- Run URL: not created
+- Result: blocked before workflow dispatch
+- Release command or build command: `gh api --method POST repos/Vermath/open-tabletop-engine/pages -f build_type=workflow`
+- Duration: immediate API response
+- Published URL, if docs-site deploy: not published
+- Required checks observed: GitHub API returned `422` with `Your current plan does not support GitHub Pages for this repository.`
+- Issues filed: none
+- Blockers: current GitHub plan does not support Pages for this private repository; final docs publication needs owner-supported Pages enablement, repo visibility/plan change by the owner, or an owner-approved equivalent hosted publication.
+- Notes: `.github/workflows/docs-site.yml` now uploads and deploys the Pages artifact on either `main` push or explicit `workflow_dispatch` once Pages is available, while PR runs remain build-only.
+
 ## Required Hosted Runs
 
 Collect evidence for both workflows before final v1 acceptance:
@@ -54,7 +72,7 @@ Collect evidence for both workflows before final v1 acceptance:
 | Workflow | Required trigger | Required result | Evidence required |
 | --- | --- | --- | --- |
 | `.github/workflows/release-smoke.yml` | Pull request or `main` push for the release commit | `pnpm release:smoke` succeeds in GitHub Actions | Run URL, commit SHA, branch/ref, completion time, and pass summary |
-| `.github/workflows/docs-site.yml` | `main` push after Pages is enabled, or an owner-approved equivalent publication run | Docs build succeeds and Pages deploy completes | Run URL, commit SHA, published Pages URL, completion time, and pass summary |
+| `.github/workflows/docs-site.yml` | `main` push or `workflow_dispatch` after Pages is enabled, or an owner-approved equivalent publication run | Docs build succeeds and Pages deploy completes | Run URL, commit SHA, published Pages URL, completion time, and pass summary |
 
 If the release owner intentionally accepts a different hosted CI provider, record the provider, run URL, and the exact command parity with the GitHub Actions workflow.
 
