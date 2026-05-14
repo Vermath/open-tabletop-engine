@@ -6306,6 +6306,15 @@ describe("api", () => {
       visibility: "gm_only" as const,
       sourceIds: ["ait_auth_matrix"]
     }) satisfies EngineState["aiMemory"][number];
+    const authMatrixPluginStorage = createTimestamped("plugstore", {
+      id: "plugstore_auth_matrix_count",
+      campaignId: "camp_demo",
+      pluginId: "example-macro-plugin",
+      key: "count",
+      value: 1,
+      updatedByType: "user" as const,
+      updatedById: "usr_demo_gm"
+    }) satisfies EngineState["pluginStorage"][number];
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
     scene.annotations.push({
       id: "ann_auth_matrix",
@@ -6327,6 +6336,16 @@ describe("api", () => {
     store.state.aiThreads.push(authMatrixThread);
     store.state.aiToolCalls.push(authMatrixToolCall);
     store.state.aiMemory.push(authMatrixMemory);
+    store.state.pluginStorage.push(authMatrixPluginStorage);
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        id: "grant_auth_matrix_plugin_configure",
+        campaignId: "camp_demo",
+        subjectType: "plugin" as const,
+        subjectId: "example-macro-plugin",
+        permissions: ["plugin.configure"]
+      }) satisfies PermissionGrant
+    );
     const app = await buildApp({ store });
 
     const unauthenticatedRoutes: Array<{
@@ -6680,6 +6699,31 @@ describe("api", () => {
       if (expectedStatus === 403) {
         expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "forbidden" });
       }
+    }
+
+    const gmUser = store.state.users.find((user) => user.id === "usr_demo_gm");
+    if (gmUser) gmUser.serverAdmin = true;
+    const privilegedReadOutcomeRoutes = observerReadOutcomeRoutes.filter((route) => {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      const key = routeKey(route.method, specPath);
+      return key.startsWith("GET /api/v1/admin/") || observerReadForbiddenRouteKeys.has(key);
+    });
+    const privilegedReadCoveredRouteKeys = new Set(
+      privilegedReadOutcomeRoutes.map((route) => routeKey(route.method, specPathForConcreteRoute(route.url, route.method)!))
+    );
+    const missingPrivilegedReadCompanions = [...observerReadForbiddenRouteKeys.keys()].filter((key) => !privilegedReadCoveredRouteKeys.has(key));
+    expect(missingPrivilegedReadCompanions).toEqual([]);
+    const privilegedReadExpectedStatuses = new Map<string, number>([
+      ["GET /api/v1/admin/jobs/{jobId}", 404]
+    ]);
+    for (const route of privilegedReadOutcomeRoutes) {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      const key = routeKey(route.method, specPath);
+      const response = await app.inject({
+        ...route,
+        headers: { ...route.headers, "x-user-id": "usr_demo_gm" }
+      });
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(privilegedReadExpectedStatuses.get(key) ?? 200);
     }
 
     const observerBlockedRoutes: Array<{
