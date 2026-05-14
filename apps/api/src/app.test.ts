@@ -328,6 +328,7 @@ describe("organization workspace defaults", () => {
           expect.objectContaining({ organizationId: "org_second", userId: "usr_second_member", role: "admin" })
         ])
       );
+      const secondOwnerMemberId = listedMembers.json().find((member: { role: string }) => member.role === "owner").id;
 
       const operatorMember = await app.inject({
         method: "POST",
@@ -349,7 +350,7 @@ describe("organization workspace defaults", () => {
 
       const ownerChangeDenied = await app.inject({
         method: "PATCH",
-        url: `/api/v1/organization/members/${listedMembers.json().find((member: { role: string }) => member.role === "owner").id}`,
+        url: `/api/v1/organization/members/${secondOwnerMemberId}`,
         headers: { "x-user-id": "usr_second_owner" },
         payload: { role: "member" }
       });
@@ -574,6 +575,35 @@ describe("organization workspace defaults", () => {
         headers: bearerHeaders
       });
       expect(demoInvites.statusCode).toBe(403);
+      const demoMembers = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/members",
+        headers: bearerHeaders
+      });
+      expect(demoMembers.statusCode).toBe(200);
+      expect(demoMembers.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ organizationId: "org_demo", userId: "usr_demo_gm", role: "owner" }),
+          expect.objectContaining({ organizationId: "org_demo", userId: "usr_second_member", role: "member" })
+        ])
+      );
+      expect(demoMembers.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ organizationId: "org_second" })]));
+      const crossWorkspaceInviteCreate = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/invites",
+        headers: authHeaders,
+        payload: { campaignId: created.json().id, email: "cross-workspace-invite@example.test", role: "player" }
+      });
+      expect(crossWorkspaceInviteCreate.statusCode).toBe(404);
+      expect(crossWorkspaceInviteCreate.json()).toMatchObject({ error: "not_found", message: "Organization campaign not found" });
+      const crossWorkspaceMemberPatch = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/organization/members/${secondOwnerMemberId}`,
+        headers: authHeaders,
+        payload: { role: "member" }
+      });
+      expect(crossWorkspaceMemberPatch.statusCode).toBe(404);
+      expect(crossWorkspaceMemberPatch.json()).toMatchObject({ error: "not_found", message: "Organization member not found" });
       const demoCampaigns = await app.inject({
         method: "GET",
         url: "/api/v1/campaigns",
