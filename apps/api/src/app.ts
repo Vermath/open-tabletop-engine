@@ -1603,6 +1603,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
     const sync = await syncPluginRegistriesForRequest(pluginRegistry, request.body?.registryUrl, reply);
+    if (!sync) return sync;
     if ("statusCode" in sync) return sync;
     appendServerAuditLog(store, adminUserId, {
       action: "admin.pluginRegistry.sync",

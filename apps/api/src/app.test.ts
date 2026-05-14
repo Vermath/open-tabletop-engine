@@ -6906,6 +6906,48 @@ describe("api", () => {
     expect(secretJournal.statusCode).toBe(200);
     expect(secretJournal.json()).toEqual([]);
 
+    const privilegedAdminMutationOutcomeRoutes = observerMutationOutcomeRoutes.filter((route) => {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      return routeKey(route.method, specPath).startsWith("POST /api/v1/admin/")
+        || routeKey(route.method, specPath).startsWith("PATCH /api/v1/admin/")
+        || routeKey(route.method, specPath).startsWith("DELETE /api/v1/admin/");
+    }).sort((left, right) => {
+      const priority = (route: typeof observerMutationOutcomeRoutes[number]): number => {
+        const key = routeKey(route.method, specPathForConcreteRoute(route.url, route.method)!);
+        if (key === "POST /api/v1/admin/users/{userId}/password-reset") return -1;
+        return 0;
+      };
+      return priority(left) - priority(right);
+    });
+    const adminMutationExpectedStatuses = new Map<string, number>([
+      ["POST /api/v1/admin/jobs", 400],
+      ["POST /api/v1/admin/jobs/lease", 204],
+      ["DELETE /api/v1/admin/sessions/{sessionId}", 404],
+      ["POST /api/v1/admin/email-outbox/retry-all", 400],
+      ["POST /api/v1/admin/email-outbox/{messageId}/retry", 404],
+      ["POST /api/v1/admin/storage/backup", 400],
+      ["POST /api/v1/admin/storage/restore-drill", 400],
+      ["POST /api/v1/admin/storage/restore", 400],
+      ["PATCH /api/v1/admin/jobs/{jobId}", 404],
+      ["POST /api/v1/admin/jobs/{jobId}/heartbeat", 404],
+      ["POST /api/v1/admin/jobs/{jobId}/retry", 404],
+      ["POST /api/v1/admin/jobs/{jobId}/cancel", 404],
+      ["PATCH /api/v1/admin/plugins/reviews/{reviewKey}", 404],
+      ["POST /api/v1/admin/plugins/registry/sync", 400],
+      ["POST /api/v1/admin/scim/group-role-mappings", 400],
+      ["DELETE /api/v1/admin/scim/group-role-mappings/{mappingId}", 404],
+      ["POST /api/v1/admin/assets/{assetId}/purge-cache", 400]
+    ]);
+    for (const route of privilegedAdminMutationOutcomeRoutes) {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      const key = routeKey(route.method, specPath);
+      const response = await app.inject({
+        ...route,
+        headers: { ...route.headers, "x-user-id": "usr_demo_gm" }
+      });
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(adminMutationExpectedStatuses.get(key) ?? 200);
+    }
+
     await app.close();
   }, 10000);
 
