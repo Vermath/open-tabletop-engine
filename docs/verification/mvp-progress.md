@@ -10,8 +10,8 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Updated `docs/verification/release-workflow-evidence.md` and the v1 completion audit to record local release-smoke preflight as covered while preserving the live hosted CI and docs publication blockers.
 - 2026-05-14 hosted release-smoke evidence follow-up:
   - Opened PR `https://github.com/Vermath/open-tabletop-engine/pull/1` from `v1-gap-closure-evidence` to `main`.
-  - Hosted Release Smoke run `25871420038` passed `pnpm release:smoke` in GitHub Actions for commit `3bdb8b6cef8bdb854efea88abbb7c8f89cb224c7`.
-  - Hosted Docs Site PR build run `25871420031` passed `pnpm docs:site:check`; Pages deployment was skipped on the PR and remains a publication blocker until a `main`/Pages deploy run succeeds.
+  - Hosted Release Smoke run `25871961476` passed `pnpm release:smoke` in GitHub Actions for commit `4ae5e1e1df3ed3ae751ce8a4aa8b49279d661b42`.
+  - Hosted Docs Site PR build run `25871961487` passed `pnpm docs:site:check`; Pages deployment was skipped on the PR and remains a publication blocker until a `main`/Pages deploy run succeeds.
 - 2026-05-14 release-workflow evidence-template follow-up:
   - Added `docs/verification/release-workflow-evidence.md` as the hosted workflow evidence template for the live release-smoke CI and GitHub Pages publication blockers, including required run URLs, commit SHAs, published URL fields, acceptance criteria, and failure handling.
   - Linked the template from the v1 completion audit, release notes, public docs index, and this v1 gap tracker while preserving the remaining blockers until successful hosted runs are attached.

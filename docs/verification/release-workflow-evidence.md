@@ -17,12 +17,12 @@ Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are usefu
 - Workflow file: `.github/workflows/release-smoke.yml`
 - Trigger: pull_request
 - Branch or ref: `v1-gap-closure-evidence`
-- Commit SHA: `3bdb8b6cef8bdb854efea88abbb7c8f89cb224c7`
-- Run URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25871420038
-- Job URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25871420038/job/76027376769
+- Commit SHA: `4ae5e1e1df3ed3ae751ce8a4aa8b49279d661b42`
+- Run URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25871961476
+- Job URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25871961476/job/76029272957
 - Result: pass
 - Release command or build command: `pnpm release:smoke`
-- Duration: 8m 24s
+- Duration: 8m 4s
 - Required checks observed: `Run release smoke` completed successfully after dependency install and Playwright Chromium setup.
 - Issues filed: none
 - Blockers: none for hosted release-smoke CI on this PR run
@@ -35,12 +35,12 @@ Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are usefu
 - Workflow file: `.github/workflows/docs-site.yml`
 - Trigger: pull_request
 - Branch or ref: `v1-gap-closure-evidence`
-- Commit SHA: `3bdb8b6cef8bdb854efea88abbb7c8f89cb224c7`
-- Run URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25871420031
-- Job URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25871420031/job/76027376902
+- Commit SHA: `4ae5e1e1df3ed3ae751ce8a4aa8b49279d661b42`
+- Run URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25871961487
+- Job URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25871961487/job/76029272961
 - Result: build pass; deploy skipped
 - Release command or build command: `pnpm docs:site:check`
-- Duration: 30s
+- Duration: 21s
 - Published URL, if docs-site deploy: not published from PR
 - Required checks observed: `Build public docs site` completed successfully; `Deploy public docs site` skipped because publication is gated to `main`.
 - Issues filed: none
