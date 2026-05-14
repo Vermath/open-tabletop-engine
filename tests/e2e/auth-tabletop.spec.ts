@@ -104,6 +104,24 @@ async function getNewestSceneTokenByName(page: Page, name: string): Promise<E2ET
   );
 }
 
+async function getSceneSortOrderByName(page: Page, name: string): Promise<number> {
+  return page.evaluate(
+    async ({ apiBaseUrl, name }) => {
+      const bearer = localStorage.getItem("otte:sessionToken");
+      if (!bearer) throw new Error("No browser session token available for scene lookup");
+      const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/scenes`, {
+        headers: { authorization: `Bearer ${bearer}` }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const scenes = (await response.json()) as Array<{ name: string; sortOrder: number }>;
+      const scene = scenes.find((item) => item.name === name);
+      if (!scene) throw new Error(`Scene ${name} not found`);
+      return scene.sortOrder;
+    },
+    { apiBaseUrl, name }
+  );
+}
+
 async function dragTokenByName(page: Page, tokenName: string, deltaX: number, deltaY: number) {
   const tokenButton = page.getByRole("button", { name: `Token ${tokenName}` });
   await expect(tokenButton).toBeVisible();
@@ -311,12 +329,13 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.getByRole("button", { name: "Move visible scenes" }).click();
   await expect(page.getByText("Moved 1 visible scenes to prep/bulk")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Edit scene folder" })).toHaveValue("prep/bulk");
+  const reorderSortOrderBeforeMove = await getSceneSortOrderByName(page, "Vault Entry Reorder");
   await expect(page.getByRole("button", { name: "Move Up" })).toBeEnabled();
   await page.getByRole("button", { name: "Move Up" }).click();
-  await expect(page.getByText("Vault Entry Reorder moved up")).toBeVisible();
+  await expect.poll(() => getSceneSortOrderByName(page, "Vault Entry Reorder")).toBeLessThan(reorderSortOrderBeforeMove);
   await expect(page.getByRole("button", { name: "Move Down" })).toBeEnabled();
   await page.getByRole("button", { name: "Move Down" }).click();
-  await expect(page.getByText("Vault Entry Reorder moved down")).toBeVisible();
+  await expect.poll(() => getSceneSortOrderByName(page, "Vault Entry Reorder")).toBe(reorderSortOrderBeforeMove);
   await page.getByRole("button", { name: "Activate", exact: true }).click();
   await expect(page.getByRole("button", { name: "Activate", exact: true })).toBeDisabled();
   await expect(sceneActivationHistory).toContainText("1 activation");
