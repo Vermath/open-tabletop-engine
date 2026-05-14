@@ -5776,6 +5776,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     const sync = await syncPluginRegistriesForRequest(pluginRegistry, body.registryUrl, reply);
+    if (!sync) return sync;
     if ("statusCode" in sync) return sync;
     store.state.auditLogs.push(
       createTimestamped("audit", {

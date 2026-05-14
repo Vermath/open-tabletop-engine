@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp } from "./app.js";
 import { loadPluginRegistry, pluginSignatureForPackage } from "./plugin-runtime.js";
+import { installedSystems } from "./registries.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 import { MemoryStateStore } from "./store.js";
 
@@ -6373,7 +6374,7 @@ describe("api", () => {
       { method: "PATCH", url: "/api/v1/organization/members/orgmem_demo_player", payload: { role: "admin" } },
       { method: "DELETE", url: "/api/v1/organization/members/orgmem_demo_player" },
       { method: "GET", url: "/api/v1/organization/invites" },
-      { method: "POST", url: "/api/v1/organization/invites", payload: { email: "invite@example.test" } },
+      { method: "POST", url: "/api/v1/organization/invites", payload: { campaignId: "camp_demo", email: "invite@example.test" } },
       { method: "GET", url: "/api/v1/campaigns" },
       { method: "POST", url: "/api/v1/campaigns", payload: { name: "No Auth Campaign" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo" },
@@ -6946,6 +6947,67 @@ describe("api", () => {
         headers: { ...route.headers, "x-user-id": "usr_demo_gm" }
       });
       expect(response.statusCode, `${route.method} ${route.url}`).toBe(adminMutationExpectedStatuses.get(key) ?? 200);
+    }
+
+    const authMatrixPluginGrant = store.state.permissionGrants.find((grant) => grant.subjectType === "plugin" && grant.subjectId === "example-macro-plugin" && grant.campaignId === "camp_demo");
+    if (authMatrixPluginGrant) authMatrixPluginGrant.permissions = ["plugin.configure"];
+
+    const privilegedCampaignMutationOutcomeRoutes = observerMutationOutcomeRoutes.filter((route) => {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      const key = routeKey(route.method, specPath);
+      return !key.startsWith("POST /api/v1/admin/")
+        && !key.startsWith("PATCH /api/v1/admin/")
+        && !key.startsWith("DELETE /api/v1/admin/");
+    }).sort((left, right) => {
+      const priority = (route: typeof observerMutationOutcomeRoutes[number]): number => {
+        const key = routeKey(route.method, specPathForConcreteRoute(route.url, route.method)!);
+        if (route.url.includes("/plugins/example-macro-plugin/storage/count")) return route.method === "PUT" ? -50 : -49;
+        if (key === "PUT /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}") return -50;
+        if (key === "DELETE /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}") return -49;
+        if (key === "POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/install") return 30;
+        if (key === "POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/chat-command") return 40;
+        if (key === "DELETE /api/v1/campaigns/{campaignId}") return 100;
+        if (key === "DELETE /api/v1/scenes/{sceneId}") return 90;
+        if (key === "DELETE /api/v1/tokens/{tokenId}") return 80;
+        if (key === "DELETE /api/v1/organization/members/{memberId}") return 10;
+        return 0;
+      };
+      return priority(left) - priority(right);
+    });
+    const privilegedCampaignMutationExpectedStatuses = new Map<string, number>([
+      ["DELETE /api/v1/auth/sessions/{sessionId}", 404],
+      ["POST /api/v1/organization/invites", 201],
+      ["DELETE /api/v1/campaigns/{campaignId}/fog-presets/{presetId}", 404],
+      ["POST /api/v1/scenes/{sceneId}/annotations", 400],
+      ["POST /api/v1/scenes/{sceneId}/fog/apply-preset", 404],
+      ["PATCH /api/v1/chat/messages/{messageId}/moderation", 400],
+      ["POST /api/v1/proposals/{proposalId}/apply", 409],
+      ["POST /api/v1/campaigns/{campaignId}/content-imports/preview", 400],
+      ["POST /api/v1/content-imports/{importId}/apply", 400],
+      ["POST /api/v1/content-imports/{importId}/rollback", 409],
+      ["POST /api/v1/campaigns/{campaignId}/ai/evaluations", 400],
+      ["POST /api/v1/plugins/install", 400],
+      ["POST /api/v1/plugins/registry/sync", 400],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium", 404],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/purchase", 400],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions", 404],
+      ["DELETE /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}", 200],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/characters", 404],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/monsters", 400]
+    ]);
+    const installedSystemCountBeforePrivilegedMatrix = installedSystems.length;
+    try {
+      for (const route of privilegedCampaignMutationOutcomeRoutes) {
+        const specPath = specPathForConcreteRoute(route.url, route.method)!;
+        const key = routeKey(route.method, specPath);
+        const response = await app.inject({
+          ...route,
+          headers: { ...route.headers, "x-user-id": "usr_demo_gm" }
+        });
+        expect(response.statusCode, `${route.method} ${route.url}`).toBe(privilegedCampaignMutationExpectedStatuses.get(key) ?? 200);
+      }
+    } finally {
+      installedSystems.splice(installedSystemCountBeforePrivilegedMatrix);
     }
 
     await app.close();
