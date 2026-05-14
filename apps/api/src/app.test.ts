@@ -6156,6 +6156,14 @@ describe("api", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     });
+    store.state.organizationMembers.push({
+      id: "orgmem_observer",
+      organizationId: "org_demo",
+      userId: "usr_observer",
+      role: "member",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
     store.state.invites.push(
       createTimestamped("inv", {
         id: "inv_auth_matrix",
@@ -6554,6 +6562,37 @@ describe("api", () => {
       const response = await app.inject(route);
       expect(response.statusCode, `${route.method} ${route.url}`).toBe(401);
       expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "unauthorized" });
+    }
+
+    const observerMutationOutcomeExceptions = new Map<string, string>([
+      ["POST /api/v1/auth/logout", "self-service session lifecycle"],
+      ["POST /api/v1/auth/password/change", "self-service credential change"],
+      ["POST /api/v1/auth/mfa/totp/enroll", "self-service MFA setup"],
+      ["POST /api/v1/auth/mfa/totp/confirm", "self-service MFA setup"],
+      ["DELETE /api/v1/auth/mfa/totp", "self-service MFA removal"],
+      ["DELETE /api/v1/auth/sessions/{sessionId}", "self-service session revocation"],
+      ["POST /api/v1/organizations", "authenticated workspace creation"],
+      ["PATCH /api/v1/organization/session", "authenticated active-workspace switch"],
+      ["POST /api/v1/campaigns", "authenticated campaign creation in active workspace"],
+      ["POST /api/v1/assets/{assetId}/delivery-url", "read-permitted signed asset delivery"],
+      ["POST /api/v1/tokens/{tokenId}/target", "read-permitted personal targeting state"],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-plan", "read-permitted encounter planning preview"],
+      ["POST /api/v1/import/campaign", "authenticated archive import creates or updates scoped campaigns"]
+    ]);
+    const observerMutationOutcomeRoutes = unauthenticatedRoutes.filter((route) => {
+      if (route.method === "GET") return false;
+      const specPath = specPathForConcreteRoute(route.url, route.method);
+      expect(specPath, `${route.method} ${route.url} must match a served OpenAPI path`).toBeDefined();
+      const key = routeKey(route.method, specPath!);
+      return !publicOrNonSessionRouteKeys.has(key) && !observerMutationOutcomeExceptions.has(key);
+    });
+    for (const route of observerMutationOutcomeRoutes) {
+      const response = await app.inject({
+        ...route,
+        headers: { ...route.headers, "x-user-id": "usr_observer" }
+      });
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(403);
+      expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "forbidden" });
     }
 
     const observerBlockedRoutes: Array<{
