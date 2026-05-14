@@ -1373,8 +1373,29 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await page.getByRole("button", { name: "SDK", exact: true }).click();
   await sdkPanel.getByRole("button", { name: "Plan Encounter" }).click();
   await expect(sdkPanel.locator(".metric-row", { hasText: "encounter" })).toBeVisible();
+  const rollCountBeforeSystemCheck = await page.evaluate(async (apiBaseUrl) => {
+    const bearer = localStorage.getItem("otte:sessionToken");
+    if (!bearer) throw new Error("No browser session token available for roll lookup");
+    const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/rolls`, {
+      headers: { authorization: `Bearer ${bearer}` }
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return (await response.json()).length;
+  }, apiBaseUrl);
   await sdkPanel.getByRole("button", { name: /Check$/ }).click();
-  await expect(page.getByText("System roll posted")).toBeVisible();
+  await expect
+    .poll(async () =>
+      page.evaluate(async (apiBaseUrl) => {
+        const bearer = localStorage.getItem("otte:sessionToken");
+        if (!bearer) throw new Error("No browser session token available for roll lookup");
+        const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/rolls`, {
+          headers: { authorization: `Bearer ${bearer}` }
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return (await response.json()).length;
+      }, apiBaseUrl)
+    )
+    .toBeGreaterThan(rollCountBeforeSystemCheck);
 
   await page.getByRole("button", { name: "SDK", exact: true }).click();
   const genericSystemCard = sdkPanel.locator("article", { hasText: "Generic Fantasy" });
