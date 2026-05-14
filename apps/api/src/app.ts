@@ -9742,9 +9742,9 @@ function systemRollEffectType(rollDefinition: { id: string; label: string }): "d
 }
 
 function systemRollConditionEffect(rollDefinition: { id: string; metadata?: Record<string, unknown> }): { id: string; name: string } | undefined {
-  if (!rollDefinition.id.toLowerCase().endsWith("-effect")) return undefined;
   const metadata = isRecord(rollDefinition.metadata) ? rollDefinition.metadata : {};
-  const conditionName = typeof metadata.condition === "string" ? metadata.condition : "";
+  const failure = isRecord(metadata.failure) ? metadata.failure : {};
+  const conditionName = typeof metadata.condition === "string" ? metadata.condition : typeof failure.condition === "string" ? failure.condition : "";
   if (!conditionName) return undefined;
   return { id: slugConditionId(conditionName), name: conditionName };
 }

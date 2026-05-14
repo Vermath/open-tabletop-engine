@@ -16889,6 +16889,18 @@ describe("api", () => {
       });
       expect(monkShortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ focus: 5 }));
 
+      const stunningStrike = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-stunning-strike", consumeResources: true, applyEffect: true, targetActorId: monkTarget.json().id }
+      });
+      expect(stunningStrike.statusCode).toBe(200);
+      expect(stunningStrike.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-stunning-strike", metadata: expect.objectContaining({ failure: expect.objectContaining({ condition: "Stunned" }) }) }));
+      expect(stunningStrike.json().usage.consumed).toEqual([{ type: "resource", key: "focus", label: "Focus Point", amount: 1, remaining: 4 }]);
+      expect(stunningStrike.json().effect).toEqual(expect.objectContaining({ type: "condition", targetActorId: monkTarget.json().id, conditionId: "stunned", conditionName: "Stunned" }));
+      expect(store.state.actors.find((actor) => actor.id === monkTarget.json().id)?.data.conditions).toEqual([{ id: "stunned", appliedAt: expect.any(String) }]);
+
       const uncannyMetabolism = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/roll`,
