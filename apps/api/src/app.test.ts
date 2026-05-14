@@ -6047,19 +6047,145 @@ describe("api", () => {
     });
     const app = await buildApp({ store });
 
-    const missingSession = await app.inject({
-      method: "GET",
-      url: "/api/v1/campaigns"
-    });
-    expect(missingSession.statusCode).toBe(401);
+    const unauthenticatedRoutes: Array<{
+      method: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
+      url: string;
+      payload?: Record<string, unknown>;
+    }> = [
+      { method: "GET", url: "/api/v1/campaigns" },
+      { method: "POST", url: "/api/v1/campaigns", payload: { name: "No Auth Campaign" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo" },
+      { method: "PATCH", url: "/api/v1/campaigns/camp_demo", payload: { name: "No Auth Rename" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/scenes" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/scenes", payload: { name: "No Auth Scene", width: 640, height: 480, gridSize: 40 } },
+      { method: "GET", url: "/api/v1/scenes/scn_vault_entry" },
+      { method: "PATCH", url: "/api/v1/scenes/scn_vault_entry", payload: { name: "No Auth Scene Rename" } },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/tokens", payload: { name: "No Auth Token" } },
+      { method: "PATCH", url: "/api/v1/tokens/tok_valen", payload: { hidden: true } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/actors" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/actors", payload: { name: "No Auth Actor" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/journal" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/journal", payload: { title: "No Auth Entry", body: "blocked" } },
+      { method: "POST", url: "/api/v1/dice/roll", payload: { campaignId: "camp_demo", formula: "1d20" } },
+      { method: "POST", url: "/api/v1/chat/messages", payload: { campaignId: "camp_demo", body: "blocked" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/combats" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/combats", payload: { name: "No Auth Combat" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/proposals" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/proposals", payload: { title: "No Auth Proposal", changesJson: [] } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/ai/threads" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/threads", payload: { prompt: "blocked" } },
+      { method: "GET", url: "/api/v1/plugins" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/plugins" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install", payload: { permissions: ["chat.write"] } },
+      { method: "GET", url: "/api/v1/systems" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/install" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/sheet" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll", payload: { rollId: "ability-strength" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/content-imports" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/content-imports/preview", payload: { sourceType: "json", records: [] } },
+      { method: "GET", url: "/api/v1/admin/users" },
+      { method: "POST", url: "/api/v1/admin/ai/proposals/stale/reject", payload: { dryRun: true } }
+    ];
 
-    const blockedMutation = await app.inject({
-      method: "POST",
-      url: "/api/v1/scenes/scn_vault_entry/tokens",
-      headers: { "x-user-id": "usr_observer" },
-      payload: { name: "Unauthorized Token" }
-    });
-    expect(blockedMutation.statusCode).toBe(403);
+    for (const route of unauthenticatedRoutes) {
+      const response = await app.inject(route);
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(401);
+      expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "unauthorized" });
+    }
+
+    const observerBlockedRoutes: Array<{
+      method: "GET" | "PATCH" | "POST";
+      url: string;
+      payload?: Record<string, unknown>;
+      expectedMessage: string;
+    }> = [
+      {
+        method: "POST",
+        url: "/api/v1/scenes/scn_vault_entry/tokens",
+        payload: { name: "Unauthorized Token" },
+        expectedMessage: "Missing permission: token.create"
+      },
+      {
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_valen",
+        payload: { hidden: true },
+        expectedMessage: "Missing permission: token.update"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/scenes/scn_vault_entry/annotations",
+        payload: { kind: "drawing", points: [{ x: 300, y: 300 }] },
+        expectedMessage: "Missing permission: scene.update"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/journal",
+        payload: { title: "Unauthorized Journal", body: "blocked" },
+        expectedMessage: "Missing permission: journal.create"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        payload: { campaignId: "camp_demo", body: "blocked" },
+        expectedMessage: "Missing permission: chat.write"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/dice/roll",
+        payload: { campaignId: "camp_demo", formula: "1d20" },
+        expectedMessage: "Missing permission: dice.roll"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        payload: { name: "Unauthorized Combat" },
+        expectedMessage: "Missing permission: combat.manage"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/proposals",
+        payload: { title: "Unauthorized Proposal", changesJson: [] },
+        expectedMessage: "Missing permission: campaign.update"
+      },
+      {
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        expectedMessage: "Missing permission: ai.proposeChanges"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        payload: { prompt: "blocked" },
+        expectedMessage: "Missing permission: ai.use"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install",
+        payload: { permissions: ["chat.write"] },
+        expectedMessage: "Missing permission: plugin.install"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/install",
+        expectedMessage: "Missing permission: campaign.update"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll",
+        payload: { rollId: "ability-strength" },
+        expectedMessage: "Missing permission: dice.roll"
+      }
+    ];
+
+    for (const route of observerBlockedRoutes) {
+      const response = await app.inject({
+        ...route,
+        headers: { "x-user-id": "usr_observer" }
+      });
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(403);
+      expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "forbidden", message: route.expectedMessage });
+    }
 
     const secretJournal = await app.inject({
       method: "GET",
