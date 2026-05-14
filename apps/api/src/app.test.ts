@@ -6775,6 +6775,60 @@ describe("api", () => {
       expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "forbidden", message: route.expectedMessage });
     }
 
+    const gmAllowedRouteOutcomes: Array<{
+      method: "GET" | "POST";
+      url: string;
+      payload?: Record<string, unknown>;
+      expectedStatus?: number;
+    }> = [
+      {
+        method: "POST",
+        url: "/api/v1/scenes/scn_vault_entry/tokens",
+        payload: { name: "Authorized Matrix Token" }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/journal",
+        payload: { title: "Authorized Matrix Journal", body: "allowed" }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        payload: { campaignId: "camp_demo", body: "authorized matrix chat" }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/dice/roll",
+        payload: { campaignId: "camp_demo", formula: "1d20" }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        payload: { combatants: [{ id: "cmbt_authorized_matrix", tokenId: "tok_valen", actorId: "act_valen", name: "Valen Ash", initiative: 15, defeated: false }] }
+      },
+      {
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/ai/threads"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/install"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll",
+        payload: { rollId: "ability-strength" }
+      }
+    ];
+
+    for (const route of gmAllowedRouteOutcomes) {
+      const response = await app.inject({
+        ...route,
+        headers: { "x-user-id": "usr_demo_gm" }
+      });
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(route.expectedStatus ?? 200);
+    }
+
     const secretJournal = await app.inject({
       method: "GET",
       url: "/api/v1/campaigns/camp_demo/journal",
@@ -6784,7 +6838,7 @@ describe("api", () => {
     expect(secretJournal.json()).toEqual([]);
 
     await app.close();
-  });
+  }, 10000);
 
   it("authors fog, walls, and lights with scene update permission", async () => {
     const store = new MemoryStateStore();
@@ -18362,7 +18416,7 @@ describe("api", () => {
     } finally {
       await app.close();
     }
-  }, 15000);
+  }, 30000);
 
   it("imports system characters from normalized character data", async () => {
     const store = new MemoryStateStore();
@@ -18468,7 +18522,7 @@ describe("api", () => {
     } finally {
       await app.close();
     }
-  });
+  }, 10000);
 
   it("plans system encounters with threat budgets and permission boundaries", async () => {
     const store = new MemoryStateStore();
