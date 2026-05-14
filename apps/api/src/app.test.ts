@@ -2078,6 +2078,21 @@ describe("api", () => {
     expect(updated.json().combatants[1]).toEqual(expect.objectContaining({ defeated: true }));
     expect(updated.json().combatants[1].conditions).toEqual(["restrained:1", "dead"]);
 
+    const expiredTimedCondition = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}`,
+      headers: authHeaders,
+      payload: {
+        round: 4,
+        turnIndex: 1,
+        combatants: updated.json().combatants
+      }
+    });
+    expect(expiredTimedCondition.statusCode).toBe(200);
+    expect(expiredTimedCondition.json()).toEqual(expect.objectContaining({ round: 4, turnIndex: 1, active: true }));
+    expect(expiredTimedCondition.json().combatants[1]).toEqual(expect.objectContaining({ defeated: true }));
+    expect(expiredTimedCondition.json().combatants[1].conditions).toEqual(["dead"]);
+
     const ended = await app.inject({
       method: "DELETE",
       url: `/api/v1/combats/${started.json().id}`,
@@ -2099,7 +2114,7 @@ describe("api", () => {
       campaignId: "camp_demo",
       targetType: "combat",
       targetId: started.json().id,
-      after: expect.objectContaining({ active: false, round: 2, combatantCount: 2, defeatedCount: 1 })
+      after: expect.objectContaining({ active: false, round: 4, combatantCount: 2, defeatedCount: 1 })
     });
 
     await app.close();
