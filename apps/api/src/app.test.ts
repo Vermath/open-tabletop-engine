@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
-import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
+import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type CampaignArchive, type ChatMessage, type Combat, type DiceMacro, type DiceRoll, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp } from "./app.js";
@@ -55,6 +55,512 @@ describe("asset storage keys", () => {
     expect(assetStorageKey(asset)).toBe("___camp_demo/___asset_with_slashes.png");
     expect(assetStorageKey(asset)).not.toContain("..");
     expect(assetStorageKey(asset)).not.toContain("\\");
+  });
+});
+
+describe("organization workspace defaults", () => {
+  it("creates workspace defaults during owner bootstrap", async () => {
+    const store = new MemoryStateStore(emptyState());
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/bootstrap",
+        payload: {
+          email: "owner@example.com",
+          displayName: "Owner",
+          password: "password-123",
+          campaignName: "Starter Campaign",
+          defaultSystemId: "generic-fantasy"
+        }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().organization).toMatchObject({
+        name: "Owner's Workspace",
+        ownerUserId: response.json().user.id,
+        defaultSystemId: "generic-fantasy",
+        defaultCampaignVisibility: "private",
+        defaultPermissionTemplate: "standard",
+        defaultInviteRole: "player",
+        defaultSceneName: "Opening Scene"
+      });
+      expect(store.state.organizations).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("lets server admins update workspace defaults and applies them to new campaigns", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const denied = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { defaultCampaignVisibility: "public" }
+      });
+      expect(denied.statusCode).toBe(403);
+
+      const updated = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: authHeaders,
+        payload: {
+          name: "Published Tables",
+          defaultSystemId: "generic-fantasy",
+          defaultCampaignVisibility: "invite_only",
+          defaultPermissionTemplate: "player_authoring",
+          defaultInviteRole: "assistant_gm",
+          defaultSceneName: "Session Zero",
+          defaultSceneFolder: "starts",
+          defaultSceneWidth: 1600,
+          defaultSceneHeight: 900,
+          defaultSceneGridSize: 80,
+          onboardingTitle: "Start Here",
+          onboardingBody: "Table agreements and first-session goals."
+        }
+      });
+      expect(updated.statusCode).toBe(200);
+      expect(updated.json()).toMatchObject({
+        name: "Published Tables",
+        defaultSystemId: "generic-fantasy",
+        defaultCampaignVisibility: "invite_only",
+        defaultPermissionTemplate: "player_authoring",
+        defaultInviteRole: "assistant_gm",
+        defaultSceneName: "Session Zero",
+        defaultSceneWidth: 1600
+      });
+
+      const fetched = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: authHeaders
+      });
+      expect(fetched.statusCode).toBe(200);
+      expect(fetched.json()).toMatchObject({ name: "Published Tables", onboardingTitle: "Start Here" });
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns",
+        headers: authHeaders,
+        payload: { name: "Defaults Campaign" }
+      });
+      expect(created.statusCode).toBe(200);
+      expect(created.json()).toMatchObject({
+        name: "Defaults Campaign",
+        defaultSystemId: "generic-fantasy",
+        visibility: "invite_only"
+      });
+
+      const campaignId = created.json().id as string;
+      expect(store.state.permissionGrants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            campaignId,
+            subjectType: "role",
+            subjectId: "player",
+            permissions: expect.arrayContaining(["actor.create", "journal.create", "token.create"]),
+            metadata: expect.objectContaining({ templateId: "player_authoring" })
+          })
+        ])
+      );
+      expect(store.state.auditLogs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            action: "organization.workspaceDefaults.update",
+            targetType: "organization_workspace"
+          })
+        ])
+      );
+    } finally {
+      restoreEnv(previousEnv);
+      await app.close();
+    }
+  });
+
+  it("keeps workspace defaults isolated across multiple owner workspaces", async () => {
+    const store = new MemoryStateStore();
+    const now = new Date().toISOString();
+    store.state.users.push({
+      id: "usr_second_owner",
+      displayName: "Second Owner",
+      email: "second-owner@example.test",
+      serverAdmin: true,
+      createdAt: now,
+      updatedAt: now
+    }, {
+      id: "usr_second_member",
+      displayName: "Second Member",
+      email: "second-member@example.test",
+      createdAt: now,
+      updatedAt: now
+    }, {
+      id: "usr_second_operator",
+      displayName: "Second Operator",
+      email: "second-operator@example.test",
+      createdAt: now,
+      updatedAt: now
+    });
+    store.state.organizations.push({
+      id: "org_second",
+      name: "Second Workspace",
+      ownerUserId: "usr_second_owner",
+      defaultSystemId: "generic-fantasy",
+      defaultCampaignVisibility: "invite_only",
+      defaultPermissionTemplate: "assistant_ops",
+      defaultInviteRole: "assistant_gm",
+      defaultSceneName: "Second Opening",
+      defaultSceneFolder: "second-start",
+      defaultSceneWidth: 1400,
+      defaultSceneHeight: 900,
+      defaultSceneGridSize: 70,
+      onboardingTitle: "Second Start",
+      onboardingBody: "Second workspace onboarding.",
+      createdAt: now,
+      updatedAt: now
+    });
+    const app = await buildApp({ store });
+
+    try {
+      const gmDefaults = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: authHeaders
+      });
+      expect(gmDefaults.statusCode).toBe(200);
+      expect(gmDefaults.json()).toMatchObject({ id: "org_demo", name: "Demo Workspace" });
+
+      const secondDefaults = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: { "x-user-id": "usr_second_owner" }
+      });
+      expect(secondDefaults.statusCode).toBe(200);
+      expect(secondDefaults.json()).toMatchObject({
+        id: "org_second",
+        name: "Second Workspace",
+        defaultSystemId: "generic-fantasy",
+        defaultCampaignVisibility: "invite_only",
+        defaultPermissionTemplate: "assistant_ops"
+      });
+
+      const updatedSecondDefaults = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { name: "Second Tables", defaultCampaignVisibility: "public" }
+      });
+      expect(updatedSecondDefaults.statusCode).toBe(200);
+      expect(updatedSecondDefaults.json()).toMatchObject({ id: "org_second", name: "Second Tables", defaultCampaignVisibility: "public" });
+      expect(store.state.organizations.find((workspace) => workspace.id === "org_demo")).toMatchObject({ name: "Demo Workspace", defaultCampaignVisibility: "private" });
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns",
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { name: "Second Workspace Campaign" }
+      });
+      expect(created.statusCode).toBe(200);
+      expect(created.json()).toMatchObject({
+        organizationId: "org_second",
+        ownerUserId: "usr_second_owner",
+        defaultSystemId: "generic-fantasy",
+        visibility: "public"
+      });
+      expect(store.state.members).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            campaignId: created.json().id,
+            userId: "usr_second_owner",
+            role: "owner"
+          })
+        ])
+      );
+      expect(store.state.permissionGrants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            campaignId: created.json().id,
+            subjectId: "assistant_gm",
+            permissions: expect.arrayContaining(["chat.moderate", "plugin.install"])
+          })
+        ])
+      );
+
+      const deniedMemberUpsert = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/members",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { email: "second-member@example.test", role: "member" }
+      });
+      expect(deniedMemberUpsert.statusCode).toBe(403);
+
+      const addedMember = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/members",
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { email: "second-member@example.test", role: "admin" }
+      });
+      expect(addedMember.statusCode).toBe(201);
+      expect(addedMember.json()).toMatchObject({
+        organizationId: "org_second",
+        userId: "usr_second_member",
+        role: "admin",
+        user: {
+          email: "second-member@example.test"
+        }
+      });
+
+      const listedMembers = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/members",
+        headers: { "x-user-id": "usr_second_member" }
+      });
+      expect(listedMembers.statusCode).toBe(200);
+      expect(listedMembers.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ organizationId: "org_second", userId: "usr_second_owner", role: "owner" }),
+          expect.objectContaining({ organizationId: "org_second", userId: "usr_second_member", role: "admin" })
+        ])
+      );
+
+      const operatorMember = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/members",
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { email: "second-operator@example.test", role: "member" }
+      });
+      expect(operatorMember.statusCode).toBe(201);
+      store.state.members.push(createTimestamped("mem", { campaignId: created.json().id, userId: "usr_second_operator", role: "observer" }));
+
+      const promotedOperator = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/organization/members/${operatorMember.json().id}`,
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { role: "admin" }
+      });
+      expect(promotedOperator.statusCode).toBe(200);
+      expect(promotedOperator.json()).toMatchObject({ id: operatorMember.json().id, userId: "usr_second_operator", role: "admin" });
+
+      const ownerChangeDenied = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/organization/members/${listedMembers.json().find((member: { role: string }) => member.role === "owner").id}`,
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { role: "member" }
+      });
+      expect(ownerChangeDenied.statusCode).toBe(400);
+
+      const removedOperator = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/organization/members/${operatorMember.json().id}`,
+        headers: { "x-user-id": "usr_second_owner" }
+      });
+      expect(removedOperator.statusCode).toBe(200);
+      expect(removedOperator.json()).toMatchObject({ removed: true, userId: "usr_second_operator", removedCampaignMemberships: 1 });
+      expect(store.state.organizationMembers).not.toEqual(expect.arrayContaining([expect.objectContaining({ userId: "usr_second_operator" })]));
+      expect(store.state.members).not.toEqual(expect.arrayContaining([expect.objectContaining({ campaignId: created.json().id, userId: "usr_second_operator" })]));
+      expect(store.state.auditLogs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ action: "organization.member.update", targetId: operatorMember.json().id }),
+          expect.objectContaining({ action: "organization.member.remove", targetId: operatorMember.json().id })
+        ])
+      );
+
+      const removedOperatorLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_second_operator" }
+      });
+      expect(removedOperatorLogin.statusCode).toBe(200);
+      const removedOperatorHeaders = { authorization: `Bearer ${removedOperatorLogin.json().token}` };
+      const removedOperatorOrganizations = await app.inject({
+        method: "GET",
+        url: "/api/v1/organizations",
+        headers: removedOperatorHeaders
+      });
+      expect(removedOperatorOrganizations.statusCode).toBe(200);
+      expect(removedOperatorOrganizations.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "org_second" })]));
+      const removedOperatorSwitch = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: removedOperatorHeaders,
+        payload: { organizationId: "org_second" }
+      });
+      expect(removedOperatorSwitch.statusCode).toBe(403);
+      const removedOperatorCampaigns = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: removedOperatorHeaders
+      });
+      expect(removedOperatorCampaigns.statusCode).toBe(200);
+      expect(removedOperatorCampaigns.json()).toEqual([]);
+
+      const addedDemoMember = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/members",
+        headers: authHeaders,
+        payload: { email: "second-member@example.test", role: "member" }
+      });
+      expect(addedDemoMember.statusCode).toBe(201);
+      store.state.members.push(
+        createTimestamped("mem", { campaignId: "camp_demo", userId: "usr_second_member", role: "observer" }),
+        createTimestamped("mem", { campaignId: created.json().id, userId: "usr_second_member", role: "observer" })
+      );
+      const demoInvite = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/invites",
+        headers: authHeaders,
+        payload: { email: "demo-invite@example.test", role: "player" }
+      });
+      expect(demoInvite.statusCode).toBe(200);
+
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_second_member" }
+      });
+      expect(login.statusCode).toBe(200);
+      const bearerHeaders = { authorization: `Bearer ${login.json().token}` };
+
+      const organizations = await app.inject({
+        method: "GET",
+        url: "/api/v1/organizations",
+        headers: bearerHeaders
+      });
+      expect(organizations.statusCode).toBe(200);
+      expect(organizations.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "org_demo", role: "member", campaignCount: 1 }),
+          expect.objectContaining({ id: "org_second", role: "admin", campaignCount: 1 })
+        ])
+      );
+
+      const createdOwnedWorkspace = await app.inject({
+        method: "POST",
+        url: "/api/v1/organizations",
+        headers: bearerHeaders,
+        payload: {
+          name: "Second Member Tables",
+          defaultCampaignVisibility: "invite_only",
+          defaultSceneName: "Member Opening"
+        }
+      });
+      expect(createdOwnedWorkspace.statusCode).toBe(201);
+      expect(createdOwnedWorkspace.json()).toMatchObject({
+        organization: {
+          name: "Second Member Tables",
+          ownerUserId: "usr_second_member",
+          defaultCampaignVisibility: "invite_only",
+          defaultSceneName: "Member Opening"
+        },
+        session: { activeOrganizationId: createdOwnedWorkspace.json().organization.id },
+        organizations: expect.arrayContaining([
+          expect.objectContaining({ name: "Second Member Tables", role: "owner", campaignCount: 0 })
+        ])
+      });
+      const ownedWorkspaceCampaigns = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: bearerHeaders
+      });
+      expect(ownedWorkspaceCampaigns.statusCode).toBe(200);
+      expect(ownedWorkspaceCampaigns.json()).toEqual([]);
+
+      const switchedSecond = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: bearerHeaders,
+        payload: { organizationId: "org_second" }
+      });
+      expect(switchedSecond.statusCode).toBe(200);
+      expect(switchedSecond.json()).toMatchObject({
+        organization: { id: "org_second", name: "Second Tables" },
+        session: { activeOrganizationId: "org_second" }
+      });
+      const secondInvite = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/invites",
+        headers: bearerHeaders,
+        payload: { campaignId: created.json().id, email: "second-invite@example.test", role: "player" }
+      });
+      expect(secondInvite.statusCode).toBe(201);
+      const secondInvites = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/invites",
+        headers: bearerHeaders
+      });
+      expect(secondInvites.statusCode).toBe(200);
+      expect(secondInvites.json()).toEqual([
+        expect.objectContaining({
+          id: secondInvite.json().invite.id,
+          email: "second-invite@example.test",
+          campaign: { id: created.json().id, name: "Second Workspace Campaign" },
+          status: "pending"
+        })
+      ]);
+      const secondCampaigns = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: bearerHeaders
+      });
+      expect(secondCampaigns.statusCode).toBe(200);
+      expect(secondCampaigns.json().map((campaign: { id: string }) => campaign.id)).toEqual([created.json().id]);
+
+      const switchedDemo = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: bearerHeaders,
+        payload: { organizationId: "org_demo" }
+      });
+      expect(switchedDemo.statusCode).toBe(200);
+      const demoInvites = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/invites",
+        headers: bearerHeaders
+      });
+      expect(demoInvites.statusCode).toBe(403);
+      const demoCampaigns = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: bearerHeaders
+      });
+      expect(demoCampaigns.statusCode).toBe(200);
+      expect(demoCampaigns.json().map((campaign: { id: string }) => campaign.id)).toEqual(["camp_demo"]);
+      const deniedDemoRevoke = await app.inject({
+        method: "POST",
+        url: `/api/v1/invites/${demoInvite.json().invite.id}/revoke`,
+        headers: bearerHeaders
+      });
+      expect(deniedDemoRevoke.statusCode).toBe(403);
+      await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: bearerHeaders,
+        payload: { organizationId: "org_second" }
+      });
+      const revokedSecondInvite = await app.inject({
+        method: "POST",
+        url: `/api/v1/invites/${secondInvite.json().invite.id}/revoke`,
+        headers: bearerHeaders
+      });
+      expect(revokedSecondInvite.statusCode).toBe(200);
+      expect(revokedSecondInvite.json()).toMatchObject({ id: secondInvite.json().invite.id, status: "revoked" });
+
+      const deniedSwitch = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: bearerHeaders,
+        payload: { organizationId: "org_missing" }
+      });
+      expect(deniedSwitch.statusCode).toBe(403);
+    } finally {
+      await app.close();
+    }
   });
 });
 
@@ -159,8 +665,847 @@ function testBase32Decode(input: string): Buffer {
 }
 
 describe("api", () => {
+  it("serves the OpenAPI contract with v1 policy semantics", async () => {
+    type ServedOpenApiOperation = {
+      parameters?: Array<{ name: string; in: string }>;
+      requestBody?: { content?: Record<string, { schema?: Record<string, unknown> }> };
+      responses?: Record<string, unknown>;
+    };
+    type ServedOpenApiSpec = {
+      openapi: string;
+      info: { version: string };
+      paths: Record<string, Record<string, ServedOpenApiOperation>>;
+      components: {
+        securitySchemes: Record<string, unknown>;
+        schemas: Record<string, unknown>;
+      };
+      "x-otte-version-policy"?: { basePath?: string };
+      "x-otte-error-policy"?: { schema?: string };
+      "x-otte-idempotency-policy"?: { header?: string };
+      "x-otte-pagination-policy"?: { limitParameter?: string; cursorParameter?: string };
+      "x-otte-rate-limit-policy"?: { statusCode?: number };
+    };
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/openapi.json"
+      });
+      expect(response.statusCode).toBe(200);
+      const spec = response.json() as ServedOpenApiSpec;
+      const jsonRequestSchema = (operation: ServedOpenApiOperation | undefined) => operation?.requestBody?.content?.["application/json"]?.schema;
+      const jsonResponseSchema = (operation: ServedOpenApiOperation | undefined, status = "200") => {
+        const okResponse = operation?.responses?.[status] as { content?: Record<string, { schema?: Record<string, unknown> }> } | undefined;
+        return okResponse?.content?.["application/json"]?.schema;
+      };
+      const textResponseSchema = (operation: ServedOpenApiOperation | undefined, status = "200") => {
+        const okResponse = operation?.responses?.[status] as { content?: Record<string, { schema?: Record<string, unknown> }> } | undefined;
+        return okResponse?.content?.["text/plain"]?.schema;
+      };
+      expect(spec.openapi).toBe("3.1.0");
+      expect(spec.info.version).toBe("0.3.0");
+      expect(spec.components.securitySchemes.BearerAuth).toMatchObject({ type: "http", scheme: "bearer" });
+      expect(spec.components.schemas.ErrorResponse).toBeDefined();
+      expect(spec.components.schemas.PaginationMeta).toBeDefined();
+      for (const schemaName of [
+        "HealthStatus",
+        "LoginRequest",
+        "LoginResponse",
+        "RegisterRequest",
+        "PasswordResetRequest",
+        "PublicMfaInfo",
+        "OidcPublicConfig",
+        "SessionInfo",
+        "AdminUser",
+        "AdminUserPatchRequest",
+        "AdminUserPasswordResetRequest",
+        "AdminUserPasswordResetResponse",
+        "AdminPasswordResetPruneRequest",
+        "AdminPasswordResetPruneResult",
+        "AdminSession",
+        "AdminSessionRevokeResponse",
+        "AdminSessionRiskReport",
+        "AdminSessionRiskRevokeRequest",
+        "AdminSessionRiskRevokeResult",
+        "AdminAuthRuntimeConfig",
+        "AdminAuthOperations",
+        "AdminAuthTestConnectionRequest",
+        "AdminAuthConnectionTestResult",
+        "EmailOutboxMessage",
+        "AdminEmailOutboxRetryAllRequest",
+        "AdminEmailOutboxRetryAllResult",
+        "AdminAuditLogExport",
+        "AdminJob",
+        "AdminJobCreateRequest",
+        "AdminJobLeaseRequest",
+        "AdminJobPatchRequest",
+        "AdminJobHeartbeatRequest",
+        "AdminJobCancelRequest",
+        "AdminJobOperationSample",
+        "AdminJobOperations",
+        "AdminJobAlertRequest",
+        "AdminJobAlertResult",
+        "OpenApiDocument",
+        "AdminAiOperations",
+        "AdminAiStaleProposalRejectRequest",
+        "AdminAiStaleProposalRejectResult",
+        "AdminAiStaleThreadFailRequest",
+        "AdminAiStaleThreadFailResult",
+        "AdminAiStaleToolCallFailRequest",
+        "AdminAiStaleToolCallFailResult",
+        "AdminAiToolCallRetryRequest",
+        "AdminAiToolCallRetryResult",
+        "AdminAiEvaluationExport",
+        "AdminPluginReviewSnapshot",
+        "AdminPluginReviewInfo",
+        "AdminPluginReviewPatchRequest",
+        "AdminPluginRegistrySyncRequest",
+        "AdminPluginRegistrySyncResponse",
+        "AdminPluginOperations",
+        "AdminSystemOperations",
+        "AdminRenderingOperations",
+        "AdminAssetStorageInfo",
+        "AdminAssetOperationRequest",
+        "AdminAssetOperationResult",
+        "AdminAssetIntegrityReport",
+        "AdminAssetCdnPurgeRequest",
+        "AdminAssetCdnPurgeResult",
+        "Campaign",
+        "CampaignInvite",
+        "CampaignInviteCreateRequest",
+        "CampaignInviteCreateResponse",
+        "InviteAcceptRequest",
+        "InviteAcceptResponse",
+        "OrganizationInvite",
+        "OrganizationInviteCreateRequest",
+        "OrganizationCreateRequest",
+        "OrganizationWorkspaceInfo",
+        "OrganizationSwitchRequest",
+        "OrganizationSwitchResponse",
+        "ScimServiceProviderConfig",
+        "ScimUser",
+        "ScimUserInput",
+        "ScimUserListResponse",
+        "ScimGroup",
+        "ScimGroupInput",
+        "ScimGroupListResponse",
+        "ScimPatchRequest",
+        "AdminScimGroupRoleMapping",
+        "AdminScimGroupRoleMappingInput",
+        "AdminScimGroupRoleMappingCreateResponse",
+        "AdminStorageOperations",
+        "StorageBackupRequest",
+        "StorageBackupResult",
+        "StorageRestoreDrillRequest",
+        "StorageRestoreDrillResult",
+        "Scene",
+        "FogPreset",
+        "FogHistoryEntry",
+        "VisionSnapshot",
+        "VisionPointSample",
+        "SceneAnnotation",
+        "Token",
+        "ChatMessage",
+        "DiceRoll",
+        "MapAsset",
+        "Actor",
+        "Item",
+        "JournalEntry",
+        "Combat",
+        "Proposal",
+        "Encounter",
+        "AiThread",
+        "AiToolCallRetryRequest",
+        "AiMemoryFact",
+        "AiToolCall",
+        "PluginRuntimeInfo",
+        "PluginStorageEntry",
+        "SystemRuntimeInfo",
+        "ContentImportBatch",
+        "CampaignArchive"
+      ]) {
+        expect(spec.components.schemas[schemaName]).toBeDefined();
+      }
+      expect(spec["x-otte-version-policy"]?.basePath).toBe("/api/v1");
+      expect(spec["x-otte-error-policy"]?.schema).toBe("ErrorResponse");
+      expect(spec["x-otte-idempotency-policy"]?.header).toBe("Idempotency-Key");
+      expect(spec["x-otte-pagination-policy"]).toMatchObject({ limitParameter: "limit", cursorParameter: "cursor" });
+      expect(spec["x-otte-rate-limit-policy"]?.statusCode).toBe(429);
+      expect(spec.paths["/api/v1/openapi.json"]?.get).toBeDefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/openapi.json"]?.get)).toMatchObject({ $ref: "#/components/schemas/OpenApiDocument" });
+      expect(spec.paths["/api/v1/campaigns"]?.get?.parameters?.some((parameter) => parameter.name === "limit" && parameter.in === "query")).toBe(true);
+      expect(spec.paths["/api/v1/campaigns/{campaignId}/scenes"]?.post?.parameters?.some((parameter) => parameter.name === "Idempotency-Key" && parameter.in === "header")).toBe(true);
+      expect(spec.paths["/api/v1/admin/storage/backup"]?.post?.parameters?.some((parameter) => parameter.name === "Idempotency-Key" && parameter.in === "header")).toBe(true);
+      expect(spec.paths["/api/v1/content-imports/{importId}/apply"]?.post?.responses?.["409"]).toBeDefined();
+      expect(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium"]?.post).toBeDefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/health"]?.get)).toMatchObject({ $ref: "#/components/schemas/HealthStatus" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/login"]?.post)).toMatchObject({ $ref: "#/components/schemas/LoginRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/login"]?.post)).toMatchObject({ $ref: "#/components/schemas/LoginResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/register"]?.post)).toMatchObject({ $ref: "#/components/schemas/RegisterRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/register"]?.post)).toMatchObject({ $ref: "#/components/schemas/LoginResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/password-reset/request"]?.post)).toMatchObject({ $ref: "#/components/schemas/PasswordResetRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/password-reset/request"]?.post)).toMatchObject({ $ref: "#/components/schemas/OkResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/password/change"]?.post)).toMatchObject({ $ref: "#/components/schemas/PasswordChangeRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/mfa"]?.get)).toMatchObject({ $ref: "#/components/schemas/PublicMfaInfo" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/mfa/totp/enroll"]?.post)).toMatchObject({ $ref: "#/components/schemas/MfaTotpEnrollRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/mfa/totp/confirm"]?.post)).toMatchObject({ $ref: "#/components/schemas/MfaTotpConfirmResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/sessions"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/UserSession" } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/oidc/config"]?.get)).toMatchObject({ $ref: "#/components/schemas/OidcPublicConfig" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/oidc/start"]?.post)).toMatchObject({ $ref: "#/components/schemas/OidcStartRequest" });
+      expect(spec.paths["/api/v1/auth/oidc/start"]?.get?.responses?.["302"]).toBeDefined();
+      expect(spec.paths["/api/v1/auth/oidc/start"]?.get?.responses?.["200"]).toBeUndefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/oidc/callback"]?.get)).toMatchObject({ $ref: "#/components/schemas/OidcCallbackResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organizations"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/OrganizationWorkspaceInfo" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organizations"]?.post)).toMatchObject({ $ref: "#/components/schemas/OrganizationCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organizations"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/OrganizationSwitchResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organization/session"]?.patch)).toMatchObject({ $ref: "#/components/schemas/OrganizationSwitchRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/session"]?.patch)).toMatchObject({ $ref: "#/components/schemas/OrganizationSwitchResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/invites"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/OrganizationInvite" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organization/invites"]?.post)).toMatchObject({ $ref: "#/components/schemas/OrganizationInviteCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/invites"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/CampaignInviteCreateResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/users"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AdminUser" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/users/{userId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminUserPatchRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/users/{userId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminUser" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/users/{userId}/password-reset"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminUserPasswordResetRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/users/{userId}/password-reset"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminUserPasswordResetResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/password-resets/prune"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminPasswordResetPruneRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/password-resets/prune"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminPasswordResetPruneResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/users/{userId}/sessions"]?.delete)).toMatchObject({ $ref: "#/components/schemas/AdminSessionRevokeResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/sessions"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AdminSession" } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/sessions/risk"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminSessionRiskReport" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/sessions/risk/revoke"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminSessionRiskRevokeRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/sessions/risk/revoke"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminSessionRiskRevokeResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/sessions/{sessionId}"]?.delete)).toMatchObject({ $ref: "#/components/schemas/OkResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/auth/config"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAuthRuntimeConfig" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/auth/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAuthOperations" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/auth/test-connection"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAuthTestConnectionRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/auth/test-connection"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAuthConnectionTestResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/email-outbox"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/EmailOutboxMessage" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/email-outbox/retry-all"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminEmailOutboxRetryAllRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/email-outbox/retry-all"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminEmailOutboxRetryAllResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/email-outbox/{messageId}/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/EmailOutboxMessage" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/audit-logs"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAuditLogExport" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AdminJob" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs/lease"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobLeaseRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/lease"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(spec.paths["/api/v1/admin/jobs/lease"]?.post?.responses?.["204"]).toBeDefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminJobOperations" });
+      expect(textResponseSchema(spec.paths["/api/v1/admin/jobs/metrics"]?.get)).toMatchObject({ type: "string" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs/alerts"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobAlertRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/alerts"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobAlertResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/alerts"]?.post, "502")).toMatchObject({ $ref: "#/components/schemas/AdminJobAlertResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/{jobId}"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs/{jobId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminJobPatchRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/{jobId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs/{jobId}/heartbeat"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobHeartbeatRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/{jobId}/heartbeat"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/{jobId}/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs/{jobId}/cancel"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobCancelRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/{jobId}/cancel"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAiOperations" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/ai/proposals/stale/reject"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleProposalRejectRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/proposals/stale/reject"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleProposalRejectResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/ai/threads/stale/fail"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleThreadFailRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/threads/stale/fail"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleThreadFailResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/ai/tool-calls/stale/fail"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleToolCallFailRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/tool-calls/stale/fail"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleToolCallFailResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/ai/tool-calls/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiToolCallRetryRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/tool-calls/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiToolCallRetryResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/evaluations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAiEvaluationExport" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/plugins/reviews"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminPluginReviewSnapshot" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/plugins/reviews/{reviewKey}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminPluginReviewPatchRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/plugins/reviews/{reviewKey}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminPluginReviewInfo" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/plugins/registry/sync"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminPluginRegistrySyncRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/plugins/registry/sync"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminPluginRegistrySyncResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/plugins/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminPluginOperations" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/systems/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminSystemOperations" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/rendering/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminRenderingOperations" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/scim/group-role-mappings"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AdminScimGroupRoleMapping" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/scim/group-role-mappings"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminScimGroupRoleMappingInput" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/scim/group-role-mappings"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminScimGroupRoleMappingCreateResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/scim/group-role-mappings"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/AdminScimGroupRoleMappingCreateResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/scim/group-role-mappings/{mappingId}"]?.delete)).toMatchObject({ $ref: "#/components/schemas/AdminScimGroupRoleMappingDeleteResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/ServiceProviderConfig"]?.get)).toMatchObject({ $ref: "#/components/schemas/ScimServiceProviderConfig" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Users"]?.get)).toMatchObject({ $ref: "#/components/schemas/ScimUserListResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Users"]?.post)).toMatchObject({ $ref: "#/components/schemas/ScimUserInput" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Users"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/ScimUser" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Users/{userId}"]?.get)).toMatchObject({ $ref: "#/components/schemas/ScimUser" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Users/{userId}"]?.put)).toMatchObject({ $ref: "#/components/schemas/ScimUserInput" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Users/{userId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/ScimPatchRequest" });
+      expect(spec.paths["/api/v1/scim/v2/Users/{userId}"]?.delete?.responses?.["204"]).toBeDefined();
+      expect(spec.paths["/api/v1/scim/v2/Users/{userId}"]?.delete?.responses?.["200"]).toBeUndefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Groups"]?.get)).toMatchObject({ $ref: "#/components/schemas/ScimGroupListResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Groups"]?.post)).toMatchObject({ $ref: "#/components/schemas/ScimGroupInput" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Groups"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/ScimGroup" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Groups/{groupId}"]?.get)).toMatchObject({ $ref: "#/components/schemas/ScimGroup" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Groups/{groupId}"]?.put)).toMatchObject({ $ref: "#/components/schemas/ScimGroupInput" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Groups/{groupId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/ScimPatchRequest" });
+      expect(spec.paths["/api/v1/scim/v2/Groups/{groupId}"]?.delete?.responses?.["204"]).toBeDefined();
+      expect(spec.paths["/api/v1/scim/v2/Groups/{groupId}"]?.delete?.responses?.["200"]).toBeUndefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/storage/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminStorageOperations" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/storage/backup"]?.post)).toMatchObject({ $ref: "#/components/schemas/StorageBackupRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/storage/backup"]?.post)).toMatchObject({ $ref: "#/components/schemas/StorageBackupResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/storage/restore-drill"]?.post)).toMatchObject({ $ref: "#/components/schemas/StorageRestoreDrillRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/storage/restore-drill"]?.post)).toMatchObject({ $ref: "#/components/schemas/StorageRestoreDrillResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/storage/restore-drill"]?.post, "409")).toMatchObject({ $ref: "#/components/schemas/StorageRestoreDrillResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/storage"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAssetStorageInfo" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/integrity"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAssetIntegrityReport" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/assets/integrity/quarantine"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/integrity/quarantine"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/assets/migrate"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/migrate"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/assets/cleanup"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/cleanup"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/assets/{assetId}/purge-cache"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetCdnPurgeRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/{assetId}/purge-cache"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetCdnPurgeResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/workspace-defaults"]?.get)).toMatchObject({ $ref: "#/components/schemas/OrganizationWorkspace" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organization/workspace-defaults"]?.patch)).toMatchObject({ $ref: "#/components/schemas/OrganizationWorkspaceDefaultsPatchRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/members"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/OrganizationMember" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organization/members"]?.post)).toMatchObject({ $ref: "#/components/schemas/OrganizationMemberCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/members"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/OrganizationMember" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organization/members/{memberId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/OrganizationMemberUpdateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/members/{memberId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/OrganizationMember" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/members/{memberId}"]?.delete)).toMatchObject({ $ref: "#/components/schemas/OrganizationMemberDeleteResponse" });
+      expect(spec.components.schemas.Campaign).toMatchObject({ properties: { organizationId: { type: "string" } } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/Campaign" } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/archive"]?.post)).toMatchObject({ $ref: "#/components/schemas/Campaign" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/restore"]?.post)).toMatchObject({ $ref: "#/components/schemas/Campaign" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/invites"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/CampaignInvite" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/invites"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignInviteCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/invites"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignInviteCreateResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/invites/accept"]?.post)).toMatchObject({ $ref: "#/components/schemas/InviteAcceptRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/invites/accept"]?.post)).toMatchObject({ $ref: "#/components/schemas/InviteAcceptResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/invites/{inviteId}/revoke"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignInvite" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/scenes"]?.post)).toMatchObject({ $ref: "#/components/schemas/SceneCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/scenes"]?.post)).toMatchObject({ $ref: "#/components/schemas/Scene" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/fog-presets"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/FogPreset" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/fog-presets"]?.post)).toMatchObject({ $ref: "#/components/schemas/FogPresetCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/vision"]?.get)).toMatchObject({ $ref: "#/components/schemas/VisionSnapshot" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/vision/sample"]?.get)).toMatchObject({ $ref: "#/components/schemas/VisionPointSample" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/rendering/diagnostics"]?.get)).toMatchObject({ $ref: "#/components/schemas/SceneRenderingDiagnostics" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/fog"]?.post)).toMatchObject({ $ref: "#/components/schemas/FogRegionInput" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/fog/history"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/FogHistoryEntry" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/walls"]?.post)).toMatchObject({ $ref: "#/components/schemas/WallInput" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/lights"]?.post)).toMatchObject({ $ref: "#/components/schemas/LightSourceInput" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/annotations"]?.post)).toMatchObject({ $ref: "#/components/schemas/SceneAnnotationCreateRequest" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/annotations/{annotationId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/SceneAnnotationUpdateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/tokens"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/Token" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/tokens/{tokenId}/target"]?.post)).toMatchObject({ $ref: "#/components/schemas/TokenTargetRequest" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/chat/messages"]?.post)).toMatchObject({ $ref: "#/components/schemas/ChatMessageCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/chat/messages"]?.post)).toMatchObject({ $ref: "#/components/schemas/ChatMessage" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/chat/messages/{messageId}/moderation"]?.patch)).toMatchObject({ $ref: "#/components/schemas/ChatModerationRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/chat/messages/{messageId}/moderation"]?.patch)).toMatchObject({ $ref: "#/components/schemas/ChatMessage" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/dice/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/DiceRollRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/dice/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/DiceRoll" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/assets"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/MapAsset" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/assets"]?.post)).toMatchObject({ $ref: "#/components/schemas/MapAssetCreateRequest" });
+      expect(spec.paths["/api/v1/assets/{assetId}/blob"]?.get?.responses?.["200"]).toMatchObject({ content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/assets/{assetId}/delivery-url"]?.post)).toMatchObject({ $ref: "#/components/schemas/AssetDeliveryUrlResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/actors"]?.post)).toMatchObject({ $ref: "#/components/schemas/ActorCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/items"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/Item" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/journal"]?.post)).toMatchObject({ $ref: "#/components/schemas/JournalEntryCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/combats"]?.post)).toMatchObject({ $ref: "#/components/schemas/Combat" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/combats/{combatId}/audit"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AuditLog" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/proposals"]?.post)).toMatchObject({ $ref: "#/components/schemas/ProposalCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/proposals/{proposalId}/apply"]?.post)).toMatchObject({ $ref: "#/components/schemas/Proposal" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/chat/export"]?.get)).toMatchObject({ $ref: "#/components/schemas/ChatExport" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/ai/threads"]?.post)).toMatchObject({ $ref: "#/components/schemas/AiThreadCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/ai/threads"]?.post)).toMatchObject({ $ref: "#/components/schemas/AiThreadResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/ai/memory"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AiMemoryFact" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/ai/tool-calls/{toolCallId}/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/AiToolCallRetryRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/ai/tool-calls/{toolCallId}/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiToolCallRetryResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/install"]?.post)).toMatchObject({ $ref: "#/components/schemas/PluginInstallRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/install"]?.post)).toMatchObject({ $ref: "#/components/schemas/PluginInstallResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}"]?.put)).toMatchObject({ $ref: "#/components/schemas/PluginStorageSetRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}"]?.put)).toMatchObject({ $ref: "#/components/schemas/PluginStorageEntry" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/install"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemInstallResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemActorActionRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemRollResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/content-imports/preview"]?.post)).toMatchObject({ $ref: "#/components/schemas/ContentImportPreviewRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/content-imports/preview"]?.post)).toMatchObject({ $ref: "#/components/schemas/ContentImportBatch" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/export"]?.get)).toMatchObject({ $ref: "#/components/schemas/CampaignArchive" });
+      expect(spec.paths["/api/v1/campaigns/{campaignId}/export"]?.get?.parameters?.some((parameter) => parameter.name === "redaction" && parameter.in === "query")).toBe(true);
+      expect(jsonRequestSchema(spec.paths["/api/v1/import/campaign"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignImportRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/import/campaign"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignImportResponse" });
+
+      const appSource = readFileSync(new URL("./app.ts", import.meta.url), "utf8");
+      const documentedRoutes = new Set(Object.entries(spec.paths).flatMap(([path, methods]) => Object.keys(methods).map((method) => `${method.toUpperCase()} ${path}`)));
+      const liveRestRoutes = Array.from(appSource.matchAll(/app\.(get|post|patch|delete|put)(?:<[^]*?>)?\(\s*"([^"]+)"/g), (match) => {
+        const method = match[1]?.toUpperCase();
+        const path = match[2]?.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+        return method && path ? `${method} ${path}` : undefined;
+      }).filter((route): route is string => Boolean(route) && route !== "GET /api/v1/realtime");
+      const missingRoutes = Array.from(new Set(liveRestRoutes)).filter((route) => !documentedRoutes.has(route)).sort();
+      expect(missingRoutes).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("lets server admins manage a persisted redacted job ledger", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS", "OTTE_JOB_ALERT_WEBHOOK_URL", "OTTE_JOB_ALERT_WEBHOOK_TOKEN", "OTTE_JOB_ALERT_WEBHOOK_TIMEOUT_MS"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    delete process.env.OTTE_JOB_ALERT_WEBHOOK_URL;
+    delete process.env.OTTE_JOB_ALERT_WEBHOOK_TOKEN;
+    delete process.env.OTTE_JOB_ALERT_WEBHOOK_TIMEOUT_MS;
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const denied = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/jobs",
+        headers: { "x-user-id": "usr_demo_player" }
+      });
+      expect(denied.statusCode).toBe(403);
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/jobs",
+        headers: authHeaders,
+        payload: {
+          type: "ai.memory.extract",
+          maxAttempts: 2,
+          payload: {
+            campaignId: "camp_demo",
+            sourceText: "The lich keeps the vault key under a black obelisk.",
+            archive: { campaigns: [{ id: "camp_demo" }] }
+          }
+        }
+      });
+      expect(created.statusCode).toBe(201);
+      const createdJob = created.json();
+      expect(createdJob).toMatchObject({
+        type: "ai.memory.extract",
+        status: "queued",
+        attempts: 0,
+        maxAttempts: 2,
+        payload: {
+          campaignId: "camp_demo",
+          sourceText: { redacted: true, field: "sourceText" },
+          archive: { redacted: true, field: "archive" }
+        }
+      });
+      expect(store.state.jobs).toHaveLength(1);
+      expect(store.state.jobs[0]?.payload).toMatchObject({
+        sourceText: "The lich keeps the vault key under a black obelisk."
+      });
+
+      const leased = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/jobs/lease",
+        headers: authHeaders,
+        payload: { workerId: "worker-a", leaseSeconds: 30, types: ["ai.memory.extract"] }
+      });
+      expect(leased.statusCode).toBe(200);
+      expect(leased.json()).toMatchObject({
+        id: createdJob.id,
+        status: "running",
+        attempts: 1,
+        leasedBy: "worker-a",
+        payload: {
+          campaignId: "camp_demo",
+          sourceText: "The lich keeps the vault key under a black obelisk."
+        }
+      });
+      expect(leased.json().leaseExpiresAt).toBeDefined();
+
+      const running = await app.inject({
+        method: "POST",
+        url: `/api/v1/admin/jobs/${createdJob.id}/heartbeat`,
+        headers: authHeaders,
+        payload: {
+          workerId: "worker-a",
+          progress: { current: 1, total: 4, percent: 25, message: "Extracting memory candidates" },
+          log: { level: "info", message: "Worker leased job", details: { sourceText: "still sensitive" } }
+        }
+      });
+      expect(running.statusCode).toBe(200);
+      expect(running.json()).toMatchObject({
+        status: "running",
+        attempts: 1,
+        leasedBy: "worker-a",
+        progress: { current: 1, total: 4, percent: 25, message: "Extracting memory candidates" }
+      });
+      expect(running.json().lastHeartbeatAt).toBeDefined();
+      expect(running.json().logs.find((log: { message: string }) => log.message === "Worker leased job").details.sourceText).toMatchObject({ redacted: true, field: "sourceText" });
+
+      const failed = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/admin/jobs/${createdJob.id}`,
+        headers: authHeaders,
+        payload: {
+          status: "failed",
+          error: "provider timeout",
+          output: { transcript: "very long raw recap" }
+        }
+      });
+      expect(failed.statusCode).toBe(200);
+      expect(failed.json()).toMatchObject({
+        status: "failed",
+        error: "provider timeout",
+        output: { transcript: { redacted: true, field: "transcript" } }
+      });
+      expect(failed.json().leasedBy).toBeUndefined();
+
+      const retried = await app.inject({
+        method: "POST",
+        url: `/api/v1/admin/jobs/${createdJob.id}/retry`,
+        headers: authHeaders
+      });
+      expect(retried.statusCode).toBe(200);
+      expect(retried.json()).toMatchObject({ status: "queued", attempts: 1 });
+      expect(retried.json().error).toBeUndefined();
+
+      const cancelled = await app.inject({
+        method: "POST",
+        url: `/api/v1/admin/jobs/${createdJob.id}/cancel`,
+        headers: authHeaders,
+        payload: { reason: "operator paused batch" }
+      });
+      expect(cancelled.statusCode).toBe(200);
+      expect(cancelled.json()).toMatchObject({ status: "cancelled", cancelledByUserId: "usr_demo_gm" });
+
+      const listed = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/jobs?status=cancelled&type=ai.memory.extract",
+        headers: authHeaders
+      });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()).toHaveLength(1);
+      expect(listed.json()[0]).toMatchObject({ id: createdJob.id, status: "cancelled" });
+
+      const fetched = await app.inject({
+        method: "GET",
+        url: `/api/v1/admin/jobs/${createdJob.id}`,
+        headers: authHeaders
+      });
+      expect(fetched.statusCode).toBe(200);
+      expect(fetched.json()).toMatchObject({ id: createdJob.id, status: "cancelled" });
+
+      const staleQueuedAt = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+      const staleHeartbeatAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const expiredLeaseAt = new Date(Date.now() - 60 * 1000).toISOString();
+      store.state.jobs.push(
+        {
+          id: "job_stale_queue",
+          type: "storage.backup",
+          status: "queued",
+          payload: { reason: "scheduled backup" },
+          attempts: 0,
+          maxAttempts: 3,
+          queuedAt: staleQueuedAt,
+          logs: [],
+          createdAt: staleQueuedAt,
+          updatedAt: staleQueuedAt
+        },
+        {
+          id: "job_expired_lease",
+          type: "campaign.export",
+          status: "running",
+          payload: { campaignId: "camp_demo", archive: { hidden: true } },
+          attempts: 2,
+          maxAttempts: 2,
+          queuedAt: staleQueuedAt,
+          startedAt: staleHeartbeatAt,
+          leasedBy: "worker-b",
+          leaseExpiresAt: expiredLeaseAt,
+          lastHeartbeatAt: staleHeartbeatAt,
+          logs: [],
+          createdAt: staleQueuedAt,
+          updatedAt: staleHeartbeatAt
+        },
+        {
+          id: "job_failed_sensitive",
+          type: "ai.session.recap",
+          status: "failed",
+          payload: { sourceText: "raw session notes must not appear" },
+          output: { transcript: "raw transcript must not appear" },
+          error: "model timeout",
+          attempts: 1,
+          maxAttempts: 3,
+          queuedAt: staleQueuedAt,
+          logs: [{ at: staleHeartbeatAt, level: "error", message: "failed", details: { sourceText: "raw log detail must not appear" } }],
+          createdAt: staleQueuedAt,
+          updatedAt: staleHeartbeatAt
+        }
+      );
+
+      const operations = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/jobs/operations",
+        headers: authHeaders
+      });
+      expect(operations.statusCode).toBe(200);
+      expect(operations.json()).toMatchObject({
+        actionRequired: true,
+        totals: {
+          byStatus: { queued: 1, running: 1, failed: 1, cancelled: 1 },
+          retryableCount: 2,
+          exhaustedCount: 1
+        },
+        queue: { staleQueuedCount: 1 },
+        leases: {
+          expiredCount: 1,
+          staleHeartbeatCount: 1,
+          workers: [expect.objectContaining({ workerId: "worker-b", expiredLeaseCount: 1, staleHeartbeatCount: 1 })]
+        },
+        failures: {
+          failedCount: 1,
+          retryableCount: 2,
+          exhaustedCount: 1,
+          recentFailed: [expect.objectContaining({ id: "job_failed_sensitive", error: "model timeout" })]
+        }
+      });
+      expect(operations.json().actionReasons).toEqual(expect.arrayContaining(["failed_jobs", "expired_job_leases", "stale_job_heartbeats", "retry_exhausted_jobs", "stale_queued_jobs"]));
+      expect(operations.json().remediationQueue.map((item: { code: string }) => item.code)).toEqual(expect.arrayContaining(["retry_or_inspect_failed_jobs", "reclaim_expired_job_leases", "investigate_stale_job_workers", "resolve_retry_exhausted_jobs", "increase_job_worker_capacity"]));
+      expect(JSON.stringify(operations.json())).not.toContain("raw session notes must not appear");
+      expect(JSON.stringify(operations.json())).not.toContain("raw transcript must not appear");
+      expect(JSON.stringify(operations.json())).not.toContain("raw log detail must not appear");
+
+      const metricsDenied = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/jobs/metrics",
+        headers: { "x-user-id": "usr_demo_player" }
+      });
+      expect(metricsDenied.statusCode).toBe(403);
+
+      const metrics = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/jobs/metrics",
+        headers: authHeaders
+      });
+      expect(metrics.statusCode).toBe(200);
+      expect(metrics.headers["content-type"]).toContain("text/plain");
+      expect(metrics.body).toContain("otte_admin_jobs_total 4");
+      expect(metrics.body).toContain('otte_admin_jobs_by_status{status="queued"} 1');
+      expect(metrics.body).toContain('otte_admin_jobs_by_status{status="running"} 1');
+      expect(metrics.body).toContain('otte_admin_jobs_by_status{status="failed"} 1');
+      expect(metrics.body).toContain('otte_admin_jobs_by_status{status="cancelled"} 1');
+      expect(metrics.body).toContain('otte_admin_jobs_by_type{type="ai.session.recap"} 1');
+      expect(metrics.body).toContain("otte_admin_jobs_retryable 2");
+      expect(metrics.body).toContain("otte_admin_jobs_retry_exhausted 1");
+      expect(metrics.body).toContain("otte_admin_jobs_queue_stale 1");
+      expect(metrics.body).toContain("otte_admin_jobs_leases_expired 1");
+      expect(metrics.body).toContain("otte_admin_jobs_heartbeats_stale 1");
+      expect(metrics.body).toContain("otte_admin_jobs_workers 1");
+      expect(metrics.body).toContain("otte_admin_jobs_action_required 1");
+      expect(metrics.body).not.toContain("raw session notes must not appear");
+      expect(metrics.body).not.toContain("raw transcript must not appear");
+      expect(metrics.body).not.toContain("raw log detail must not appear");
+
+      const dryRunAlert = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/jobs/alerts",
+        headers: authHeaders,
+        payload: { dryRun: true, force: true, reason: "operator smoke" }
+      });
+      expect(dryRunAlert.statusCode).toBe(200);
+      expect(dryRunAlert.json()).toMatchObject({
+        status: "dry_run",
+        configured: false,
+        actionRequired: true,
+        remediationCount: 5,
+        reason: "operator smoke"
+      });
+
+      const missingWebhookAlert = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/jobs/alerts",
+        headers: authHeaders,
+        payload: { reason: "send without webhook" }
+      });
+      expect(missingWebhookAlert.statusCode).toBe(502);
+      expect(missingWebhookAlert.json()).toMatchObject({
+        status: "failed",
+        configured: false,
+        actionRequired: true
+      });
+
+      let alertAuthorization: string | undefined;
+      let alertPayload: { kind?: string; reason?: string; operations?: { actionRequired?: boolean; remediationQueue?: unknown[] } } | undefined;
+      const webhook = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+        alertAuthorization = request.headers.authorization;
+        alertPayload = JSON.parse(await readRequestBody(request));
+        response.writeHead(202, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
+      });
+      await new Promise<void>((resolve) => webhook.listen(0, "127.0.0.1", resolve));
+      const address = webhook.address() as AddressInfo;
+      process.env.OTTE_JOB_ALERT_WEBHOOK_URL = `http://127.0.0.1:${address.port}/job-alert`;
+      process.env.OTTE_JOB_ALERT_WEBHOOK_TOKEN = "job-alert-secret";
+      process.env.OTTE_JOB_ALERT_WEBHOOK_TIMEOUT_MS = "2000";
+      try {
+        const deliveredAlert = await app.inject({
+          method: "POST",
+          url: "/api/v1/admin/jobs/alerts",
+          headers: authHeaders,
+          payload: { reason: "send posture alert" }
+        });
+        expect(deliveredAlert.statusCode).toBe(200);
+        expect(deliveredAlert.json()).toMatchObject({
+          status: "delivered",
+          configured: true,
+          webhookStatus: 202,
+          actionRequired: true,
+          reason: "send posture alert"
+        });
+        expect(alertAuthorization).toBe("Bearer job-alert-secret");
+        expect(alertPayload).toMatchObject({
+          kind: "open_tabletop.job_operations_alert",
+          reason: "send posture alert",
+          operations: {
+            actionRequired: true,
+            remediationQueue: expect.any(Array)
+          }
+        });
+        expect(JSON.stringify(alertPayload)).not.toContain("raw session notes must not appear");
+        expect(JSON.stringify(alertPayload)).not.toContain("raw transcript must not appear");
+        expect(JSON.stringify(alertPayload)).not.toContain("raw log detail must not appear");
+      } finally {
+        await new Promise<void>((resolve) => webhook.close(() => resolve()));
+      }
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
+  it("persists and replays successful idempotent mutations", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const payload = { name: "Idempotent Scene", width: 640, height: 480, gridSize: 40 };
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "scene-create-1" },
+        payload
+      });
+      expect(first.statusCode).toBe(200);
+      const firstSceneId = first.json().id;
+      expect(store.state.scenes.filter((scene) => scene.name === "Idempotent Scene")).toHaveLength(1);
+      expect(store.state.idempotencyRecords).toHaveLength(1);
+
+      const replay = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "scene-create-1" },
+        payload: { gridSize: 40, height: 480, name: "Idempotent Scene", width: 640 }
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.headers["idempotency-replayed"]).toBe("true");
+      expect(replay.json().id).toBe(firstSceneId);
+      expect(store.state.scenes.filter((scene) => scene.name === "Idempotent Scene")).toHaveLength(1);
+      expect(store.state.idempotencyRecords).toHaveLength(1);
+
+      const conflictResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "scene-create-1" },
+        payload: { name: "Different Scene", width: 640, height: 480, gridSize: 40 }
+      });
+      expect(conflictResponse.statusCode).toBe(409);
+      expect(conflictResponse.json().message).toContain("Idempotency-Key");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("enforces configured API rate limits with standard headers", async () => {
+    const app = await buildApp({
+      store: new MemoryStateStore(),
+      rateLimit: { enabled: true, windowMs: 60_000, maxRequests: 2 }
+    });
+
+    try {
+      const first = await app.inject({ method: "GET", url: "/api/v1/health" });
+      expect(first.statusCode).toBe(200);
+      expect(first.headers["x-ratelimit-limit"]).toBe("2");
+      expect(first.headers["x-ratelimit-remaining"]).toBe("1");
+      expect(first.headers["x-ratelimit-reset"]).toBeDefined();
+
+      const second = await app.inject({ method: "GET", url: "/api/v1/health" });
+      expect(second.statusCode).toBe(200);
+      expect(second.headers["x-ratelimit-remaining"]).toBe("0");
+
+      const blocked = await app.inject({ method: "GET", url: "/api/v1/health" });
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.headers["retry-after"]).toBeDefined();
+      expect(blocked.headers["x-ratelimit-limit"]).toBe("2");
+      expect(blocked.headers["x-ratelimit-remaining"]).toBe("0");
+      expect(blocked.json()).toMatchObject({
+        error: "rate_limited",
+        details: { limit: 2, windowSeconds: 60 }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("creates campaign role permission templates for default setup profiles", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: {
+        name: "Collaborative Setup",
+        permissionTemplate: "player_authoring"
+      }
+    });
+    expect(created.statusCode).toBe(200);
+    const campaignId = created.json().id as string;
+    expect(store.state.permissionGrants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          campaignId,
+          subjectType: "role",
+          subjectId: "player",
+          permissions: expect.arrayContaining(["actor.create", "journal.create", "token.create"]),
+          metadata: expect.objectContaining({ source: "campaign_permission_template", templateId: "player_authoring" })
+        })
+      ])
+    );
+
+    store.state.members.push(
+      createTimestamped("mem", {
+        campaignId,
+        userId: "usr_demo_player",
+        role: "player" as const
+      })
+    );
+    const members = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/${campaignId}/members`,
+      headers: authHeaders
+    });
+    expect(members.statusCode).toBe(200);
+    expect(members.json().find((member: { userId: string }) => member.userId === "usr_demo_player").permissions).toEqual(expect.arrayContaining(["actor.create", "journal.create", "token.create"]));
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: {
+        name: "Invalid Setup",
+        permissionTemplate: "unbounded"
+      }
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    await app.close();
+  });
+
   it("serves campaigns, rolls dice, and exports campaign data", async () => {
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
 
     const campaigns = await app.inject({
       method: "GET",
@@ -183,6 +1528,46 @@ describe("api", () => {
     expect(roll.statusCode).toBe(200);
     expect(roll.json().total).toBeGreaterThanOrEqual(6);
 
+    const rolls = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/rolls",
+      headers: authHeaders
+    });
+    expect(rolls.statusCode).toBe(200);
+    expect(rolls.json().map((item: DiceRoll) => item.id)).toContain(roll.json().id);
+
+    const macros = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/dice-macros",
+      headers: authHeaders
+    });
+    expect(macros.statusCode).toBe(200);
+    expect(macros.json().map((item: DiceMacro) => item.name)).toContain("Attack Check");
+
+    const createdMacro = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/dice-macros",
+      headers: authHeaders,
+      payload: {
+        name: "Blessed Save",
+        formula: "1d20+1d4+3",
+        visibility: "public"
+      }
+    });
+    expect(createdMacro.statusCode).toBe(200);
+    expect(createdMacro.json()).toMatchObject({ campaignId: "camp_demo", name: "Blessed Save", formula: "1d20+1d4+3" });
+
+    const playerMacroCreate = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/dice-macros",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: {
+        name: "Player Shared Macro",
+        formula: "1d20"
+      }
+    });
+    expect(playerMacroCreate.statusCode).toBe(403);
+
     const exported = await app.inject({
       method: "GET",
       url: "/api/v1/campaigns/camp_demo/export",
@@ -190,8 +1575,557 @@ describe("api", () => {
     });
     expect(exported.statusCode).toBe(200);
     expect(exported.json().format).toBe("ottx");
+    expect(exported.json().data.diceMacros.map((item: DiceMacro) => item.id)).toContain(createdMacro.json().id);
+    expect(exported.json().manifest).toMatchObject({
+      exportScope: "campaign",
+      redactionMode: "portable",
+      compatibilityNotes: expect.arrayContaining([expect.stringContaining("v0.3/v1-compatible importer")])
+    });
+
+    const dryRunImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: exported.json(), mode: "dry_run" }
+    });
+    expect(dryRunImport.statusCode).toBe(200);
+    expect(dryRunImport.json()).toMatchObject({
+      dryRun: true,
+      conflicts: expect.arrayContaining([expect.objectContaining({ collection: "campaigns", id: "camp_demo" })])
+    });
+    expect(store.state.campaigns).toHaveLength(1);
+
+    const scopedDryRunImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: exported.json(), mode: "dry_run", scope: "assets_only" }
+    });
+    expect(scopedDryRunImport.statusCode).toBe(200);
+    expect(scopedDryRunImport.json()).toMatchObject({
+      dryRun: true,
+      importScope: "assets_only",
+      importedCampaignIds: [],
+      counts: expect.objectContaining({ campaigns: 0 })
+    });
+
+    const selectedCollectionDryRunImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: exported.json(), mode: "dry_run", scope: "selected_collections", collections: ["diceMacros"] }
+    });
+    expect(selectedCollectionDryRunImport.statusCode).toBe(200);
+    expect(selectedCollectionDryRunImport.json()).toMatchObject({
+      dryRun: true,
+      importScope: "selected_collections",
+      importCollections: ["diceMacros"],
+      importedCampaignIds: [],
+      counts: expect.objectContaining({ campaigns: 0, diceMacros: expect.any(Number) })
+    });
+
+    const dependencyWarningImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: exported.json(), mode: "dry_run", scope: "selected_collections", collections: ["tokens"] }
+    });
+    expect(dependencyWarningImport.statusCode).toBe(200);
+    expect(dependencyWarningImport.json()).toMatchObject({
+      dryRun: true,
+      importWarnings: expect.arrayContaining([expect.stringContaining("tokens records may reference omitted scenes records")])
+    });
+
+    const selectiveArchive = exported.json() as CampaignArchive;
+    selectiveArchive.data.diceMacros.push({
+      ...(createdMacro.json() as DiceMacro),
+      id: "macro_selective_import",
+      name: "Selective Import Macro"
+    });
+    const selectiveImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: selectiveArchive, mode: "skip_conflicts" }
+    });
+    expect(selectiveImport.statusCode).toBe(200);
+    expect(selectiveImport.json()).toMatchObject({
+      importedCampaignIds: [],
+      counts: expect.objectContaining({ campaigns: 0, diceMacros: 1 }),
+      skippedConflicts: expect.arrayContaining([expect.objectContaining({ collection: "campaigns", id: "camp_demo" })])
+    });
+    expect(store.state.campaigns).toHaveLength(1);
+    expect(store.state.diceMacros.map((item) => item.id)).toContain("macro_selective_import");
+
+    const invalidImportMode = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: exported.json(), mode: "replace" }
+    });
+    expect(invalidImportMode.statusCode).toBe(400);
+
+    const invalidExport = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export?scope=organization",
+      headers: authHeaders
+    });
+    expect(invalidExport.statusCode).toBe(400);
 
     await app.close();
+  });
+
+  it("archives and restores campaigns without deleting campaign records", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const archived = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/archive",
+      headers: authHeaders,
+      payload: { reason: "season break" }
+    });
+    expect(archived.statusCode).toBe(200);
+    expect(archived.json()).toEqual(expect.objectContaining({ id: "camp_demo", archivedAt: expect.any(String), archivedByUserId: "usr_demo_gm" }));
+    expect(store.state.scenes.some((scene) => scene.campaignId === "camp_demo")).toBe(true);
+    expect(store.state.tokens.some((token) => token.sceneId === "scn_vault_entry")).toBe(true);
+    expect(store.state.auditLogs.at(-1)).toMatchObject({
+      action: "campaign.archive",
+      targetType: "campaign",
+      targetId: "camp_demo",
+      after: expect.objectContaining({ archived: true, reason: "season break" })
+    });
+
+    const campaigns = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns",
+      headers: authHeaders
+    });
+    expect(campaigns.statusCode).toBe(200);
+    expect(campaigns.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "camp_demo", archivedAt: expect.any(String) })]));
+
+    const restored = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/restore",
+      headers: authHeaders,
+      payload: { reason: "season resumed" }
+    });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json()).toEqual(expect.objectContaining({ id: "camp_demo", restoredAt: expect.any(String), restoredByUserId: "usr_demo_gm" }));
+    expect(restored.json().archivedAt).toBeUndefined();
+    expect(store.state.auditLogs.at(-1)).toMatchObject({
+      action: "campaign.restore",
+      targetType: "campaign",
+      targetId: "camp_demo",
+      before: expect.objectContaining({ archived: true }),
+      after: expect.objectContaining({ archived: false, reason: "season resumed" })
+    });
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/archive",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { reason: "player cannot archive" }
+    });
+    expect(blocked.statusCode).toBe(403);
+
+    await app.close();
+  });
+
+  it("keeps scene activation exclusive and supports combat lifecycle updates", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const createdScene = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders,
+      payload: {
+        name: "Upper Vault",
+        active: true,
+        width: 900,
+        height: 700,
+        gridSize: 60
+      }
+    });
+    expect(createdScene.statusCode).toBe(200);
+    expect(createdScene.json().activationHistory).toEqual([
+      expect.objectContaining({
+        sceneId: createdScene.json().id,
+        activatedByUserId: "usr_demo_gm",
+        previousActiveSceneId: "scn_vault_entry",
+        deactivatedSceneIds: ["scn_vault_entry"],
+        source: "create"
+      })
+    ]);
+
+    const scenes = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders
+    });
+    expect(scenes.statusCode).toBe(200);
+    expect(scenes.json().filter((scene: Scene) => scene.active).map((scene: Scene) => scene.id)).toEqual([createdScene.json().id]);
+
+    const reactivatedScene = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/scenes/scn_vault_entry",
+      headers: authHeaders,
+      payload: {
+        active: true,
+        activationHistory: []
+      }
+    });
+    expect(reactivatedScene.statusCode).toBe(200);
+    expect(reactivatedScene.json().activationHistory).toEqual([
+      expect.objectContaining({ sceneId: "scn_vault_entry", source: "create" }),
+      expect.objectContaining({
+        sceneId: "scn_vault_entry",
+        activatedByUserId: "usr_demo_gm",
+        previousActiveSceneId: createdScene.json().id,
+        deactivatedSceneIds: [createdScene.json().id],
+        source: "activate"
+      })
+    ]);
+    expect(store.state.scenes.filter((scene) => scene.active).map((scene) => scene.id)).toEqual(["scn_vault_entry"]);
+
+    store.state.actors.push(
+      createTimestamped("act", {
+        id: "act_sentinel",
+        campaignId: "camp_demo",
+        systemId: "generic-fantasy",
+        ownerUserId: "usr_demo_gm",
+        type: "npc",
+        name: "Vault Sentinel",
+        data: { hp: { current: 12, max: 12 }, conditions: [] },
+        permissions: {}
+      }) satisfies Actor
+    );
+
+    const started = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/combats",
+      headers: authHeaders,
+      payload: {
+        combatants: [
+          { id: "cmbt_alpha", tokenId: "tok_valen", actorId: "act_valen", name: "Valen", initiative: 18, defeated: false },
+          { id: "cmbt_beta", tokenId: "tok_sentinel", actorId: "act_sentinel", name: "Vault Sentinel", initiative: 12, defeated: false }
+        ]
+      }
+    });
+    expect(started.statusCode).toBe(200);
+
+    const syncedCombatant = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}/combatants/cmbt_alpha`,
+      headers: authHeaders,
+      payload: {
+        readiness: "ready",
+        conditions: ["prone", "concentrating", "stunned"],
+        deathSaveSuccesses: 2,
+        deathSaveFailures: 1,
+        resourceKey: "focus",
+        resourceLabel: "Focus 3",
+        resourceUsed: true,
+        syncActorSheet: true
+      }
+    });
+    expect(syncedCombatant.statusCode).toBe(200);
+    expect(syncedCombatant.json().combatants[0]).toEqual(expect.objectContaining({ readiness: "ready", conditions: ["prone", "stunned", "concentration lost"], deathSaveSuccesses: 2, deathSaveFailures: 1, resourceUsed: true, resourceSpent: true }));
+    expect(store.state.actors.find((actor) => actor.id === "act_valen")?.data).toEqual(
+      expect.objectContaining({
+        resources: { focus: 2 },
+        conditions: [
+          { id: "prone", appliedAt: expect.any(String) },
+          { id: "stunned", appliedAt: expect.any(String) },
+          { id: "concentration lost", appliedAt: expect.any(String) }
+        ],
+        deathSaves: { successes: 2, failures: 1 },
+        combatState: expect.objectContaining({ combatantId: "cmbt_alpha", tokenId: "tok_valen", readiness: "ready", resourceKey: "focus", resourceLabel: "Focus 3", resourceUsed: true, resourceSpent: true })
+      })
+    );
+
+    const stableCombatant = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}/combatants/cmbt_alpha`,
+      headers: authHeaders,
+      payload: {
+        deathSaveSuccesses: 3,
+        deathSaveFailures: 0,
+        syncActorSheet: true
+      }
+    });
+    expect(stableCombatant.statusCode).toBe(200);
+    expect(stableCombatant.json().combatants[0]).toEqual(expect.objectContaining({ deathSaveOutcome: "stable", defeated: false, conditions: ["prone", "stunned", "concentration lost", "stable"], resourceUsed: true, resourceSpent: true }));
+    expect(store.state.actors.find((actor) => actor.id === "act_valen")?.data).toEqual(
+      expect.objectContaining({
+        resources: { focus: 2 },
+        conditions: expect.arrayContaining([{ id: "stable", appliedAt: expect.any(String) }]),
+        deathSaves: { successes: 3, failures: 0 },
+        combatState: expect.objectContaining({ deathSaveOutcome: "stable", resourceSpent: true })
+      })
+    );
+
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["combat.manage"]
+      })
+    );
+    const blockedActorSync = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}/combatants/cmbt_beta`,
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { conditions: ["restrained"], syncActorSheet: true }
+    });
+    expect(blockedActorSync.statusCode).toBe(403);
+
+    const combatOnlyPatch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}/combatants/cmbt_beta`,
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { conditions: ["restrained:2"], syncActorSheet: false }
+    });
+    expect(combatOnlyPatch.statusCode).toBe(200);
+    expect(combatOnlyPatch.json().combatants[1]).toEqual(expect.objectContaining({ conditions: ["restrained:2"] }));
+    expect(store.state.actors.find((actor) => actor.id === "act_sentinel")?.data.conditions).toEqual([]);
+
+    const deadCombatant = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}/combatants/cmbt_beta`,
+      headers: authHeaders,
+      payload: { deathSaveFailures: 3, syncActorSheet: false }
+    });
+    expect(deadCombatant.statusCode).toBe(200);
+    expect(deadCombatant.json().combatants[1]).toEqual(expect.objectContaining({ defeated: true, deathSaveOutcome: "dead", conditions: ["restrained:2", "dead"] }));
+
+    const updated = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}`,
+      headers: authHeaders,
+      payload: {
+        round: 2,
+        turnIndex: 1,
+        combatants: deadCombatant.json().combatants
+      }
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual(expect.objectContaining({ round: 2, turnIndex: 1, active: true }));
+    expect(updated.json().combatants[1]).toEqual(expect.objectContaining({ defeated: true }));
+    expect(updated.json().combatants[1].conditions).toEqual(["restrained:1", "dead"]);
+
+    const ended = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/combats/${started.json().id}`,
+      headers: authHeaders
+    });
+    expect(ended.statusCode).toBe(200);
+    expect(ended.json()).toEqual(expect.objectContaining({ active: false }));
+
+    const combatAudit = await app.inject({
+      method: "GET",
+      url: `/api/v1/combats/${started.json().id}/audit`,
+      headers: authHeaders
+    });
+    expect(combatAudit.statusCode).toBe(200);
+    expect(combatAudit.json().map((log: { action: string }) => log.action)).toEqual(expect.arrayContaining(["combat.ended", "combat.roundAdvanced", "combat.started"]));
+    const endedAudit = combatAudit.json().find((log: { action: string }) => log.action === "combat.ended");
+    expect(endedAudit).toMatchObject({
+      actorUserId: "usr_demo_gm",
+      campaignId: "camp_demo",
+      targetType: "combat",
+      targetId: started.json().id,
+      after: expect.objectContaining({ active: false, round: 2, combatantCount: 2, defeatedCount: 1 })
+    });
+
+    await app.close();
+  });
+
+  it("cleans up scene and campaign-owned records when tabletop containers are deleted", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const createdScene = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders,
+      payload: { name: "Scene Cleanup", active: false }
+    });
+    expect(createdScene.statusCode).toBe(200);
+
+    const createdToken = await app.inject({
+      method: "POST",
+      url: `/api/v1/scenes/${createdScene.json().id}/tokens`,
+      headers: authHeaders,
+      payload: { name: "Cleanup Token" }
+    });
+    expect(createdToken.statusCode).toBe(200);
+
+    const createdChat = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", sceneId: createdScene.json().id, body: "Scene cleanup checkpoint" }
+    });
+    expect(createdChat.statusCode).toBe(200);
+
+    const createdEncounter = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/encounters",
+      headers: authHeaders,
+      payload: { name: "Scene Cleanup Encounter", summary: "", tokenIds: [createdToken.json().id] }
+    });
+    expect(createdEncounter.statusCode).toBe(200);
+
+    const createdCombat = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/combats",
+      headers: authHeaders,
+      payload: {
+        combatants: [{ id: "cmbt_cleanup_token", tokenId: createdToken.json().id, name: "Cleanup Token", initiative: 10, defeated: false }]
+      }
+    });
+    expect(createdCombat.statusCode).toBe(200);
+
+    const deletedScene = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/scenes/${createdScene.json().id}`,
+      headers: authHeaders
+    });
+    expect(deletedScene.statusCode).toBe(200);
+    expect(store.state.scenes.some((scene) => scene.id === createdScene.json().id)).toBe(false);
+    expect(store.state.tokens.some((token) => token.sceneId === createdScene.json().id)).toBe(false);
+    expect(store.state.chat.some((message) => message.sceneId === createdScene.json().id)).toBe(false);
+    expect(store.state.encounters.find((encounter) => encounter.id === createdEncounter.json().id)?.tokenIds).toEqual([]);
+    expect(store.state.combats.some((combat) => combat.id === createdCombat.json().id)).toBe(false);
+    const sceneDeleteAudit = store.state.auditLogs.find((log) => log.action === "scene.delete" && log.targetId === createdScene.json().id);
+    expect(sceneDeleteAudit).toMatchObject({
+      actorType: "user",
+      actorUserId: "usr_demo_gm",
+      campaignId: "camp_demo",
+      targetType: "scene",
+      before: expect.objectContaining({
+        name: "Scene Cleanup",
+        tokens: 1,
+        sceneChatMessages: 1
+      }),
+      after: { deleted: true }
+    });
+    expect(JSON.stringify(sceneDeleteAudit)).not.toContain("Scene cleanup checkpoint");
+
+    const createdCampaign = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: { name: "Campaign Cleanup", description: "Container delete cleanup" }
+    });
+    expect(createdCampaign.statusCode).toBe(200);
+
+    const campaignScene = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${createdCampaign.json().id}/scenes`,
+      headers: authHeaders,
+      payload: { name: "Campaign Cleanup Scene" }
+    });
+    expect(campaignScene.statusCode).toBe(200);
+
+    const campaignToken = await app.inject({
+      method: "POST",
+      url: `/api/v1/scenes/${campaignScene.json().id}/tokens`,
+      headers: authHeaders,
+      payload: { name: "Campaign Cleanup Token" }
+    });
+    expect(campaignToken.statusCode).toBe(200);
+
+    const deletedCampaign = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/campaigns/${createdCampaign.json().id}`,
+      headers: authHeaders
+    });
+    expect(deletedCampaign.statusCode).toBe(200);
+    expect(store.state.campaigns.some((campaign) => campaign.id === createdCampaign.json().id)).toBe(false);
+    expect(store.state.members.some((member) => member.campaignId === createdCampaign.json().id)).toBe(false);
+    expect(store.state.scenes.some((scene) => scene.campaignId === createdCampaign.json().id)).toBe(false);
+    expect(store.state.tokens.some((token) => token.id === campaignToken.json().id)).toBe(false);
+    const campaignDeleteAudit = store.state.auditLogs.find((log) => log.action === "campaign.delete" && log.targetId === createdCampaign.json().id);
+    expect(campaignDeleteAudit).toMatchObject({
+      actorType: "user",
+      actorUserId: "usr_demo_gm",
+      campaignId: createdCampaign.json().id,
+      targetType: "campaign",
+      before: expect.objectContaining({
+        name: "Campaign Cleanup",
+        scenes: 1,
+        members: 1,
+        tokens: 1
+      }),
+      after: { deleted: true }
+    });
+
+    await app.close();
+  });
+
+  it("bootstraps the first owner from an empty deployment", async () => {
+    const app = await buildApp({ store: new MemoryStateStore(emptyState()) });
+
+    const status = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/bootstrap"
+    });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toEqual(expect.objectContaining({ required: true, userCount: 0, campaignCount: 0 }));
+
+    const bootstrapped = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/bootstrap",
+      payload: {
+        email: "Owner@Example.Test",
+        displayName: "Owner GM",
+        password: "correct horse",
+        campaignName: "Owner Campaign"
+      }
+    });
+    expect(bootstrapped.statusCode).toBe(200);
+    expect(bootstrapped.json().token).toMatch(/^ots_/);
+    expect(bootstrapped.json().serverAdmin).toBe(true);
+    expect(bootstrapped.json().user).toEqual(expect.objectContaining({ email: "owner@example.test", serverAdmin: true }));
+    expect(bootstrapped.json().campaign).toEqual(expect.objectContaining({ name: "Owner Campaign", ownerUserId: bootstrapped.json().user.id }));
+    expect(bootstrapped.json().scene).toEqual(expect.objectContaining({ campaignId: bootstrapped.json().campaign.id, active: true }));
+
+    const adminUsers = await app.inject({
+      method: "GET",
+      url: "/api/v1/admin/users",
+      headers: { authorization: `Bearer ${bootstrapped.json().token}` }
+    });
+    expect(adminUsers.statusCode).toBe(200);
+
+    const secondBootstrap = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/bootstrap",
+      payload: {
+        email: "second@example.test",
+        displayName: "Second",
+        password: "correct horse",
+        campaignName: "Second Campaign"
+      }
+    });
+    expect(secondBootstrap.statusCode).toBe(409);
+
+    await app.close();
+  });
+
+  it("can disable demo seeding for durable stores", () => {
+    const directory = mkdtempSync(join(tmpdir(), "otte-empty-store-"));
+    const dbPath = join(directory, "state.sqlite");
+    const store = new SqliteStateStore(dbPath, { seedDemo: false });
+
+    expect(store.state.users).toEqual([]);
+    expect(store.state.campaigns).toEqual([]);
+
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
   });
 
   it("supports a seeded player session without GM permissions", async () => {
@@ -226,6 +2160,47 @@ describe("api", () => {
     expect(playerMember.permissions).toContain("token.move");
     expect(playerMember.permissions).not.toContain("scene.update");
 
+    const unownedToken = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: authHeaders,
+      payload: { name: "Shared Console", x: 520, y: 420, ownerUserIds: [] }
+    });
+    expect(unownedToken.statusCode).toBe(200);
+    const blockedUnownedMove = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tokens/${unownedToken.json().id}`,
+      headers: playerHeaders,
+      payload: { x: 540, y: 430 }
+    });
+    expect(blockedUnownedMove.statusCode).toBe(403);
+
+    const invalidOwner = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tokens/${unownedToken.json().id}`,
+      headers: authHeaders,
+      payload: { ownerUserIds: ["usr_missing"] }
+    });
+    expect(invalidOwner.statusCode).toBe(400);
+
+    const assignedOwner = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tokens/${unownedToken.json().id}`,
+      headers: authHeaders,
+      payload: { ownerUserIds: ["usr_demo_player"] }
+    });
+    expect(assignedOwner.statusCode).toBe(200);
+    expect(assignedOwner.json().ownerUserIds).toEqual(["usr_demo_player"]);
+
+    const movedAssignedToken = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tokens/${unownedToken.json().id}`,
+      headers: playerHeaders,
+      payload: { x: 560, y: 440 }
+    });
+    expect(movedAssignedToken.statusCode).toBe(200);
+    expect(movedAssignedToken.json()).toEqual(expect.objectContaining({ x: 560, y: 440 }));
+
     const movedToken = await app.inject({
       method: "PATCH",
       url: "/api/v1/tokens/tok_valen",
@@ -234,6 +2209,46 @@ describe("api", () => {
     });
     expect(movedToken.statusCode).toBe(200);
     expect(movedToken.json()).toEqual(expect.objectContaining({ x: 460, y: 390 }));
+
+    const gmTokenState = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_valen",
+      headers: authHeaders,
+      payload: {
+        notes: "Hold the vault doorway.",
+        conditions: [{ name: "Marked" }, { id: "blessed", name: "Blessed" }],
+        auras: [{ name: "Guardian Aura", radius: 15, color: "#38bdf8" }]
+      }
+    });
+    expect(gmTokenState.statusCode).toBe(200);
+    expect(gmTokenState.json()).toEqual(
+      expect.objectContaining({
+        notes: "Hold the vault doorway.",
+        conditions: [
+          { id: "marked", name: "Marked" },
+          { id: "blessed", name: "Blessed" }
+        ],
+        auras: [{ id: "guardian-aura", name: "Guardian Aura", radius: 15, color: "#38bdf8" }]
+      })
+    );
+
+    const targetedToken = await app.inject({
+      method: "POST",
+      url: "/api/v1/tokens/tok_valen/target",
+      headers: playerHeaders,
+      payload: { targeted: true }
+    });
+    expect(targetedToken.statusCode).toBe(200);
+    expect(targetedToken.json().targetedByUserIds).toEqual(["usr_demo_player"]);
+
+    const untargetedToken = await app.inject({
+      method: "POST",
+      url: "/api/v1/tokens/tok_valen/target",
+      headers: playerHeaders,
+      payload: { targeted: false }
+    });
+    expect(untargetedToken.statusCode).toBe(200);
+    expect(untargetedToken.json().targetedByUserIds).toEqual([]);
 
     const updatedActor = await app.inject({
       method: "PATCH",
@@ -252,6 +2267,59 @@ describe("api", () => {
     });
     expect(blockedWall.statusCode).toBe(403);
 
+    const playerPing = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/annotations",
+      headers: playerHeaders,
+      payload: { kind: "ping", points: [{ x: 325, y: 225 }], layer: "measurement", groupLabel: "Party marks", expiresInSeconds: 30 }
+    });
+    expect(playerPing.statusCode).toBe(200);
+    expect(playerPing.json().annotations.at(-1)).toEqual(expect.objectContaining({ kind: "ping", createdByUserId: "usr_demo_player", layer: "measurement", groupId: "party-marks", groupLabel: "Party marks" }));
+    expect(playerPing.json().annotationHistory.at(-1)).toEqual(expect.objectContaining({ action: "create", kind: "ping", layer: "measurement", groupLabel: "Party marks", actorUserId: "usr_demo_player" }));
+
+    const blockedDrawing = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/annotations",
+      headers: playerHeaders,
+      payload: { kind: "drawing", points: [{ x: 300, y: 300 }, { x: 350, y: 330 }] }
+    });
+    expect(blockedDrawing.statusCode).toBe(403);
+
+    const gmTemplate = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/annotations",
+      headers: authHeaders,
+      payload: { kind: "template", templateShape: "line", templateSaveAbility: "dexterity", templateSaveDc: 15, templateDamageFormula: "8d6", templateDamageType: "fire", points: [{ x: 476, y: 390 }, { x: 580, y: 390 }], color: "#fb7185", layer: "effects", groupLabel: "Hazards", snapToGrid: true }
+    });
+    expect(gmTemplate.statusCode).toBe(200);
+    const template = gmTemplate.json().annotations.at(-1);
+    expect(template).toEqual(expect.objectContaining({ kind: "template", templateShape: "line", templateSaveAbility: "dexterity", templateSaveDc: 15, templateDamageFormula: "8d6", templateDamageType: "fire", radius: 100, color: "#fb7185", layer: "effects", groupLabel: "Hazards", snapToGrid: true, affectedTokenIds: ["tok_valen"], rulesSystemId: "dnd-5e-srd" }));
+    expect(template.points).toEqual([{ x: 500, y: 400 }, { x: 600, y: 400 }]);
+    expect(template.effectHint).toContain("Line template: 1 affected token");
+    expect(template.effectHint).toContain("Dexterity save DC 15");
+    expect(template.effectHint).toContain("damage 8d6 fire");
+
+    const updatedTemplate = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/scenes/scn_vault_entry/annotations/${template.id}`,
+      headers: authHeaders,
+      payload: { color: "#f97316", groupLabel: "Moved Hazards", points: [{ x: 525, y: 390 }, { x: 630, y: 390 }] }
+    });
+    expect(updatedTemplate.statusCode).toBe(200);
+    const movedTemplate = updatedTemplate.json().annotations.find((annotation: { id: string }) => annotation.id === template.id);
+    expect(movedTemplate).toEqual(expect.objectContaining({ color: "#f97316", groupLabel: "Moved Hazards", groupId: "moved-hazards" }));
+    expect(movedTemplate.points).toEqual([{ x: 550, y: 400 }, { x: 650, y: 400 }]);
+    expect(updatedTemplate.json().annotationHistory.at(-1)).toEqual(expect.objectContaining({ action: "update", kind: "template", groupLabel: "Moved Hazards", actorUserId: "usr_demo_gm" }));
+
+    const deletedTemplate = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/scenes/scn_vault_entry/annotations/${template.id}`,
+      headers: authHeaders
+    });
+    expect(deletedTemplate.statusCode).toBe(200);
+    expect(deletedTemplate.json().annotations.some((annotation: { id: string }) => annotation.id === template.id)).toBe(false);
+    expect(deletedTemplate.json().annotationHistory.at(-1)).toEqual(expect.objectContaining({ action: "delete", kind: "template", templateShape: "line", templateSaveDc: 15, templateDamageFormula: "8d6", layer: "effects", groupLabel: "Moved Hazards", actorUserId: "usr_demo_gm" }));
+
     const secretJournal = await app.inject({
       method: "GET",
       url: "/api/v1/campaigns/camp_demo/journal",
@@ -259,6 +2327,140 @@ describe("api", () => {
     });
     expect(secretJournal.statusCode).toBe(200);
     expect(secretJournal.json()).toEqual([]);
+
+    await app.close();
+  });
+
+  it("validates chat whisper recipients and gates chat moderation", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    const missingRecipient = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "No recipient", visibility: "whisper" }
+    });
+    expect(missingRecipient.statusCode).toBe(400);
+
+    const invalidRecipient = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "Invalid recipient", visibility: "whisper", recipientUserIds: ["usr_not_a_member"] }
+    });
+    expect(invalidRecipient.statusCode).toBe(400);
+
+    const whisper = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "Whisper to player", type: "whisper", visibility: "public", recipientUserIds: ["usr_demo_player"] }
+    });
+    expect(whisper.statusCode).toBe(200);
+    expect(whisper.json()).toEqual(expect.objectContaining({ type: "whisper", visibility: "whisper", recipientUserIds: ["usr_demo_player"] }));
+
+    const playerMessages = await app.inject({
+      method: "GET",
+      url: "/api/v1/chat/messages?campaignId=camp_demo",
+      headers: playerHeaders
+    });
+    expect(playerMessages.statusCode).toBe(200);
+    expect(playerMessages.json().map((message: ChatMessage) => message.id)).toContain(whisper.json().id);
+
+    const threadRoot = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "Thread root" }
+    });
+    expect(threadRoot.statusCode).toBe(200);
+
+    const threadReply = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "Thread reply", replyToMessageId: threadRoot.json().id }
+    });
+    expect(threadReply.statusCode).toBe(200);
+    expect(threadReply.json()).toEqual(expect.objectContaining({ body: "Thread reply", replyToMessageId: threadRoot.json().id }));
+
+    const playerModeration = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/chat/messages/${threadReply.json().id}/moderation`,
+      headers: playerHeaders,
+      payload: { moderationStatus: "reviewed" }
+    });
+    expect(playerModeration.statusCode).toBe(403);
+
+    const moderatedReply = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/chat/messages/${threadReply.json().id}/moderation`,
+      headers: authHeaders,
+      payload: { moderationStatus: "follow_up" }
+    });
+    expect(moderatedReply.statusCode).toBe(200);
+    expect(moderatedReply.json()).toEqual(expect.objectContaining({ moderationStatus: "follow_up", moderatedByUserId: "usr_demo_gm", moderatedAt: expect.any(String) }));
+
+    const missingReplyTarget = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "Missing reply", replyToMessageId: "msg_missing" }
+    });
+    expect(missingReplyTarget.statusCode).toBe(400);
+
+    const exportedWhisperView = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/chat/export",
+      headers: playerHeaders
+    });
+    expect(exportedWhisperView.statusCode).toBe(200);
+    expect(exportedWhisperView.json()).toEqual(
+      expect.objectContaining({
+        campaignId: "camp_demo",
+        count: expect.any(Number),
+        visibilityCounts: expect.objectContaining({ whisper: 1 })
+      })
+    );
+    expect(exportedWhisperView.json().messages.map((message: ChatMessage) => message.id)).toContain(whisper.json().id);
+
+    const playerDelete = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/chat/messages/${whisper.json().id}`,
+      headers: playerHeaders
+    });
+    expect(playerDelete.statusCode).toBe(403);
+
+    const moderatorDelete = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/chat/messages/${whisper.json().id}`,
+      headers: authHeaders
+    });
+    expect(moderatorDelete.statusCode).toBe(200);
+    expect(store.state.auditLogs.find((log) => log.action === "chat.message.delete" && log.targetId === whisper.json().id)).toMatchObject({
+      campaignId: "camp_demo",
+      actorUserId: "usr_demo_gm",
+      targetType: "chat",
+      before: expect.objectContaining({ visibility: "whisper", recipientCount: 1, bodyLength: "Whisper to player".length })
+    });
+
+    const afterDelete = await app.inject({
+      method: "GET",
+      url: "/api/v1/chat/messages?campaignId=camp_demo",
+      headers: playerHeaders
+    });
+    expect(afterDelete.json().map((message: ChatMessage) => message.id)).not.toContain(whisper.json().id);
+
+    const ndjsonExport = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/chat/export?format=ndjson",
+      headers: authHeaders
+    });
+    expect(ndjsonExport.statusCode).toBe(200);
+    expect(ndjsonExport.headers["content-type"]).toContain("application/x-ndjson");
+    expect(store.state.auditLogs.filter((log) => log.action === "chat.export" && log.campaignId === "camp_demo").length).toBeGreaterThanOrEqual(2);
 
     await app.close();
   });
@@ -702,7 +2904,8 @@ describe("api", () => {
     process.env.OTTE_OIDC_ISSUER = "https://sso.example.test";
     process.env.OTTE_OIDC_CLIENT_ID = "otte-client";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
       const adminLogin = await app.inject({
         method: "POST",
@@ -1337,6 +3540,109 @@ describe("api", () => {
     }
   });
 
+  it("tests OIDC and SCIM admin connections without exposing provider secrets", async () => {
+    let issuer = "";
+    const provider = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+      if (request.url === "/.well-known/openid-configuration") {
+        sendJson(response, {
+          issuer,
+          authorization_endpoint: `${issuer}/authorize`,
+          token_endpoint: `${issuer}/token`,
+          userinfo_endpoint: `${issuer}/userinfo`
+        });
+        return;
+      }
+      response.writeHead(404).end();
+    });
+    await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve));
+    const address = provider.address() as AddressInfo;
+    issuer = `http://127.0.0.1:${address.port}`;
+
+    const previousEnv = snapshotEnv([
+      "OTTE_ADMIN_USER_IDS",
+      "OTTE_OIDC_ISSUER",
+      "OTTE_OIDC_CLIENT_ID",
+      "OTTE_OIDC_CLIENT_SECRET",
+      "OTTE_OIDC_REDIRECT_URI",
+      "OTTE_OIDC_ALLOW_INSECURE",
+      "OTTE_SCIM_BEARER_TOKEN"
+    ]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    process.env.OTTE_OIDC_ISSUER = issuer;
+    process.env.OTTE_OIDC_CLIENT_ID = "otte-client";
+    process.env.OTTE_OIDC_CLIENT_SECRET = "otte-secret";
+    process.env.OTTE_OIDC_REDIRECT_URI = "http://127.0.0.1:4000/api/v1/auth/oidc/callback";
+    process.env.OTTE_OIDC_ALLOW_INSECURE = "true";
+    process.env.OTTE_SCIM_BEARER_TOKEN = "scim-secret";
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    try {
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_gm" }
+      });
+      const headers = { authorization: `Bearer ${login.json().token}` };
+      const oidc = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/auth/test-connection",
+        headers,
+        payload: { provider: "oidc" }
+      });
+      expect(oidc.statusCode).toBe(200);
+      expect(oidc.json()).toMatchObject({
+        provider: "oidc",
+        ok: true,
+        status: "passed",
+        checks: expect.arrayContaining([
+          expect.objectContaining({ name: "discovery_document", ok: true }),
+          expect.objectContaining({ name: "authorization_endpoint", ok: true }),
+          expect.objectContaining({ name: "token_endpoint", ok: true }),
+          expect.objectContaining({ name: "userinfo_endpoint", ok: true })
+        ])
+      });
+
+      const scim = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/auth/test-connection",
+        headers,
+        payload: { provider: "scim" }
+      });
+      expect(scim.statusCode).toBe(200);
+      expect(scim.json()).toMatchObject({
+        provider: "scim",
+        ok: true,
+        status: "passed",
+        checks: expect.arrayContaining([
+          expect.objectContaining({ name: "bearer_token_configured", ok: true }),
+          expect.objectContaining({ name: "service_provider_config", ok: true }),
+          expect.objectContaining({ name: "users_endpoint", ok: true }),
+          expect.objectContaining({ name: "groups_endpoint", ok: true })
+        ])
+      });
+
+      const invalidProvider = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/auth/test-connection",
+        headers,
+        payload: { provider: "ldap" }
+      });
+      expect(invalidProvider.statusCode).toBe(400);
+
+      const body = JSON.stringify({ oidc: oidc.json(), scim: scim.json() });
+      expect(body).not.toContain(issuer);
+      expect(body).not.toContain("otte-client");
+      expect(body).not.toContain("otte-secret");
+      expect(body).not.toContain("scim-secret");
+      expect(store.state.auditLogs.filter((log) => log.action === "admin.authConnection.test")).toHaveLength(2);
+    } finally {
+      await app.close();
+      provider.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("flags invalid session TTL env values without exposing raw values", async () => {
     const previousEnv = snapshotEnv([
       "NODE_ENV",
@@ -1609,7 +3915,8 @@ describe("api", () => {
   });
 
   it("provisions users and groups through token-protected SCIM", async () => {
-    const previousEnv = snapshotEnv(["OTTE_SCIM_BEARER_TOKEN"]);
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS", "OTTE_SCIM_BEARER_TOKEN"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
     process.env.OTTE_SCIM_BEARER_TOKEN = "scim-secret";
     const directory = mkdtempSync(join(tmpdir(), "otte-scim-"));
     const dbPath = join(directory, "state.sqlite");
@@ -1730,6 +4037,34 @@ describe("api", () => {
         memberUserIds: []
       });
       restoredStore.close();
+
+      const adminLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_gm" }
+      });
+      const authOperations = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/auth/operations",
+        headers: { authorization: `Bearer ${adminLogin.json().token}` }
+      });
+      expect(authOperations.statusCode).toBe(200);
+      expect(authOperations.json()).toMatchObject({
+        runtime: {
+          scim: {
+            configured: true,
+            bearerTokenConfigured: true,
+            serviceProviderConfigPath: "/api/v1/scim/v2/ServiceProviderConfig",
+            usersPath: "/api/v1/scim/v2/Users",
+            groupsPath: "/api/v1/scim/v2/Groups",
+            userCount: 1,
+            groupCount: 1,
+            mappingCount: 0,
+            matchedMappingCount: 0
+          }
+        }
+      });
+      expect(JSON.stringify(authOperations.json())).not.toContain("scim-secret");
 
       expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["scim.user.create", "scim.user.patch", "scim.group.create", "scim.group.patch"]));
       expect(store.state.auditLogs.filter((log) => log.action.startsWith("scim.")).every((log) => log.actorType === "system")).toBe(true);
@@ -2354,7 +4689,7 @@ describe("api", () => {
         latestRiskRevokeAt: expect.any(String),
         singleSessionRevocationCount: 0,
         userSessionRevocationRunCount: 0,
-        recentRiskRevokeRuns: [
+        recentRiskRevokeRuns: expect.arrayContaining([
           expect.objectContaining({
             actorUserId: "usr_demo_gm",
             staleDays: 1,
@@ -2369,7 +4704,7 @@ describe("api", () => {
             matched: 1,
             revoked: 0
           })
-        ]
+        ])
       });
 
       store.state.sessions = store.state.sessions.filter(
@@ -4160,6 +6495,7 @@ describe("api", () => {
       fogHistory: [],
       walls: [{ id: "wall_stale_zero", x1: 30, y1: 30, x2: 30, y2: 30, blocksVision: true }],
       lights: [],
+      annotations: [],
       metadata: {},
       createdAt: "2026-05-06T00:00:00.000Z",
       updatedAt: "2026-05-06T00:00:00.000Z"
@@ -4820,6 +7156,21 @@ describe("api", () => {
     expect(learnedSpell.statusCode).toBe(200);
     expect(learnedSpell.json().item).toEqual(expect.objectContaining({ type: "spell", name: "Healing Word", actorId: "act_valen" }));
     expect(learnedSpell.json().sheet.spells).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Healing Word" })]));
+    const updatedSpellPrep = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/items/${learnedSpell.json().item.id}`,
+      headers: authHeaders,
+      payload: { data: { ...learnedSpell.json().item.data, prepared: false } }
+    });
+    expect(updatedSpellPrep.statusCode).toBe(200);
+    expect(updatedSpellPrep.json().data).toEqual(expect.objectContaining({ prepared: false }));
+    const observerSpellPrep = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/items/${learnedSpell.json().item.id}`,
+      headers: { "x-user-id": "usr_observer" },
+      payload: { data: { ...updatedSpellPrep.json().data, prepared: true } }
+    });
+    expect(observerSpellPrep.statusCode).toBe(403);
     const spellRollId = `spell-${learnedSpell.json().item.id}-healing`;
     expect(learnedSpell.json().sheet.quickRolls).toContainEqual({
       id: spellRollId,
@@ -15528,7 +17879,11 @@ describe("api", () => {
           id: "versioned-plugin",
           version: "2.0.0",
           installed: false,
-          distribution: { availableVersions: ["2.0.0", "1.0.0"], latestVersion: "2.0.0" }
+          distribution: { availableVersions: ["2.0.0", "1.0.0"], latestVersion: "2.0.0" },
+          versionCompatibility: [
+            expect.objectContaining({ version: "2.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } }),
+            expect.objectContaining({ version: "1.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } })
+          ]
         })
       ]);
 
@@ -15595,13 +17950,101 @@ describe("api", () => {
     }
   });
 
+  it("reports compatibility per plugin version and blocks only incompatible targets", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-version-compat-"));
+    try {
+      writeVersionedPluginPackage(pluginRoot, "versioned-plugin-1", "versioned-plugin", "1.0.0", "Version 1 macro");
+      writeVersionedPluginPackage(pluginRoot, "versioned-plugin-2", "versioned-plugin", "2.0.0", "Version 2 macro");
+      const futureManifestPath = join(pluginRoot, "versioned-plugin-2", "plugin.manifest.json");
+      const futureManifest = JSON.parse(readFileSync(futureManifestPath, "utf8")) as { compatibleCore: string };
+      futureManifest.compatibleCore = ">=9.0.0";
+      writeFileSync(futureManifestPath, JSON.stringify(futureManifest));
+      const store = new MemoryStateStore();
+      const app = await buildApp({ store, pluginRoot });
+
+      const catalog = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins",
+        headers: authHeaders
+      });
+      expect(catalog.statusCode).toBe(200);
+      expect(catalog.json()).toEqual([
+        expect.objectContaining({
+          id: "versioned-plugin",
+          version: "2.0.0",
+          compatibleCore: { range: ">=9.0.0", coreVersion: "0.3.0", satisfied: false },
+          compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0",
+          versionCompatibility: [
+            expect.objectContaining({ version: "2.0.0", compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0" }),
+            expect.objectContaining({ version: "1.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } })
+          ]
+        })
+      ]);
+
+      const deniedLatest = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/install",
+        headers: authHeaders,
+        payload: { version: "2.0.0", permissions: ["chat.write"] }
+      });
+      expect(deniedLatest.statusCode).toBe(403);
+      expect(deniedLatest.json().message).toBe("Plugin requires core >=9.0.0; server core is 0.3.0");
+
+      const installOld = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/install",
+        headers: authHeaders,
+        payload: { version: "1.0.0", permissions: ["chat.write"] }
+      });
+      expect(installOld.statusCode).toBe(200);
+      expect(installOld.json().plugin).toEqual(
+        expect.objectContaining({
+          version: "1.0.0",
+          installedVersion: "1.0.0",
+          compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true },
+          updateAvailable: true,
+          rollbackVersions: ["2.0.0"],
+          versionCompatibility: [
+            expect.objectContaining({ version: "2.0.0", compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0" }),
+            expect.objectContaining({ version: "1.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } })
+          ]
+        })
+      );
+
+      const deniedUpgrade = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/install",
+        headers: authHeaders,
+        payload: { version: "2.0.0", permissions: ["chat.write"] }
+      });
+      expect(deniedUpgrade.statusCode).toBe(403);
+      expect(deniedUpgrade.json().message).toBe("Plugin requires core >=9.0.0; server core is 0.3.0");
+
+      const oldCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(oldCommand.statusCode).toBe(200);
+      expect(oldCommand.json().chat.body).toBe("Version 1 macro");
+
+      await app.close();
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("enforces plugin trusted-only install and execution policy", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-api-"));
     let app: Awaited<ReturnType<typeof buildApp>> | undefined;
     try {
       writeVersionedPluginPackage(pluginRoot, "unsigned-plugin", "unsigned-plugin", "1.0.0", "Unsigned macro");
       writeVersionedPluginPackage(pluginRoot, "signed-plugin", "signed-plugin", "1.0.0", "Signed macro");
+      writeVersionedPluginPackage(pluginRoot, "tampered-plugin", "tampered-plugin", "1.0.0", "Tampered macro");
       writePluginSignature(pluginRoot, "signed-plugin", "trusted-local", "shared-secret");
+      writePluginSignature(pluginRoot, "tampered-plugin", "trusted-local", "shared-secret");
+      writeFileSync(join(pluginRoot, "tampered-plugin", "server.js"), `registerCommand("/version", () => ({ body: "Changed after signing", visibility: "public" }));`);
       const store = new MemoryStateStore();
       const pluginRegistry = loadPluginRegistry({
         pluginRoot,
@@ -15618,7 +18061,16 @@ describe("api", () => {
       expect(catalog.json()).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: "signed-plugin", trust: expect.objectContaining({ status: "trusted", installable: true }) }),
-          expect.objectContaining({ id: "unsigned-plugin", trust: expect.objectContaining({ status: "unsigned", installable: false }) })
+          expect.objectContaining({ id: "unsigned-plugin", trust: expect.objectContaining({ status: "unsigned", installable: false }) }),
+          expect.objectContaining({
+            id: "tampered-plugin",
+            trust: expect.objectContaining({
+              status: "untrusted",
+              installable: false,
+              errors: ["Plugin signature does not match package contents"],
+              signature: expect.objectContaining({ keyId: "trusted-local", verified: false })
+            })
+          })
         ])
       );
 
@@ -15630,6 +18082,16 @@ describe("api", () => {
       });
       expect(unsignedInstall.statusCode).toBe(403);
       expect(unsignedInstall.json().message).toContain("current trust policy");
+
+      const tamperedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/tampered-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(tamperedInstall.statusCode).toBe(403);
+      expect(tamperedInstall.json().message).toContain("signature does not match package contents");
+      expect(store.state.permissionGrants.find((grant) => grant.subjectId === "tampered-plugin")).toBeUndefined();
 
       const signedInstall = await app.inject({
         method: "POST",
@@ -15649,6 +18111,24 @@ describe("api", () => {
       });
       expect(signedCommand.statusCode).toBe(200);
       expect(signedCommand.json().chat.body).toBe("Signed macro");
+
+      store.state.permissionGrants.push(
+        createTimestamped("grant", {
+          subjectType: "plugin" as const,
+          subjectId: "tampered-plugin",
+          campaignId: "camp_demo",
+          permissions: ["chat.write"],
+          metadata: { version: "1.0.0" }
+        }) satisfies PermissionGrant
+      );
+      const tamperedCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/tampered-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(tamperedCommand.statusCode).toBe(403);
+      expect(tamperedCommand.json().message).toContain("signature does not match package contents");
     } finally {
       await app?.close();
       rmSync(pluginRoot, { recursive: true, force: true });
@@ -15752,6 +18232,68 @@ describe("api", () => {
     } finally {
       await app?.close();
       restoreEnv(previousEnv);
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks plugin install and execution when core compatibility drifts", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-core-drift-"));
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      writeVersionedPluginPackage(pluginRoot, "future-core-plugin-1", "future-core-plugin", "1.0.0", "Future core macro");
+      const futureManifestPath = join(pluginRoot, "future-core-plugin-1", "plugin.manifest.json");
+      const futureManifest = JSON.parse(readFileSync(futureManifestPath, "utf8")) as { compatibleCore: string };
+      futureManifest.compatibleCore = ">=9.0.0";
+      writeFileSync(futureManifestPath, JSON.stringify(futureManifest));
+      const store = new MemoryStateStore();
+      app = await buildApp({ store, pluginRoot });
+
+      const catalog = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins",
+        headers: authHeaders
+      });
+      expect(catalog.statusCode).toBe(200);
+      expect(catalog.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "future-core-plugin",
+            compatibleCore: { range: ">=9.0.0", coreVersion: "0.3.0", satisfied: false },
+            compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0"
+          })
+        ])
+      );
+
+      const deniedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/future-core-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(deniedInstall.statusCode).toBe(403);
+      expect(deniedInstall.json().message).toBe("Plugin requires core >=9.0.0; server core is 0.3.0");
+      expect(store.state.permissionGrants.find((grant) => grant.subjectId === "future-core-plugin")).toBeUndefined();
+
+      store.state.permissionGrants.push(
+        createTimestamped("grant", {
+          subjectType: "plugin" as const,
+          subjectId: "future-core-plugin",
+          campaignId: "camp_demo",
+          permissions: ["chat.write"],
+          metadata: { version: "1.0.0" }
+        }) satisfies PermissionGrant
+      );
+      const deniedCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/future-core-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(deniedCommand.statusCode).toBe(403);
+      expect(deniedCommand.json().message).toBe("Plugin requires core >=9.0.0; server core is 0.3.0");
+      expect(store.state.chat).toEqual([]);
+    } finally {
+      await app?.close();
       rmSync(pluginRoot, { recursive: true, force: true });
     }
   });
@@ -16949,15 +19491,38 @@ registerCommand("/state", (input) => {
       }
     });
     const packageChecksum = `sha256:${createHash("sha256").update(Buffer.from(packageText, "utf8")).digest("hex")}`;
+    const tamperedPackageText = JSON.stringify({
+      files: {
+        "plugin.manifest.json": JSON.stringify({
+          id: "tampered-remote-plugin",
+          name: "Tampered Remote Plugin",
+          version: "1.0.0",
+          compatibleCore: ">=0.1.0",
+          entrypoints: { server: "./server.js" },
+          runtime: { apiVersion: "0.1", sandbox: "vm" },
+          permissions: ["chat.write"],
+          chatCommands: [{ command: "/tampered", description: "Should never install" }]
+        }),
+        "server.js": "registerCommand('/tampered', () => ({ body: 'Tampered registry macro', visibility: 'public' }));"
+      }
+    });
+    const expectedTamperedChecksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
     const registry = createServer((request, response) => {
       if (request.url === "/catalog.json") {
         sendJson(response, {
-          plugins: [{ packageId: "remote-plugin-1", packageUrl: "/remote-plugin-1.json", checksum: packageChecksum }]
+          plugins: [
+            { packageId: "remote-plugin-1", packageUrl: "/remote-plugin-1.json", checksum: packageChecksum },
+            { packageId: "tampered-remote-plugin-1", packageUrl: "/tampered-remote-plugin-1.json", checksum: expectedTamperedChecksum }
+          ]
         });
         return;
       }
       if (request.url === "/remote-plugin-1.json") {
         response.writeHead(200, { "content-type": "application/json" }).end(packageText);
+        return;
+      }
+      if (request.url === "/tampered-remote-plugin-1.json") {
+        response.writeHead(200, { "content-type": "application/json" }).end(tamperedPackageText);
         return;
       }
       response.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ error: "not_found" }));
@@ -16979,6 +19544,38 @@ registerCommand("/state", (input) => {
         payload: { registryUrl }
       });
       expect(nonAdminSync.statusCode).toBe(403);
+
+      const playerMarketplaceSync = await app.inject({
+        method: "POST",
+        url: "/api/v1/plugins/registry/sync",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { campaignId: "camp_demo", registryUrl }
+      });
+      expect(playerMarketplaceSync.statusCode).toBe(403);
+
+      const marketplaceSync = await app.inject({
+        method: "POST",
+        url: "/api/v1/plugins/registry/sync",
+        headers: authHeaders,
+        payload: { campaignId: "camp_demo", registryUrl }
+      });
+      expect(marketplaceSync.statusCode).toBe(200);
+      expect(marketplaceSync.json().plugins).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "remote-plugin",
+            version: "1.0.0",
+            source: expect.objectContaining({ type: "registry", packageId: "remote-plugin-1", registryUrl })
+          })
+        ])
+      );
+      expect(marketplaceSync.json().plugins).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "tampered-remote-plugin" })]));
+      expect(marketplaceSync.json().registries[0].errors).toEqual([
+        expect.objectContaining({
+          packagePath: "tampered-remote-plugin-1",
+          errors: [expect.stringContaining(`Expected ${expectedTamperedChecksum} but received sha256:`)]
+        })
+      ]);
 
       const sync = await app.inject({
         method: "POST",
@@ -17003,7 +19600,12 @@ registerCommand("/state", (input) => {
               })
             })
           ],
-          errors: []
+          errors: [
+            expect.objectContaining({
+              packagePath: "tampered-remote-plugin-1",
+              errors: [expect.stringContaining(`Expected ${expectedTamperedChecksum} but received sha256:`)]
+            })
+          ]
         })
       );
 
@@ -17022,6 +19624,7 @@ registerCommand("/state", (input) => {
           })
         ])
       );
+      expect(catalog.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "tampered-remote-plugin" })]));
 
       const install = await app.inject({
         method: "POST",
@@ -17043,6 +19646,15 @@ registerCommand("/state", (input) => {
       expect(store.state.auditLogs.find((log) => log.action === "admin.pluginRegistry.sync")).toEqual(
         expect.objectContaining({
           targetType: "plugin_registry",
+          after: expect.objectContaining({
+            registries: [expect.objectContaining({ imported: ["remote-plugin@1.0.0"] })]
+          })
+        })
+      );
+      expect(store.state.auditLogs.find((log) => log.action === "plugin.registrySync")).toEqual(
+        expect.objectContaining({
+          campaignId: "camp_demo",
+          targetType: "plugin",
           after: expect.objectContaining({
             registries: [expect.objectContaining({ imported: ["remote-plugin@1.0.0"] })]
           })
@@ -18898,6 +21510,57 @@ registerCommand("/state", (input) => {
       });
       expect(blockedToolRetry.statusCode).toBe(403);
 
+      const gmRetryStart = createTimestamped("tool", {
+        threadId: thread.json().thread.id,
+        toolName: "read_compendium",
+        input: { systemId: "dnd-5e-srd" },
+        output: undefined,
+        status: "started" as const
+      });
+      const gmRetryFailure = createTimestamped("tool", {
+        threadId: thread.json().thread.id,
+        toolName: "read_compendium",
+        input: undefined,
+        output: { error: "tool_failed", message: "GM retry smoke" },
+        status: "failed" as const,
+        durationMs: 21
+      });
+      store.state.aiToolCalls.push(gmRetryStart, gmRetryFailure);
+
+      const blockedCampaignToolRetry = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/ai/tool-calls/${gmRetryFailure.id}/retry`,
+        headers: playerHeaders,
+        payload: {}
+      });
+      expect(blockedCampaignToolRetry.statusCode).toBe(403);
+
+      const campaignToolRetry = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/ai/tool-calls/${gmRetryFailure.id}/retry`,
+        headers: adminHeaders,
+        payload: {}
+      });
+      expect(campaignToolRetry.statusCode).toBe(200);
+      expect(campaignToolRetry.json()).toMatchObject({
+        dryRun: false,
+        campaignId: "camp_demo",
+        toolCallId: gmRetryFailure.id,
+        matched: 1,
+        retried: 1,
+        skipped: 0,
+        completed: 1,
+        failed: 0,
+        toolCalls: [expect.objectContaining({ id: gmRetryFailure.id, toolName: "read_compendium", retryReason: "tool_failed", status: "completed", inputCallId: gmRetryStart.id, startedCallId: expect.any(String), resultCallId: expect.any(String) })]
+      });
+      expect(store.state.auditLogs.at(-1)).toMatchObject({
+        action: "ai.toolCalls.retry",
+        campaignId: "camp_demo",
+        targetType: "ai_tool_call",
+        targetId: gmRetryFailure.id,
+        after: { dryRun: false, campaignId: "camp_demo", toolCallId: gmRetryFailure.id, matched: 1, retried: 1, skipped: 0, completed: 1, failed: 0 }
+      });
+
       const dryRunToolRetry = await app.inject({
         method: "POST",
         url: "/api/v1/admin/ai/tool-calls/retry",
@@ -18961,12 +21624,12 @@ registerCommand("/state", (input) => {
       });
       expect(replayOperations.statusCode).toBe(200);
       expect(replayOperations.json().replayOperations).toMatchObject({
-        replayedToolCallCount: 1,
-        completedReplayCount: 1,
+        replayedToolCallCount: 2,
+        completedReplayCount: 2,
         failedReplayCount: 0,
         latestReplayAt: expect.any(String),
         actionRequired: false,
-        recentRetried: [
+        recentRetried: expect.arrayContaining([
           expect.objectContaining({
             id: retryableCompendiumFailure.id,
             threadId: thread.json().thread.id,
@@ -18978,8 +21641,8 @@ registerCommand("/state", (input) => {
             resultCallId: toolRetry.json().toolCalls[0].resultCallId,
             resultStatus: "completed"
           })
-        ],
-        recentRuns: [
+        ]),
+        recentRuns: expect.arrayContaining([
           expect.objectContaining({
             dryRun: false,
             actorUserId: "usr_demo_gm",
@@ -18997,7 +21660,7 @@ registerCommand("/state", (input) => {
             matched: 1,
             retried: 0
           })
-        ]
+        ])
       });
 
       const repeatedToolRetry = await app.inject({
@@ -20467,6 +23130,9 @@ registerCommand("/state", (input) => {
     });
     expect(encounterDraft.statusCode).toBe(200);
     const proposalId = encounterDraft.json().proposal.id as string;
+    expect(encounterDraft.json().proposal.history).toEqual([
+      expect.objectContaining({ action: "created", status: "pending", actorUserId: "usr_demo_gm", actorType: "ai", auditAction: "ai.proposal.created" })
+    ]);
 
     const blockedApply = await app.inject({
       method: "POST",
@@ -20490,6 +23156,7 @@ registerCommand("/state", (input) => {
     expect(approved.statusCode).toBe(200);
     expect(approved.json().status).toBe("approved");
     expect(approved.json().approvedByUserId).toBe("usr_demo_gm");
+    expect(approved.json().history).toEqual(expect.arrayContaining([expect.objectContaining({ action: "approved", status: "approved", previousStatus: "pending", actorUserId: "usr_demo_gm", auditAction: "proposal.approved" })]));
 
     const applied = await app.inject({
       method: "POST",
@@ -20498,6 +23165,7 @@ registerCommand("/state", (input) => {
     });
     expect(applied.statusCode).toBe(200);
     expect(applied.json().status).toBe("applied");
+    expect(applied.json().history).toEqual(expect.arrayContaining([expect.objectContaining({ action: "applied", status: "applied", previousStatus: "approved", actorUserId: "usr_demo_gm", auditAction: "proposal.applied" })]));
     expect(store.state.encounters.some((encounter) => encounter.name === "AI Draft Encounter" && encounter.difficulty === "hard")).toBe(true);
 
     const reapproved = await app.inject({
@@ -20705,6 +23373,28 @@ registerCommand("/state", (input) => {
       headers: authHeaders
     });
     expect(memory.json().some((fact: { id: string; approvedByUserId?: string }) => fact.id === memoryId && fact.approvedByUserId === "usr_demo_gm")).toBe(true);
+
+    const blockedMemoryDelete = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/ai/memory/${memoryId}`,
+      headers: { "x-user-id": "usr_player" }
+    });
+    expect(blockedMemoryDelete.statusCode).toBe(403);
+
+    const deletedMemory = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/ai/memory/${memoryId}`,
+      headers: authHeaders
+    });
+    expect(deletedMemory.statusCode).toBe(200);
+    expect(deletedMemory.json()).toMatchObject({ id: memoryId, visibility: "gm_only", approvedByUserId: "usr_demo_gm" });
+    expect(store.state.aiMemory.some((fact) => fact.id === memoryId)).toBe(false);
+    expect(store.state.auditLogs.find((log) => log.action === "ai.memory.delete" && log.targetId === memoryId)).toMatchObject({
+      action: "ai.memory.delete",
+      targetType: "ai_memory",
+      before: { id: memoryId, visibility: "gm_only", sourceCount: 1, approved: true }
+    });
+    expect(JSON.stringify(store.state.auditLogs.find((log) => log.action === "ai.memory.delete" && log.targetId === memoryId))).not.toContain("The party mapped the lower vault.");
 
     await app.close();
   });
@@ -20998,16 +23688,24 @@ registerCommand("/state", (input) => {
 
   it("issues signed CDN asset URLs, enforces quotas, and tracks lifecycle storage stats", async () => {
     const previousEnv = snapshotEnv([
+      "NODE_ENV",
       "OTTE_ADMIN_USER_IDS",
       "OTTE_ASSET_CDN_BASE_URL",
+      "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL",
+      "OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN",
+      "OTTE_PUBLIC_URL",
       "OTTE_ASSET_QUOTA_BYTES",
       "OTTE_ASSET_RETENTION_DAYS",
       "OTTE_ASSET_URL_SIGNING_SECRET",
       "OTTE_ASSET_URL_TTL_SECONDS",
       "OTTE_ASSET_URL_MAX_TTL_SECONDS"
     ]);
+    process.env.NODE_ENV = "test";
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
     process.env.OTTE_ASSET_CDN_BASE_URL = "https://cdn.example.test/otte";
+    delete process.env.OTTE_ASSET_CDN_PURGE_WEBHOOK_URL;
+    delete process.env.OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN;
+    delete process.env.OTTE_PUBLIC_URL;
     process.env.OTTE_ASSET_QUOTA_BYTES = "20";
     process.env.OTTE_ASSET_RETENTION_DAYS = "7";
     process.env.OTTE_ASSET_URL_SIGNING_SECRET = "test-asset-signing-secret";
@@ -21073,8 +23771,36 @@ registerCommand("/state", (input) => {
         quotaBytes: 20,
         remainingBytes: 20 - bytes.length,
         lifecycleCounts: { active: 1 },
-        providerCounts: { local: 1 }
+        providerCounts: { local: 1 },
+        delivery: {
+          mode: "cdn",
+          cdnConfigured: true,
+          publicUrlConfigured: false,
+          signingSecretConfigured: true,
+          signingSecretRequired: false,
+          defaultTtlSeconds: 120,
+          maxTtlSeconds: 600,
+          purgeWebhookConfigured: false,
+          purgeWebhookTokenConfigured: false,
+          actionRequired: true,
+          actionReasons: ["asset_cdn_purge_unconfigured"],
+          posture: {
+            activeManagedAssetCount: 1,
+            deliverableActiveAssetCount: 1,
+            undeliverableActiveAssetCount: 0,
+            cdnEligibleAssetCount: 1,
+            signedUrlEligibleAssetCount: 1
+          },
+          warnings: [
+            expect.objectContaining({
+              code: "asset_cdn_purge_unconfigured",
+              severity: "warning",
+              env: ["OTTE_ASSET_CDN_PURGE_WEBHOOK_URL"]
+            })
+          ]
+        }
       });
+      expect(JSON.stringify(storage.json().delivery)).not.toContain("cdn.example.test");
 
       const delivery = await app.inject({
         method: "POST",
@@ -23338,6 +26064,75 @@ registerCommand("/state", (input) => {
     rmSync(targetUploadDir, { recursive: true, force: true });
   });
 
+  it("rejects corrupted archived asset files without merging campaign state or restored objects", async () => {
+    const sourceUploadDir = mkdtempSync(join(tmpdir(), "otte-corrupt-archive-source-"));
+    const targetUploadDir = mkdtempSync(join(tmpdir(), "otte-corrupt-archive-target-"));
+    const sourceApp = await buildApp({
+      store: new MemoryStateStore(),
+      uploadDir: sourceUploadDir
+    });
+    const assetBytes = Buffer.from("asset-restore-drill");
+
+    const uploaded = await sourceApp.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/assets/upload",
+      headers: {
+        ...authHeaders,
+        "content-type": "image/png",
+        "x-asset-name": encodeURIComponent("Corrupt Restore Drill.png")
+      },
+      payload: assetBytes
+    });
+    expect(uploaded.statusCode).toBe(200);
+
+    const exported = await sourceApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export",
+      headers: authHeaders
+    });
+    expect(exported.statusCode).toBe(200);
+    const archive = exported.json() as { files: Array<{ data: string }> };
+    expect(archive.files).toHaveLength(1);
+    const corruptedBytes = Buffer.from(assetBytes);
+    corruptedBytes[0] = corruptedBytes[0] === 0x61 ? 0x62 : 0x61;
+    archive.files[0]!.data = corruptedBytes.toString("base64");
+    await sourceApp.close();
+
+    const freshState: EngineState = emptyState();
+    freshState.users.push({
+      id: "usr_demo_gm",
+      displayName: "Import Admin",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    const targetStore = new MemoryStateStore(freshState);
+    const targetStorage = new MemoryAssetStorage("target-assets");
+    const targetApp = await buildApp({
+      store: targetStore,
+      uploadDir: targetUploadDir,
+      assetStorage: targetStorage
+    });
+
+    const imported = await targetApp.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    expect(imported.statusCode).toBe(400);
+    expect(imported.json()).toMatchObject({
+      error: "bad_request",
+      message: expect.stringContaining("Archive asset file restore failed: Archive file checksum mismatch")
+    });
+    expect(targetStore.state.campaigns).toHaveLength(0);
+    expect(targetStore.state.assets).toHaveLength(0);
+    expect(targetStorage.objects.size).toBe(0);
+
+    await targetApp.close();
+    rmSync(sourceUploadDir, { recursive: true, force: true });
+    rmSync(targetUploadDir, { recursive: true, force: true });
+  });
+
   it("persists campaign state across sqlite-backed store restarts", async () => {
     const directory = mkdtempSync(join(tmpdir(), "otte-api-"));
     const dbPath = join(directory, "state.sqlite");
@@ -23370,6 +26165,184 @@ registerCommand("/state", (input) => {
     await secondApp.close();
     secondStore.close();
     rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("reports sqlite storage operations and runs backup restore drills", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "otte-storage-ops-"));
+    const dbPath = join(directory, "state.sqlite");
+    const store = new SqliteStateStore(dbPath);
+    const gmUser = store.state.users.find((user) => user.id === "usr_demo_gm");
+    if (gmUser) gmUser.serverAdmin = true;
+    store.save();
+    const app = await buildApp({ store });
+
+    const beforeBackup = await app.inject({
+      method: "GET",
+      url: "/api/v1/admin/storage/operations",
+      headers: authHeaders
+    });
+    expect(beforeBackup.statusCode).toBe(200);
+    expect(beforeBackup.json()).toMatchObject({
+      provider: "sqlite-json-records",
+      supported: true,
+      actionRequired: true,
+      actionReasons: expect.arrayContaining(["sqlite_backup_missing"]),
+      integrity: expect.objectContaining({ ok: true, result: "ok" }),
+      migrations: expect.objectContaining({ latestAppliedVersion: 1, missingVersions: [] }),
+      indexes: expect.objectContaining({ missing: [] })
+    });
+
+    const playerBlocked = await app.inject({
+      method: "GET",
+      url: "/api/v1/admin/storage/operations",
+      headers: { "x-user-id": "usr_demo_player" }
+    });
+    expect(playerBlocked.statusCode).toBe(403);
+
+    const backup = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/storage/backup",
+      headers: authHeaders,
+      payload: { reason: "pre-upgrade smoke" }
+    });
+    expect(backup.statusCode).toBe(200);
+    expect(backup.json()).toMatchObject({ status: "created", reason: "pre-upgrade smoke" });
+    expect(backup.json().fileName).toMatch(/^opentabletop-.*\.sqlite$/);
+    expect(backup.json().sizeBytes).toBeGreaterThan(0);
+    expect(existsSync(join(directory, "backups", backup.json().fileName))).toBe(true);
+
+    const afterBackup = await app.inject({
+      method: "GET",
+      url: "/api/v1/admin/storage/operations",
+      headers: authHeaders
+    });
+    expect(afterBackup.statusCode).toBe(200);
+    expect(afterBackup.json()).toMatchObject({
+      actionRequired: false,
+      actionReasons: [],
+      backups: {
+        latest: expect.objectContaining({ fileName: backup.json().fileName, sizeBytes: backup.json().sizeBytes })
+      }
+    });
+    expect(afterBackup.json().records.collections).toEqual(expect.arrayContaining([expect.objectContaining({ collection: "campaigns", count: expect.any(Number) })]));
+
+    const drill = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/storage/restore-drill",
+      headers: authHeaders,
+      payload: { backupFileName: backup.json().fileName }
+    });
+    expect(drill.statusCode).toBe(200);
+    expect(drill.json()).toMatchObject({
+      status: "passed",
+      backup: expect.objectContaining({ fileName: backup.json().fileName }),
+      integrity: expect.objectContaining({ ok: true, result: "ok" }),
+      campaignCount: expect.any(Number),
+      recordCount: expect.any(Number)
+    });
+    expect(drill.json().campaignCount).toBeGreaterThan(0);
+    expect(drill.json().recordCount).toBeGreaterThan(0);
+
+    store.state.campaigns.push(
+      createTimestamped("camp", {
+        id: "camp_transient_after_backup",
+        ownerUserId: "usr_demo_gm",
+        name: "Transient After Backup",
+        description: "Should disappear after destructive restore",
+        defaultSystemId: "dnd-5e-srd",
+        visibility: "private" as const
+      })
+    );
+    store.save();
+    const restoreMismatch = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/storage/restore",
+      headers: authHeaders,
+      payload: { backupFileName: backup.json().fileName, confirmFileName: "wrong.sqlite" }
+    });
+    expect(restoreMismatch.statusCode).toBe(400);
+
+    const restored = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/storage/restore",
+      headers: authHeaders,
+      payload: { backupFileName: backup.json().fileName, confirmFileName: backup.json().fileName, reason: "rollback smoke" }
+    });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json()).toMatchObject({
+      status: "passed",
+      backup: expect.objectContaining({ fileName: backup.json().fileName }),
+      reason: "rollback smoke"
+    });
+    expect(store.state.campaigns.some((campaign) => campaign.id === "camp_transient_after_backup")).toBe(false);
+    expect(store.state.auditLogs.at(-1)).toMatchObject({ action: "admin.storage.restore", targetType: "storage_backup", targetId: backup.json().fileName });
+
+    const missingDrill = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/storage/restore-drill",
+      headers: authHeaders,
+      payload: { backupFileName: "missing.sqlite" }
+    });
+    expect(missingDrill.statusCode).toBe(409);
+    expect(missingDrill.json()).toMatchObject({ status: "failed", error: "No SQLite backup is available for restore drill" });
+
+    await app.close();
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("runs scheduled sqlite backups on startup when configured", async () => {
+    const previousRunOnStart = process.env.OTTE_SQLITE_BACKUP_RUN_ON_START;
+    const previousReason = process.env.OTTE_SQLITE_BACKUP_REASON;
+    process.env.OTTE_SQLITE_BACKUP_RUN_ON_START = "true";
+    process.env.OTTE_SQLITE_BACKUP_REASON = "startup-smoke";
+    const directory = mkdtempSync(join(tmpdir(), "otte-storage-schedule-"));
+    const dbPath = join(directory, "state.sqlite");
+    const store = new SqliteStateStore(dbPath);
+    const gmUser = store.state.users.find((user) => user.id === "usr_demo_gm");
+    if (gmUser) gmUser.serverAdmin = true;
+    store.save();
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      app = await buildApp({ store });
+      const operations = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/storage/operations",
+        headers: authHeaders
+      });
+      expect(operations.statusCode).toBe(200);
+      expect(operations.json()).toMatchObject({
+        backups: {
+          latest: expect.objectContaining({ fileName: expect.stringMatching(/^opentabletop-.*\.sqlite$/) })
+        },
+        scheduledBackups: {
+          enabled: true,
+          runOnStart: true,
+          reason: "startup-smoke",
+          lastRun: expect.objectContaining({
+            trigger: "startup",
+            status: "succeeded",
+            reason: "startup-smoke:startup",
+            fileName: expect.stringMatching(/^opentabletop-.*\.sqlite$/)
+          })
+        }
+      });
+      expect(existsSync(join(directory, "backups", operations.json().scheduledBackups.lastRun.fileName))).toBe(true);
+    } finally {
+      if (app) await app.close();
+      store.close();
+      rmSync(directory, { recursive: true, force: true });
+      if (previousRunOnStart === undefined) {
+        delete process.env.OTTE_SQLITE_BACKUP_RUN_ON_START;
+      } else {
+        process.env.OTTE_SQLITE_BACKUP_RUN_ON_START = previousRunOnStart;
+      }
+      if (previousReason === undefined) {
+        delete process.env.OTTE_SQLITE_BACKUP_REASON;
+      } else {
+        process.env.OTTE_SQLITE_BACKUP_REASON = previousReason;
+      }
+    }
   });
 
   it("round-trips a campaign archive into a fresh instance with all MVP collections", async () => {
@@ -24084,7 +27057,7 @@ registerCommand("/state", (input) => {
       await app.close();
       store.close();
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   });
 
@@ -24473,6 +27446,17 @@ registerCommand("/state", (input) => {
       });
       expect(chat.statusCode).toBe(200);
       await Promise.all(clients.map((client) => client.waitFor("chat.message.created", chat.json().id)));
+
+      const whisper = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: authHeaders,
+        payload: { campaignId: "camp_beta_ember_vault", sceneId: "scn_beta_vault", body: "Private realtime checkpoint", type: "whisper", recipientUserIds: ["usr_beta_player_2"] }
+      });
+      expect(whisper.statusCode).toBe(200);
+      await Promise.all([clients[0]!.waitFor("chat.message.created", whisper.json().id), clients[2]!.waitFor("chat.message.created", whisper.json().id)]);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(clients[3]!.messages.some((message) => message.type === "chat.message.created" && message.targetId === whisper.json().id)).toBe(false);
 
       const journal = await app.inject({
         method: "POST",

@@ -21,6 +21,46 @@ Campaign installation can grant all requested permissions or an explicit subset.
 
 Plugin state mutation should happen through proposals unless the permission grant explicitly allows a direct API call.
 
+## Registry Distribution
+
+Remote registries are server-allowlisted with `OTTE_PLUGIN_REGISTRY_URLS`. A GM with `plugin.install` can sync the configured registry set from the Runtime SDK marketplace panel, and a server admin can run the same sync from Admin Plugin Operations. Both flows write audit rows and refuse registries that are not configured on the server.
+
+A registry catalog is a JSON document with a `plugins` array:
+
+```json
+{
+  "plugins": [
+    {
+      "packageId": "example-macro-plugin-1",
+      "packageUrl": "https://registry.example.test/example-macro-plugin-1.json",
+      "checksum": "sha256:..."
+    }
+  ]
+}
+```
+
+`packageUrl` may be relative to the catalog URL. `checksum` is optional for local development but should be present for shared registries. The downloaded package document contains a `files` object whose keys become files under the package directory:
+
+```json
+{
+  "files": {
+    "plugin.manifest.json": "{ \"id\": \"example-macro-plugin\", \"name\": \"Example Macro Plugin\", \"version\": \"1.0.0\", \"compatibleCore\": \">=0.1.0\", \"entrypoints\": { \"server\": \"./server.js\" }, \"runtime\": { \"apiVersion\": \"0.1\", \"sandbox\": \"vm\" }, \"permissions\": [\"chat.write\"], \"chatCommands\": [{ \"command\": \"/spark\", \"description\": \"Post a spark\" }] }",
+    "server.js": "registerCommand('/spark', () => ({ body: 'Spark', visibility: 'public' }));"
+  }
+}
+```
+
+Registry-imported packages are loaded through the same manifest validation, VM sandbox, signature/trust policy, marketplace review, permission review, install, upgrade, rollback, and command-execution checks as local packages. Registry sync will not overwrite an existing local package directory unless that directory already carries matching registry provenance.
+
+## Author Checklist
+
+- Keep `id` stable across versions and publish each version as a distinct package id or package document.
+- Set `compatibleCore` narrowly enough that unsupported server versions fail closed.
+- Request only the permissions required by commands or UI surfaces.
+- Include `plugin.signature.json` and publish package checksums for any registry beyond local development.
+- Exercise install, subset permission grant, command execution, upgrade, rollback, rejected-review, and tampered-checksum paths before publishing.
+- Treat campaign writes as proposals or explicit permission-gated API calls; never assume a plugin can mutate campaign state directly.
+
 ## Public Alpha Smoke Path
 
 The launch demo uses `plugins/example-macro-plugin` as the concrete plugin example. Its manifest requests only `chat.write` and `token.read`, exposes the VM-sandboxed `/spark` chat command, and is safe to install with a smaller permission grant.

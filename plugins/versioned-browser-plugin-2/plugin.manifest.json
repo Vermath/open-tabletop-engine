@@ -1,0 +1,19 @@
+{
+  "id": "versioned-browser-plugin",
+  "name": "Versioned Browser Plugin",
+  "version": "2.0.0",
+  "compatibleCore": ">=0.1.0",
+  "package": {
+    "publisher": "OpenTabletop",
+    "license": "MIT"
+  },
+  "entrypoints": {
+    "server": "./server.sandbox.js"
+  },
+  "runtime": {
+    "apiVersion": "0.1",
+    "sandbox": "vm"
+  },
+  "permissions": ["chat.write"],
+  "chatCommands": [{ "command": "/versioned", "description": "Reports the installed browser plugin version." }]
+}

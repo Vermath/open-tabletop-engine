@@ -4,6 +4,8 @@ coverage/
 .turbo/
 .vite/
 .playwright-cli/
+playwright-report/
+test-results/
 output/
 .env
 .env.*

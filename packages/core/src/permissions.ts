@@ -140,9 +140,10 @@ export function hasPermission(input: {
   const now = input.now ?? new Date();
   const grantAllows = input.grants.some((grant) => {
     if (grant.campaignId !== input.campaignId) return false;
-    if (grant.subjectType !== "user" || grant.subjectId !== input.userId) return false;
     if (grant.expiresAt && new Date(grant.expiresAt) < now) return false;
-    return grant.permissions.includes(input.permission);
+    if (grant.subjectType === "user" && grant.subjectId === input.userId) return grant.permissions.includes(input.permission);
+    if (member && grant.subjectType === "role" && grant.subjectId === member.role) return grant.permissions.includes(input.permission);
+    return false;
   });
   return roleAllows || grantAllows;
 }

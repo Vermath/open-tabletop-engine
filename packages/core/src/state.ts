@@ -1,5 +1,5 @@
 import { createId, nowIso } from "./ids.js";
-import type { Actor, Campaign, CampaignArchive, CampaignMember, EngineState, JournalEntry, Scene, Token, User } from "./types.js";
+import type { Actor, Campaign, CampaignArchive, CampaignMember, DiceMacro, EngineState, JournalEntry, OrganizationMember, Scene, Token, User } from "./types.js";
 
 export function emptyState(): EngineState {
   return {
@@ -11,6 +11,8 @@ export function emptyState(): EngineState {
     emailOutbox: [],
     scimGroups: [],
     scimGroupRoleMappings: [],
+    organizations: [],
+    organizationMembers: [],
     invites: [],
     campaigns: [],
     members: [],
@@ -24,6 +26,7 @@ export function emptyState(): EngineState {
     handouts: [],
     chat: [],
     rolls: [],
+    diceMacros: [],
     encounters: [],
     combats: [],
     compendia: [],
@@ -37,7 +40,9 @@ export function emptyState(): EngineState {
     pluginStorage: [],
     pluginReviews: [],
     contentImports: [],
-    fogPresets: []
+    fogPresets: [],
+    idempotencyRecords: [],
+    jobs: []
   };
 }
 
@@ -60,11 +65,46 @@ export function seedState(): EngineState {
   };
   const campaign: Campaign = {
     id: "camp_demo",
+    organizationId: "org_demo",
     ownerUserId: user.id,
     name: "The Ember Vault",
     description: "A sample fantasy campaign for local development.",
     defaultSystemId: "dnd-5e-srd",
     visibility: "private",
+    createdAt: now,
+    updatedAt: now
+  };
+  state.organizations.push({
+    id: "org_demo",
+    name: "Demo Workspace",
+    ownerUserId: user.id,
+    defaultSystemId: campaign.defaultSystemId,
+    defaultCampaignVisibility: "private",
+    defaultPermissionTemplate: "standard",
+    defaultInviteRole: "player",
+    defaultSceneName: "Opening Scene",
+    defaultSceneFolder: "session-0",
+    defaultSceneWidth: 1200,
+    defaultSceneHeight: 800,
+    defaultSceneGridSize: 50,
+    onboardingTitle: "Welcome to the Table",
+    onboardingBody: "",
+    createdAt: now,
+    updatedAt: now
+  });
+  const organizationMember: OrganizationMember = {
+    id: "orgmem_demo_gm",
+    organizationId: "org_demo",
+    userId: user.id,
+    role: "owner",
+    createdAt: now,
+    updatedAt: now
+  };
+  const playerOrganizationMember: OrganizationMember = {
+    id: "orgmem_demo_player",
+    organizationId: "org_demo",
+    userId: player.id,
+    role: "member",
     createdAt: now,
     updatedAt: now
   };
@@ -96,6 +136,8 @@ export function seedState(): EngineState {
     sortOrder: 1,
     fog: [{ id: "fog_center", x: 540, y: 360, radius: 190, hidden: false }],
     fogHistory: [],
+    activationHistory: [{ id: "sact_vault_entry", sceneId: "scn_vault_entry", activatedAt: now, activatedByUserId: user.id, deactivatedSceneIds: [], source: "create" }],
+    annotationHistory: [],
     walls: [
       {
         id: "wall_north",
@@ -109,6 +151,7 @@ export function seedState(): EngineState {
       }
     ],
     lights: [{ id: "light_brazier", x: 320, y: 320, radius: 180, color: "#f59e0b", intensity: 0.24 }],
+    annotations: [],
     metadata: {},
     createdAt: now,
     updatedAt: now
@@ -151,6 +194,10 @@ export function seedState(): EngineState {
     visionEnabled: true,
     visionRadius: 180,
     disposition: "friendly",
+    notes: "",
+    conditions: [],
+    auras: [],
+    targetedByUserIds: [],
     metadata: {},
     createdAt: now,
     updatedAt: now
@@ -169,14 +216,26 @@ export function seedState(): EngineState {
     createdAt: now,
     updatedAt: now
   };
+  const macro: DiceMacro = {
+    id: "mac_demo_attack",
+    campaignId: campaign.id,
+    createdBy: user.id,
+    name: "Attack Check",
+    formula: "1d20+5",
+    visibility: "public",
+    createdAt: now,
+    updatedAt: now
+  };
 
   state.users.push(user, player);
+  state.organizationMembers.push(organizationMember, playerOrganizationMember);
   state.campaigns.push(campaign);
   state.members.push(member, playerMember);
   state.scenes.push(scene);
   state.actors.push(actor);
   state.tokens.push(token);
   state.journals.push(journal);
+  state.diceMacros.push(macro);
   return state;
 }
 
@@ -194,6 +253,8 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     emailOutbox: [],
     scimGroups: [],
     scimGroupRoleMappings: [],
+    organizations: [],
+    organizationMembers: [],
     invites: [],
     campaigns: state.campaigns.filter((item) => item.id === campaignId),
     members: state.members.filter((item) => item.campaignId === campaignId).map(({ source: _source, ...member }) => member),
@@ -207,6 +268,7 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     handouts: state.handouts.filter((item) => item.campaignId === campaignId),
     chat: state.chat.filter((item) => item.campaignId === campaignId),
     rolls: state.rolls.filter((item) => item.campaignId === campaignId),
+    diceMacros: state.diceMacros.filter((item) => item.campaignId === campaignId),
     encounters: state.encounters.filter((item) => item.campaignId === campaignId),
     combats: state.combats.filter((item) => item.campaignId === campaignId),
     compendia: state.compendia,
@@ -220,7 +282,9 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     pluginStorage: state.pluginStorage.filter((item) => item.campaignId === campaignId),
     pluginReviews: [],
     contentImports: state.contentImports.filter((item) => item.campaignId === campaignId && item.status !== "deleted"),
-    fogPresets: state.fogPresets.filter((item) => item.campaignId === campaignId)
+    fogPresets: state.fogPresets.filter((item) => item.campaignId === campaignId),
+    idempotencyRecords: [],
+    jobs: []
   };
   return {
     format: "ottx",

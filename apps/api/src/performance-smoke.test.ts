@@ -1,0 +1,243 @@
+import { performance } from "node:perf_hooks";
+import { createTimestamped, type CampaignMember, type ChatMessage, type JournalEntry, type Token, type User } from "@open-tabletop/core";
+import { describe, expect, it } from "vitest";
+import { buildApp } from "./app.js";
+import { MemoryStateStore } from "./store.js";
+
+const gmHeaders = { "x-user-id": "usr_demo_gm" };
+
+describe("performance smoke", () => {
+  it("keeps large tabletop reads, exports, compendium lookup, and realtime fanout within smoke budgets", async () => {
+    type RealtimeTestSocket = {
+      onopen: (() => void) | null;
+      onmessage: ((event: { data: unknown }) => void) | null;
+      onerror: ((event: unknown) => void) | null;
+      close(): void;
+    };
+
+    const store = new MemoryStateStore();
+    seedLargeCampaignSurface(store);
+    const app = await buildApp({ store });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address();
+    if (!address || typeof address === "string") throw new Error("Performance smoke API did not bind to a TCP port");
+
+    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string) => RealtimeTestSocket }).WebSocket;
+    if (!maybeWebSocket) throw new Error("WebSocket is not available in this Node runtime");
+    const TestWebSocket = maybeWebSocket;
+    const clients: Array<Awaited<ReturnType<typeof openRealtimeClient>>> = [];
+
+    try {
+      const tokens = await timeRequest("scene token read", 800, () =>
+        app.inject({
+          method: "GET",
+          url: "/api/v1/scenes/scn_vault_entry/tokens",
+          headers: gmHeaders
+        })
+      );
+      expect((tokens.json() as unknown[]).length).toBeGreaterThanOrEqual(250);
+
+      const chatExport = await timeRequest("chat history export", 1200, () =>
+        app.inject({
+          method: "GET",
+          url: "/api/v1/campaigns/camp_demo/chat/export",
+          headers: gmHeaders
+        })
+      );
+      const chatExportBody = chatExport.json() as { count: number };
+      expect(chatExportBody.count).toBeGreaterThanOrEqual(400);
+
+      const compendium = await timeRequest("rules compendium lookup", 800, () =>
+        app.inject({
+          method: "GET",
+          url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/compendium",
+          headers: gmHeaders
+        })
+      );
+      const compendiumBody = compendium.json() as { entries: unknown[] };
+      expect(compendiumBody.entries.length).toBeGreaterThan(50);
+
+      const campaignExport = await timeRequest("campaign archive export", 1500, () =>
+        app.inject({
+          method: "GET",
+          url: "/api/v1/campaigns/camp_demo/export",
+          headers: gmHeaders
+        })
+      );
+      const campaignExportBody = campaignExport.json() as { data: { tokens: unknown[]; chat: unknown[] } };
+      expect(campaignExportBody.data.tokens.length).toBeGreaterThanOrEqual(250);
+      expect(campaignExportBody.data.chat.length).toBeGreaterThanOrEqual(400);
+
+      for (const userId of ["usr_demo_gm", "usr_demo_player", "usr_perf_player_2", "usr_perf_player_3"]) {
+        clients.push(await openRealtimeClient(TestWebSocket, address.port, app, userId));
+      }
+
+      const fanoutStarted = performance.now();
+      const message = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: gmHeaders,
+        payload: { campaignId: "camp_demo", sceneId: "scn_vault_entry", body: "Performance smoke fanout", visibility: "public" }
+      });
+      expect(message.statusCode).toBe(200);
+      await Promise.all(clients.map((client) => client.waitFor("chat.message.created", message.json().id)));
+      expect(performance.now() - fanoutStarted).toBeLessThan(2500);
+    } finally {
+      clients.forEach((client) => client.close());
+      await app.close();
+    }
+  });
+});
+
+async function timeRequest(name: string, maxMs: number, action: () => Promise<{ statusCode: number; json(): unknown }>) {
+  const started = performance.now();
+  const response = await action();
+  const durationMs = performance.now() - started;
+  expect(response.statusCode, name).toBe(200);
+  expect(durationMs, `${name} duration`).toBeLessThan(maxMs);
+  return response;
+}
+
+function seedLargeCampaignSurface(store: MemoryStateStore): void {
+  const users = [2, 3].map((index) =>
+    createTimestamped("usr_perf", {
+      id: `usr_perf_player_${index}`,
+      displayName: `Performance Player ${index}`,
+      email: `performance.player.${index}@example.test`
+    }) satisfies User
+  );
+  const members = users.map((user) =>
+    createTimestamped("mem_perf", {
+      id: `mem_${user.id}`,
+      campaignId: "camp_demo",
+      userId: user.id,
+      role: "player"
+    }) satisfies CampaignMember
+  );
+  const tokens = Array.from({ length: 250 }, (_, index) =>
+    createTimestamped("tok_perf", {
+      id: `tok_perf_${index}`,
+      sceneId: "scn_vault_entry",
+      actorId: index % 2 === 0 ? "act_valen" : undefined,
+      name: `Perf Token ${index}`,
+      x: 80 + (index % 25) * 28,
+      y: 120 + Math.floor(index / 25) * 28,
+      width: 1,
+      height: 1,
+      rotation: 0,
+      hidden: false,
+      locked: false,
+      visionEnabled: index % 3 === 0,
+      visionRadius: 60,
+      disposition: index % 5 === 0 ? "hostile" : "neutral",
+      metadata: { smoke: true, index }
+    }) satisfies Token
+  );
+
+  const chat = Array.from({ length: 400 }, (_, index) =>
+    createTimestamped("msg_perf", {
+      id: `msg_perf_${index}`,
+      campaignId: "camp_demo",
+      sceneId: "scn_vault_entry",
+      userId: index % 2 === 0 ? "usr_demo_gm" : "usr_demo_player",
+      type: index % 7 === 0 ? "ooc" : "plain",
+      body: `Performance smoke chat row ${index}`,
+      visibility: "public",
+      recipientUserIds: []
+    }) satisfies ChatMessage
+  );
+
+  const journals = Array.from({ length: 80 }, (_, index) =>
+    createTimestamped("jnl_perf", {
+      id: `jnl_perf_${index}`,
+      campaignId: "camp_demo",
+      title: `Performance Journal ${index}`,
+      body: `Performance smoke journal body ${index}`,
+      visibility: "public",
+      visibleToUserIds: [],
+      visibleToActorIds: [],
+      tags: ["performance", `batch-${index % 8}`],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm"
+    }) satisfies JournalEntry
+  );
+
+  store.state.users.push(...users);
+  store.state.members.push(...members);
+  store.state.tokens.push(...tokens);
+  store.state.chat.push(...chat);
+  store.state.journals.push(...journals);
+  store.save();
+}
+
+async function openRealtimeClient(
+  TestWebSocket: new (url: string) => {
+    onopen: (() => void) | null;
+    onmessage: ((event: { data: unknown }) => void) | null;
+    onerror: ((event: unknown) => void) | null;
+    close(): void;
+  },
+  port: number,
+  app: Awaited<ReturnType<typeof buildApp>>,
+  userId: string
+) {
+  type RealtimeEventMessage = { type?: string; targetId?: string; payload?: unknown; error?: string };
+  const login = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/login",
+    payload: { userId }
+  });
+  expect(login.statusCode).toBe(200);
+
+  const token = login.json().token as string;
+  const socket = new TestWebSocket(`ws://127.0.0.1:${port}/api/v1/realtime?campaignId=camp_demo&sessionToken=${encodeURIComponent(token)}`);
+  const messages: RealtimeEventMessage[] = [];
+  const waiters: Array<{ predicate: (message: RealtimeEventMessage) => boolean; resolve: (message: RealtimeEventMessage) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }> = [];
+
+  socket.onmessage = (event) => {
+    const message = JSON.parse(String(event.data)) as RealtimeEventMessage;
+    messages.push(message);
+    for (const waiter of [...waiters]) {
+      if (!waiter.predicate(message)) continue;
+      clearTimeout(waiter.timer);
+      waiters.splice(waiters.indexOf(waiter), 1);
+      waiter.resolve(message);
+    }
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out opening realtime socket for ${userId}`)), 1500);
+    socket.onopen = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    socket.onerror = (event) => {
+      clearTimeout(timer);
+      reject(new Error(`Realtime socket error for ${userId}: ${String(event)}`));
+    };
+  });
+
+  return {
+    userId,
+    waitFor(type: string, targetId?: string) {
+      const existing = messages.find((message) => message.type === type && (!targetId || message.targetId === targetId));
+      if (existing) return Promise.resolve(existing);
+      return new Promise<RealtimeEventMessage>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${type}:${targetId ?? ""} for ${userId}`)), 2000);
+        waiters.push({
+          predicate: (message) => message.type === type && (!targetId || message.targetId === targetId),
+          resolve,
+          reject,
+          timer
+        });
+      });
+    },
+    close() {
+      socket.close();
+      for (const waiter of waiters.splice(0)) {
+        clearTimeout(waiter.timer);
+        waiter.reject(new Error(`Realtime client closed for ${userId}`));
+      }
+    }
+  };
+}

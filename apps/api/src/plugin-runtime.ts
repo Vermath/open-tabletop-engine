@@ -386,6 +386,7 @@ function loadPluginPackage(pluginRoot: string, packagePath: string, trustPolicy:
 }
 
 class SandboxedPluginRuntime {
+  private static readonly executionTimeoutMs = 1000;
   private readonly context: Context;
   private readonly sandbox: SandboxGlobals;
 
@@ -405,7 +406,7 @@ class SandboxedPluginRuntime {
       codeGeneration: { strings: false, wasm: false }
     });
     const source = readFileSync(plugin.resolvedServerEntrypoint!, "utf8");
-    new Script(source, { filename: plugin.resolvedServerEntrypoint }).runInContext(this.context, { timeout: 100 });
+    new Script(source, { filename: plugin.resolvedServerEntrypoint }).runInContext(this.context, { timeout: SandboxedPluginRuntime.executionTimeoutMs });
     const missingCommands = [...declaredCommands].filter((command) => !handlers[command]);
     if (missingCommands.length) throw new Error(`Plugin did not register command handlers: ${missingCommands.join(", ")}`);
   }
@@ -416,7 +417,7 @@ class SandboxedPluginRuntime {
     this.sandbox.__otteInput = input;
     this.sandbox.__otteResult = undefined;
     try {
-      new Script("__otteResult = __otteHandlers[__otteCommand](__otteInput);").runInContext(this.context, { timeout: 100 });
+      new Script("__otteResult = __otteHandlers[__otteCommand](__otteInput);").runInContext(this.context, { timeout: SandboxedPluginRuntime.executionTimeoutMs });
       return normalizeCommandResult(this.sandbox.__otteResult);
     } finally {
       this.sandbox.__otteCommand = undefined;
