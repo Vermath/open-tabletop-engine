@@ -6430,7 +6430,7 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns/camp_demo/systems" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/install" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/character-templates" },
-      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/character-origins" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/character-origins" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters", payload: { name: "No Auth Character" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/monsters", payload: { name: "No Auth Monster" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters/import", payload: { name: "No Auth Import" } },
@@ -6593,6 +6593,48 @@ describe("api", () => {
       });
       expect(response.statusCode, `${route.method} ${route.url}`).toBe(403);
       expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "forbidden" });
+    }
+
+    const observerReadOutcomeExceptions = new Map<string, string>([
+      ["GET /api/v1/auth/session", "self-service bearer-session inspection"],
+      ["GET /api/v1/auth/mfa", "self-service bearer-session MFA state"],
+      ["GET /api/v1/auth/sessions", "self-service bearer-session listing"],
+      ["GET /api/v1/assets/{assetId}/blob", "blob fixture lacks backing local object"]
+    ]);
+    const observerReadForbiddenRouteKeys = new Map<string, string>([
+      ["GET /api/v1/organization/invites", "organization admin invite roster"],
+      ["GET /api/v1/campaigns/{campaignId}/invites", "campaign invite roster requires campaign update"],
+      ["GET /api/v1/campaigns/{campaignId}/fog-presets", "fog presets require token reveal"],
+      ["GET /api/v1/scenes/{sceneId}/rendering/diagnostics", "rendering diagnostics require scene update"],
+      ["GET /api/v1/scenes/{sceneId}/fog/history", "fog history requires token reveal"],
+      ["GET /api/v1/campaigns/{campaignId}/dice-macros", "macro roster requires dice rolling"],
+      ["GET /api/v1/campaigns/{campaignId}/ai/threads", "AI thread roster requires AI proposal permission"],
+      ["GET /api/v1/campaigns/{campaignId}/ai/usage", "AI usage requires AI proposal permission"],
+      ["GET /api/v1/campaigns/{campaignId}/ai/evaluations", "AI evaluations require AI proposal permission"],
+      ["GET /api/v1/campaigns/{campaignId}/ai/memory", "AI memory requires AI memory permission"],
+      ["GET /api/v1/campaigns/{campaignId}/ai/tool-calls", "AI tool calls require AI proposal permission"],
+      ["GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage", "plugin storage requires plugin configure"],
+      ["GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}", "plugin storage requires plugin configure"]
+    ]);
+    const observerReadOutcomeRoutes = unauthenticatedRoutes.filter((route) => {
+      if (route.method !== "GET") return false;
+      const specPath = specPathForConcreteRoute(route.url, route.method);
+      expect(specPath, `${route.method} ${route.url} must match a served OpenAPI path`).toBeDefined();
+      const key = routeKey(route.method, specPath!);
+      return !publicOrNonSessionRouteKeys.has(key) && !observerReadOutcomeExceptions.has(key);
+    });
+    for (const route of observerReadOutcomeRoutes) {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      const key = routeKey(route.method, specPath);
+      const response = await app.inject({
+        ...route,
+        headers: { ...route.headers, "x-user-id": "usr_observer" }
+      });
+      const expectedStatus = key.startsWith("GET /api/v1/admin/") || observerReadForbiddenRouteKeys.has(key) ? 403 : 200;
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(expectedStatus);
+      if (expectedStatus === 403) {
+        expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "forbidden" });
+      }
     }
 
     const observerBlockedRoutes: Array<{
