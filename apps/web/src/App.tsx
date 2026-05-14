@@ -2337,7 +2337,7 @@ export function App() {
   async function useActorAction(rollId: string, options: { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean } = {}) {
     if (!selectedActor) return;
     try {
-      const used = await apiPost<{ usage?: { consumed?: Array<{ label: string; remaining: number }> }; effect?: { type: string; targetActorId: string; amount?: number } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
+      const used = await apiPost<{ actor?: Actor; usage?: { consumed?: Array<{ label: string; remaining: number }> }; effect?: { type: string; targetActorId: string; amount?: number } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
         rollId,
         consumeResources: options.consumeResources ?? true,
         applyEffect: options.applyEffect,
@@ -2345,7 +2345,10 @@ export function App() {
       });
       const spent = used.usage?.consumed?.map((item) => `${item.label} ${item.remaining}`).join(", ");
       const applied = used.effect ? `; ${used.effect.type} applied` : "";
-      await refresh();
+      if (used.actor) {
+        const updatedActor = used.actor;
+        setSnapshot((current) => ({ ...current, actors: current.actors.map((actor) => (actor.id === updatedActor.id ? updatedActor : actor)) }));
+      }
       setStatus(spent ? `${selectedActor.name} used action: ${spent}${applied}` : `${selectedActor.name} action posted${applied}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
