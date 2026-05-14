@@ -2420,7 +2420,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Params: { campaignId: string }; Body: { reason?: string } }>("/api/v1/campaigns/:campaignId/archive", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, request.params.campaignId, "campaign.update")) return forbidden(reply, "Missing permission: campaign.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
     const before = campaignLifecycleAuditSummary(campaign);
@@ -2451,7 +2452,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Params: { campaignId: string }; Body: { reason?: string } }>("/api/v1/campaigns/:campaignId/restore", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, request.params.campaignId, "campaign.update")) return forbidden(reply, "Missing permission: campaign.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
     const before = campaignLifecycleAuditSummary(campaign);
@@ -2573,7 +2575,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const body = request.body ?? {};
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, request.params.campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "token.reveal");
+    if (allowed !== true) return allowed;
     const sourceScene = sourceSceneForFogPreset(store, request.params.campaignId, body.sceneId);
     if (!sourceScene) return notFound(reply, "Source scene not found");
     const regions = sourceScene.fog.filter((region) => !region.hidden).map(fogPresetRegionFromFog);
@@ -2601,7 +2604,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.delete<{ Params: { campaignId: string; presetId: string } }>("/api/v1/campaigns/:campaignId/fog-presets/:presetId", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, request.params.campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "token.reveal");
+    if (allowed !== true) return allowed;
     const index = store.state.fogPresets.findIndex((preset) => preset.id === request.params.presetId && preset.campaignId === request.params.campaignId);
     if (index < 0) return notFound(reply, "Fog preset not found");
     const deleted = store.state.fogPresets.splice(index, 1)[0]!;
@@ -2722,7 +2726,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!asset) return notFound(reply, "Asset not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, asset.campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, asset.campaignId, "scene.update");
+    if (allowed !== true) return allowed;
     if (typeof body.name === "string" && body.name.trim()) asset.name = body.name.trim().slice(0, 160);
     if (body.folder !== undefined) asset.folder = normalizeAssetFolder(body.folder);
     if (body.tags !== undefined) asset.tags = normalizeAssetTags(body.tags);
@@ -2753,7 +2758,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!asset) return notFound(reply, "Asset not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, asset.campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, asset.campaignId, "scene.update");
+    if (allowed !== true) return allowed;
     const status = normalizeAssetLifecycleStatus(body.status);
     if (!status) return badRequest(reply, "Asset lifecycle status must be active, archived, or deleted");
     const expiresAt = normalizeOptionalIsoDate(body.expiresAt);
@@ -2790,9 +2796,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "missing_session" });
         return unauthorized(reply, "Missing asset session");
       }
-      if (!canCampaign(store, userId, asset.campaignId, "scene.read")) {
-        appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "missing_permission" });
-        return forbidden(reply, "Missing permission: scene.read");
+      const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, asset.campaignId, "scene.read");
+      if (allowed !== true) {
+        appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "missing_permission_or_active_organization" });
+        return allowed;
       }
     }
     const cacheControl = signedAccess ? signedAssetCacheControl(request.query.expiresAt) : "private, max-age=60";
@@ -3057,7 +3064,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const kind = normalizeSceneAnnotationKind(body.kind);
     if (!kind) return badRequest(reply, "Annotation kind must be ping, ruler, template, or drawing");
     const requiredPermission: PermissionName = kind === "ping" || kind === "ruler" ? "scene.read" : "scene.update";
-    if (!canCampaign(store, userId, campaignId, requiredPermission)) return forbidden(reply, `Missing permission: ${requiredPermission}`);
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, requiredPermission);
+    if (allowed !== true) return allowed;
     const normalized = normalizeSceneAnnotationInput(scene, userId, body, kind);
     if ("error" in normalized) return badRequest(reply, normalized.error);
     if (normalized.annotation.kind === "template") {
@@ -3114,7 +3122,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const annotations = ensureSceneAnnotations(scene);
     const annotation = annotations.find((item) => item.id === request.params.annotationId);
@@ -3157,7 +3166,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const annotations = ensureSceneAnnotations(scene);
     const index = annotations.findIndex((annotation) => annotation.id === request.params.annotationId);
@@ -3194,7 +3204,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "token.reveal");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const fogRegion = normalizeFogRegion(body, scene);
     if (!fogRegion) {
@@ -3253,7 +3264,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "token.reveal");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const target = latestUndoableFogHistoryEntry(scene);
     if (!target) return badRequest(reply, "No fog history to undo");
@@ -3309,7 +3321,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "token.reveal");
+    if (allowed !== true) return allowed;
     const preset = store.state.fogPresets.find((item) => item.id === body.presetId && item.campaignId === campaignId);
     if (!preset) return notFound(reply, "Fog preset not found");
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
@@ -3368,7 +3381,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "token.reveal");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const fogRegion = scene.fog.find((region) => region.id === request.params.fogId);
     if (!fogRegion) return notFound(reply, "Fog region not found");
@@ -3415,7 +3429,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "token.reveal")) return forbidden(reply, "Missing permission: token.reveal");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "token.reveal");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const index = scene.fog.findIndex((region) => region.id === request.params.fogId);
     if (index < 0) return notFound(reply, "Fog region not found");
@@ -3464,7 +3479,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const kind: WallKind = request.body.kind === "terrain" ? "terrain" : "wall";
     const wall = {
@@ -3507,7 +3523,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const wall = scene.walls.find((item) => item.id === request.params.wallId);
     if (!wall) return notFound(reply, "Wall not found");
@@ -3568,7 +3585,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const index = scene.walls.findIndex((item) => item.id === request.params.wallId);
     if (index < 0) return notFound(reply, "Wall not found");
@@ -3602,7 +3620,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const light = {
       id: createId("light"),
@@ -3647,7 +3666,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const light = scene.lights.find((item) => item.id === request.params.lightId);
     if (!light) return notFound(reply, "Light source not found");
@@ -3694,7 +3714,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, campaignId, "scene.update")) return forbidden(reply, "Missing permission: scene.update");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const index = scene.lights.findIndex((item) => item.id === request.params.lightId);
     if (index < 0) return notFound(reply, "Light source not found");
@@ -3934,6 +3955,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!actor) return notFound(reply, "Actor not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, actor.campaignId);
+    if (activeOrganization !== true) return activeOrganization;
     const canUpdate = canCampaign(store, userId, actor.campaignId, "actor.update");
     const canUpdateOwned = actor.ownerUserId === userId && canCampaign(store, userId, actor.campaignId, "actor.updateOwned");
     if (!canUpdate && !canUpdateOwned) return forbidden(reply, "Missing permission: actor.update");
@@ -3977,6 +4000,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!item) return notFound(reply, "Item not found");
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, item.campaignId);
+    if (activeOrganization !== true) return activeOrganization;
     const actor = item.actorId ? store.state.actors.find((candidate) => candidate.id === item.actorId) : undefined;
     const nextActorId = request.body.actorId === null ? undefined : request.body.actorId !== undefined ? String(request.body.actorId) : item.actorId;
     const nextActor = nextActorId ? store.state.actors.find((candidate) => candidate.id === nextActorId && candidate.campaignId === item.campaignId) : undefined;
@@ -4017,7 +4042,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/journal", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    if (!canCampaign(store, userId, request.params.campaignId, "journal.read")) return forbidden(reply, "Missing permission: journal.read");
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "journal.read");
+    if (allowed !== true) return allowed;
     const canReadSecret = canCampaign(store, userId, request.params.campaignId, "journal.readSecret");
     return store.state.journals.filter((item) => item.campaignId === request.params.campaignId).filter((item) => item.visibility === "public" || canReadSecret || item.visibleToUserIds.includes(userId));
   });
@@ -4217,7 +4243,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     if (!request.query.campaignId) {
-      return store.state.chat.filter((item) => canCampaign(store, userId, item.campaignId, "chat.read") && canReadChatMessage(store, userId, item));
+      const workspace = organizationWorkspaceRecordForRequest(store, userId, request.headers);
+      const activeCampaignIds = new Set(store.state.campaigns.filter((campaign) => campaign.organizationId === workspace.id).map((campaign) => campaign.id));
+      return store.state.chat.filter((item) => activeCampaignIds.has(item.campaignId) && canCampaign(store, userId, item.campaignId, "chat.read") && canReadChatMessage(store, userId, item));
     }
     const allowed = requireCampaignPermission(store, reply, request.headers, request.query.campaignId, "chat.read");
     if (allowed !== true) return allowed;
@@ -5152,6 +5180,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/ai/memory", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, request.params.campaignId);
+    if (activeOrganization !== true) return activeOrganization;
     const canReadPublic = canCampaign(store, userId, request.params.campaignId, "ai.readPublicMemory");
     const canReadGm = canCampaign(store, userId, request.params.campaignId, "ai.readGmMemory");
     if (!canReadPublic && !canReadGm) return forbidden(reply, "Missing permission: ai.readPublicMemory");
@@ -15299,6 +15329,10 @@ function testScimAdminConnection(store: StateStore) {
 function requireCampaignPermission(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>, campaignId: string, permission: PermissionName): true | FastifyReply {
   const userId = requireUser(store, reply, headers);
   if (typeof userId !== "string") return userId;
+  return requireCampaignPermissionForUser(store, reply, headers, userId, campaignId, permission);
+}
+
+function requireCampaignPermissionForUser(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>, userId: string, campaignId: string, permission: PermissionName): true | FastifyReply {
   const activeOrganization = requireCampaignActiveOrganization(store, reply, headers, userId, campaignId);
   if (activeOrganization !== true) return activeOrganization;
   if (

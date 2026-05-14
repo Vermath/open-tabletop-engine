@@ -409,7 +409,7 @@ describe("organization workspace defaults", () => {
       expect(addedDemoMember.statusCode).toBe(201);
       store.state.members.push(
         createTimestamped("mem", { campaignId: "camp_demo", userId: "usr_second_member", role: "observer" }),
-        createTimestamped("mem", { campaignId: created.json().id, userId: "usr_second_member", role: "observer" })
+        createTimestamped("mem", { campaignId: created.json().id, userId: "usr_second_member", role: "gm" })
       );
       const demoInvite = await app.inject({
         method: "POST",
@@ -489,6 +489,49 @@ describe("organization workspace defaults", () => {
       });
       expect(allowedSecondCampaign.statusCode).toBe(200);
       expect(allowedSecondCampaign.json()).toMatchObject({ id: created.json().id, organizationId: "org_second" });
+      const secondScene = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/scenes`,
+        headers: bearerHeaders,
+        payload: { name: "Second Workspace Scene" }
+      });
+      expect(secondScene.statusCode).toBe(200);
+      const secondSceneId = secondScene.json().id;
+      const secondAsset = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/assets`,
+        headers: bearerHeaders,
+        payload: { name: "Second Map", url: "/maps/second.png", sizeBytes: 12 }
+      });
+      expect(secondAsset.statusCode).toBe(200);
+      const secondActor = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/actors`,
+        headers: bearerHeaders,
+        payload: { name: "Second Actor" }
+      });
+      expect(secondActor.statusCode).toBe(200);
+      const secondItem = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/items`,
+        headers: bearerHeaders,
+        payload: { name: "Second Item", actorId: secondActor.json().id }
+      });
+      expect(secondItem.statusCode).toBe(200);
+      const secondJournal = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/journal`,
+        headers: bearerHeaders,
+        payload: { title: "Second Journal", body: "Second workspace only", visibility: "public" }
+      });
+      expect(secondJournal.statusCode).toBe(200);
+      const secondChat = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: bearerHeaders,
+        payload: { campaignId: created.json().id, body: "second workspace chat", visibility: "public" }
+      });
+      expect(secondChat.statusCode).toBe(200);
       const secondInvite = await app.inject({
         method: "POST",
         url: "/api/v1/organization/invites",
@@ -552,6 +595,74 @@ describe("organization workspace defaults", () => {
       });
       expect(directSecondScenes.statusCode).toBe(403);
       expect(directSecondScenes.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondArchive = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/archive`,
+        headers: bearerHeaders,
+        payload: { reason: "cross-org denial check" }
+      });
+      expect(directSecondArchive.statusCode).toBe(403);
+      expect(directSecondArchive.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondJournal = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${created.json().id}/journal`,
+        headers: bearerHeaders
+      });
+      expect(directSecondJournal.statusCode).toBe(403);
+      expect(directSecondJournal.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondAssetUpdate = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/assets/${secondAsset.json().id}`,
+        headers: bearerHeaders,
+        payload: { name: "Cross Org Rename" }
+      });
+      expect(directSecondAssetUpdate.statusCode).toBe(403);
+      expect(directSecondAssetUpdate.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondAssetBlob = await app.inject({
+        method: "GET",
+        url: `/api/v1/assets/${secondAsset.json().id}/blob`,
+        headers: bearerHeaders
+      });
+      expect(directSecondAssetBlob.statusCode).toBe(403);
+      expect(directSecondAssetBlob.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondActorUpdate = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/actors/${secondActor.json().id}`,
+        headers: bearerHeaders,
+        payload: { name: "Cross Org Actor" }
+      });
+      expect(directSecondActorUpdate.statusCode).toBe(403);
+      expect(directSecondActorUpdate.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondItemUpdate = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/items/${secondItem.json().id}`,
+        headers: bearerHeaders,
+        payload: { name: "Cross Org Item" }
+      });
+      expect(directSecondItemUpdate.statusCode).toBe(403);
+      expect(directSecondItemUpdate.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondAnnotation = await app.inject({
+        method: "POST",
+        url: `/api/v1/scenes/${secondSceneId}/annotations`,
+        headers: bearerHeaders,
+        payload: { kind: "ping", points: [{ x: 10, y: 10 }] }
+      });
+      expect(directSecondAnnotation.statusCode).toBe(403);
+      expect(directSecondAnnotation.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondAiMemory = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${created.json().id}/ai/memory`,
+        headers: bearerHeaders
+      });
+      expect(directSecondAiMemory.statusCode).toBe(403);
+      expect(directSecondAiMemory.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const unscopedChat = await app.inject({
+        method: "GET",
+        url: "/api/v1/chat/messages",
+        headers: bearerHeaders
+      });
+      expect(unscopedChat.statusCode).toBe(200);
+      expect(unscopedChat.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: secondChat.json().id })]));
       const deniedDemoRevoke = await app.inject({
         method: "POST",
         url: `/api/v1/invites/${demoInvite.json().invite.id}/revoke`,
