@@ -6776,7 +6776,7 @@ describe("api", () => {
     }
 
     const gmAllowedRouteOutcomes: Array<{
-      method: "GET" | "POST";
+      method: "GET" | "PATCH" | "POST";
       url: string;
       payload?: Record<string, unknown>;
       expectedStatus?: number;
@@ -6785,6 +6785,16 @@ describe("api", () => {
         method: "POST",
         url: "/api/v1/scenes/scn_vault_entry/tokens",
         payload: { name: "Authorized Matrix Token" }
+      },
+      {
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_valen",
+        payload: { hidden: true }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/scenes/scn_vault_entry/annotations",
+        payload: { kind: "drawing", points: [{ x: 320, y: 320 }, { x: 360, y: 340 }] }
       },
       {
         method: "POST",
@@ -6807,8 +6817,23 @@ describe("api", () => {
         payload: { combatants: [{ id: "cmbt_authorized_matrix", tokenId: "tok_valen", actorId: "act_valen", name: "Valen Ash", initiative: 15, defeated: false }] }
       },
       {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/proposals",
+        payload: { title: "Authorized Matrix Proposal", changesJson: [] }
+      },
+      {
         method: "GET",
         url: "/api/v1/campaigns/camp_demo/ai/threads"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        payload: { prompt: "authorized matrix thread" }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install",
+        payload: { permissions: ["chat.write"] }
       },
       {
         method: "POST",
