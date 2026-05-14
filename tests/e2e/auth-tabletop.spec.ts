@@ -1042,6 +1042,7 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await expect(combatPanel.getByText("combat.updated").first()).toBeVisible();
   await expect(valenCombatant.getByLabel("Valen Ash condition timing")).toContainText("prone expires in 1 round");
   await advanceUntilRound("3");
+  await expect(valenCombatant.getByLabel("Valen Ash condition timing")).toContainText("No timed conditions");
   await previousUntilRound("2");
 
   await combatPanel.getByRole("button", { name: "End" }).click();
