@@ -1164,8 +1164,15 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   await expect(recoveryControls).toContainText("tool_failed");
   await recoveryControls.locator(".tool-call-row", { hasText: "E2E failed provider thread" }).getByRole("button", { name: "Replay prompt" }).click();
   await expect(page.getByText("AI thread replayed")).toBeVisible();
+  const retryToolResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    response.url().includes("/api/v1/campaigns/camp_demo/ai/tool-calls/tool_e2e_retryable_compendium_failure/retry")
+  );
   await recoveryControls.locator(".tool-call-row", { hasText: "read_compendium" }).getByRole("button", { name: "Retry tool" }).click();
-  await expect(page.getByText("Retried 1 read_compendium call; 1 completed, 0 failed, 0 skipped")).toBeVisible();
+  const retryToolResult = await retryToolResponse;
+  expect(retryToolResult.ok(), await retryToolResult.text()).toBeTruthy();
+  const retryToolBody = await retryToolResult.json() as { retried: number; completed: number; failed: number; skipped: number };
+  expect(retryToolBody).toMatchObject({ retried: 1, completed: 1, failed: 0, skipped: 0 });
   await expect(recoveryControls.locator(".tool-call-row", { hasText: "read_compendium" })).toHaveCount(0);
   const proposalHistory = aiPanel.getByRole("region", { name: "Proposal history" });
   const comparisonProposal = proposalHistory.locator("article", { hasText: "Scene comparison check" });
