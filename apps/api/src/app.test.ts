@@ -6156,6 +6156,16 @@ describe("api", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     });
+    store.state.invites.push(
+      createTimestamped("inv", {
+        id: "inv_auth_matrix",
+        campaignId: "camp_demo",
+        tokenHash: "auth-matrix-token-hash",
+        role: "player" as const,
+        invitedByUserId: "usr_demo_gm",
+        expiresAt: "2026-06-01T00:00:00.000Z"
+      }) satisfies EngineState["invites"][number]
+    );
     const authMatrixAsset = createTimestamped("asset", {
       id: "asset_auth_matrix",
       campaignId: "camp_demo",
@@ -6298,6 +6308,7 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns/camp_demo/members" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/invites" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/invites", payload: { email: "invite@example.test" } },
+      { method: "POST", url: "/api/v1/invites/inv_auth_matrix/revoke" },
       { method: "PATCH", url: "/api/v1/campaigns/camp_demo", payload: { name: "No Auth Rename" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/archive", payload: { reason: "missing auth" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/restore", payload: { reason: "missing auth" } },
@@ -6397,6 +6408,8 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns/camp_demo/ai/tool-calls" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/tool-calls/aitc_auth_matrix/retry", payload: { reason: "missing auth" } },
       { method: "GET", url: "/api/v1/plugins" },
+      { method: "POST", url: "/api/v1/plugins/install", payload: { campaignId: "camp_demo", packagePath: "missing-plugin-package" } },
+      { method: "POST", url: "/api/v1/plugins/registry/sync", payload: { campaignId: "camp_demo" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/plugins" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install", payload: { permissions: ["chat.write"] } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/storage" },
@@ -6405,6 +6418,7 @@ describe("api", () => {
       { method: "DELETE", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/storage/count" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/chat-command", payload: { command: "/spark" } },
       { method: "GET", url: "/api/v1/systems" },
+      { method: "POST", url: "/api/v1/systems/install", payload: { campaignId: "camp_demo" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/systems" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/install" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/character-templates" },
@@ -6478,6 +6492,63 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/admin/assets/cleanup", payload: { campaignId: "camp_demo", dryRun: true } },
       { method: "POST", url: "/api/v1/admin/assets/asset_auth_matrix/purge-cache", payload: { reason: "missing auth" } }
     ];
+
+    type BehaviorOpenApiSpec = { paths: Record<string, Record<string, unknown>> };
+    const openApi = await app.inject({ method: "GET", url: "/api/v1/openapi.json" });
+    expect(openApi.statusCode).toBe(200);
+    const spec = openApi.json() as BehaviorOpenApiSpec;
+    const restMethods = new Set(["delete", "get", "patch", "post", "put"]);
+    const routeKey = (method: string, path: string): string => `${method.toUpperCase()} ${path}`;
+    const specRouteKeys = Object.entries(spec.paths).flatMap(([path, operations]) =>
+      Object.keys(operations)
+        .filter((method) => restMethods.has(method))
+        .map((method) => routeKey(method, path))
+    );
+    const publicOrNonSessionRouteKeys = new Map<string, string>([
+      ["GET /api/v1/health", "public health check"],
+      ["GET /api/v1/openapi.json", "public API contract"],
+      ["GET /api/v1/auth/bootstrap", "public first-run bootstrap status"],
+      ["POST /api/v1/auth/bootstrap", "public first-run owner creation"],
+      ["POST /api/v1/auth/register", "public account registration"],
+      ["POST /api/v1/auth/login", "public session creation"],
+      ["POST /api/v1/auth/password-reset/request", "public password reset request"],
+      ["POST /api/v1/auth/password-reset/confirm", "public password reset completion"],
+      ["GET /api/v1/auth/oidc/config", "public OIDC client configuration"],
+      ["GET /api/v1/auth/oidc/start", "browser redirect flow"],
+      ["POST /api/v1/auth/oidc/start", "browser redirect flow"],
+      ["GET /api/v1/auth/oidc/callback", "provider callback"],
+      ["POST /api/v1/invites/accept", "public invite acceptance"],
+      ["GET /api/v1/scim/v2/ServiceProviderConfig", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["GET /api/v1/scim/v2/Users", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["POST /api/v1/scim/v2/Users", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["GET /api/v1/scim/v2/Users/{userId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["PUT /api/v1/scim/v2/Users/{userId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["PATCH /api/v1/scim/v2/Users/{userId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["DELETE /api/v1/scim/v2/Users/{userId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["GET /api/v1/scim/v2/Groups", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["POST /api/v1/scim/v2/Groups", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["GET /api/v1/scim/v2/Groups/{groupId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["PUT /api/v1/scim/v2/Groups/{groupId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["PATCH /api/v1/scim/v2/Groups/{groupId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["DELETE /api/v1/scim/v2/Groups/{groupId}", "SCIM bearer provisioning route covered by identity/live-provider gates"]
+    ]);
+    const specPathForConcreteRoute = (url: string, method: string): string | undefined => {
+      const concretePath = url.split("?")[0]!;
+      return Object.entries(spec.paths).find(([path, operations]) => {
+        if (!Object.prototype.hasOwnProperty.call(operations, method.toLowerCase())) return false;
+        const expression = new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\{[^/]+\\\}/g, "[^/]+")}$`);
+        return expression.test(concretePath);
+      })?.[0];
+    };
+    const coveredRouteKeys = new Set(
+      unauthenticatedRoutes.map((route) => {
+        const specPath = specPathForConcreteRoute(route.url, route.method);
+        expect(specPath, `${route.method} ${route.url} must match a served OpenAPI path`).toBeDefined();
+        return routeKey(route.method, specPath!);
+      })
+    );
+    const missingSessionCoverage = specRouteKeys.filter((key) => !publicOrNonSessionRouteKeys.has(key) && !coveredRouteKeys.has(key));
+    expect(missingSessionCoverage).toEqual([]);
 
     for (const route of unauthenticatedRoutes) {
       const response = await app.inject(route);
