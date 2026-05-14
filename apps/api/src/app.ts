@@ -2375,7 +2375,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     invite.acceptedAt = nowIso();
     invite.acceptedByUserId = user.id;
     invite.updatedAt = invite.acceptedAt;
+    if (campaign.organizationId) {
+      const state = store.state as EngineState & { organizationMembers?: OrganizationMember[] };
+      state.organizationMembers ??= [];
+      if (!state.organizationMembers.some((member) => member.organizationId === campaign.organizationId && member.userId === user.id)) {
+        state.organizationMembers.push(createOrganizationMember(campaign.organizationId, user.id, "member"));
+      }
+    }
     const { token: sessionToken, session } = createUserSession(store, user.id);
+    if (campaign.organizationId && canAccessOrganization(store, campaign.organizationId, user.id)) {
+      session.activeOrganizationId = campaign.organizationId;
+    }
     store.save();
     broadcast(
       createEvent({
@@ -15289,6 +15299,8 @@ function testScimAdminConnection(store: StateStore) {
 function requireCampaignPermission(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>, campaignId: string, permission: PermissionName): true | FastifyReply {
   const userId = requireUser(store, reply, headers);
   if (typeof userId !== "string") return userId;
+  const activeOrganization = requireCampaignActiveOrganization(store, reply, headers, userId, campaignId);
+  if (activeOrganization !== true) return activeOrganization;
   if (
     !hasPermission({
       userId,
@@ -15300,6 +15312,14 @@ function requireCampaignPermission(store: StateStore, reply: FastifyReply, heade
   ) {
     return forbidden(reply, `Missing permission: ${permission}`);
   }
+  return true;
+}
+
+function requireCampaignActiveOrganization(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>, userId: string, campaignId: string): true | FastifyReply {
+  const campaign = store.state.campaigns.find((item) => item.id === campaignId);
+  if (!campaign?.organizationId) return true;
+  const workspace = organizationWorkspaceRecordForRequest(store, userId, headers);
+  if (workspace.id !== campaign.organizationId) return forbidden(reply, "Campaign belongs to a different active organization");
   return true;
 }
 

@@ -482,6 +482,13 @@ describe("organization workspace defaults", () => {
         organization: { id: "org_second", name: "Second Tables" },
         session: { activeOrganizationId: "org_second" }
       });
+      const allowedSecondCampaign = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${created.json().id}`,
+        headers: bearerHeaders
+      });
+      expect(allowedSecondCampaign.statusCode).toBe(200);
+      expect(allowedSecondCampaign.json()).toMatchObject({ id: created.json().id, organizationId: "org_second" });
       const secondInvite = await app.inject({
         method: "POST",
         url: "/api/v1/organization/invites",
@@ -531,6 +538,20 @@ describe("organization workspace defaults", () => {
       });
       expect(demoCampaigns.statusCode).toBe(200);
       expect(demoCampaigns.json().map((campaign: { id: string }) => campaign.id)).toEqual(["camp_demo"]);
+      const directSecondCampaign = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${created.json().id}`,
+        headers: bearerHeaders
+      });
+      expect(directSecondCampaign.statusCode).toBe(403);
+      expect(directSecondCampaign.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondScenes = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${created.json().id}/scenes`,
+        headers: bearerHeaders
+      });
+      expect(directSecondScenes.statusCode).toBe(403);
+      expect(directSecondScenes.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
       const deniedDemoRevoke = await app.inject({
         method: "POST",
         url: `/api/v1/invites/${demoInvite.json().invite.id}/revoke`,
@@ -5105,6 +5126,7 @@ describe("api", () => {
     expect(accepted.json().user).toMatchObject({ displayName: "Invited Player", email: "invited.player@example.test" });
     expect(accepted.json().user).not.toHaveProperty("passwordHash");
     expect(accepted.json().invite.status).toBe("accepted");
+    expect(accepted.json().session).toMatchObject({ activeOrganizationId: "org_demo" });
     expect(accepted.json().membership).toMatchObject({
       campaignId: "camp_demo",
       role: "player",
@@ -5112,6 +5134,11 @@ describe("api", () => {
     });
     expect(accepted.json().membership.permissions).toContain("token.move");
     expect(accepted.json().membership.permissions).not.toContain("scene.update");
+    expect(store.state.organizationMembers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ organizationId: "org_demo", userId: accepted.json().user.id, role: "member" })
+      ])
+    );
     expect(store.state.users.find((user) => user.email === "invited.player@example.test")?.passwordHash).toMatch(/^scrypt:/);
 
     const reused = await app.inject({

@@ -4,6 +4,11 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 ## Current Follow-Up
 
+- 2026-05-14 cross-organization route-scope follow-up:
+  - Direct campaign permission checks now enforce the bearer session's active organization before campaign permission grants are evaluated.
+  - Campaign-invite acceptance now attaches the invited user to the campaign organization and selects that organization for the new session.
+  - API coverage verifies a multi-organization member can read the second workspace campaign after switching into that workspace, then receives 403 for direct campaign/scenes reads after switching back to the demo workspace.
+  - Validation passed: `pnpm --filter @open-tabletop/api test -- -t "keeps workspace defaults isolated across multiple owner workspaces|supports campaign invites for new password users"` and `pnpm --filter @open-tabletop/api test`.
 - 2026-05-14 local release-smoke preflight follow-up:
   - Fixed release-smoke blockers found during local `pnpm release:smoke`: API client annotation PATCH conformance coverage, imported archive workspace stamping, plugin-runtime timeout headroom, Windows SQLite cleanup retry, deterministic Playwright server startup, and E2E test isolation around shared seeded tabletop state.
   - Validation passed: `pnpm --filter @open-tabletop/api-client test`, `pnpm --filter @open-tabletop/api test`, `pnpm exec playwright test tests/e2e/auth-tabletop.spec.ts`, `pnpm e2e`, and full `pnpm release:smoke`.
