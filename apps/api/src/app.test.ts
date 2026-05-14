@@ -20285,7 +20285,8 @@ registerCommand("/state", (input) => {
         })
       );
       expect(operations.json().risk).toEqual(expect.objectContaining({ failedEvaluationCount: 1, actionRequired: false }));
-      expect(operations.json().recentEvaluations[0]).toEqual(expect.objectContaining({ name: "Missing tool regression", status: "failed" }));
+      const failedRecentEvaluation = operations.json().recentEvaluations.find((evaluation: { name?: string }) => evaluation.name === "Missing tool regression");
+      expect(failedRecentEvaluation).toEqual(expect.objectContaining({ name: "Missing tool regression", status: "failed" }));
 
       const adminEvaluationExport = await app.inject({
         method: "GET",
