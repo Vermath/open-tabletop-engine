@@ -18,6 +18,85 @@ interface E2EToken {
   conditions?: Array<{ id: string; name: string }>;
 }
 
+interface E2EActor {
+  id: string;
+  name: string;
+  data: Record<string, unknown>;
+}
+
+async function createSystemCharacter(page: Page, input: { templateId: string; name: string; ownerUserId: string; advanceToLevel?: number }): Promise<E2EActor> {
+  return page.evaluate(
+    async ({ apiBaseUrl, input }) => {
+      const bearer = localStorage.getItem("otte:sessionToken");
+      if (!bearer) throw new Error("No browser session token available for actor setup");
+      const created = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+        body: JSON.stringify({ templateId: input.templateId, name: input.name, ownerUserId: input.ownerUserId })
+      });
+      if (!created.ok) throw new Error(await created.text());
+      let actor = (await created.json()).actor as E2EActor;
+      for (let level = 2; level <= (input.advanceToLevel ?? 1); level += 1) {
+        const advanced = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actor.id}/advance`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+          body: JSON.stringify({ optionId: "level-up" })
+        });
+        if (!advanced.ok) throw new Error(await advanced.text());
+        actor = (await advanced.json()).actor as E2EActor;
+      }
+      return actor;
+    },
+    { apiBaseUrl, input }
+  );
+}
+
+async function createRulesTargetActor(page: Page, input: { name: string; hp: { current: number; max: number } }): Promise<E2EActor> {
+  return page.evaluate(
+    async ({ apiBaseUrl, input }) => {
+      const bearer = localStorage.getItem("otte:sessionToken");
+      if (!bearer) throw new Error("No browser session token available for actor setup");
+      const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/actors`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          systemId: "dnd-5e-srd",
+          ownerUserId: "usr_demo_player",
+          type: "character",
+          name: input.name,
+          data: {
+            ruleset: "SRD 5.2.1",
+            hp: input.hp,
+            attributes: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 },
+            conditions: []
+          }
+        })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return response.json() as Promise<E2EActor>;
+    },
+    { apiBaseUrl, input }
+  );
+}
+
+async function getActorById(page: Page, actorId: string): Promise<E2EActor> {
+  return page.evaluate(
+    async ({ apiBaseUrl, actorId }) => {
+      const bearer = localStorage.getItem("otte:sessionToken");
+      if (!bearer) throw new Error("No browser session token available for actor lookup");
+      const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/actors`, {
+        headers: { authorization: `Bearer ${bearer}` }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const actors = (await response.json()) as E2EActor[];
+      const actor = actors.find((item) => item.id === actorId);
+      if (!actor) throw new Error(`Actor ${actorId} not found`);
+      return actor;
+    },
+    { apiBaseUrl, actorId }
+  );
+}
+
 async function createSceneToken(page: Page, input: { name: string; x: number; y: number; ownerUserIds: string[]; actorId?: string }): Promise<E2EToken> {
   return page.evaluate(
     async ({ apiBaseUrl, input }) => {
@@ -1431,6 +1510,51 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(page.getByText("Generic Fantasy activated")).toBeVisible();
   await expect(sdkPanel.locator(".metric-row", { hasText: "Active System" })).toContainText("Generic Fantasy");
   await expect(genericSystemCard).toContainText("active system");
+});
+
+test("GM can apply broader D&D SRD action effects from the browser", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  const suffix = Date.now().toString(36);
+  const target = await createRulesTargetActor(page, { name: `E2E Rules Target ${suffix}`, hp: { current: 20, max: 20 } });
+  const paladin = await createSystemCharacter(page, { templateId: "paladin", name: `E2E Paladin ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
+  const monk = await createSystemCharacter(page, { templateId: "monk", name: `E2E Monk ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
+  await createSceneToken(page, { name: `E2E Paladin Token ${suffix}`, actorId: paladin.id, x: 410, y: 330, ownerUserIds: ["usr_demo_player"] });
+  await createSceneToken(page, { name: `E2E Monk Token ${suffix}`, actorId: monk.id, x: 470, y: 330, ownerUserIds: ["usr_demo_player"] });
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await page.getByRole("button", { name: `Token E2E Paladin Token ${suffix}` }).click();
+  await page.getByRole("button", { name: "Actors", exact: true }).click();
+  await page.getByRole("tab", { name: "Actions" }).click();
+  await expect(page.getByRole("heading", { name: `E2E Paladin ${suffix}` })).toBeVisible();
+  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  const divineSmiteCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Divine Smite" }).first();
+  await expect(divineSmiteCard).toContainText("effect supported");
+  const targetHpBeforeSmite = (target.data.hp as { current: number }).current;
+  await divineSmiteCard.getByRole("button", { name: "Use action" }).click();
+  await expect(page.getByText(new RegExp(`E2E Paladin ${suffix} used action: Level 1 Spell Slot \\d+; damage applied`))).toBeVisible();
+  await expect
+    .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
+    .toBeLessThan(targetHpBeforeSmite);
+
+  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: monk.name });
+  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(page.getByRole("heading", { name: `E2E Monk ${suffix}` })).toBeVisible();
+  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  const stunningStrikeCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Stunning Strike" }).first();
+  await expect(stunningStrikeCard).toContainText("effect supported");
+  await stunningStrikeCard.getByRole("button", { name: "Use action" }).click();
+  await expect(page.getByText(new RegExp(`E2E Monk ${suffix} used action: Focus Point \\d+; condition applied`))).toBeVisible();
+  await expect
+    .poll(async () => ((await getActorById(page, target.id)).data.conditions as Array<{ id: string }> | undefined)?.map((condition) => condition.id) ?? [])
+    .toContain("stunned");
 });
 
 test("SDK marketplace blocks trust-policy failures in the browser", async ({ page }) => {

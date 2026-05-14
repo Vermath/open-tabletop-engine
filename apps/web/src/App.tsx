@@ -5999,6 +5999,7 @@ type ActorActionOption = { rollId: string; label: string; description: string };
 
 function actorActionSupportsEffect(action: ActorActionOption | undefined): boolean {
   if (!action) return false;
+  if (action.rollId === "feature-stunning-strike") return true;
   const effectText = `${action.rollId} ${action.label} ${action.description}`.toLowerCase();
   return action.rollId.endsWith("-healing") || action.rollId.endsWith("-damage") || /\b(healing|damage|condition|effect)\b/.test(effectText);
 }
