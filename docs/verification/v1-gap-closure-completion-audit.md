@@ -25,8 +25,8 @@ Close the release gaps tracked in `docs/prd-v1-gap-closure.md` so v1 can be decl
 | Mobile/tablet live-play smoke | Mobile Playwright smoke covers viewport fit, touch token creation/drag, footer dice, and chat | Covered locally |
 | Local public documentation renderer | `pnpm docs:site:check` | Covered locally |
 | Local release-smoke gate | `pnpm release:smoke` on 2026-05-14, covering `pnpm check`, E2E, security, migration, deployment, and performance smoke checks | Covered locally |
-| Release smoke CI workflow exists | `.github/workflows/release-smoke.yml`, root `pnpm release:smoke` wiring, and `docs/verification/release-workflow-evidence.md` evidence template | Workflow present; live green CI run still required |
-| Docs-site publication workflow exists | `.github/workflows/docs-site.yml`, `pnpm docs:site:check`, and `docs/verification/release-workflow-evidence.md` evidence template | Workflow/local check present; live GitHub Pages run still required |
+| Release smoke CI workflow exists | `.github/workflows/release-smoke.yml`, root `pnpm release:smoke` wiring, and hosted PR run `25871420038` recorded in `docs/verification/release-workflow-evidence.md` | Covered on PR |
+| Docs-site publication workflow exists | `.github/workflows/docs-site.yml`, `pnpm docs:site:check`, and hosted PR build run `25871420031` recorded in `docs/verification/release-workflow-evidence.md` | Workflow/local/PR build present; live GitHub Pages deploy still required |
 | OIDC/SCIM provider readiness | `pnpm identity:smoke` harness and `docs/verification/identity-provider-smoke-evidence.md` evidence template exist | Incomplete until run against real provider sandbox credentials with pass output |
 | Assistive technology acceptance | `docs/verification/accessibility-assistive-tech-pass.md` plan exists | Incomplete until NVDA/Narrator/VoiceOver/TalkBack pass evidence is attached |
 
@@ -34,9 +34,8 @@ Close the release gaps tracked in `docs/prd-v1-gap-closure.md` so v1 can be decl
 
 - Live provider-specific OIDC/SCIM sandbox pass using real release-owner credentials, recorded with `docs/verification/identity-provider-smoke-evidence.md`.
 - Completed assistive-technology pass evidence for the required screen-reader/device matrix.
-- Live green release-smoke CI run for `.github/workflows/release-smoke.yml`, recorded with `docs/verification/release-workflow-evidence.md`.
 - Live successful GitHub Pages docs-site publication run, recorded with `docs/verification/release-workflow-evidence.md`.
 
 ## Conclusion
 
-The local implementation, browser evidence, and local release-smoke preflight have expanded substantially, but the objective is not complete. The remaining blockers require external credentials, manual assistive-technology execution, or live hosted CI/publication runs.
+The local implementation, browser evidence, local release-smoke preflight, and PR-hosted release-smoke CI evidence have expanded substantially, but the objective is not complete. The remaining blockers require external credentials, manual assistive-technology execution, or live documentation publication.
