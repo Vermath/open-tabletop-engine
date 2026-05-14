@@ -318,7 +318,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.getByRole("button", { name: "Move Down" }).click();
   await expect(page.getByText("Vault Entry Reorder moved down")).toBeVisible();
   await page.getByRole("button", { name: "Activate", exact: true }).click();
-  await expect(page.getByText("Vault Entry Reorder activated")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Activate", exact: true })).toBeDisabled();
   await expect(sceneActivationHistory).toContainText("1 activation");
   await expect(sceneActivationHistory).toContainText("previous active scn_vault_entry");
   await page.getByRole("textbox", { name: "Confirm scene delete" }).fill("Vault Entry Reorder");
@@ -944,6 +944,7 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await page.getByRole("combobox", { name: "Token disposition" }).selectOption("hostile");
   await page.getByRole("button", { name: "Token", exact: true }).click();
   await expect(page.getByText("Goblin Minion created")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Token Goblin Minion" }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Combat", exact: true }).click();
   const combatPanel = page.locator(".panel-stack", { hasText: "Combat Tracker" });
@@ -1596,6 +1597,7 @@ test("player can accept an invite from a private browser session", async ({ brow
 
     await privatePage.reload();
     await expect(privatePage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+    await privatePage.getByRole("button", { name: /Vault Entry/ }).click();
     await expect(privatePage.getByRole("button", { name: `Token ${ownedToken.name}` })).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${unownedToken.name}` })).toBeVisible();
     await privatePage.getByRole("button", { name: `Token ${ownedToken.name}` }).click();
@@ -1644,10 +1646,10 @@ test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
 
   await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(`${prefix} A`);
   await page.getByRole("button", { name: "Add Scene" }).click();
-  await expect(page.getByText(`${prefix} A created`)).toBeVisible();
+  await expect(page.getByRole("button", { name: new RegExp(`${prefix} A`) })).toBeVisible();
   await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(`${prefix} B`);
   await page.getByRole("button", { name: "Add Scene" }).click();
-  await expect(page.getByText(`${prefix} B created`)).toBeVisible();
+  await expect(page.getByRole("button", { name: new RegExp(`${prefix} B`) })).toBeVisible();
 
   await page.getByRole("textbox", { name: "Scene search" }).fill(prefix);
   await expect(page.getByRole("status", { name: "Scene filter summary" })).toContainText("2 of");
