@@ -63,6 +63,7 @@ runHandoffGateMetadataMatchesVerifier();
 runCompletionAuditReportsFailedEvidenceAndContinues();
 runCompletionAuditPassesWhenAllGatesPass();
 runCompletionAuditHonorsReleaseTargetCommit();
+runCompletionAuditRejectsShortReleaseTargetCommit();
 
 console.log("v1 release evidence verifier tests passed.");
 
@@ -1009,6 +1010,20 @@ function runCompletionAuditHonorsReleaseTargetCommit() {
     assert(result.status === 0, "completion audit should pass when evidence matches the supplied release target");
     assert(result.stdout.includes(`Checking v1 release evidence for commit ${hostedCommit} (OTTE_RELEASE_COMMIT).`), "completion audit should pass the release target to the evidence verifier");
     assert(result.stdout.includes("v1 completion audit passed."), "completion audit should report success for supplied release target");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runCompletionAuditRejectsShortReleaseTargetCommit() {
+  const root = fixtureRoot(completeEvidence(commit));
+
+  try {
+    const result = runCompletionAudit(root, { releaseCommit: commit.slice(0, 12) });
+    assert(result.status === 1, "completion audit should fail when release target commit is abbreviated");
+    assert(result.stderr.includes("OTTE_RELEASE_COMMIT must be a full 40-character commit SHA"), "completion audit should surface full-SHA requirement from evidence verifier");
+    assert(result.stdout.includes("PASS: Open P0/P1 issue audit"), "completion audit should still continue through issue gate after verifier target failure");
+    assert(result.stdout.includes("PASS: Public docs site guard"), "completion audit should still continue through docs gate after verifier target failure");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
