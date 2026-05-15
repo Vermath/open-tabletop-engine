@@ -85,4 +85,4 @@ Stop the pass and file a blocking issue if:
 
 The Playwright accessibility smoke is a regression gate, not a substitute for this manual pass. v1.0 final acceptance needs completed evidence for the required environments or an explicit owner-approved accessibility descoping note in `docs/prd-v1-gap-closure.md`.
 
-If the owner explicitly descopes or substitutes part of the assistive-technology matrix, record a release-evidence line using the exact form `- Owner-approved descope: <approval summary>`. The `pnpm v1:evidence:check` gate only treats that explicit field as an override.
+If the owner explicitly descopes or substitutes part of the assistive-technology matrix, record a release-evidence line using the exact form `- Owner-approved descope: <approval summary>`. The `pnpm v1:evidence:check` gate only treats that explicit field as an override, and it rejects blank, placeholder, pending, or negative values such as `none`, `n/a`, `tbd`, or `<approval summary>`.

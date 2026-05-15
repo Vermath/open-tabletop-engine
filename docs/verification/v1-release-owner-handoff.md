@@ -60,6 +60,7 @@ Use `docs/verification/accessibility-assistive-tech-pass.md` as the scenario scr
 - Android with TalkBack.
 
 If a device or assistive technology is unavailable, record the omission and owner-approved substitute before final acceptance.
+Placeholder override values such as `none`, `n/a`, `tbd`, `pending`, or `<approval summary>` do not satisfy `pnpm v1:evidence:check`.
 
 ## Docs Publication
 

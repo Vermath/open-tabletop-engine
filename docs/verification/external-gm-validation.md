@@ -73,4 +73,4 @@ If the pass fails:
 - Record the exact blocking workflow.
 - File or link the remediation issue.
 - Re-run after the fix or record explicit owner acceptance.
-- Do not mark external GM validation complete until pass evidence or owner-approved substitution is attached. If the owner approves a substitute for the external GM pass, record a release-evidence line using the exact form `- Owner-approved substitution: <approval summary>` so `pnpm v1:evidence:check` can verify the override.
+- Do not mark external GM validation complete until pass evidence or owner-approved substitution is attached. If the owner approves a substitute for the external GM pass, record a release-evidence line using the exact form `- Owner-approved substitution: <approval summary>` so `pnpm v1:evidence:check` can verify the override. The verifier rejects blank, placeholder, pending, or negative values such as `none`, `n/a`, `tbd`, or `<approval summary>`.
