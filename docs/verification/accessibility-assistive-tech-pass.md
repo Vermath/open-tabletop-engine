@@ -45,6 +45,7 @@ A pass is acceptable only when:
 - Dynamic status updates are discoverable without relying on color, hover-only text, or visual placement.
 - Canvas-adjacent controls expose enough nonvisual context to select tokens, inspect state, and perform common actions even if precise drag placement remains visual.
 - No critical workflow has duplicate, misleading, or silent controls.
+- The evidence block's `App build or commit` matches the checked release commit, using either the full 40-character SHA or an unambiguous Git prefix of at least 7 characters.
 
 ## Evidence Template
 
@@ -66,6 +67,7 @@ Copy one block per environment into the release evidence log:
 - Issues filed:
 - Workflows completed:
 - Blockers:
+- Owner-approved descope:
 - Notes:
 ```
 
@@ -82,3 +84,5 @@ Stop the pass and file a blocking issue if:
 ## Release Rule
 
 The Playwright accessibility smoke is a regression gate, not a substitute for this manual pass. v1.0 final acceptance needs completed evidence for the required environments or an explicit owner-approved accessibility descoping note in `docs/prd-v1-gap-closure.md`.
+
+If the owner explicitly descopes or substitutes part of the assistive-technology matrix, record a release-evidence line using the exact form `- Owner-approved descope: <approval summary>`. The `pnpm v1:evidence:check` gate only treats that explicit field as an override.

@@ -61,6 +61,7 @@ The pass is acceptable only when:
 
 - `pnpm identity:smoke` exits `0`.
 - The run is not skipped.
+- The evidence block's `App build or commit` matches the checked release commit, using either the full 40-character SHA or an unambiguous Git prefix of at least 7 characters.
 - The redacted admin OIDC/SCIM test-connection route reports OIDC readiness against live provider discovery.
 - The SCIM service-provider config endpoint succeeds with bearer authentication.
 - Output and attached notes contain no bearer tokens, client secrets, auth codes, refresh tokens, identity claims for real users, or full tenant-specific diagnostic payloads.

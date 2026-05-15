@@ -9,6 +9,7 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 - Run `pnpm release:smoke`.
 - Run `pnpm docs:site:check`.
 - Run `pnpm identity:smoke` only when real OIDC/SCIM sandbox variables are configured; skipped output does not satisfy provider readiness.
+- Run `pnpm v1:evidence:check`; it must pass before v1.0 is declared ready. If evidence is committed after the hosted run, set `OTTE_RELEASE_COMMIT` to the hosted workflow commit SHA when running the verifier.
 - Confirm `docs/verification/v1-gap-closure-completion-audit.md` has no unowned local/code gaps.
 - Confirm open GitHub issues have no P0/P1 labels, or record explicit owner approval for any accepted risk.
 
@@ -39,4 +40,4 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 
 ## Final Decision
 
-Only declare v1.0 ready when every required evidence document has a pass result or an explicit owner-approved substitution/descope, and `docs/verification/v1-gap-closure-completion-audit.md` no longer lists incomplete blockers.
+Only declare v1.0 ready when every required evidence document has a pass result or an explicit owner-approved substitution/descope, `pnpm v1:evidence:check` passes, and `docs/verification/v1-gap-closure-completion-audit.md` no longer lists incomplete blockers.

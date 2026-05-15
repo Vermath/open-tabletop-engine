@@ -76,8 +76,11 @@ After the external gates above are satisfied, rerun the completion audit:
 
 ```powershell
 pnpm docs:site:check
+pnpm v1:evidence:check
 pnpm identity:smoke
 git diff --check
 ```
+
+If the evidence documents were updated after the hosted workflow run, run the evidence verifier with `OTTE_RELEASE_COMMIT` set to the hosted release-smoke commit SHA.
 
 Then update `docs/verification/v1-gap-closure-completion-audit.md` with the evidence links before declaring the v1 gap-closure objective complete.

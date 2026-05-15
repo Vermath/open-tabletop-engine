@@ -90,6 +90,14 @@ Collect evidence for both workflows before final v1 acceptance:
 
 If the release owner intentionally accepts a different hosted CI provider, record the provider, run URL, and the exact command parity with the GitHub Actions workflow.
 
+When the evidence documents are updated in a follow-up commit after the hosted workflow runs, check the workflow commit explicitly:
+
+```bash
+OTTE_RELEASE_COMMIT=<hosted-run-commit-sha> pnpm v1:evidence:check
+```
+
+Without `OTTE_RELEASE_COMMIT`, the verifier checks the current local `HEAD`.
+
 ## Evidence Template
 
 Copy one block per workflow into the release evidence log:
@@ -130,6 +138,8 @@ The docs-site publication pass is acceptable only when:
 - The Pages deployment completes successfully for the release docs commit.
 - The published URL is reachable by the release owner.
 - The published documentation does not expose secrets, local filesystem paths, provider tokens, or non-public evidence attachments.
+- The evidence block records the checked release commit SHA, using either the full 40-character SHA or an unambiguous Git prefix of at least 7 characters.
+- Owner-approved equivalent publication evidence is recorded inside a non-template hosted workflow evidence block with a published URL, commit SHA, result, and command parity.
 
 ## Failure Handling
 

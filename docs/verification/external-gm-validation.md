@@ -38,6 +38,7 @@ The pass is acceptable only when:
 - The tester can complete a representative GM prep/play loop.
 - Any critical setup, data-loss, auth, permission, import/export, or recovery blocker is filed or explicitly accepted by the owner.
 - The result is recorded as pass, pass with issues, or fail.
+- The evidence block's `App build or commit` matches the checked release commit, using either the full 40-character SHA or an unambiguous Git prefix of at least 7 characters.
 - Evidence does not expose secrets, private player identities, provider tokens, or proprietary game content.
 
 ## Evidence Template
@@ -60,6 +61,7 @@ Copy one block into the release evidence log:
 - Issues filed:
 - Blockers:
 - Owner acceptance notes:
+- Owner-approved substitution:
 - Redacted screenshots/logs attached:
 - Notes:
 ```
@@ -71,4 +73,4 @@ If the pass fails:
 - Record the exact blocking workflow.
 - File or link the remediation issue.
 - Re-run after the fix or record explicit owner acceptance.
-- Do not mark external GM validation complete until pass evidence or owner-approved substitution is attached.
+- Do not mark external GM validation complete until pass evidence or owner-approved substitution is attached. If the owner approves a substitute for the external GM pass, record a release-evidence line using the exact form `- Owner-approved substitution: <approval summary>` so `pnpm v1:evidence:check` can verify the override.

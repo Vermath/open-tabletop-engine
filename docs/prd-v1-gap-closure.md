@@ -448,6 +448,7 @@ Acceptance criteria:
 - AI security coverage maps to `apps/api/src/app.test.ts`, including provider proposal tools with permission boundaries, role-filtered tool advertisement invariants, underlying campaign-permission checks for AI edit proposals, malformed tool input rejection without state mutation, proposal approve/apply/reject gates, forged `approvalRequired: false` protection, redacted rejection audits, and AI memory permission boundaries.
 - The two-browser GM/player realtime release gate maps to `tests/e2e/auth-tabletop.spec.ts`, root `pnpm e2e`, root `pnpm release:smoke`, and `.github/workflows/release-smoke.yml`; final acceptance still requires the hosted release-smoke rerun on the final release commit because current local commits postdate the latest hosted pass.
 - The automated accessibility/mobile release gate maps to `tests/e2e/accessibility.spec.ts` and `tests/e2e/mobile.spec.ts`; the focused 2026-05-15 run passed 7 tests for accessible names, landmarks, duplicate ids, contrast, reduced motion, focus-visible styling, keyboard journeys, dialog semantics, phone/tablet viewport fit, touch token creation/drag, dice/chat, and player reload. Manual assistive-technology pass evidence remains a separate final-acceptance blocker.
+- `pnpm v1:evidence:check` now provides an executable final-evidence verifier for live OIDC/SCIM provider evidence, manual assistive-technology evidence, external GM validation, hosted release-smoke evidence for the checked release commit, and public docs publication evidence. It is expected to fail until those external/manual gates are recorded.
 - `docs/verification/v1-gap-closure-completion-audit.md` tracks the prompt-to-artifact completion checklist and currently marks the v1 gap-closure objective incomplete until the remaining external/manual evidence is attached. Hosted release-smoke and docs-publication pass output should use `docs/verification/release-workflow-evidence.md`.
 
 ## Milestones
@@ -498,6 +499,7 @@ v1.0 must not ship until all of the following are true:
 - Security checklist passes for auth, uploads, signed URLs, plugins, AI, and admin routes.
 - API/OpenAPI/client contract tests pass.
 - Admin can observe and recover failed jobs, failed AI work, failed email delivery, asset integrity issues, and plugin/system registry problems.
+- `pnpm v1:evidence:check` passes against the final release commit or an explicitly supplied `OTTE_RELEASE_COMMIT`, proving required external/manual evidence has been recorded.
 
 ## Non-Goals
 
