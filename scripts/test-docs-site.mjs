@@ -109,6 +109,9 @@ function writeRequiredDocs(root) {
     join(root, "docs", "verification", "v1-release-owner-handoff.md"),
     "# v1 Release Owner Handoff\n\nRemaining final evidence gates: OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication.\n"
   );
+  writeFileSync(join(root, "docs", "verification", "accessibility-assistive-tech-pass.md"), "# Assistive Technology Pass Plan\n");
+  writeFileSync(join(root, "docs", "verification", "external-gm-validation.md"), "# External GM Validation Evidence\n");
+  writeFileSync(join(root, "docs", "verification", "identity-provider-smoke-evidence.md"), "# Identity Provider Smoke Evidence\n");
   writeFileSync(join(root, "docs", "verification", "release-workflow-evidence.md"), "# Release Workflow Evidence\n");
 }
 
