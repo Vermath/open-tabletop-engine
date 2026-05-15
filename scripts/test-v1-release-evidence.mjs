@@ -12,6 +12,7 @@ runFailsWhenEvidenceIsMissing();
 runPassesWhenEvidenceIsComplete();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
+runFailsWithPlaceholderOwnerOverrides();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
@@ -86,6 +87,28 @@ function runPassesWithOwnerApprovedManualOverrides() {
   try {
     const result = runChecker(root);
     assert(result.status === 0, "owner-approved manual overrides should satisfy manual gates");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithPlaceholderOwnerOverrides() {
+  const files = completeEvidence(commit);
+  files.assistive = `# Assistive Technology Pass Plan
+
+- Owner-approved descope: none
+`;
+  files.externalGm = `# External GM Validation Evidence
+
+- Owner-approved substitution: <approval summary>
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "placeholder owner overrides should not satisfy manual gates");
+    assert(result.stdout.includes("Missing pass evidence for: NVDA, Narrator, VoiceOver, iOS, TalkBack"), "placeholder AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Add a non-template external GM validation block"), "placeholder GM override should leave external validation incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -191,7 +191,14 @@ function normalizeSha(value) {
 }
 
 function explicitOwnerOverride(markdown) {
-  return /^-\s*Owner-approved (substitution|descope|substitute):\s*(approved|yes|accepted|.+)$/im.test(stripCodeFences(markdown));
+  const matches = stripCodeFences(markdown).matchAll(/^-\s*Owner-approved (?:substitution|descope|substitute):\s*(.+)$/gim);
+  for (const match of matches) {
+    const value = match[1].trim().toLowerCase();
+    if (value && !["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>"].includes(value)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function git(args) {
