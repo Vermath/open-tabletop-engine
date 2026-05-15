@@ -14,6 +14,7 @@ runPassesWhenEvidenceIsComplete();
 runPassesWhenIdentityEvidenceMentionsNoSkippedChecks();
 runFailsWhenIdentityEvidenceOmitsReadinessResults();
 runFailsWhenIdentityEvidenceUsesWrongCommand();
+runFailsWhenIdentityReadinessUsesTemplateChoices();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
 runFailsWithTemplateOwnerOverrides();
@@ -104,6 +105,22 @@ function runFailsWhenIdentityEvidenceUsesWrongCommand() {
     const result = runChecker(root);
     assert(result.status === 1, "identity evidence without exact command parity should fail");
     assert(result.stdout.includes("Record Exit code: 0 from a non-skipped `pnpm identity:smoke` run against a real provider sandbox."), "identity failure should name required smoke command");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenIdentityReadinessUsesTemplateChoices() {
+  const files = completeEvidence(commit);
+  files.identity = files.identity
+    .replace("- OIDC discovery/test result: pass\n", "- OIDC discovery/test result: pass / fail / skipped\n")
+    .replace("- SCIM ServiceProviderConfig result: pass\n", "- SCIM ServiceProviderConfig result: pass / fail / skipped\n");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "identity readiness template-choice values should fail");
+    assert(result.stdout.includes("Record passing OIDC discovery/test and SCIM ServiceProviderConfig results."), "identity readiness template-choice failure should name required readiness results");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

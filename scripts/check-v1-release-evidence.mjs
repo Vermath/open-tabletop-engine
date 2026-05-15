@@ -222,7 +222,8 @@ function validHttpUrl(value) {
 }
 
 function passField(value) {
-  return /^pass(?:\b|:|-|$)/i.test(value.trim());
+  const normalized = value.trim();
+  return !templateChoice(normalized.toLowerCase()) && /^pass(?:\b|:|-|$)/i.test(normalized);
 }
 
 function meaningfulField(value) {
