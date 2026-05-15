@@ -215,10 +215,14 @@ function commandEquals(value, expected) {
 function validHttpUrl(value) {
   try {
     const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname);
+    return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname) && !placeholderHost(url.hostname);
   } catch {
     return false;
   }
+}
+
+function placeholderHost(hostname) {
+  return /(^|\.)example(?:\.com|\.org|\.net|\.test)$/i.test(hostname);
 }
 
 function passField(value) {

@@ -30,6 +30,7 @@ runFailsWithWrongReleaseSmokeCommand();
 runFailsWithNegativeDocsPublicationResult();
 runFailsWithWrongDocsPublicationCommand();
 runFailsWithPlaceholderHostedUrls();
+runFailsWithExampleHostedUrls();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
 runHandoffReportsIncompleteVerifierStatus();
@@ -305,7 +306,7 @@ function runFailsWithProseOnlyDocsPublicationOverride() {
   files.releaseWorkflow = `# Release Workflow Evidence
 
 This release has an owner-approved equivalent hosted publication.
-Published URL, if docs-site deploy: https://docs.example.test/open-tabletop
+Published URL, if docs-site deploy: https://vermath.github.io/open-tabletop-engine
 
 ## Hosted Workflow Evidence: Release Smoke
 
@@ -326,7 +327,7 @@ Published URL, if docs-site deploy: https://docs.example.test/open-tabletop
 
 function runFailsWithHostedEvidenceMissingRunUrl() {
   const files = completeEvidence(commit);
-  files.releaseWorkflow = files.releaseWorkflow.replace("- Run URL: https://github.example.test/run/1\n", "").replace("- Run URL: https://github.example.test/run/2\n", "");
+  files.releaseWorkflow = files.releaseWorkflow.replace("- Run URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/1\n", "").replace("- Run URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/2\n", "");
   const root = fixtureRoot(files);
 
   try {
@@ -383,7 +384,7 @@ function runFailsWithWrongDocsPublicationCommand() {
 
 function runFailsWithPlaceholderHostedUrls() {
   const files = completeEvidence(commit);
-  files.releaseWorkflow = files.releaseWorkflow.replace("https://github.example.test/run/1", "https://").replace("https://github.example.test/run/2", "https://").replace("https://docs.example.test/open-tabletop", "https://");
+  files.releaseWorkflow = files.releaseWorkflow.replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/1", "https://").replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/2", "https://").replace("https://vermath.github.io/open-tabletop-engine", "https://");
   const root = fixtureRoot(files);
 
   try {
@@ -391,6 +392,24 @@ function runFailsWithPlaceholderHostedUrls() {
     assert(result.status === 1, "placeholder hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "placeholder release-smoke run URL should fail the hosted smoke gate");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "placeholder docs URLs should fail the docs publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithExampleHostedUrls() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/1", "https://github.example.test/run/1")
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/2", "https://github.example.test/run/2")
+    .replace("https://vermath.github.io/open-tabletop-engine", "https://docs.example.test/open-tabletop");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "example hosted URLs should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "example release-smoke run URL should fail the hosted smoke gate");
+    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "example docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -551,7 +570,7 @@ function completeEvidence(evidenceCommit) {
 - Commit SHA: ${evidenceCommit}
 - Result: pass
 - Release command or build command: pnpm release:smoke
-- Run URL: https://github.example.test/run/1
+- Run URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/1
 - Blockers: none
 
 ## Hosted Workflow Evidence: Docs Site Deploy
@@ -559,8 +578,8 @@ function completeEvidence(evidenceCommit) {
 - Commit SHA: ${evidenceCommit}
 - Result: pass
 - Release command or build command: pnpm docs:site:check
-- Published URL, if docs-site deploy: https://docs.example.test/open-tabletop
-- Run URL: https://github.example.test/run/2
+- Published URL, if docs-site deploy: https://vermath.github.io/open-tabletop-engine
+- Run URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/2
 - Blockers: none
 `
   };
