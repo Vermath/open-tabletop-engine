@@ -29,7 +29,7 @@ section(`Identity Provider Smoke: <provider and sandbox>`, [
   ["Notes", ""]
 ]);
 
-for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS VoiceOver", "Android TalkBack"]) {
+for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS/iPadOS VoiceOver", "Android TalkBack"]) {
   section(`Assistive Technology Pass: ${environment}`, [
     ["Date", today],
     ["Tester", ""],

@@ -240,7 +240,7 @@ function runFailsWithTemplateOwnerOverrides() {
   try {
     const result = runChecker(root);
     assert(result.status === 1, "template owner overrides should not satisfy manual gates");
-    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "fenced AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "fenced AT override should leave the manual matrix incomplete");
     assert(result.stdout.includes("Add a non-template external GM validation block"), "fenced GM override should leave external validation incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -262,7 +262,7 @@ function runFailsWithPlaceholderOwnerOverrides() {
   try {
     const result = runChecker(root);
     assert(result.status === 1, "placeholder owner overrides should not satisfy manual gates");
-    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "placeholder AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "placeholder AT override should leave the manual matrix incomplete");
     assert(result.stdout.includes("Add a non-template external GM validation block"), "placeholder GM override should leave external validation incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -284,7 +284,7 @@ function runFailsWithTemplateChoiceOwnerOverrides() {
   try {
     const result = runChecker(root);
     assert(result.status === 1, "template-choice owner overrides should not satisfy manual gates");
-    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "template-choice AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "template-choice AT override should leave the manual matrix incomplete");
     assert(result.stdout.includes("Add a non-template external GM validation block"), "template-choice GM override should leave external validation incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -306,7 +306,7 @@ function runFailsWithCompactTemplateChoiceOwnerOverrides() {
   try {
     const result = runChecker(root);
     assert(result.status === 1, "compact template-choice owner overrides should not satisfy manual gates");
-    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "compact template-choice AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "compact template-choice AT override should leave the manual matrix incomplete");
     assert(result.stdout.includes("Add a non-template external GM validation block"), "compact template-choice GM override should leave external validation incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -337,7 +337,7 @@ function runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence() {
 - Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
 - Result: pass
 
-## Assistive Technology Pass: iOS VoiceOver
+## Assistive Technology Pass: iOS/iPadOS VoiceOver
 
 - App build or commit: ${commit}
 - Assistive technology: VoiceOver
@@ -375,7 +375,7 @@ function runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments() {
 ## Assistive Technology Pass: Combined matrix
 
 - App build or commit: ${commit}
-- Assistive technology: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack
+- Assistive technology: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack
 - Browser: Chrome on Windows, Edge on Windows, Safari on macOS, Safari on iOS, Chrome on Android
 - Result: pass
 - Notes: Combined summary, not one evidence block per required environment.
@@ -385,7 +385,7 @@ function runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments() {
   try {
     const result = runChecker(root);
     assert(result.status === 1, "one assistive section should not satisfy multiple required environments");
-    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "combined assistive section should leave the full matrix incomplete");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "combined assistive section should leave the full matrix incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -782,7 +782,7 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   assert(result.stdout.includes("- Release command or build command: pnpm docs:site:check"), "docs publication template should preserve command parity");
   assert(result.stdout.includes("- Run URL: https://"), "hosted evidence templates should prompt for HTTPS run URLs");
   assert(result.stdout.includes("- Published URL, if docs-site deploy: https://"), "docs publication template should prompt for an HTTPS published URL");
-  for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS VoiceOver", "Android TalkBack"]) {
+  for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS/iPadOS VoiceOver", "Android TalkBack"]) {
     assert(result.stdout.includes(`## Assistive Technology Pass: ${environment}`), `templates should include ${environment}`);
   }
   assert(result.stdout.includes("Do not mark Result as pass until the matching evidence has actually been collected."), "templates should warn against treating placeholders as pass evidence");
@@ -884,11 +884,11 @@ function completeEvidence(evidenceCommit) {
 - Result: pass
 - Blockers: none
 
-## Assistive Technology Pass: iOS VoiceOver
+## Assistive Technology Pass: iOS/iPadOS VoiceOver
 
 - App build or commit: ${evidenceCommit}
 - Browser: Safari
-- Assistive technology: iOS VoiceOver
+- Assistive technology: iOS/iPadOS VoiceOver
 - Input method: touch
 - Scenario data: sample campaign
 - Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
