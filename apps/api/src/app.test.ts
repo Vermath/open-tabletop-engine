@@ -7017,18 +7017,35 @@ describe("api", () => {
     const store = new MemoryStateStore();
     const gm = store.state.users.find((user) => user.id === "usr_demo_gm");
     if (gm) gm.serverAdmin = true;
+    store.state.chat.push(
+      createTimestamped("msg", {
+        id: "msg_malformed_body",
+        campaignId: "camp_demo",
+        sceneId: "scn_vault_entry",
+        userId: "usr_demo_gm",
+        type: "plain" as const,
+        body: "Malformed body compatibility fixture",
+        visibility: "public" as const,
+        recipientUserIds: []
+      }) satisfies ChatMessage
+    );
     const app = await buildApp({ store });
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const targetToken = store.state.tokens.find((item) => item.id === "tok_valen")!;
     const snapshot = () => ({
       campaigns: store.state.campaigns.length,
       scenes: store.state.scenes.length,
       annotations: scene.annotations.length,
+      assets: store.state.assets.length,
+      tokenTargets: targetToken.targetedByUserIds ?? [],
       diceMacros: store.state.diceMacros.length,
       contentImports: store.state.contentImports.length,
       actors: store.state.actors.length,
       items: store.state.items.length,
       rolls: store.state.rolls.length,
-      chat: store.state.chat.length
+      chat: store.state.chat.length,
+      aiEvaluations: store.state.aiEvaluations.length,
+      jobs: store.state.jobs.length
     });
     const before = snapshot();
     const malformedRoutes: Array<{
@@ -7060,6 +7077,34 @@ describe("api", () => {
         expected: { error: "bad_request", message: "template annotation requires at least 2 valid points" }
       },
       {
+        label: "asset size",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/assets",
+        payload: { name: "Invalid Asset", sizeBytes: -1 },
+        expected: { error: "bad_request", message: "Asset sizeBytes must be a non-negative finite number" }
+      },
+      {
+        label: "token target flag",
+        method: "POST",
+        url: "/api/v1/tokens/tok_valen/target",
+        payload: { targeted: "yes" },
+        expected: { error: "bad_request", message: "targeted must be a boolean" }
+      },
+      {
+        label: "chat whisper recipients",
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        payload: { campaignId: "camp_demo", body: "Invalid whisper", type: "whisper" },
+        expected: { error: "bad_request", message: "Whisper messages require at least one recipient" }
+      },
+      {
+        label: "chat moderation status",
+        method: "PATCH",
+        url: "/api/v1/chat/messages/msg_malformed_body/moderation",
+        payload: { moderationStatus: "hidden" },
+        expected: { error: "bad_request", message: "moderationStatus must be open, follow_up, or reviewed" }
+      },
+      {
         label: "dice macro formula",
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/dice-macros",
@@ -7079,6 +7124,27 @@ describe("api", () => {
         url: "/api/v1/plugins/install",
         payload: { campaignId: "camp_demo" },
         expected: { error: "bad_request", message: "Plugin packagePath is required" }
+      },
+      {
+        label: "ai evaluation thread id",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/evaluations",
+        payload: { threadId: "" },
+        expected: { error: "bad_request", message: "threadId is required" }
+      },
+      {
+        label: "admin job type",
+        method: "POST",
+        url: "/api/v1/admin/jobs",
+        payload: { type: "unknown" },
+        expected: { error: "bad_request", message: "Job type is required and must be supported" }
+      },
+      {
+        label: "admin job retry attempts",
+        method: "POST",
+        url: "/api/v1/admin/jobs",
+        payload: { type: "asset.storage.cleanup", maxAttempts: 0 },
+        expected: { error: "bad_request", message: "maxAttempts must be an integer from 1 to 10" }
       }
     ];
 
