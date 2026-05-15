@@ -62,7 +62,7 @@ for (const environment of requiredAssistiveTechnologyEnvironments) {
 section(gate("assistive-technology"), "Assistive Technology Owner-Approved Descope: <scope label>", [
   ["Date", today],
   ["App build or commit", commit],
-  ["Owner-approved descope", "Release owner accepted/approved ..."],
+  ["Owner-approved descope", "Release owner accepted the documented matrix change for this release candidate."],
   ["Required environments replaced or removed", ""],
   ["Reason", ""],
   ["Notes", ""]
@@ -89,7 +89,7 @@ section(gate("external-gm"), "External GM Validation: <tester/session label>", [
 section(gate("external-gm"), "External GM Owner-Approved Substitution: <substitution label>", [
   ["Date", today],
   ["App build or commit", commit],
-  ["Owner-approved substitution", "Release owner accepted/approved ..."],
+  ["Owner-approved substitution", "Release owner accepted the documented substitute validation path for this release candidate."],
   ["Substitution used", ""],
   ["Reason", ""],
   ["Notes", ""]

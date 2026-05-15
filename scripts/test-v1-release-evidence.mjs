@@ -876,8 +876,8 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   assert(result.stdout.includes("- Published URL, if docs-site deploy: https://"), "docs publication template should prompt for an HTTPS published URL");
   assert(result.stdout.includes("## Assistive Technology Owner-Approved Descope: <scope label>"), "templates should include a separate AT owner-descope example");
   assert(result.stdout.includes("## External GM Owner-Approved Substitution: <substitution label>"), "templates should include a separate GM substitution example");
-  assert(result.stdout.includes("- Owner-approved descope: Release owner accepted/approved ..."), "AT override example should show required owner approval phrasing");
-  assert(result.stdout.includes("- Owner-approved substitution: Release owner accepted/approved ..."), "GM override example should show required owner approval phrasing");
+  assert(result.stdout.includes("- Owner-approved descope: Release owner accepted the documented matrix change for this release candidate."), "AT override example should show required owner approval phrasing");
+  assert(result.stdout.includes("- Owner-approved substitution: Release owner accepted the documented substitute validation path for this release candidate."), "GM override example should show required owner approval phrasing");
   assert(!result.stdout.includes("- Owner-approved descope: <explicit owner approval summary>"), "templates should not emit verifier-rejected descope placeholders");
   assert(!result.stdout.includes("- Owner-approved substitution: <explicit owner approval summary>"), "templates should not emit verifier-rejected substitution placeholders");
   for (const environment of requiredAssistiveTechnologyEnvironments) {

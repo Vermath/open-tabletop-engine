@@ -67,7 +67,19 @@ Copy one block per environment into the release evidence log:
 - Issues filed:
 - Workflows completed:
 - Blockers:
-- Owner-approved descope: <explicit owner approval summary>
+- Notes:
+```
+
+When the release owner explicitly accepts a descope or substitute for part of the matrix, copy this separate override block instead of adding a placeholder override field to a pass block:
+
+```md
+## Assistive Technology Owner-Approved Descope: <scope label>
+
+- Date:
+- App build or commit:
+- Owner-approved descope: Release owner accepted the documented matrix change for this release candidate.
+- Required environments replaced or removed:
+- Reason:
 - Notes:
 ```
 

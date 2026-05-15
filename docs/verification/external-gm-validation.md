@@ -61,8 +61,20 @@ Copy one block into the release evidence log:
 - Issues filed:
 - Blockers:
 - Owner acceptance notes:
-- Owner-approved substitution: <explicit owner approval summary>
 - Redacted screenshots/logs attached:
+- Notes:
+```
+
+When the release owner explicitly accepts a substitute for the external GM pass, copy this separate override block instead of adding a placeholder override field to a pass block:
+
+```md
+## External GM Owner-Approved Substitution: <substitution label>
+
+- Date:
+- App build or commit:
+- Owner-approved substitution: Release owner accepted the documented substitute validation path for this release candidate.
+- Substitution used:
+- Reason:
 - Notes:
 ```
 

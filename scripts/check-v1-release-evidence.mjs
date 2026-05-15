@@ -93,11 +93,14 @@ function checkAssistiveTechnologyPass() {
 
   const hasOwnerSubstitution = explicitOwnerOverride(doc);
   const missing = requiredAssistiveTechnologyEnvironments.map((environment) => environment.label).filter((environment) => !accepted.has(environment));
-  return result(releaseGate.verifierName, !invalidOwnerOverride && (missing.length === 0 || hasOwnerSubstitution), [
+  const reasons = [
     `Missing pass evidence for: ${missing.join(", ") || "none"}.`,
-    "Remove placeholder or ambiguous owner-approved descope/substitution fields, or replace them with explicit release-owner accepted/approved text.",
     "Add one non-template pass or pass-with-issues evidence block per required environment, tied to the checked release commit, with browser, assistive technology, input method, scenario data, and workflows completed; or record an owner-approved substitution/descope."
-  ]);
+  ];
+  if (invalidOwnerOverride) {
+    reasons.splice(1, 0, "Remove placeholder or ambiguous owner-approved descope/substitution fields, or replace them with explicit release-owner accepted/approved text.");
+  }
+  return result(releaseGate.verifierName, !invalidOwnerOverride && (missing.length === 0 || hasOwnerSubstitution), reasons);
 }
 
 function checkExternalGmValidation() {
@@ -117,11 +120,14 @@ function checkExternalGmValidation() {
   const hasOwnerSubstitution = explicitOwnerOverride(doc);
   const invalidOwnerOverride = ownerOverridePlaceholder(doc);
 
-  return result(releaseGate.verifierName, !invalidOwnerOverride && (pass || hasOwnerSubstitution), [
+  const reasons = [
     "Add a non-template external GM validation block with Result: pass or pass with issues, App build or commit matching the checked release commit, tester role, relationship to project, setup path, scenario data, and workflows completed.",
-    "Remove placeholder or ambiguous owner-approved substitution fields, or replace them with explicit release-owner accepted/approved text.",
     "Alternatively record the explicit owner-approved substitution called out by the release handoff."
-  ]);
+  ];
+  if (invalidOwnerOverride) {
+    reasons.splice(1, 0, "Remove placeholder or ambiguous owner-approved substitution fields, or replace them with explicit release-owner accepted/approved text.");
+  }
+  return result(releaseGate.verifierName, !invalidOwnerOverride && (pass || hasOwnerSubstitution), reasons);
 }
 
 function checkHostedReleaseSmoke() {
