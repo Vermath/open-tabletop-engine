@@ -85,6 +85,7 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 - 2026-05-15 verifier-hardening audit: `pnpm v1:evidence:test`, `pnpm docs:site:check`, and `git diff --check` passed after commit `503a8c4761078fbc5eeeaf17e30cd1f7eea42f95`; `pnpm v1:release:handoff` still printed the expected five external/manual blockers for that checked commit.
 - 2026-05-15 completion-audit refresh: after commit `7010ca0320934b1dda39c05009753d4b537a645a`, `pnpm v1:release:handoff` again printed the expected five external/manual blockers for the checked `HEAD`.
 - After any audit-only commit, rerun `pnpm v1:release:handoff` or `pnpm v1:evidence:check` to bind the five-blocker status to the new `HEAD`; do not treat a prior fixed SHA in this historical log as the current verifier target.
+- 2026-05-15 GitHub refresh: open issue audit still showed only issue #2 `Track remaining v1 external evidence blockers` with no labels; PR #1 was still open at remote head `fe140d7bbe86526fbb45a3d288410f30b713175d` with Release Smoke and Docs Site build checks passing and Docs Site deploy skipped, while the local branch remained 137 commits ahead at `566a93293b03dfb6223f4b789ea9075c486d8c33`.
 - 2026-05-15 `pnpm v1:evidence:check`: expectedly failed because live OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication evidence are not yet recorded; rerun after final evidence commits so the checked commit matches the release target.
 
 ## Conclusion
