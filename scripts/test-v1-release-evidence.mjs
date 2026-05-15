@@ -13,6 +13,7 @@ runFailsWhenEvidenceIsMissing();
 runPassesWhenEvidenceIsComplete();
 runPassesWhenIdentityEvidenceMentionsNoSkippedChecks();
 runFailsWhenIdentityEvidenceOmitsReadinessResults();
+runFailsWhenIdentityEvidenceUsesWrongCommand();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
 runFailsWithTemplateOwnerOverrides();
@@ -88,6 +89,20 @@ function runFailsWhenIdentityEvidenceOmitsReadinessResults() {
     const result = runChecker(root);
     assert(result.status === 1, "identity evidence without command/readiness results should fail");
     assert(result.stdout.includes("Record passing OIDC discovery/test and SCIM ServiceProviderConfig results."), "identity failure should name missing readiness results");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenIdentityEvidenceUsesWrongCommand() {
+  const files = completeEvidence(commit);
+  files.identity = files.identity.replace("pnpm identity:smoke", "not pnpm identity:smoke");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "identity evidence without exact command parity should fail");
+    assert(result.stdout.includes("Record Exit code: 0 from a non-skipped `pnpm identity:smoke` run against a real provider sandbox."), "identity failure should name required smoke command");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
