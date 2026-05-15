@@ -71,6 +71,7 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 - 2026-05-15 `pnpm security:smoke`: passed 6 focused security-smoke tests.
 - 2026-05-15 `pnpm deployment:smoke`: passed 1 focused deployment-smoke test.
 - 2026-05-15 `pnpm perf:smoke`: passed 1 focused performance-smoke test.
+- 2026-05-15 `pnpm exec playwright test -c playwright.bootstrap.config.ts`: passed the clean-bootstrap admin recovery and first-owner smoke after hardening route teardown for late admin operations polling.
 - 2026-05-15 GitHub issue audit: one open issue, #2 `Track remaining v1 external evidence blockers`, with no labels.
 - 2026-05-15 GitHub PR audit: PR #1 remote head checks passed for Release Smoke and Docs Site build, but the local branch has additional unpushed commits, so final hosted evidence still needs refresh on the final release commit.
 

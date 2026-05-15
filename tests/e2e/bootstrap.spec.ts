@@ -376,12 +376,17 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   });
   let pluginRegistrySyncRequests = 0;
   await page.route("**/api/v1/admin/plugins/operations", async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
-    body.registryOperations.configuredRegistryCount = 1;
-    body.registryOperations.actionRequired = pluginRegistrySyncRequests === 0;
-    body.registryOperations.actionReasons = pluginRegistrySyncRequests === 0 ? ["stale_plugin_registry"] : [];
-    await route.fulfill({ response, json: body });
+    try {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.registryOperations.configuredRegistryCount = 1;
+      body.registryOperations.actionRequired = pluginRegistrySyncRequests === 0;
+      body.registryOperations.actionReasons = pluginRegistrySyncRequests === 0 ? ["stale_plugin_registry"] : [];
+      await route.fulfill({ response, json: body });
+    } catch (error) {
+      if (String(error).includes("has been closed")) return;
+      throw error;
+    }
   });
   await page.route("**/api/v1/admin/plugins/registry/sync", async (route) => {
     pluginRegistrySyncRequests += 1;
@@ -393,24 +398,29 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   });
   let jobAlertDeliveryRequests = 0;
   await page.route("**/api/v1/admin/jobs/operations", async (route) => {
-    const response = await route.fetch();
-    const body = await response.json();
-    body.actionRequired = true;
-    body.actionReasons = ["failed_jobs"];
-    body.totals = {
-      ...(body.totals ?? {}),
-      failedCount: Math.max(body.totals?.failedCount ?? 0, 1),
-      retryableCount: Math.max(body.totals?.retryableCount ?? 0, 1)
-    };
-    body.failures = {
-      ...(body.failures ?? {}),
-      failedCount: Math.max(body.failures?.failedCount ?? 0, 1),
-      retryableCount: Math.max(body.failures?.retryableCount ?? 0, 1)
-    };
-    body.remediationQueue = body.remediationQueue?.length
-      ? body.remediationQueue
-      : [{ code: "retry_or_inspect_failed_jobs", severity: "warning", action: "Inspect retryable failed jobs.", affectedCount: 1 }];
-    await route.fulfill({ response, json: body });
+    try {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.actionRequired = true;
+      body.actionReasons = ["failed_jobs"];
+      body.totals = {
+        ...(body.totals ?? {}),
+        failedCount: Math.max(body.totals?.failedCount ?? 0, 1),
+        retryableCount: Math.max(body.totals?.retryableCount ?? 0, 1)
+      };
+      body.failures = {
+        ...(body.failures ?? {}),
+        failedCount: Math.max(body.failures?.failedCount ?? 0, 1),
+        retryableCount: Math.max(body.failures?.retryableCount ?? 0, 1)
+      };
+      body.remediationQueue = body.remediationQueue?.length
+        ? body.remediationQueue
+        : [{ code: "retry_or_inspect_failed_jobs", severity: "warning", action: "Inspect retryable failed jobs.", affectedCount: 1 }];
+      await route.fulfill({ response, json: body });
+    } catch (error) {
+      if (String(error).includes("has been closed")) return;
+      throw error;
+    }
   });
   await page.route("**/api/v1/admin/jobs/alerts", async (route) => {
     const requestBody = route.request().postDataJSON() as { dryRun?: boolean; reason?: string };
@@ -664,4 +674,5 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await auditLog.getByRole("button", { name: "Export Redacted JSON" }).click();
   await expect(auditLog).toContainText("Exported");
   await expect(auditLog).toContainText("redacted audit rows");
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
