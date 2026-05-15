@@ -44,3 +44,13 @@ export const releaseEvidenceGates = [
     evidence: "docs/verification/release-workflow-evidence.md"
   }
 ];
+
+const releaseEvidenceGateByIdMap = new Map(releaseEvidenceGates.map((gate) => [gate.id, gate]));
+
+export function releaseEvidenceGateById(id) {
+  const gate = releaseEvidenceGateByIdMap.get(id);
+  if (!gate) {
+    throw new Error(`Unknown release evidence gate: ${id}`);
+  }
+  return gate;
+}

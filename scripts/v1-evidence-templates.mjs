@@ -1,9 +1,8 @@
 import { execSync } from "node:child_process";
-import { releaseEvidenceGates } from "./v1-release-gates.mjs";
+import { releaseEvidenceGateById } from "./v1-release-gates.mjs";
 
 const commit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
 const today = new Date().toISOString().slice(0, 10);
-const gateById = new Map(releaseEvidenceGates.map((gate) => [gate.id, gate]));
 
 if (!/^[0-9a-f]{40}$/i.test(commit.trim())) {
   console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${commit}.`);
@@ -125,11 +124,7 @@ function section(gate, title, fields) {
 }
 
 function gate(id) {
-  const releaseGate = gateById.get(id);
-  if (!releaseGate) {
-    throw new Error(`Unknown release evidence gate: ${id}`);
-  }
-  return releaseGate;
+  return releaseEvidenceGateById(id);
 }
 
 function git(args) {
