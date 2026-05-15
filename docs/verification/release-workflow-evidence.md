@@ -85,7 +85,7 @@ Collect evidence for both workflows before final v1 acceptance:
 
 | Workflow | Required trigger | Required result | Evidence required |
 | --- | --- | --- | --- |
-| `.github/workflows/release-smoke.yml` | Pull request or `main` push for the release commit | `pnpm release:smoke` succeeds in GitHub Actions | Run URL, commit SHA, branch/ref, completion time, and pass summary |
+| `.github/workflows/release-smoke.yml` | Pull request or `main` push for the release commit | `pnpm release:smoke` succeeds in GitHub Actions, including the live `pnpm v1:issues:check` open-issue audit | Run URL, commit SHA, branch/ref, completion time, and pass summary |
 | `.github/workflows/docs-site.yml` | `main` push or `workflow_dispatch` after Pages is enabled, or an owner-approved equivalent publication run | Docs build succeeds and Pages deploy completes | Run URL, commit SHA, published Pages URL, completion time, and pass summary |
 
 If the release owner intentionally accepts a different hosted CI provider, record the provider, run URL, and the exact command parity with the GitHub Actions workflow.
@@ -117,7 +117,7 @@ Copy one block per workflow into the release evidence log:
 - Duration:
 - Artifact URL, if any:
 - Published URL, if docs-site deploy: https://
-- Required checks observed:
+- Required checks observed: include whether `pnpm release:smoke`, `pnpm v1:evidence:test`, `pnpm v1:issues:test`, and `pnpm v1:issues:check` completed successfully for release-smoke evidence.
 - Issues filed:
 - Blockers:
 - Notes:
@@ -130,6 +130,7 @@ The release-smoke hosted pass is acceptable only when:
 - The workflow run is tied to the release candidate commit checked by `pnpm v1:evidence:check`, or by `OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check` if evidence docs are committed afterward.
 - The run completes successfully without rerunning with uncommitted local changes.
 - The `Run release smoke` step executes `pnpm release:smoke`.
+- The hosted release-smoke output includes successful `pnpm v1:issues:test` and `pnpm v1:issues:check` steps, proving the live open-issue P0/P1 audit passed in CI.
 - Any manually rerun job records the final HTTPS run attempt URL.
 
 The docs-site publication pass is acceptable only when:
