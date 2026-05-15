@@ -77,10 +77,11 @@ pnpm identity:smoke
 Hosted owner-triggered setup shape:
 
 1. Store the same values as GitHub repository secrets.
-2. Run `.github/workflows/identity-smoke.yml` with `workflow_dispatch`.
-3. Choose `deployed-api` when `OTTE_IDENTITY_SMOKE_BASE_URL`, `OTTE_IDENTITY_SMOKE_ADMIN_TOKEN`, and `OTTE_SCIM_BEARER_TOKEN` point at a reachable release-candidate API.
-4. Choose `local-sandbox` when the workflow should start the in-memory API using `OTTE_OIDC_*` plus `OTTE_SCIM_BEARER_TOKEN`.
-5. Copy the successful hosted workflow URL into `docs/verification/identity-provider-smoke-evidence.md`.
+2. Confirm GitHub lists `.github/workflows/identity-smoke.yml` as an available workflow. If GitHub only lists the already-published workflows, merge or otherwise publish the workflow file into the repository workflow context first, or use the local `pnpm identity:smoke` command instead.
+3. Run `.github/workflows/identity-smoke.yml` with `workflow_dispatch`.
+4. Choose `deployed-api` when `OTTE_IDENTITY_SMOKE_BASE_URL`, `OTTE_IDENTITY_SMOKE_ADMIN_TOKEN`, and `OTTE_SCIM_BEARER_TOKEN` point at a reachable release-candidate API.
+5. Choose `local-sandbox` when the workflow should start the in-memory API using `OTTE_OIDC_*` plus `OTTE_SCIM_BEARER_TOKEN`.
+6. Copy the successful hosted workflow URL into `docs/verification/identity-provider-smoke-evidence.md`.
 
 Record whether the run targeted a deployed API or local sandbox, the API base URL host, provider label, sandbox or tenant label, commit SHA, exit code, and redacted OIDC/SCIM readiness summaries in `docs/verification/identity-provider-smoke-evidence.md`.
 
@@ -149,10 +150,11 @@ pnpm v1:evidence:check
 
 Hosted owner-triggered final audit:
 
-1. Run `.github/workflows/v1-completion-audit.yml` with `workflow_dispatch`.
-2. Enter the full hosted release-smoke commit SHA in `release_commit`.
-3. The workflow validates the SHA shape, sets `OTTE_RELEASE_COMMIT`, runs `pnpm v1:completion:audit`, and uses `GH_TOKEN` with `issues: read` so the live P0/P1 issue audit is included.
-4. A passing hosted completion-audit run is acceptable only after the three owner-supplied evidence gates above have already been recorded.
+1. Confirm GitHub lists `.github/workflows/v1-completion-audit.yml` as an available workflow. If GitHub only lists the already-published workflows, merge or otherwise publish the workflow file into the repository workflow context first, or use the local `pnpm v1:completion:audit` command instead.
+2. Run `.github/workflows/v1-completion-audit.yml` with `workflow_dispatch`.
+3. Enter the full hosted release-smoke commit SHA in `release_commit`.
+4. The workflow validates the SHA shape, sets `OTTE_RELEASE_COMMIT`, runs `pnpm v1:completion:audit`, and uses `GH_TOKEN` with `issues: read` so the live P0/P1 issue audit is included.
+5. A passing hosted completion-audit run is acceptable only after the three owner-supplied evidence gates above have already been recorded.
 
 A skipped `pnpm identity:smoke` run is still only a local readiness signal; final identity-provider evidence must be the non-skipped pass recorded in `docs/verification/identity-provider-smoke-evidence.md`.
 
