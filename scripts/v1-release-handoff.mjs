@@ -6,17 +6,17 @@ const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "
 const gates = [
   {
     name: "Live OIDC/SCIM provider readiness",
-    ownerAction: "Run `pnpm identity:smoke` against a real provider sandbox without skipped tests.",
+    ownerAction: "Run `pnpm identity:smoke` against a real provider sandbox and record command, matching commit, exit code 0, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result.",
     evidence: "docs/verification/identity-provider-smoke-evidence.md"
   },
   {
     name: "Manual assistive-technology matrix",
-    ownerAction: "Record NVDA, Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and TalkBack pass evidence or an explicit owner-approved descope.",
+    ownerAction: "Record distinct Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack pass evidence or an explicit owner-approved descope.",
     evidence: "docs/verification/accessibility-assistive-tech-pass.md"
   },
   {
     name: "External GM validation",
-    ownerAction: "Have an unaffiliated or owner-approved GM run the release-candidate flow, or record the explicit owner-approved substitution.",
+    ownerAction: "Have an unaffiliated or owner-approved GM run the release-candidate flow and record matching commit, setup path, workflows completed, and result, or record the explicit owner-approved substitution.",
     evidence: "docs/verification/external-gm-validation.md"
   },
   {
@@ -26,7 +26,7 @@ const gates = [
   },
   {
     name: "Public docs publication",
-    ownerAction: "Publish the docs site from the release commit through GitHub Pages or an owner-approved equivalent hosted publication.",
+    ownerAction: "Publish the docs site from the release commit and record run URL, published URL, matching commit, pass result, and `pnpm docs:site:check` command parity.",
     evidence: "docs/verification/release-workflow-evidence.md"
   }
 ];

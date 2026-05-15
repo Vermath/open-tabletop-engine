@@ -356,6 +356,10 @@ function runHandoffReportsIncompleteVerifierStatus() {
     assert(result.status === 0, "handoff should exit successfully even when evidence is incomplete");
     assert(result.stdout.includes("Current evidence verifier status:"), "handoff should print verifier status");
     assert(result.stdout.includes("pnpm v1:evidence:templates"), "handoff should point to the evidence template generator");
+    assert(result.stdout.includes("passing OIDC discovery/test result"), "handoff should mention identity readiness fields");
+    assert(result.stdout.includes("distinct Windows NVDA"), "handoff should mention distinct AT environments");
+    assert(result.stdout.includes("setup path, workflows completed"), "handoff should mention external GM scenario fields");
+    assert(result.stdout.includes("`pnpm docs:site:check` command parity"), "handoff should mention docs publication command parity");
     assert(result.stdout.includes("v1 release evidence is incomplete: 5 blocker(s) remain."), "handoff should include incomplete verifier output");
     assert(result.stdout.includes("Handoff command exits 0; run `pnpm v1:evidence:check` for the enforced release gate."), "handoff should distinguish guidance from enforcement");
   } finally {
