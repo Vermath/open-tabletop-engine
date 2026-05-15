@@ -33,11 +33,11 @@ pnpm v1:evidence:templates
 
 | Gate | Owner action | Evidence destination | Completion rule |
 | --- | --- | --- | --- |
-| Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` | `pnpm identity:smoke` exits `0` without skipping, and the evidence block records the command, matching commit, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result |
-| Assistive-technology acceptance | Run or delegate Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` | Every required environment has pass evidence, or an explicit owner-approved substitution/descope is recorded |
-| External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` | Matching commit, setup path, workflows completed, pass/fail outcome, and issue-reporting feedback are recorded |
-| Hosted release-smoke refresh | Push the final release candidate and rerun `.github/workflows/release-smoke.yml` | `docs/verification/release-workflow-evidence.md` | `pnpm release:smoke` passes on the verifier target commit, with exact command parity recorded |
-| Public docs publication | Enable GitHub Pages for the repo, make the repo/plan support Pages, or approve an equivalent hosted publication | `docs/verification/release-workflow-evidence.md` | Docs build and deploy complete for the release commit; run URL, commit SHA, and published URL are recorded |
+| Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` | `pnpm identity:smoke` exits `0` without skipping, and the evidence block records exact command parity, matching commit, non-placeholder API host, provider, sandbox label, smoke target, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result |
+| Assistive-technology acceptance | Run or delegate Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` | Every required environment has its own pass or pass-with-issues evidence section tied to the verifier target commit, or an explicit owner-approved substitution/descope is recorded |
+| External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` | Matching commit, tester role, relationship to project, setup path, scenario data, workflows completed, pass/pass-with-issues outcome, and issue-reporting feedback are recorded |
+| Hosted release-smoke refresh | Push the final release candidate and rerun `.github/workflows/release-smoke.yml` | `docs/verification/release-workflow-evidence.md` | `pnpm release:smoke` passes on the verifier target commit, with exact command parity and a concrete hosted run URL recorded |
+| Public docs publication | Enable GitHub Pages for the repo, make the repo/plan support Pages, or approve an equivalent hosted publication | `docs/verification/release-workflow-evidence.md` | Docs build and deploy complete for the release commit; concrete run URL, commit SHA, exact `pnpm docs:site:check` command parity, and published URL are recorded |
 
 ## Identity Provider Smoke
 
@@ -54,7 +54,7 @@ $env:OTTE_SCIM_BEARER_TOKEN = "<redacted-scim-token>"
 pnpm identity:smoke
 ```
 
-Record whether the run targeted a deployed API or local sandbox, the provider label, the commit SHA, exit code, and redacted OIDC/SCIM readiness summaries in `docs/verification/identity-provider-smoke-evidence.md`.
+Record whether the run targeted a deployed API or local sandbox, the API base URL host, provider label, sandbox or tenant label, commit SHA, exit code, and redacted OIDC/SCIM readiness summaries in `docs/verification/identity-provider-smoke-evidence.md`.
 
 ## Assistive-Technology Pass
 
@@ -65,6 +65,8 @@ Use `docs/verification/accessibility-assistive-tech-pass.md` as the scenario scr
 - macOS with VoiceOver.
 - iOS or iPadOS with VoiceOver.
 - Android with TalkBack.
+
+Record each environment as its own `## Assistive Technology Pass: ...` block. A combined summary that mentions multiple environments does not satisfy `pnpm v1:evidence:check`.
 
 If a device or assistive technology is unavailable, record the omission and owner-approved substitute before final acceptance.
 Placeholder override values such as `none`, `n/a`, `tbd`, `pending`, or `<approval summary>` do not satisfy `pnpm v1:evidence:check`.
