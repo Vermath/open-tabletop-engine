@@ -22,6 +22,7 @@ runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
 runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
 runFailsWithHostedEvidenceMissingRunUrl();
+runFailsWithWrongReleaseSmokeCommand();
 runFailsWithNegativeDocsPublicationResult();
 runFailsWithWrongDocsPublicationCommand();
 runFailsWithPlaceholderHostedUrls();
@@ -264,6 +265,20 @@ function runFailsWithHostedEvidenceMissingRunUrl() {
   }
 }
 
+function runFailsWithWrongReleaseSmokeCommand() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow.replace("pnpm release:smoke", "not pnpm release:smoke");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "release-smoke evidence without exact command parity should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "wrong release-smoke command should fail the hosted smoke gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function runFailsWithNegativeDocsPublicationResult() {
   const files = completeEvidence(commit);
   files.releaseWorkflow = files.releaseWorkflow.replace("- Result: pass\n- Release command or build command: pnpm docs:site:check", "- Result: not pass\n- Release command or build command: pnpm docs:site:check");
@@ -280,7 +295,7 @@ function runFailsWithNegativeDocsPublicationResult() {
 
 function runFailsWithWrongDocsPublicationCommand() {
   const files = completeEvidence(commit);
-  files.releaseWorkflow = files.releaseWorkflow.replace("pnpm docs:site:check", "pnpm docs:site");
+  files.releaseWorkflow = files.releaseWorkflow.replace("pnpm docs:site:check", "not pnpm docs:site:check");
   const root = fixtureRoot(files);
 
   try {

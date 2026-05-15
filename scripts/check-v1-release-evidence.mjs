@@ -114,7 +114,7 @@ function checkHostedReleaseSmoke() {
     (section) =>
       field(section.body, "Result").toLowerCase() === "pass" &&
       shaMatches(field(section.body, "Commit SHA"), currentCommit) &&
-      /pnpm release:smoke/.test(field(section.body, "Release command or build command")) &&
+      commandEquals(field(section.body, "Release command or build command"), "pnpm release:smoke") &&
       validHttpUrl(field(section.body, "Run URL"))
   );
 
@@ -137,7 +137,7 @@ function checkDocsPublication() {
     return (
       resultText === "pass" &&
       shaMatches(commitSha, currentCommit) &&
-      /pnpm docs:site:check/.test(command) &&
+      commandEquals(command, "pnpm docs:site:check") &&
       validHttpUrl(runUrl) &&
       validHttpUrl(publishedUrl) &&
       !/not published|skipped|blocked/i.test(body) &&
@@ -206,6 +206,10 @@ function shaMatches(recorded, expected) {
 
 function normalizeSha(value) {
   return value.replace(/`/g, "").trim().toLowerCase();
+}
+
+function commandEquals(value, expected) {
+  return value.replace(/`/g, "").trim() === expected;
 }
 
 function validHttpUrl(value) {
