@@ -2,7 +2,7 @@
 
 Status: v1.0 candidate verification template. This document defines the live hosted workflow evidence required before v1.0 can be declared ready. It is not completed hosted evidence by itself.
 
-Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are useful preflight checks, but final release evidence needs successful hosted runs for the release smoke workflow and the GitHub Pages documentation workflow.
+Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are useful preflight checks, but final release evidence needs a successful hosted run for the release smoke workflow and successful public documentation publication through GitHub Pages or an owner-approved equivalent host.
 
 ## Local Preflight Evidence
 
@@ -140,7 +140,7 @@ Collect evidence for both workflows before final v1 acceptance:
 | Workflow | Required trigger | Required result | Evidence required |
 | --- | --- | --- | --- |
 | `.github/workflows/release-smoke.yml` | Pull request or `main` push for the release commit | `pnpm release:smoke` succeeds in GitHub Actions, including the live `pnpm v1:issues:check` open-issue audit | Run URL, commit SHA, branch/ref, completion time, and pass summary |
-| `.github/workflows/docs-site.yml` | `main` push or `workflow_dispatch` after Pages is enabled, or an owner-approved equivalent publication run | Docs build succeeds and Pages deploy completes | Run URL, commit SHA, published Pages URL, completion time, and pass summary |
+| `.github/workflows/docs-site.yml` | `main` push or `workflow_dispatch` after Pages is enabled, or an owner-approved equivalent publication run | Docs build succeeds and the public docs URL is reachable | Run URL, commit SHA, published HTTPS URL, completion time, and pass summary |
 
 If the release owner intentionally accepts a different hosted CI provider, record the provider, run URL, and the exact command parity with the GitHub Actions workflow.
 
@@ -192,7 +192,7 @@ The release-smoke hosted pass is acceptable only when:
 The docs-site publication pass is acceptable only when:
 
 - The docs build runs `pnpm docs:site:check`.
-- The Pages deployment completes successfully for the release docs commit.
+- The GitHub Pages deployment completes successfully for the release docs commit, or an owner-approved equivalent hosted publication completes successfully for the checked release commit.
 - The HTTPS published URL is reachable by the release owner.
 - The published documentation does not expose secrets, local filesystem paths, provider tokens, or non-public evidence attachments.
 - The evidence block records the checked release commit SHA, using either the full 40-character SHA or an unambiguous Git prefix of at least 7 characters.
