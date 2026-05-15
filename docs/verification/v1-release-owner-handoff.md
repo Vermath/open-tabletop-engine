@@ -83,7 +83,7 @@ The PRD's v1 release-candidate milestone calls for external GM validation in add
 
 ## Hosted Release-Smoke Refresh
 
-The existing hosted release-smoke run proves the workflow shape, but it predates the current local-only commits. Before final acceptance, rerun hosted release smoke on the final pushed release commit and update `docs/verification/release-workflow-evidence.md` with the run URL, commit SHA, result, and exact `pnpm release:smoke` command.
+The existing hosted release-smoke run proves the workflow shape, but it predates the current local-only commits. Before final acceptance, rerun hosted release smoke on the verifier target commit and update `docs/verification/release-workflow-evidence.md` with the run URL, commit SHA, result, and exact `pnpm release:smoke` command.
 
 ## Final Release Check
 
