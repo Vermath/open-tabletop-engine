@@ -34,6 +34,15 @@ describe("deployment smoke", () => {
     expect(identityWorkflow).toContain("Missing required identity-smoke secrets");
     expect(identityWorkflow).toContain("pnpm identity:smoke");
 
+    const completionAuditWorkflow = readWorkspaceFile(".github/workflows/v1-completion-audit.yml");
+    expect(completionAuditWorkflow).toContain("workflow_dispatch:");
+    expect(completionAuditWorkflow).toContain("release_commit:");
+    expect(completionAuditWorkflow).toContain("OTTE_RELEASE_COMMIT: ${{ inputs.release_commit }}");
+    expect(completionAuditWorkflow).toContain("issues: read");
+    expect(completionAuditWorkflow).toContain("GH_TOKEN: ${{ github.token }}");
+    expect(completionAuditWorkflow).toContain("release_commit must be a full 40-character SHA");
+    expect(completionAuditWorkflow).toContain("pnpm v1:completion:audit");
+
     const compose = readWorkspaceFile("docker-compose.yml");
     expect(compose).toContain("dockerfile: infra/docker/api.Dockerfile");
     expect(compose).toContain("dockerfile: infra/docker/web.Dockerfile");

@@ -147,6 +147,13 @@ pnpm v1:completion:audit
 pnpm v1:evidence:check
 ```
 
+Hosted owner-triggered final audit:
+
+1. Run `.github/workflows/v1-completion-audit.yml` with `workflow_dispatch`.
+2. Enter the full hosted release-smoke commit SHA in `release_commit`.
+3. The workflow validates the SHA shape, sets `OTTE_RELEASE_COMMIT`, runs `pnpm v1:completion:audit`, and uses `GH_TOKEN` with `issues: read` so the live P0/P1 issue audit is included.
+4. A passing hosted completion-audit run is acceptable only after the three owner-supplied evidence gates above have already been recorded.
+
 A skipped `pnpm identity:smoke` run is still only a local readiness signal; final identity-provider evidence must be the non-skipped pass recorded in `docs/verification/identity-provider-smoke-evidence.md`.
 
 Then update `docs/verification/v1-gap-closure-completion-audit.md` with the evidence links before declaring the v1 gap-closure objective complete.
