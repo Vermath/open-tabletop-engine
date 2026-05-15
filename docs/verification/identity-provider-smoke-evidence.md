@@ -69,7 +69,7 @@ The pass is acceptable only when:
 
 ## Evidence Template
 
-Current verifier target for the latest hosted release-smoke/docs publication evidence: `c7a0ccadba0dad11d34e0f0f8c3490c4df4274b7`.
+Current verifier target for the latest hosted release-smoke/docs publication evidence: `fef76e55042e4f10170442e437e9da3c29e9a4dd`.
 
 Copy one block per provider sandbox into the release evidence log:
 
@@ -78,7 +78,7 @@ Copy one block per provider sandbox into the release evidence log:
 
 - Date: 2026-05-15
 - Operator:
-- App build or commit: c7a0ccadba0dad11d34e0f0f8c3490c4df4274b7
+- App build or commit: fef76e55042e4f10170442e437e9da3c29e9a4dd
 - API base URL host:
 - Provider:
 - Provider sandbox or tenant label:
