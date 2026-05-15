@@ -6,7 +6,7 @@ Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are usefu
 
 ## Local Preflight Evidence
 
-- 2026-05-14: `pnpm release:smoke` passed locally on Windows from `D:\open_tabletop_engine`.
+- 2026-05-14: `pnpm release:smoke` passed locally on Windows from the repository root.
 - Covered gates: `pnpm check`, seeded and clean-bootstrap Playwright E2E, `pnpm security:smoke`, `pnpm migration:smoke`, `pnpm deployment:smoke`, and `pnpm perf:smoke`.
 - Notes: This clears the local release-smoke blocker only. Final release acceptance still requires a hosted workflow run tied to the release candidate commit.
 

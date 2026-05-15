@@ -54,6 +54,15 @@ if (process.argv.includes("--check")) {
     console.error(`Docs site build found broken markdown links:\n${brokenLinks.join("\n")}`);
     process.exit(1);
   }
+  const localPathLeakSources = required
+    .filter((file) => file.endsWith(".html"))
+    .map((file) => join(root, file.replace(/\.html$/i, ".md")))
+    .filter((file) => existsSync(file));
+  const localPathLeaks = localPathLeakSources.flatMap((file) => findLocalPathLeaks(file));
+  if (localPathLeaks.length > 0) {
+    console.error(`Docs site build found local filesystem paths in public docs:\n${localPathLeaks.join("\n")}`);
+    process.exit(1);
+  }
 }
 
 function collectMarkdown(entry) {
@@ -83,6 +92,14 @@ function findBrokenMarkdownLinks(file) {
     }
   }
   return broken;
+}
+
+function findLocalPathLeaks(file) {
+  const markdown = readFileSync(file, "utf8").replace(/```[\s\S]*?```/g, "");
+  const sourceRelative = relative(root, file).replaceAll("\\", "/");
+  return markdown
+    .split(/\r?\n/)
+    .flatMap((line, index) => (/(^|[^A-Za-z])[A-Za-z]:[\\/]/.test(line) ? [`${sourceRelative}:${index + 1}`] : []));
 }
 
 function renderPage(relativePath, markdown) {
