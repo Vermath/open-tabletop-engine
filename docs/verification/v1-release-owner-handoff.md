@@ -10,6 +10,8 @@ The local implementation, browser coverage, release-smoke wiring, and docs rende
 | --- | --- | --- | --- |
 | Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` | `pnpm identity:smoke` exits `0` without skipping and the evidence block is attached |
 | Assistive-technology acceptance | Run or delegate NVDA, Narrator, VoiceOver, iOS/iPadOS VoiceOver, and TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` | Every required environment has pass evidence, or an explicit owner-approved substitution/descope is recorded |
+| External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/v1-gap-closure-completion-audit.md` or a linked validation note | Clean install or hosted access, campaign/session flow, issue-reporting feedback, and pass/fail outcome are recorded |
+| Hosted release-smoke refresh | Push the final release candidate and rerun `.github/workflows/release-smoke.yml` | `docs/verification/release-workflow-evidence.md` | `pnpm release:smoke` passes on the final release commit or owner-approved successor |
 | Public docs publication | Enable GitHub Pages for the repo, make the repo/plan support Pages, or approve an equivalent hosted publication | `docs/verification/release-workflow-evidence.md` | Docs build and deploy complete for the release commit and the published URL is recorded |
 
 ## Identity Provider Smoke
@@ -56,9 +58,24 @@ Equivalent hosted publication is acceptable only if the owner records:
 - Exact command parity with `pnpm docs:site:check`.
 - Confirmation that the public site exposes no secrets, local paths, provider tokens, or private evidence attachments.
 
+## External GM Validation
+
+The PRD's v1 release-candidate milestone calls for external GM validation in addition to dogfood. Record:
+
+- Tester role and relationship to the project.
+- Release commit SHA or deployed URL.
+- Setup path used: clean local install, self-hosted deployment, or hosted preview.
+- Session flow covered: first-run/sign-in, campaign setup or import, map/token/chat/dice/combat, archive/report bundle, and issue-reporting path.
+- Result: pass / pass with issues / fail.
+- Blocking issues or owner-approved acceptance notes.
+
+## Hosted Release-Smoke Refresh
+
+The existing hosted release-smoke run proves the workflow shape, but it predates the current local-only commits. Before final acceptance, rerun hosted release smoke on the final pushed release commit and update `docs/verification/release-workflow-evidence.md` with the run URL, commit SHA, and result.
+
 ## Final Release Check
 
-After the three external gates above are satisfied, rerun the completion audit:
+After the external gates above are satisfied, rerun the completion audit:
 
 ```powershell
 pnpm docs:site:check
