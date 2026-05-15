@@ -852,6 +852,9 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS/iPadOS VoiceOver", "Android TalkBack"]) {
     assert(result.stdout.includes(`## Assistive Technology Pass: ${environment}`), `templates should include ${environment}`);
   }
+  for (const gate of releaseEvidenceGates) {
+    assert(result.stdout.includes(`Evidence file: ${gate.evidence}`), `templates should include destination for ${gate.name}`);
+  }
   assert(result.stdout.includes("Do not mark Result as pass until the matching evidence has actually been collected."), "templates should warn against treating placeholders as pass evidence");
 }
 
