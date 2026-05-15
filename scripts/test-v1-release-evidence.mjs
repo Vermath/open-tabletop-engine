@@ -355,6 +355,7 @@ function runHandoffReportsIncompleteVerifierStatus() {
     const result = runHandoff(root);
     assert(result.status === 0, "handoff should exit successfully even when evidence is incomplete");
     assert(result.stdout.includes("Current evidence verifier status:"), "handoff should print verifier status");
+    assert(result.stdout.includes("pnpm v1:evidence:templates"), "handoff should point to the evidence template generator");
     assert(result.stdout.includes("v1 release evidence is incomplete: 5 blocker(s) remain."), "handoff should include incomplete verifier output");
     assert(result.stdout.includes("Handoff command exits 0; run `pnpm v1:evidence:check` for the enforced release gate."), "handoff should distinguish guidance from enforcement");
   } finally {

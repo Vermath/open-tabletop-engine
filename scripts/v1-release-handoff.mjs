@@ -49,6 +49,8 @@ for (const [index, gate] of gates.entries()) {
 
 console.log("");
 console.log("Release-owner checklist: docs/verification/v1-release-owner-handoff.md");
+console.log("Ready-to-fill evidence templates:");
+console.log("  pnpm v1:evidence:templates");
 console.log("");
 printVerifierStatus();
 
