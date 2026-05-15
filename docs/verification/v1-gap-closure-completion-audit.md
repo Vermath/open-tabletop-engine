@@ -64,7 +64,7 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 
 - 2026-05-15 `pnpm identity:smoke`: command completed, but the only identity-provider test was skipped because no live OIDC/SCIM sandbox environment is configured; this is not final provider-readiness evidence.
 - 2026-05-15 `pnpm docs:site:check`: passed locally after adding required rendered release-evidence pages, local Markdown link validation, exclusion of internal historical verification logs that contain local machine paths, and drive-letter local filesystem path checks across the rendered public site.
-- 2026-05-15 `pnpm docs:site:test`: passed fixture coverage for excluding internal local-path logs from public rendering and failing required public release pages that leak drive-letter local filesystem paths.
+- 2026-05-15 `pnpm docs:site:test`: passed fixture coverage for excluding internal local-path logs from public rendering, failing required public release pages that leak drive-letter local filesystem paths, and failing broken local Markdown links with source/target diagnostics.
 - 2026-05-15 `pnpm v1:evidence:test`: passed verifier fixture coverage for complete evidence, missing evidence, stale commit evidence, accepted short-SHA evidence, owner-approved manual overrides, rejected too-short SHA evidence, and rejected prose-only docs-publication claims.
 - 2026-05-15 `git diff --check`: passed locally.
 - 2026-05-15 `pnpm --filter @open-tabletop/api test -- --run -t "ai provider proposal tools|expanded ai tools|tool advertisement|underlying campaign permissions for ai campaign-edit proposal tools|malformed function-call inputs|approves and applies ai proposals"`: passed 5 focused AI safety tests, with unrelated tests skipped by name filter.
