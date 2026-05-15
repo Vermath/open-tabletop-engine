@@ -4,6 +4,9 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 ## Current Follow-Up
 
+- 2026-05-14 selected-collection archive import browser follow-up:
+  - The archive browser smoke now mutates the exported campaign archive with a unique journal, applies only the selected Journals collection through the archive import wizard, verifies selected-record validation evidence, and confirms the imported journal renders in the Journal tab.
+  - Validation passed: `pnpm exec playwright test tests/e2e/auth-tabletop.spec.ts -g "GM can export and safely re-import a campaign archive"`.
 - 2026-05-14 asset delivery URL browser follow-up:
   - The seeded tabletop smoke now clicks the uploaded map asset's Signed URL action while the asset is active, verifies the signed-delivery success status, and still later verifies deleted assets disable token/background/signed-delivery actions before restore.
   - Validation passed: `pnpm exec playwright test tests/e2e/auth-tabletop.spec.ts -g "demo GM can reach campaign"`.

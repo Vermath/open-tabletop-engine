@@ -940,6 +940,7 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
 });
 
 test("GM can export and safely re-import a campaign archive", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
@@ -959,6 +960,28 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   const archiveDirectory = mkdtempSync(join(tmpdir(), "otte-e2e-archive-"));
   const archivePath = join(archiveDirectory, download.suggestedFilename());
   await download.saveAs(archivePath);
+  const selectedJournalTitle = `Selected import journal ${Date.now().toString(36)}`;
+  const selectedCollectionArchivePath = join(archiveDirectory, "selected-journal-import.ottx.json");
+  const selectedCollectionArchive = JSON.parse(readFileSync(archivePath, "utf8")) as {
+    data: {
+      journals: Array<Record<string, unknown>>;
+    };
+  };
+  selectedCollectionArchive.data.journals.push({
+    id: `jrn_e2e_selected_${Date.now().toString(36)}`,
+    campaignId: "camp_demo",
+    title: selectedJournalTitle,
+    body: "Imported through the selected-collection archive browser path.",
+    visibility: "gm_only",
+    visibleToUserIds: [],
+    visibleToActorIds: [],
+    tags: ["selected-import"],
+    createdBy: "usr_demo_gm",
+    updatedBy: "usr_demo_gm",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+  writeFileSync(selectedCollectionArchivePath, JSON.stringify(selectedCollectionArchive));
   const reportBundleDownloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Report Bundle" }).click();
   const reportBundleDownload = await reportBundleDownloadPromise;
@@ -1009,6 +1032,17 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("selected records");
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("tokens");
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("Dependency warnings");
+  await importWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("upsert");
+  await importWizard.getByLabel("Import Journals").check();
+  await importWizard.getByLabel("Import Tokens").uncheck();
+  await page.getByLabel("Import campaign archive").setInputFiles(selectedCollectionArchivePath);
+  await expect(page.getByText(/Archive imported|Imported with \d+ conflicts/)).toBeVisible();
+  await expect(importWizard.getByLabel("Archive import validation")).toContainText("selected records");
+  await expect(importWizard.getByLabel("Archive import validation")).toContainText("journals");
+  await page.getByRole("button", { name: "Journal" }).click();
+  await expect(page.getByText(selectedJournalTitle)).toBeVisible();
+  await expect(page.getByText("Imported through the selected-collection archive browser path.")).toBeVisible();
+  await expect(importWizard).toBeVisible();
   await importWizard.getByRole("combobox", { name: "Archive import scope" }).selectOption("all");
 
   await importWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("skip_conflicts");
