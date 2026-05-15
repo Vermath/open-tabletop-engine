@@ -2135,7 +2135,7 @@ export function App() {
   async function moderateChatMessage(message: ChatMessage, moderationStatus: ChatModerationResolution) {
     await apiPatch<ChatMessage>(`/api/v1/chat/messages/${message.id}/moderation`, { moderationStatus });
     setStatus(`Chat message marked ${titleCaseLabel(moderationStatus)}`);
-    await refresh();
+    await refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function exportChatHistory(format: ChatExportFormat) {
