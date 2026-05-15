@@ -374,6 +374,7 @@ function runHandoffReportsIncompleteVerifierStatus() {
     assert(result.stdout.includes("passing OIDC discovery/test result"), "handoff should mention identity readiness fields");
     assert(result.stdout.includes("distinct Windows NVDA"), "handoff should mention distinct AT environments");
     assert(result.stdout.includes("setup path, workflows completed"), "handoff should mention external GM scenario fields");
+    assert(result.stdout.includes("hosted `pnpm release:smoke` pass for the checked commit"), "handoff should mention hosted release-smoke verifier target");
     assert(result.stdout.includes("`pnpm docs:site:check` command parity"), "handoff should mention docs publication command parity");
     assert(result.stdout.includes("v1 release evidence is incomplete: 5 blocker(s) remain."), "handoff should include incomplete verifier output");
     assert(result.stdout.includes("Handoff command exits 0; run `pnpm v1:evidence:check` for the enforced release gate."), "handoff should distinguish guidance from enforcement");
