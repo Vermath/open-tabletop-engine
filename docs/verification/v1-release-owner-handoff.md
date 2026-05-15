@@ -2,7 +2,7 @@
 
 Status: final external-evidence checklist for the v1.0 release candidate. This is not completion evidence by itself.
 
-The local implementation, browser coverage, release-smoke wiring, and docs renderer are covered by `docs/verification/v1-gap-closure-completion-audit.md`. The remaining v1 blockers require OIDC/SCIM release-owner credentials, manual assistive-technology testing, external GM validation, hosted release-smoke evidence, and docs-publication support.
+The local implementation, browser coverage, release-smoke wiring, docs renderer, hosted release-smoke evidence, and public docs publication evidence are covered by `docs/verification/v1-gap-closure-completion-audit.md`. The remaining v1 blockers require OIDC/SCIM release-owner credentials, manual assistive-technology testing, and external GM validation.
 
 Use `docs/release/v1-release-checklist.md` as the release-owner preflight, publication, evidence, and rollback checklist.
 
@@ -38,8 +38,8 @@ pnpm v1:evidence:templates
 | Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` | `pnpm identity:smoke` exits `0` without skipping, and the evidence block records exact command parity, matching commit, non-placeholder API host, provider, sandbox label, smoke target, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result |
 | Assistive-technology acceptance | Run or delegate Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` | Every required environment has its own pass or pass-with-issues evidence section tied to the verifier target commit with browser, assistive technology, input method, scenario data, and workflows completed, or an explicit owner-approved substitution/descope is recorded |
 | External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` | Matching commit, tester role, relationship to project, setup path, scenario data, workflows completed, pass/pass-with-issues outcome, and issue-reporting feedback are recorded |
-| Hosted release-smoke refresh | Push the final release candidate and rerun `.github/workflows/release-smoke.yml` | `docs/verification/release-workflow-evidence.md` | `pnpm release:smoke` passes on the verifier target commit, with exact command parity and a concrete HTTPS hosted run URL recorded |
-| Public docs publication | Enable GitHub Pages for the repo, make the repo/plan support Pages, or approve an equivalent hosted publication | `docs/verification/release-workflow-evidence.md` | Docs build and deploy complete for the release commit; concrete HTTPS run URL, commit SHA, exact `pnpm docs:site:check` command parity, and published HTTPS URL are recorded |
+| Hosted release-smoke refresh | Covered by PR Release Smoke run `25915135921` for verifier target `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d` | `docs/verification/release-workflow-evidence.md` | Recorded and passing; rerun only if the release verifier target changes |
+| Public docs publication | Covered by equivalent hosted Vercel publication for verifier target `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d` | `docs/verification/release-workflow-evidence.md` | Recorded and passing with HTTPS published URL `https://docs-site-seven-theta.vercel.app`; republish only if the release verifier target changes |
 
 ## Identity Provider Smoke
 
@@ -75,13 +75,15 @@ Override values must explicitly say the release owner accepted or approved the s
 
 ## Docs Publication
 
-Preferred path:
+Current evidence:
 
-1. Enable GitHub Pages support for `Vermath/open-tabletop-engine`.
-2. Publish from `.github/workflows/docs-site.yml` on `main` or `workflow_dispatch`.
-3. Record the run URL, commit SHA, deployed URL, and pass summary in `docs/verification/release-workflow-evidence.md`.
+- Published URL: https://docs-site-seven-theta.vercel.app
+- Deployment evidence: https://vercel.com/treys-projects-52eabdbc/docs-site/GLk7UZT25WyiCyJ1LoEye4ajpLzX
+- Verifier target: `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d`
+- Command parity: `pnpm docs:site:check`
+- Final evidence gate: docs-publication
 
-Equivalent hosted publication is acceptable only if the owner records:
+If the release verifier target changes, republish from `dist/docs-site` after `pnpm docs:site:check` or publish from `.github/workflows/docs-site.yml` once GitHub Pages support is available. Any replacement publication evidence must record:
 
 - Hosting provider and HTTPS published URL.
 - Release commit SHA.
@@ -94,7 +96,7 @@ The PRD's v1 release-candidate milestone calls for external GM validation in add
 
 ## Hosted Release-Smoke Refresh
 
-The existing hosted release-smoke run proves the workflow shape, but it predates the current local-only commits. Before final acceptance, rerun hosted release smoke on the verifier target commit and update `docs/verification/release-workflow-evidence.md` with the HTTPS run URL, commit SHA, result, and exact `pnpm release:smoke` command.
+Hosted release-smoke evidence is recorded for verifier target `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d` with run `25915135921`. If the release verifier target changes, rerun hosted release smoke and update `docs/verification/release-workflow-evidence.md` with the HTTPS run URL, commit SHA, result, and exact `pnpm release:smoke` command.
 
 ## Final Release Check
 
