@@ -60,6 +60,7 @@ runEvidenceTemplatesIncludeVerifierFields();
 runEvidenceTemplatesReportDefaultTargetSource();
 runEvidenceTemplatesRejectShortReleaseTargetCommit();
 runHandoffReportsIncompleteVerifierStatus();
+runHandoffSeparatesRemainingAndSatisfiedGates();
 runHandoffReportsCompleteVerifierStatus();
 runHandoffRejectsShortReleaseTargetCommit();
 runHandoffGateMetadataMatchesVerifier();
@@ -971,6 +972,32 @@ function runHandoffReportsIncompleteVerifierStatus() {
   }
 }
 
+function runHandoffSeparatesRemainingAndSatisfiedGates() {
+  const root = fixtureRoot({
+    identity: "# Identity Provider Smoke Evidence\n",
+    assistive: "# Assistive Technology Pass Plan\n",
+    externalGm: "# External GM Validation Evidence\n",
+    releaseWorkflow: completeEvidence(commit).releaseWorkflow
+  });
+
+  try {
+    const result = runHandoff(root);
+    assert(result.status === 0, "handoff should exit successfully with partial evidence");
+    assert(result.stdout.includes("Remaining owner-supplied evidence:"), "handoff should print remaining evidence heading");
+    assert(result.stdout.includes("Satisfied evidence gates:"), "handoff should print satisfied evidence heading");
+    assert(sectionIncludes(result.stdout, "Remaining owner-supplied evidence:", "Live OIDC/SCIM provider readiness"), "identity should remain pending");
+    assert(sectionIncludes(result.stdout, "Remaining owner-supplied evidence:", "Manual assistive-technology matrix"), "assistive technology should remain pending");
+    assert(sectionIncludes(result.stdout, "Remaining owner-supplied evidence:", "External GM validation"), "external GM should remain pending");
+    assert(!sectionIncludes(result.stdout, "Remaining owner-supplied evidence:", "Hosted release smoke"), "hosted release smoke should not remain pending");
+    assert(!sectionIncludes(result.stdout, "Remaining owner-supplied evidence:", "Public docs publication"), "public docs publication should not remain pending");
+    assert(sectionIncludes(result.stdout, "Satisfied evidence gates:", "Hosted release smoke"), "hosted release smoke should be satisfied");
+    assert(sectionIncludes(result.stdout, "Satisfied evidence gates:", "Public docs publication"), "public docs publication should be satisfied");
+    assert(result.stdout.includes("v1 release evidence is incomplete: 3 blocker(s) remain."), "handoff should include partial verifier blocker count");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function runHandoffReportsCompleteVerifierStatus() {
   const root = fixtureRoot(completeEvidence(commit));
 
@@ -982,6 +1009,17 @@ function runHandoffReportsCompleteVerifierStatus() {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+function sectionIncludes(output, heading, value) {
+  const start = output.indexOf(heading);
+  if (start === -1) {
+    return false;
+  }
+
+  const nextHeading = output.indexOf("\n\n", start + heading.length);
+  const section = nextHeading === -1 ? output.slice(start) : output.slice(start, nextHeading);
+  return section.includes(value);
 }
 
 function runHandoffRejectsShortReleaseTargetCommit() {
