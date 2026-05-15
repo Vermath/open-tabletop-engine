@@ -9,6 +9,8 @@ const checker = join(repoRoot, "scripts", "check-v1-release-evidence.mjs");
 
 runFailsWhenEvidenceIsMissing();
 runPassesWhenEvidenceIsComplete();
+runPassesWithShortCommitEvidence();
+runPassesWithOwnerApprovedManualOverrides();
 runFailsWhenEvidenceTargetsAnotherCommit();
 
 console.log("v1 release evidence verifier tests passed.");
@@ -49,6 +51,37 @@ function runFailsWhenEvidenceTargetsAnotherCommit() {
     const result = runChecker(root);
     assert(result.status === 1, "evidence for a different commit should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "stale evidence should name missing hosted commit");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runPassesWithShortCommitEvidence() {
+  const root = fixtureRoot(completeEvidence(commit.slice(0, 12)));
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 0, "short commit evidence should pass when it prefixes the checked commit");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runPassesWithOwnerApprovedManualOverrides() {
+  const files = completeEvidence(commit);
+  files.assistive = `# Assistive Technology Pass Plan
+
+- Owner-approved descope: Release owner accepted a temporary reduced matrix for the release candidate.
+`;
+  files.externalGm = `# External GM Validation Evidence
+
+- Owner-approved substitution: Release owner accepted an internal GM substitute for the release candidate.
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 0, "owner-approved manual overrides should satisfy manual gates");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
