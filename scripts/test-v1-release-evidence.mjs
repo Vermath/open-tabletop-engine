@@ -12,6 +12,7 @@ const handoff = join(repoRoot, "scripts", "v1-release-handoff.mjs");
 runFailsWhenEvidenceIsMissing();
 runPassesWhenEvidenceIsComplete();
 runPassesWhenIdentityEvidenceMentionsNoSkippedChecks();
+runFailsWhenIdentityEvidenceOmitsReadinessResults();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
 runFailsWithPlaceholderOwnerOverrides();
@@ -65,6 +66,23 @@ function runPassesWhenIdentityEvidenceMentionsNoSkippedChecks() {
   try {
     const result = runChecker(root);
     assert(result.status === 0, "identity pass evidence should allow notes that no checks were skipped");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenIdentityEvidenceOmitsReadinessResults() {
+  const files = completeEvidence(commit);
+  files.identity = files.identity
+    .replace("- Command: pnpm identity:smoke\n", "")
+    .replace("- OIDC discovery/test result: pass\n", "")
+    .replace("- SCIM ServiceProviderConfig result: pass\n", "");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "identity evidence without command/readiness results should fail");
+    assert(result.stdout.includes("Record passing OIDC discovery/test and SCIM ServiceProviderConfig results."), "identity failure should name missing readiness results");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

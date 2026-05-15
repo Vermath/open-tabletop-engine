@@ -43,12 +43,16 @@ function checkIdentityProviderSmoke() {
     (section) =>
       field(section.body, "Result").toLowerCase() === "pass" &&
       evidenceCommitMatches(section.body) &&
-      field(section.body, "Exit code") === "0"
+      field(section.body, "Exit code") === "0" &&
+      field(section.body, "Command") === "pnpm identity:smoke" &&
+      passField(field(section.body, "OIDC discovery/test result")) &&
+      passField(field(section.body, "SCIM ServiceProviderConfig result"))
   );
 
   return result("Live OIDC/SCIM provider smoke", pass, [
     "Add a non-template identity-provider evidence block with Result: pass.",
     "Record Exit code: 0 from a non-skipped `pnpm identity:smoke` run against a real provider sandbox.",
+    "Record passing OIDC discovery/test and SCIM ServiceProviderConfig results.",
     `Record App build or commit for the checked release commit ${currentCommit}.`
   ]);
 }
@@ -199,6 +203,10 @@ function validHttpUrl(value) {
   } catch {
     return false;
   }
+}
+
+function passField(value) {
+  return /^pass(?:\b|:|-|$)/i.test(value.trim());
 }
 
 function explicitOwnerOverride(markdown) {
