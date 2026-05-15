@@ -101,7 +101,7 @@ function checkHostedReleaseSmoke() {
       field(section.body, "Result").toLowerCase() === "pass" &&
       shaMatches(field(section.body, "Commit SHA"), currentCommit) &&
       /pnpm release:smoke/.test(field(section.body, "Release command or build command")) &&
-      /^https?:\/\//i.test(field(section.body, "Run URL"))
+      validHttpUrl(field(section.body, "Run URL"))
   );
 
   return result("Hosted release-smoke on final commit", pass, [
@@ -122,8 +122,8 @@ function checkDocsPublication() {
     return (
       resultText === "pass" &&
       shaMatches(commitSha, currentCommit) &&
-      /^https?:\/\//i.test(runUrl) &&
-      /^https?:\/\//i.test(publishedUrl) &&
+      validHttpUrl(runUrl) &&
+      validHttpUrl(publishedUrl) &&
       !/not published|skipped|blocked/i.test(body) &&
       (/deploy|publication/i.test(section.title) || /owner-approved equivalent hosted publication/i.test(body))
     );
@@ -190,6 +190,15 @@ function shaMatches(recorded, expected) {
 
 function normalizeSha(value) {
   return value.replace(/`/g, "").trim().toLowerCase();
+}
+
+function validHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 function explicitOwnerOverride(markdown) {

@@ -20,6 +20,7 @@ runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
 runFailsWithHostedEvidenceMissingRunUrl();
 runFailsWithNegativeDocsPublicationResult();
+runFailsWithPlaceholderHostedUrls();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
 runHandoffReportsIncompleteVerifierStatus();
@@ -194,6 +195,21 @@ function runFailsWithNegativeDocsPublicationResult() {
     const result = runChecker(root);
     assert(result.status === 1, "negative docs publication result should fail");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "negative docs publication result should not satisfy publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithPlaceholderHostedUrls() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow.replace("https://github.example.test/run/1", "https://").replace("https://github.example.test/run/2", "https://").replace("https://docs.example.test/open-tabletop", "https://");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "placeholder hosted URLs should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "placeholder release-smoke run URL should fail the hosted smoke gate");
+    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "placeholder docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

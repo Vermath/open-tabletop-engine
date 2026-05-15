@@ -99,7 +99,7 @@ section("Hosted Workflow Evidence: Docs Site Publication Final", [
   ["Release command or build command", "pnpm docs:site:check"],
   ["Duration", ""],
   ["Artifact URL, if any", ""],
-  ["Published URL, if docs-site deploy", "https://"],
+  ["Published URL, if docs-site deploy", ""],
   ["Required checks observed", ""],
   ["Issues filed", ""],
   ["Blockers", ""],
