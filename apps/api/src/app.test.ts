@@ -7013,6 +7013,92 @@ describe("api", () => {
     await app.close();
   }, 10000);
 
+  it("rejects authenticated malformed request bodies without state changes", async () => {
+    const store = new MemoryStateStore();
+    const gm = store.state.users.find((user) => user.id === "usr_demo_gm");
+    if (gm) gm.serverAdmin = true;
+    const app = await buildApp({ store });
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const snapshot = () => ({
+      campaigns: store.state.campaigns.length,
+      scenes: store.state.scenes.length,
+      annotations: scene.annotations.length,
+      diceMacros: store.state.diceMacros.length,
+      contentImports: store.state.contentImports.length,
+      actors: store.state.actors.length,
+      items: store.state.items.length,
+      rolls: store.state.rolls.length,
+      chat: store.state.chat.length
+    });
+    const before = snapshot();
+    const malformedRoutes: Array<{
+      label: string;
+      method: "PATCH" | "POST";
+      url: string;
+      payload: Record<string, unknown>;
+      expected: Record<string, unknown>;
+    }> = [
+      {
+        label: "organization default enum",
+        method: "PATCH",
+        url: "/api/v1/organization/workspace-defaults",
+        payload: { defaultCampaignVisibility: "friends_only" },
+        expected: { error: "bad_request", message: "Default campaign visibility must be private, invite_only, or public" }
+      },
+      {
+        label: "campaign permission template",
+        method: "POST",
+        url: "/api/v1/campaigns",
+        payload: { name: "Invalid Campaign", permissionTemplate: "god_mode" },
+        expected: { error: "bad_request", message: "Campaign permission template must be standard, player_authoring, ai_assisted, or assistant_ops" }
+      },
+      {
+        label: "scene annotation geometry",
+        method: "POST",
+        url: "/api/v1/scenes/scn_vault_entry/annotations",
+        payload: { kind: "template", points: [{ x: 120, y: 120 }], radius: -1 },
+        expected: { error: "bad_request", message: "template annotation requires at least 2 valid points" }
+      },
+      {
+        label: "dice macro formula",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/dice-macros",
+        payload: { name: "Broken Macro", formula: "" },
+        expected: { error: "bad_request", message: "Dice macro formula is required" }
+      },
+      {
+        label: "content import selection",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/content-imports/preview",
+        payload: { source: { sourceType: "manual" }, entities: [] },
+        expected: { error: "content_import_entities_required" }
+      },
+      {
+        label: "plugin install package path",
+        method: "POST",
+        url: "/api/v1/plugins/install",
+        payload: { campaignId: "camp_demo" },
+        expected: { error: "bad_request", message: "Plugin packagePath is required" }
+      }
+    ];
+
+    try {
+      for (const route of malformedRoutes) {
+        const response = await app.inject({
+          method: route.method,
+          url: route.url,
+          headers: authHeaders,
+          payload: route.payload
+        });
+        expect(response.statusCode, route.label).toBe(400);
+        expect(response.json(), route.label).toMatchObject(route.expected);
+      }
+      expect(snapshot()).toEqual(before);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("authors fog, walls, and lights with scene update permission", async () => {
     const store = new MemoryStateStore();
     store.state.users.push({
