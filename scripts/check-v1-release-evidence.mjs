@@ -2,7 +2,8 @@ import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const root = process.cwd();
+const repoRoot = process.cwd();
+const evidenceRoot = process.env.OTTE_EVIDENCE_ROOT ?? repoRoot;
 const currentCommit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
 const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
 
@@ -133,7 +134,7 @@ function checkDocsPublication() {
 }
 
 function evidence(name) {
-  return readFileSync(join(root, "docs", "verification", name), "utf8");
+  return readFileSync(join(evidenceRoot, "docs", "verification", name), "utf8");
 }
 
 function sectionsFor(markdown, headingPrefix) {
@@ -194,7 +195,7 @@ function explicitOwnerOverride(markdown) {
 }
 
 function git(args) {
-  return execSync(`git ${args}`, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  return execSync(`git ${args}`, { cwd: repoRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 }
 
 function escapeRegExp(value) {

@@ -15,6 +15,7 @@
     "docs:site": "node scripts/build-docs-site.mjs",
     "docs:site:check": "node scripts/build-docs-site.mjs --check",
     "v1:evidence:check": "node scripts/check-v1-release-evidence.mjs",
+    "v1:evidence:test": "node scripts/test-v1-release-evidence.mjs",
     "release:smoke": "pnpm check && pnpm e2e && pnpm security:smoke && pnpm migration:smoke && pnpm deployment:smoke && pnpm perf:smoke",
     "identity:smoke": "pnpm --filter @open-tabletop/api test -- --run src/identity-smoke.test.ts",
     "migration:smoke": "pnpm --filter @open-tabletop/api test -- --run -t \"migration smoke\"",
