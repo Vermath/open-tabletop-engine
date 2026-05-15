@@ -44,8 +44,8 @@ pnpm v1:evidence:templates
 | Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` and issue #3 | `pnpm identity:smoke` exits `0` without skipping, and the evidence block records exact command parity, matching commit, non-placeholder API host, provider, sandbox label, smoke target, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result |
 | Assistive-technology acceptance | Run or delegate Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` and issue #4 | Every required environment has its own pass or pass-with-issues evidence section tied to the verifier target commit with browser, assistive technology, input method, scenario data, and workflows completed, or an explicit owner-approved substitution/descope is recorded |
 | External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` and issue #5 | Matching commit, tester role, relationship to project, setup path, scenario data, workflows completed, pass/pass-with-issues outcome, and issue-reporting feedback are recorded |
-| Hosted release-smoke refresh | Covered by PR Release Smoke run `25915135921` for verifier target `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d` | `docs/verification/release-workflow-evidence.md` | Recorded and passing; rerun only if the release verifier target changes |
-| Public docs publication | Covered by equivalent hosted Vercel publication for verifier target `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d` | `docs/verification/release-workflow-evidence.md` | Recorded and passing with HTTPS published URL `https://docs-site-seven-theta.vercel.app`; republish only if the release verifier target changes |
+| Hosted release-smoke refresh | Covered by PR Release Smoke run `25923886895` for verifier target `c7a0ccadba0dad11d34e0f0f8c3490c4df4274b7` | `docs/verification/release-workflow-evidence.md` | Recorded and passing; rerun only if the release verifier target changes |
+| Public docs publication | Covered by equivalent hosted Vercel publication for verifier target `c7a0ccadba0dad11d34e0f0f8c3490c4df4274b7` | `docs/verification/release-workflow-evidence.md` | Recorded and passing with HTTPS published URL `https://docs-site-seven-theta.vercel.app`; republish only if the release verifier target changes |
 
 ## Identity Provider Smoke
 
@@ -84,8 +84,8 @@ Override values must explicitly say the release owner accepted or approved the s
 Current evidence:
 
 - Published URL: https://docs-site-seven-theta.vercel.app
-- Deployment evidence: https://vercel.com/treys-projects-52eabdbc/docs-site/GLk7UZT25WyiCyJ1LoEye4ajpLzX
-- Verifier target: `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d`
+- Deployment evidence: https://vercel.com/treys-projects-52eabdbc/docs-site/4ZyaD9p1FKnQqy47ZDCRPNXUhr73
+- Verifier target: `c7a0ccadba0dad11d34e0f0f8c3490c4df4274b7`
 - Command parity: `pnpm docs:site:check`
 - Final evidence gate: docs-publication
 
@@ -102,7 +102,7 @@ The PRD's v1 release-candidate milestone calls for external GM validation in add
 
 ## Hosted Release-Smoke Refresh
 
-Hosted release-smoke evidence is recorded for verifier target `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d` with run `25915135921`. If the release verifier target changes, rerun hosted release smoke and update `docs/verification/release-workflow-evidence.md` with the HTTPS run URL, commit SHA, result, and exact `pnpm release:smoke` command.
+Hosted release-smoke evidence is recorded for verifier target `c7a0ccadba0dad11d34e0f0f8c3490c4df4274b7` with run `25923886895`. If the release verifier target changes, rerun hosted release smoke and update `docs/verification/release-workflow-evidence.md` with the HTTPS run URL, commit SHA, result, and exact `pnpm release:smoke` command.
 
 ## Final Release Check
 
