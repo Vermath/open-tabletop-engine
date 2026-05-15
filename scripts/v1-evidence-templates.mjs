@@ -15,6 +15,7 @@ console.log("");
 console.log(`Template target source: ${commitSource}`);
 console.log("");
 console.log("These are ready-to-fill blocks only. Do not mark Result as pass until the matching evidence has actually been collected.");
+console.log("Leave owner-approved override examples out of pass evidence unless the release owner explicitly accepted or approved the substitution/descope.");
 console.log("");
 
 const identityGate = gate("identity-provider");
@@ -54,10 +55,18 @@ for (const environment of requiredAssistiveTechnologyEnvironments) {
     ["Issues filed", ""],
     ["Workflows completed", ""],
     ["Blockers", ""],
-    ["Owner-approved descope", "<explicit owner approval summary>"],
     ["Notes", ""]
   ]);
 }
+
+section(gate("assistive-technology"), "Assistive Technology Owner-Approved Descope: <scope label>", [
+  ["Date", today],
+  ["App build or commit", commit],
+  ["Owner-approved descope", "Release owner accepted/approved ..."],
+  ["Required environments replaced or removed", ""],
+  ["Reason", ""],
+  ["Notes", ""]
+]);
 
 section(gate("external-gm"), "External GM Validation: <tester/session label>", [
   ["Date", today],
@@ -69,12 +78,20 @@ section(gate("external-gm"), "External GM Validation: <tester/session label>", [
   ["Web URL, if deployed", ""],
   ["Scenario data", ""],
   ["Workflows completed", ""],
-  ["Result", "pass / pass with issues / fail"],
-  ["Issues filed", ""],
-  ["Blockers", ""],
-  ["Owner acceptance notes", ""],
-  ["Owner-approved substitution", "<explicit owner approval summary>"],
-  ["Redacted screenshots/logs attached", ""],
+    ["Result", "pass / pass with issues / fail"],
+    ["Issues filed", ""],
+    ["Blockers", ""],
+    ["Owner acceptance notes", ""],
+    ["Redacted screenshots/logs attached", ""],
+    ["Notes", ""]
+]);
+
+section(gate("external-gm"), "External GM Owner-Approved Substitution: <substitution label>", [
+  ["Date", today],
+  ["App build or commit", commit],
+  ["Owner-approved substitution", "Release owner accepted/approved ..."],
+  ["Substitution used", ""],
+  ["Reason", ""],
   ["Notes", ""]
 ]);
 

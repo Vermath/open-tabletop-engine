@@ -874,9 +874,12 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   assert(result.stdout.includes("- Release command or build command: pnpm docs:site:check"), "docs publication template should preserve command parity");
   assert(result.stdout.includes("- Run URL: https://"), "hosted evidence templates should prompt for HTTPS run URLs");
   assert(result.stdout.includes("- Published URL, if docs-site deploy: https://"), "docs publication template should prompt for an HTTPS published URL");
-  assert(result.stdout.includes("- Owner-approved descope: <explicit owner approval summary>"), "manual templates should use a non-evidence owner-approval placeholder");
-  assert(result.stdout.includes("- Owner-approved substitution: <explicit owner approval summary>"), "GM template should use a non-evidence owner-approval placeholder");
-  assert(!result.stdout.includes("Release owner accepted/approved ..."), "templates should not include approval-like placeholder text");
+  assert(result.stdout.includes("## Assistive Technology Owner-Approved Descope: <scope label>"), "templates should include a separate AT owner-descope example");
+  assert(result.stdout.includes("## External GM Owner-Approved Substitution: <substitution label>"), "templates should include a separate GM substitution example");
+  assert(result.stdout.includes("- Owner-approved descope: Release owner accepted/approved ..."), "AT override example should show required owner approval phrasing");
+  assert(result.stdout.includes("- Owner-approved substitution: Release owner accepted/approved ..."), "GM override example should show required owner approval phrasing");
+  assert(!result.stdout.includes("- Owner-approved descope: <explicit owner approval summary>"), "templates should not emit verifier-rejected descope placeholders");
+  assert(!result.stdout.includes("- Owner-approved substitution: <explicit owner approval summary>"), "templates should not emit verifier-rejected substitution placeholders");
   for (const environment of requiredAssistiveTechnologyEnvironments) {
     assert(result.stdout.includes(`## Assistive Technology Pass: ${environment.label}`), `templates should include ${environment.label}`);
   }
