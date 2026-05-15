@@ -120,7 +120,7 @@ function checkHostedReleaseSmoke() {
 
   return result("Hosted release-smoke on final commit", pass, [
     `No hosted release-smoke pass is recorded for commit ${currentCommit}.`,
-    "Record a GitHub Actions or owner-approved equivalent run where `pnpm release:smoke` passes on the final release commit."
+    "Record a GitHub Actions or owner-approved equivalent run where `pnpm release:smoke` passes on the checked release commit."
   ]);
 }
 
