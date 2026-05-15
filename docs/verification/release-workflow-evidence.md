@@ -77,7 +77,7 @@ Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are usefu
 - Docs Site run: https://github.com/Vermath/open-tabletop-engine/actions/runs/25897361971
 - Docs Site build result: pass
 - Docs Site deploy result: skipped on PR
-- Notes: This confirms the remote PR head checks were green, but the local branch has additional unpushed commits. Final acceptance still needs hosted release-smoke and docs evidence tied to the final pushed release commit or an owner-approved successor.
+- Notes: This confirms the remote PR head checks were green, but the local branch has additional unpushed commits. Final acceptance still needs hosted release-smoke and docs evidence tied to the final verifier target commit.
 
 ## Required Hosted Runs
 
@@ -127,7 +127,7 @@ Copy one block per workflow into the release evidence log:
 
 The release-smoke hosted pass is acceptable only when:
 
-- The workflow run is tied to the release candidate commit or an owner-approved successor commit.
+- The workflow run is tied to the release candidate commit checked by `pnpm v1:evidence:check`, or by `OTTE_RELEASE_COMMIT=<hosted-run-commit-sha> pnpm v1:evidence:check` if evidence docs are committed afterward.
 - The run completes successfully without rerunning with uncommitted local changes.
 - The `Run release smoke` step executes `pnpm release:smoke`.
 - Any manually rerun job records the final run attempt URL.

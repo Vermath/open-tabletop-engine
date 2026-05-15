@@ -29,7 +29,7 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 - Publish release notes from `docs/release/v1.0.md`.
 - Publish public docs from `docs/site/index.md`.
 - Confirm the published docs expose no secrets, local filesystem paths, provider tokens, private evidence attachments, or sandbox credentials.
-- Tag the release only after the hosted release-smoke pass and public documentation publication are recorded for the final release commit or an owner-approved successor.
+- Tag the release only after the hosted release-smoke pass and public documentation publication are recorded for the verifier target commit.
 
 ## Rollback Plan
 
