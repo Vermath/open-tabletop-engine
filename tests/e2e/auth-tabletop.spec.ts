@@ -1719,6 +1719,18 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
   await page.getByRole("checkbox", { name: "Apply action effect" }).check();
   await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  const biteDamageCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Bite Damage" }).first();
+  await expect(biteDamageCard).toContainText("effect supported");
+  const targetHpBeforeBite = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
+  await biteDamageCard.getByRole("button", { name: "Use action" }).click();
+  await expect(page.getByText(new RegExp(`E2E Giant Spider ${suffix} action posted; damage applied`))).toBeVisible();
+  await expect
+    .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
+    .toBeLessThan(targetHpBeforeBite);
+  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: monster.name });
+  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(page.getByRole("heading", { name: `E2E Giant Spider ${suffix}` })).toBeVisible();
+  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
   const webEffectCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Web Effect" }).first();
   await expect(webEffectCard).toContainText("effect supported");
   await webEffectCard.getByRole("button", { name: "Use action" }).click();
