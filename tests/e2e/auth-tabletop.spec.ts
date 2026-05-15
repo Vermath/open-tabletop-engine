@@ -1406,8 +1406,13 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(versionedPluginCard).toContainText("Audit history: 3 plugin.install rows");
 
   await expect(sdkPanel.getByText("System Registry")).toBeVisible();
-  await expect(sdkPanel.locator("article", { hasText: "D&D 5.5e SRD" })).toContainText("Manifest validation");
-  await expect(sdkPanel.locator("article", { hasText: "D&D 5.5e SRD" })).toContainText("Activation impact");
+  const dndSystemCard = sdkPanel.locator("article", { hasText: "D&D 5.5e SRD" });
+  await expect(dndSystemCard).toContainText("Manifest validation");
+  await expect(dndSystemCard).toContainText("Core: >=0.1.0");
+  await expect(dndSystemCard).toContainText("Entrypoints: client/server");
+  await expect(dndSystemCard).toContainText("Schemas: actor/item");
+  await expect(dndSystemCard).toContainText("Permissions: 4");
+  await expect(dndSystemCard).toContainText("Activation impact");
 
   const fighterTemplate = sdkPanel.locator("article", { hasText: "SRD 5.2.1 martial character" });
   await fighterTemplate.getByRole("button", { name: "Create" }).click();
@@ -1506,6 +1511,10 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await page.getByRole("button", { name: "SDK", exact: true }).click();
   const genericSystemCard = sdkPanel.locator("article", { hasText: "Generic Fantasy" });
   await expect(genericSystemCard).toContainText("available system");
+  await expect(genericSystemCard).toContainText("Core: >=0.1.0");
+  await expect(genericSystemCard).toContainText("Entrypoints: client/server");
+  await expect(genericSystemCard).toContainText("Schemas: actor/item");
+  await expect(genericSystemCard).toContainText("Permissions: 4");
   await genericSystemCard.getByRole("button", { name: "Activate" }).click();
   await expect(page.getByText("Generic Fantasy activated")).toBeVisible();
   await expect(sdkPanel.locator(".metric-row", { hasText: "Active System" })).toContainText("Generic Fantasy");
@@ -1712,6 +1721,10 @@ test("SDK marketplace is read-only for players in the browser", async ({ page })
   await expect(sdkPanel.getByText("System Registry")).toBeVisible();
   const inactiveSystem = sdkPanel.locator("article", { hasText: "Stellar Frontiers" });
   await expect(inactiveSystem).toContainText("available system");
+  await expect(inactiveSystem).toContainText("Core: >=0.1.0");
+  await expect(inactiveSystem).toContainText("Entrypoints: client/server");
+  await expect(inactiveSystem).toContainText("Schemas: actor/item");
+  await expect(inactiveSystem).toContainText("Permissions: 4");
   await expect(inactiveSystem.getByRole("button", { name: "Activate" })).toBeDisabled();
   const characterTemplate = sdkPanel.locator("article", { hasText: "character template" }).first();
   await expect(characterTemplate.getByRole("button", { name: "Create" })).toBeDisabled();

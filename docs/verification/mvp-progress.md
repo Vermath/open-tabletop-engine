@@ -4,6 +4,10 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 ## Current Follow-Up
 
+- 2026-05-14 system manifest marketplace browser follow-up:
+  - The Runtime SDK System Registry now surfaces each system manifest's core compatibility range, declared client/server entrypoints, actor/item schemas, and permission count beside activation impact.
+  - The GM SDK/plugin browser smoke now verifies that manifest metadata for active and available systems before activation, and the player read-only marketplace smoke verifies the same metadata remains inspectable while activation stays disabled.
+  - Validation passed: `pnpm exec playwright test tests/e2e/auth-tabletop.spec.ts -g "GM can run SDK plugin and system workflows|SDK marketplace is read-only for players"`.
 - 2026-05-14 cross-organization route-scope follow-up:
   - Direct campaign permission checks now enforce the bearer session's active organization before campaign permission grants are evaluated.
   - Campaign-invite acceptance now attaches the invited user to the campaign organization and selects that organization for the new session.

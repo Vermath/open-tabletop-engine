@@ -12164,6 +12164,14 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
   const advancementLabel = systemAdvancementLabel(props.actor?.systemId);
   const selectedAdvancementOption = props.advancementOptions.find((option) => option.id === advancementOptionId) ?? props.advancementOptions[0];
   const arcaneRecovery = props.actor ? dnd5eSrdArcaneRecoverySelection(props.actor) : undefined;
+  const systemEntrypointLabel = (system: SystemRuntimeInfo) => {
+    const entrypoints = [system.entrypoints?.client ? "client" : undefined, system.entrypoints?.server ? "server" : undefined].filter(Boolean);
+    return entrypoints.length > 0 ? entrypoints.join("/") : "none";
+  };
+  const systemSchemaLabel = (system: SystemRuntimeInfo) => {
+    const schemas = [system.schemas?.actor ? "actor" : undefined, system.schemas?.item ? "item" : undefined].filter(Boolean);
+    return schemas.length > 0 ? schemas.join("/") : "none";
+  };
   const registryPlugins = props.plugins.filter((plugin) => plugin.source?.type === "registry");
   const installedPlugins = props.plugins.filter((plugin) => plugin.installed);
   const incompatiblePlugins = props.plugins.filter((plugin) => plugin.compatibleCore?.satisfied === false);
@@ -12433,6 +12441,10 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
           <p>Manifest validation: bundled and loadable - v{system.version}</p>
           <div className="admin-meta">
             <span>Compendium: {system.id.includes("dnd") ? "SRD entries" : "starter entries"}</span>
+            <span>Core: {system.compatibleCore ?? "unspecified"}</span>
+            <span>Entrypoints: {systemEntrypointLabel(system)}</span>
+            <span>Schemas: {systemSchemaLabel(system)}</span>
+            <span>Permissions: {formatNumber(system.permissions?.length ?? 0)}</span>
             <span>Migration: no campaign migration required</span>
             <span>Activation impact: campaign default rules system</span>
           </div>

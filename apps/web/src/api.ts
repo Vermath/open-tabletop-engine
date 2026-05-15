@@ -599,6 +599,16 @@ export interface SystemRuntimeInfo {
   id: string;
   name: string;
   version: string;
+  compatibleCore?: string;
+  entrypoints?: {
+    client?: string;
+    server?: string;
+  };
+  schemas?: {
+    actor?: string;
+    item?: string;
+  };
+  permissions?: PermissionName[];
   active: boolean;
 }
 
