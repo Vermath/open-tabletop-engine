@@ -370,6 +370,7 @@ function runHandoffReportsIncompleteVerifierStatus() {
     const result = runHandoff(root);
     assert(result.status === 0, "handoff should exit successfully even when evidence is incomplete");
     assert(result.stdout.includes("Current evidence verifier status:"), "handoff should print verifier status");
+    assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<hosted-run-commit-sha> pnpm v1:evidence:check"), "handoff should not imply the current docs commit is the hosted run target");
     assert(result.stdout.includes("pnpm v1:evidence:templates"), "handoff should point to the evidence template generator");
     assert(result.stdout.includes("passing OIDC discovery/test result"), "handoff should mention identity readiness fields");
     assert(result.stdout.includes("distinct Windows NVDA"), "handoff should mention distinct AT environments");

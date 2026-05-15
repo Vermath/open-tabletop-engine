@@ -37,7 +37,7 @@ console.log("Final evidence verifier:");
 console.log("  pnpm v1:evidence:check");
 console.log("");
 console.log("If evidence docs are committed after the hosted workflow run:");
-console.log(`  OTTE_RELEASE_COMMIT=${commit} pnpm v1:evidence:check`);
+console.log("  OTTE_RELEASE_COMMIT=<hosted-run-commit-sha> pnpm v1:evidence:check");
 console.log("");
 console.log("Remaining owner-supplied evidence:");
 
