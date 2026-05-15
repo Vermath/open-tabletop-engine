@@ -14,9 +14,12 @@ describe("deployment smoke", () => {
     const packageJson = JSON.parse(readWorkspaceFile("package.json")) as { scripts: Record<string, string> };
     expect(packageJson.scripts["deployment:smoke"]).toBe('pnpm --filter @open-tabletop/api test -- --run -t "deployment smoke"');
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm deployment:smoke");
+    expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:issues:test");
+    expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:issues:check");
 
     const workflow = readWorkspaceFile(".github/workflows/release-smoke.yml");
     expect(workflow).toContain("pnpm release:smoke");
+    expect(workflow).toContain("GH_TOKEN: ${{ github.token }}");
 
     const compose = readWorkspaceFile("docker-compose.yml");
     expect(compose).toContain("dockerfile: infra/docker/api.Dockerfile");
