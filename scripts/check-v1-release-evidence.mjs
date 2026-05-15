@@ -221,7 +221,8 @@ function validHttpUrl(value) {
       !placeholderHost(url.hostname) &&
       !localHost(url.hostname) &&
       !localNetworkName(url.hostname) &&
-      !privateHost(url.hostname)
+      !privateHost(url.hostname) &&
+      !reservedHost(url.hostname)
     );
   } catch {
     return false;
@@ -261,6 +262,22 @@ function privateHost(hostname) {
     );
   }
   return normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80:");
+}
+
+function reservedHost(hostname) {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  const octets = normalized.split(".").map((part) => Number(part));
+  if (
+    octets.length === 4 &&
+    octets.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)
+  ) {
+    return (
+      (octets[0] === 192 && octets[1] === 0 && octets[2] === 2) ||
+      (octets[0] === 198 && octets[1] === 51 && octets[2] === 100) ||
+      (octets[0] === 203 && octets[1] === 0 && octets[2] === 113)
+    );
+  }
+  return normalized.endsWith(".test") || normalized.endsWith(".example") || normalized.endsWith(".invalid") || normalized.startsWith("2001:db8:");
 }
 
 function passField(value) {
