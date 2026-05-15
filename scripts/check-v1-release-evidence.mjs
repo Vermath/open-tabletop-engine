@@ -1,11 +1,13 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { releaseEvidenceGates } from "./v1-release-gates.mjs";
 
 const repoRoot = process.cwd();
 const evidenceRoot = process.env.OTTE_EVIDENCE_ROOT ?? repoRoot;
 const currentCommit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
 const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
+const gateByName = new Map(releaseEvidenceGates.map((gate) => [gate.name, gate]));
 
 if (!fullSha(currentCommit)) {
   console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${currentCommit}.`);
@@ -42,7 +44,8 @@ if (failed.length > 0) {
 console.log("\nv1 release evidence is complete for the checked gates.");
 
 function checkIdentityProviderSmoke() {
-  const doc = evidence("identity-provider-smoke-evidence.md");
+  const releaseGate = gate("Live OIDC/SCIM provider readiness");
+  const doc = evidence(releaseGate);
   const sections = sectionsFor(doc, "Identity Provider Smoke").filter((section) => !placeholder(section.title));
   const pass = sections.find(
     (section) =>
@@ -58,7 +61,7 @@ function checkIdentityProviderSmoke() {
       passField(field(section.body, "SCIM ServiceProviderConfig result"))
   );
 
-  return result("Live OIDC/SCIM provider smoke", pass, [
+  return result(releaseGate.verifierName, pass, [
     "Add a non-template identity-provider evidence block with Result: pass.",
     "Record Exit code: 0 from a non-skipped `pnpm identity:smoke` run against a real provider sandbox.",
     "Record non-placeholder API base URL host, provider, provider sandbox or tenant label, and smoke target.",
@@ -68,7 +71,8 @@ function checkIdentityProviderSmoke() {
 }
 
 function checkAssistiveTechnologyPass() {
-  const doc = evidence("accessibility-assistive-tech-pass.md");
+  const releaseGate = gate("Manual assistive-technology matrix");
+  const doc = evidence(releaseGate);
   const required = [
     { label: "Windows NVDA", pattern: /\bwindows\b[\s\S]*\bnvda\b|\bnvda\b[\s\S]*\bwindows\b/i },
     { label: "Windows Narrator", pattern: /\bwindows\b[\s\S]*\bnarrator\b|\bnarrator\b[\s\S]*\bwindows\b/i },
@@ -96,14 +100,15 @@ function checkAssistiveTechnologyPass() {
 
   const hasOwnerSubstitution = explicitOwnerOverride(doc);
   const missing = required.map((environment) => environment.label).filter((environment) => !accepted.has(environment));
-  return result("Manual assistive-technology matrix", missing.length === 0 || hasOwnerSubstitution, [
+  return result(releaseGate.verifierName, missing.length === 0 || hasOwnerSubstitution, [
     `Missing pass evidence for: ${missing.join(", ") || "none"}.`,
     "Add one non-template pass or pass-with-issues evidence block per required environment, tied to the checked release commit, with browser, assistive technology, input method, scenario data, and workflows completed; or record an owner-approved substitution/descope."
   ]);
 }
 
 function checkExternalGmValidation() {
-  const doc = evidence("external-gm-validation.md");
+  const releaseGate = gate("External GM validation");
+  const doc = evidence(releaseGate);
   const sections = sectionsFor(doc, "External GM Validation").filter((section) => !placeholder(section.title));
   const pass = sections.find(
     (section) =>
@@ -117,14 +122,15 @@ function checkExternalGmValidation() {
   );
   const hasOwnerSubstitution = explicitOwnerOverride(doc);
 
-  return result("External GM validation", pass || hasOwnerSubstitution, [
+  return result(releaseGate.verifierName, pass || hasOwnerSubstitution, [
     "Add a non-template external GM validation block with Result: pass or pass with issues, App build or commit matching the checked release commit, tester role, relationship to project, setup path, scenario data, and workflows completed.",
     "Alternatively record the explicit owner-approved substitution called out by the release handoff."
   ]);
 }
 
 function checkHostedReleaseSmoke() {
-  const doc = evidence("release-workflow-evidence.md");
+  const releaseGate = gate("Hosted release smoke");
+  const doc = evidence(releaseGate);
   const sections = sectionsFor(doc, "Hosted Workflow Evidence").filter((section) => /release smoke/i.test(section.title) && !placeholder(section.title));
   const pass = sections.find(
     (section) =>
@@ -134,14 +140,15 @@ function checkHostedReleaseSmoke() {
       validHostedRunUrl(field(section.body, "Run URL"))
   );
 
-  return result("Hosted release-smoke on checked commit", pass, [
+  return result(releaseGate.verifierName, pass, [
     `No hosted release-smoke pass is recorded for commit ${currentCommit}.`,
     "Record a GitHub Actions or owner-approved equivalent run where `pnpm release:smoke` passes on the checked release commit, with a concrete HTTPS hosted run URL."
   ]);
 }
 
 function checkDocsPublication() {
-  const doc = evidence("release-workflow-evidence.md");
+  const releaseGate = gate("Public docs publication");
+  const doc = evidence(releaseGate);
   const sections = sectionsFor(doc, "Hosted Workflow Evidence").filter((section) => /docs site/i.test(section.title) && !placeholder(section.title));
   const pass = sections.find((section) => {
     const body = section.body;
@@ -161,14 +168,22 @@ function checkDocsPublication() {
     );
   });
 
-  return result("Public docs publication", pass, [
+  return result(releaseGate.verifierName, pass, [
     `No successful docs-site publication with an HTTPS published URL is recorded for commit ${currentCommit}.`,
     "Record a successful Pages deployment or owner-approved equivalent hosted publication evidence block for the checked release commit, including HTTPS URLs and `pnpm docs:site:check` command parity."
   ]);
 }
 
-function evidence(name) {
-  return readFileSync(join(evidenceRoot, "docs", "verification", name), "utf8");
+function evidence(gate) {
+  return readFileSync(join(evidenceRoot, gate.evidence), "utf8");
+}
+
+function gate(name) {
+  const releaseGate = gateByName.get(name);
+  if (!releaseGate) {
+    throw new Error(`Unknown release evidence gate: ${name}`);
+  }
+  return releaseGate;
 }
 
 function sectionsFor(markdown, headingPrefix) {
