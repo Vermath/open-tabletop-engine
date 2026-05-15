@@ -4,6 +4,14 @@ import { basename, dirname, extname, join, relative } from "node:path";
 const root = process.cwd();
 const outputDir = join(root, "dist", "docs-site");
 const markdownRoots = [join(root, "README.md"), join(root, "CHANGELOG.md"), join(root, "docs")];
+const excludedPublicSources = new Set(
+  [
+    "docs/verification/mvp-acceptance-audit.md",
+    "docs/verification/mvp-progress.md",
+    "docs/verification/v0.3-dogfood-acceptance.md",
+    "docs/verification/v0.3-dogfood-progress.md"
+  ].map((file) => file.toLowerCase())
+);
 
 rmSync(outputDir, { recursive: true, force: true });
 mkdirSync(outputDir, { recursive: true });
@@ -54,11 +62,7 @@ if (process.argv.includes("--check")) {
     console.error(`Docs site build found broken markdown links:\n${brokenLinks.join("\n")}`);
     process.exit(1);
   }
-  const localPathLeakSources = required
-    .filter((file) => file.endsWith(".html"))
-    .map((file) => join(root, file.replace(/\.html$/i, ".md")))
-    .filter((file) => existsSync(file));
-  const localPathLeaks = localPathLeakSources.flatMap((file) => findLocalPathLeaks(file));
+  const localPathLeaks = markdownFiles.flatMap((file) => findLocalPathLeaks(file));
   if (localPathLeaks.length > 0) {
     console.error(`Docs site build found local filesystem paths in public docs:\n${localPathLeaks.join("\n")}`);
     process.exit(1);
@@ -68,7 +72,10 @@ if (process.argv.includes("--check")) {
 function collectMarkdown(entry) {
   if (!existsSync(entry)) return [];
   const stats = statSync(entry);
-  if (stats.isFile()) return extname(entry).toLowerCase() === ".md" ? [entry] : [];
+  if (stats.isFile()) {
+    const relativePath = relative(root, entry).replaceAll("\\", "/").toLowerCase();
+    return extname(entry).toLowerCase() === ".md" && !excludedPublicSources.has(relativePath) ? [entry] : [];
+  }
   return readdirSync(entry, { withFileTypes: true }).flatMap((item) => collectMarkdown(join(entry, item.name)));
 }
 

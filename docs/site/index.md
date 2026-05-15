@@ -51,10 +51,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 - [Identity provider smoke evidence](../verification/identity-provider-smoke-evidence.md)
 - [Release workflow evidence](../verification/release-workflow-evidence.md)
 - [Assistive technology pass plan](../verification/accessibility-assistive-tech-pass.md)
-- [MVP progress log](../verification/mvp-progress.md)
 - [v0.3 dogfood readiness](../verification/v0.3-dogfood-readiness.md)
-- [v0.3 dogfood progress](../verification/v0.3-dogfood-progress.md)
-- [v0.3 dogfood acceptance](../verification/v0.3-dogfood-acceptance.md)
 
 ## Publication Requirements
 
