@@ -124,7 +124,7 @@ function findReleaseGateGaps() {
       .filter((command) => !markdown.includes(command))
       .map((command) => `${source} missing ${command}`);
   });
-  const evidenceFiles = ["docs/release/v1.0.md", "docs/prd-v1-gap-closure.md"];
+  const evidenceFiles = ["docs/release/v1.0.md", "docs/prd-v1-gap-closure.md", "docs/verification/v1-release-owner-handoff.md"];
   const evidenceGaps = evidenceFiles.flatMap((source) => {
     const markdown = readFileSync(join(root, source), "utf8").toLowerCase();
     return requiredEvidenceTerms

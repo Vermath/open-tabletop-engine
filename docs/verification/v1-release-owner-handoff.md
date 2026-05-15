@@ -2,7 +2,7 @@
 
 Status: final external-evidence checklist for the v1.0 release candidate. This is not completion evidence by itself.
 
-The local implementation, browser coverage, release-smoke wiring, and docs renderer are covered by `docs/verification/v1-gap-closure-completion-audit.md`. The remaining v1 blockers require release-owner credentials, manual assistive-technology testing, or hosted publication support.
+The local implementation, browser coverage, release-smoke wiring, and docs renderer are covered by `docs/verification/v1-gap-closure-completion-audit.md`. The remaining v1 blockers require OIDC/SCIM release-owner credentials, manual assistive-technology testing, external GM validation, hosted release-smoke evidence, and docs-publication support.
 
 Use `docs/release/v1-release-checklist.md` as the release-owner preflight, publication, evidence, and rollback checklist.
 

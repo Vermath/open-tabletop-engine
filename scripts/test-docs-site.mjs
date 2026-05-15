@@ -98,7 +98,10 @@ function writeRequiredDocs(root) {
     "# v1 Gap Closure PRD\n\nRemaining final evidence gates: OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication.\n"
   );
   writeFileSync(join(root, "docs", "verification", "v1-gap-closure-completion-audit.md"), "# v1 Gap Closure Completion Audit\n");
-  writeFileSync(join(root, "docs", "verification", "v1-release-owner-handoff.md"), "# v1 Release Owner Handoff\n");
+  writeFileSync(
+    join(root, "docs", "verification", "v1-release-owner-handoff.md"),
+    "# v1 Release Owner Handoff\n\nRemaining final evidence gates: OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication.\n"
+  );
   writeFileSync(join(root, "docs", "verification", "release-workflow-evidence.md"), "# Release Workflow Evidence\n");
 }
 
