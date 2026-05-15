@@ -15,6 +15,7 @@ runPassesWhenIdentityEvidenceMentionsNoSkippedChecks();
 runFailsWhenIdentityEvidenceOmitsReadinessResults();
 runFailsWhenIdentityEvidenceUsesWrongCommand();
 runFailsWhenIdentityReadinessUsesTemplateChoices();
+runFailsWhenIdentityReadinessUsesCompactTemplateChoices();
 runFailsWhenIdentityEvidenceOmitsProviderDetails();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
@@ -133,6 +134,22 @@ function runFailsWhenIdentityReadinessUsesTemplateChoices() {
     const result = runChecker(root);
     assert(result.status === 1, "identity readiness template-choice values should fail");
     assert(result.stdout.includes("Record passing OIDC discovery/test and SCIM ServiceProviderConfig results."), "identity readiness template-choice failure should name required readiness results");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenIdentityReadinessUsesCompactTemplateChoices() {
+  const files = completeEvidence(commit);
+  files.identity = files.identity
+    .replace("- OIDC discovery/test result: pass\n", "- OIDC discovery/test result: pass/fail/skipped\n")
+    .replace("- SCIM ServiceProviderConfig result: pass\n", "- SCIM ServiceProviderConfig result: pass/fail/skipped\n");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "identity readiness compact template-choice values should fail");
+    assert(result.stdout.includes("Record passing OIDC discovery/test and SCIM ServiceProviderConfig results."), "identity compact template-choice failure should name required readiness results");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

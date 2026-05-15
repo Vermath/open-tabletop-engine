@@ -299,7 +299,7 @@ function reservedHost(hostname) {
 
 function passField(value) {
   const normalized = value.trim();
-  return !templateChoice(normalized.toLowerCase()) && /^pass(?:\b|:|-|$)/i.test(normalized);
+  return !templateChoice(normalized.toLowerCase()) && !normalized.includes("/") && /^pass(?:\b|:|-|$)/i.test(normalized);
 }
 
 function meaningfulField(value) {
