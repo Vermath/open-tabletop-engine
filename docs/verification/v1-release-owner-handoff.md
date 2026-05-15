@@ -22,6 +22,13 @@ To generate ready-to-fill evidence blocks with the current release commit prefil
 pnpm v1:evidence:templates
 ```
 
+If evidence documents are committed after the hosted workflow run, generate the blocks against the hosted run commit:
+
+```powershell
+$env:OTTE_RELEASE_COMMIT = "<hosted-run-commit-sha>"
+pnpm v1:evidence:templates
+```
+
 ## Remaining Decisions
 
 | Gate | Owner action | Evidence destination | Completion rule |
