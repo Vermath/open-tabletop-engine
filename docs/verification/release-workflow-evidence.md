@@ -92,9 +92,10 @@ If the release owner intentionally accepts a different hosted CI provider, recor
 
 When the evidence documents are updated in a follow-up commit after the hosted workflow runs, check the workflow commit explicitly:
 
-```bash
-OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:completion:audit
-OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check
+```powershell
+$env:OTTE_RELEASE_COMMIT = "<full-40-character-hosted-run-commit-sha>"
+pnpm v1:completion:audit
+pnpm v1:evidence:check
 ```
 
 Without `OTTE_RELEASE_COMMIT`, the aggregate audit and evidence verifier check the current local `HEAD`.
