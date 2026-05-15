@@ -51,6 +51,7 @@ runFailsWithSensitiveParamHostedUrls();
 runFailsWithHttpHostedUrls();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
+runEvidenceTemplatesRejectShortReleaseTargetCommit();
 runHandoffReportsIncompleteVerifierStatus();
 runHandoffReportsCompleteVerifierStatus();
 
@@ -800,6 +801,20 @@ function runEvidenceTemplatesIncludeVerifierFields() {
     assert(result.stdout.includes(`## Assistive Technology Pass: ${environment}`), `templates should include ${environment}`);
   }
   assert(result.stdout.includes("Do not mark Result as pass until the matching evidence has actually been collected."), "templates should warn against treating placeholders as pass evidence");
+}
+
+function runEvidenceTemplatesRejectShortReleaseTargetCommit() {
+  const result = spawnSync(process.execPath, [templates], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      OTTE_RELEASE_COMMIT: commit.slice(0, 12)
+    },
+    encoding: "utf8"
+  });
+
+  assert(result.status === 1, "evidence template generator should reject short release target commits");
+  assert(result.stderr.includes("OTTE_RELEASE_COMMIT must be a full 40-character commit SHA"), "template generator short-target failure should name full-SHA requirement");
 }
 
 function runHandoffReportsIncompleteVerifierStatus() {

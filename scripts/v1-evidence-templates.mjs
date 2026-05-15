@@ -3,6 +3,11 @@ import { execSync } from "node:child_process";
 const commit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
 const today = new Date().toISOString().slice(0, 10);
 
+if (!/^[0-9a-f]{40}$/i.test(commit.trim())) {
+  console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${commit}.`);
+  process.exit(1);
+}
+
 console.log(`# v1 Evidence Templates for ${commit}`);
 console.log("");
 console.log("These are ready-to-fill blocks only. Do not mark Result as pass until the matching evidence has actually been collected.");
