@@ -731,6 +731,9 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByText("e2e-map.svg metadata updated")).toBeVisible();
   await expect(uploadedAsset).toContainText("maps/revised");
   await expect(uploadedAsset).toContainText("vault, background");
+  await uploadedAsset.getByRole("button", { name: "Signed URL" }).click();
+  await expect(page.getByText("Signed URL ready for e2e-map.svg")).toBeVisible();
+  await expect(page.getByText("Asset delivery URL created")).toBeVisible();
   const assetFolderNavigation = page.getByLabel("Asset folder navigation");
   await expect(assetFolderNavigation).toContainText("maps");
   await page.getByRole("button", { name: "Open asset folder maps" }).click();

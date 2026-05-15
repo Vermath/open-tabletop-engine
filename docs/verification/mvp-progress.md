@@ -4,6 +4,9 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 ## Current Follow-Up
 
+- 2026-05-14 asset delivery URL browser follow-up:
+  - The seeded tabletop smoke now clicks the uploaded map asset's Signed URL action while the asset is active, verifies the signed-delivery success status, and still later verifies deleted assets disable token/background/signed-delivery actions before restore.
+  - Validation passed: `pnpm exec playwright test tests/e2e/auth-tabletop.spec.ts -g "demo GM can reach campaign"`.
 - 2026-05-14 system manifest marketplace browser follow-up:
   - The Runtime SDK System Registry now surfaces each system manifest's core compatibility range, declared client/server entrypoints, actor/item schemas, and permission count beside activation impact.
   - The GM SDK/plugin browser smoke now verifies that manifest metadata for active and available systems before activation, and the player read-only marketplace smoke verifies the same metadata remains inspectable while activation stays disabled.
