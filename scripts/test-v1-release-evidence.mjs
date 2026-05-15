@@ -511,7 +511,7 @@ Published URL, if docs-site deploy: https://vermath.github.io/open-tabletop-engi
   try {
     const result = runChecker(root);
     assert(result.status === 1, "prose-only docs publication override should fail");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "prose-only docs publication should not satisfy publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "prose-only docs publication should not satisfy publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -526,7 +526,7 @@ function runFailsWithHostedEvidenceMissingRunUrl() {
     const result = runChecker(root);
     assert(result.status === 1, "hosted evidence without run URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "missing release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "missing docs run URL should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "missing docs run URL should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -543,7 +543,7 @@ function runFailsWithBareHostedRunUrls() {
     const result = runChecker(root);
     assert(result.status === 1, "bare hosted run URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "bare release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "bare docs run URL should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "bare docs run URL should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -571,7 +571,7 @@ function runFailsWithNegativeDocsPublicationResult() {
   try {
     const result = runChecker(root);
     assert(result.status === 1, "negative docs publication result should fail");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "negative docs publication result should not satisfy publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "negative docs publication result should not satisfy publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -585,7 +585,7 @@ function runFailsWithWrongDocsPublicationCommand() {
   try {
     const result = runChecker(root);
     assert(result.status === 1, "docs publication evidence without command parity should fail");
-    assert(result.stdout.includes("including `pnpm docs:site:check` command parity"), "docs command-parity failure should name required command");
+    assert(result.stdout.includes("including HTTPS URLs and `pnpm docs:site:check` command parity"), "docs command-parity failure should name required command and HTTPS URLs");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -600,7 +600,7 @@ function runFailsWithPlaceholderHostedUrls() {
     const result = runChecker(root);
     assert(result.status === 1, "placeholder hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "placeholder release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "placeholder docs URLs should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "placeholder docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -618,7 +618,7 @@ function runFailsWithExampleHostedUrls() {
     const result = runChecker(root);
     assert(result.status === 1, "example hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "example release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "example docs URLs should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "example docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -636,7 +636,7 @@ function runFailsWithLocalHostedUrls() {
     const result = runChecker(root);
     assert(result.status === 1, "local hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "local release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "local docs URLs should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "local docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -654,7 +654,7 @@ function runFailsWithPrivateHostedUrls() {
     const result = runChecker(root);
     assert(result.status === 1, "private hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "private release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "private docs URLs should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "private docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -672,7 +672,7 @@ function runFailsWithLocalNetworkHostedUrls() {
     const result = runChecker(root);
     assert(result.status === 1, "local-network hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "local-network release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "local-network docs URLs should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "local-network docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -690,7 +690,7 @@ function runFailsWithReservedHostedUrls() {
     const result = runChecker(root);
     assert(result.status === 1, "reserved hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "reserved release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "reserved docs URLs should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "reserved docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -708,7 +708,7 @@ function runFailsWithCredentialHostedUrls() {
     const result = runChecker(root);
     assert(result.status === 1, "credential-bearing hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "credential-bearing release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "credential-bearing docs URLs should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "credential-bearing docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -726,7 +726,7 @@ function runFailsWithSensitiveParamHostedUrls() {
     const result = runChecker(root);
     assert(result.status === 1, "sensitive-param hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "sensitive-param release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "sensitive-param docs URLs should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "sensitive-param docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -744,7 +744,7 @@ function runFailsWithHttpHostedUrls() {
     const result = runChecker(root);
     assert(result.status === 1, "non-HTTPS hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "HTTP release-smoke run URL should fail the hosted smoke gate");
-    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "HTTP docs URLs should fail the docs publication gate");
+    assert(result.stdout.includes(`No successful docs-site publication with an HTTPS published URL is recorded for commit ${commit}`), "HTTP docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

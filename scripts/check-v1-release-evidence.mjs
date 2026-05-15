@@ -150,15 +150,15 @@ function checkDocsPublication() {
       shaMatches(commitSha, currentCommit) &&
       commandEquals(command, "pnpm docs:site:check") &&
       validHostedRunUrl(runUrl) &&
-      validHttpUrl(publishedUrl) &&
+      validHttpsUrl(publishedUrl) &&
       !/not published|skipped|blocked/i.test(body) &&
       (/deploy|publication/i.test(section.title) || /owner-approved equivalent hosted publication/i.test(body))
     );
   });
 
   return result("Public docs publication", pass, [
-    `No successful docs-site publication with a published URL is recorded for commit ${currentCommit}.`,
-    "Record a successful Pages deployment or owner-approved equivalent hosted publication evidence block for the checked release commit, including `pnpm docs:site:check` command parity."
+    `No successful docs-site publication with an HTTPS published URL is recorded for commit ${currentCommit}.`,
+    "Record a successful Pages deployment or owner-approved equivalent hosted publication evidence block for the checked release commit, including HTTPS URLs and `pnpm docs:site:check` command parity."
   ]);
 }
 
@@ -223,7 +223,7 @@ function commandEquals(value, expected) {
   return value.replace(/`/g, "").trim() === expected;
 }
 
-function validHttpUrl(value) {
+function validHttpsUrl(value) {
   try {
     const url = new URL(value);
     return (
@@ -244,7 +244,7 @@ function validHttpUrl(value) {
 }
 
 function validHostedRunUrl(value) {
-  if (!validHttpUrl(value)) return false;
+  if (!validHttpsUrl(value)) return false;
   const url = new URL(value);
   return url.pathname.replace(/\/+$/, "") !== "";
 }
