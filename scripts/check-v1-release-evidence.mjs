@@ -93,12 +93,16 @@ function checkExternalGmValidation() {
   const doc = evidence("external-gm-validation.md");
   const sections = sectionsFor(doc, "External GM Validation").filter((section) => !placeholder(section.title));
   const pass = sections.find(
-    (section) => ["pass", "pass with issues"].includes(field(section.body, "Result").toLowerCase()) && evidenceCommitMatches(section.body)
+    (section) =>
+      ["pass", "pass with issues"].includes(field(section.body, "Result").toLowerCase()) &&
+      evidenceCommitMatches(section.body) &&
+      meaningfulField(field(section.body, "Setup path")) &&
+      meaningfulField(field(section.body, "Workflows completed"))
   );
   const hasOwnerSubstitution = explicitOwnerOverride(doc);
 
   return result("External GM validation", pass || hasOwnerSubstitution, [
-    "Add a non-template external GM validation block with Result: pass or pass with issues and App build or commit matching the checked release commit.",
+    "Add a non-template external GM validation block with Result: pass or pass with issues, App build or commit matching the checked release commit, setup path, and workflows completed.",
     "Alternatively record the explicit owner-approved substitution called out by the release handoff."
   ]);
 }
@@ -213,6 +217,11 @@ function validHttpUrl(value) {
 
 function passField(value) {
   return /^pass(?:\b|:|-|$)/i.test(value.trim());
+}
+
+function meaningfulField(value) {
+  const normalized = value.trim().toLowerCase();
+  return Boolean(normalized) && !["none", "n/a", "na", "no", "pending", "tbd", "<approval summary>"].includes(normalized) && !placeholder(normalized);
 }
 
 function explicitOwnerOverride(markdown) {

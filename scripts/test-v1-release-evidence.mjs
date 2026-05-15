@@ -18,6 +18,7 @@ runPassesWithOwnerApprovedManualOverrides();
 runFailsWithPlaceholderOwnerOverrides();
 runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenEvidenceTargetsAnotherCommit();
+runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
 runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
 runFailsWithHostedEvidenceMissingRunUrl();
@@ -192,6 +193,20 @@ function runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence() {
     const result = runChecker(root);
     assert(result.status === 1, "iOS VoiceOver evidence should not satisfy macOS VoiceOver");
     assert(result.stdout.includes("Missing pass evidence for: macOS VoiceOver"), "missing macOS VoiceOver should be reported distinctly");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenExternalGmEvidenceOmitsScenarioDetails() {
+  const files = completeEvidence(commit);
+  files.externalGm = files.externalGm.replace("- Setup path: hosted preview\n", "").replace("- Workflows completed: campaign prep and play loop\n", "");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "external GM evidence without setup path and workflows should fail");
+    assert(result.stdout.includes("setup path, and workflows completed"), "external GM failure should name missing scenario details");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
