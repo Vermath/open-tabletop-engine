@@ -32,6 +32,7 @@ runFailsWithWrongDocsPublicationCommand();
 runFailsWithPlaceholderHostedUrls();
 runFailsWithExampleHostedUrls();
 runFailsWithLocalHostedUrls();
+runFailsWithPrivateHostedUrls();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
 runHandoffReportsIncompleteVerifierStatus();
@@ -429,6 +430,24 @@ function runFailsWithLocalHostedUrls() {
     assert(result.status === 1, "local hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "local release-smoke run URL should fail the hosted smoke gate");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "local docs URLs should fail the docs publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithPrivateHostedUrls() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/1", "http://10.0.0.4/release-smoke")
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/2", "http://172.16.0.9/docs-site")
+    .replace("https://vermath.github.io/open-tabletop-engine", "http://192.168.1.20/open-tabletop");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "private hosted URLs should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "private release-smoke run URL should fail the hosted smoke gate");
+    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "private docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

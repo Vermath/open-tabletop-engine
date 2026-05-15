@@ -215,7 +215,13 @@ function commandEquals(value, expected) {
 function validHttpUrl(value) {
   try {
     const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname) && !placeholderHost(url.hostname) && !localHost(url.hostname);
+    return (
+      ["http:", "https:"].includes(url.protocol) &&
+      Boolean(url.hostname) &&
+      !placeholderHost(url.hostname) &&
+      !localHost(url.hostname) &&
+      !privateHost(url.hostname)
+    );
   } catch {
     return false;
   }
@@ -228,6 +234,26 @@ function placeholderHost(hostname) {
 function localHost(hostname) {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   return normalized === "localhost" || normalized === "::1" || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+}
+
+function privateHost(hostname) {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const octets = normalized.split(".").map((part) => Number(part));
+  if (
+    octets.length === 4 &&
+    octets.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)
+  ) {
+    return (
+      octets[0] === 0 ||
+      octets[0] === 10 ||
+      (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127) ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 192 && octets[1] === 168) ||
+      (octets[0] === 198 && (octets[1] === 18 || octets[1] === 19)) ||
+      (octets[0] === 169 && octets[1] === 254)
+    );
+  }
+  return normalized.startsWith("fc") || normalized.startsWith("fd") || normalized.startsWith("fe80:");
 }
 
 function passField(value) {
