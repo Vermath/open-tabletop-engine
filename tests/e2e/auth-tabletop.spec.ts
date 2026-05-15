@@ -1513,18 +1513,23 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
 });
 
 test("GM can apply broader D&D SRD action effects from the browser", async ({ page }) => {
+  test.setTimeout(60_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
   const suffix = Date.now().toString(36);
-  const target = await createRulesTargetActor(page, { name: `E2E Rules Target ${suffix}`, hp: { current: 50, max: 50 } });
+  const target = await createRulesTargetActor(page, { name: `E2E Rules Target ${suffix}`, hp: { current: 100, max: 100 } });
+  const barbarian = await createSystemCharacter(page, { templateId: "barbarian", name: `E2E Barbarian ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const paladin = await createSystemCharacter(page, { templateId: "paladin", name: `E2E Paladin ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const monk = await createSystemCharacter(page, { templateId: "monk", name: `E2E Monk ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const ranger = await createSystemCharacter(page, { templateId: "ranger", name: `E2E Ranger ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
+  const rogue = await createSystemCharacter(page, { templateId: "rogue", name: `E2E Rogue ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
+  await createSceneToken(page, { name: `E2E Barbarian Token ${suffix}`, actorId: barbarian.id, x: 350, y: 330, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Paladin Token ${suffix}`, actorId: paladin.id, x: 410, y: 330, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Monk Token ${suffix}`, actorId: monk.id, x: 470, y: 330, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Ranger Token ${suffix}`, actorId: ranger.id, x: 530, y: 330, ownerUserIds: ["usr_demo_player"] });
+  await createSceneToken(page, { name: `E2E Rogue Token ${suffix}`, actorId: rogue.id, x: 590, y: 330, ownerUserIds: ["usr_demo_player"] });
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
@@ -1572,6 +1577,34 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeHuntersMark);
+
+  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: rogue.name });
+  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(page.getByRole("heading", { name: `E2E Rogue ${suffix}` })).toBeVisible();
+  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+  const sneakAttackCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Sneak Attack" }).first();
+  await expect(sneakAttackCard).toContainText("effect supported");
+  const targetHpBeforeSneakAttack = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
+  await sneakAttackCard.getByRole("button", { name: "Use action" }).click();
+  await expect(page.getByText(new RegExp(`E2E Rogue ${suffix} action posted; damage applied`))).toBeVisible();
+  await expect
+    .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
+    .toBeLessThan(targetHpBeforeSneakAttack);
+
+  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: barbarian.name });
+  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(page.getByRole("heading", { name: `E2E Barbarian ${suffix}` })).toBeVisible();
+  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+  const rageDamageCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Rage Damage" }).first();
+  await expect(rageDamageCard).toContainText("effect supported");
+  const targetHpBeforeRageDamage = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
+  await rageDamageCard.getByRole("button", { name: "Use action" }).click();
+  await expect(page.getByText(new RegExp(`E2E Barbarian ${suffix} action posted; damage applied`))).toBeVisible();
+  await expect
+    .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
+    .toBeLessThan(targetHpBeforeRageDamage);
 });
 
 test("SDK marketplace blocks trust-policy failures in the browser", async ({ page }) => {
