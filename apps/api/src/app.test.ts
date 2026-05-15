@@ -555,6 +555,40 @@ describe("organization workspace defaults", () => {
           status: "pending"
         })
       ]);
+      const secondCombat = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/combats`,
+        headers: bearerHeaders,
+        payload: {
+          combatants: [{ id: "cmbt_second_cross_org", name: "Second Combatant", initiative: 11, defeated: false }]
+        }
+      });
+      expect(secondCombat.statusCode).toBe(200);
+      const secondProposal = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/proposals`,
+        headers: bearerHeaders,
+        payload: { title: "Second Workspace Proposal", changesJson: [] }
+      });
+      expect(secondProposal.statusCode).toBe(200);
+      const secondImport = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/content-imports/preview`,
+        headers: bearerHeaders,
+        payload: {
+          source: { sourceType: "user_upload", sourceName: "second-workspace.json" },
+          entities: [
+            {
+              id: "second_workspace_note",
+              kind: "journal",
+              name: "Second Workspace Note",
+              selectedByDefault: true,
+              data: { body: "Second workspace only", visibility: "public" }
+            }
+          ]
+        }
+      });
+      expect(secondImport.statusCode).toBe(200);
       const secondCampaigns = await app.inject({
         method: "GET",
         url: "/api/v1/campaigns",
@@ -605,6 +639,29 @@ describe("organization workspace defaults", () => {
       });
       expect(crossWorkspaceMemberPatch.statusCode).toBe(404);
       expect(crossWorkspaceMemberPatch.json()).toMatchObject({ error: "not_found", message: "Organization member not found" });
+      const crossWorkspaceMemberDelete = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/organization/members/${secondOwnerMemberId}`,
+        headers: authHeaders
+      });
+      expect(crossWorkspaceMemberDelete.statusCode).toBe(404);
+      expect(crossWorkspaceMemberDelete.json()).toMatchObject({ error: "not_found", message: "Organization member not found" });
+      const directSecondInviteCreate = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/invites`,
+        headers: bearerHeaders,
+        payload: { email: "direct-cross-workspace@example.test", role: "player" }
+      });
+      expect(directSecondInviteCreate.statusCode).toBe(403);
+      expect(directSecondInviteCreate.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondInviteRevoke = await app.inject({
+        method: "POST",
+        url: `/api/v1/invites/${secondInvite.json().invite.id}/revoke`,
+        headers: bearerHeaders
+      });
+      expect(directSecondInviteRevoke.statusCode).toBe(403);
+      expect(directSecondInviteRevoke.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      expect(store.state.invites.find((invite) => invite.id === secondInvite.json().invite.id)?.revokedAt).toBeUndefined();
       const demoCampaigns = await app.inject({
         method: "GET",
         url: "/api/v1/campaigns",
@@ -687,6 +744,36 @@ describe("organization workspace defaults", () => {
       });
       expect(directSecondAiMemory.statusCode).toBe(403);
       expect(directSecondAiMemory.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondCombatPatch = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/combats/${secondCombat.json().id}`,
+        headers: bearerHeaders,
+        payload: { round: 2 }
+      });
+      expect(directSecondCombatPatch.statusCode).toBe(403);
+      expect(directSecondCombatPatch.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondProposalApply = await app.inject({
+        method: "POST",
+        url: `/api/v1/proposals/${secondProposal.json().id}/apply`,
+        headers: bearerHeaders
+      });
+      expect(directSecondProposalApply.statusCode).toBe(403);
+      expect(directSecondProposalApply.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondContentImport = await app.inject({
+        method: "GET",
+        url: `/api/v1/content-imports/${secondImport.json().id}`,
+        headers: bearerHeaders
+      });
+      expect(directSecondContentImport.statusCode).toBe(403);
+      expect(directSecondContentImport.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondContentImportApply = await app.inject({
+        method: "POST",
+        url: `/api/v1/content-imports/${secondImport.json().id}/apply`,
+        headers: bearerHeaders,
+        payload: { selectedEntityIds: ["second_workspace_note"] }
+      });
+      expect(directSecondContentImportApply.statusCode).toBe(403);
+      expect(directSecondContentImportApply.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
       const unscopedChat = await app.inject({
         method: "GET",
         url: "/api/v1/chat/messages",

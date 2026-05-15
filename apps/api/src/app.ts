@@ -2316,6 +2316,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, campaign.id);
+    if (activeOrganization !== true) return activeOrganization;
     if (!campaign.organizationId || !canManageOrganization(store, campaign.organizationId, userId)) {
       const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
       if (allowed !== true) return allowed;
@@ -2333,6 +2335,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const campaign = store.state.campaigns.find((item) => item.id === invite.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
+    const activeOrganization = requireCampaignActiveOrganization(store, reply, request.headers, userId, campaign.id);
+    if (activeOrganization !== true) return activeOrganization;
     if (!campaign.organizationId || !canManageOrganization(store, campaign.organizationId, userId)) {
       const allowed = requireCampaignPermission(store, reply, request.headers, invite.campaignId, "campaign.update");
       if (allowed !== true) return allowed;
