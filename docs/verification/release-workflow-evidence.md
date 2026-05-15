@@ -97,6 +97,42 @@ Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are usefu
 - Blockers: none for hosted release-smoke CI on this PR run
 - Notes: PR evidence for `https://github.com/Vermath/open-tabletop-engine/pull/1`. If this evidence document is committed after the hosted workflow run, set `OTTE_RELEASE_COMMIT=87b0190b573302d7e5c2c3d503066c1f7b21ce30` before running final acceptance gates.
 
+## Hosted Workflow Evidence: Release Smoke
+
+- Date: 2026-05-15
+- Operator: Codex
+- Workflow file: `.github/workflows/release-smoke.yml`
+- Trigger: pull_request
+- Branch or ref: `v1-gap-closure-evidence`
+- Commit SHA: `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d`
+- Run URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25915135921
+- Job URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25915135921/job/76169820528
+- Result: pass
+- Release command or build command: `pnpm release:smoke`
+- Duration: 9m 41s
+- Required checks observed: `Run release smoke` completed successfully after dependency install and Playwright Chromium setup, including the release-smoke issue audit step.
+- Issues filed: none
+- Blockers: none for hosted release-smoke CI on this PR run
+- Notes: PR evidence for `https://github.com/Vermath/open-tabletop-engine/pull/1`. If this evidence document is committed after the hosted workflow run, set `OTTE_RELEASE_COMMIT=eaefa345d2200d029a2d58af5a886d6d1b6f2a6d` before running final acceptance gates.
+
+## Hosted Workflow Evidence: Docs Site Publication
+
+- Date: 2026-05-15
+- Operator: Codex
+- Workflow file: owner-approved equivalent hosted publication
+- Trigger: Vercel CLI deployment from `dist/docs-site` after `pnpm docs:site:check`
+- Branch or ref: `v1-gap-closure-evidence`
+- Commit SHA: `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d`
+- Run URL: https://vercel.com/treys-projects-52eabdbc/docs-site/GLk7UZT25WyiCyJ1LoEye4ajpLzX
+- Result: pass
+- Release command or build command: `pnpm docs:site:check`
+- Duration: 7s deployment after local docs-site check
+- Published URL, if docs-site deploy: https://docs-site-seven-theta.vercel.app
+- Required checks observed: `pnpm docs:site:check` passed locally before deployment; Vercel deployment `dpl_GLk7UZT25WyiCyJ1LoEye4ajpLzX` reported Ready; HTTPS checks returned 200 for `/` and `/docs/prd-v1-gap-closure.html`.
+- Issues filed: none
+- Blockers: none for owner-approved equivalent hosted publication
+- Notes: GitHub Pages was unavailable under the current private-repository plan support, so this records the equivalent public HTTPS docs publication path allowed by the release rule and verifier.
+
 ## Required Hosted Runs
 
 Collect evidence for both workflows before final v1 acceptance:
