@@ -22,6 +22,7 @@ runFailsWhenIdentityEvidenceOmitsProviderDetails();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
 runFailsWithTemplateOwnerOverrides();
+runMissingManualEvidenceDoesNotReportOwnerOverrideCleanup();
 runFailsWithPlaceholderOwnerOverrides();
 runFailsWhenPassEvidenceKeepsPlaceholderOwnerOverrides();
 runFailsWithTemplateChoiceOwnerOverrides();
@@ -268,6 +269,24 @@ function runFailsWithTemplateOwnerOverrides() {
     assert(result.status === 1, "template owner overrides should not satisfy manual gates");
     assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "fenced AT override should leave the manual matrix incomplete");
     assert(result.stdout.includes("Add a non-template external GM validation block"), "fenced GM override should leave external validation incomplete");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runMissingManualEvidenceDoesNotReportOwnerOverrideCleanup() {
+  const files = completeEvidence(commit);
+  files.assistive = "# Assistive Technology Pass Plan\n";
+  files.externalGm = "# External GM Validation Evidence\n";
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "missing manual evidence should fail");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "missing AT evidence should name missing environments");
+    assert(result.stdout.includes("Add a non-template external GM validation block"), "missing GM evidence should name the missing GM block");
+    assert(!result.stdout.includes("Remove placeholder or ambiguous owner-approved descope/substitution fields"), "missing clean AT evidence should not report owner-override cleanup");
+    assert(!result.stdout.includes("Remove placeholder or ambiguous owner-approved substitution fields"), "missing clean GM evidence should not report owner-override cleanup");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
