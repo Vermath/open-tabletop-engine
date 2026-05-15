@@ -12,7 +12,7 @@ Tracking issue: https://github.com/Vermath/open-tabletop-engine/issues/2 records
 | --- | --- | --- | --- |
 | Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` | `pnpm identity:smoke` exits `0` without skipping and the evidence block is attached |
 | Assistive-technology acceptance | Run or delegate NVDA, Narrator, VoiceOver, iOS/iPadOS VoiceOver, and TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` | Every required environment has pass evidence, or an explicit owner-approved substitution/descope is recorded |
-| External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/v1-gap-closure-completion-audit.md` or a linked validation note | Clean install or hosted access, campaign/session flow, issue-reporting feedback, and pass/fail outcome are recorded |
+| External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` | Clean install or hosted access, campaign/session flow, issue-reporting feedback, and pass/fail outcome are recorded |
 | Hosted release-smoke refresh | Push the final release candidate and rerun `.github/workflows/release-smoke.yml` | `docs/verification/release-workflow-evidence.md` | `pnpm release:smoke` passes on the final release commit or owner-approved successor |
 | Public docs publication | Enable GitHub Pages for the repo, make the repo/plan support Pages, or approve an equivalent hosted publication | `docs/verification/release-workflow-evidence.md` | Docs build and deploy complete for the release commit and the published URL is recorded |
 
@@ -62,14 +62,7 @@ Equivalent hosted publication is acceptable only if the owner records:
 
 ## External GM Validation
 
-The PRD's v1 release-candidate milestone calls for external GM validation in addition to dogfood. Record:
-
-- Tester role and relationship to the project.
-- Release commit SHA or deployed URL.
-- Setup path used: clean local install, self-hosted deployment, or hosted preview.
-- Session flow covered: first-run/sign-in, campaign setup or import, map/token/chat/dice/combat, archive/report bundle, and issue-reporting path.
-- Result: pass / pass with issues / fail.
-- Blocking issues or owner-approved acceptance notes.
+The PRD's v1 release-candidate milestone calls for external GM validation in addition to dogfood. Use `docs/verification/external-gm-validation.md` to run and record the pass.
 
 ## Hosted Release-Smoke Refresh
 
