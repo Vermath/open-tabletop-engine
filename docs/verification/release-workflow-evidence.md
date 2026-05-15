@@ -129,7 +129,7 @@ Copy one block per workflow into the release evidence log:
 
 The release-smoke hosted pass is acceptable only when:
 
-- The workflow run is tied to the release candidate commit checked by `pnpm v1:completion:audit` and `pnpm v1:evidence:check`, or by setting `OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha>` for both commands if evidence docs are committed afterward.
+- The workflow run is tied to the release candidate commit checked by `pnpm v1:completion:audit` and `pnpm v1:evidence:check`, or by setting `$env:OTTE_RELEASE_COMMIT = "<full-40-character-hosted-run-commit-sha>"` before both commands if evidence docs are committed afterward.
 - The run completes successfully without rerunning with uncommitted local changes.
 - The `Run release smoke` step executes `pnpm release:smoke`.
 - The hosted release-smoke output includes successful `pnpm v1:issues:test` and `pnpm v1:issues:check` steps, proving the live open-issue P0/P1 audit passed in CI.
