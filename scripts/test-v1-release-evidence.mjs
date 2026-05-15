@@ -16,6 +16,7 @@ runFailsWhenIdentityEvidenceOmitsReadinessResults();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
 runFailsWithPlaceholderOwnerOverrides();
+runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
@@ -146,8 +147,51 @@ function runFailsWithPlaceholderOwnerOverrides() {
   try {
     const result = runChecker(root);
     assert(result.status === 1, "placeholder owner overrides should not satisfy manual gates");
-    assert(result.stdout.includes("Missing pass evidence for: NVDA, Narrator, VoiceOver, iOS, TalkBack"), "placeholder AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "placeholder AT override should leave the manual matrix incomplete");
     assert(result.stdout.includes("Add a non-template external GM validation block"), "placeholder GM override should leave external validation incomplete");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence() {
+  const files = completeEvidence(commit);
+  files.assistive = `# Assistive Technology Pass Plan
+
+## Assistive Technology Pass: Windows NVDA
+
+- App build or commit: ${commit}
+- Assistive technology: NVDA
+- Browser: Chrome on Windows
+- Result: pass
+
+## Assistive Technology Pass: Windows Narrator
+
+- App build or commit: ${commit}
+- Assistive technology: Narrator
+- Browser: Edge on Windows
+- Result: pass
+
+## Assistive Technology Pass: iOS VoiceOver
+
+- App build or commit: ${commit}
+- Assistive technology: VoiceOver
+- Browser: Safari on iOS
+- Result: pass
+
+## Assistive Technology Pass: Android TalkBack
+
+- App build or commit: ${commit}
+- Assistive technology: TalkBack
+- Browser: Chrome on Android
+- Result: pass
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "iOS VoiceOver evidence should not satisfy macOS VoiceOver");
+    assert(result.stdout.includes("Missing pass evidence for: macOS VoiceOver"), "missing macOS VoiceOver should be reported distinctly");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

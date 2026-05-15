@@ -59,7 +59,13 @@ function checkIdentityProviderSmoke() {
 
 function checkAssistiveTechnologyPass() {
   const doc = evidence("accessibility-assistive-tech-pass.md");
-  const required = ["NVDA", "Narrator", "VoiceOver", "iOS", "TalkBack"];
+  const required = [
+    { label: "Windows NVDA", pattern: /\bwindows\b[\s\S]*\bnvda\b|\bnvda\b[\s\S]*\bwindows\b/i },
+    { label: "Windows Narrator", pattern: /\bwindows\b[\s\S]*\bnarrator\b|\bnarrator\b[\s\S]*\bwindows\b/i },
+    { label: "macOS VoiceOver", pattern: /\bmacos\b[\s\S]*\bvoiceover\b|\bvoiceover\b[\s\S]*\bmacos\b/i },
+    { label: "iOS VoiceOver", pattern: /\bios\b[\s\S]*\bvoiceover\b|\bipados\b[\s\S]*\bvoiceover\b|\bvoiceover\b[\s\S]*\bios\b|\bvoiceover\b[\s\S]*\bipados\b/i },
+    { label: "Android TalkBack", pattern: /\bandroid\b[\s\S]*\btalkback\b|\btalkback\b[\s\S]*\bandroid\b/i }
+  ];
   const sections = sectionsFor(doc, "Assistive Technology Pass").filter((section) => !placeholder(section.title));
   const accepted = new Set();
 
@@ -69,14 +75,14 @@ function checkAssistiveTechnologyPass() {
     if (!evidenceCommitMatches(section.body)) continue;
     const haystack = `${section.title}\n${section.body}`.toLowerCase();
     for (const environment of required) {
-      if (haystack.includes(environment.toLowerCase())) {
-        accepted.add(environment);
+      if (environment.pattern.test(haystack)) {
+        accepted.add(environment.label);
       }
     }
   }
 
   const hasOwnerSubstitution = explicitOwnerOverride(doc);
-  const missing = required.filter((environment) => !accepted.has(environment));
+  const missing = required.map((environment) => environment.label).filter((environment) => !accepted.has(environment));
   return result("Manual assistive-technology matrix", missing.length === 0 || hasOwnerSubstitution, [
     `Missing pass evidence for: ${missing.join(", ") || "none"}.`,
     "Add one non-template pass or pass-with-issues evidence block per required environment, tied to the checked release commit, or record an owner-approved substitution/descope."
