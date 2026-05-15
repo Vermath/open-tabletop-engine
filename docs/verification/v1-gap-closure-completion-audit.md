@@ -80,7 +80,7 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 - 2026-05-15 GitHub issue audit: one open issue, #2 `Track remaining v1 external evidence blockers`, with no labels.
 - 2026-05-15 GitHub PR audit: PR #1 remote head checks passed for Release Smoke and Docs Site build, but the local branch has additional unpushed commits, so final hosted evidence still needs refresh on the final release commit.
 - 2026-05-15 local candidate audit: full local `pnpm release:smoke` passed for implementation candidate `37192cb64d01c058b05a80def52041f27b94b47f`; later evidence-only documentation commits mean final hosted release-smoke still needs to run on the final pushed release commit.
-- 2026-05-15 `pnpm v1:evidence:check`: release-evidence verifier is wired and expectedly failed because live OIDC/SCIM, assistive-technology, external GM, final hosted release-smoke, and docs-publication evidence are not yet recorded.
+- 2026-05-15 `pnpm v1:evidence:check`: expectedly failed for current documentation head `f5ea1218b10090c496be977f9f76be71d2b29a5b` because live OIDC/SCIM, assistive-technology, external GM, final hosted release-smoke, and docs-publication evidence are not yet recorded.
 
 ## Conclusion
 
