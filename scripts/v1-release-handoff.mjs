@@ -6,27 +6,27 @@ const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "
 const gates = [
   {
     name: "Live OIDC/SCIM provider readiness",
-    ownerAction: "Run `pnpm identity:smoke` against a real provider sandbox and record command, matching commit, exit code 0, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result.",
+    ownerAction: "Run `pnpm identity:smoke` against a real provider sandbox and record command, matching commit, exit code 0, non-placeholder API host/provider/sandbox/smoke-target details, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result.",
     evidence: "docs/verification/identity-provider-smoke-evidence.md"
   },
   {
     name: "Manual assistive-technology matrix",
-    ownerAction: "Record distinct Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack pass evidence or an explicit owner-approved descope.",
+    ownerAction: "Record one pass or pass-with-issues evidence section for each required environment: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack; alternatively record an explicit owner-approved descope.",
     evidence: "docs/verification/accessibility-assistive-tech-pass.md"
   },
   {
     name: "External GM validation",
-    ownerAction: "Have an unaffiliated or owner-approved GM run the release-candidate flow and record matching commit, setup path, workflows completed, and result, or record the explicit owner-approved substitution.",
+    ownerAction: "Have an unaffiliated or owner-approved GM run the release-candidate flow and record matching commit, tester role, relationship to project, setup path, scenario data, workflows completed, and result, or record the explicit owner-approved substitution.",
     evidence: "docs/verification/external-gm-validation.md"
   },
   {
     name: "Hosted release smoke",
-    ownerAction: "Record a hosted `pnpm release:smoke` pass for the checked commit.",
+    ownerAction: "Record a hosted `pnpm release:smoke` pass for the checked commit with exact command parity and a concrete hosted run URL.",
     evidence: "docs/verification/release-workflow-evidence.md"
   },
   {
     name: "Public docs publication",
-    ownerAction: "Publish the docs site from the checked commit and record run URL, published URL, matching commit, pass result, and `pnpm docs:site:check` command parity.",
+    ownerAction: "Publish the docs site from the checked commit and record concrete run URL, published URL, matching commit, pass result, and `pnpm docs:site:check` command parity.",
     evidence: "docs/verification/release-workflow-evidence.md"
   }
 ];
