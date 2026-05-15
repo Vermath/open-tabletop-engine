@@ -15,6 +15,7 @@ runPassesWhenIdentityEvidenceMentionsNoSkippedChecks();
 runFailsWhenIdentityEvidenceOmitsReadinessResults();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
+runFailsWithTemplateOwnerOverrides();
 runFailsWithPlaceholderOwnerOverrides();
 runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenEvidenceTargetsAnotherCommit();
@@ -130,6 +131,32 @@ function runPassesWithOwnerApprovedManualOverrides() {
   try {
     const result = runChecker(root);
     assert(result.status === 0, "owner-approved manual overrides should satisfy manual gates");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithTemplateOwnerOverrides() {
+  const files = completeEvidence(commit);
+  files.assistive = `# Assistive Technology Pass Plan
+
+\`\`\`md
+- Owner-approved descope: Release owner accepted a temporary reduced matrix for the release candidate.
+\`\`\`
+`;
+  files.externalGm = `# External GM Validation Evidence
+
+\`\`\`md
+- Owner-approved substitution: Release owner accepted an internal GM substitute for the release candidate.
+\`\`\`
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "template owner overrides should not satisfy manual gates");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "fenced AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Add a non-template external GM validation block"), "fenced GM override should leave external validation incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
