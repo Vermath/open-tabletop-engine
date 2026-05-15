@@ -34,6 +34,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 ## Developer and Extension Guides
 
 - [REST API](../api/rest.md)
+- [API Client](../api-client.md)
 - [Plugin SDK](../plugin-sdk/overview.md)
 - [System SDK](../system-sdk/overview.md)
 - [Extension package CI](../extension-ci.md)
