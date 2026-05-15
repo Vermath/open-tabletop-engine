@@ -23,12 +23,13 @@ console.log("  $env:OTTE_RELEASE_COMMIT = \"<full-40-character-hosted-run-commit
 console.log("  pnpm v1:completion:audit");
 console.log("  pnpm v1:evidence:check");
 console.log("");
-console.log("Remaining owner-supplied evidence:");
 
-for (const [index, gate] of releaseEvidenceGates.entries()) {
-  console.log(`${index + 1}. ${gate.name}`);
-  console.log(`   Action: ${gate.ownerAction}`);
-  console.log(`   Evidence: ${gate.evidence}`);
+const verifierResult = getVerifierStatus();
+const gateStatus = summarizeGateStatus(verifierResult);
+
+printGates("Remaining owner-supplied evidence:", gateStatus.pending);
+if (gateStatus.satisfied.length > 0) {
+  printGates("Satisfied evidence gates:", gateStatus.satisfied);
 }
 
 console.log("");
@@ -40,21 +41,60 @@ console.log("  pnpm v1:evidence:templates");
 console.log("  $env:OTTE_RELEASE_COMMIT = \"<full-40-character-hosted-run-commit-sha>\"");
 console.log("  pnpm v1:evidence:templates");
 console.log("");
-printVerifierStatus();
+printVerifierStatus(verifierResult);
 
 function git(args) {
   return execSync(`git ${args}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 }
 
-function printVerifierStatus() {
-  const result = spawnSync(process.execPath, ["scripts/check-v1-release-evidence.mjs"], {
+function getVerifierStatus() {
+  return spawnSync(process.execPath, ["scripts/check-v1-release-evidence.mjs"], {
     encoding: "utf8",
     env: {
       ...process.env,
       OTTE_RELEASE_COMMIT: commit
     }
   });
+}
 
+function summarizeGateStatus(result) {
+  const output = `${result.stdout}\n${result.stderr}`;
+  const pending = [];
+  const satisfied = [];
+
+  for (const gate of releaseEvidenceGates) {
+    const failed = output.includes(`FAIL: ${gate.verifierName}`);
+    const passed = output.includes(`PASS: ${gate.verifierName}`);
+
+    if (failed) {
+      pending.push(gate);
+    } else if (passed) {
+      satisfied.push(gate);
+    } else {
+      pending.push(gate);
+    }
+  }
+
+  return { pending, satisfied };
+}
+
+function printGates(title, gates) {
+  console.log(title);
+  if (gates.length === 0) {
+    console.log("  None.");
+    console.log("");
+    return;
+  }
+
+  for (const [index, gate] of gates.entries()) {
+    console.log(`${index + 1}. ${gate.name}`);
+    console.log(`   Action: ${gate.ownerAction}`);
+    console.log(`   Evidence: ${gate.evidence}`);
+  }
+  console.log("");
+}
+
+function printVerifierStatus(result) {
   console.log("Current evidence verifier status:");
   if (result.stdout.trim()) {
     console.log(indent(result.stdout.trim()));
