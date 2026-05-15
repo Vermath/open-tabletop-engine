@@ -887,7 +887,9 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   assert(result.status === 0, "evidence template generator should exit successfully");
   assert(result.stdout.includes(`# v1 Evidence Templates for ${commit}`), "templates should include the checked commit header");
   assert(result.stdout.includes("Template target source: OTTE_RELEASE_COMMIT"), "templates should identify supplied release target source");
+  assert(result.stdout.includes("issue #3"), "templates should point identity evidence to issue #3");
   assert(result.stdout.includes(".github/workflows/identity-smoke.yml"), "templates should mention the hosted identity workflow path");
+  assert(result.stdout.includes(".github/workflows/v1-completion-audit.yml"), "templates should mention the hosted completion audit workflow path");
   assert(result.stdout.includes("issue #4"), "templates should point AT evidence to issue #4");
   assert(result.stdout.includes("issue #5"), "templates should point GM evidence to issue #5");
   assert(result.stdout.includes("- App build or commit: 1234567890abcdef1234567890abcdef12345678"), "manual evidence templates should prefill App build or commit");
