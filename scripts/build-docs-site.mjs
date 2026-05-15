@@ -116,13 +116,20 @@ function findLocalPathLeaks(file) {
 
 function findReleaseGateGaps() {
   const requiredCommands = ["pnpm release:smoke", "pnpm v1:evidence:check", "pnpm v1:issues:check"];
+  const requiredEvidenceTerms = ["OIDC/SCIM", "assistive-technology", "external GM", "hosted release-smoke", "docs-publication"];
   const requiredFiles = ["docs/release/v1.0.md", "docs/site/index.md"];
-  return requiredFiles.flatMap((source) => {
+  const commandGaps = requiredFiles.flatMap((source) => {
     const markdown = readFileSync(join(root, source), "utf8");
     return requiredCommands
       .filter((command) => !markdown.includes(command))
       .map((command) => `${source} missing ${command}`);
   });
+  const releaseNote = "docs/release/v1.0.md";
+  const releaseMarkdown = readFileSync(join(root, releaseNote), "utf8").toLowerCase();
+  const evidenceGaps = requiredEvidenceTerms
+    .filter((term) => !releaseMarkdown.includes(term.toLowerCase()))
+    .map((term) => `${releaseNote} missing final evidence gate: ${term}`);
+  return [...commandGaps, ...evidenceGaps];
 }
 
 function renderPage(relativePath, markdown) {

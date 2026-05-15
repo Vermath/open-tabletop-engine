@@ -69,6 +69,7 @@ function runFailsWhenReleaseGateCommandsAreMissing() {
     assert(result.status === 1, "docs check should fail when release gate commands are missing");
     assert(result.stderr.includes("Docs site build found missing release-gate references"), "docs check should explain missing release gate references");
     assert(result.stderr.includes("docs/release/v1.0.md missing pnpm v1:issues:check"), "docs check should name missing release note issue gate");
+    assert(result.stderr.includes("docs/release/v1.0.md missing final evidence gate: external GM"), "docs check should name missing final evidence gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -87,7 +88,10 @@ function writeRequiredDocs(root) {
   writeFileSync(join(root, "README.md"), "# README\n\nSee [release notes](docs/release/v1.0.md).\n");
   writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n");
   writeFileSync(join(root, "docs", "site", "index.md"), "# Public Docs\n\n- [Release notes](../release/v1.0.md)\n\nRun `pnpm release:smoke`, `pnpm v1:evidence:check`, and `pnpm v1:issues:check`.\n");
-  writeFileSync(join(root, "docs", "release", "v1.0.md"), "# v1.0\n\n## Release Gate\n\n```bash\npnpm release:smoke\npnpm v1:evidence:check\npnpm v1:issues:check\n```\n");
+  writeFileSync(
+    join(root, "docs", "release", "v1.0.md"),
+    "# v1.0\n\n## Release Gate\n\n```bash\npnpm release:smoke\npnpm v1:evidence:check\npnpm v1:issues:check\n```\n\nRecord final OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication evidence before publishing.\n"
+  );
   writeFileSync(join(root, "docs", "deployment", "hosted-deployment-recipes.md"), "# Hosted Deployment Recipes\n");
   writeFileSync(join(root, "docs", "prd-v1-gap-closure.md"), "# v1 Gap Closure PRD\n");
   writeFileSync(join(root, "docs", "verification", "v1-gap-closure-completion-audit.md"), "# v1 Gap Closure Completion Audit\n");
