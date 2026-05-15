@@ -92,6 +92,10 @@ function writeRequiredDocs(root) {
     join(root, "docs", "release", "v1.0.md"),
     "# v1.0\n\n## Release Gate\n\n```bash\npnpm release:smoke\npnpm v1:evidence:check\npnpm v1:issues:check\n```\n\nRecord final OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication evidence before publishing.\n"
   );
+  writeFileSync(
+    join(root, "docs", "release", "v1-release-checklist.md"),
+    "# v1 Release Checklist\n\nFinal evidence gates: OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication.\n"
+  );
   writeFileSync(join(root, "docs", "deployment", "hosted-deployment-recipes.md"), "# Hosted Deployment Recipes\n");
   writeFileSync(
     join(root, "docs", "prd-v1-gap-closure.md"),
