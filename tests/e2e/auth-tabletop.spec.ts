@@ -1765,6 +1765,17 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect
     .poll(async () => (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0)
     .toBeLessThan(bardicInspirationBefore);
+  const bardicInspirationSpent = (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0;
+  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: bard.name });
+  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(page.getByRole("heading", { name: `E2E Bard ${suffix}` })).toBeVisible();
+  const fontOfInspirationCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Font of Inspiration" }).first();
+  await expect(fontOfInspirationCard).toContainText("roll only action");
+  await fontOfInspirationCard.getByRole("button", { name: "Use action" }).click();
+  await expect(page.getByText(new RegExp(`E2E Bard ${suffix} used action: Level 1 Spell Slot \\d+`))).toBeVisible();
+  await expect
+    .poll(async () => (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0)
+    .toBeGreaterThan(bardicInspirationSpent);
 
   await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: monk.name });
   await expect(page.getByText("Token updated")).toBeVisible();
