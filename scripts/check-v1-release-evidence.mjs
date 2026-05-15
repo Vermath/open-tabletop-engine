@@ -45,6 +45,10 @@ function checkIdentityProviderSmoke() {
       evidenceCommitMatches(section.body) &&
       field(section.body, "Exit code") === "0" &&
       commandEquals(field(section.body, "Command"), "pnpm identity:smoke") &&
+      meaningfulField(field(section.body, "API base URL host")) &&
+      meaningfulField(field(section.body, "Provider")) &&
+      meaningfulField(field(section.body, "Provider sandbox or tenant label")) &&
+      meaningfulField(field(section.body, "Smoke target")) &&
       passField(field(section.body, "OIDC discovery/test result")) &&
       passField(field(section.body, "SCIM ServiceProviderConfig result"))
   );
@@ -52,6 +56,7 @@ function checkIdentityProviderSmoke() {
   return result("Live OIDC/SCIM provider smoke", pass, [
     "Add a non-template identity-provider evidence block with Result: pass.",
     "Record Exit code: 0 from a non-skipped `pnpm identity:smoke` run against a real provider sandbox.",
+    "Record non-placeholder API base URL host, provider, provider sandbox or tenant label, and smoke target.",
     "Record passing OIDC discovery/test and SCIM ServiceProviderConfig results.",
     `Record App build or commit for the checked release commit ${currentCommit}.`
   ]);

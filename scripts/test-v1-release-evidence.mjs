@@ -15,6 +15,7 @@ runPassesWhenIdentityEvidenceMentionsNoSkippedChecks();
 runFailsWhenIdentityEvidenceOmitsReadinessResults();
 runFailsWhenIdentityEvidenceUsesWrongCommand();
 runFailsWhenIdentityReadinessUsesTemplateChoices();
+runFailsWhenIdentityEvidenceOmitsProviderDetails();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
 runFailsWithTemplateOwnerOverrides();
@@ -129,6 +130,24 @@ function runFailsWhenIdentityReadinessUsesTemplateChoices() {
     const result = runChecker(root);
     assert(result.status === 1, "identity readiness template-choice values should fail");
     assert(result.stdout.includes("Record passing OIDC discovery/test and SCIM ServiceProviderConfig results."), "identity readiness template-choice failure should name required readiness results");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenIdentityEvidenceOmitsProviderDetails() {
+  const files = completeEvidence(commit);
+  files.identity = files.identity
+    .replace("- API base URL host: api.example.test\n", "- API base URL host: \n")
+    .replace("- Provider: Okta\n", "- Provider: <provider>\n")
+    .replace("- Provider sandbox or tenant label: sandbox\n", "- Provider sandbox or tenant label: <sandbox>\n")
+    .replace("- Smoke target: deployed API\n", "- Smoke target: deployed API / local sandbox\n");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "identity evidence without provider details should fail");
+    assert(result.stdout.includes("Record non-placeholder API base URL host, provider, provider sandbox or tenant label, and smoke target."), "identity detail failure should name provider detail fields");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
