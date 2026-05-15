@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { releaseEvidenceGates } from "./v1-release-gates.mjs";
 
 const repoRoot = process.cwd();
 const commit = "1234567890abcdef1234567890abcdef12345678";
@@ -57,6 +58,7 @@ runEvidenceTemplatesRejectShortReleaseTargetCommit();
 runHandoffReportsIncompleteVerifierStatus();
 runHandoffReportsCompleteVerifierStatus();
 runHandoffRejectsShortReleaseTargetCommit();
+runHandoffGateMetadataMatchesVerifier();
 
 console.log("v1 release evidence verifier tests passed.");
 
@@ -917,6 +919,30 @@ function runHandoffRejectsShortReleaseTargetCommit() {
     const result = runHandoff(root, { releaseCommit: commit.slice(0, 12) });
     assert(result.status === 1, "handoff should reject short release target commits");
     assert(result.stderr.includes("OTTE_RELEASE_COMMIT must be a full 40-character commit SHA"), "handoff short-target failure should name full-SHA requirement");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runHandoffGateMetadataMatchesVerifier() {
+  const root = fixtureRoot({
+    identity: "# Identity Provider Smoke Evidence\n",
+    assistive: "# Assistive Technology Pass Plan\n",
+    externalGm: "# External GM Validation Evidence\n",
+    releaseWorkflow: "# Release Workflow Evidence\n"
+  });
+
+  try {
+    const handoffResult = runHandoff(root);
+    const verifierResult = runChecker(root);
+    assert(handoffResult.status === 0, "handoff should run for gate metadata check");
+    assert(verifierResult.status === 1, "verifier should report incomplete fixture for gate metadata check");
+    for (const gate of releaseEvidenceGates) {
+      assert(handoffResult.stdout.includes(gate.name), `handoff should list gate ${gate.name}`);
+      assert(handoffResult.stdout.includes(gate.ownerAction), `handoff should list action for ${gate.name}`);
+      assert(handoffResult.stdout.includes(gate.evidence), `handoff should list evidence path for ${gate.name}`);
+      assert(verifierResult.stdout.includes(`FAIL: ${gate.verifierName}`), `verifier should report gate ${gate.verifierName}`);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
