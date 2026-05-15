@@ -99,13 +99,16 @@ function checkExternalGmValidation() {
     (section) =>
       ["pass", "pass with issues"].includes(field(section.body, "Result").toLowerCase()) &&
       evidenceCommitMatches(section.body) &&
+      meaningfulField(field(section.body, "Tester role")) &&
+      meaningfulField(field(section.body, "Relationship to project")) &&
       meaningfulField(field(section.body, "Setup path")) &&
+      meaningfulField(field(section.body, "Scenario data")) &&
       meaningfulField(field(section.body, "Workflows completed"))
   );
   const hasOwnerSubstitution = explicitOwnerOverride(doc);
 
   return result("External GM validation", pass || hasOwnerSubstitution, [
-    "Add a non-template external GM validation block with Result: pass or pass with issues, App build or commit matching the checked release commit, setup path, and workflows completed.",
+    "Add a non-template external GM validation block with Result: pass or pass with issues, App build or commit matching the checked release commit, tester role, relationship to project, setup path, scenario data, and workflows completed.",
     "Alternatively record the explicit owner-approved substitution called out by the release handoff."
   ]);
 }

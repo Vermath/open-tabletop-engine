@@ -25,6 +25,7 @@ runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
+runFailsWhenExternalGmEvidenceOmitsTesterContext();
 runFailsWhenExternalGmEvidenceUsesTemplateChoices();
 runFailsWithTooShortCommitEvidence();
 runFailsWithPlaceholderHostedReleaseSmokeTitle();
@@ -340,7 +341,24 @@ function runFailsWhenExternalGmEvidenceOmitsScenarioDetails() {
   try {
     const result = runChecker(root);
     assert(result.status === 1, "external GM evidence without setup path and workflows should fail");
-    assert(result.stdout.includes("setup path, and workflows completed"), "external GM failure should name missing scenario details");
+    assert(result.stdout.includes("tester role, relationship to project, setup path, scenario data, and workflows completed"), "external GM failure should name missing scenario details");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenExternalGmEvidenceOmitsTesterContext() {
+  const files = completeEvidence(commit);
+  files.externalGm = files.externalGm
+    .replace("- Tester role: external GM\n", "")
+    .replace("- Relationship to project: unaffiliated tester\n", "")
+    .replace("- Scenario data: sample campaign\n", "");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "external GM evidence without tester context should fail");
+    assert(result.stdout.includes("tester role, relationship to project, setup path, scenario data, and workflows completed"), "external GM tester-context failure should name missing context fields");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -354,7 +372,7 @@ function runFailsWhenExternalGmEvidenceUsesTemplateChoices() {
   try {
     const result = runChecker(root);
     assert(result.status === 1, "external GM evidence with template-choice setup path should fail");
-    assert(result.stdout.includes("setup path, and workflows completed"), "external GM template-choice failure should name scenario details");
+    assert(result.stdout.includes("tester role, relationship to project, setup path, scenario data, and workflows completed"), "external GM template-choice failure should name scenario details");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -714,8 +732,11 @@ function completeEvidence(evidenceCommit) {
 
 ## External GM Validation: release candidate session
 
+- Tester role: external GM
+- Relationship to project: unaffiliated tester
 - App build or commit: ${evidenceCommit}
 - Setup path: hosted preview
+- Scenario data: sample campaign
 - Workflows completed: campaign prep and play loop
 - Result: pass
 - Blockers: none
