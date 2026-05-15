@@ -23,6 +23,7 @@ runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
 runFailsWithHostedEvidenceMissingRunUrl();
 runFailsWithNegativeDocsPublicationResult();
+runFailsWithWrongDocsPublicationCommand();
 runFailsWithPlaceholderHostedUrls();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
@@ -272,6 +273,20 @@ function runFailsWithNegativeDocsPublicationResult() {
     const result = runChecker(root);
     assert(result.status === 1, "negative docs publication result should fail");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "negative docs publication result should not satisfy publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithWrongDocsPublicationCommand() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow.replace("pnpm docs:site:check", "pnpm docs:site");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "docs publication evidence without command parity should fail");
+    assert(result.stdout.includes("including `pnpm docs:site:check` command parity"), "docs command-parity failure should name required command");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

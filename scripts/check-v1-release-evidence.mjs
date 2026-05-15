@@ -133,9 +133,11 @@ function checkDocsPublication() {
     const commitSha = field(body, "Commit SHA");
     const runUrl = field(body, "Run URL");
     const publishedUrl = field(body, "Published URL, if docs-site deploy");
+    const command = field(body, "Release command or build command");
     return (
       resultText === "pass" &&
       shaMatches(commitSha, currentCommit) &&
+      /pnpm docs:site:check/.test(command) &&
       validHttpUrl(runUrl) &&
       validHttpUrl(publishedUrl) &&
       !/not published|skipped|blocked/i.test(body) &&
@@ -145,7 +147,7 @@ function checkDocsPublication() {
 
   return result("Public docs publication", pass, [
     `No successful docs-site publication with a published URL is recorded for commit ${currentCommit}.`,
-    "Record a successful Pages deployment or owner-approved equivalent hosted publication evidence block for the checked release commit."
+    "Record a successful Pages deployment or owner-approved equivalent hosted publication evidence block for the checked release commit, including `pnpm docs:site:check` command parity."
   ]);
 }
 
