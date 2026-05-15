@@ -109,7 +109,7 @@ function checkExternalGmValidation() {
 
 function checkHostedReleaseSmoke() {
   const doc = evidence("release-workflow-evidence.md");
-  const sections = sectionsFor(doc, "Hosted Workflow Evidence").filter((section) => /release smoke/i.test(section.title));
+  const sections = sectionsFor(doc, "Hosted Workflow Evidence").filter((section) => /release smoke/i.test(section.title) && !placeholder(section.title));
   const pass = sections.find(
     (section) =>
       field(section.body, "Result").toLowerCase() === "pass" &&

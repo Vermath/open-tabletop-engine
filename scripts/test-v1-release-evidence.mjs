@@ -25,6 +25,7 @@ runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
 runFailsWhenExternalGmEvidenceUsesTemplateChoices();
 runFailsWithTooShortCommitEvidence();
+runFailsWithPlaceholderHostedReleaseSmokeTitle();
 runFailsWithProseOnlyDocsPublicationOverride();
 runFailsWithHostedEvidenceMissingRunUrl();
 runFailsWithWrongReleaseSmokeCommand();
@@ -323,6 +324,20 @@ function runFailsWithTooShortCommitEvidence() {
     const result = runChecker(root);
     assert(result.status === 1, "too-short commit evidence should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "too-short commit should not satisfy hosted release-smoke");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithPlaceholderHostedReleaseSmokeTitle() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow.replace("## Hosted Workflow Evidence: Release Smoke", "## Hosted Workflow Evidence: Release Smoke <workflow run>");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "placeholder release-smoke evidence title should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "placeholder release-smoke title should leave hosted smoke incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
