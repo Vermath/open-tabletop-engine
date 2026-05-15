@@ -16,6 +16,12 @@ pnpm v1:release:handoff
 
 Rerun it after committing final evidence documents so the printed commit matches the verifier target.
 
+To generate ready-to-fill evidence blocks with the current release commit prefilled, run:
+
+```powershell
+pnpm v1:evidence:templates
+```
+
 ## Remaining Decisions
 
 | Gate | Owner action | Evidence destination | Completion rule |
@@ -84,6 +90,7 @@ After the external gates above are satisfied, rerun the completion audit:
 
 ```powershell
 pnpm v1:release:handoff
+pnpm v1:evidence:templates
 pnpm docs:site:test
 pnpm docs:site:check
 pnpm v1:evidence:check

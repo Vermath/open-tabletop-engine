@@ -17,6 +17,7 @@
     "docs:site:test": "node scripts/test-docs-site.mjs",
     "v1:evidence:check": "node scripts/check-v1-release-evidence.mjs",
     "v1:evidence:test": "node scripts/test-v1-release-evidence.mjs",
+    "v1:evidence:templates": "node scripts/v1-evidence-templates.mjs",
     "v1:release:handoff": "node scripts/v1-release-handoff.mjs",
     "release:smoke": "pnpm check && pnpm e2e && pnpm security:smoke && pnpm migration:smoke && pnpm deployment:smoke && pnpm perf:smoke && pnpm docs:site:test && pnpm v1:evidence:test",
     "identity:smoke": "pnpm --filter @open-tabletop/api test -- --run src/identity-smoke.test.ts",
