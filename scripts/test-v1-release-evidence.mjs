@@ -19,6 +19,7 @@ runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
 runFailsWithTemplateOwnerOverrides();
 runFailsWithPlaceholderOwnerOverrides();
+runFailsWithTemplateChoiceOwnerOverrides();
 runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
@@ -204,11 +205,11 @@ function runFailsWithPlaceholderOwnerOverrides() {
   const files = completeEvidence(commit);
   files.assistive = `# Assistive Technology Pass Plan
 
-- Owner-approved descope: none
+- Owner-approved descope: <descope summary>
 `;
   files.externalGm = `# External GM Validation Evidence
 
-- Owner-approved substitution: <approval summary>
+- Owner-approved substitution: <owner approval>
 `;
   const root = fixtureRoot(files);
 
@@ -217,6 +218,28 @@ function runFailsWithPlaceholderOwnerOverrides() {
     assert(result.status === 1, "placeholder owner overrides should not satisfy manual gates");
     assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "placeholder AT override should leave the manual matrix incomplete");
     assert(result.stdout.includes("Add a non-template external GM validation block"), "placeholder GM override should leave external validation incomplete");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithTemplateChoiceOwnerOverrides() {
+  const files = completeEvidence(commit);
+  files.assistive = `# Assistive Technology Pass Plan
+
+- Owner-approved descope: approved / not approved
+`;
+  files.externalGm = `# External GM Validation Evidence
+
+- Owner-approved substitution: external GM validation / owner-approved substitute
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "template-choice owner overrides should not satisfy manual gates");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "template-choice AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Add a non-template external GM validation block"), "template-choice GM override should leave external validation incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

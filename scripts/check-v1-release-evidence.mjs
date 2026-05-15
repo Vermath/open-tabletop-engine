@@ -299,7 +299,12 @@ function explicitOwnerOverride(markdown) {
   const matches = evidenceText.matchAll(/^-\s*Owner-approved (?:substitution|descope|substitute):\s*(.+)$/gim);
   for (const match of matches) {
     const value = match[1].trim().toLowerCase();
-    if (value && !["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>"].includes(value)) {
+    if (
+      value &&
+      !["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>"].includes(value) &&
+      !placeholder(value) &&
+      !templateChoice(value)
+    ) {
       return true;
     }
   }
