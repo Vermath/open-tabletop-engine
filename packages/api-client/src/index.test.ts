@@ -86,6 +86,46 @@ describe("OpenTabletopClient", () => {
     await expect(client.createCampaign({ name: "" })).rejects.toThrow('{"error":"bad_request","message":"Invalid client payload"}');
   });
 
+  it("supports archive and chat export runtime permutations", async () => {
+    const requests: Array<{ method: string; url: URL; headers: Record<string, string>; body?: BodyInit | null }> = [];
+    const client = new OpenTabletopClient("http://api.test", {
+      token: "ots_test",
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(input.toString());
+        requests.push({
+          method: init?.method ?? "GET",
+          url,
+          headers: Object.fromEntries(new Headers(init?.headers).entries()),
+          body: init?.body
+        });
+        if (url.searchParams.get("format") === "ndjson") {
+          return new Response('{"body":"hello"}\n', { status: 200, headers: { "content-type": "application/x-ndjson" } });
+        }
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch
+    });
+
+    await client.exportChat(campaignId, { format: "json" });
+    await expect(client.exportChatNdjson(campaignId)).resolves.toBe('{"body":"hello"}\n');
+    await client.exportCampaign(campaignId, { scope: "campaign", version: "0.2.0", redaction: "portable" });
+    await client.importCampaign({ format: "ottx" }, { mode: "dry_run", scope: "selected_collections", collections: ["journals", "assets"] });
+
+    expect(requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /api/v1/campaigns/camp_client/chat/export",
+      "GET /api/v1/campaigns/camp_client/chat/export",
+      "GET /api/v1/campaigns/camp_client/export",
+      "POST /api/v1/import/campaign"
+    ]);
+    expect(requests.every((request) => request.headers.authorization === "Bearer ots_test")).toBe(true);
+    expect(requests[0]!.url.searchParams.get("format")).toBe("json");
+    expect(requests[1]!.url.searchParams.get("format")).toBe("ndjson");
+    expect(requests[2]!.url.searchParams.get("scope")).toBe("campaign");
+    expect(requests[2]!.url.searchParams.get("version")).toBe("0.2.0");
+    expect(requests[2]!.url.searchParams.get("redaction")).toBe("portable");
+    expect(requests[3]!.headers["content-type"]).toBe("application/json");
+    expect(requests[3]!.body).toBe(JSON.stringify({ archive: { format: "ottx" }, mode: "dry_run", scope: "selected_collections", collections: ["journals", "assets"] }));
+  });
+
   it("covers every public OpenAPI REST route or intentionally excludes it", async () => {
     const calls: string[] = [];
     const client = new OpenTabletopClient("http://api.test", {

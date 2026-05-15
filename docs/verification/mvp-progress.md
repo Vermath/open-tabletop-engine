@@ -4,6 +4,10 @@ This document tracks verified MVP progress without treating the whole PRD as com
 
 ## Current Follow-Up
 
+- 2026-05-14 API client import/export permutation follow-up:
+  - `@open-tabletop/api-client` now supports chat JSON export with explicit format, chat NDJSON export through a text response path, campaign archive export query options, and selected-scope archive import body wrapping.
+  - API-client regression coverage verifies the generated client sends the expected query parameters, auth headers, NDJSON text handling, and selected-collection import body.
+  - Validation passed: `pnpm --filter @open-tabletop/api-client test`, `pnpm --filter @open-tabletop/api-client typecheck`, and `pnpm docs:site:check`.
 - 2026-05-14 selected-collection archive import browser follow-up:
   - The archive browser smoke now mutates the exported campaign archive with a unique journal, applies only the selected Journals collection through the archive import wizard, verifies selected-record validation evidence, and confirms the imported journal renders in the Journal tab.
   - Validation passed: `pnpm exec playwright test tests/e2e/auth-tabletop.spec.ts -g "GM can export and safely re-import a campaign archive"`.

@@ -33,6 +33,12 @@ export interface CampaignArchiveImportResult {
   assetFiles: number;
 }
 
+export interface CampaignArchiveImportOptions {
+  mode?: "upsert" | "reject_conflicts" | "skip_conflicts" | "dry_run";
+  scope?: "all" | "assets_only" | "selected_collections";
+  collections?: string[];
+}
+
 export interface PluginRuntimeInfo {
   id: string;
   name: string;
@@ -495,8 +501,13 @@ export class OpenTabletopClient {
     return this.delete(routes.chatMessage(messageId));
   }
 
-  async exportChat(campaignId: string): Promise<{ campaignId: string; exportedAt: string; count: number; visibilityCounts: Record<string, number>; typeCounts: Record<string, number>; messages: ChatMessage[] }> {
-    return this.get(routes.chatExport(campaignId));
+  async exportChat(campaignId: string, options: { format?: "json" } = {}): Promise<{ campaignId: string; exportedAt: string; count: number; visibilityCounts: Record<string, number>; typeCounts: Record<string, number>; messages: ChatMessage[] }> {
+    const query = options.format ? `?format=${encodeURIComponent(options.format)}` : "";
+    return this.get(`${routes.chatExport(campaignId)}${query}`);
+  }
+
+  async exportChatNdjson(campaignId: string): Promise<string> {
+    return this.getText(`${routes.chatExport(campaignId)}?format=ndjson`);
   }
 
   async roll(input: { campaignId: string; formula: string; visibility?: DiceRoll["visibility"]; label?: string }): Promise<DiceRoll> {
@@ -771,16 +782,22 @@ export class OpenTabletopClient {
     return this.delete(routes.contentImportDelete(importId));
   }
 
-  async exportCampaign(campaignId: string): Promise<unknown> {
-    return this.get(routes.exportCampaign(campaignId));
+  async exportCampaign(campaignId: string, options: { scope?: "campaign"; version?: "0.2.0"; redaction?: "portable" } = {}): Promise<unknown> {
+    const query = new URLSearchParams();
+    if (options.scope) query.set("scope", options.scope);
+    if (options.version) query.set("version", options.version);
+    if (options.redaction) query.set("redaction", options.redaction);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    return this.get(`${routes.exportCampaign(campaignId)}${suffix}`);
   }
 
   async dogfoodReportBundle(campaignId: string): Promise<unknown> {
     return this.get(routes.dogfoodReportBundle(campaignId));
   }
 
-  async importCampaign(archive: unknown): Promise<CampaignArchiveImportResult> {
-    return this.post(routes.importCampaign, archive);
+  async importCampaign(archive: unknown, options: CampaignArchiveImportOptions = {}): Promise<CampaignArchiveImportResult> {
+    const hasOptions = options.mode !== undefined || options.scope !== undefined || options.collections !== undefined;
+    return this.post(routes.importCampaign, hasOptions ? { archive, ...options } : archive);
   }
 
   private async get<T>(path: string): Promise<T> {
@@ -814,6 +831,18 @@ export class OpenTabletopClient {
     });
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
+  }
+
+  private async getText(path: string): Promise<string> {
+    const headers: Record<string, string> = {};
+    if (this.options.token) headers.authorization = `Bearer ${this.options.token}`;
+    if (this.options.userId) headers["x-user-id"] = this.options.userId;
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+      method: "GET",
+      headers
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.text();
   }
 
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
