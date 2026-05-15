@@ -56,7 +56,7 @@ Close the release gaps tracked in `docs/prd-v1-gap-closure.md` so v1 can be decl
 - Live provider-specific OIDC/SCIM sandbox pass using real release-owner credentials, recorded with `docs/verification/identity-provider-smoke-evidence.md`.
 - Completed assistive-technology pass evidence for the required screen-reader/device matrix.
 - External GM validation for the final release candidate, recorded with `docs/verification/external-gm-validation.md`, or an explicit owner-approved substitution.
-- Open issue #2 tracks the remaining external evidence blockers, with child issues #3, #4, and #5 for live OIDC/SCIM provider smoke, assistive-technology matrix, and external GM validation; none have P0/P1 labels as of the 2026-05-15 GitHub issue audit.
+- Open issue #2 tracks the remaining external evidence blockers, with child issues #3, #4, and #5 for live OIDC/SCIM provider smoke, assistive-technology matrix, and external GM validation; all four issues now carry the neutral `release-evidence` label and none have P0/P1 labels as of the 2026-05-15 GitHub issue audit.
 
 The actionable release-owner handoff for these external blockers lives at `docs/verification/v1-release-owner-handoff.md`.
 
@@ -104,6 +104,7 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 - 2026-05-15 post-split aggregate audit: with `$env:OTTE_RELEASE_COMMIT = "eaefa345d2200d029a2d58af5a886d6d1b6f2a6d"`, `pnpm v1:completion:audit` again failed only the final evidence verifier. The open issue audit passed with 4 open issues and 0 P0/P1 labels, the public docs-site guard passed, and the evidence verifier continued to pass hosted release-smoke and public docs publication while failing exactly live OIDC/SCIM provider smoke, manual assistive-technology matrix, and external GM validation.
 - 2026-05-15 current-head hosted evidence refresh: hosted Release Smoke passed for `def4f408a6c48cb297c9f08d04aee375d13fd382` in run `25928669881`, and public docs were republished to `https://docs-site-seven-theta.vercel.app` with Vercel deployment evidence `https://vercel.com/treys-projects-52eabdbc/docs-site/4kwvC4RDU64YXcdrEhB7js1AYpWe`.
 - 2026-05-15 hosted owner workflow refresh: `.github/workflows/identity-smoke.yml` and `.github/workflows/v1-completion-audit.yml` now exist on the PR branch and are covered by `pnpm deployment:smoke`; `gh secret list --repo Vermath/open-tabletop-engine` showed no visible matching identity-smoke secrets, and `gh workflow list --repo Vermath/open-tabletop-engine` only listed `Docs Site` and `Release Smoke` at that moment, so these workflow paths do not yet close the live identity or final aggregate-audit evidence blockers.
+- 2026-05-15 issue-label audit: issues #2, #3, #4, and #5 are labeled `release-evidence`; `pnpm v1:issues:check` still passed with 4 open issues and 0 P0/P1 labels.
 
 ## Conclusion
 
