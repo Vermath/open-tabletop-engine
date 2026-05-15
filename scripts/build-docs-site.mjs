@@ -128,6 +128,7 @@ function findReleaseGateGaps() {
     "docs/release/v1.0.md",
     "docs/release/v1-release-checklist.md",
     "docs/prd-v1-gap-closure.md",
+    "docs/verification/v1-gap-closure-completion-audit.md",
     "docs/verification/v1-release-owner-handoff.md"
   ];
   const evidenceGaps = evidenceFiles.flatMap((source) => {
