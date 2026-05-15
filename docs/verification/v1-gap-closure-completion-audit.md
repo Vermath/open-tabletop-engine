@@ -42,6 +42,8 @@ Close the release gaps tracked in `docs/prd-v1-gap-closure.md` so v1 can be decl
 - Completed assistive-technology pass evidence for the required screen-reader/device matrix.
 - Live successful GitHub Pages docs-site publication run, recorded with `docs/verification/release-workflow-evidence.md`; current attempt is blocked by GitHub plan support for Pages on this private repository unless the owner enables supported Pages or approves an equivalent hosted publication.
 
+The actionable release-owner handoff for these three external blockers lives at `docs/verification/v1-release-owner-handoff.md`.
+
 ## Latest Audit Refresh
 
 - 2026-05-15 `pnpm identity:smoke`: command completed, but the only identity-provider test was skipped because no live OIDC/SCIM sandbox environment is configured; this is not final provider-readiness evidence.

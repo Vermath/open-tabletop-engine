@@ -42,6 +42,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 ## Verification and Release Evidence
 
 - [v1.0 gap closure PRD](../prd-v1-gap-closure.md)
+- [v1 release owner handoff](../verification/v1-release-owner-handoff.md)
 - [Identity provider smoke evidence](../verification/identity-provider-smoke-evidence.md)
 - [Release workflow evidence](../verification/release-workflow-evidence.md)
 - [Assistive technology pass plan](../verification/accessibility-assistive-tech-pass.md)
