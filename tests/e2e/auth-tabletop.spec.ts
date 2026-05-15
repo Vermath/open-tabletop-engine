@@ -1625,6 +1625,18 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeSmite);
+  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: paladin.name });
+  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(page.getByRole("heading", { name: `E2E Paladin ${suffix}` })).toBeVisible();
+  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  const targetHpBeforeLayOnHands = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
+  const layOnHandsCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Lay On Hands" }).first();
+  await expect(layOnHandsCard).toContainText("effect supported");
+  await layOnHandsCard.getByRole("button", { name: "Use action" }).click();
+  await expect(page.getByText(new RegExp(`E2E Paladin ${suffix} used action: Lay On Hands \\d+; healing applied`))).toBeVisible();
+  await expect
+    .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
+    .toBeGreaterThan(targetHpBeforeLayOnHands);
 
   await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: cleric.name });
   await expect(page.getByText("Token updated")).toBeVisible();
