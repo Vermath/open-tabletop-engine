@@ -6,7 +6,7 @@ Automated Playwright checks cover accessible names, landmark names, duplicate id
 
 ## Required Environments
 
-Run at least one pass in each environment before final v1 acceptance:
+Run at least one pass in each environment before final v1 acceptance. Issue #4 tracks this evidence collection: https://github.com/Vermath/open-tabletop-engine/issues/4.
 
 | Environment | Browser | Assistive technology | Purpose |
 | --- | --- | --- | --- |
@@ -51,7 +51,7 @@ A pass is acceptable only when:
 
 Current verifier target for the latest hosted release-smoke/docs publication evidence: `def4f408a6c48cb297c9f08d04aee375d13fd382`.
 
-Copy one block per environment into the release evidence log:
+Copy one block per environment into the release evidence log. Keep each required environment in a separate `## Assistive Technology Pass: ...` section; a combined summary that mentions multiple environments does not satisfy `pnpm v1:evidence:check`.
 
 ```md
 ## Assistive Technology Pass: <environment>

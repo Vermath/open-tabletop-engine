@@ -12,7 +12,7 @@ Record the tester role and relationship to the project. Do not record private pe
 
 ## Required Scenario
 
-The validation pass should cover one of these setup paths:
+The validation pass should cover one of these setup paths. Issue #5 tracks this evidence collection: https://github.com/Vermath/open-tabletop-engine/issues/5.
 
 - Clean local install from the release candidate.
 - Self-hosted deployment following `docs/deployment/self-hosting.md`.
