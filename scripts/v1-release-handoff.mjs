@@ -3,6 +3,11 @@ import { execSync, spawnSync } from "node:child_process";
 const commit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
 const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
 
+if (!/^[0-9a-f]{40}$/i.test(commit.trim())) {
+  console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${commit}.`);
+  process.exit(1);
+}
+
 const gates = [
   {
     name: "Live OIDC/SCIM provider readiness",

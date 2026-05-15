@@ -54,6 +54,7 @@ runEvidenceTemplatesIncludeVerifierFields();
 runEvidenceTemplatesRejectShortReleaseTargetCommit();
 runHandoffReportsIncompleteVerifierStatus();
 runHandoffReportsCompleteVerifierStatus();
+runHandoffRejectsShortReleaseTargetCommit();
 
 console.log("v1 release evidence verifier tests passed.");
 
@@ -858,6 +859,18 @@ function runHandoffReportsCompleteVerifierStatus() {
   }
 }
 
+function runHandoffRejectsShortReleaseTargetCommit() {
+  const root = fixtureRoot(completeEvidence(commit));
+
+  try {
+    const result = runHandoff(root, { releaseCommit: commit.slice(0, 12) });
+    assert(result.status === 1, "handoff should reject short release target commits");
+    assert(result.stderr.includes("OTTE_RELEASE_COMMIT must be a full 40-character commit SHA"), "handoff short-target failure should name full-SHA requirement");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function completeEvidence(evidenceCommit) {
   return {
     identity: `# Identity Provider Smoke Evidence
@@ -993,13 +1006,13 @@ function runChecker(root, options = {}) {
   });
 }
 
-function runHandoff(root) {
+function runHandoff(root, options = {}) {
   return spawnSync(process.execPath, [handoff], {
     cwd: repoRoot,
     env: {
       ...process.env,
       OTTE_EVIDENCE_ROOT: root,
-      OTTE_RELEASE_COMMIT: commit
+      OTTE_RELEASE_COMMIT: options.releaseCommit ?? commit
     },
     encoding: "utf8"
   });
