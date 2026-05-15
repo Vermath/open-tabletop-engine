@@ -19,6 +19,7 @@ runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
 runFailsWithHostedEvidenceMissingRunUrl();
+runFailsWithNegativeDocsPublicationResult();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
 runHandoffReportsIncompleteVerifierStatus();
@@ -179,6 +180,20 @@ function runFailsWithHostedEvidenceMissingRunUrl() {
     assert(result.status === 1, "hosted evidence without run URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "missing release-smoke run URL should fail the hosted smoke gate");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "missing docs run URL should fail the docs publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithNegativeDocsPublicationResult() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow.replace("- Result: pass\n- Release command or build command: pnpm docs:site:check", "- Result: not pass\n- Release command or build command: pnpm docs:site:check");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "negative docs publication result should fail");
+    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "negative docs publication result should not satisfy publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

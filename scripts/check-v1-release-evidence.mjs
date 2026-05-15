@@ -120,7 +120,7 @@ function checkDocsPublication() {
     const runUrl = field(body, "Run URL");
     const publishedUrl = field(body, "Published URL, if docs-site deploy");
     return (
-      resultText.includes("pass") &&
+      resultText === "pass" &&
       shaMatches(commitSha, currentCommit) &&
       /^https?:\/\//i.test(runUrl) &&
       /^https?:\/\//i.test(publishedUrl) &&
