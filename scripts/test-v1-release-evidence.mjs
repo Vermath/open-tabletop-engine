@@ -11,6 +11,7 @@ const handoff = join(repoRoot, "scripts", "v1-release-handoff.mjs");
 
 runFailsWhenEvidenceIsMissing();
 runPassesWhenEvidenceIsComplete();
+runPassesWhenIdentityEvidenceMentionsNoSkippedChecks();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
 runFailsWithPlaceholderOwnerOverrides();
@@ -47,6 +48,19 @@ function runPassesWhenEvidenceIsComplete() {
     const result = runChecker(root);
     assert(result.status === 0, "complete evidence should pass");
     assert(result.stdout.includes("v1 release evidence is complete"), "complete evidence should report success");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runPassesWhenIdentityEvidenceMentionsNoSkippedChecks() {
+  const files = completeEvidence(commit);
+  files.identity = files.identity.replace("- Blockers: none", "- Skipped checks: none\n- Blockers: none");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 0, "identity pass evidence should allow notes that no checks were skipped");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

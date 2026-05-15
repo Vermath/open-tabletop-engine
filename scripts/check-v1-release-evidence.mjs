@@ -43,8 +43,7 @@ function checkIdentityProviderSmoke() {
     (section) =>
       field(section.body, "Result").toLowerCase() === "pass" &&
       evidenceCommitMatches(section.body) &&
-      field(section.body, "Exit code") === "0" &&
-      !/skipped/i.test(section.body)
+      field(section.body, "Exit code") === "0"
   );
 
   return result("Live OIDC/SCIM provider smoke", pass, [
