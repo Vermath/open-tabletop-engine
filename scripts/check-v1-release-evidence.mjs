@@ -220,6 +220,7 @@ function validHttpUrl(value) {
       Boolean(url.hostname) &&
       !placeholderHost(url.hostname) &&
       !localHost(url.hostname) &&
+      !localNetworkName(url.hostname) &&
       !privateHost(url.hostname)
     );
   } catch {
@@ -234,6 +235,12 @@ function placeholderHost(hostname) {
 function localHost(hostname) {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   return normalized === "localhost" || normalized === "::1" || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+}
+
+function localNetworkName(hostname) {
+  const normalized = hostname.toLowerCase().replace(/\.$/, "");
+  if (normalized.startsWith("[") && normalized.endsWith("]")) return false;
+  return !normalized.includes(".") || normalized.endsWith(".local") || normalized.endsWith(".localhost");
 }
 
 function privateHost(hostname) {
