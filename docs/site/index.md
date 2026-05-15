@@ -45,6 +45,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 ## Verification and Release Evidence
 
 - [v1.0 gap closure PRD](../prd-v1-gap-closure.md)
+- [v1 gap closure completion audit](../verification/v1-gap-closure-completion-audit.md)
 - [v1 release owner handoff](../verification/v1-release-owner-handoff.md)
 - [External GM validation evidence](../verification/external-gm-validation.md)
 - [Identity provider smoke evidence](../verification/identity-provider-smoke-evidence.md)
@@ -59,6 +60,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 
 - Keep documentation in `docs/` and release history in `CHANGELOG.md` before publishing a hosted site.
 - Run `pnpm docs:site:check` before changing the hosted documentation workflow.
+- Run `pnpm v1:evidence:check` against the final release commit before declaring v1.0 ready.
 - Link each released version to its release notes and verification artifact.
 - Do not publish v1.0 documentation as final until `docs/prd-v1-gap-closure.md` release gates are satisfied or explicitly descoped.
 - Keep public docs free of secrets, provider tokens, proprietary content, and internal filesystem paths.
