@@ -1682,6 +1682,20 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeHex);
+  const warlockAfterHex = await getActorById(page, warlock.id);
+  const pactSlotLevel = Object.keys((warlockAfterHex.data.spellSlots as Record<string, { current: number }>) ?? {}).find((key) => key.startsWith("level")) ?? "level3";
+  const pactSlotsAfterHex = ((warlockAfterHex.data.spellSlots as Record<string, { current: number }>)[pactSlotLevel]?.current) ?? 0;
+  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: warlock.name });
+  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(page.getByRole("heading", { name: `E2E Warlock ${suffix}` })).toBeVisible();
+  await page.getByRole("checkbox", { name: "Apply action effect" }).uncheck();
+  const magicalCunningCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Magical Cunning" }).first();
+  await expect(magicalCunningCard).toContainText("roll only action");
+  await magicalCunningCard.getByRole("button", { name: "Use action" }).click();
+  await expect(page.getByText(new RegExp(`E2E Warlock ${suffix} used action: Magical Cunning \\d+`))).toBeVisible();
+  await expect
+    .poll(async () => (((await getActorById(page, warlock.id)).data.spellSlots as Record<string, { current: number }>)[pactSlotLevel]?.current) ?? 0)
+    .toBeGreaterThan(pactSlotsAfterHex);
 
   await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: druid.name });
   await expect(page.getByText("Token updated")).toBeVisible();
