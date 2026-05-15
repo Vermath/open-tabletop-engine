@@ -27,6 +27,7 @@ runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments();
 runFailsWhenAssistiveEvidenceOmitsWorkflowDetails();
 runFailsWhenEvidenceTargetsAnotherCommit();
+runFailsWithShortReleaseTargetCommit();
 runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
 runFailsWhenExternalGmEvidenceOmitsTesterContext();
 runFailsWhenExternalGmEvidenceUsesTemplateChoices();
@@ -185,6 +186,18 @@ function runFailsWhenEvidenceTargetsAnotherCommit() {
     const result = runChecker(root);
     assert(result.status === 1, "evidence for a different commit should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "stale evidence should name missing hosted commit");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithShortReleaseTargetCommit() {
+  const root = fixtureRoot(completeEvidence(commit));
+
+  try {
+    const result = runChecker(root, { releaseCommit: commit.slice(0, 12) });
+    assert(result.status === 1, "short release target commit should fail");
+    assert(result.stderr.includes("OTTE_RELEASE_COMMIT must be a full 40-character commit SHA"), "short release target failure should name full-SHA requirement");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -953,13 +966,13 @@ function fixtureRoot(files) {
   return root;
 }
 
-function runChecker(root) {
+function runChecker(root, options = {}) {
   return spawnSync(process.execPath, [checker], {
     cwd: repoRoot,
     env: {
       ...process.env,
       OTTE_EVIDENCE_ROOT: root,
-      OTTE_RELEASE_COMMIT: commit
+      OTTE_RELEASE_COMMIT: options.releaseCommit ?? commit
     },
     encoding: "utf8"
   });

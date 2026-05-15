@@ -7,6 +7,11 @@ const evidenceRoot = process.env.OTTE_EVIDENCE_ROOT ?? repoRoot;
 const currentCommit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
 const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
 
+if (!fullSha(currentCommit)) {
+  console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${currentCommit}.`);
+  process.exit(1);
+}
+
 const checks = [
   checkIdentityProviderSmoke(),
   checkAssistiveTechnologyPass(),
@@ -211,12 +216,16 @@ function shaMatches(recorded, expected) {
   const recordedSha = normalizeSha(recorded);
   const expectedSha = normalizeSha(expected);
   if (!recordedSha || !expectedSha) return false;
-  if (!/^[0-9a-f]{7,40}$/.test(recordedSha) || !/^[0-9a-f]{7,40}$/.test(expectedSha)) return false;
+  if (!/^[0-9a-f]{7,40}$/.test(recordedSha) || !fullSha(expectedSha)) return false;
   return recordedSha === expectedSha || (recordedSha.length >= 7 && expectedSha.startsWith(recordedSha));
 }
 
 function normalizeSha(value) {
   return value.replace(/`/g, "").trim().toLowerCase();
+}
+
+function fullSha(value) {
+  return /^[0-9a-f]{40}$/.test(normalizeSha(value));
 }
 
 function commandEquals(value, expected) {
