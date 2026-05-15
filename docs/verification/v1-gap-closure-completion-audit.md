@@ -4,7 +4,7 @@ Date: 2026-05-14
 Status: incomplete; local product/code coverage is at the current v1 threshold, but external/manual release evidence is still pending.
 Last refreshed: 2026-05-15.
 Verifier target rule: `pnpm v1:evidence:check` checks the current release commit by default, or `OTTE_RELEASE_COMMIT` when supplied.
-Local candidate note: the latest full local release-smoke implementation candidate was `37192cb64d01c058b05a80def52041f27b94b47f` on `v1-gap-closure-evidence`; later evidence-only documentation and verifier-hardening commits exist, and hosted CI evidence must be refreshed for the verifier target commit. The current local verifier target after the latest audit refresh is `503a8c4761078fbc5eeeaf17e30cd1f7eea42f95`.
+Local candidate note: the latest full local release-smoke implementation candidate was `37192cb64d01c058b05a80def52041f27b94b47f` on `v1-gap-closure-evidence`; later evidence-only documentation and verifier-hardening commits exist, and hosted CI evidence must be refreshed for the verifier target commit. The verifier target is always the commit reported by `git rev-parse HEAD` unless `OTTE_RELEASE_COMMIT` is supplied.
 
 ## Objective
 
@@ -83,6 +83,7 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 - 2026-05-15 GitHub PR audit: PR #1 remote head checks passed for Release Smoke and Docs Site build, but the local branch has additional unpushed commits, so final hosted evidence still needs refresh on the verifier target commit.
 - 2026-05-15 local candidate audit: full local `pnpm release:smoke` passed for implementation candidate `37192cb64d01c058b05a80def52041f27b94b47f`; later evidence-only documentation and verifier-hardening commits mean final hosted release-smoke still needs to run on the verifier target commit.
 - 2026-05-15 latest verifier-hardening audit: `pnpm v1:evidence:test`, `pnpm docs:site:check`, and `git diff --check` passed after commit `503a8c4761078fbc5eeeaf17e30cd1f7eea42f95`; `pnpm v1:release:handoff` still printed the expected five external/manual blockers for that checked commit.
+- 2026-05-15 latest completion-audit refresh: after commit `7010ca0320934b1dda39c05009753d4b537a645a`, `pnpm v1:release:handoff` again printed the expected five external/manual blockers for the checked `HEAD`.
 - 2026-05-15 `pnpm v1:evidence:check`: expectedly failed because live OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication evidence are not yet recorded; rerun after final evidence commits so the checked commit matches the release target.
 
 ## Conclusion
