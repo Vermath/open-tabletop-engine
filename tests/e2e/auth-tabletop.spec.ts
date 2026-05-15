@@ -1566,11 +1566,13 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
 
   const suffix = Date.now().toString(36);
   const target = await createRulesTargetActor(page, { name: `E2E Rules Target ${suffix}`, hp: { current: 100, max: 100 } });
+  const cleric = await createSystemCharacter(page, { templateId: "cleric", name: `E2E Cleric ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const barbarian = await createSystemCharacter(page, { templateId: "barbarian", name: `E2E Barbarian ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const paladin = await createSystemCharacter(page, { templateId: "paladin", name: `E2E Paladin ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const monk = await createSystemCharacter(page, { templateId: "monk", name: `E2E Monk ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const ranger = await createSystemCharacter(page, { templateId: "ranger", name: `E2E Ranger ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const rogue = await createSystemCharacter(page, { templateId: "rogue", name: `E2E Rogue ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
+  await createSceneToken(page, { name: `E2E Cleric Token ${suffix}`, actorId: cleric.id, x: 290, y: 330, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Barbarian Token ${suffix}`, actorId: barbarian.id, x: 350, y: 330, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Paladin Token ${suffix}`, actorId: paladin.id, x: 410, y: 330, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Monk Token ${suffix}`, actorId: monk.id, x: 470, y: 330, ownerUserIds: ["usr_demo_player"] });
@@ -1594,6 +1596,21 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeSmite);
+
+  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: cleric.name });
+  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(page.getByRole("heading", { name: `E2E Cleric ${suffix}` })).toBeVisible();
+  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  const divineSparkCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Divine Spark Damage" }).first();
+  await expect(divineSparkCard).toContainText("effect supported");
+  const targetHpBeforeDivineSpark = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
+  await divineSparkCard.getByRole("button", { name: "Use action" }).click();
+  await expect(page.getByText(new RegExp(`E2E Cleric ${suffix} used action: Channel Divinity \\d+; damage applied`))).toBeVisible();
+  await expect
+    .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
+    .toBeLessThan(targetHpBeforeDivineSpark);
 
   await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: monk.name });
   await expect(page.getByText("Token updated")).toBeVisible();
