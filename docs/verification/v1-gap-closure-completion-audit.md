@@ -3,6 +3,7 @@
 Date: 2026-05-14
 Status: incomplete; local product/code coverage is at the current v1 threshold, but external/manual release evidence is still pending.
 Last refreshed: 2026-05-15.
+Local candidate note: the latest checked implementation candidate was `836ae589f9d41447ac77422ab3f03d5f364936da` on `v1-gap-closure-evidence`; the branch had local-only commits beyond `origin/v1-gap-closure-evidence`, so hosted CI evidence must be refreshed after the final push.
 
 ## Objective
 
@@ -74,6 +75,7 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 - 2026-05-15 `pnpm exec playwright test -c playwright.bootstrap.config.ts`: passed the clean-bootstrap admin recovery and first-owner smoke after hardening route teardown for late admin operations polling.
 - 2026-05-15 GitHub issue audit: one open issue, #2 `Track remaining v1 external evidence blockers`, with no labels.
 - 2026-05-15 GitHub PR audit: PR #1 remote head checks passed for Release Smoke and Docs Site build, but the local branch has additional unpushed commits, so final hosted evidence still needs refresh on the final release commit.
+- 2026-05-15 local candidate audit: `git rev-parse HEAD` returned `836ae589f9d41447ac77422ab3f03d5f364936da`; `git status --short --branch` showed `v1-gap-closure-evidence...origin/v1-gap-closure-evidence [ahead 31]` with only pre-existing untracked graphify artifacts, confirming the recorded hosted evidence predates the checked local implementation candidate and must be refreshed after the final push.
 
 ## Conclusion
 
