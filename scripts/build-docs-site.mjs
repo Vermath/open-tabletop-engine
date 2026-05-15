@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, relative } from "node:path";
+import { releaseEvidenceGates } from "./v1-release-gates.mjs";
 
 const root = process.cwd();
 const outputDir = join(root, "dist", "docs-site");
@@ -120,7 +121,7 @@ function findLocalPathLeaks(file) {
 
 function findReleaseGateGaps() {
   const requiredCommands = ["pnpm release:smoke", "pnpm v1:evidence:check", "pnpm v1:issues:check"];
-  const requiredEvidenceTerms = ["OIDC/SCIM", "assistive-technology", "external GM", "hosted release-smoke", "docs-publication"];
+  const requiredEvidenceTerms = releaseEvidenceGates.map((gate) => gate.publicDocsTerm);
   const requiredFiles = ["docs/release/v1.0.md", "docs/site/index.md"];
   const commandGaps = requiredFiles.flatMap((source) => {
     const markdown = readFileSync(join(root, source), "utf8");
