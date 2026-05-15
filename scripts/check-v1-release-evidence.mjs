@@ -74,11 +74,9 @@ function checkAssistiveTechnologyPass() {
     if (!["pass", "pass with issues"].includes(resultText)) continue;
     if (!evidenceCommitMatches(section.body)) continue;
     const haystack = `${section.title}\n${section.body}`.toLowerCase();
-    for (const environment of required) {
-      if (environment.pattern.test(haystack)) {
-        accepted.add(environment.label);
-      }
-    }
+    const matched = required.filter((environment) => environment.pattern.test(haystack));
+    if (matched.length !== 1) continue;
+    accepted.add(matched[0].label);
   }
 
   const hasOwnerSubstitution = explicitOwnerOverride(doc);

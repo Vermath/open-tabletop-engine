@@ -21,6 +21,7 @@ runFailsWithTemplateOwnerOverrides();
 runFailsWithPlaceholderOwnerOverrides();
 runFailsWithTemplateChoiceOwnerOverrides();
 runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
+runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
 runFailsWhenExternalGmEvidenceUsesTemplateChoices();
@@ -284,6 +285,29 @@ function runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence() {
     const result = runChecker(root);
     assert(result.status === 1, "iOS VoiceOver evidence should not satisfy macOS VoiceOver");
     assert(result.stdout.includes("Missing pass evidence for: macOS VoiceOver"), "missing macOS VoiceOver should be reported distinctly");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments() {
+  const files = completeEvidence(commit);
+  files.assistive = `# Assistive Technology Pass Plan
+
+## Assistive Technology Pass: Combined matrix
+
+- App build or commit: ${commit}
+- Assistive technology: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack
+- Browser: Chrome on Windows, Edge on Windows, Safari on macOS, Safari on iOS, Chrome on Android
+- Result: pass
+- Notes: Combined summary, not one evidence block per required environment.
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "one assistive section should not satisfy multiple required environments");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "combined assistive section should leave the full matrix incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
