@@ -6,7 +6,13 @@ The local implementation, browser coverage, release-smoke wiring, docs renderer,
 
 Use `docs/release/v1-release-checklist.md` as the release-owner preflight, publication, evidence, and rollback checklist.
 
-Tracking issue: https://github.com/Vermath/open-tabletop-engine/issues/2 records the remaining external evidence blockers and had no P0/P1 labels in the 2026-05-15 audit.
+Tracking issue: https://github.com/Vermath/open-tabletop-engine/issues/2 records the remaining external evidence blockers. The issue tracker audit on 2026-05-15 covered the parent issue plus the child evidence trackers below and found no P0/P1 labels.
+
+Child evidence trackers:
+
+- Live OIDC/SCIM provider smoke: https://github.com/Vermath/open-tabletop-engine/issues/3
+- Assistive-technology matrix: https://github.com/Vermath/open-tabletop-engine/issues/4
+- External GM validation: https://github.com/Vermath/open-tabletop-engine/issues/5
 
 Run `pnpm v1:issues:check` before final acceptance to verify the live open-issue list still has no P0/P1 labels.
 
@@ -35,9 +41,9 @@ pnpm v1:evidence:templates
 
 | Gate | Owner action | Evidence destination | Completion rule |
 | --- | --- | --- | --- |
-| Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` | `pnpm identity:smoke` exits `0` without skipping, and the evidence block records exact command parity, matching commit, non-placeholder API host, provider, sandbox label, smoke target, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result |
-| Assistive-technology acceptance | Run or delegate Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` | Every required environment has its own pass or pass-with-issues evidence section tied to the verifier target commit with browser, assistive technology, input method, scenario data, and workflows completed, or an explicit owner-approved substitution/descope is recorded |
-| External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` | Matching commit, tester role, relationship to project, setup path, scenario data, workflows completed, pass/pass-with-issues outcome, and issue-reporting feedback are recorded |
+| Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` and issue #3 | `pnpm identity:smoke` exits `0` without skipping, and the evidence block records exact command parity, matching commit, non-placeholder API host, provider, sandbox label, smoke target, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result |
+| Assistive-technology acceptance | Run or delegate Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` and issue #4 | Every required environment has its own pass or pass-with-issues evidence section tied to the verifier target commit with browser, assistive technology, input method, scenario data, and workflows completed, or an explicit owner-approved substitution/descope is recorded |
+| External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` and issue #5 | Matching commit, tester role, relationship to project, setup path, scenario data, workflows completed, pass/pass-with-issues outcome, and issue-reporting feedback are recorded |
 | Hosted release-smoke refresh | Covered by PR Release Smoke run `25915135921` for verifier target `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d` | `docs/verification/release-workflow-evidence.md` | Recorded and passing; rerun only if the release verifier target changes |
 | Public docs publication | Covered by equivalent hosted Vercel publication for verifier target `eaefa345d2200d029a2d58af5a886d6d1b6f2a6d` | `docs/verification/release-workflow-evidence.md` | Recorded and passing with HTTPS published URL `https://docs-site-seven-theta.vercel.app`; republish only if the release verifier target changes |
 
