@@ -231,6 +231,7 @@ function validHttpUrl(value) {
       Boolean(url.hostname) &&
       !url.username &&
       !url.password &&
+      !sensitiveUrlParams(url) &&
       !placeholderHost(url.hostname) &&
       !localHost(url.hostname) &&
       !localNetworkName(url.hostname) &&
@@ -246,6 +247,18 @@ function validHostedRunUrl(value) {
   if (!validHttpUrl(value)) return false;
   const url = new URL(value);
   return url.pathname.replace(/\/+$/, "") !== "";
+}
+
+function sensitiveUrlParams(url) {
+  const sensitiveNames = /^(?:access[_-]?token|api[_-]?key|auth|auth[_-]?code|client[_-]?secret|code|credential|id[_-]?token|key|password|refresh[_-]?token|secret|sig|signature|token)$/i;
+  const hasSensitiveParam = (value) => {
+    const params = new URLSearchParams(value.replace(/^#/, ""));
+    for (const key of params.keys()) {
+      if (sensitiveNames.test(key)) return true;
+    }
+    return false;
+  };
+  return hasSensitiveParam(url.search) || hasSensitiveParam(url.hash);
 }
 
 function placeholderHost(hostname) {

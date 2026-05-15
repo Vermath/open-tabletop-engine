@@ -46,6 +46,7 @@ runFailsWithPrivateHostedUrls();
 runFailsWithLocalNetworkHostedUrls();
 runFailsWithReservedHostedUrls();
 runFailsWithCredentialHostedUrls();
+runFailsWithSensitiveParamHostedUrls();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
 runHandoffReportsIncompleteVerifierStatus();
@@ -707,6 +708,24 @@ function runFailsWithCredentialHostedUrls() {
     assert(result.status === 1, "credential-bearing hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "credential-bearing release-smoke run URL should fail the hosted smoke gate");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "credential-bearing docs URLs should fail the docs publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithSensitiveParamHostedUrls() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/1", "https://github.com/Vermath/open-tabletop-engine/actions/runs/1?access_token=redacted")
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/2", "https://github.com/Vermath/open-tabletop-engine/actions/runs/2#id_token=redacted")
+    .replace("https://vermath.github.io/open-tabletop-engine", "https://vermath.github.io/open-tabletop-engine?api_key=redacted");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "sensitive-param hosted URLs should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "sensitive-param release-smoke run URL should fail the hosted smoke gate");
+    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "sensitive-param docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
