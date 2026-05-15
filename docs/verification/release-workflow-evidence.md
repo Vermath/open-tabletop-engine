@@ -65,6 +65,20 @@ Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are usefu
 - Blockers: current GitHub plan does not support Pages for this private repository; final docs publication needs owner-supported Pages enablement, repo visibility/plan change by the owner, or an owner-approved equivalent hosted publication.
 - Notes: `.github/workflows/docs-site.yml` now uploads and deploys the Pages artifact on either `main` push or explicit `workflow_dispatch` once Pages is available, while PR runs remain build-only.
 
+## Latest PR Check Observation
+
+- Date: 2026-05-15
+- Operator: Codex
+- PR: https://github.com/Vermath/open-tabletop-engine/pull/1
+- Remote head SHA: `fe140d7bbe86526fbb45a3d288410f30b713175d`
+- Release Smoke run: https://github.com/Vermath/open-tabletop-engine/actions/runs/25897361976
+- Release Smoke job: https://github.com/Vermath/open-tabletop-engine/actions/runs/25897361976/job/76113166287
+- Release Smoke result: pass
+- Docs Site run: https://github.com/Vermath/open-tabletop-engine/actions/runs/25897361971
+- Docs Site build result: pass
+- Docs Site deploy result: skipped on PR
+- Notes: This confirms the remote PR head checks were green, but the local branch has additional unpushed commits. Final acceptance still needs hosted release-smoke and docs evidence tied to the final pushed release commit or an owner-approved successor.
+
 ## Required Hosted Runs
 
 Collect evidence for both workflows before final v1 acceptance:

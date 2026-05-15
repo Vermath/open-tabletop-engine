@@ -33,6 +33,7 @@ Close the release gaps tracked in `docs/prd-v1-gap-closure.md` so v1 can be decl
 | Deeper API behavior compatibility tests | API coverage compares the missing-session matrix to the served OpenAPI path/method surface, verifies every user-session-protected REST route is covered or explicitly excluded as public/browser-flow/SCIM-bearer, verifies read-only observer `403` outcomes across every non-self-service mutating user-session route from that served surface, verifies read-only observer outcomes across protected `GET` routes, verifies privileged GM/server-admin read companions, verifies privileged server-admin and GM mutating companions, verifies authenticated malformed request bodies without representative state mutation, and verifies API-client auth/header/body/upload/error/export/archive behavior beyond route conformance | Covered locally for the current served route and generated-client fixture surface |
 | Expanded advanced-flow browser E2E | Browser coverage includes timed combat condition expiry, selected D&D SRD action-effect paths across Fighter/Cleric/Bard/Druid/Wizard/Sorcerer/Warlock/Monster/Barbarian/Paladin/Monk/Ranger/Rogue, SDK/system registry manifest metadata, plugin source/status/core/trust filters and install/upgrade/rollback/read-only/failure states, admin auth/storage/asset/AI/plugin/job/audit recovery, chat export formats, archive reject-conflict and selected-collection journal import application, signed asset delivery URL generation, deleted-asset delivery disablement, and phone/tablet touch token/dice/chat/reload smokes | Covered locally for the current v1 browser evidence threshold |
 | Future/archive upgrade fixture policy | Current migration smoke covers existing v0.1/v0.2 archive fixtures and a v0.3 SQLite fixture, but `docs/prd-v1-gap-closure.md` still requires committed fixture coverage for future historical versions as they are released | Covered for current fixtures; future-version requirement remains ongoing |
+| No P0/P1 open issues | `gh issue list --repo Vermath/open-tabletop-engine --state open --limit 100 --json number,title,labels,url` on 2026-05-15 returned issue #2, `Track remaining v1 external evidence blockers`, with no labels | No labeled P0/P1 product issues found; one open external-evidence tracking issue remains |
 | Milestone 5 external GM validation | `docs/prd-v1-gap-closure.md` requires clean install, upgrade, dogfood, and external GM validation for the v1 release candidate | Incomplete until an external GM validation pass or explicit owner-approved substitution is recorded |
 | OIDC/SCIM provider readiness | `pnpm identity:smoke` harness and `docs/verification/identity-provider-smoke-evidence.md` evidence template exist | Incomplete until run against real provider sandbox credentials with pass output |
 | Assistive technology acceptance | `docs/verification/accessibility-assistive-tech-pass.md` plan exists | Incomplete until NVDA/Narrator/VoiceOver/TalkBack pass evidence is attached |
@@ -44,6 +45,7 @@ Close the release gaps tracked in `docs/prd-v1-gap-closure.md` so v1 can be decl
 - External GM validation for the final release candidate, or an explicit owner-approved substitution.
 - Hosted release-smoke evidence refreshed for the final pushed release commit; current hosted run predates local-only commits.
 - Live successful GitHub Pages docs-site publication run, recorded with `docs/verification/release-workflow-evidence.md`; current attempt is blocked by GitHub plan support for Pages on this private repository unless the owner enables supported Pages or approves an equivalent hosted publication.
+- Open issue #2 tracks the remaining external evidence blockers; it has no P0/P1 labels as of the 2026-05-15 GitHub issue audit.
 
 The actionable release-owner handoff for these external blockers lives at `docs/verification/v1-release-owner-handoff.md`.
 
@@ -52,6 +54,8 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 - 2026-05-15 `pnpm identity:smoke`: command completed, but the only identity-provider test was skipped because no live OIDC/SCIM sandbox environment is configured; this is not final provider-readiness evidence.
 - 2026-05-15 `pnpm docs:site:check`: passed locally.
 - 2026-05-15 `git diff --check`: passed locally.
+- 2026-05-15 GitHub issue audit: one open issue, #2 `Track remaining v1 external evidence blockers`, with no labels.
+- 2026-05-15 GitHub PR audit: PR #1 remote head checks passed for Release Smoke and Docs Site build, but the local branch has additional unpushed commits, so final hosted evidence still needs refresh on the final release commit.
 
 ## Conclusion
 
