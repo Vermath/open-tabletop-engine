@@ -8,6 +8,7 @@ const builder = join(repoRoot, "scripts", "build-docs-site.mjs");
 
 runPassesWithRequiredDocsAndExcludedInternalLogs();
 runFailsWhenRequiredReleasePageLeaksLocalPath();
+runFailsWhenPublicDocsLinkIsBroken();
 
 console.log("docs site publication guard tests passed.");
 
@@ -37,6 +38,21 @@ function runFailsWhenRequiredReleasePageLeaksLocalPath() {
     assert(result.status === 1, "docs check should fail when a required release page leaks a local path");
     assert(result.stderr.includes("Docs site build found local filesystem paths in public docs"), "docs check should explain local path leak");
     assert(result.stderr.includes("docs/verification/release-workflow-evidence.md:3"), "docs check should name the leaking release page");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenPublicDocsLinkIsBroken() {
+  const root = fixtureRoot();
+  writeRequiredDocs(root);
+  writeFileSync(join(root, "docs", "site", "index.md"), "# Public Docs\n\n- [Missing](../missing-page.md)\n");
+
+  try {
+    const result = runBuilder(root);
+    assert(result.status === 1, "docs check should fail when a public docs link is broken");
+    assert(result.stderr.includes("Docs site build found broken markdown links"), "docs check should explain broken markdown links");
+    assert(result.stderr.includes("docs/site/index.md -> ../missing-page.md"), "docs check should name the broken source and target");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
