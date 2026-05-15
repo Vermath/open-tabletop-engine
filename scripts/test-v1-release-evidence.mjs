@@ -12,6 +12,8 @@ runPassesWhenEvidenceIsComplete();
 runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
 runFailsWhenEvidenceTargetsAnotherCommit();
+runFailsWithTooShortCommitEvidence();
+runFailsWithProseOnlyDocsPublicationOverride();
 
 console.log("v1 release evidence verifier tests passed.");
 
@@ -82,6 +84,42 @@ function runPassesWithOwnerApprovedManualOverrides() {
   try {
     const result = runChecker(root);
     assert(result.status === 0, "owner-approved manual overrides should satisfy manual gates");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithTooShortCommitEvidence() {
+  const root = fixtureRoot(completeEvidence(commit.slice(0, 6)));
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "too-short commit evidence should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "too-short commit should not satisfy hosted release-smoke");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithProseOnlyDocsPublicationOverride() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = `# Release Workflow Evidence
+
+This release has an owner-approved equivalent hosted publication.
+Published URL, if docs-site deploy: https://docs.example.test/open-tabletop
+
+## Hosted Workflow Evidence: Release Smoke
+
+- Commit SHA: ${commit}
+- Result: pass
+- Release command or build command: pnpm release:smoke
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "prose-only docs publication override should fail");
+    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "prose-only docs publication should not satisfy publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
