@@ -215,7 +215,7 @@ function commandEquals(value, expected) {
 function validHttpUrl(value) {
   try {
     const url = new URL(value);
-    return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname) && !placeholderHost(url.hostname);
+    return ["http:", "https:"].includes(url.protocol) && Boolean(url.hostname) && !placeholderHost(url.hostname) && !localHost(url.hostname);
   } catch {
     return false;
   }
@@ -223,6 +223,11 @@ function validHttpUrl(value) {
 
 function placeholderHost(hostname) {
   return /(^|\.)example(?:\.com|\.org|\.net|\.test)$/i.test(hostname);
+}
+
+function localHost(hostname) {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "localhost" || normalized === "::1" || /^127(?:\.\d{1,3}){3}$/.test(normalized);
 }
 
 function passField(value) {
