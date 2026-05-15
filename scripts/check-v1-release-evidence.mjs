@@ -48,7 +48,7 @@ function checkIdentityProviderSmoke() {
       meaningfulField(field(section.body, "API base URL host")) &&
       meaningfulField(field(section.body, "Provider")) &&
       meaningfulField(field(section.body, "Provider sandbox or tenant label")) &&
-      meaningfulField(field(section.body, "Smoke target")) &&
+      meaningfulChoiceField(field(section.body, "Smoke target")) &&
       passField(field(section.body, "OIDC discovery/test result")) &&
       passField(field(section.body, "SCIM ServiceProviderConfig result"))
   );
@@ -106,7 +106,7 @@ function checkExternalGmValidation() {
       evidenceCommitMatches(section.body) &&
       meaningfulField(field(section.body, "Tester role")) &&
       meaningfulField(field(section.body, "Relationship to project")) &&
-      meaningfulField(field(section.body, "Setup path")) &&
+      meaningfulChoiceField(field(section.body, "Setup path")) &&
       meaningfulField(field(section.body, "Scenario data")) &&
       meaningfulField(field(section.body, "Workflows completed"))
   );
@@ -307,6 +307,11 @@ function meaningfulField(value) {
   return Boolean(normalized) && !["none", "n/a", "na", "no", "pending", "tbd", "<approval summary>"].includes(normalized) && !placeholder(normalized) && !templateChoice(normalized);
 }
 
+function meaningfulChoiceField(value) {
+  const normalized = value.trim().toLowerCase();
+  return meaningfulField(value) && !normalized.includes("/");
+}
+
 function templateChoice(value) {
   return value.includes(" / ");
 }
@@ -320,7 +325,8 @@ function explicitOwnerOverride(markdown) {
       value &&
       !["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>"].includes(value) &&
       !placeholder(value) &&
-      !templateChoice(value)
+      !templateChoice(value) &&
+      !value.includes("/")
     ) {
       return true;
     }

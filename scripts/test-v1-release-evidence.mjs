@@ -22,6 +22,7 @@ runPassesWithOwnerApprovedManualOverrides();
 runFailsWithTemplateOwnerOverrides();
 runFailsWithPlaceholderOwnerOverrides();
 runFailsWithTemplateChoiceOwnerOverrides();
+runFailsWithCompactTemplateChoiceOwnerOverrides();
 runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments();
 runFailsWhenAssistiveEvidenceOmitsWorkflowDetails();
@@ -29,6 +30,7 @@ runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
 runFailsWhenExternalGmEvidenceOmitsTesterContext();
 runFailsWhenExternalGmEvidenceUsesTemplateChoices();
+runFailsWhenExternalGmEvidenceUsesCompactTemplateChoices();
 runFailsWithTooShortCommitEvidence();
 runFailsWithPlaceholderHostedReleaseSmokeTitle();
 runFailsWithProseOnlyDocsPublicationOverride();
@@ -286,6 +288,28 @@ function runFailsWithTemplateChoiceOwnerOverrides() {
   }
 }
 
+function runFailsWithCompactTemplateChoiceOwnerOverrides() {
+  const files = completeEvidence(commit);
+  files.assistive = `# Assistive Technology Pass Plan
+
+- Owner-approved descope: approved/not approved
+`;
+  files.externalGm = `# External GM Validation Evidence
+
+- Owner-approved substitution: external GM validation/owner-approved substitute
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "compact template-choice owner overrides should not satisfy manual gates");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "compact template-choice AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Add a non-template external GM validation block"), "compact template-choice GM override should leave external validation incomplete");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence() {
   const files = completeEvidence(commit);
   files.assistive = `# Assistive Technology Pass Plan
@@ -421,6 +445,20 @@ function runFailsWhenExternalGmEvidenceUsesTemplateChoices() {
     const result = runChecker(root);
     assert(result.status === 1, "external GM evidence with template-choice setup path should fail");
     assert(result.stdout.includes("tester role, relationship to project, setup path, scenario data, and workflows completed"), "external GM template-choice failure should name scenario details");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenExternalGmEvidenceUsesCompactTemplateChoices() {
+  const files = completeEvidence(commit);
+  files.externalGm = files.externalGm.replace("- Setup path: hosted preview\n", "- Setup path: clean local install/self-hosted deployment/hosted preview/owner-approved substitute\n");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "external GM evidence with compact template-choice setup path should fail");
+    assert(result.stdout.includes("tester role, relationship to project, setup path, scenario data, and workflows completed"), "external GM compact template-choice failure should name scenario details");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
