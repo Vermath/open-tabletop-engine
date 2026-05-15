@@ -18,6 +18,7 @@ runFailsWithPlaceholderOwnerOverrides();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
+runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
 runHandoffReportsIncompleteVerifierStatus();
 runHandoffReportsCompleteVerifierStatus();
@@ -162,6 +163,19 @@ Published URL, if docs-site deploy: https://docs.example.test/open-tabletop
     const result = runChecker(root);
     assert(result.status === 1, "prose-only docs publication override should fail");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "prose-only docs publication should not satisfy publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runPassesWithPublicationTitledDocsEvidence() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow.replace("## Hosted Workflow Evidence: Docs Site Deploy", "## Hosted Workflow Evidence: Docs Site Publication Final");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 0, "docs publication evidence should pass with publication title and required fields");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

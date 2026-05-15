@@ -122,7 +122,7 @@ function checkDocsPublication() {
       shaMatches(commitSha, currentCommit) &&
       /^https?:\/\//i.test(publishedUrl) &&
       !/not published|skipped|blocked/i.test(body) &&
-      (/deploy/i.test(section.title) || /owner-approved equivalent hosted publication/i.test(body))
+      (/deploy|publication/i.test(section.title) || /owner-approved equivalent hosted publication/i.test(body))
     );
   });
 
