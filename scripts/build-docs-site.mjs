@@ -42,6 +42,9 @@ const manifest = {
 writeFileSync(join(outputDir, "site-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
 if (process.argv.includes("--check")) {
+  const requiredReleaseEvidenceOutputs = Array.from(
+    new Set(releaseEvidenceGates.map((gate) => gate.evidence.replace(/\.md$/i, ".html")))
+  );
   const required = [
     "index.html",
     "CHANGELOG.html",
@@ -50,12 +53,9 @@ if (process.argv.includes("--check")) {
     "docs/release/v1-release-checklist.html",
     "docs/deployment/hosted-deployment-recipes.html",
     "docs/prd-v1-gap-closure.html",
-    "docs/verification/accessibility-assistive-tech-pass.html",
-    "docs/verification/external-gm-validation.html",
-    "docs/verification/identity-provider-smoke-evidence.html",
     "docs/verification/v1-gap-closure-completion-audit.html",
     "docs/verification/v1-release-owner-handoff.html",
-    "docs/verification/release-workflow-evidence.html"
+    ...requiredReleaseEvidenceOutputs
   ];
   const missing = required.filter((file) => !existsSync(join(outputDir, file)));
   if (missing.length > 0) {

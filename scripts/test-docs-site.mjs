@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { releaseEvidenceGates } from "./v1-release-gates.mjs";
 
 const repoRoot = process.cwd();
@@ -115,10 +115,12 @@ function writeRequiredDocs(root) {
     join(root, "docs", "verification", "v1-release-owner-handoff.md"),
     `# v1 Release Owner Handoff\n\nRemaining final evidence gates: ${finalEvidenceText}.\n`
   );
-  writeFileSync(join(root, "docs", "verification", "accessibility-assistive-tech-pass.md"), "# Assistive Technology Pass Plan\n");
-  writeFileSync(join(root, "docs", "verification", "external-gm-validation.md"), "# External GM Validation Evidence\n");
-  writeFileSync(join(root, "docs", "verification", "identity-provider-smoke-evidence.md"), "# Identity Provider Smoke Evidence\n");
-  writeFileSync(join(root, "docs", "verification", "release-workflow-evidence.md"), "# Release Workflow Evidence\n");
+  for (const gate of releaseEvidenceGates) {
+    const evidencePath = join(root, gate.evidence);
+    if (existsSync(evidencePath)) continue;
+    mkdirSync(dirname(evidencePath), { recursive: true });
+    writeFileSync(evidencePath, `# ${gate.name} Evidence\n`);
+  }
 }
 
 function runBuilder(root) {
