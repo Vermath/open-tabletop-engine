@@ -71,7 +71,7 @@ Use `docs/verification/accessibility-assistive-tech-pass.md` as the scenario scr
 Record each environment as its own `## Assistive Technology Pass: ...` block. A combined summary that mentions multiple environments does not satisfy `pnpm v1:evidence:check`.
 
 If a device or assistive technology is unavailable, record the omission and owner-approved substitute before final acceptance.
-Override values must explicitly say the release owner accepted or approved the substitution/descope. Placeholder or ambiguous values such as `none`, `n/a`, `tbd`, `pending`, `<approval summary>`, `Temporary reduced matrix`, or `Internal GM substitute` do not satisfy `pnpm v1:evidence:check`.
+Override values must explicitly say the release owner accepted or approved the substitution/descope. Placeholder or ambiguous values such as `none`, `n/a`, `tbd`, `pending`, `<approval summary>`, `<explicit owner approval summary>`, `Temporary reduced matrix`, or `Internal GM substitute` do not satisfy `pnpm v1:evidence:check`.
 
 ## Docs Publication
 
