@@ -7,6 +7,7 @@ const repoRoot = process.cwd();
 const commit = "1234567890abcdef1234567890abcdef12345678";
 const checker = join(repoRoot, "scripts", "check-v1-release-evidence.mjs");
 const templates = join(repoRoot, "scripts", "v1-evidence-templates.mjs");
+const handoff = join(repoRoot, "scripts", "v1-release-handoff.mjs");
 
 runFailsWhenEvidenceIsMissing();
 runPassesWhenEvidenceIsComplete();
@@ -17,6 +18,8 @@ runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
 runEvidenceTemplatesIncludeVerifierFields();
+runHandoffReportsIncompleteVerifierStatus();
+runHandoffReportsCompleteVerifierStatus();
 
 console.log("v1 release evidence verifier tests passed.");
 
@@ -173,6 +176,38 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   assert(result.stdout.includes("Do not mark Result as pass until the matching evidence has actually been collected."), "templates should warn against treating placeholders as pass evidence");
 }
 
+function runHandoffReportsIncompleteVerifierStatus() {
+  const root = fixtureRoot({
+    identity: "# Identity Provider Smoke Evidence\n",
+    assistive: "# Assistive Technology Pass Plan\n",
+    externalGm: "# External GM Validation Evidence\n",
+    releaseWorkflow: "# Release Workflow Evidence\n"
+  });
+
+  try {
+    const result = runHandoff(root);
+    assert(result.status === 0, "handoff should exit successfully even when evidence is incomplete");
+    assert(result.stdout.includes("Current evidence verifier status:"), "handoff should print verifier status");
+    assert(result.stdout.includes("v1 release evidence is incomplete: 5 blocker(s) remain."), "handoff should include incomplete verifier output");
+    assert(result.stdout.includes("Handoff command exits 0; run `pnpm v1:evidence:check` for the enforced release gate."), "handoff should distinguish guidance from enforcement");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runHandoffReportsCompleteVerifierStatus() {
+  const root = fixtureRoot(completeEvidence(commit));
+
+  try {
+    const result = runHandoff(root);
+    assert(result.status === 0, "handoff should exit successfully when evidence is complete");
+    assert(result.stdout.includes("v1 release evidence is complete for the checked gates."), "handoff should include complete verifier output");
+    assert(result.stdout.includes("Evidence verifier is complete for the checked commit."), "handoff should summarize complete status");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function completeEvidence(evidenceCommit) {
   return {
     identity: `# Identity Provider Smoke Evidence
@@ -280,6 +315,18 @@ function fixtureRoot(files) {
 
 function runChecker(root) {
   return spawnSync(process.execPath, [checker], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      OTTE_EVIDENCE_ROOT: root,
+      OTTE_RELEASE_COMMIT: commit
+    },
+    encoding: "utf8"
+  });
+}
+
+function runHandoff(root) {
+  return spawnSync(process.execPath, [handoff], {
     cwd: repoRoot,
     env: {
       ...process.env,
