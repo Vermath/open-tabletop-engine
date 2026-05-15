@@ -36,6 +36,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 - [REST API](../api/rest.md)
 - [Plugin SDK](../plugin-sdk/overview.md)
 - [System SDK](../system-sdk/overview.md)
+- [Extension package CI](../extension-ci.md)
 - [AI overview](../ai/overview.md)
 - [Architecture overview](../architecture/overview.md)
 

@@ -6,6 +6,7 @@ See:
 
 - `packages/plugin-sdk`
 - `plugins/example-macro-plugin`
+- [Extension package CI](../extension-ci.md)
 
 ## Packaged Plugins
 
@@ -60,6 +61,7 @@ Registry-imported packages are loaded through the same manifest validation, VM s
 - Include `plugin.signature.json` and publish package checksums for any registry beyond local development.
 - Exercise install, subset permission grant, command execution, upgrade, rollback, rejected-review, and tampered-checksum paths before publishing.
 - Treat campaign writes as proposals or explicit permission-gated API calls; never assume a plugin can mutate campaign state directly.
+- Run the [extension package CI](../extension-ci.md) checks for manifest validation, permission denial cases, signatures, checksums, and install smoke evidence before sharing a package.
 
 ## Public Alpha Smoke Path
 
