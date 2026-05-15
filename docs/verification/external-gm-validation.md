@@ -61,7 +61,7 @@ Copy one block into the release evidence log:
 - Issues filed:
 - Blockers:
 - Owner acceptance notes:
-- Owner-approved substitution: Release owner accepted/approved ...
+- Owner-approved substitution: <explicit owner approval summary>
 - Redacted screenshots/logs attached:
 - Notes:
 ```
@@ -73,4 +73,4 @@ If the pass fails:
 - Record the exact blocking workflow.
 - File or link the remediation issue.
 - Re-run after the fix or record explicit owner acceptance.
-- Do not mark external GM validation complete until pass evidence or owner-approved substitution is attached. If the owner approves a substitute for the external GM pass, record a release-evidence line using the exact form `- Owner-approved substitution: Release owner accepted/approved ...` so `pnpm v1:evidence:check` can verify the override. The verifier rejects blank, placeholder, pending, ambiguous, or negative values such as `none`, `n/a`, `tbd`, `Internal GM substitute`, or `<approval summary>`.
+- Do not mark external GM validation complete until pass evidence or owner-approved substitution is attached. If the owner approves a substitute for the external GM pass, record a release-evidence line using the exact form `- Owner-approved substitution: Release owner accepted ...` or `- Owner-approved substitution: Release owner approved ...` with the concrete approval context so `pnpm v1:evidence:check` can verify the override. The verifier rejects blank, placeholder, pending, ambiguous, or negative values such as `none`, `n/a`, `tbd`, `Internal GM substitute`, `<approval summary>`, or `<explicit owner approval summary>`.

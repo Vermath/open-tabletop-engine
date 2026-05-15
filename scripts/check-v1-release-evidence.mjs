@@ -328,7 +328,12 @@ function passField(value) {
 
 function meaningfulField(value) {
   const normalized = value.trim().toLowerCase();
-  return Boolean(normalized) && !["none", "n/a", "na", "no", "pending", "tbd", "<approval summary>"].includes(normalized) && !placeholder(normalized) && !templateChoice(normalized);
+  return (
+    Boolean(normalized) &&
+    !["none", "n/a", "na", "no", "pending", "tbd", "<approval summary>", "<explicit owner approval summary>"].includes(normalized) &&
+    !placeholder(normalized) &&
+    !templateChoice(normalized)
+  );
 }
 
 function meaningfulChoiceField(value) {
@@ -355,7 +360,7 @@ function explicitOwnerOverride(markdown) {
     const value = match[1].trim().toLowerCase();
     if (
       value &&
-      !["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>"].includes(value) &&
+      !["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>", "<explicit owner approval summary>"].includes(value) &&
       !placeholder(value) &&
       !templateChoice(value) &&
       !value.includes("/") &&

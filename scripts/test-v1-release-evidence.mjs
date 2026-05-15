@@ -268,11 +268,11 @@ function runFailsWithPlaceholderOwnerOverrides() {
   const files = completeEvidence(commit);
   files.assistive = `# Assistive Technology Pass Plan
 
-- Owner-approved descope: <descope summary>
+- Owner-approved descope: <explicit owner approval summary>
 `;
   files.externalGm = `# External GM Validation Evidence
 
-- Owner-approved substitution: <owner approval>
+- Owner-approved substitution: <explicit owner approval summary>
 `;
   const root = fixtureRoot(files);
 
@@ -844,6 +844,9 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   assert(result.stdout.includes("- Release command or build command: pnpm docs:site:check"), "docs publication template should preserve command parity");
   assert(result.stdout.includes("- Run URL: https://"), "hosted evidence templates should prompt for HTTPS run URLs");
   assert(result.stdout.includes("- Published URL, if docs-site deploy: https://"), "docs publication template should prompt for an HTTPS published URL");
+  assert(result.stdout.includes("- Owner-approved descope: <explicit owner approval summary>"), "manual templates should use a non-evidence owner-approval placeholder");
+  assert(result.stdout.includes("- Owner-approved substitution: <explicit owner approval summary>"), "GM template should use a non-evidence owner-approval placeholder");
+  assert(!result.stdout.includes("Release owner accepted/approved ..."), "templates should not include approval-like placeholder text");
   for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS/iPadOS VoiceOver", "Android TalkBack"]) {
     assert(result.stdout.includes(`## Assistive Technology Pass: ${environment}`), `templates should include ${environment}`);
   }
