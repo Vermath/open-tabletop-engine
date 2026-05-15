@@ -28,6 +28,7 @@ section(identityGate, `Identity Provider Smoke: <provider and sandbox>`, [
   ["Provider sandbox or tenant label", ""],
   ["Smoke target", "deployed API / local sandbox"],
   ["Command", identityGate.command],
+  ["Hosted workflow run, if used", ""],
   ["Result", "pass / fail / skipped"],
   ["Exit code", ""],
   ["OIDC discovery/test result", ""],

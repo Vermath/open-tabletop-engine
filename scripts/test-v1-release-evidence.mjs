@@ -890,6 +890,7 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   assert(result.stdout.includes("- App build or commit: 1234567890abcdef1234567890abcdef12345678"), "manual evidence templates should prefill App build or commit");
   assert(result.stdout.includes("- Commit SHA: 1234567890abcdef1234567890abcdef12345678"), "hosted evidence templates should prefill Commit SHA");
   assert(result.stdout.includes("- Command: pnpm identity:smoke"), "identity template should preserve the verifier command field");
+  assert(result.stdout.includes("- Hosted workflow run, if used:"), "identity template should prompt for the optional hosted workflow run URL");
   assert(result.stdout.includes("- Release command or build command: pnpm release:smoke"), "release-smoke template should preserve command parity");
   assert(result.stdout.includes("- Release command or build command: pnpm docs:site:check"), "docs publication template should preserve command parity");
   assert(result.stdout.includes("- Run URL: https://"), "hosted evidence templates should prompt for HTTPS run URLs");
