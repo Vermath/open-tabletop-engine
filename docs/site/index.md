@@ -10,6 +10,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 - [Roadmap](../ROADMAP.md): release tracks from public alpha through v1.0.
 - [Changelog](../../CHANGELOG.md): versioned release history and upgrade notes.
 - [v1.0 Release Notes](../release/v1.0.md): v1.0 candidate highlights, compatibility guarantees, known limitations, and release gate.
+- [v1 Release Checklist](../release/v1-release-checklist.md): release-owner preflight, publication, evidence, and rollback plan.
 
 ## GM and Player Guides
 

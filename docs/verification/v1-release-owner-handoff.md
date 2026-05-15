@@ -4,6 +4,8 @@ Status: final external-evidence checklist for the v1.0 release candidate. This i
 
 The local implementation, browser coverage, release-smoke wiring, and docs renderer are covered by `docs/verification/v1-gap-closure-completion-audit.md`. The remaining v1 blockers require release-owner credentials, manual assistive-technology testing, or hosted publication support.
 
+Use `docs/release/v1-release-checklist.md` as the release-owner preflight, publication, evidence, and rollback checklist.
+
 Tracking issue: https://github.com/Vermath/open-tabletop-engine/issues/2 records the remaining external evidence blockers and had no P0/P1 labels in the 2026-05-15 audit.
 
 ## Remaining Decisions

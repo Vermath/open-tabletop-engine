@@ -1,0 +1,42 @@
+# v1 Release Checklist
+
+Status: release-owner checklist for the v1.0 release candidate. This checklist is not completion evidence by itself; attach pass/fail output to the linked verification documents.
+
+## Preflight
+
+- Confirm the release commit is the intended final candidate and has no uncommitted product or documentation changes.
+- Run `pnpm install --frozen-lockfile`.
+- Run `pnpm release:smoke`.
+- Run `pnpm docs:site:check`.
+- Run `pnpm identity:smoke` only when real OIDC/SCIM sandbox variables are configured; skipped output does not satisfy provider readiness.
+- Confirm `docs/verification/v1-gap-closure-completion-audit.md` has no unowned local/code gaps.
+- Confirm open GitHub issues have no P0/P1 labels, or record explicit owner approval for any accepted risk.
+
+## External Evidence
+
+- Record live OIDC/SCIM sandbox evidence in `docs/verification/identity-provider-smoke-evidence.md`.
+- Record assistive-technology pass evidence in `docs/verification/accessibility-assistive-tech-pass.md`.
+- Record external GM validation in `docs/verification/external-gm-validation.md`.
+- Record hosted release-smoke and docs-publication evidence in `docs/verification/release-workflow-evidence.md`.
+- If GitHub Pages is unavailable, record the owner-approved equivalent hosted publication provider, URL, release commit SHA, command parity with `pnpm docs:site:check`, and public-site secret review.
+
+## Publication
+
+- Publish release notes from `docs/release/v1.0.md`.
+- Publish public docs from `docs/site/index.md`.
+- Confirm the published docs expose no secrets, local filesystem paths, provider tokens, private evidence attachments, or sandbox credentials.
+- Tag the release only after the hosted release-smoke pass and public documentation publication are recorded for the final release commit or an owner-approved successor.
+
+## Rollback Plan
+
+- Keep the previous release artifact, previous container image or deployment revision, SQLite backup, asset-storage backup, and current release commit SHA available before promotion.
+- If release smoke fails before promotion, stop the release, keep the candidate untagged, file or link the blocker, and rerun only after committing a fix or recording an owner-approved infrastructure retry.
+- If docs publication fails, leave the product release blocked unless the owner records an equivalent hosted publication.
+- If hosted deployment fails after promotion, roll traffic back to the previous deployment revision and record the failed revision, rollback time, and user-visible impact.
+- If storage migration or integrity checks fail, stop the app, restore the most recent verified SQLite backup and asset-storage backup, rerun the restore drill, and keep the failed store copy for investigation.
+- If OIDC/SCIM readiness fails, disable the affected provider integration or keep local-account access as the supported path until a clean provider smoke is recorded.
+- If external GM or assistive-technology evidence fails, keep v1.0 in candidate status and file issues for each failed scenario before another release decision.
+
+## Final Decision
+
+Only declare v1.0 ready when every required evidence document has a pass result or an explicit owner-approved substitution/descope, and `docs/verification/v1-gap-closure-completion-audit.md` no longer lists incomplete blockers.
