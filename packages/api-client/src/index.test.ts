@@ -30,6 +30,62 @@ const annotationId = "anno_client";
 const organizationMemberId = "orgmem_client";
 
 describe("OpenTabletopClient", () => {
+  it("sends auth headers and request bodies consistently", async () => {
+    const requests: Array<{ method: string; url: URL; headers: Record<string, string>; body?: BodyInit | null }> = [];
+    const client = new OpenTabletopClient("http://api.test", {
+      token: "ots_test",
+      userId: "usr_legacy",
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({
+          method: init?.method ?? "GET",
+          url: new URL(input.toString()),
+          headers: Object.fromEntries(new Headers(init?.headers).entries()),
+          body: init?.body
+        });
+        return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+      }) as typeof fetch
+    });
+
+    await client.campaigns();
+    await client.createCampaign({ name: "JSON Campaign" });
+    await client.updateCampaign(campaignId, { name: "Renamed Campaign" });
+    await client.deleteCampaign(campaignId);
+    await client.uploadAsset(campaignId, "raw-svg-body", { contentType: "image/svg+xml", fileName: "map.svg", folder: "Maps", tags: ["alpha", "beta"] });
+
+    expect(requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
+      "GET /api/v1/campaigns",
+      "POST /api/v1/campaigns",
+      "PATCH /api/v1/campaigns/camp_client",
+      "DELETE /api/v1/campaigns/camp_client",
+      "POST /api/v1/campaigns/camp_client/assets/upload"
+    ]);
+    for (const request of requests) {
+      expect(request.headers.authorization).toBe("Bearer ots_test");
+      expect(request.headers["x-user-id"]).toBe("usr_legacy");
+    }
+    expect(requests[0]!.headers["content-type"]).toBeUndefined();
+    expect(requests[0]!.body).toBeUndefined();
+    expect(requests[1]!.headers["content-type"]).toBe("application/json");
+    expect(requests[1]!.body).toBe(JSON.stringify({ name: "JSON Campaign" }));
+    expect(requests[2]!.headers["content-type"]).toBe("application/json");
+    expect(requests[2]!.body).toBe(JSON.stringify({ name: "Renamed Campaign" }));
+    expect(requests[3]!.headers["content-type"]).toBeUndefined();
+    expect(requests[3]!.body).toBeUndefined();
+    expect(requests[4]!.headers["content-type"]).toBe("image/svg+xml");
+    expect(requests[4]!.body).toBe("raw-svg-body");
+    expect(requests[4]!.url.searchParams.get("name")).toBe("map.svg");
+    expect(requests[4]!.url.searchParams.get("folder")).toBe("Maps");
+    expect(requests[4]!.url.searchParams.getAll("tag")).toEqual(["alpha", "beta"]);
+  });
+
+  it("throws server error response bodies", async () => {
+    const client = new OpenTabletopClient("http://api.test", {
+      fetch: (async () => new Response(JSON.stringify({ error: "bad_request", message: "Invalid client payload" }), { status: 400, headers: { "content-type": "application/json" } })) as typeof fetch
+    });
+
+    await expect(client.createCampaign({ name: "" })).rejects.toThrow('{"error":"bad_request","message":"Invalid client payload"}');
+  });
+
   it("covers every public OpenAPI REST route or intentionally excludes it", async () => {
     const calls: string[] = [];
     const client = new OpenTabletopClient("http://api.test", {
