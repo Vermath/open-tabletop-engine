@@ -3,7 +3,7 @@ import { releaseEvidenceGates } from "./v1-release-gates.mjs";
 
 const commit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
 const today = new Date().toISOString().slice(0, 10);
-const gateByName = new Map(releaseEvidenceGates.map((gate) => [gate.name, gate]));
+const gateById = new Map(releaseEvidenceGates.map((gate) => [gate.id, gate]));
 
 if (!/^[0-9a-f]{40}$/i.test(commit.trim())) {
   console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${commit}.`);
@@ -15,7 +15,7 @@ console.log("");
 console.log("These are ready-to-fill blocks only. Do not mark Result as pass until the matching evidence has actually been collected.");
 console.log("");
 
-section(gate("Live OIDC/SCIM provider readiness"), `Identity Provider Smoke: <provider and sandbox>`, [
+section(gate("identity-provider"), `Identity Provider Smoke: <provider and sandbox>`, [
   ["Date", today],
   ["Operator", ""],
   ["App build or commit", commit],
@@ -37,7 +37,7 @@ section(gate("Live OIDC/SCIM provider readiness"), `Identity Provider Smoke: <pr
 ]);
 
 for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS/iPadOS VoiceOver", "Android TalkBack"]) {
-  section(gate("Manual assistive-technology matrix"), `Assistive Technology Pass: ${environment}`, [
+  section(gate("assistive-technology"), `Assistive Technology Pass: ${environment}`, [
     ["Date", today],
     ["Tester", ""],
     ["App build or commit", commit],
@@ -56,7 +56,7 @@ for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver"
   ]);
 }
 
-section(gate("External GM validation"), "External GM Validation: <tester/session label>", [
+section(gate("external-gm"), "External GM Validation: <tester/session label>", [
   ["Date", today],
   ["Tester role", ""],
   ["Relationship to project", ""],
@@ -75,7 +75,7 @@ section(gate("External GM validation"), "External GM Validation: <tester/session
   ["Notes", ""]
 ]);
 
-section(gate("Hosted release smoke"), "Hosted Workflow Evidence: Release Smoke Final", [
+section(gate("hosted-release-smoke"), "Hosted Workflow Evidence: Release Smoke Final", [
   ["Date", today],
   ["Operator", ""],
   ["Workflow file", ".github/workflows/release-smoke.yml"],
@@ -94,7 +94,7 @@ section(gate("Hosted release smoke"), "Hosted Workflow Evidence: Release Smoke F
   ["Notes", ""]
 ]);
 
-section(gate("Public docs publication"), "Hosted Workflow Evidence: Docs Site Publication Final", [
+section(gate("docs-publication"), "Hosted Workflow Evidence: Docs Site Publication Final", [
   ["Date", today],
   ["Operator", ""],
   ["Workflow file", ".github/workflows/docs-site.yml"],
@@ -124,10 +124,10 @@ function section(gate, title, fields) {
   console.log("");
 }
 
-function gate(name) {
-  const releaseGate = gateByName.get(name);
+function gate(id) {
+  const releaseGate = gateById.get(id);
   if (!releaseGate) {
-    throw new Error(`Unknown release evidence gate: ${name}`);
+    throw new Error(`Unknown release evidence gate: ${id}`);
   }
   return releaseGate;
 }

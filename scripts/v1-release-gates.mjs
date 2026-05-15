@@ -1,5 +1,6 @@
 export const releaseEvidenceGates = [
   {
+    id: "identity-provider",
     name: "Live OIDC/SCIM provider readiness",
     verifierName: "Live OIDC/SCIM provider smoke",
     publicDocsTerm: "OIDC/SCIM",
@@ -8,6 +9,7 @@ export const releaseEvidenceGates = [
     evidence: "docs/verification/identity-provider-smoke-evidence.md"
   },
   {
+    id: "assistive-technology",
     name: "Manual assistive-technology matrix",
     verifierName: "Manual assistive-technology matrix",
     publicDocsTerm: "assistive-technology",
@@ -16,6 +18,7 @@ export const releaseEvidenceGates = [
     evidence: "docs/verification/accessibility-assistive-tech-pass.md"
   },
   {
+    id: "external-gm",
     name: "External GM validation",
     verifierName: "External GM validation",
     publicDocsTerm: "external GM",
@@ -24,6 +27,7 @@ export const releaseEvidenceGates = [
     evidence: "docs/verification/external-gm-validation.md"
   },
   {
+    id: "hosted-release-smoke",
     name: "Hosted release smoke",
     verifierName: "Hosted release-smoke on checked commit",
     publicDocsTerm: "hosted release-smoke",
@@ -31,6 +35,7 @@ export const releaseEvidenceGates = [
     evidence: "docs/verification/release-workflow-evidence.md"
   },
   {
+    id: "docs-publication",
     name: "Public docs publication",
     verifierName: "Public docs publication",
     publicDocsTerm: "docs-publication",

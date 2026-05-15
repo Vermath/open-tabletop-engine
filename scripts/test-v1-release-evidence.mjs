@@ -940,7 +940,9 @@ function runHandoffGateMetadataMatchesVerifier() {
     const verifierResult = runChecker(root);
     assert(handoffResult.status === 0, "handoff should run for gate metadata check");
     assert(verifierResult.status === 1, "verifier should report incomplete fixture for gate metadata check");
+    assert(new Set(releaseEvidenceGates.map((gate) => gate.id)).size === releaseEvidenceGates.length, "release evidence gate ids should be unique");
     for (const gate of releaseEvidenceGates) {
+      assert(gate.id, `gate ${gate.name} should define a stable id`);
       assert(handoffResult.stdout.includes(gate.name), `handoff should list gate ${gate.name}`);
       assert(handoffResult.stdout.includes(gate.ownerAction), `handoff should list action for ${gate.name}`);
       assert(handoffResult.stdout.includes(gate.evidence), `handoff should list evidence path for ${gate.name}`);

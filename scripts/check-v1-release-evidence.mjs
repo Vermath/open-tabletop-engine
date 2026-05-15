@@ -7,7 +7,7 @@ const repoRoot = process.cwd();
 const evidenceRoot = process.env.OTTE_EVIDENCE_ROOT ?? repoRoot;
 const currentCommit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
 const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
-const gateByName = new Map(releaseEvidenceGates.map((gate) => [gate.name, gate]));
+const gateById = new Map(releaseEvidenceGates.map((gate) => [gate.id, gate]));
 
 if (!fullSha(currentCommit)) {
   console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${currentCommit}.`);
@@ -44,7 +44,7 @@ if (failed.length > 0) {
 console.log("\nv1 release evidence is complete for the checked gates.");
 
 function checkIdentityProviderSmoke() {
-  const releaseGate = gate("Live OIDC/SCIM provider readiness");
+  const releaseGate = gate("identity-provider");
   const doc = evidence(releaseGate);
   const sections = sectionsFor(doc, "Identity Provider Smoke").filter((section) => !placeholder(section.title));
   const pass = sections.find(
@@ -71,7 +71,7 @@ function checkIdentityProviderSmoke() {
 }
 
 function checkAssistiveTechnologyPass() {
-  const releaseGate = gate("Manual assistive-technology matrix");
+  const releaseGate = gate("assistive-technology");
   const doc = evidence(releaseGate);
   const required = [
     { label: "Windows NVDA", pattern: /\bwindows\b[\s\S]*\bnvda\b|\bnvda\b[\s\S]*\bwindows\b/i },
@@ -107,7 +107,7 @@ function checkAssistiveTechnologyPass() {
 }
 
 function checkExternalGmValidation() {
-  const releaseGate = gate("External GM validation");
+  const releaseGate = gate("external-gm");
   const doc = evidence(releaseGate);
   const sections = sectionsFor(doc, "External GM Validation").filter((section) => !placeholder(section.title));
   const pass = sections.find(
@@ -129,7 +129,7 @@ function checkExternalGmValidation() {
 }
 
 function checkHostedReleaseSmoke() {
-  const releaseGate = gate("Hosted release smoke");
+  const releaseGate = gate("hosted-release-smoke");
   const doc = evidence(releaseGate);
   const sections = sectionsFor(doc, "Hosted Workflow Evidence").filter((section) => /release smoke/i.test(section.title) && !placeholder(section.title));
   const pass = sections.find(
@@ -147,7 +147,7 @@ function checkHostedReleaseSmoke() {
 }
 
 function checkDocsPublication() {
-  const releaseGate = gate("Public docs publication");
+  const releaseGate = gate("docs-publication");
   const doc = evidence(releaseGate);
   const sections = sectionsFor(doc, "Hosted Workflow Evidence").filter((section) => /docs site/i.test(section.title) && !placeholder(section.title));
   const pass = sections.find((section) => {
@@ -178,10 +178,10 @@ function evidence(gate) {
   return readFileSync(join(evidenceRoot, gate.evidence), "utf8");
 }
 
-function gate(name) {
-  const releaseGate = gateByName.get(name);
+function gate(id) {
+  const releaseGate = gateById.get(id);
   if (!releaseGate) {
-    throw new Error(`Unknown release evidence gate: ${name}`);
+    throw new Error(`Unknown release evidence gate: ${id}`);
   }
   return releaseGate;
 }
