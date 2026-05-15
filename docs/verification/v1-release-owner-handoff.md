@@ -75,6 +75,7 @@ The existing hosted release-smoke run proves the workflow shape, but it predates
 After the external gates above are satisfied, rerun the completion audit:
 
 ```powershell
+pnpm docs:site:test
 pnpm docs:site:check
 pnpm v1:evidence:check
 pnpm identity:smoke
