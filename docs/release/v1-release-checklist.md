@@ -12,6 +12,7 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 - Run `pnpm identity:smoke` only when real OIDC/SCIM sandbox variables are configured; skipped output does not satisfy provider readiness.
 - Run `pnpm v1:release:handoff` to print the current release-evidence destinations and checked commit.
 - Run `pnpm v1:evidence:templates` if release owners need ready-to-fill evidence blocks with the checked commit prefilled. If evidence is committed after the hosted run, set `OTTE_RELEASE_COMMIT` to the hosted workflow commit SHA when generating templates.
+- Run `pnpm v1:completion:audit` to execute the final evidence verifier, live issue audit, and docs-site guard together.
 - Run `pnpm v1:evidence:check`; it must pass before v1.0 is declared ready. If evidence is committed after the hosted run, set `OTTE_RELEASE_COMMIT` to the hosted workflow commit SHA when running the verifier.
 - Confirm `docs/verification/v1-gap-closure-completion-audit.md` has no unowned local/code gaps.
 - Run `pnpm v1:issues:check` and confirm open GitHub issues have no P0/P1 labels, or record explicit owner approval for any accepted risk.
@@ -43,4 +44,4 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 
 ## Final Decision
 
-Only declare v1.0 ready when every required evidence document has a pass result or an explicit owner-approved substitution/descope, `pnpm v1:evidence:check` passes, `pnpm v1:issues:check` passes or owner-approved P0/P1 risk acceptance is recorded, and `docs/verification/v1-gap-closure-completion-audit.md` no longer lists incomplete blockers. Override values must explicitly say the release owner accepted or approved the substitution/descope; placeholder, ambiguous, or template-choice values such as `none`, `n/a`, `tbd`, `pending`, `<approval summary>`, `<explicit owner approval summary>`, `Temporary reduced matrix`, `Internal GM substitute`, or `approved / not approved` do not count as owner approval.
+Only declare v1.0 ready when every required evidence document has a pass result or an explicit owner-approved substitution/descope, `pnpm v1:completion:audit` passes, `pnpm v1:evidence:check` passes, `pnpm v1:issues:check` passes or owner-approved P0/P1 risk acceptance is recorded, and `docs/verification/v1-gap-closure-completion-audit.md` no longer lists incomplete blockers. Override values must explicitly say the release owner accepted or approved the substitution/descope; placeholder, ambiguous, or template-choice values such as `none`, `n/a`, `tbd`, `pending`, `<approval summary>`, `<explicit owner approval summary>`, `Temporary reduced matrix`, `Internal GM substitute`, or `approved / not approved` do not count as owner approval.

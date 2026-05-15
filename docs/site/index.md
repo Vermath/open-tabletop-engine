@@ -57,7 +57,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 
 - Keep documentation in `docs/` and release history in `CHANGELOG.md` before publishing a hosted site.
 - Run `pnpm docs:site:check` before changing the hosted documentation workflow.
-- Run `pnpm release:smoke`, `pnpm v1:evidence:check`, and `pnpm v1:issues:check` against the verifier target commit before declaring v1.0 ready.
+- Run `pnpm release:smoke` and `pnpm v1:completion:audit` against the verifier target commit before declaring v1.0 ready. The completion audit wraps `pnpm v1:evidence:check`, `pnpm v1:issues:check`, and `pnpm docs:site:check`.
 - Link each released version to its release notes and verification artifact.
 - Do not publish v1.0 documentation as final until `docs/prd-v1-gap-closure.md` release gates are satisfied or explicitly descoped.
 - Keep public docs free of secrets, provider tokens, proprietary content, and internal filesystem paths.

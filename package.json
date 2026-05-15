@@ -20,6 +20,7 @@
     "v1:evidence:templates": "node scripts/v1-evidence-templates.mjs",
     "v1:issues:check": "node scripts/check-v1-open-issues.mjs",
     "v1:issues:test": "node scripts/test-v1-open-issues.mjs",
+    "v1:completion:audit": "node scripts/v1-completion-audit.mjs",
     "v1:release:handoff": "node scripts/v1-release-handoff.mjs",
     "release:smoke": "pnpm check && pnpm e2e && pnpm security:smoke && pnpm migration:smoke && pnpm deployment:smoke && pnpm perf:smoke && pnpm docs:site:test && pnpm v1:evidence:test && pnpm v1:issues:test && pnpm v1:issues:check",
     "identity:smoke": "pnpm --filter @open-tabletop/api test -- --run src/identity-smoke.test.ts",
