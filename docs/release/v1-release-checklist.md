@@ -14,7 +14,7 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 - Run `pnpm v1:evidence:templates` if release owners need ready-to-fill evidence blocks with the checked commit prefilled. If evidence is committed after the hosted run, set `OTTE_RELEASE_COMMIT` to the hosted workflow commit SHA when generating templates.
 - Run `pnpm v1:evidence:check`; it must pass before v1.0 is declared ready. If evidence is committed after the hosted run, set `OTTE_RELEASE_COMMIT` to the hosted workflow commit SHA when running the verifier.
 - Confirm `docs/verification/v1-gap-closure-completion-audit.md` has no unowned local/code gaps.
-- Confirm open GitHub issues have no P0/P1 labels, or record explicit owner approval for any accepted risk.
+- Run `pnpm v1:issues:check` and confirm open GitHub issues have no P0/P1 labels, or record explicit owner approval for any accepted risk.
 
 ## External Evidence
 

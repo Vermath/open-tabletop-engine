@@ -40,6 +40,8 @@ console.log(`v1 release-owner handoff for ${commit} (${commitSource})`);
 console.log("");
 console.log("Final evidence verifier:");
 console.log("  pnpm v1:evidence:check");
+console.log("Open issue gate:");
+console.log("  pnpm v1:issues:check");
 console.log("");
 console.log("If evidence docs are committed after the hosted workflow run:");
 console.log("  OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check");

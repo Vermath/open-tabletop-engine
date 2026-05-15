@@ -8,6 +8,8 @@ Use `docs/release/v1-release-checklist.md` as the release-owner preflight, publi
 
 Tracking issue: https://github.com/Vermath/open-tabletop-engine/issues/2 records the remaining external evidence blockers and had no P0/P1 labels in the 2026-05-15 audit.
 
+Run `pnpm v1:issues:check` before final acceptance to verify the live open-issue list still has no P0/P1 labels.
+
 For a command-line summary of the remaining owner-supplied evidence, run:
 
 ```powershell
