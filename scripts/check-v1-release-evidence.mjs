@@ -78,6 +78,11 @@ function checkAssistiveTechnologyPass() {
     const resultText = field(section.body, "Result").toLowerCase();
     if (!["pass", "pass with issues"].includes(resultText)) continue;
     if (!evidenceCommitMatches(section.body)) continue;
+    if (!meaningfulField(field(section.body, "Browser"))) continue;
+    if (!meaningfulField(field(section.body, "Assistive technology"))) continue;
+    if (!meaningfulField(field(section.body, "Input method"))) continue;
+    if (!meaningfulField(field(section.body, "Scenario data"))) continue;
+    if (!meaningfulField(field(section.body, "Workflows completed"))) continue;
     const haystack = `${section.title}\n${section.body}`.toLowerCase();
     const matched = required.filter((environment) => environment.pattern.test(haystack));
     if (matched.length !== 1) continue;
@@ -88,7 +93,7 @@ function checkAssistiveTechnologyPass() {
   const missing = required.map((environment) => environment.label).filter((environment) => !accepted.has(environment));
   return result("Manual assistive-technology matrix", missing.length === 0 || hasOwnerSubstitution, [
     `Missing pass evidence for: ${missing.join(", ") || "none"}.`,
-    "Add one non-template pass or pass-with-issues evidence block per required environment, tied to the checked release commit, or record an owner-approved substitution/descope."
+    "Add one non-template pass or pass-with-issues evidence block per required environment, tied to the checked release commit, with browser, assistive technology, input method, scenario data, and workflows completed; or record an owner-approved substitution/descope."
   ]);
 }
 

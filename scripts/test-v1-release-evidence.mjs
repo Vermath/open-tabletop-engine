@@ -23,6 +23,7 @@ runFailsWithPlaceholderOwnerOverrides();
 runFailsWithTemplateChoiceOwnerOverrides();
 runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments();
+runFailsWhenAssistiveEvidenceOmitsWorkflowDetails();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
 runFailsWhenExternalGmEvidenceOmitsTesterContext();
@@ -277,6 +278,9 @@ function runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence() {
 - App build or commit: ${commit}
 - Assistive technology: NVDA
 - Browser: Chrome on Windows
+- Input method: keyboard
+- Scenario data: sample campaign
+- Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
 - Result: pass
 
 ## Assistive Technology Pass: Windows Narrator
@@ -284,6 +288,9 @@ function runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence() {
 - App build or commit: ${commit}
 - Assistive technology: Narrator
 - Browser: Edge on Windows
+- Input method: keyboard
+- Scenario data: sample campaign
+- Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
 - Result: pass
 
 ## Assistive Technology Pass: iOS VoiceOver
@@ -291,6 +298,9 @@ function runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence() {
 - App build or commit: ${commit}
 - Assistive technology: VoiceOver
 - Browser: Safari on iOS
+- Input method: touch
+- Scenario data: sample campaign
+- Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
 - Result: pass
 
 ## Assistive Technology Pass: Android TalkBack
@@ -298,6 +308,9 @@ function runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence() {
 - App build or commit: ${commit}
 - Assistive technology: TalkBack
 - Browser: Chrome on Android
+- Input method: touch
+- Scenario data: sample campaign
+- Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
 - Result: pass
 `;
   const root = fixtureRoot(files);
@@ -329,6 +342,23 @@ function runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments() {
     const result = runChecker(root);
     assert(result.status === 1, "one assistive section should not satisfy multiple required environments");
     assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS VoiceOver, Android TalkBack"), "combined assistive section should leave the full matrix incomplete");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenAssistiveEvidenceOmitsWorkflowDetails() {
+  const files = completeEvidence(commit);
+  files.assistive = files.assistive
+    .replace(/- Input method: [^\n]+\n/g, "")
+    .replace(/- Scenario data: [^\n]+\n/g, "")
+    .replace(/- Workflows completed: [^\n]+\n/g, "");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "assistive evidence without workflow details should fail");
+    assert(result.stdout.includes("with browser, assistive technology, input method, scenario data, and workflows completed"), "assistive workflow-detail failure should name required details");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -711,6 +741,9 @@ function completeEvidence(evidenceCommit) {
 - App build or commit: ${evidenceCommit}
 - Browser: Chrome
 - Assistive technology: NVDA
+- Input method: keyboard
+- Scenario data: sample campaign
+- Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
 - Result: pass
 - Blockers: none
 
@@ -719,6 +752,9 @@ function completeEvidence(evidenceCommit) {
 - App build or commit: ${evidenceCommit}
 - Browser: Edge
 - Assistive technology: Narrator
+- Input method: keyboard
+- Scenario data: sample campaign
+- Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
 - Result: pass
 - Blockers: none
 
@@ -727,6 +763,9 @@ function completeEvidence(evidenceCommit) {
 - App build or commit: ${evidenceCommit}
 - Browser: Safari
 - Assistive technology: VoiceOver
+- Input method: keyboard
+- Scenario data: sample campaign
+- Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
 - Result: pass
 - Blockers: none
 
@@ -735,6 +774,9 @@ function completeEvidence(evidenceCommit) {
 - App build or commit: ${evidenceCommit}
 - Browser: Safari
 - Assistive technology: iOS VoiceOver
+- Input method: touch
+- Scenario data: sample campaign
+- Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
 - Result: pass
 - Blockers: none
 
@@ -743,6 +785,9 @@ function completeEvidence(evidenceCommit) {
 - App build or commit: ${evidenceCommit}
 - Browser: Chrome
 - Assistive technology: TalkBack
+- Input method: touch
+- Scenario data: sample campaign
+- Workflows completed: sign in, campaign navigation, scene controls, chat, dice, actor sheet, content, AI, SDK, admin
 - Result: pass
 - Blockers: none
 `,
