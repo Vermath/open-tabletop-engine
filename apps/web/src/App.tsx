@@ -5380,7 +5380,7 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
                   <WandSparkles size={14} /> Use previewed action
                 </button>
               </div>
-              {actionOptions.slice(0, 10).map((action) => {
+              {actionOptions.map((action) => {
                 const supportsEffect = actorActionSupportsEffect(action);
                 const unsupportedEffect = props.actionApplyEffect && !supportsEffect;
                 return (
