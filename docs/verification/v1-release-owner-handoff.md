@@ -74,6 +74,14 @@ $env:OTTE_SCIM_BEARER_TOKEN = "<redacted-scim-token>"
 pnpm identity:smoke
 ```
 
+Hosted owner-triggered setup shape:
+
+1. Store the same values as GitHub repository secrets.
+2. Run `.github/workflows/identity-smoke.yml` with `workflow_dispatch`.
+3. Choose `deployed-api` when `OTTE_IDENTITY_SMOKE_BASE_URL`, `OTTE_IDENTITY_SMOKE_ADMIN_TOKEN`, and `OTTE_SCIM_BEARER_TOKEN` point at a reachable release-candidate API.
+4. Choose `local-sandbox` when the workflow should start the in-memory API using `OTTE_OIDC_*` plus `OTTE_SCIM_BEARER_TOKEN`.
+5. Copy the successful hosted workflow URL into `docs/verification/identity-provider-smoke-evidence.md`.
+
 Record whether the run targeted a deployed API or local sandbox, the API base URL host, provider label, sandbox or tenant label, commit SHA, exit code, and redacted OIDC/SCIM readiness summaries in `docs/verification/identity-provider-smoke-evidence.md`.
 
 ## Assistive-Technology Pass

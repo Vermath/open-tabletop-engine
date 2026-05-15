@@ -81,3 +81,5 @@ pnpm identity:smoke
 ```
 
 For a deployed API, set `OTTE_IDENTITY_SMOKE_BASE_URL`, `OTTE_IDENTITY_SMOKE_ADMIN_TOKEN`, and `OTTE_SCIM_BEARER_TOKEN`. The smoke posts to the redacted admin OIDC/SCIM test-connection route and checks the SCIM service-provider config endpoint with bearer auth. For a local sandbox app, set the normal `OTTE_OIDC_*` values plus `OTTE_SCIM_BEARER_TOKEN`; the smoke starts an in-memory API and verifies live OIDC issuer discovery plus SCIM readiness. With no sandbox variables configured, the smoke is reported as skipped and does not count as live IdP evidence.
+
+Release owners can also run `.github/workflows/identity-smoke.yml` with `workflow_dispatch` after storing those values as repository secrets. Use the `deployed-api` target for a reachable release-candidate API and the `local-sandbox` target for a hosted run that starts the in-memory API against live OIDC/SCIM sandbox settings. The workflow fails before running the smoke if the required secrets for the selected target are missing.

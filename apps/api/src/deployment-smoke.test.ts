@@ -23,6 +23,17 @@ describe("deployment smoke", () => {
     expect(workflow).toContain("pnpm release:smoke");
     expect(workflow).toContain("GH_TOKEN: ${{ github.token }}");
 
+    const identityWorkflow = readWorkspaceFile(".github/workflows/identity-smoke.yml");
+    expect(identityWorkflow).toContain("workflow_dispatch:");
+    expect(identityWorkflow).toContain("smoke_target:");
+    expect(identityWorkflow).toContain("deployed-api");
+    expect(identityWorkflow).toContain("local-sandbox");
+    expect(identityWorkflow).toContain("OTTE_IDENTITY_SMOKE_BASE_URL: ${{ secrets.OTTE_IDENTITY_SMOKE_BASE_URL }}");
+    expect(identityWorkflow).toContain("OTTE_IDENTITY_SMOKE_ADMIN_TOKEN: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_TOKEN }}");
+    expect(identityWorkflow).toContain("OTTE_SCIM_BEARER_TOKEN: ${{ secrets.OTTE_SCIM_BEARER_TOKEN }}");
+    expect(identityWorkflow).toContain("Missing required identity-smoke secrets");
+    expect(identityWorkflow).toContain("pnpm identity:smoke");
+
     const compose = readWorkspaceFile("docker-compose.yml");
     expect(compose).toContain("dockerfile: infra/docker/api.Dockerfile");
     expect(compose).toContain("dockerfile: infra/docker/web.Dockerfile");

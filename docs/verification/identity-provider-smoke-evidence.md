@@ -55,12 +55,20 @@ pnpm identity:smoke
 
 PowerShell operators can set the same variables with `$env:NAME = "value"` before running `pnpm identity:smoke`.
 
+Hosted owner-triggered smoke:
+
+1. Add the same values as GitHub repository secrets. For a deployed API, set `OTTE_IDENTITY_SMOKE_BASE_URL`, `OTTE_IDENTITY_SMOKE_ADMIN_TOKEN`, and `OTTE_SCIM_BEARER_TOKEN`. For a local-sandbox style hosted run, set `OTTE_OIDC_ISSUER`, `OTTE_OIDC_CLIENT_ID`, optional OIDC companion secrets, and `OTTE_SCIM_BEARER_TOKEN`.
+2. Run `.github/workflows/identity-smoke.yml` with `workflow_dispatch` and choose `deployed-api` or `local-sandbox`.
+3. Record the workflow run URL, commit SHA, exact `pnpm identity:smoke` command, exit code, and redacted pass summary in the evidence block below.
+4. Do not paste secret values into the workflow summary, issue comments, or this document.
+
 ## Acceptance Criteria
 
 The pass is acceptable only when:
 
 - `pnpm identity:smoke` exits `0`.
 - The run is not skipped.
+- If run in GitHub Actions, `.github/workflows/identity-smoke.yml` completes successfully on the same checked release commit and does not fail the required-secret preflight.
 - The evidence block's `App build or commit` matches the checked release commit, using either the full 40-character SHA or an unambiguous Git prefix of at least 7 characters.
 - The redacted admin OIDC/SCIM test-connection route reports OIDC readiness against live provider discovery.
 - The SCIM service-provider config endpoint succeeds with bearer authentication.
@@ -84,6 +92,7 @@ Copy one block per provider sandbox into the release evidence log:
 - Provider sandbox or tenant label:
 - Smoke target: deployed API / local sandbox
 - Command: pnpm identity:smoke
+- Hosted workflow run, if used:
 - Result: pass / fail / skipped
 - Exit code:
 - OIDC discovery/test result:
