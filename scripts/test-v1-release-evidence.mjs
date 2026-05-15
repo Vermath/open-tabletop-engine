@@ -361,7 +361,7 @@ function runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence() {
 
   try {
     const result = runChecker(root);
-    assert(result.status === 1, "iOS VoiceOver evidence should not satisfy macOS VoiceOver");
+    assert(result.status === 1, "iOS/iPadOS VoiceOver evidence should not satisfy macOS VoiceOver");
     assert(result.stdout.includes("Missing pass evidence for: macOS VoiceOver"), "missing macOS VoiceOver should be reported distinctly");
   } finally {
     rmSync(root, { recursive: true, force: true });
