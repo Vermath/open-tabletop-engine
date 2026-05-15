@@ -49,7 +49,7 @@ for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver"
     ["Issues filed", ""],
     ["Workflows completed", ""],
     ["Blockers", ""],
-    ["Owner-approved descope", ""],
+    ["Owner-approved descope", "Release owner accepted/approved ..."],
     ["Notes", ""]
   ]);
 }
@@ -68,7 +68,7 @@ section("External GM Validation: <tester/session label>", [
   ["Issues filed", ""],
   ["Blockers", ""],
   ["Owner acceptance notes", ""],
-  ["Owner-approved substitution", ""],
+  ["Owner-approved substitution", "Release owner accepted/approved ..."],
   ["Redacted screenshots/logs attached", ""],
   ["Notes", ""]
 ]);

@@ -43,4 +43,4 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 
 ## Final Decision
 
-Only declare v1.0 ready when every required evidence document has a pass result or an explicit owner-approved substitution/descope, `pnpm v1:evidence:check` passes, and `docs/verification/v1-gap-closure-completion-audit.md` no longer lists incomplete blockers. Placeholder or template-choice override values such as `none`, `n/a`, `tbd`, `pending`, `<approval summary>`, or `approved / not approved` do not count as owner approval.
+Only declare v1.0 ready when every required evidence document has a pass result or an explicit owner-approved substitution/descope, `pnpm v1:evidence:check` passes, and `docs/verification/v1-gap-closure-completion-audit.md` no longer lists incomplete blockers. Override values must explicitly say the release owner accepted or approved the substitution/descope; placeholder, ambiguous, or template-choice values such as `none`, `n/a`, `tbd`, `pending`, `<approval summary>`, `Temporary reduced matrix`, `Internal GM substitute`, or `approved / not approved` do not count as owner approval.
