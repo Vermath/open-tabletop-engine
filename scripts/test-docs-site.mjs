@@ -16,6 +16,7 @@ runPassesWithRequiredDocsAndExcludedInternalLogs();
 runFailsWhenRequiredReleasePageLeaksLocalPath();
 runFailsWhenPublicDocsLinkIsBroken();
 runFailsWhenReleaseGateCommandsAreMissing();
+runFailsWhenCurrentHostedReleaseSmokeCommitIsMissing();
 
 console.log("docs site publication guard tests passed.");
 
@@ -82,6 +83,27 @@ function runFailsWhenReleaseGateCommandsAreMissing() {
   }
 }
 
+function runFailsWhenCurrentHostedReleaseSmokeCommitIsMissing() {
+  const root = fixtureRoot();
+  writeRequiredDocs(root);
+  writeFileSync(
+    join(root, "docs", "verification", "v1-release-owner-handoff.md"),
+    `# v1 Release Owner Handoff\n\nRemaining final evidence gates: ${finalEvidenceText}.\n`
+  );
+
+  try {
+    const result = runBuilder(root);
+    assert(result.status === 1, "docs check should fail when current release evidence commit is missing");
+    assert(result.stderr.includes("Docs site build found stale release evidence references"), "docs check should explain stale release evidence");
+    assert(
+      result.stderr.includes(`docs/verification/v1-release-owner-handoff.md missing current hosted release-smoke commit ${fixtureReleaseCommit()}`),
+      "docs check should name the stale owner handoff"
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function fixtureRoot() {
   const root = mkdtempSync(join(tmpdir(), "otte-docs-site-"));
   mkdirSync(join(root, "docs", "deployment"), { recursive: true });
@@ -106,7 +128,7 @@ function writeRequiredDocs(root) {
   writeFileSync(join(root, "docs", "deployment", "hosted-deployment-recipes.md"), "# Hosted Deployment Recipes\n");
   writeFileSync(
     join(root, "docs", "prd-v1-gap-closure.md"),
-    `# v1 Gap Closure PRD\n\nRemaining final evidence gates: ${finalEvidenceText}.\n`
+    `# v1 Gap Closure PRD\n\nCurrent hosted release-smoke commit: ${fixtureReleaseCommit()}.\n\nRemaining final evidence gates: ${finalEvidenceText}.\n`
   );
   writeFileSync(
     join(root, "docs", "verification", "v1-gap-closure-completion-audit.md"),
@@ -114,7 +136,11 @@ function writeRequiredDocs(root) {
   );
   writeFileSync(
     join(root, "docs", "verification", "v1-release-owner-handoff.md"),
-    `# v1 Release Owner Handoff\n\nRemaining final evidence gates: ${finalEvidenceText}.\n`
+    `# v1 Release Owner Handoff\n\nCurrent hosted release-smoke commit: ${fixtureReleaseCommit()}.\n\nRemaining final evidence gates: ${finalEvidenceText}.\n`
+  );
+  writeFileSync(
+    join(root, "docs", "verification", "release-workflow-evidence.md"),
+    `# Release Workflow Evidence\n\n## Hosted Workflow Evidence: Release Smoke\n\n- Commit SHA: \`${fixtureReleaseCommit()}\`\n- Result: pass\n- Release command or build command: \`pnpm release:smoke\`\n`
   );
   for (const gate of releaseEvidenceGates) {
     const evidencePath = join(root, gate.evidence);
@@ -129,6 +155,10 @@ function runBuilder(root) {
     cwd: root,
     encoding: "utf8"
   });
+}
+
+function fixtureReleaseCommit() {
+  return "0123456789abcdef0123456789abcdef01234567";
 }
 
 function assert(condition, message) {

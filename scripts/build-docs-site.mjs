@@ -77,6 +77,11 @@ if (process.argv.includes("--check")) {
     console.error(`Docs site build found missing release-gate references:\n${releaseGateGaps.join("\n")}`);
     process.exit(1);
   }
+  const staleReleaseEvidenceGaps = findStaleReleaseEvidenceGaps();
+  if (staleReleaseEvidenceGaps.length > 0) {
+    console.error(`Docs site build found stale release evidence references:\n${staleReleaseEvidenceGaps.join("\n")}`);
+    process.exit(1);
+  }
 }
 
 function collectMarkdown(entry) {
@@ -143,6 +148,38 @@ function findReleaseGateGaps() {
       .map((term) => `${source} missing final evidence gate: ${term}`);
   });
   return [...commandGaps, ...evidenceGaps];
+}
+
+function findStaleReleaseEvidenceGaps() {
+  const evidencePath = join(root, "docs", "verification", "release-workflow-evidence.md");
+  if (!existsSync(evidencePath)) {
+    return ["docs/verification/release-workflow-evidence.md missing"];
+  }
+  const releaseCommit = latestPassingHostedReleaseSmokeCommit(readFileSync(evidencePath, "utf8"));
+  if (!releaseCommit) {
+    return ["docs/verification/release-workflow-evidence.md missing passing Hosted Workflow Evidence: Release Smoke commit"];
+  }
+  const requiredCurrentEvidenceFiles = [
+    "docs/prd-v1-gap-closure.md",
+    "docs/verification/v1-release-owner-handoff.md"
+  ];
+  return requiredCurrentEvidenceFiles
+    .filter((source) => !readFileSync(join(root, source), "utf8").includes(releaseCommit))
+    .map((source) => `${source} missing current hosted release-smoke commit ${releaseCommit}`);
+}
+
+function latestPassingHostedReleaseSmokeCommit(markdown) {
+  return markdown
+    .split(/^## /m)
+    .map((section) => section.trim())
+    .filter((section) => section.startsWith("Hosted Workflow Evidence: Release Smoke"))
+    .map((section) => {
+      const commit = section.match(/- Commit SHA:\s*`([0-9a-f]{40})`/i)?.[1];
+      const result = section.match(/- Result:\s*(.+)/i)?.[1]?.trim().toLowerCase();
+      return commit && result === "pass" ? commit : null;
+    })
+    .filter(Boolean)
+    .at(-1);
 }
 
 function renderPage(relativePath, markdown) {
