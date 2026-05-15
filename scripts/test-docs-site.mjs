@@ -74,6 +74,7 @@ function runFailsWhenReleaseGateCommandsAreMissing() {
     const result = runBuilder(root);
     assert(result.status === 1, "docs check should fail when release gate commands are missing");
     assert(result.stderr.includes("Docs site build found missing release-gate references"), "docs check should explain missing release gate references");
+    assert(result.stderr.includes("docs/release/v1.0.md missing pnpm v1:completion:audit"), "docs check should name missing release note aggregate audit");
     assert(result.stderr.includes("docs/release/v1.0.md missing pnpm v1:issues:check"), "docs check should name missing release note issue gate");
     assert(result.stderr.includes("docs/release/v1.0.md missing final evidence gate: external GM"), "docs check should name missing final evidence gate");
   } finally {
@@ -93,10 +94,10 @@ function fixtureRoot() {
 function writeRequiredDocs(root) {
   writeFileSync(join(root, "README.md"), "# README\n\nSee [release notes](docs/release/v1.0.md).\n");
   writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n");
-  writeFileSync(join(root, "docs", "site", "index.md"), "# Public Docs\n\n- [Release notes](../release/v1.0.md)\n\nRun `pnpm release:smoke`, `pnpm v1:evidence:check`, and `pnpm v1:issues:check`.\n");
+  writeFileSync(join(root, "docs", "site", "index.md"), "# Public Docs\n\n- [Release notes](../release/v1.0.md)\n\nRun `pnpm release:smoke`, `pnpm v1:completion:audit`, `pnpm v1:evidence:check`, and `pnpm v1:issues:check`.\n");
   writeFileSync(
     join(root, "docs", "release", "v1.0.md"),
-    `# v1.0\n\n## Release Gate\n\n\`\`\`bash\npnpm release:smoke\npnpm v1:evidence:check\npnpm v1:issues:check\n\`\`\`\n\nRecord final ${finalEvidenceText} evidence before publishing.\n`
+    `# v1.0\n\n## Release Gate\n\n\`\`\`bash\npnpm release:smoke\npnpm v1:completion:audit\npnpm v1:evidence:check\npnpm v1:issues:check\n\`\`\`\n\nRecord final ${finalEvidenceText} evidence before publishing.\n`
   );
   writeFileSync(
     join(root, "docs", "release", "v1-release-checklist.md"),

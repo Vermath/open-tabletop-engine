@@ -120,7 +120,7 @@ function findLocalPathLeaks(file) {
 }
 
 function findReleaseGateGaps() {
-  const requiredCommands = ["pnpm release:smoke", "pnpm v1:evidence:check", "pnpm v1:issues:check"];
+  const requiredCommands = ["pnpm release:smoke", "pnpm v1:completion:audit", "pnpm v1:evidence:check", "pnpm v1:issues:check"];
   const requiredEvidenceTerms = releaseEvidenceGates.map((gate) => gate.publicDocsTerm);
   const requiredFiles = ["docs/release/v1.0.md", "docs/site/index.md"];
   const commandGaps = requiredFiles.flatMap((source) => {
