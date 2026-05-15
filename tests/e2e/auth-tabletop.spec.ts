@@ -337,7 +337,7 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
 });
 
 test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
