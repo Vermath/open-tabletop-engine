@@ -3,7 +3,8 @@
 Date: 2026-05-14
 Status: incomplete; local product/code coverage is at the current v1 threshold, but external/manual release evidence is still pending.
 Last refreshed: 2026-05-15.
-Local candidate note: the latest full local release-smoke implementation candidate was `37192cb64d01c058b05a80def52041f27b94b47f` on `v1-gap-closure-evidence`; later evidence-only documentation commits may exist, and hosted CI evidence must be refreshed after the final push.
+Current verifier target: `a630d24ecf955354683f67e5699c995a6a74d1a8`.
+Local candidate note: the latest full local release-smoke implementation candidate was `37192cb64d01c058b05a80def52041f27b94b47f` on `v1-gap-closure-evidence`; later evidence-only documentation commits exist, and hosted CI evidence must be refreshed for the verifier target commit.
 
 ## Objective
 
@@ -66,7 +67,7 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 - 2026-05-15 `pnpm docs:site:check`: passed locally after adding required rendered release-evidence pages, local Markdown link validation, exclusion of internal historical verification logs that contain local machine paths, and drive-letter local filesystem path checks across the rendered public site.
 - 2026-05-15 `pnpm docs:site:test`: passed fixture coverage for excluding internal local-path logs from public rendering, failing required public release pages that leak drive-letter local filesystem paths, and failing broken local Markdown links with source/target diagnostics.
 - 2026-05-15 `pnpm v1:evidence:test`: passed verifier fixture coverage for complete evidence, missing evidence, stale commit evidence, accepted short-SHA evidence, owner-approved manual overrides, rejected placeholder owner overrides, rejected incomplete identity readiness fields, distinct macOS/iOS VoiceOver matching, rejected incomplete external GM scenario fields, accepted no-skipped identity notes, rejected missing hosted run URLs, rejected placeholder hosted URLs, rejected non-pass docs-publication results, rejected exact release-smoke command mismatch, rejected exact docs-publication command mismatch, rejected too-short SHA evidence, rejected prose-only docs-publication claims, accepted publication-titled docs evidence, evidence template generation, and handoff status output.
-- 2026-05-15 `pnpm v1:release:handoff`: passed locally and printed the live five-blocker verifier status while exiting successfully as a release-owner guidance command.
+- 2026-05-15 `pnpm v1:release:handoff`: passed locally for verifier target `a630d24ecf955354683f67e5699c995a6a74d1a8` and printed the live five-blocker verifier status while exiting successfully as a release-owner guidance command.
 - 2026-05-15 `pnpm release:smoke`: passed locally for candidate `37192cb64d01c058b05a80def52041f27b94b47f`, covering `pnpm check`, 19 seeded E2E tests, 1 clean-bootstrap E2E test, security, migration, deployment, performance, docs-site guard fixtures, and v1 evidence-verifier fixtures.
 - 2026-05-15 `git diff --check`: passed locally.
 - 2026-05-15 `pnpm --filter @open-tabletop/api test -- --run -t "ai provider proposal tools|expanded ai tools|tool advertisement|underlying campaign permissions for ai campaign-edit proposal tools|malformed function-call inputs|approves and applies ai proposals"`: passed 5 focused AI safety tests, with unrelated tests skipped by name filter.
