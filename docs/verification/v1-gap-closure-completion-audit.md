@@ -82,8 +82,9 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 - 2026-05-15 GitHub issue audit: one open issue, #2 `Track remaining v1 external evidence blockers`, with no labels.
 - 2026-05-15 GitHub PR audit: PR #1 remote head checks passed for Release Smoke and Docs Site build, but the local branch has additional unpushed commits, so final hosted evidence still needs refresh on the verifier target commit.
 - 2026-05-15 local candidate audit: full local `pnpm release:smoke` passed for implementation candidate `37192cb64d01c058b05a80def52041f27b94b47f`; later evidence-only documentation and verifier-hardening commits mean final hosted release-smoke still needs to run on the verifier target commit.
-- 2026-05-15 latest verifier-hardening audit: `pnpm v1:evidence:test`, `pnpm docs:site:check`, and `git diff --check` passed after commit `503a8c4761078fbc5eeeaf17e30cd1f7eea42f95`; `pnpm v1:release:handoff` still printed the expected five external/manual blockers for that checked commit.
-- 2026-05-15 latest completion-audit refresh: after commit `7010ca0320934b1dda39c05009753d4b537a645a`, `pnpm v1:release:handoff` again printed the expected five external/manual blockers for the checked `HEAD`.
+- 2026-05-15 verifier-hardening audit: `pnpm v1:evidence:test`, `pnpm docs:site:check`, and `git diff --check` passed after commit `503a8c4761078fbc5eeeaf17e30cd1f7eea42f95`; `pnpm v1:release:handoff` still printed the expected five external/manual blockers for that checked commit.
+- 2026-05-15 completion-audit refresh: after commit `7010ca0320934b1dda39c05009753d4b537a645a`, `pnpm v1:release:handoff` again printed the expected five external/manual blockers for the checked `HEAD`.
+- After any audit-only commit, rerun `pnpm v1:release:handoff` or `pnpm v1:evidence:check` to bind the five-blocker status to the new `HEAD`; do not treat a prior fixed SHA in this historical log as the current verifier target.
 - 2026-05-15 `pnpm v1:evidence:check`: expectedly failed because live OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication evidence are not yet recorded; rerun after final evidence commits so the checked commit matches the release target.
 
 ## Conclusion
