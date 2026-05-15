@@ -16,6 +16,9 @@ console.log(`Template target source: ${commitSource}`);
 console.log("");
 console.log("These are ready-to-fill blocks only. Do not mark Result as pass until the matching evidence has actually been collected.");
 console.log("Leave owner-approved override examples out of pass evidence unless the release owner explicitly accepted or approved the substitution/descope.");
+console.log("Identity provider smoke can be recorded from a local `pnpm identity:smoke` run or a passing `.github/workflows/identity-smoke.yml` workflow_dispatch run with configured provider secrets.");
+console.log("Assistive-technology evidence is tracked in issue #4 and must stay split into one section per required environment.");
+console.log("External GM validation evidence is tracked in issue #5.");
 console.log("");
 
 const identityGate = gate("identity-provider");
@@ -79,12 +82,12 @@ section(gate("external-gm"), "External GM Validation: <tester/session label>", [
   ["Web URL, if deployed", ""],
   ["Scenario data", ""],
   ["Workflows completed", ""],
-    ["Result", "pass / pass with issues / fail"],
-    ["Issues filed", ""],
-    ["Blockers", ""],
-    ["Owner acceptance notes", ""],
-    ["Redacted screenshots/logs attached", ""],
-    ["Notes", ""]
+  ["Result", "pass / pass with issues / fail"],
+  ["Issues filed", ""],
+  ["Blockers", ""],
+  ["Owner acceptance notes", ""],
+  ["Redacted screenshots/logs attached", ""],
+  ["Notes", ""]
 ]);
 
 section(gate("external-gm"), "External GM Owner-Approved Substitution: <substitution label>", [
