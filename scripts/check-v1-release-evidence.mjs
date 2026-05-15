@@ -350,7 +350,8 @@ function explicitOwnerOverride(markdown) {
       !["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>"].includes(value) &&
       !placeholder(value) &&
       !templateChoice(value) &&
-      !value.includes("/")
+      !value.includes("/") &&
+      /\bowner\b[\s\S]*\b(?:accepted|approved)\b|\b(?:accepted|approved)\b[\s\S]*\bowner\b/.test(value)
     ) {
       return true;
     }

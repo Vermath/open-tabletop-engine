@@ -23,6 +23,7 @@ runFailsWithTemplateOwnerOverrides();
 runFailsWithPlaceholderOwnerOverrides();
 runFailsWithTemplateChoiceOwnerOverrides();
 runFailsWithCompactTemplateChoiceOwnerOverrides();
+runFailsWithAmbiguousOwnerOverrides();
 runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments();
 runFailsWhenAssistiveEvidenceOmitsWorkflowDetails();
@@ -323,6 +324,28 @@ function runFailsWithCompactTemplateChoiceOwnerOverrides() {
     assert(result.status === 1, "compact template-choice owner overrides should not satisfy manual gates");
     assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "compact template-choice AT override should leave the manual matrix incomplete");
     assert(result.stdout.includes("Add a non-template external GM validation block"), "compact template-choice GM override should leave external validation incomplete");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithAmbiguousOwnerOverrides() {
+  const files = completeEvidence(commit);
+  files.assistive = `# Assistive Technology Pass Plan
+
+- Owner-approved descope: Temporary reduced matrix for the release candidate.
+`;
+  files.externalGm = `# External GM Validation Evidence
+
+- Owner-approved substitution: Internal GM substitute for the release candidate.
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "ambiguous owner overrides should not satisfy manual gates");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "ambiguous AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Add a non-template external GM validation block"), "ambiguous GM override should leave external validation incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
