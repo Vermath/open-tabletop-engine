@@ -340,6 +340,14 @@ function templateChoice(value) {
   return value.includes(" / ");
 }
 
+function negativeOwnerApproval(value) {
+  return (
+    /\b(?:did|does|do|has|have)\s+not\s+(?:accept|accepted|approve|approved)\b/.test(value) ||
+    /\bnot\s+(?:accepted|approved)\b/.test(value) ||
+    /\bowner\b[\s\S]{0,80}\bnot\s+(?:accept|accepted|approve|approved)\b/.test(value)
+  );
+}
+
 function explicitOwnerOverride(markdown) {
   const evidenceText = stripCodeFences(markdown);
   const matches = evidenceText.matchAll(/^-\s*Owner-approved (?:substitution|descope|substitute):\s*(.+)$/gim);
@@ -351,6 +359,7 @@ function explicitOwnerOverride(markdown) {
       !placeholder(value) &&
       !templateChoice(value) &&
       !value.includes("/") &&
+      !negativeOwnerApproval(value) &&
       /\bowner\b[\s\S]*\b(?:accepted|approved)\b|\b(?:accepted|approved)\b[\s\S]*\bowner\b/.test(value)
     ) {
       return true;

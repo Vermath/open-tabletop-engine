@@ -24,6 +24,7 @@ runFailsWithPlaceholderOwnerOverrides();
 runFailsWithTemplateChoiceOwnerOverrides();
 runFailsWithCompactTemplateChoiceOwnerOverrides();
 runFailsWithAmbiguousOwnerOverrides();
+runFailsWithNegativeOwnerApprovalOverrides();
 runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments();
 runFailsWhenAssistiveEvidenceOmitsWorkflowDetails();
@@ -346,6 +347,28 @@ function runFailsWithAmbiguousOwnerOverrides() {
     assert(result.status === 1, "ambiguous owner overrides should not satisfy manual gates");
     assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "ambiguous AT override should leave the manual matrix incomplete");
     assert(result.stdout.includes("Add a non-template external GM validation block"), "ambiguous GM override should leave external validation incomplete");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithNegativeOwnerApprovalOverrides() {
+  const files = completeEvidence(commit);
+  files.assistive = `# Assistive Technology Pass Plan
+
+- Owner-approved descope: Release owner did not approve reducing the matrix.
+`;
+  files.externalGm = `# External GM Validation Evidence
+
+- Owner-approved substitution: Release owner has not accepted an internal GM substitute.
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "negative owner approval overrides should not satisfy manual gates");
+    assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "negative AT override should leave the manual matrix incomplete");
+    assert(result.stdout.includes("Add a non-template external GM validation block"), "negative GM override should leave external validation incomplete");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
