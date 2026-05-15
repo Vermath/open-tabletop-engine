@@ -977,6 +977,7 @@ function runCompletionAuditReportsFailedEvidenceAndContinues() {
   try {
     const result = runCompletionAudit(root);
     assert(result.status === 1, "completion audit should fail when release evidence is incomplete");
+    assert(result.stdout.includes(`v1 completion audit target: ${commit} (OTTE_RELEASE_COMMIT)`), "completion audit should print the verifier target");
     assert(result.stdout.includes("FAIL: Final release evidence"), "completion audit should summarize failed evidence");
     assert(result.stdout.includes("PASS: Open P0/P1 issue audit"), "completion audit should continue through issue gate");
     assert(result.stdout.includes("PASS: Public docs site guard"), "completion audit should continue through docs gate");
@@ -1008,6 +1009,7 @@ function runCompletionAuditHonorsReleaseTargetCommit() {
   try {
     const result = runCompletionAudit(root, { releaseCommit: hostedCommit });
     assert(result.status === 0, "completion audit should pass when evidence matches the supplied release target");
+    assert(result.stdout.includes(`v1 completion audit target: ${hostedCommit} (OTTE_RELEASE_COMMIT)`), "completion audit should print supplied release target");
     assert(result.stdout.includes(`Checking v1 release evidence for commit ${hostedCommit} (OTTE_RELEASE_COMMIT).`), "completion audit should pass the release target to the evidence verifier");
     assert(result.stdout.includes("v1 completion audit passed."), "completion audit should report success for supplied release target");
   } finally {

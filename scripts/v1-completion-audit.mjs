@@ -1,4 +1,7 @@
-import { spawnSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
+
+const auditCommit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
+const auditCommitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
 
 const checks = [
   {
@@ -14,6 +17,8 @@ const checks = [
     command: ["pnpm", "docs:site:check"]
   }
 ];
+
+console.log(`v1 completion audit target: ${auditCommit} (${auditCommitSource})`);
 
 const results = checks.map(runCheck);
 const failed = results.filter((result) => result.status !== 0);
@@ -51,4 +56,8 @@ function runCheck(check) {
     ...check,
     status: result.status ?? 1
   };
+}
+
+function git(args) {
+  return execSync(`git ${args}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 }
