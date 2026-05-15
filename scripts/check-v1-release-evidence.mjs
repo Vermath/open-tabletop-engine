@@ -121,7 +121,7 @@ function checkHostedReleaseSmoke() {
       field(section.body, "Result").toLowerCase() === "pass" &&
       shaMatches(field(section.body, "Commit SHA"), currentCommit) &&
       commandEquals(field(section.body, "Release command or build command"), "pnpm release:smoke") &&
-      validHttpUrl(field(section.body, "Run URL"))
+      validHostedRunUrl(field(section.body, "Run URL"))
   );
 
   return result("Hosted release-smoke on checked commit", pass, [
@@ -144,7 +144,7 @@ function checkDocsPublication() {
       resultText === "pass" &&
       shaMatches(commitSha, currentCommit) &&
       commandEquals(command, "pnpm docs:site:check") &&
-      validHttpUrl(runUrl) &&
+      validHostedRunUrl(runUrl) &&
       validHttpUrl(publishedUrl) &&
       !/not published|skipped|blocked/i.test(body) &&
       (/deploy|publication/i.test(section.title) || /owner-approved equivalent hosted publication/i.test(body))
@@ -233,6 +233,12 @@ function validHttpUrl(value) {
   } catch {
     return false;
   }
+}
+
+function validHostedRunUrl(value) {
+  if (!validHttpUrl(value)) return false;
+  const url = new URL(value);
+  return url.pathname.replace(/\/+$/, "") !== "";
 }
 
 function placeholderHost(hostname) {

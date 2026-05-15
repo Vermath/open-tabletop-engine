@@ -31,6 +31,7 @@ runFailsWithTooShortCommitEvidence();
 runFailsWithPlaceholderHostedReleaseSmokeTitle();
 runFailsWithProseOnlyDocsPublicationOverride();
 runFailsWithHostedEvidenceMissingRunUrl();
+runFailsWithBareHostedRunUrls();
 runFailsWithWrongReleaseSmokeCommand();
 runFailsWithNegativeDocsPublicationResult();
 runFailsWithWrongDocsPublicationCommand();
@@ -438,6 +439,23 @@ function runFailsWithHostedEvidenceMissingRunUrl() {
     assert(result.status === 1, "hosted evidence without run URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "missing release-smoke run URL should fail the hosted smoke gate");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "missing docs run URL should fail the docs publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithBareHostedRunUrls() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/1", "https://github.com")
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/2", "https://github.com/");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "bare hosted run URLs should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "bare release-smoke run URL should fail the hosted smoke gate");
+    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "bare docs run URL should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
