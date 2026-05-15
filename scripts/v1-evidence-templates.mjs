@@ -14,7 +14,8 @@ console.log("");
 console.log("These are ready-to-fill blocks only. Do not mark Result as pass until the matching evidence has actually been collected.");
 console.log("");
 
-section(gate("identity-provider"), `Identity Provider Smoke: <provider and sandbox>`, [
+const identityGate = gate("identity-provider");
+section(identityGate, `Identity Provider Smoke: <provider and sandbox>`, [
   ["Date", today],
   ["Operator", ""],
   ["App build or commit", commit],
@@ -22,7 +23,7 @@ section(gate("identity-provider"), `Identity Provider Smoke: <provider and sandb
   ["Provider", ""],
   ["Provider sandbox or tenant label", ""],
   ["Smoke target", "deployed API / local sandbox"],
-  ["Command", "pnpm identity:smoke"],
+  ["Command", identityGate.command],
   ["Result", "pass / fail / skipped"],
   ["Exit code", ""],
   ["OIDC discovery/test result", ""],
@@ -74,7 +75,8 @@ section(gate("external-gm"), "External GM Validation: <tester/session label>", [
   ["Notes", ""]
 ]);
 
-section(gate("hosted-release-smoke"), "Hosted Workflow Evidence: Release Smoke Final", [
+const hostedReleaseSmokeGate = gate("hosted-release-smoke");
+section(hostedReleaseSmokeGate, "Hosted Workflow Evidence: Release Smoke Final", [
   ["Date", today],
   ["Operator", ""],
   ["Workflow file", ".github/workflows/release-smoke.yml"],
@@ -83,7 +85,7 @@ section(gate("hosted-release-smoke"), "Hosted Workflow Evidence: Release Smoke F
   ["Commit SHA", commit],
   ["Run URL", "https://"],
   ["Result", "pass / fail / skipped"],
-  ["Release command or build command", "pnpm release:smoke"],
+  ["Release command or build command", hostedReleaseSmokeGate.command],
   ["Duration", ""],
   ["Artifact URL, if any", ""],
   ["Published URL, if docs-site deploy", "https://"],
@@ -93,7 +95,8 @@ section(gate("hosted-release-smoke"), "Hosted Workflow Evidence: Release Smoke F
   ["Notes", ""]
 ]);
 
-section(gate("docs-publication"), "Hosted Workflow Evidence: Docs Site Publication Final", [
+const docsPublicationGate = gate("docs-publication");
+section(docsPublicationGate, "Hosted Workflow Evidence: Docs Site Publication Final", [
   ["Date", today],
   ["Operator", ""],
   ["Workflow file", ".github/workflows/docs-site.yml"],
@@ -102,7 +105,7 @@ section(gate("docs-publication"), "Hosted Workflow Evidence: Docs Site Publicati
   ["Commit SHA", commit],
   ["Run URL", "https://"],
   ["Result", "pass / fail / skipped"],
-  ["Release command or build command", "pnpm docs:site:check"],
+  ["Release command or build command", docsPublicationGate.command],
   ["Duration", ""],
   ["Artifact URL, if any", ""],
   ["Published URL, if docs-site deploy", "https://"],

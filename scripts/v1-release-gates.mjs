@@ -14,6 +14,7 @@ export const releaseEvidenceGates = [
     name: "Live OIDC/SCIM provider readiness",
     verifierName: "Live OIDC/SCIM provider smoke",
     publicDocsTerm: "OIDC/SCIM",
+    command: "pnpm identity:smoke",
     ownerAction:
       "Run `pnpm identity:smoke` against a real provider sandbox and record command, matching commit, exit code 0, non-placeholder API host/provider/sandbox/smoke-target details, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result.",
     evidence: "docs/verification/identity-provider-smoke-evidence.md"
@@ -41,6 +42,7 @@ export const releaseEvidenceGates = [
     name: "Hosted release smoke",
     verifierName: "Hosted release-smoke on checked commit",
     publicDocsTerm: "hosted release-smoke",
+    command: "pnpm release:smoke",
     ownerAction: "Record a hosted `pnpm release:smoke` pass for the checked commit with exact command parity and a concrete HTTPS hosted run URL.",
     evidence: "docs/verification/release-workflow-evidence.md"
   },
@@ -49,6 +51,7 @@ export const releaseEvidenceGates = [
     name: "Public docs publication",
     verifierName: "Public docs publication",
     publicDocsTerm: "docs-publication",
+    command: "pnpm docs:site:check",
     ownerAction:
       "Publish the docs site from the checked commit and record concrete HTTPS run URL, HTTPS published URL, matching commit, pass result, and `pnpm docs:site:check` command parity.",
     evidence: "docs/verification/release-workflow-evidence.md"

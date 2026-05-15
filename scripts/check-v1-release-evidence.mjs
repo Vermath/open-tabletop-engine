@@ -51,7 +51,7 @@ function checkIdentityProviderSmoke() {
       field(section.body, "Result").toLowerCase() === "pass" &&
       evidenceCommitMatches(section.body) &&
       field(section.body, "Exit code") === "0" &&
-      commandEquals(field(section.body, "Command"), "pnpm identity:smoke") &&
+      commandEquals(field(section.body, "Command"), releaseGate.command) &&
       meaningfulField(field(section.body, "API base URL host")) &&
       meaningfulField(field(section.body, "Provider")) &&
       meaningfulField(field(section.body, "Provider sandbox or tenant label")) &&
@@ -128,7 +128,7 @@ function checkHostedReleaseSmoke() {
     (section) =>
       field(section.body, "Result").toLowerCase() === "pass" &&
       shaMatches(field(section.body, "Commit SHA"), currentCommit) &&
-      commandEquals(field(section.body, "Release command or build command"), "pnpm release:smoke") &&
+      commandEquals(field(section.body, "Release command or build command"), releaseGate.command) &&
       validHostedRunUrl(field(section.body, "Run URL"))
   );
 
@@ -152,7 +152,7 @@ function checkDocsPublication() {
     return (
       resultText === "pass" &&
       shaMatches(commitSha, currentCommit) &&
-      commandEquals(command, "pnpm docs:site:check") &&
+      commandEquals(command, releaseGate.command) &&
       validHostedRunUrl(runUrl) &&
       validHttpsUrl(publishedUrl) &&
       !/not published|skipped|blocked/i.test(body) &&

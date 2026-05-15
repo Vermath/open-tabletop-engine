@@ -854,6 +854,9 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   }
   for (const gate of releaseEvidenceGates) {
     assert(result.stdout.includes(`Evidence file: ${gate.evidence}`), `templates should include destination for ${gate.name}`);
+    if (gate.command) {
+      assert(result.stdout.includes(gate.command), `templates should include command for ${gate.name}`);
+    }
   }
   assert(result.stdout.includes("Do not mark Result as pass until the matching evidence has actually been collected."), "templates should warn against treating placeholders as pass evidence");
 }
