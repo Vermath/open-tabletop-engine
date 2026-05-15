@@ -11,7 +11,7 @@ const gates = [
   },
   {
     name: "Manual assistive-technology matrix",
-    ownerAction: "Record one pass or pass-with-issues evidence section for each required environment: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack; alternatively record an explicit owner-approved descope.",
+    ownerAction: "Record one pass or pass-with-issues evidence section for each required environment with browser, assistive technology, input method, scenario data, and workflows completed: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack; alternatively record an explicit owner-approved descope.",
     evidence: "docs/verification/accessibility-assistive-tech-pass.md"
   },
   {

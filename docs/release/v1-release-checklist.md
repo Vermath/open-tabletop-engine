@@ -19,7 +19,7 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 ## External Evidence
 
 - Record live OIDC/SCIM sandbox evidence in `docs/verification/identity-provider-smoke-evidence.md`, including exact `pnpm identity:smoke` command parity, exit code `0`, matching commit, non-placeholder API host/provider/sandbox/smoke-target details, and passing OIDC plus SCIM readiness summaries.
-- Record assistive-technology pass evidence in `docs/verification/accessibility-assistive-tech-pass.md`, using one pass or pass-with-issues section per required environment.
+- Record assistive-technology pass evidence in `docs/verification/accessibility-assistive-tech-pass.md`, using one pass or pass-with-issues section per required environment with browser, assistive technology, input method, scenario data, and workflows completed.
 - Record external GM validation in `docs/verification/external-gm-validation.md`, including tester role, relationship to project, setup path, scenario data, workflows completed, matching commit, and pass or pass-with-issues result.
 - Record hosted release-smoke and docs-publication evidence in `docs/verification/release-workflow-evidence.md`, including matching commit, exact command parity, pass result, and concrete hosted run URLs.
 - If GitHub Pages is unavailable, record the owner-approved equivalent hosted publication provider, URL, release commit SHA, concrete run URL, command parity with `pnpm docs:site:check`, and public-site secret review.

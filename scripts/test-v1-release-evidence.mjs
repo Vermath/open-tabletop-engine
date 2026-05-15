@@ -690,7 +690,7 @@ function runHandoffReportsIncompleteVerifierStatus() {
     assert(result.stdout.includes("pnpm v1:evidence:templates"), "handoff should point to the evidence template generator");
     assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<hosted-run-commit-sha> pnpm v1:evidence:templates"), "handoff should show hosted-run template generation");
     assert(result.stdout.includes("non-placeholder API host/provider/sandbox/smoke-target details"), "handoff should mention identity provider detail fields");
-    assert(result.stdout.includes("one pass or pass-with-issues evidence section for each required environment"), "handoff should mention distinct AT evidence sections");
+    assert(result.stdout.includes("one pass or pass-with-issues evidence section for each required environment with browser, assistive technology, input method, scenario data, and workflows completed"), "handoff should mention distinct AT evidence details");
     assert(result.stdout.includes("tester role, relationship to project, setup path, scenario data, workflows completed"), "handoff should mention external GM scenario fields");
     assert(result.stdout.includes("concrete hosted run URL"), "handoff should mention concrete hosted run URLs");
     assert(result.stdout.includes("`pnpm docs:site:check` command parity"), "handoff should mention docs publication command parity");
