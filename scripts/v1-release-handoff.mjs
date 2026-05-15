@@ -1,0 +1,55 @@
+import { execSync } from "node:child_process";
+
+const commit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
+const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
+
+const gates = [
+  {
+    name: "Live OIDC/SCIM provider readiness",
+    ownerAction: "Run `pnpm identity:smoke` against a real provider sandbox without skipped tests.",
+    evidence: "docs/verification/identity-provider-smoke-evidence.md"
+  },
+  {
+    name: "Manual assistive-technology matrix",
+    ownerAction: "Record NVDA, Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and TalkBack pass evidence or an explicit owner-approved descope.",
+    evidence: "docs/verification/accessibility-assistive-tech-pass.md"
+  },
+  {
+    name: "External GM validation",
+    ownerAction: "Have an unaffiliated or owner-approved GM run the release-candidate flow, or record the explicit owner-approved substitution.",
+    evidence: "docs/verification/external-gm-validation.md"
+  },
+  {
+    name: "Hosted release smoke",
+    ownerAction: "Push the final release candidate and record a hosted `pnpm release:smoke` pass for that commit.",
+    evidence: "docs/verification/release-workflow-evidence.md"
+  },
+  {
+    name: "Public docs publication",
+    ownerAction: "Publish the docs site from the release commit through GitHub Pages or an owner-approved equivalent hosted publication.",
+    evidence: "docs/verification/release-workflow-evidence.md"
+  }
+];
+
+console.log(`v1 release-owner handoff for ${commit} (${commitSource})`);
+console.log("");
+console.log("Final evidence verifier:");
+console.log("  pnpm v1:evidence:check");
+console.log("");
+console.log("If evidence docs are committed after the hosted workflow run:");
+console.log(`  OTTE_RELEASE_COMMIT=${commit} pnpm v1:evidence:check`);
+console.log("");
+console.log("Remaining owner-supplied evidence:");
+
+for (const [index, gate] of gates.entries()) {
+  console.log(`${index + 1}. ${gate.name}`);
+  console.log(`   Action: ${gate.ownerAction}`);
+  console.log(`   Evidence: ${gate.evidence}`);
+}
+
+console.log("");
+console.log("Release-owner checklist: docs/verification/v1-release-owner-handoff.md");
+
+function git(args) {
+  return execSync(`git ${args}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+}

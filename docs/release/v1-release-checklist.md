@@ -10,6 +10,7 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 - Run `pnpm docs:site:test` if verifying publication guards outside the full release smoke run.
 - Run `pnpm docs:site:check`.
 - Run `pnpm identity:smoke` only when real OIDC/SCIM sandbox variables are configured; skipped output does not satisfy provider readiness.
+- Run `pnpm v1:release:handoff` to print the current release-evidence destinations and checked commit.
 - Run `pnpm v1:evidence:check`; it must pass before v1.0 is declared ready. If evidence is committed after the hosted run, set `OTTE_RELEASE_COMMIT` to the hosted workflow commit SHA when running the verifier.
 - Confirm `docs/verification/v1-gap-closure-completion-audit.md` has no unowned local/code gaps.
 - Confirm open GitHub issues have no P0/P1 labels, or record explicit owner approval for any accepted risk.

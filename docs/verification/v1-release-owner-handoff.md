@@ -8,6 +8,14 @@ Use `docs/release/v1-release-checklist.md` as the release-owner preflight, publi
 
 Tracking issue: https://github.com/Vermath/open-tabletop-engine/issues/2 records the remaining external evidence blockers and had no P0/P1 labels in the 2026-05-15 audit.
 
+For a command-line summary of the remaining owner-supplied evidence, run:
+
+```powershell
+pnpm v1:release:handoff
+```
+
+Rerun it after committing final evidence documents so the printed commit matches the verifier target.
+
 ## Remaining Decisions
 
 | Gate | Owner action | Evidence destination | Completion rule |
@@ -75,6 +83,7 @@ The existing hosted release-smoke run proves the workflow shape, but it predates
 After the external gates above are satisfied, rerun the completion audit:
 
 ```powershell
+pnpm v1:release:handoff
 pnpm docs:site:test
 pnpm docs:site:check
 pnpm v1:evidence:check
