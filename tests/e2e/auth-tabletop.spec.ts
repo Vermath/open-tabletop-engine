@@ -1562,6 +1562,9 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.conditions as Array<{ id: string }> | undefined)?.map((condition) => condition.id) ?? [])
     .toContain("stunned");
+  const deflectCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Deflect" }).first();
+  await expect(deflectCard).toContainText("Deflect Attacks Reaction Damage");
+  await expect(deflectCard).toContainText("effect supported");
 
   await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: ranger.name });
   await expect(page.getByText("Token updated")).toBeVisible();

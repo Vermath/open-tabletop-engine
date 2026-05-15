@@ -6131,7 +6131,7 @@ function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
     );
   }
   if (dnd5eSrdHasDeflectAttacks(actor)) {
-    options.push({ rollId: "feature-deflect-attacks-damage", label: "Deflect", description: `Deflect Attacks Damage: ${dnd5eSrdDeflectAttacksDamageFormula(actor)} after reducing damage to 0` });
+    options.push({ rollId: "feature-deflect-attacks-damage", label: "Deflect", description: `Deflect Attacks Reaction Damage: ${dnd5eSrdDeflectAttacksDamageFormula(actor)} after reducing damage to 0` });
   }
   if (dnd5eSrdHasStunningStrike(actor)) {
     options.push({ rollId: "feature-stunning-strike", label: "Stunning Strike", description: `Stunning Strike: spend 1 Focus; DC ${dnd5eSrdMonkSaveDc(actor)} Constitution` });
