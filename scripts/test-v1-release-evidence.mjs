@@ -844,6 +844,7 @@ function runEvidenceTemplatesIncludeVerifierFields() {
 
   assert(result.status === 0, "evidence template generator should exit successfully");
   assert(result.stdout.includes(`# v1 Evidence Templates for ${commit}`), "templates should include the checked commit header");
+  assert(result.stdout.includes("Template target source: OTTE_RELEASE_COMMIT"), "templates should identify supplied release target source");
   assert(result.stdout.includes("- App build or commit: 1234567890abcdef1234567890abcdef12345678"), "manual evidence templates should prefill App build or commit");
   assert(result.stdout.includes("- Commit SHA: 1234567890abcdef1234567890abcdef12345678"), "hosted evidence templates should prefill Commit SHA");
   assert(result.stdout.includes("- Command: pnpm identity:smoke"), "identity template should preserve the verifier command field");

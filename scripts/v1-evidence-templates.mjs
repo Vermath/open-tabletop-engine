@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { releaseEvidenceGateById, requiredAssistiveTechnologyEnvironments } from "./v1-release-gates.mjs";
 
 const commit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
+const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
 const today = new Date().toISOString().slice(0, 10);
 
 if (!/^[0-9a-f]{40}$/i.test(commit.trim())) {
@@ -10,6 +11,8 @@ if (!/^[0-9a-f]{40}$/i.test(commit.trim())) {
 }
 
 console.log(`# v1 Evidence Templates for ${commit}`);
+console.log("");
+console.log(`Template target source: ${commitSource}`);
 console.log("");
 console.log("These are ready-to-fill blocks only. Do not mark Result as pass until the matching evidence has actually been collected.");
 console.log("");
