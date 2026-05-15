@@ -29,7 +29,7 @@ pnpm v1:evidence:templates
 | Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` | `pnpm identity:smoke` exits `0` without skipping, and the evidence block records the command, matching commit, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result |
 | Assistive-technology acceptance | Run or delegate Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` | Every required environment has pass evidence, or an explicit owner-approved substitution/descope is recorded |
 | External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` | Matching commit, setup path, workflows completed, pass/fail outcome, and issue-reporting feedback are recorded |
-| Hosted release-smoke refresh | Push the final release candidate and rerun `.github/workflows/release-smoke.yml` | `docs/verification/release-workflow-evidence.md` | `pnpm release:smoke` passes on the final release commit or owner-approved successor |
+| Hosted release-smoke refresh | Push the final release candidate and rerun `.github/workflows/release-smoke.yml` | `docs/verification/release-workflow-evidence.md` | `pnpm release:smoke` passes on the final release commit or owner-approved successor, with exact command parity recorded |
 | Public docs publication | Enable GitHub Pages for the repo, make the repo/plan support Pages, or approve an equivalent hosted publication | `docs/verification/release-workflow-evidence.md` | Docs build and deploy complete for the release commit; run URL, commit SHA, and published URL are recorded |
 
 ## Identity Provider Smoke
@@ -83,7 +83,7 @@ The PRD's v1 release-candidate milestone calls for external GM validation in add
 
 ## Hosted Release-Smoke Refresh
 
-The existing hosted release-smoke run proves the workflow shape, but it predates the current local-only commits. Before final acceptance, rerun hosted release smoke on the final pushed release commit and update `docs/verification/release-workflow-evidence.md` with the run URL, commit SHA, and result.
+The existing hosted release-smoke run proves the workflow shape, but it predates the current local-only commits. Before final acceptance, rerun hosted release smoke on the final pushed release commit and update `docs/verification/release-workflow-evidence.md` with the run URL, commit SHA, result, and exact `pnpm release:smoke` command.
 
 ## Final Release Check
 
