@@ -111,12 +111,12 @@ Copy one block per workflow into the release evidence log:
 - Trigger: pull_request / push to main / workflow_dispatch / equivalent hosted CI
 - Branch or ref:
 - Commit SHA:
-- Run URL:
+- Run URL: https://
 - Result: pass / fail / skipped
 - Release command or build command:
 - Duration:
 - Artifact URL, if any:
-- Published URL, if docs-site deploy:
+- Published URL, if docs-site deploy: https://
 - Required checks observed:
 - Issues filed:
 - Blockers:
@@ -130,16 +130,16 @@ The release-smoke hosted pass is acceptable only when:
 - The workflow run is tied to the release candidate commit checked by `pnpm v1:evidence:check`, or by `OTTE_RELEASE_COMMIT=<hosted-run-commit-sha> pnpm v1:evidence:check` if evidence docs are committed afterward.
 - The run completes successfully without rerunning with uncommitted local changes.
 - The `Run release smoke` step executes `pnpm release:smoke`.
-- Any manually rerun job records the final run attempt URL.
+- Any manually rerun job records the final HTTPS run attempt URL.
 
 The docs-site publication pass is acceptable only when:
 
 - The docs build runs `pnpm docs:site:check`.
 - The Pages deployment completes successfully for the release docs commit.
-- The published URL is reachable by the release owner.
+- The HTTPS published URL is reachable by the release owner.
 - The published documentation does not expose secrets, local filesystem paths, provider tokens, or non-public evidence attachments.
 - The evidence block records the checked release commit SHA, using either the full 40-character SHA or an unambiguous Git prefix of at least 7 characters.
-- Owner-approved equivalent publication evidence is recorded inside a non-template hosted workflow evidence block with a published URL, commit SHA, result, and command parity.
+- Owner-approved equivalent publication evidence is recorded inside a non-template hosted workflow evidence block with an HTTPS published URL, commit SHA, result, and command parity.
 
 ## Failure Handling
 
