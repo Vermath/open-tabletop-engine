@@ -18,11 +18,11 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 
 ## External Evidence
 
-- Record live OIDC/SCIM sandbox evidence in `docs/verification/identity-provider-smoke-evidence.md`.
-- Record assistive-technology pass evidence in `docs/verification/accessibility-assistive-tech-pass.md`.
-- Record external GM validation in `docs/verification/external-gm-validation.md`.
-- Record hosted release-smoke and docs-publication evidence in `docs/verification/release-workflow-evidence.md`.
-- If GitHub Pages is unavailable, record the owner-approved equivalent hosted publication provider, URL, release commit SHA, command parity with `pnpm docs:site:check`, and public-site secret review.
+- Record live OIDC/SCIM sandbox evidence in `docs/verification/identity-provider-smoke-evidence.md`, including exact `pnpm identity:smoke` command parity, exit code `0`, matching commit, non-placeholder API host/provider/sandbox/smoke-target details, and passing OIDC plus SCIM readiness summaries.
+- Record assistive-technology pass evidence in `docs/verification/accessibility-assistive-tech-pass.md`, using one pass or pass-with-issues section per required environment.
+- Record external GM validation in `docs/verification/external-gm-validation.md`, including tester role, relationship to project, setup path, scenario data, workflows completed, matching commit, and pass or pass-with-issues result.
+- Record hosted release-smoke and docs-publication evidence in `docs/verification/release-workflow-evidence.md`, including matching commit, exact command parity, pass result, and concrete hosted run URLs.
+- If GitHub Pages is unavailable, record the owner-approved equivalent hosted publication provider, URL, release commit SHA, concrete run URL, command parity with `pnpm docs:site:check`, and public-site secret review.
 
 ## Publication
 
@@ -43,4 +43,4 @@ Status: release-owner checklist for the v1.0 release candidate. This checklist i
 
 ## Final Decision
 
-Only declare v1.0 ready when every required evidence document has a pass result or an explicit owner-approved substitution/descope, `pnpm v1:evidence:check` passes, and `docs/verification/v1-gap-closure-completion-audit.md` no longer lists incomplete blockers. Placeholder override values such as `none`, `n/a`, `tbd`, `pending`, or `<approval summary>` do not count as owner approval.
+Only declare v1.0 ready when every required evidence document has a pass result or an explicit owner-approved substitution/descope, `pnpm v1:evidence:check` passes, and `docs/verification/v1-gap-closure-completion-audit.md` no longer lists incomplete blockers. Placeholder or template-choice override values such as `none`, `n/a`, `tbd`, `pending`, `<approval summary>`, or `approved / not approved` do not count as owner approval.
