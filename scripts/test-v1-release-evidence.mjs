@@ -23,6 +23,7 @@ runPassesWithShortCommitEvidence();
 runPassesWithOwnerApprovedManualOverrides();
 runFailsWithTemplateOwnerOverrides();
 runFailsWithPlaceholderOwnerOverrides();
+runFailsWhenPassEvidenceKeepsPlaceholderOwnerOverrides();
 runFailsWithTemplateChoiceOwnerOverrides();
 runFailsWithCompactTemplateChoiceOwnerOverrides();
 runFailsWithAmbiguousOwnerOverrides();
@@ -289,6 +290,26 @@ function runFailsWithPlaceholderOwnerOverrides() {
     assert(result.status === 1, "placeholder owner overrides should not satisfy manual gates");
     assert(result.stdout.includes("Missing pass evidence for: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, Android TalkBack"), "placeholder AT override should leave the manual matrix incomplete");
     assert(result.stdout.includes("Add a non-template external GM validation block"), "placeholder GM override should leave external validation incomplete");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenPassEvidenceKeepsPlaceholderOwnerOverrides() {
+  const files = completeEvidence(commit);
+  files.assistive = `${files.assistive}
+- Owner-approved descope: <explicit owner approval summary>
+`;
+  files.externalGm = `${files.externalGm}
+- Owner-approved substitution: <explicit owner approval summary>
+`;
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "placeholder owner override fields should fail even with pass evidence");
+    assert(result.stdout.includes("Remove placeholder or ambiguous owner-approved descope/substitution fields"), "assistive failure should name placeholder owner-approval cleanup");
+    assert(result.stdout.includes("Remove placeholder or ambiguous owner-approved substitution fields"), "external GM failure should name placeholder owner-approval cleanup");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

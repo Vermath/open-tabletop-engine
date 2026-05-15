@@ -74,6 +74,7 @@ function checkAssistiveTechnologyPass() {
   const doc = evidence(releaseGate);
   const sections = sectionsFor(doc, "Assistive Technology Pass").filter((section) => !placeholder(section.title));
   const accepted = new Set();
+  const invalidOwnerOverride = ownerOverridePlaceholder(doc);
 
   for (const section of sections) {
     const resultText = field(section.body, "Result").toLowerCase();
@@ -92,8 +93,9 @@ function checkAssistiveTechnologyPass() {
 
   const hasOwnerSubstitution = explicitOwnerOverride(doc);
   const missing = requiredAssistiveTechnologyEnvironments.map((environment) => environment.label).filter((environment) => !accepted.has(environment));
-  return result(releaseGate.verifierName, missing.length === 0 || hasOwnerSubstitution, [
+  return result(releaseGate.verifierName, !invalidOwnerOverride && (missing.length === 0 || hasOwnerSubstitution), [
     `Missing pass evidence for: ${missing.join(", ") || "none"}.`,
+    "Remove placeholder or ambiguous owner-approved descope/substitution fields, or replace them with explicit release-owner accepted/approved text.",
     "Add one non-template pass or pass-with-issues evidence block per required environment, tied to the checked release commit, with browser, assistive technology, input method, scenario data, and workflows completed; or record an owner-approved substitution/descope."
   ]);
 }
@@ -113,9 +115,11 @@ function checkExternalGmValidation() {
       meaningfulField(field(section.body, "Workflows completed"))
   );
   const hasOwnerSubstitution = explicitOwnerOverride(doc);
+  const invalidOwnerOverride = ownerOverridePlaceholder(doc);
 
-  return result(releaseGate.verifierName, pass || hasOwnerSubstitution, [
+  return result(releaseGate.verifierName, !invalidOwnerOverride && (pass || hasOwnerSubstitution), [
     "Add a non-template external GM validation block with Result: pass or pass with issues, App build or commit matching the checked release commit, tester role, relationship to project, setup path, scenario data, and workflows completed.",
+    "Remove placeholder or ambiguous owner-approved substitution fields, or replace them with explicit release-owner accepted/approved text.",
     "Alternatively record the explicit owner-approved substitution called out by the release handoff."
   ]);
 }
@@ -354,6 +358,26 @@ function negativeOwnerApproval(value) {
     /\bnot\s+(?:accepted|approved)\b/.test(value) ||
     /\bowner\b[\s\S]{0,80}\bnot\s+(?:accept|accepted|approve|approved)\b/.test(value)
   );
+}
+
+function ownerOverridePlaceholder(markdown) {
+  const evidenceText = stripCodeFences(markdown);
+  const matches = evidenceText.matchAll(/^-\s*Owner-approved (?:substitution|descope|substitute):\s*(.+)$/gim);
+  for (const match of matches) {
+    const value = match[1].trim().toLowerCase();
+    if (
+      !value ||
+      ["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>", "<explicit owner approval summary>"].includes(value) ||
+      placeholder(value) ||
+      templateChoice(value) ||
+      value.includes("/") ||
+      negativeOwnerApproval(value) ||
+      !(/\bowner\b[\s\S]*\b(?:accepted|approved)\b|\b(?:accepted|approved)\b[\s\S]*\bowner\b/.test(value))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function explicitOwnerOverride(markdown) {
