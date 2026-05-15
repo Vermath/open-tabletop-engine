@@ -227,7 +227,11 @@ function passField(value) {
 
 function meaningfulField(value) {
   const normalized = value.trim().toLowerCase();
-  return Boolean(normalized) && !["none", "n/a", "na", "no", "pending", "tbd", "<approval summary>"].includes(normalized) && !placeholder(normalized);
+  return Boolean(normalized) && !["none", "n/a", "na", "no", "pending", "tbd", "<approval summary>"].includes(normalized) && !placeholder(normalized) && !templateChoice(normalized);
+}
+
+function templateChoice(value) {
+  return value.includes(" / ");
 }
 
 function explicitOwnerOverride(markdown) {

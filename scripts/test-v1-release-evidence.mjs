@@ -21,6 +21,7 @@ runFailsWithPlaceholderOwnerOverrides();
 runFailsWhenIosVoiceOverIsOnlyVoiceOverEvidence();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
+runFailsWhenExternalGmEvidenceUsesTemplateChoices();
 runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
 runFailsWithHostedEvidenceMissingRunUrl();
@@ -251,6 +252,20 @@ function runFailsWhenExternalGmEvidenceOmitsScenarioDetails() {
     const result = runChecker(root);
     assert(result.status === 1, "external GM evidence without setup path and workflows should fail");
     assert(result.stdout.includes("setup path, and workflows completed"), "external GM failure should name missing scenario details");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWhenExternalGmEvidenceUsesTemplateChoices() {
+  const files = completeEvidence(commit);
+  files.externalGm = files.externalGm.replace("- Setup path: hosted preview\n", "- Setup path: clean local install / self-hosted deployment / hosted preview / owner-approved substitute\n");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "external GM evidence with template-choice setup path should fail");
+    assert(result.stdout.includes("setup path, and workflows completed"), "external GM template-choice failure should name scenario details");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
