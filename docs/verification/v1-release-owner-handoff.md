@@ -103,6 +103,7 @@ After the external gates above are satisfied, rerun the completion audit:
 ```powershell
 pnpm v1:release:handoff
 pnpm v1:evidence:templates
+pnpm v1:completion:audit
 pnpm docs:site:test
 pnpm docs:site:check
 pnpm v1:evidence:check
@@ -110,6 +111,14 @@ pnpm identity:smoke
 git diff --check
 ```
 
-If the evidence documents were updated after the hosted workflow run, run the evidence verifier with `OTTE_RELEASE_COMMIT` set to the hosted release-smoke commit SHA.
+If the evidence documents were updated after the hosted workflow run, run the aggregate audit and evidence verifier with `OTTE_RELEASE_COMMIT` set to the hosted release-smoke commit SHA:
+
+```powershell
+$env:OTTE_RELEASE_COMMIT = "<full-40-character-hosted-run-commit-sha>"
+pnpm v1:completion:audit
+pnpm v1:evidence:check
+```
+
+A skipped `pnpm identity:smoke` run is still only a local readiness signal; final identity-provider evidence must be the non-skipped pass recorded in `docs/verification/identity-provider-smoke-evidence.md`.
 
 Then update `docs/verification/v1-gap-closure-completion-audit.md` with the evidence links before declaring the v1 gap-closure objective complete.
