@@ -6012,7 +6012,35 @@ function actorActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
 }
 
 function dnd5eSrdActionOptions(actor: Actor, items: Item[]): ActorActionOption[] {
-  return [...dnd5eSrdClassFeatureActionOptions(actor), ...dnd5eSrdSpeciesTraitActionOptions(actor), ...dnd5eSrdItemActionOptions(actor, items)];
+  return [...dnd5eSrdClassFeatureActionOptions(actor), ...dnd5eSrdSpeciesTraitActionOptions(actor), ...dnd5eSrdMonsterActionOptions(actor), ...dnd5eSrdItemActionOptions(actor, items)];
+}
+
+function dnd5eSrdMonsterActionOptions(actor: Actor): ActorActionOption[] {
+  const monster = recordValue(actor.data.monster);
+  const statBlock = recordValue(monster.statBlock);
+  const actions = Array.isArray(statBlock.actions) ? statBlock.actions.map(recordValue) : [];
+  return actions.flatMap((action) => {
+    const name = stringValue(action.name);
+    if (!name) return [];
+    const id = slugId(name);
+    const options: ActorActionOption[] = [];
+    if (Number.isFinite(numericValue(action.attackBonus, Number.NaN))) {
+      options.push({ rollId: `monster-${id}-attack`, label: `${name} Attack`, description: `${name} Attack` });
+    }
+    const damageFormula = stringValue(action.damageFormula);
+    if (damageFormula) {
+      options.push({ rollId: `monster-${id}-damage`, label: `${name} Damage`, description: `${name} Damage: ${damageFormula}` });
+    }
+    if (stringValue(action.condition) || stringValue(action.summary) || Object.keys(recordValue(action.save)).length > 0) {
+      options.push({ rollId: `monster-${id}-effect`, label: `${name} Effect`, description: `${name} Effect: ${dnd5eSrdMonsterActionEffectSummary(action)}` });
+    }
+    return options;
+  });
+}
+
+function dnd5eSrdMonsterActionEffectSummary(action: Record<string, unknown>): string {
+  const parts = [stringValue(action.condition), stringValue(action.recharge) ? `Recharge ${stringValue(action.recharge)}` : undefined, stringValue(action.summary)].filter((value): value is string => Boolean(value));
+  return parts.join("; ") || "effect";
 }
 
 function dnd5eSrdClassFeatureActionOptions(actor: Actor): ActorActionOption[] {
