@@ -67,6 +67,7 @@ The actionable release-owner handoff for these external blockers lives at `docs/
 - 2026-05-15 `pnpm --filter @open-tabletop/api test -- --run -t "serves the OpenAPI contract|rejects unauthenticated and unauthorized campaign access|rejects authenticated malformed request bodies"`: passed 3 focused API/OpenAPI behavior tests, with unrelated tests skipped by name filter.
 - 2026-05-15 `pnpm --filter @open-tabletop/api-client test -- --run -t "covers every public OpenAPI REST route"`: passed the public OpenAPI REST route conformance test, with unrelated client tests skipped by name filter.
 - 2026-05-15 `pnpm exec playwright test tests/e2e/accessibility.spec.ts tests/e2e/mobile.spec.ts`: passed 7 focused browser tests for automated accessibility and phone/tablet smoke coverage.
+- 2026-05-15 `pnpm migration:smoke`: passed 2 focused migration-smoke tests covering older archive import/export, storage migration posture, backup creation, restore drill, unsupported-version rejection, and v0.3 SQLite JSON-record reopening.
 - 2026-05-15 GitHub issue audit: one open issue, #2 `Track remaining v1 external evidence blockers`, with no labels.
 - 2026-05-15 GitHub PR audit: PR #1 remote head checks passed for Release Smoke and Docs Site build, but the local branch has additional unpushed commits, so final hosted evidence still needs refresh on the final release commit.
 
