@@ -33,7 +33,17 @@ const manifest = {
 writeFileSync(join(outputDir, "site-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
 if (process.argv.includes("--check")) {
-  const required = ["index.html", "CHANGELOG.html", "docs/site/index.html", "docs/release/v1.0.html", "docs/deployment/hosted-deployment-recipes.html"];
+  const required = [
+    "index.html",
+    "CHANGELOG.html",
+    "docs/site/index.html",
+    "docs/release/v1.0.html",
+    "docs/deployment/hosted-deployment-recipes.html",
+    "docs/prd-v1-gap-closure.html",
+    "docs/verification/v1-gap-closure-completion-audit.html",
+    "docs/verification/v1-release-owner-handoff.html",
+    "docs/verification/release-workflow-evidence.html"
+  ];
   const missing = required.filter((file) => !existsSync(join(outputDir, file)));
   if (missing.length > 0) {
     console.error(`Docs site build missing required outputs: ${missing.join(", ")}`);
