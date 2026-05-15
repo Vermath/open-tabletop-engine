@@ -44,7 +44,7 @@ function checkIdentityProviderSmoke() {
       field(section.body, "Result").toLowerCase() === "pass" &&
       evidenceCommitMatches(section.body) &&
       field(section.body, "Exit code") === "0" &&
-      field(section.body, "Command") === "pnpm identity:smoke" &&
+      commandEquals(field(section.body, "Command"), "pnpm identity:smoke") &&
       passField(field(section.body, "OIDC discovery/test result")) &&
       passField(field(section.body, "SCIM ServiceProviderConfig result"))
   );
