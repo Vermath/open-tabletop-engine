@@ -67,6 +67,11 @@ if (process.argv.includes("--check")) {
     console.error(`Docs site build found local filesystem paths in public docs:\n${localPathLeaks.join("\n")}`);
     process.exit(1);
   }
+  const releaseGateGaps = findReleaseGateGaps();
+  if (releaseGateGaps.length > 0) {
+    console.error(`Docs site build found missing release-gate references:\n${releaseGateGaps.join("\n")}`);
+    process.exit(1);
+  }
 }
 
 function collectMarkdown(entry) {
@@ -107,6 +112,17 @@ function findLocalPathLeaks(file) {
   return markdown
     .split(/\r?\n/)
     .flatMap((line, index) => (/(^|[^A-Za-z])[A-Za-z]:[\\/]/.test(line) ? [`${sourceRelative}:${index + 1}`] : []));
+}
+
+function findReleaseGateGaps() {
+  const requiredCommands = ["pnpm release:smoke", "pnpm v1:evidence:check", "pnpm v1:issues:check"];
+  const requiredFiles = ["docs/release/v1.0.md", "docs/site/index.md"];
+  return requiredFiles.flatMap((source) => {
+    const markdown = readFileSync(join(root, source), "utf8");
+    return requiredCommands
+      .filter((command) => !markdown.includes(command))
+      .map((command) => `${source} missing ${command}`);
+  });
 }
 
 function renderPage(relativePath, markdown) {
