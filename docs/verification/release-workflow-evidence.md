@@ -93,7 +93,7 @@ If the release owner intentionally accepts a different hosted CI provider, recor
 When the evidence documents are updated in a follow-up commit after the hosted workflow runs, check the workflow commit explicitly:
 
 ```bash
-OTTE_RELEASE_COMMIT=<hosted-run-commit-sha> pnpm v1:evidence:check
+OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check
 ```
 
 Without `OTTE_RELEASE_COMMIT`, the verifier checks the current local `HEAD`.
@@ -127,7 +127,7 @@ Copy one block per workflow into the release evidence log:
 
 The release-smoke hosted pass is acceptable only when:
 
-- The workflow run is tied to the release candidate commit checked by `pnpm v1:evidence:check`, or by `OTTE_RELEASE_COMMIT=<hosted-run-commit-sha> pnpm v1:evidence:check` if evidence docs are committed afterward.
+- The workflow run is tied to the release candidate commit checked by `pnpm v1:evidence:check`, or by `OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check` if evidence docs are committed afterward.
 - The run completes successfully without rerunning with uncommitted local changes.
 - The `Run release smoke` step executes `pnpm release:smoke`.
 - Any manually rerun job records the final HTTPS run attempt URL.

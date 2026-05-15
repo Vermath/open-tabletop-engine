@@ -830,9 +830,9 @@ function runHandoffReportsIncompleteVerifierStatus() {
     const result = runHandoff(root);
     assert(result.status === 0, "handoff should exit successfully even when evidence is incomplete");
     assert(result.stdout.includes("Current evidence verifier status:"), "handoff should print verifier status");
-    assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<hosted-run-commit-sha> pnpm v1:evidence:check"), "handoff should not imply the current docs commit is the hosted run target");
+    assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check"), "handoff should not imply the current docs commit is the hosted run target");
     assert(result.stdout.includes("pnpm v1:evidence:templates"), "handoff should point to the evidence template generator");
-    assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<hosted-run-commit-sha> pnpm v1:evidence:templates"), "handoff should show hosted-run template generation");
+    assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:templates"), "handoff should show hosted-run template generation");
     assert(result.stdout.includes("non-placeholder API host/provider/sandbox/smoke-target details"), "handoff should mention identity provider detail fields");
     assert(result.stdout.includes("one pass or pass-with-issues evidence section for each required environment with browser, assistive technology, input method, scenario data, and workflows completed"), "handoff should mention distinct AT evidence details");
     assert(result.stdout.includes("tester role, relationship to project, setup path, scenario data, workflows completed"), "handoff should mention external GM scenario fields");

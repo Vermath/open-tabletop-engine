@@ -25,7 +25,7 @@ pnpm v1:evidence:templates
 If evidence documents are committed after the hosted workflow run, generate the blocks against the hosted run commit:
 
 ```powershell
-$env:OTTE_RELEASE_COMMIT = "<hosted-run-commit-sha>"
+$env:OTTE_RELEASE_COMMIT = "<full-40-character-hosted-run-commit-sha>"
 pnpm v1:evidence:templates
 ```
 
