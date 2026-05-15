@@ -2,9 +2,15 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { releaseEvidenceGates } from "./v1-release-gates.mjs";
 
 const repoRoot = process.cwd();
 const builder = join(repoRoot, "scripts", "build-docs-site.mjs");
+const finalEvidenceTerms = releaseEvidenceGates.map((gate) => {
+  assert(gate.publicDocsTerm, `release evidence gate ${gate.name} must define publicDocsTerm`);
+  return gate.publicDocsTerm;
+});
+const finalEvidenceText = finalEvidenceTerms.join(", ").replace(/, ([^,]+)$/, ", and $1");
 
 runPassesWithRequiredDocsAndExcludedInternalLogs();
 runFailsWhenRequiredReleasePageLeaksLocalPath();
@@ -90,24 +96,24 @@ function writeRequiredDocs(root) {
   writeFileSync(join(root, "docs", "site", "index.md"), "# Public Docs\n\n- [Release notes](../release/v1.0.md)\n\nRun `pnpm release:smoke`, `pnpm v1:evidence:check`, and `pnpm v1:issues:check`.\n");
   writeFileSync(
     join(root, "docs", "release", "v1.0.md"),
-    "# v1.0\n\n## Release Gate\n\n```bash\npnpm release:smoke\npnpm v1:evidence:check\npnpm v1:issues:check\n```\n\nRecord final OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication evidence before publishing.\n"
+    `# v1.0\n\n## Release Gate\n\n\`\`\`bash\npnpm release:smoke\npnpm v1:evidence:check\npnpm v1:issues:check\n\`\`\`\n\nRecord final ${finalEvidenceText} evidence before publishing.\n`
   );
   writeFileSync(
     join(root, "docs", "release", "v1-release-checklist.md"),
-    "# v1 Release Checklist\n\nFinal evidence gates: OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication.\n"
+    `# v1 Release Checklist\n\nFinal evidence gates: ${finalEvidenceText}.\n`
   );
   writeFileSync(join(root, "docs", "deployment", "hosted-deployment-recipes.md"), "# Hosted Deployment Recipes\n");
   writeFileSync(
     join(root, "docs", "prd-v1-gap-closure.md"),
-    "# v1 Gap Closure PRD\n\nRemaining final evidence gates: OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication.\n"
+    `# v1 Gap Closure PRD\n\nRemaining final evidence gates: ${finalEvidenceText}.\n`
   );
   writeFileSync(
     join(root, "docs", "verification", "v1-gap-closure-completion-audit.md"),
-    "# v1 Gap Closure Completion Audit\n\nRemaining final evidence gates: OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication.\n"
+    `# v1 Gap Closure Completion Audit\n\nRemaining final evidence gates: ${finalEvidenceText}.\n`
   );
   writeFileSync(
     join(root, "docs", "verification", "v1-release-owner-handoff.md"),
-    "# v1 Release Owner Handoff\n\nRemaining final evidence gates: OIDC/SCIM, assistive-technology, external GM, hosted release-smoke, and docs-publication.\n"
+    `# v1 Release Owner Handoff\n\nRemaining final evidence gates: ${finalEvidenceText}.\n`
   );
   writeFileSync(join(root, "docs", "verification", "accessibility-assistive-tech-pass.md"), "# Assistive Technology Pass Plan\n");
   writeFileSync(join(root, "docs", "verification", "external-gm-validation.md"), "# External GM Validation Evidence\n");
