@@ -14,6 +14,18 @@ Child evidence trackers:
 - Assistive-technology matrix: https://github.com/Vermath/open-tabletop-engine/issues/4
 - External GM validation: https://github.com/Vermath/open-tabletop-engine/issues/5
 
+Current verifier target for the hosted release-smoke and public-docs evidence is `c7a0ccadba0dad11d34e0f0f8c3490c4df4274b7`. Keep that value in the three owner-supplied evidence files unless release-smoke and public-docs publication are refreshed for a newer release target.
+
+## Release-Owner Evidence Packet
+
+Copy the matching template from each file below, fill it with real evidence, then commit the updated file and rerun the final release check.
+
+| Evidence gate | Fill this file | Mirror or link in GitHub issue | Required proof |
+| --- | --- | --- | --- |
+| Live OIDC/SCIM provider smoke | `docs/verification/identity-provider-smoke-evidence.md` | https://github.com/Vermath/open-tabletop-engine/issues/3 | Non-skipped `pnpm identity:smoke` pass against a real provider sandbox, exit code `0`, exact command parity, matching verifier target, non-placeholder API host/provider/sandbox/smoke-target details, passing OIDC discovery/test, and passing SCIM ServiceProviderConfig |
+| Assistive-technology matrix | `docs/verification/accessibility-assistive-tech-pass.md` | https://github.com/Vermath/open-tabletop-engine/issues/4 | One pass or pass-with-issues block for Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack with browser, assistive technology, input method, scenario data, and workflows completed, or an explicit release-owner-approved descope |
+| External GM validation | `docs/verification/external-gm-validation.md` | https://github.com/Vermath/open-tabletop-engine/issues/5 | Unaffiliated or owner-approved GM validation with matching verifier target, tester role, relationship to project, setup path, scenario data, workflows completed, result, and issue-reporting feedback, or an explicit release-owner-approved substitution |
+
 Run `pnpm v1:issues:check` before final acceptance to verify the live open-issue list still has no P0/P1 labels.
 
 For a command-line summary of the remaining owner-supplied evidence, run:
