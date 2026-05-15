@@ -79,6 +79,24 @@ Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are usefu
 - Docs Site deploy result: skipped on PR
 - Notes: This confirms the remote PR head checks were green, but the local branch has additional unpushed commits. Final acceptance still needs hosted release-smoke and docs evidence tied to the final verifier target commit.
 
+## Hosted Workflow Evidence: Release Smoke
+
+- Date: 2026-05-15
+- Operator: Codex
+- Workflow file: `.github/workflows/release-smoke.yml`
+- Trigger: pull_request
+- Branch or ref: `v1-gap-closure-evidence`
+- Commit SHA: `87b0190b573302d7e5c2c3d503066c1f7b21ce30`
+- Run URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25914505406
+- Job URL: https://github.com/Vermath/open-tabletop-engine/actions/runs/25914505406/job/76167682085
+- Result: pass
+- Release command or build command: `pnpm release:smoke`
+- Duration: 11m 53s
+- Required checks observed: `Run release smoke` completed successfully after dependency install and Playwright Chromium setup, including the release-smoke issue audit step.
+- Issues filed: none
+- Blockers: none for hosted release-smoke CI on this PR run
+- Notes: PR evidence for `https://github.com/Vermath/open-tabletop-engine/pull/1`. If this evidence document is committed after the hosted workflow run, set `OTTE_RELEASE_COMMIT=87b0190b573302d7e5c2c3d503066c1f7b21ce30` before running final acceptance gates.
+
 ## Required Hosted Runs
 
 Collect evidence for both workflows before final v1 acceptance:
