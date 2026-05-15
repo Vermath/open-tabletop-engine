@@ -890,8 +890,11 @@ function runHandoffReportsIncompleteVerifierStatus() {
     const result = runHandoff(root);
     assert(result.status === 0, "handoff should exit successfully even when evidence is incomplete");
     assert(result.stdout.includes("Current evidence verifier status:"), "handoff should print verifier status");
+    assert(result.stdout.includes("Aggregate completion audit:"), "handoff should mention the aggregate completion audit");
+    assert(result.stdout.includes("pnpm v1:completion:audit"), "handoff should point to the aggregate completion audit");
     assert(result.stdout.includes("Open issue gate:"), "handoff should mention the open issue gate");
     assert(result.stdout.includes("pnpm v1:issues:check"), "handoff should point to the open issue audit");
+    assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:completion:audit"), "handoff should show hosted-run aggregate audit");
     assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check"), "handoff should not imply the current docs commit is the hosted run target");
     assert(result.stdout.includes("Checklist: docs/release/v1-release-checklist.md"), "handoff should point to the release checklist");
     assert(result.stdout.includes("Handoff: docs/verification/v1-release-owner-handoff.md"), "handoff should point to the owner handoff");
@@ -904,7 +907,7 @@ function runHandoffReportsIncompleteVerifierStatus() {
     assert(result.stdout.includes("HTTPS published URL"), "handoff should mention HTTPS docs publication URLs");
     assert(result.stdout.includes("`pnpm docs:site:check` command parity"), "handoff should mention docs publication command parity");
     assert(result.stdout.includes("v1 release evidence is incomplete: 5 blocker(s) remain."), "handoff should include incomplete verifier output");
-    assert(result.stdout.includes("Handoff command exits 0; run `pnpm v1:evidence:check` for the enforced release gate."), "handoff should distinguish guidance from enforcement");
+    assert(result.stdout.includes("Handoff command exits 0; run `pnpm v1:completion:audit` for the aggregate release gate and `pnpm v1:evidence:check` for the enforced evidence gate."), "handoff should distinguish guidance from enforcement");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

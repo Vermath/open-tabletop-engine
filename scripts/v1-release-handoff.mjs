@@ -11,12 +11,15 @@ if (!/^[0-9a-f]{40}$/i.test(commit.trim())) {
 
 console.log(`v1 release-owner handoff for ${commit} (${commitSource})`);
 console.log("");
+console.log("Aggregate completion audit:");
+console.log("  pnpm v1:completion:audit");
 console.log("Final evidence verifier:");
 console.log("  pnpm v1:evidence:check");
 console.log("Open issue gate:");
 console.log("  pnpm v1:issues:check");
 console.log("");
 console.log("If evidence docs are committed after the hosted workflow run:");
+console.log("  OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:completion:audit");
 console.log("  OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check");
 console.log("");
 console.log("Remaining owner-supplied evidence:");
@@ -60,7 +63,7 @@ function printVerifierStatus() {
   if (result.status === 0) {
     console.log("Evidence verifier is complete for the checked commit.");
   } else {
-    console.log(`Evidence verifier still reports blockers for the checked commit. Handoff command exits 0; run \`pnpm v1:evidence:check\` for the enforced release gate.`);
+    console.log(`Evidence verifier still reports blockers for the checked commit. Handoff command exits 0; run \`pnpm v1:completion:audit\` for the aggregate release gate and \`pnpm v1:evidence:check\` for the enforced evidence gate.`);
   }
 }
 
