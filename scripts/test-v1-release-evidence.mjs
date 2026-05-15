@@ -558,6 +558,7 @@ function runFailsWithWrongReleaseSmokeCommand() {
     const result = runChecker(root);
     assert(result.status === 1, "release-smoke evidence without exact command parity should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "wrong release-smoke command should fail the hosted smoke gate");
+    assert(result.stdout.includes("concrete HTTPS hosted run URL"), "release-smoke failure should name required HTTPS run URL evidence");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
