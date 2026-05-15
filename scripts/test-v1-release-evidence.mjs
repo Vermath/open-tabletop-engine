@@ -780,6 +780,8 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   assert(result.stdout.includes("- Command: pnpm identity:smoke"), "identity template should preserve the verifier command field");
   assert(result.stdout.includes("- Release command or build command: pnpm release:smoke"), "release-smoke template should preserve command parity");
   assert(result.stdout.includes("- Release command or build command: pnpm docs:site:check"), "docs publication template should preserve command parity");
+  assert(result.stdout.includes("- Run URL: https://"), "hosted evidence templates should prompt for HTTPS run URLs");
+  assert(result.stdout.includes("- Published URL, if docs-site deploy: https://"), "docs publication template should prompt for an HTTPS published URL");
   for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS VoiceOver", "Android TalkBack"]) {
     assert(result.stdout.includes(`## Assistive Technology Pass: ${environment}`), `templates should include ${environment}`);
   }
