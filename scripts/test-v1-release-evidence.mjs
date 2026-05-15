@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { releaseEvidenceGates } from "./v1-release-gates.mjs";
+import { releaseEvidenceGates, requiredAssistiveTechnologyEnvironments } from "./v1-release-gates.mjs";
 
 const repoRoot = process.cwd();
 const commit = "1234567890abcdef1234567890abcdef12345678";
@@ -849,8 +849,8 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   assert(result.stdout.includes("- Owner-approved descope: <explicit owner approval summary>"), "manual templates should use a non-evidence owner-approval placeholder");
   assert(result.stdout.includes("- Owner-approved substitution: <explicit owner approval summary>"), "GM template should use a non-evidence owner-approval placeholder");
   assert(!result.stdout.includes("Release owner accepted/approved ..."), "templates should not include approval-like placeholder text");
-  for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS/iPadOS VoiceOver", "Android TalkBack"]) {
-    assert(result.stdout.includes(`## Assistive Technology Pass: ${environment}`), `templates should include ${environment}`);
+  for (const environment of requiredAssistiveTechnologyEnvironments) {
+    assert(result.stdout.includes(`## Assistive Technology Pass: ${environment.label}`), `templates should include ${environment.label}`);
   }
   for (const gate of releaseEvidenceGates) {
     assert(result.stdout.includes(`Evidence file: ${gate.evidence}`), `templates should include destination for ${gate.name}`);
@@ -943,6 +943,7 @@ function runHandoffGateMetadataMatchesVerifier() {
     assert(handoffResult.status === 0, "handoff should run for gate metadata check");
     assert(verifierResult.status === 1, "verifier should report incomplete fixture for gate metadata check");
     assert(new Set(releaseEvidenceGates.map((gate) => gate.id)).size === releaseEvidenceGates.length, "release evidence gate ids should be unique");
+    assert(requiredAssistiveTechnologyEnvironments.length === 5, "assistive-technology matrix should require five environments");
     for (const gate of releaseEvidenceGates) {
       assert(gate.id, `gate ${gate.name} should define a stable id`);
       assert(handoffResult.stdout.includes(gate.name), `handoff should list gate ${gate.name}`);

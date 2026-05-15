@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { releaseEvidenceGateById } from "./v1-release-gates.mjs";
+import { releaseEvidenceGateById, requiredAssistiveTechnologyEnvironments } from "./v1-release-gates.mjs";
 
 const repoRoot = process.cwd();
 const evidenceRoot = process.env.OTTE_EVIDENCE_ROOT ?? repoRoot;
@@ -72,13 +72,6 @@ function checkIdentityProviderSmoke() {
 function checkAssistiveTechnologyPass() {
   const releaseGate = gate("assistive-technology");
   const doc = evidence(releaseGate);
-  const required = [
-    { label: "Windows NVDA", pattern: /\bwindows\b[\s\S]*\bnvda\b|\bnvda\b[\s\S]*\bwindows\b/i },
-    { label: "Windows Narrator", pattern: /\bwindows\b[\s\S]*\bnarrator\b|\bnarrator\b[\s\S]*\bwindows\b/i },
-    { label: "macOS VoiceOver", pattern: /\bmacos\b[\s\S]*\bvoiceover\b|\bvoiceover\b[\s\S]*\bmacos\b/i },
-    { label: "iOS/iPadOS VoiceOver", pattern: /\bios\b[\s\S]*\bvoiceover\b|\bipados\b[\s\S]*\bvoiceover\b|\bvoiceover\b[\s\S]*\bios\b|\bvoiceover\b[\s\S]*\bipados\b/i },
-    { label: "Android TalkBack", pattern: /\bandroid\b[\s\S]*\btalkback\b|\btalkback\b[\s\S]*\bandroid\b/i }
-  ];
   const sections = sectionsFor(doc, "Assistive Technology Pass").filter((section) => !placeholder(section.title));
   const accepted = new Set();
 
@@ -92,13 +85,13 @@ function checkAssistiveTechnologyPass() {
     if (!meaningfulField(field(section.body, "Scenario data"))) continue;
     if (!meaningfulField(field(section.body, "Workflows completed"))) continue;
     const haystack = `${section.title}\n${section.body}`.toLowerCase();
-    const matched = required.filter((environment) => environment.pattern.test(haystack));
+    const matched = requiredAssistiveTechnologyEnvironments.filter((environment) => environment.pattern.test(haystack));
     if (matched.length !== 1) continue;
     accepted.add(matched[0].label);
   }
 
   const hasOwnerSubstitution = explicitOwnerOverride(doc);
-  const missing = required.map((environment) => environment.label).filter((environment) => !accepted.has(environment));
+  const missing = requiredAssistiveTechnologyEnvironments.map((environment) => environment.label).filter((environment) => !accepted.has(environment));
   return result(releaseGate.verifierName, missing.length === 0 || hasOwnerSubstitution, [
     `Missing pass evidence for: ${missing.join(", ") || "none"}.`,
     "Add one non-template pass or pass-with-issues evidence block per required environment, tied to the checked release commit, with browser, assistive technology, input method, scenario data, and workflows completed; or record an owner-approved substitution/descope."

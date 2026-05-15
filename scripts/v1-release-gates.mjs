@@ -1,3 +1,13 @@
+export const requiredAssistiveTechnologyEnvironments = [
+  { label: "Windows NVDA", pattern: /\bwindows\b[\s\S]*\bnvda\b|\bnvda\b[\s\S]*\bwindows\b/i },
+  { label: "Windows Narrator", pattern: /\bwindows\b[\s\S]*\bnarrator\b|\bnarrator\b[\s\S]*\bwindows\b/i },
+  { label: "macOS VoiceOver", pattern: /\bmacos\b[\s\S]*\bvoiceover\b|\bvoiceover\b[\s\S]*\bmacos\b/i },
+  { label: "iOS/iPadOS VoiceOver", pattern: /\bios\b[\s\S]*\bvoiceover\b|\bipados\b[\s\S]*\bvoiceover\b|\bvoiceover\b[\s\S]*\bios\b|\bvoiceover\b[\s\S]*\bipados\b/i },
+  { label: "Android TalkBack", pattern: /\bandroid\b[\s\S]*\btalkback\b|\btalkback\b[\s\S]*\bandroid\b/i }
+];
+
+const requiredAssistiveTechnologyLabels = requiredAssistiveTechnologyEnvironments.map((environment) => environment.label).join(", ");
+
 export const releaseEvidenceGates = [
   {
     id: "identity-provider",
@@ -14,7 +24,7 @@ export const releaseEvidenceGates = [
     verifierName: "Manual assistive-technology matrix",
     publicDocsTerm: "assistive-technology",
     ownerAction:
-      "Record one pass or pass-with-issues evidence section for each required environment with browser, assistive technology, input method, scenario data, and workflows completed: Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack; alternatively record an explicit owner-approved descope.",
+      `Record one pass or pass-with-issues evidence section for each required environment with browser, assistive technology, input method, scenario data, and workflows completed: ${requiredAssistiveTechnologyLabels}; alternatively record an explicit owner-approved descope.`,
     evidence: "docs/verification/accessibility-assistive-tech-pass.md"
   },
   {

@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { releaseEvidenceGateById } from "./v1-release-gates.mjs";
+import { releaseEvidenceGateById, requiredAssistiveTechnologyEnvironments } from "./v1-release-gates.mjs";
 
 const commit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
 const today = new Date().toISOString().slice(0, 10);
@@ -35,15 +35,15 @@ section(gate("identity-provider"), `Identity Provider Smoke: <provider and sandb
   ["Notes", ""]
 ]);
 
-for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS/iPadOS VoiceOver", "Android TalkBack"]) {
-  section(gate("assistive-technology"), `Assistive Technology Pass: ${environment}`, [
+for (const environment of requiredAssistiveTechnologyEnvironments) {
+  section(gate("assistive-technology"), `Assistive Technology Pass: ${environment.label}`, [
     ["Date", today],
     ["Tester", ""],
     ["App build or commit", commit],
     ["API URL", ""],
     ["Web URL", ""],
     ["Browser", ""],
-    ["Assistive technology", environment],
+    ["Assistive technology", environment.label],
     ["Input method", ""],
     ["Scenario data", ""],
     ["Result", "pass / pass with issues / fail"],
