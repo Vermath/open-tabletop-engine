@@ -100,7 +100,8 @@ function checkHostedReleaseSmoke() {
     (section) =>
       field(section.body, "Result").toLowerCase() === "pass" &&
       shaMatches(field(section.body, "Commit SHA"), currentCommit) &&
-      /pnpm release:smoke/.test(field(section.body, "Release command or build command"))
+      /pnpm release:smoke/.test(field(section.body, "Release command or build command")) &&
+      /^https?:\/\//i.test(field(section.body, "Run URL"))
   );
 
   return result("Hosted release-smoke on final commit", pass, [
@@ -116,10 +117,12 @@ function checkDocsPublication() {
     const body = section.body;
     const resultText = field(body, "Result").toLowerCase();
     const commitSha = field(body, "Commit SHA");
+    const runUrl = field(body, "Run URL");
     const publishedUrl = field(body, "Published URL, if docs-site deploy");
     return (
       resultText.includes("pass") &&
       shaMatches(commitSha, currentCommit) &&
+      /^https?:\/\//i.test(runUrl) &&
       /^https?:\/\//i.test(publishedUrl) &&
       !/not published|skipped|blocked/i.test(body) &&
       (/deploy|publication/i.test(section.title) || /owner-approved equivalent hosted publication/i.test(body))

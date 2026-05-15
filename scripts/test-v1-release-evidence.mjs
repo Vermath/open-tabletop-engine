@@ -18,6 +18,7 @@ runFailsWithPlaceholderOwnerOverrides();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
+runFailsWithHostedEvidenceMissingRunUrl();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
 runHandoffReportsIncompleteVerifierStatus();
@@ -163,6 +164,21 @@ Published URL, if docs-site deploy: https://docs.example.test/open-tabletop
     const result = runChecker(root);
     assert(result.status === 1, "prose-only docs publication override should fail");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "prose-only docs publication should not satisfy publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithHostedEvidenceMissingRunUrl() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow.replace("- Run URL: https://github.example.test/run/1\n", "").replace("- Run URL: https://github.example.test/run/2\n", "");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "hosted evidence without run URLs should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "missing release-smoke run URL should fail the hosted smoke gate");
+    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "missing docs run URL should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
