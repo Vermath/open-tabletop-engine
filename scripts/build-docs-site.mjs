@@ -46,6 +46,7 @@ if (process.argv.includes("--check")) {
     "CHANGELOG.html",
     "docs/site/index.html",
     "docs/release/v1.0.html",
+    "docs/release/v1-release-checklist.html",
     "docs/deployment/hosted-deployment-recipes.html",
     "docs/prd-v1-gap-closure.html",
     "docs/verification/v1-gap-closure-completion-audit.html",
