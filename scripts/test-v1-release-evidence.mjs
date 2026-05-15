@@ -45,6 +45,7 @@ runFailsWithLocalHostedUrls();
 runFailsWithPrivateHostedUrls();
 runFailsWithLocalNetworkHostedUrls();
 runFailsWithReservedHostedUrls();
+runFailsWithCredentialHostedUrls();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
 runHandoffReportsIncompleteVerifierStatus();
@@ -688,6 +689,24 @@ function runFailsWithReservedHostedUrls() {
     assert(result.status === 1, "reserved hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "reserved release-smoke run URL should fail the hosted smoke gate");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "reserved docs URLs should fail the docs publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithCredentialHostedUrls() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/1", "https://user:token@github.com/Vermath/open-tabletop-engine/actions/runs/1")
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/2", "https://user:token@github.com/Vermath/open-tabletop-engine/actions/runs/2")
+    .replace("https://vermath.github.io/open-tabletop-engine", "https://user:token@vermath.github.io/open-tabletop-engine");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "credential-bearing hosted URLs should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "credential-bearing release-smoke run URL should fail the hosted smoke gate");
+    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "credential-bearing docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

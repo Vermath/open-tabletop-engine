@@ -229,6 +229,8 @@ function validHttpUrl(value) {
     return (
       ["http:", "https:"].includes(url.protocol) &&
       Boolean(url.hostname) &&
+      !url.username &&
+      !url.password &&
       !placeholderHost(url.hostname) &&
       !localHost(url.hostname) &&
       !localNetworkName(url.hostname) &&
