@@ -894,12 +894,11 @@ function runHandoffReportsIncompleteVerifierStatus() {
     assert(result.stdout.includes("pnpm v1:completion:audit"), "handoff should point to the aggregate completion audit");
     assert(result.stdout.includes("Open issue gate:"), "handoff should mention the open issue gate");
     assert(result.stdout.includes("pnpm v1:issues:check"), "handoff should point to the open issue audit");
-    assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:completion:audit"), "handoff should show hosted-run aggregate audit");
-    assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check"), "handoff should not imply the current docs commit is the hosted run target");
+    assert(result.stdout.includes("$env:OTTE_RELEASE_COMMIT = \"<full-40-character-hosted-run-commit-sha>\""), "handoff should show PowerShell hosted-run target setup");
+    assert(result.stdout.includes("pnpm v1:evidence:check"), "handoff should not imply the current docs commit is the hosted run target");
     assert(result.stdout.includes("Checklist: docs/release/v1-release-checklist.md"), "handoff should point to the release checklist");
     assert(result.stdout.includes("Handoff: docs/verification/v1-release-owner-handoff.md"), "handoff should point to the owner handoff");
     assert(result.stdout.includes("pnpm v1:evidence:templates"), "handoff should point to the evidence template generator");
-    assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:templates"), "handoff should show hosted-run template generation");
     assert(result.stdout.includes("non-placeholder API host/provider/sandbox/smoke-target details"), "handoff should mention identity provider detail fields");
     assert(result.stdout.includes("one pass or pass-with-issues evidence section for each required environment with browser, assistive technology, input method, scenario data, and workflows completed"), "handoff should mention distinct AT evidence details");
     assert(result.stdout.includes("tester role, relationship to project, setup path, scenario data, workflows completed"), "handoff should mention external GM scenario fields");

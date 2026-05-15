@@ -19,8 +19,9 @@ console.log("Open issue gate:");
 console.log("  pnpm v1:issues:check");
 console.log("");
 console.log("If evidence docs are committed after the hosted workflow run:");
-console.log("  OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:completion:audit");
-console.log("  OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check");
+console.log("  $env:OTTE_RELEASE_COMMIT = \"<full-40-character-hosted-run-commit-sha>\"");
+console.log("  pnpm v1:completion:audit");
+console.log("  pnpm v1:evidence:check");
 console.log("");
 console.log("Remaining owner-supplied evidence:");
 
@@ -36,7 +37,8 @@ console.log("  Checklist: docs/release/v1-release-checklist.md");
 console.log("  Handoff: docs/verification/v1-release-owner-handoff.md");
 console.log("Ready-to-fill evidence templates:");
 console.log("  pnpm v1:evidence:templates");
-console.log("  OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:templates");
+console.log("  $env:OTTE_RELEASE_COMMIT = \"<full-40-character-hosted-run-commit-sha>\"");
+console.log("  pnpm v1:evidence:templates");
 console.log("");
 printVerifierStatus();
 
