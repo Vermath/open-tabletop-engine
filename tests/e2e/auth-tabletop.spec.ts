@@ -1567,6 +1567,7 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const suffix = Date.now().toString(36);
   const target = await createRulesTargetActor(page, { name: `E2E Rules Target ${suffix}`, hp: { current: 100, max: 100 } });
   const cleric = await createSystemCharacter(page, { templateId: "cleric", name: `E2E Cleric ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
+  const bard = await createSystemCharacter(page, { templateId: "bard", name: `E2E Bard ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const sorcerer = await createSystemCharacter(page, { templateId: "sorcerer", name: `E2E Sorcerer ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const warlock = await createSystemCharacter(page, { templateId: "warlock", name: `E2E Warlock ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const barbarian = await createSystemCharacter(page, { templateId: "barbarian", name: `E2E Barbarian ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
@@ -1575,6 +1576,7 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const ranger = await createSystemCharacter(page, { templateId: "ranger", name: `E2E Ranger ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const rogue = await createSystemCharacter(page, { templateId: "rogue", name: `E2E Rogue ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   await createSceneToken(page, { name: `E2E Cleric Token ${suffix}`, actorId: cleric.id, x: 290, y: 330, ownerUserIds: ["usr_demo_player"] });
+  await createSceneToken(page, { name: `E2E Bard Token ${suffix}`, actorId: bard.id, x: 260, y: 390, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Sorcerer Token ${suffix}`, actorId: sorcerer.id, x: 320, y: 390, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Warlock Token ${suffix}`, actorId: warlock.id, x: 380, y: 390, ownerUserIds: ["usr_demo_player"] });
   await createSceneToken(page, { name: `E2E Barbarian Token ${suffix}`, actorId: barbarian.id, x: 350, y: 330, ownerUserIds: ["usr_demo_player"] });
@@ -1645,6 +1647,21 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeHex);
+
+  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: bard.name });
+  await expect(page.getByText("Token updated")).toBeVisible();
+  await expect(page.getByRole("heading", { name: `E2E Bard ${suffix}` })).toBeVisible();
+  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  const healingWordCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Healing Word Healing" }).first();
+  await expect(healingWordCard).toContainText("effect supported");
+  const targetHpBeforeHealingWord = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
+  await healingWordCard.getByRole("button", { name: "Use action" }).click();
+  await expect(page.getByText(new RegExp(`E2E Bard ${suffix} used action: Level 1 Spell Slot \\d+; healing applied`))).toBeVisible();
+  await expect
+    .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
+    .toBeGreaterThan(targetHpBeforeHealingWord);
 
   await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: monk.name });
   await expect(page.getByText("Token updated")).toBeVisible();
