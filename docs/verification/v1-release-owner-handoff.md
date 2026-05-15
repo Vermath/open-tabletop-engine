@@ -30,7 +30,7 @@ pnpm v1:evidence:templates
 | Assistive-technology acceptance | Run or delegate NVDA, Narrator, VoiceOver, iOS/iPadOS VoiceOver, and TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` | Every required environment has pass evidence, or an explicit owner-approved substitution/descope is recorded |
 | External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` | Clean install or hosted access, campaign/session flow, issue-reporting feedback, and pass/fail outcome are recorded |
 | Hosted release-smoke refresh | Push the final release candidate and rerun `.github/workflows/release-smoke.yml` | `docs/verification/release-workflow-evidence.md` | `pnpm release:smoke` passes on the final release commit or owner-approved successor |
-| Public docs publication | Enable GitHub Pages for the repo, make the repo/plan support Pages, or approve an equivalent hosted publication | `docs/verification/release-workflow-evidence.md` | Docs build and deploy complete for the release commit and the published URL is recorded |
+| Public docs publication | Enable GitHub Pages for the repo, make the repo/plan support Pages, or approve an equivalent hosted publication | `docs/verification/release-workflow-evidence.md` | Docs build and deploy complete for the release commit; run URL, commit SHA, and published URL are recorded |
 
 ## Identity Provider Smoke
 
