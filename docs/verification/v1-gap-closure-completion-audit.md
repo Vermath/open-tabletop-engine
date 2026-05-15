@@ -2,6 +2,7 @@
 
 Date: 2026-05-14
 Status: incomplete; local product/code coverage is at the current v1 threshold, but external/manual release evidence is still pending.
+Last refreshed: 2026-05-15.
 
 ## Objective
 
@@ -40,6 +41,12 @@ Close the release gaps tracked in `docs/prd-v1-gap-closure.md` so v1 can be decl
 - Live provider-specific OIDC/SCIM sandbox pass using real release-owner credentials, recorded with `docs/verification/identity-provider-smoke-evidence.md`.
 - Completed assistive-technology pass evidence for the required screen-reader/device matrix.
 - Live successful GitHub Pages docs-site publication run, recorded with `docs/verification/release-workflow-evidence.md`; current attempt is blocked by GitHub plan support for Pages on this private repository unless the owner enables supported Pages or approves an equivalent hosted publication.
+
+## Latest Audit Refresh
+
+- 2026-05-15 `pnpm identity:smoke`: command completed, but the only identity-provider test was skipped because no live OIDC/SCIM sandbox environment is configured; this is not final provider-readiness evidence.
+- 2026-05-15 `pnpm docs:site:check`: passed locally.
+- 2026-05-15 `git diff --check`: passed locally.
 
 ## Conclusion
 
