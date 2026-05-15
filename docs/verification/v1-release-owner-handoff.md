@@ -36,8 +36,8 @@ pnpm v1:evidence:templates
 | Live OIDC/SCIM provider readiness | Provide a real Okta, Microsoft Entra ID, Google Workspace, or equivalent sandbox plus redacted smoke output | `docs/verification/identity-provider-smoke-evidence.md` | `pnpm identity:smoke` exits `0` without skipping, and the evidence block records exact command parity, matching commit, non-placeholder API host, provider, sandbox label, smoke target, passing OIDC discovery/test result, and passing SCIM ServiceProviderConfig result |
 | Assistive-technology acceptance | Run or delegate Windows NVDA, Windows Narrator, macOS VoiceOver, iOS/iPadOS VoiceOver, and Android TalkBack passes | `docs/verification/accessibility-assistive-tech-pass.md` | Every required environment has its own pass or pass-with-issues evidence section tied to the verifier target commit with browser, assistive technology, input method, scenario data, and workflows completed, or an explicit owner-approved substitution/descope is recorded |
 | External GM validation | Have an unaffiliated or owner-approved GM run the v1 release-candidate flow | `docs/verification/external-gm-validation.md` | Matching commit, tester role, relationship to project, setup path, scenario data, workflows completed, pass/pass-with-issues outcome, and issue-reporting feedback are recorded |
-| Hosted release-smoke refresh | Push the final release candidate and rerun `.github/workflows/release-smoke.yml` | `docs/verification/release-workflow-evidence.md` | `pnpm release:smoke` passes on the verifier target commit, with exact command parity and a concrete hosted run URL recorded |
-| Public docs publication | Enable GitHub Pages for the repo, make the repo/plan support Pages, or approve an equivalent hosted publication | `docs/verification/release-workflow-evidence.md` | Docs build and deploy complete for the release commit; concrete run URL, commit SHA, exact `pnpm docs:site:check` command parity, and published URL are recorded |
+| Hosted release-smoke refresh | Push the final release candidate and rerun `.github/workflows/release-smoke.yml` | `docs/verification/release-workflow-evidence.md` | `pnpm release:smoke` passes on the verifier target commit, with exact command parity and a concrete HTTPS hosted run URL recorded |
+| Public docs publication | Enable GitHub Pages for the repo, make the repo/plan support Pages, or approve an equivalent hosted publication | `docs/verification/release-workflow-evidence.md` | Docs build and deploy complete for the release commit; concrete HTTPS run URL, commit SHA, exact `pnpm docs:site:check` command parity, and published HTTPS URL are recorded |
 
 ## Identity Provider Smoke
 
@@ -81,7 +81,7 @@ Preferred path:
 
 Equivalent hosted publication is acceptable only if the owner records:
 
-- Hosting provider and published URL.
+- Hosting provider and HTTPS published URL.
 - Release commit SHA.
 - Exact command parity with `pnpm docs:site:check`.
 - Confirmation that the public site exposes no secrets, local paths, provider tokens, or private evidence attachments.
@@ -92,7 +92,7 @@ The PRD's v1 release-candidate milestone calls for external GM validation in add
 
 ## Hosted Release-Smoke Refresh
 
-The existing hosted release-smoke run proves the workflow shape, but it predates the current local-only commits. Before final acceptance, rerun hosted release smoke on the verifier target commit and update `docs/verification/release-workflow-evidence.md` with the run URL, commit SHA, result, and exact `pnpm release:smoke` command.
+The existing hosted release-smoke run proves the workflow shape, but it predates the current local-only commits. Before final acceptance, rerun hosted release smoke on the verifier target commit and update `docs/verification/release-workflow-evidence.md` with the HTTPS run URL, commit SHA, result, and exact `pnpm release:smoke` command.
 
 ## Final Release Check
 

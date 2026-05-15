@@ -47,6 +47,7 @@ runFailsWithLocalNetworkHostedUrls();
 runFailsWithReservedHostedUrls();
 runFailsWithCredentialHostedUrls();
 runFailsWithSensitiveParamHostedUrls();
+runFailsWithHttpHostedUrls();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
 runHandoffReportsIncompleteVerifierStatus();
@@ -726,6 +727,24 @@ function runFailsWithSensitiveParamHostedUrls() {
     assert(result.status === 1, "sensitive-param hosted URLs should fail");
     assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "sensitive-param release-smoke run URL should fail the hosted smoke gate");
     assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "sensitive-param docs URLs should fail the docs publication gate");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runFailsWithHttpHostedUrls() {
+  const files = completeEvidence(commit);
+  files.releaseWorkflow = files.releaseWorkflow
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/1", "http://github.com/Vermath/open-tabletop-engine/actions/runs/1")
+    .replace("https://github.com/Vermath/open-tabletop-engine/actions/runs/2", "http://github.com/Vermath/open-tabletop-engine/actions/runs/2")
+    .replace("https://vermath.github.io/open-tabletop-engine", "http://vermath.github.io/open-tabletop-engine");
+  const root = fixtureRoot(files);
+
+  try {
+    const result = runChecker(root);
+    assert(result.status === 1, "non-HTTPS hosted URLs should fail");
+    assert(result.stdout.includes(`No hosted release-smoke pass is recorded for commit ${commit}`), "HTTP release-smoke run URL should fail the hosted smoke gate");
+    assert(result.stdout.includes(`No successful docs-site publication with a published URL is recorded for commit ${commit}`), "HTTP docs URLs should fail the docs publication gate");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
