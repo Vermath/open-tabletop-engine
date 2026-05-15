@@ -887,6 +887,8 @@ function runHandoffReportsIncompleteVerifierStatus() {
     assert(result.stdout.includes("Open issue gate:"), "handoff should mention the open issue gate");
     assert(result.stdout.includes("pnpm v1:issues:check"), "handoff should point to the open issue audit");
     assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:check"), "handoff should not imply the current docs commit is the hosted run target");
+    assert(result.stdout.includes("Checklist: docs/release/v1-release-checklist.md"), "handoff should point to the release checklist");
+    assert(result.stdout.includes("Handoff: docs/verification/v1-release-owner-handoff.md"), "handoff should point to the owner handoff");
     assert(result.stdout.includes("pnpm v1:evidence:templates"), "handoff should point to the evidence template generator");
     assert(result.stdout.includes("OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:templates"), "handoff should show hosted-run template generation");
     assert(result.stdout.includes("non-placeholder API host/provider/sandbox/smoke-target details"), "handoff should mention identity provider detail fields");

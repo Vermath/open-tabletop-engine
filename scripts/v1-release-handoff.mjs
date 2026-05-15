@@ -28,7 +28,9 @@ for (const [index, gate] of releaseEvidenceGates.entries()) {
 }
 
 console.log("");
-console.log("Release-owner checklist: docs/verification/v1-release-owner-handoff.md");
+console.log("Release-owner documents:");
+console.log("  Checklist: docs/release/v1-release-checklist.md");
+console.log("  Handoff: docs/verification/v1-release-owner-handoff.md");
 console.log("Ready-to-fill evidence templates:");
 console.log("  pnpm v1:evidence:templates");
 console.log("  OTTE_RELEASE_COMMIT=<full-40-character-hosted-run-commit-sha> pnpm v1:evidence:templates");
