@@ -55,6 +55,7 @@ runFailsWithSensitiveParamHostedUrls();
 runFailsWithHttpHostedUrls();
 runPassesWithPublicationTitledDocsEvidence();
 runEvidenceTemplatesIncludeVerifierFields();
+runEvidenceTemplatesReportDefaultTargetSource();
 runEvidenceTemplatesRejectShortReleaseTargetCommit();
 runHandoffReportsIncompleteVerifierStatus();
 runHandoffReportsCompleteVerifierStatus();
@@ -865,6 +866,18 @@ function runEvidenceTemplatesIncludeVerifierFields() {
     }
   }
   assert(result.stdout.includes("Do not mark Result as pass until the matching evidence has actually been collected."), "templates should warn against treating placeholders as pass evidence");
+}
+
+function runEvidenceTemplatesReportDefaultTargetSource() {
+  const { OTTE_RELEASE_COMMIT, ...envWithoutReleaseCommit } = process.env;
+  const result = spawnSync(process.execPath, [templates], {
+    cwd: repoRoot,
+    env: envWithoutReleaseCommit,
+    encoding: "utf8"
+  });
+
+  assert(result.status === 0, "evidence template generator should exit successfully with default git target");
+  assert(result.stdout.includes("Template target source: git rev-parse HEAD"), "templates should identify default git target source");
 }
 
 function runEvidenceTemplatesRejectShortReleaseTargetCommit() {
