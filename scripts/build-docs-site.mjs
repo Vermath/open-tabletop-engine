@@ -49,6 +49,11 @@ if (process.argv.includes("--check")) {
     console.error(`Docs site build missing required outputs: ${missing.join(", ")}`);
     process.exit(1);
   }
+  const brokenLinks = markdownFiles.flatMap((file) => findBrokenMarkdownLinks(file));
+  if (brokenLinks.length > 0) {
+    console.error(`Docs site build found broken markdown links:\n${brokenLinks.join("\n")}`);
+    process.exit(1);
+  }
 }
 
 function collectMarkdown(entry) {
@@ -61,6 +66,23 @@ function collectMarkdown(entry) {
 function htmlOutputPath(relativePath) {
   const normalized = relativePath.replaceAll("\\", "/").replace(/\.md$/i, ".html");
   return join(outputDir, normalized);
+}
+
+function findBrokenMarkdownLinks(file) {
+  const markdown = readFileSync(file, "utf8").replace(/```[\s\S]*?```/g, "");
+  const sourceRelative = relative(root, file).replaceAll("\\", "/");
+  const broken = [];
+  for (const match of markdown.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
+    const href = match[2].trim();
+    if (!href || /^[a-z]+:/i.test(href) || href.startsWith("#")) continue;
+    const [path] = href.split("#");
+    if (!path || !path.endsWith(".md")) continue;
+    const target = join(dirname(file), path);
+    if (!existsSync(target)) {
+      broken.push(`${sourceRelative} -> ${href}`);
+    }
+  }
+  return broken;
 }
 
 function renderPage(relativePath, markdown) {
