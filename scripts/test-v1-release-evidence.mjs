@@ -62,6 +62,7 @@ runHandoffRejectsShortReleaseTargetCommit();
 runHandoffGateMetadataMatchesVerifier();
 runCompletionAuditReportsFailedEvidenceAndContinues();
 runCompletionAuditPassesWhenAllGatesPass();
+runCompletionAuditHonorsReleaseTargetCommit();
 
 console.log("v1 release evidence verifier tests passed.");
 
@@ -999,6 +1000,20 @@ function runCompletionAuditPassesWhenAllGatesPass() {
   }
 }
 
+function runCompletionAuditHonorsReleaseTargetCommit() {
+  const hostedCommit = "abcdefabcdefabcdefabcdefabcdefabcdefabcd";
+  const root = fixtureRoot(completeEvidence(hostedCommit));
+
+  try {
+    const result = runCompletionAudit(root, { releaseCommit: hostedCommit });
+    assert(result.status === 0, "completion audit should pass when evidence matches the supplied release target");
+    assert(result.stdout.includes(`Checking v1 release evidence for commit ${hostedCommit} (OTTE_RELEASE_COMMIT).`), "completion audit should pass the release target to the evidence verifier");
+    assert(result.stdout.includes("v1 completion audit passed."), "completion audit should report success for supplied release target");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function completeEvidence(evidenceCommit) {
   return {
     identity: `# Identity Provider Smoke Evidence
@@ -1146,13 +1161,13 @@ function runHandoff(root, options = {}) {
   });
 }
 
-function runCompletionAudit(root) {
+function runCompletionAudit(root, options = {}) {
   return spawnSync(process.execPath, [completionAudit], {
     cwd: repoRoot,
     env: {
       ...process.env,
       OTTE_EVIDENCE_ROOT: root,
-      OTTE_RELEASE_COMMIT: commit,
+      OTTE_RELEASE_COMMIT: options.releaseCommit ?? commit,
       OTTE_OPEN_ISSUES_JSON: "[]"
     },
     encoding: "utf8"
