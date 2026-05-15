@@ -6,6 +6,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  issues: read
+
 jobs:
   release-smoke:
     name: pnpm release:smoke

@@ -18,6 +18,8 @@ describe("deployment smoke", () => {
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:issues:check");
 
     const workflow = readWorkspaceFile(".github/workflows/release-smoke.yml");
+    expect(workflow).toContain("contents: read");
+    expect(workflow).toContain("issues: read");
     expect(workflow).toContain("pnpm release:smoke");
     expect(workflow).toContain("GH_TOKEN: ${{ github.token }}");
 
