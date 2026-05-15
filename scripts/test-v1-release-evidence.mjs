@@ -9,6 +9,7 @@ const commit = "1234567890abcdef1234567890abcdef12345678";
 const checker = join(repoRoot, "scripts", "check-v1-release-evidence.mjs");
 const templates = join(repoRoot, "scripts", "v1-evidence-templates.mjs");
 const handoff = join(repoRoot, "scripts", "v1-release-handoff.mjs");
+const completionAudit = join(repoRoot, "scripts", "v1-completion-audit.mjs");
 
 runFailsWhenEvidenceIsMissing();
 runPassesWhenEvidenceIsComplete();
@@ -59,6 +60,8 @@ runHandoffReportsIncompleteVerifierStatus();
 runHandoffReportsCompleteVerifierStatus();
 runHandoffRejectsShortReleaseTargetCommit();
 runHandoffGateMetadataMatchesVerifier();
+runCompletionAuditReportsFailedEvidenceAndContinues();
+runCompletionAuditPassesWhenAllGatesPass();
 
 console.log("v1 release evidence verifier tests passed.");
 
@@ -959,6 +962,41 @@ function runHandoffGateMetadataMatchesVerifier() {
   }
 }
 
+function runCompletionAuditReportsFailedEvidenceAndContinues() {
+  const root = fixtureRoot({
+    identity: "# Identity Provider Smoke Evidence\n",
+    assistive: "# Assistive Technology Pass Plan\n",
+    externalGm: "# External GM Validation Evidence\n",
+    releaseWorkflow: "# Release Workflow Evidence\n"
+  });
+
+  try {
+    const result = runCompletionAudit(root);
+    assert(result.status === 1, "completion audit should fail when release evidence is incomplete");
+    assert(result.stdout.includes("FAIL: Final release evidence"), "completion audit should summarize failed evidence");
+    assert(result.stdout.includes("PASS: Open P0/P1 issue audit"), "completion audit should continue through issue gate");
+    assert(result.stdout.includes("PASS: Public docs site guard"), "completion audit should continue through docs gate");
+    assert(result.stderr.includes("v1 completion audit failed: 1 required gate(s) did not pass."), "completion audit should report failed gate count");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runCompletionAuditPassesWhenAllGatesPass() {
+  const root = fixtureRoot(completeEvidence(commit));
+
+  try {
+    const result = runCompletionAudit(root);
+    assert(result.status === 0, "completion audit should pass when evidence, issues, and docs gates pass");
+    assert(result.stdout.includes("PASS: Final release evidence"), "completion audit should summarize evidence pass");
+    assert(result.stdout.includes("PASS: Open P0/P1 issue audit"), "completion audit should summarize issue pass");
+    assert(result.stdout.includes("PASS: Public docs site guard"), "completion audit should summarize docs pass");
+    assert(result.stdout.includes("v1 completion audit passed."), "completion audit should report success");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 function completeEvidence(evidenceCommit) {
   return {
     identity: `# Identity Provider Smoke Evidence
@@ -1101,6 +1139,19 @@ function runHandoff(root, options = {}) {
       ...process.env,
       OTTE_EVIDENCE_ROOT: root,
       OTTE_RELEASE_COMMIT: options.releaseCommit ?? commit
+    },
+    encoding: "utf8"
+  });
+}
+
+function runCompletionAudit(root) {
+  return spawnSync(process.execPath, [completionAudit], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      OTTE_EVIDENCE_ROOT: root,
+      OTTE_RELEASE_COMMIT: commit,
+      OTTE_OPEN_ISSUES_JSON: "[]"
     },
     encoding: "utf8"
   });
