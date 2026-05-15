@@ -30,6 +30,33 @@ const annotationId = "anno_client";
 const organizationMemberId = "orgmem_client";
 
 describe("OpenTabletopClient", () => {
+  it("builds typed realtime websocket helpers", () => {
+    const sockets: Array<{ url: string; protocols?: string | string[] }> = [];
+    class MockWebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        sockets.push({ url: url.toString(), protocols });
+      }
+    }
+
+    const client = new OpenTabletopClient("https://api.test/base", { token: "ots_test" });
+    expect(client.realtimeUrl(campaignId)).toBe("wss://api.test/api/v1/realtime?campaignId=camp_client&sessionToken=ots_test");
+    expect(client.realtimeUrl(campaignId, { token: "override_token" })).toBe("wss://api.test/api/v1/realtime?campaignId=camp_client&sessionToken=override_token");
+
+    const localClient = new OpenTabletopClient("http://localhost:4000", {});
+    expect(localClient.realtimeUrl(campaignId)).toBe("ws://localhost:4000/api/v1/realtime?campaignId=camp_client");
+
+    const socket = client.connectRealtime(campaignId, { WebSocket: MockWebSocket as unknown as typeof WebSocket, protocols: ["otte.v1"] });
+    expect(socket).toBeInstanceOf(MockWebSocket);
+    expect(sockets).toEqual([{ url: "wss://api.test/api/v1/realtime?campaignId=camp_client&sessionToken=ots_test", protocols: ["otte.v1"] }]);
+
+    expect(client.parseRealtimeMessage({ data: "{\"id\":\"evt_client\",\"campaignId\":\"camp_client\",\"type\":\"chat.message.created\",\"timestamp\":\"2026-05-15T00:00:00.000Z\",\"payload\":{\"messageId\":\"msg_client\"}}" } as MessageEvent<string>)).toMatchObject({
+      id: "evt_client",
+      campaignId,
+      type: "chat.message.created",
+      payload: { messageId }
+    });
+  });
+
   it("sends auth headers and request bodies consistently", async () => {
     const requests: Array<{ method: string; url: URL; headers: Record<string, string>; body?: BodyInit | null }> = [];
     const client = new OpenTabletopClient("http://api.test", {

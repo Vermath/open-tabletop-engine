@@ -1,11 +1,21 @@
 import { routes } from "@open-tabletop/api-contracts";
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, FogPreset, FogRegion, Item, JournalEntry, LightSource, MapAsset, OrganizationMember, OrganizationWorkspace, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, Token, User, UserSession, VisionPoint, VisionPointSample, VisionSnapshot, Wall } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, EngineEvent, FogPreset, FogRegion, Item, JournalEntry, LightSource, MapAsset, OrganizationMember, OrganizationWorkspace, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, Token, User, UserSession, VisionPoint, VisionPointSample, VisionSnapshot, Wall } from "@open-tabletop/core";
 
 export interface OpenTabletopClientOptions {
   token?: string;
   userId?: string;
   fetch?: typeof fetch;
 }
+
+export type RealtimeWebSocketConstructor = new (url: string | URL, protocols?: string | string[]) => WebSocket;
+
+export interface OpenTabletopRealtimeOptions {
+  token?: string;
+  WebSocket?: RealtimeWebSocketConstructor;
+  protocols?: string | string[];
+}
+
+export const openTabletopRealtimePath = "/api/v1/realtime";
 
 export interface CampaignInviteInfo {
   id: string;
@@ -109,7 +119,7 @@ export const apiClientExcludedRoutePatterns = [
   { prefix: "/api/v1/admin/", reason: "server-admin operations are intentionally excluded from the reusable public client surface" },
   { prefix: "/api/v1/scim/", reason: "SCIM provisioning is an identity-provider integration surface, not reusable campaign client API" },
   { path: routes.openApi, reason: "OpenAPI contract discovery is consumed at build/test time rather than wrapped as domain behavior" },
-  { path: "/api/v1/realtime", reason: "Realtime uses websocket semantics instead of the REST fetch client" },
+  { path: openTabletopRealtimePath, reason: "Realtime uses websocket helpers instead of REST fetch wrappers" },
   { path: "/api/v1/assets/{assetId}/blob", reason: "Binary asset delivery is intentionally fetched directly from signed URLs or browser media elements" }
 ] as const;
 
@@ -198,6 +208,27 @@ export class OpenTabletopClient {
 
   async bootstrapOwner(input: { email: string; displayName: string; password: string; campaignName: string; campaignDescription?: string; defaultSystemId?: string }): Promise<BootstrapOwnerInfo> {
     return this.post(routes.bootstrap, input);
+  }
+
+  realtimeUrl(campaignId: string, options: Pick<OpenTabletopRealtimeOptions, "token"> = {}): string {
+    const url = new URL(openTabletopRealtimePath, this.baseUrl);
+    if (url.protocol === "http:") url.protocol = "ws:";
+    if (url.protocol === "https:") url.protocol = "wss:";
+    url.searchParams.set("campaignId", campaignId);
+    const token = options.token ?? this.options.token;
+    if (token) url.searchParams.set("sessionToken", token);
+    return url.toString();
+  }
+
+  connectRealtime(campaignId: string, options: OpenTabletopRealtimeOptions = {}): WebSocket {
+    const WebSocketCtor = options.WebSocket ?? globalThis.WebSocket;
+    if (!WebSocketCtor) throw new Error("WebSocket is not available; pass a WebSocket constructor in OpenTabletopRealtimeOptions.");
+    return new WebSocketCtor(this.realtimeUrl(campaignId, options), options.protocols);
+  }
+
+  parseRealtimeMessage<TEvent extends EngineEvent = EngineEvent>(message: string | MessageEvent<string>): TEvent {
+    const data = typeof message === "string" ? message : message.data;
+    return JSON.parse(data) as TEvent;
   }
 
   async organizations(): Promise<OrganizationWorkspaceInfo[]> {

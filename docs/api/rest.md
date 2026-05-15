@@ -612,3 +612,19 @@ Realtime clients connect to:
 ```text
 ws://localhost:4000/api/v1/realtime?campaignId=camp_demo&sessionToken=<token>
 ```
+
+`@open-tabletop/api-client` includes typed realtime helpers for clients that already use the REST wrapper:
+
+```ts
+import type { EngineEvent } from "@open-tabletop/core";
+import { OpenTabletopClient } from "@open-tabletop/api-client";
+
+const client = new OpenTabletopClient("https://api.example.test", { token });
+const socket = client.connectRealtime("camp_demo");
+socket.addEventListener("message", (message) => {
+  const event = client.parseRealtimeMessage<EngineEvent>(message);
+  console.log(event.type, event.targetId);
+});
+```
+
+Use `client.realtimeUrl(campaignId)` when a framework or custom WebSocket implementation owns socket construction.
