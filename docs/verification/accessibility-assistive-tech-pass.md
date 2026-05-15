@@ -49,7 +49,7 @@ A pass is acceptable only when:
 
 ## Evidence Template
 
-Current verifier target for the latest hosted release-smoke/docs publication evidence: `fef76e55042e4f10170442e437e9da3c29e9a4dd`.
+Current verifier target for the latest hosted release-smoke/docs publication evidence: `def4f408a6c48cb297c9f08d04aee375d13fd382`.
 
 Copy one block per environment into the release evidence log:
 
@@ -58,7 +58,7 @@ Copy one block per environment into the release evidence log:
 
 - Date: 2026-05-15
 - Tester:
-- App build or commit: fef76e55042e4f10170442e437e9da3c29e9a4dd
+- App build or commit: def4f408a6c48cb297c9f08d04aee375d13fd382
 - API URL:
 - Web URL:
 - Browser:
@@ -78,7 +78,7 @@ When the release owner explicitly accepts a descope or substitute for part of th
 ## Assistive Technology Owner-Approved Descope: <scope label>
 
 - Date: 2026-05-15
-- App build or commit: fef76e55042e4f10170442e437e9da3c29e9a4dd
+- App build or commit: def4f408a6c48cb297c9f08d04aee375d13fd382
 - Owner-approved descope: Release owner accepted the documented matrix change for this release candidate.
 - Required environments replaced or removed:
 - Reason:
