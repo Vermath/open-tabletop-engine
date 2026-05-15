@@ -21,12 +21,12 @@ const gates = [
   },
   {
     name: "Hosted release smoke",
-    ownerAction: "Record a hosted `pnpm release:smoke` pass for the checked commit with exact command parity and a concrete hosted run URL.",
+    ownerAction: "Record a hosted `pnpm release:smoke` pass for the checked commit with exact command parity and a concrete HTTPS hosted run URL.",
     evidence: "docs/verification/release-workflow-evidence.md"
   },
   {
     name: "Public docs publication",
-    ownerAction: "Publish the docs site from the checked commit and record concrete run URL, published URL, matching commit, pass result, and `pnpm docs:site:check` command parity.",
+    ownerAction: "Publish the docs site from the checked commit and record concrete HTTPS run URL, HTTPS published URL, matching commit, pass result, and `pnpm docs:site:check` command parity.",
     evidence: "docs/verification/release-workflow-evidence.md"
   }
 ];
