@@ -6,6 +6,7 @@ import { join } from "node:path";
 const repoRoot = process.cwd();
 const commit = "1234567890abcdef1234567890abcdef12345678";
 const checker = join(repoRoot, "scripts", "check-v1-release-evidence.mjs");
+const templates = join(repoRoot, "scripts", "v1-evidence-templates.mjs");
 
 runFailsWhenEvidenceIsMissing();
 runPassesWhenEvidenceIsComplete();
@@ -14,6 +15,7 @@ runPassesWithOwnerApprovedManualOverrides();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWithTooShortCommitEvidence();
 runFailsWithProseOnlyDocsPublicationOverride();
+runEvidenceTemplatesIncludeVerifierFields();
 
 console.log("v1 release evidence verifier tests passed.");
 
@@ -123,6 +125,29 @@ Published URL, if docs-site deploy: https://docs.example.test/open-tabletop
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+function runEvidenceTemplatesIncludeVerifierFields() {
+  const result = spawnSync(process.execPath, [templates], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      OTTE_RELEASE_COMMIT: commit
+    },
+    encoding: "utf8"
+  });
+
+  assert(result.status === 0, "evidence template generator should exit successfully");
+  assert(result.stdout.includes(`# v1 Evidence Templates for ${commit}`), "templates should include the checked commit header");
+  assert(result.stdout.includes("- App build or commit: 1234567890abcdef1234567890abcdef12345678"), "manual evidence templates should prefill App build or commit");
+  assert(result.stdout.includes("- Commit SHA: 1234567890abcdef1234567890abcdef12345678"), "hosted evidence templates should prefill Commit SHA");
+  assert(result.stdout.includes("- Command: pnpm identity:smoke"), "identity template should preserve the verifier command field");
+  assert(result.stdout.includes("- Release command or build command: pnpm release:smoke"), "release-smoke template should preserve command parity");
+  assert(result.stdout.includes("- Release command or build command: pnpm docs:site:check"), "docs publication template should preserve command parity");
+  for (const environment of ["Windows NVDA", "Windows Narrator", "macOS VoiceOver", "iOS VoiceOver", "Android TalkBack"]) {
+    assert(result.stdout.includes(`## Assistive Technology Pass: ${environment}`), `templates should include ${environment}`);
+  }
+  assert(result.stdout.includes("Do not mark Result as pass until the matching evidence has actually been collected."), "templates should warn against treating placeholders as pass evidence");
 }
 
 function completeEvidence(evidenceCommit) {
