@@ -49,14 +49,16 @@ A pass is acceptable only when:
 
 ## Evidence Template
 
+Current verifier target for the latest hosted release-smoke/docs publication evidence: `c7a0ccadba0dad11d34e0f0f8c3490c4df4274b7`.
+
 Copy one block per environment into the release evidence log:
 
 ```md
 ## Assistive Technology Pass: <environment>
 
-- Date:
+- Date: 2026-05-15
 - Tester:
-- App build or commit:
+- App build or commit: c7a0ccadba0dad11d34e0f0f8c3490c4df4274b7
 - API URL:
 - Web URL:
 - Browser:
@@ -75,8 +77,8 @@ When the release owner explicitly accepts a descope or substitute for part of th
 ```md
 ## Assistive Technology Owner-Approved Descope: <scope label>
 
-- Date:
-- App build or commit:
+- Date: 2026-05-15
+- App build or commit: c7a0ccadba0dad11d34e0f0f8c3490c4df4274b7
 - Owner-approved descope: Release owner accepted the documented matrix change for this release candidate.
 - Required environments replaced or removed:
 - Reason:
