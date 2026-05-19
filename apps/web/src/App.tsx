@@ -6042,7 +6042,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
   const firstAction = actionOptions[0];
   const previewAction = actionOptions.find((action) => action.rollId === actionPreviewRollId) ?? firstAction;
   const previewActionSupportsEffect = actorActionSupportsEffect(previewAction);
-  const requiredPendingSaves = actionPreview?.pendingSaves?.filter((save) => save.requiredForCommit !== false) ?? [];
+  const requiredPendingSaves = actionPreview?.pendingSaves?.filter((save) => save.requiredForCommit === true) ?? [];
   const missingRequiredSaveOutcomes = requiredPendingSaves.some((save) => !actionSaveOutcomes[save.actorId]);
   const actionPreviewRequiresInput = Boolean(missingRequiredSaveOutcomes || (actionPreview?.pendingChoice && !actionEffectChoice) || (props.actionApplyEffect && actionPreview?.manualResolutionRequired));
   const actionTargetActorId = props.actionTargetActorId || props.actor.id;
@@ -6474,7 +6474,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
                 {actionPreview?.pendingSaves?.map((save) => (
                   <div className="operator-row tool-call-row" key={`action-save-${save.actorId}-${save.ability}-${save.reason}`}>
                     <span>{actionSaveActorName(save.actorId)} {titleCaseLabel(save.ability)} save{save.dc ? ` DC ${save.dc}` : ""}</span>
-                    {save.requiredForCommit !== false ? (
+                    {save.requiredForCommit === true ? (
                       <div className="button-row" role="group" aria-label={`${actionSaveActorName(save.actorId)} ${save.ability} save outcome`}>
                         <button className={actionSaveOutcomes[save.actorId] === "success" ? "ghost-button active" : "ghost-button"} type="button" aria-pressed={actionSaveOutcomes[save.actorId] === "success"} onClick={() => updateActionSaveOutcome(save.actorId, "success")}>
                           <Check size={14} /> Success
