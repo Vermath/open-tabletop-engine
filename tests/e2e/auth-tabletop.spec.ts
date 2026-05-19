@@ -425,7 +425,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(sceneStateComparison).toContainText("Scene diff details");
   await expect(sceneStateComparison).toContainText("Prep drift review");
   await expect(sceneStateComparison).toContainText("Token roster");
-  await expect(sceneStateComparison).toContainText("No token roster drift");
+  await expect(sceneStateComparison).toContainText("Selected-only none; active-only Valen Ash");
   await expect(sceneStateComparison).toContainText("Background asset");
   await page.getByRole("textbox", { name: "Scene search" }).fill("");
   await page.getByRole("button", { name: "Select visible scenes" }).click();
