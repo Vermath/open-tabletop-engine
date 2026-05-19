@@ -1755,7 +1755,11 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const divineSparkCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Divine Spark Damage" }).first();
   await expect(divineSparkCard).toContainText("effect supported");
   const targetHpBeforeDivineSpark = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
-  await divineSparkCard.getByRole("button", { name: "Use action" }).click();
+  await divineSparkCard.getByRole("button", { name: "Preview" }).click();
+  const divineSparkPreview = page.getByRole("region", { name: "Action resolution preview" });
+  await expect(divineSparkPreview).toContainText("Divine Spark Damage");
+  await divineSparkPreview.getByRole("group", { name: `${target.name} constitution save outcome` }).getByRole("button", { name: "Failure" }).click();
+  await divineSparkPreview.getByRole("button", { name: "Use previewed action" }).click();
   await expect(page.getByText(new RegExp(`E2E Cleric ${suffix} used action: Channel Divinity \\d+; damage applied`))).toBeVisible();
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
