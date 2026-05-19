@@ -5,6 +5,10 @@ const auditCommitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT
 
 const checks = [
   {
+    name: "Release worktree cleanliness",
+    command: ["pnpm", "v1:worktree:check"]
+  },
+  {
     name: "Final release evidence",
     command: ["pnpm", "v1:evidence:check"]
   },

@@ -1,0 +1,230 @@
+[
+  {
+    "viewport": "1280x800",
+    "modeChecks": [
+      {
+        "mode": "Live Table",
+        "clientWidth": 1280,
+        "scrollWidth": 1280,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 1280,
+        "shellHeight": null,
+        "workspaceHeight": 800,
+        "sceneBoardHeight": 380,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "Prep",
+        "clientWidth": 1280,
+        "scrollWidth": 1280,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 1280,
+        "shellHeight": null,
+        "workspaceHeight": 800,
+        "sceneBoardHeight": 380,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "AI Studio",
+        "clientWidth": 1280,
+        "scrollWidth": 1280,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 1280,
+        "shellHeight": null,
+        "workspaceHeight": 800,
+        "sceneBoardHeight": null,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "Manage",
+        "clientWidth": 1280,
+        "scrollWidth": 1280,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 1280,
+        "shellHeight": null,
+        "workspaceHeight": 800,
+        "sceneBoardHeight": null,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      }
+    ]
+  },
+  {
+    "viewport": "1000x800",
+    "modeChecks": [
+      {
+        "mode": "Live Table",
+        "clientWidth": 1000,
+        "scrollWidth": 1000,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 1000,
+        "shellHeight": null,
+        "workspaceHeight": 608,
+        "sceneBoardHeight": 170.703125,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "Prep",
+        "clientWidth": 1000,
+        "scrollWidth": 1000,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 1000,
+        "shellHeight": null,
+        "workspaceHeight": 608,
+        "sceneBoardHeight": 94.703125,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "AI Studio",
+        "clientWidth": 1000,
+        "scrollWidth": 1000,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 1000,
+        "shellHeight": null,
+        "workspaceHeight": 608,
+        "sceneBoardHeight": null,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "Manage",
+        "clientWidth": 1000,
+        "scrollWidth": 1000,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 1000,
+        "shellHeight": null,
+        "workspaceHeight": 608,
+        "sceneBoardHeight": null,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      }
+    ]
+  },
+  {
+    "viewport": "760x800",
+    "modeChecks": [
+      {
+        "mode": "Live Table",
+        "clientWidth": 760,
+        "scrollWidth": 760,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 760,
+        "shellHeight": null,
+        "workspaceHeight": 608,
+        "sceneBoardHeight": 154.703125,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "Prep",
+        "clientWidth": 760,
+        "scrollWidth": 760,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 760,
+        "shellHeight": null,
+        "workspaceHeight": 608,
+        "sceneBoardHeight": 136,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "AI Studio",
+        "clientWidth": 760,
+        "scrollWidth": 760,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 760,
+        "shellHeight": null,
+        "workspaceHeight": 608,
+        "sceneBoardHeight": null,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "Manage",
+        "clientWidth": 760,
+        "scrollWidth": 760,
+        "clientHeight": 800,
+        "scrollHeight": 800,
+        "bodyScrollWidth": 760,
+        "shellHeight": null,
+        "workspaceHeight": 608,
+        "sceneBoardHeight": null,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      }
+    ]
+  },
+  {
+    "viewport": "390x844",
+    "modeChecks": [
+      {
+        "mode": "Live Table",
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "clientHeight": 844,
+        "scrollHeight": 844,
+        "bodyScrollWidth": 390,
+        "shellHeight": null,
+        "workspaceHeight": 641.453125,
+        "sceneBoardHeight": 160,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "Prep",
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "clientHeight": 844,
+        "scrollHeight": 844,
+        "bodyScrollWidth": 390,
+        "shellHeight": null,
+        "workspaceHeight": 641.453125,
+        "sceneBoardHeight": 160,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "AI Studio",
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "clientHeight": 844,
+        "scrollHeight": 844,
+        "bodyScrollWidth": 390,
+        "shellHeight": null,
+        "workspaceHeight": 641.453125,
+        "sceneBoardHeight": null,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      },
+      {
+        "mode": "Manage",
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "clientHeight": 844,
+        "scrollHeight": 844,
+        "bodyScrollWidth": 390,
+        "shellHeight": null,
+        "workspaceHeight": 641.453125,
+        "sceneBoardHeight": null,
+        "consoleHeight": null,
+        "horizontalOverflow": false
+      }
+    ]
+  }
+]

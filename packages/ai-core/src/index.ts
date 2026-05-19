@@ -1,5 +1,4 @@
-import type { AiUsageMetrics, EngineState, PermissionName, ProposalChange, Visibility } from "@open-tabletop/core";
-export { OpenAiResponsesProvider, type OpenAiResponsesProviderOptions } from "./openai-responses-provider.js";
+import type { AiUsageMetrics, EngineState, MapAsset, PermissionName, ProposalChange, Visibility } from "@open-tabletop/core";
 
 export interface AiMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -18,7 +17,7 @@ export interface AiToolParameterSchema {
   type: "object";
   properties: Record<string, AiToolJsonSchema>;
   required?: string[];
-  additionalProperties?: boolean;
+  additionalProperties?: boolean | AiToolJsonSchema;
 }
 
 export interface AiToolJsonSchema {
@@ -28,8 +27,10 @@ export interface AiToolJsonSchema {
   items?: AiToolJsonSchema;
   properties?: Record<string, AiToolJsonSchema>;
   required?: string[];
-  additionalProperties?: boolean;
+  additionalProperties?: boolean | AiToolJsonSchema;
 }
+
+type AiRulesSaveOutcome = "success" | "failure";
 
 export interface AiToolContext {
   campaignId: string;
@@ -38,8 +39,20 @@ export interface AiToolContext {
   state: EngineState;
   createProposal(input: { title: string; summary: string; changes: ProposalChange[] }): Promise<string>;
   createMemory(input: { text: string; visibility: Visibility; sourceIds: string[] }): Promise<string>;
+  generateImageAsset(input: {
+    kind: "map" | "token";
+    prompt: string;
+    name: string;
+    folder: string;
+    tags: string[];
+    size?: string;
+    quality?: string;
+    outputFormat?: "png" | "jpeg" | "webp";
+  }): Promise<{ asset: MapAsset; provider: string; model?: string; revisedPrompt?: string; sourcePrompt: string } | { error: string; message?: string; [key: string]: unknown }>;
   rollDice(input: { formula: string; label?: string; visibility: "public" | "gm_only" | "whisper" }): Promise<{ rollId: string; formula: string; label?: string; total: number; visibility: string }>;
-  useActorAction(input: { actorId: string; actionRollId?: string; actionName?: string; targetActorId?: string; applyEffect?: boolean; spellSlotLevel?: number; resourceAmount?: number; useFreeResource?: boolean; visibility: "public" | "gm_only" | "whisper" }): Promise<{
+  useActorAction(input: { actorId: string; actionRollId?: string; actionName?: string; targetActorId?: string; applyEffect?: boolean; spellSlotLevel?: number; resourceAmount?: number; useFreeResource?: boolean; saveOutcomes?: Record<string, AiRulesSaveOutcome>; visibility: "public" | "gm_only" | "whisper" }): Promise<{
+    proposalId: string;
+    changeCount: number;
     actorId: string;
     systemId: string;
     actionRollId: string;
@@ -51,7 +64,9 @@ export interface AiToolContext {
     slotLevel?: number;
     consumed: Array<{ type: string; key: string; label: string; amount: number; remaining: number }>;
     updatedItems: Array<{ id: string; name: string; quantity?: number }>;
-    effect?: { type: "damage" | "healing"; targetActorId: string; targetActorName: string; pool: string; amount: number; before: number; after: number; max: number };
+    effect?: { type: "damage" | "healing" | "condition" | "utility"; targetActorId: string; targetActorName: string; pool?: string; amount?: number; before?: number | string[]; after?: number | string[]; max?: number; damageType?: string; damageTypes?: string[]; effectChoice?: string; choiceKind?: string; resistance?: string[]; immunity?: string[]; vulnerability?: string[]; duration?: string; conditionId?: string; conditionName?: string; alreadyPresent?: boolean };
+    effects?: Array<{ type: "damage" | "healing" | "condition" | "utility"; targetActorId: string; targetActorName: string; pool?: string; amount?: number; before?: number | string[]; after?: number | string[]; max?: number; damageType?: string; damageTypes?: string[]; effectChoice?: string; choiceKind?: string; resistance?: string[]; immunity?: string[]; vulnerability?: string[]; duration?: string; conditionId?: string; conditionName?: string; alreadyPresent?: boolean }>;
+    resolution?: unknown;
   } | { error: string; permission?: PermissionName; [key: string]: unknown }>;
 }
 
@@ -99,21 +114,22 @@ export function buildPermissionFilteredContext(input: {
   permissions: PermissionName[];
 }): PermissionFilteredContext {
   const campaign = input.state.campaigns.find((item) => item.id === input.campaignId);
-  const canReadSecrets = input.permissions.includes("journal.readSecret") || input.permissions.includes("ai.readGmMemory");
+  const canReadJournalSecrets = input.permissions.includes("journal.readSecret");
+  const canReadMemorySecrets = canReadJournalSecrets || input.permissions.includes("ai.readGmMemory");
   const canReadActors = input.permissions.includes("actor.read");
   const canReadScenes = input.permissions.includes("scene.read");
   const canReadCampaign = input.permissions.includes("campaign.read");
   const journals = input.state.journals.filter((item) => item.campaignId === input.campaignId);
-  const visibleJournals = journals.filter((item) => item.visibility === "public" || canReadSecrets);
+  const visibleJournals = journals.filter((item) => item.visibility === "public" || canReadJournalSecrets);
   const memory = input.state.aiMemory
     .filter((item) => item.campaignId === input.campaignId)
-    .filter((item) => item.visibility === "public" || canReadSecrets)
+    .filter((item) => item.visibility === "public" || canReadMemorySecrets)
     .map((item) => ({ text: item.text, visibility: item.visibility, sourceIds: item.sourceIds }));
 
   return {
     campaignId: input.campaignId,
     publicSummary: `${campaign?.name ?? "Unknown campaign"}: ${visibleJournals.map((item) => item.title).join(", ")}`,
-    gmSecrets: canReadSecrets ? journals.filter((item) => item.visibility === "gm_only").map((item) => item.body) : [],
+    gmSecrets: canReadJournalSecrets ? journals.filter((item) => item.visibility === "gm_only").map((item) => item.body) : [],
     memory,
     actors: canReadActors
       ? input.state.actors

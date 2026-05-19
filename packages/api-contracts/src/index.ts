@@ -125,6 +125,8 @@ export const routes = {
   aiToolCallRetry: (campaignId: string, toolCallId: string) => `/api/v1/campaigns/${campaignId}/ai/tool-calls/${toolCallId}/retry`,
   aiSessionRecap: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/session-recap`,
   aiEncounterDesign: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/encounter-design`,
+  aiGenerateMapAsset: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/generate-map-asset`,
+  aiGenerateTokenAsset: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/generate-token-asset`,
   systems: "/api/v1/systems",
   campaignSystems: (campaignId: string) => `/api/v1/campaigns/${campaignId}/systems`,
   campaignSystem: (campaignId: string, systemId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}`,
@@ -408,6 +410,8 @@ const endpointSpecs = [
   ["POST", "/api/v1/ai/memory/{factId}/approve"],
   ["POST", "/api/v1/campaigns/{campaignId}/ai/session-recap"],
   ["POST", "/api/v1/campaigns/{campaignId}/ai/encounter-design"],
+  ["POST", "/api/v1/campaigns/{campaignId}/ai/generate-map-asset"],
+  ["POST", "/api/v1/campaigns/{campaignId}/ai/generate-token-asset"],
   ["GET", routes.plugins],
   ["POST", "/api/v1/plugins/install"],
   ["POST", routes.pluginRegistrySync],
@@ -3092,6 +3096,7 @@ const componentSchemas = {
       width: { type: "number", minimum: 0 },
       height: { type: "number", minimum: 0 },
       rotation: { type: "number" },
+      layer: { type: "string", enum: ["map", "player", "gm"] },
       hidden: { type: "boolean" },
       locked: { type: "boolean" },
       visionEnabled: { type: "boolean" },
@@ -3119,6 +3124,7 @@ const componentSchemas = {
       width: { type: "number", minimum: 0 },
       height: { type: "number", minimum: 0 },
       rotation: { type: "number" },
+      layer: { type: "string", enum: ["map", "player", "gm"] },
       hidden: { type: "boolean" },
       locked: { type: "boolean" },
       visionEnabled: { type: "boolean" },
@@ -3595,7 +3601,7 @@ const componentSchemas = {
     additionalProperties: false,
     required: ["entity", "action", "data"],
     properties: {
-      entity: { type: "string", enum: ["campaign", "scene", "token", "actor", "item", "journal", "chat", "encounter", "combat"] },
+      entity: { type: "string", enum: ["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "encounter", "combat", "asset"] },
       action: { type: "string", enum: ["create", "update", "delete"] },
       id: idSchema,
       data: { type: "object", additionalProperties: true }
@@ -4068,7 +4074,20 @@ const componentSchemas = {
       restType: { type: "string", enum: ["short", "long"] },
       rollId: idSchema,
       ability: stringSchema,
-      visibility: { type: "string", enum: ["public", "gm_only", "whisper"] }
+      visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
+      targetActorId: idSchema,
+      targetActorIds: arrayOf(idSchema),
+      consumeResources: { type: "boolean" },
+      applyEffect: { type: "boolean" },
+      spellSlotLevel: { type: "number" },
+      resourceAmount: { type: "number" },
+      useFreeResource: { type: "boolean" },
+      effectChoice: stringSchema,
+      saveOutcomes: { type: "object", additionalProperties: { type: "string", enum: ["success", "failure"] } },
+      reactionUse: { type: "boolean" },
+      rechargeCheck: { type: "number" },
+      commit: { type: "boolean" },
+      preview: { type: "boolean" }
     }
   },
   SystemActorResponse: {
@@ -4084,15 +4103,20 @@ const componentSchemas = {
   SystemRollResponse: {
     type: "object",
     additionalProperties: true,
-    required: ["roll", "chat", "actor", "sheet"],
+    required: ["actor", "sheet"],
     properties: {
       roll: schemaRef("DiceRoll"),
+      rolls: arrayOf(schemaRef("DiceRoll")),
       chat: schemaRef("ChatMessage"),
+      chatMessages: arrayOf(schemaRef("ChatMessage")),
       actor: schemaRef("Actor"),
+      updatedActors: arrayOf(schemaRef("Actor")),
       sheet: { type: "object", additionalProperties: true },
       quickRoll: { type: "object", additionalProperties: true },
       usage: { type: "object", additionalProperties: true },
-      effect: { type: "object", additionalProperties: true }
+      effect: { type: "object", additionalProperties: true },
+      effects: arrayOf({ type: "object", additionalProperties: true }),
+      resolution: { type: "object", additionalProperties: true }
     }
   },
   SystemEncounterPlanRequest: {

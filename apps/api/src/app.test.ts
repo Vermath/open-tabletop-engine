@@ -8,13 +8,14 @@ import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-table
 import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type CampaignArchive, type ChatMessage, type Combat, type DiceMacro, type DiceRoll, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
-import { buildApp } from "./app.js";
+import { buildApp, type ImageAssetGenerator } from "./app.js";
 import { loadPluginRegistry, pluginSignatureForPackage } from "./plugin-runtime.js";
 import { installedSystems } from "./registries.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 import { MemoryStateStore } from "./store.js";
 
 const authHeaders = { "x-user-id": "usr_demo_gm" };
+const tinyPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axpRz8AAAAASUVORK5CYII=", "base64");
 
 class MemoryAssetStorage implements AssetStorage {
   readonly provider = "s3" as const;
@@ -1778,6 +1779,19 @@ describe("api", () => {
     expect(roll.statusCode).toBe(200);
     expect(roll.json().total).toBeGreaterThanOrEqual(6);
 
+    const invalidRoll = await app.inject({
+      method: "POST",
+      url: "/api/v1/dice/roll",
+      headers: authHeaders,
+      payload: {
+        campaignId: "camp_demo",
+        formula: "1d1",
+        visibility: "public"
+      }
+    });
+    expect(invalidRoll.statusCode).toBe(400);
+    expect(invalidRoll.json().message).toContain("Invalid die sides");
+
     const rolls = await app.inject({
       method: "GET",
       url: "/api/v1/campaigns/camp_demo/rolls",
@@ -2394,7 +2408,8 @@ describe("api", () => {
   });
 
   it("supports a seeded player session without GM permissions", async () => {
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     const playerHeaders = { "x-user-id": "usr_demo_player" };
 
     const session = await app.inject({
@@ -2424,6 +2439,31 @@ describe("api", () => {
     const playerMember = members.json().find((member: { user: { id: string } }) => member.user.id === "usr_demo_player");
     expect(playerMember.permissions).toContain("token.move");
     expect(playerMember.permissions).not.toContain("scene.update");
+
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["token.create"]
+      })
+    );
+    const playerCreatedToken = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: playerHeaders,
+      payload: { name: "Player Placed Lantern", x: 40, y: 40 }
+    });
+    expect(playerCreatedToken.statusCode).toBe(200);
+    expect(playerCreatedToken.json().ownerUserIds).toEqual(["usr_demo_player"]);
+    const movedPlayerCreatedToken = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tokens/${playerCreatedToken.json().id}`,
+      headers: playerHeaders,
+      payload: { x: 55, y: 50 }
+    });
+    expect(movedPlayerCreatedToken.statusCode).toBe(200);
+    expect(movedPlayerCreatedToken.json()).toEqual(expect.objectContaining({ x: 55, y: 50 }));
 
     const unownedToken = await app.inject({
       method: "POST",
@@ -2474,6 +2514,15 @@ describe("api", () => {
     });
     expect(movedToken.statusCode).toBe(200);
     expect(movedToken.json()).toEqual(expect.objectContaining({ x: 460, y: 390 }));
+
+    const blockedMixedMoveUpdate = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_valen",
+      headers: playerHeaders,
+      payload: { x: 470, hidden: true }
+    });
+    expect(blockedMixedMoveUpdate.statusCode).toBe(403);
+    expect(store.state.tokens.find((token) => token.id === "tok_valen")).toEqual(expect.objectContaining({ x: 460, hidden: false }));
 
     const gmTokenState = await app.inject({
       method: "PATCH",
@@ -2739,7 +2788,7 @@ describe("api", () => {
     const login = await firstApp.inject({
       method: "POST",
       url: "/api/v1/auth/login",
-      payload: { userId: "usr_demo_player" }
+      payload: { email: "player@example.test" }
     });
     expect(login.statusCode).toBe(200);
     expect(login.json().token).toMatch(/^ots_/);
@@ -2946,13 +2995,13 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
       const reset = await app.inject({
@@ -3028,7 +3077,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const headers = { authorization: `Bearer ${adminLogin.json().token}` };
       for (let index = 0; index < 2; index += 1) {
@@ -3105,7 +3154,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -3175,7 +3224,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -3257,7 +3306,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const invalidNumericConfig = ["OTTE_EMAIL_WEBHOOK_TIMEOUT_MS", "OTTE_PASSWORD_RESET_TTL_MINUTES"];
       const operations = await app.inject({
@@ -3332,7 +3381,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -3404,7 +3453,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -3458,7 +3507,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const after = Date.now();
       expect(login.statusCode).toBe(200);
@@ -3481,7 +3530,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       expect(login.statusCode).toBe(200);
 
@@ -3522,7 +3571,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -3578,7 +3627,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -3677,7 +3726,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const reset = await app.inject({
         method: "POST",
@@ -3764,7 +3813,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -3846,7 +3895,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const headers = { authorization: `Bearer ${login.json().token}` };
       const oidc = await app.inject({
@@ -3935,7 +3984,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -4306,7 +4355,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const authOperations = await app.inject({
         method: "GET",
@@ -4352,7 +4401,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       expect(adminLogin.statusCode).toBe(200);
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
@@ -4493,18 +4542,18 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const playerSecondLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
 
@@ -4572,7 +4621,7 @@ describe("api", () => {
       const staleLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const staleSession = store.state.sessions.find((session) => session.id === staleLogin.json().session.id)!;
       staleSession.lastSeenAt = "2026-04-01T00:00:00.000Z";
@@ -4588,7 +4637,7 @@ describe("api", () => {
       const disabledUserLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       expect(disabledUserLogin.statusCode).toBe(403);
 
@@ -5026,7 +5075,7 @@ describe("api", () => {
       const disabledLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       expect(disabledLogin.statusCode).toBe(403);
 
@@ -5041,7 +5090,7 @@ describe("api", () => {
       const resetRequiredLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       expect(resetRequiredLogin.statusCode).toBe(403);
 
@@ -5067,12 +5116,12 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const playerLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
@@ -5214,11 +5263,18 @@ describe("api", () => {
         url: "/api/v1/auth/login",
         payload: { userId: "usr_demo_gm" }
       });
-      expect(login.statusCode).toBe(200);
+      expect(login.statusCode).toBe(401);
+      expect(login.json().message).toBe("Unknown login identity");
+      const emailLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "gm@example.test" }
+      });
+      expect(emailLogin.statusCode).toBe(200);
       const bearer = await app.inject({
         method: "GET",
         url: "/api/v1/campaigns",
-        headers: { authorization: `Bearer ${login.json().token}` }
+        headers: { authorization: `Bearer ${emailLogin.json().token}` }
       });
       expect(bearer.statusCode).toBe(200);
 
@@ -5239,7 +5295,7 @@ describe("api", () => {
       const authConfig = await app.inject({
         method: "GET",
         url: "/api/v1/admin/auth/config",
-        headers: { authorization: `Bearer ${login.json().token}` }
+        headers: { authorization: `Bearer ${emailLogin.json().token}` }
       });
       expect(authConfig.statusCode).toBe(200);
       expect(authConfig.json()).toMatchObject({
@@ -5254,12 +5310,12 @@ describe("api", () => {
       const authOperations = await app.inject({
         method: "GET",
         url: "/api/v1/admin/auth/operations",
-        headers: { authorization: `Bearer ${login.json().token}` }
+        headers: { authorization: `Bearer ${emailLogin.json().token}` }
       });
       expect(authOperations.statusCode).toBe(200);
       expect(authOperations.json()).toMatchObject({
         actionRequired: true,
-        actionReasons: ["legacy_user_header_blocked_attempts"],
+        actionReasons: ["legacy_user_header_blocked_attempts", "auth_login_failures"],
         legacyUserHeaderUsage: {
           usageCount: 0,
           blockedAttemptCount: 2,
@@ -5308,6 +5364,12 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(enabled.statusCode).toBe(200);
+      const legacyLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_gm" }
+      });
+      expect(legacyLogin.statusCode).toBe(200);
     } finally {
       await app.close();
       restoreEnv(previousEnv);
@@ -5593,26 +5655,67 @@ describe("api", () => {
     }
   });
 
-  it("filters hidden tokens from player reads and mutations", async () => {
+  it("filters hidden and GM-layer tokens from player reads and blocks player map-layer interactions", async () => {
     const store = new MemoryStateStore();
-    store.state.tokens.push({
-      id: "tok_hidden_sentinel",
-      sceneId: "scn_vault_entry",
-      name: "Hidden Sentinel",
-      x: 700,
-      y: 260,
-      width: 50,
-      height: 50,
-      rotation: 0,
-      hidden: true,
-      locked: false,
-      visionEnabled: false,
-      visionRadius: 0,
-      disposition: "hostile",
-      metadata: {},
-      createdAt: "2026-05-01T00:00:00.000Z",
-      updatedAt: "2026-05-01T00:00:00.000Z"
-    });
+    store.state.tokens.push(
+      {
+        id: "tok_hidden_sentinel",
+        sceneId: "scn_vault_entry",
+        name: "Hidden Sentinel",
+        x: 700,
+        y: 260,
+        width: 50,
+        height: 50,
+        rotation: 0,
+        layer: "player",
+        hidden: true,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition: "hostile",
+        metadata: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      },
+      {
+        id: "tok_map_statue",
+        sceneId: "scn_vault_entry",
+        name: "Map Statue",
+        x: 520,
+        y: 300,
+        width: 50,
+        height: 50,
+        rotation: 0,
+        layer: "map",
+        hidden: false,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition: "neutral",
+        metadata: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      },
+      {
+        id: "tok_gm_ambush",
+        sceneId: "scn_vault_entry",
+        name: "GM Ambush",
+        x: 760,
+        y: 260,
+        width: 50,
+        height: 50,
+        rotation: 0,
+        layer: "gm",
+        hidden: false,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition: "hostile",
+        metadata: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      }
+    );
     const app = await buildApp({ store });
     const playerHeaders = { "x-user-id": "usr_demo_player" };
 
@@ -5622,7 +5725,7 @@ describe("api", () => {
       headers: playerHeaders
     });
     expect(playerTokens.statusCode).toBe(200);
-    expect(playerTokens.json().map((token: { id: string }) => token.id)).toEqual(["tok_valen"]);
+    expect(playerTokens.json().map((token: { id: string }) => token.id)).toEqual(["tok_valen", "tok_map_statue"]);
 
     const gmTokens = await app.inject({
       method: "GET",
@@ -5631,6 +5734,23 @@ describe("api", () => {
     });
     expect(gmTokens.statusCode).toBe(200);
     expect(gmTokens.json().map((token: { id: string }) => token.id)).toContain("tok_hidden_sentinel");
+    expect(gmTokens.json().map((token: { id: string }) => token.id)).toContain("tok_gm_ambush");
+
+    const blockedMapMove = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_map_statue",
+      headers: playerHeaders,
+      payload: { x: 560, y: 320 }
+    });
+    expect(blockedMapMove.statusCode).toBe(403);
+
+    const blockedMapTarget = await app.inject({
+      method: "POST",
+      url: "/api/v1/tokens/tok_map_statue/target",
+      headers: playerHeaders,
+      payload: { targeted: true }
+    });
+    expect(blockedMapTarget.statusCode).toBe(403);
 
     const blockedMove = await app.inject({
       method: "PATCH",
@@ -5648,6 +5768,15 @@ describe("api", () => {
     });
     expect(gmMove.statusCode).toBe(200);
     expect(gmMove.json()).toEqual(expect.objectContaining({ hidden: true, x: 760, y: 300 }));
+
+    const gmLayerPatch = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_hidden_sentinel",
+      headers: authHeaders,
+      payload: { layer: "gm", hidden: false }
+    });
+    expect(gmLayerPatch.statusCode).toBe(200);
+    expect(gmLayerPatch.json()).toEqual(expect.objectContaining({ layer: "gm", hidden: false }));
 
     await app.close();
   });
@@ -5839,7 +5968,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerHeaders = { "x-user-id": "usr_demo_player" };
@@ -6565,6 +6694,8 @@ describe("api", () => {
       { method: "DELETE", url: "/api/v1/ai/memory/aimem_auth_matrix" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/session-recap", payload: { transcript: "blocked" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/encounter-design", payload: { prompt: "blocked" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/generate-map-asset", payload: { prompt: "blocked" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/generate-token-asset", payload: { prompt: "blocked" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/ai/tool-calls" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/tool-calls/aitc_auth_matrix/retry", payload: { reason: "missing auth" } },
       { method: "GET", url: "/api/v1/plugins" },
@@ -7073,6 +7204,8 @@ describe("api", () => {
       ["POST /api/v1/content-imports/{importId}/apply", 400],
       ["POST /api/v1/content-imports/{importId}/rollback", 409],
       ["POST /api/v1/campaigns/{campaignId}/ai/evaluations", 400],
+      ["POST /api/v1/campaigns/{campaignId}/ai/generate-map-asset", 502],
+      ["POST /api/v1/campaigns/{campaignId}/ai/generate-token-asset", 502],
       ["POST /api/v1/plugins/install", 400],
       ["POST /api/v1/plugins/registry/sync", 400],
       ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium", 404],
@@ -7206,6 +7339,13 @@ describe("api", () => {
         expected: { error: "content_import_entities_required" }
       },
       {
+        label: "content import entity kind",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/content-imports/preview",
+        payload: { source: { sourceType: "manual" }, entities: [{ kind: "map", name: "Bad import" }] },
+        expected: { error: "bad_request", message: "Unsupported content import entity kind: map" }
+      },
+      {
         label: "plugin install package path",
         method: "POST",
         url: "/api/v1/plugins/install",
@@ -7247,6 +7387,43 @@ describe("api", () => {
         expect(response.json(), route.label).toMatchObject(route.expected);
       }
       expect(snapshot()).toEqual(before);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects proposal create changes that would collide with existing records", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/proposals",
+        headers: authHeaders,
+        payload: {
+          title: "Duplicate journal proposal",
+          changesJson: [
+            {
+              entity: "journal",
+              action: "create",
+              data: {
+                id: "jnl_hook",
+                campaignId: "camp_demo",
+                title: "Duplicate Hook",
+                body: "This should not be staged over an existing journal."
+              }
+            }
+          ]
+        }
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        error: "bad_request",
+        message: "Proposal change 1 creates a journal id that already exists"
+      });
+      expect(store.state.proposals.some((proposal) => proposal.title === "Duplicate journal proposal")).toBe(false);
     } finally {
       await app.close();
     }
@@ -17914,7 +18091,7 @@ describe("api", () => {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/roll`,
         headers: { "x-user-id": "usr_demo_player" },
-        payload: { rollId: "feature-deflect-attacks-damage", consumeResources: true, applyEffect: true, targetActorId: monkTarget.json().id }
+        payload: { rollId: "feature-deflect-attacks-damage", consumeResources: true, applyEffect: true, targetActorId: monkTarget.json().id, saveOutcomes: { [monkTarget.json().id]: "failure" } }
       });
       expect(deflectAttacks.statusCode).toBe(200);
       expect(deflectAttacks.json().roll.formula).toBe("2d8+5");
@@ -17947,7 +18124,7 @@ describe("api", () => {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/roll`,
         headers: { "x-user-id": "usr_demo_player" },
-        payload: { rollId: "feature-stunning-strike", consumeResources: true, applyEffect: true, targetActorId: monkTarget.json().id }
+        payload: { rollId: "feature-stunning-strike", consumeResources: true, applyEffect: true, targetActorId: monkTarget.json().id, saveOutcomes: { [monkTarget.json().id]: "failure" } }
       });
       expect(stunningStrike.statusCode).toBe(200);
       expect(stunningStrike.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-stunning-strike", metadata: expect.objectContaining({ failure: expect.objectContaining({ condition: "Stunned" }) }) }));
@@ -18437,7 +18614,7 @@ describe("api", () => {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${giantSpiderMonster.json().actor.id}/roll`,
         headers: authHeaders,
-        payload: { rollId: "monster-web-effect", applyEffect: true, targetActorId: monsterTarget.json().id }
+        payload: { rollId: "monster-web-effect", applyEffect: true, targetActorId: monsterTarget.json().id, saveOutcomes: { [monsterTarget.json().id]: "failure" } }
       });
       expect(monsterWebEffect.statusCode).toBe(200);
       expect(monsterWebEffect.json().quickRoll).toEqual(expect.objectContaining({ id: "monster-web-effect", formula: "0", metadata: expect.objectContaining({ effectType: "condition", save: { ability: "dexterity", dc: 13 }, condition: "Restrained" }) }));
@@ -18707,7 +18884,7 @@ describe("api", () => {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,
         headers: authHeaders,
-        payload: { rollId: colorSprayEffectRollId, consumeResources: true, applyEffect: true, targetActorId: spellTarget.json().id }
+        payload: { rollId: colorSprayEffectRollId, consumeResources: true, applyEffect: true, targetActorId: spellTarget.json().id, saveOutcomes: { [spellTarget.json().id]: "failure" } }
       });
       expect(colorSprayEffect.statusCode).toBe(200);
       expect(colorSprayEffect.json().quickRoll).toEqual(expect.objectContaining({ id: colorSprayEffectRollId, formula: "0", metadata: expect.objectContaining({ effectType: "condition", condition: "Blinded" }) }));
@@ -18829,6 +19006,177 @@ describe("api", () => {
       await app.close();
     }
   }, 30000);
+
+  it("routes D&D actor rolls through resolver preview and committed mutation paths", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const fighter = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "Resolver Fighter", ownerUserId: "usr_demo_player" }
+      });
+      expect(fighter.statusCode).toBe(200);
+      const actorId = fighter.json().actor.id;
+      const initialRollCount = store.state.rolls.length;
+      const initialChatCount = store.state.chat.length;
+
+      const preview = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-second-wind-healing", consumeResources: true, commit: false }
+      });
+      expect(preview.statusCode).toBe(200);
+      expect(preview.json().roll).toBeUndefined();
+      expect(preview.json().chat).toBeUndefined();
+      expect(preview.json().resolution).toEqual(expect.objectContaining({ commitMode: "preview", resourceConsumption: [{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }] }));
+      expect(store.state.rolls).toHaveLength(initialRollCount);
+      expect(store.state.chat).toHaveLength(initialChatCount);
+      expect(store.state.actors.find((actor) => actor.id === actorId)?.data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
+
+      const committed = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-second-wind-healing", consumeResources: true }
+      });
+      expect(committed.statusCode).toBe(200);
+      expect(committed.json()).toEqual(expect.objectContaining({ roll: expect.any(Object), chat: expect.any(Object), actor: expect.any(Object), sheet: expect.any(Object) }));
+      expect(committed.json().usage.consumed).toEqual([{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }]);
+      expect(committed.json().resolution).toEqual(expect.objectContaining({ commitMode: "commit", resourceConsumption: [{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }] }));
+      expect(store.state.actors.find((actor) => actor.id === actorId)?.data.resources).toEqual({ secondWind: { current: 1, max: 2, recovery: "short" } });
+
+      const storedSelfHealingActor = store.state.actors.find((actor) => actor.id === actorId)!;
+      storedSelfHealingActor.data = { ...storedSelfHealingActor.data, hp: { current: 1, max: 12 } };
+      const selfHealing = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-second-wind-healing", consumeResources: true, applyEffect: true, targetActorId: actorId }
+      });
+      expect(selfHealing.statusCode).toBe(200);
+      expect(selfHealing.json().effect).toEqual(expect.objectContaining({ type: "healing", targetActorId: actorId, before: 1, max: 12 }));
+      expect(selfHealing.json().effect.after).toBeGreaterThan(1);
+      expect(selfHealing.json().updatedActors).toContainEqual(
+        expect.objectContaining({ id: actorId, data: expect.objectContaining({ hp: expect.objectContaining({ current: selfHealing.json().effect.after, max: 12 }), resources: { secondWind: { current: 0, max: 2, recovery: "short" } } }) })
+      );
+
+      const fighterLongsword = fighter.json().items.find((item: { name: string }) => item.name === "Longsword");
+      if (!fighterLongsword) throw new Error("Expected resolver fighter to start with a Longsword");
+      const target = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "Resolver Target", ownerUserId: "usr_demo_player" }
+      });
+      expect(target.statusCode).toBe(200);
+      const targetActorId = target.json().actor.id;
+      const exposedTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "Resolver Exposed Target", ownerUserId: "usr_demo_player" }
+      });
+      expect(exposedTarget.statusCode).toBe(200);
+      const exposedTargetActorId = exposedTarget.json().actor.id;
+      const storedActor = store.state.actors.find((actor) => actor.id === actorId)!;
+      const storedTarget = store.state.actors.find((actor) => actor.id === targetActorId)!;
+      storedActor.data = { ...storedActor.data, conditions: [{ id: "poisoned" }] };
+      storedTarget.data = { ...storedTarget.data, conditions: [{ id: "restrained" }] };
+      const multiTargetAttack = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: `item-${fighterLongsword.id}-attack`, targetActorIds: [targetActorId, exposedTargetActorId] }
+      });
+      expect(multiTargetAttack.statusCode).toBe(200);
+      expect(multiTargetAttack.json().resolution.rolls).toEqual([
+        expect.objectContaining({ targetActorId, formula: "1d20+5", d20Mode: "normal" }),
+        expect.objectContaining({ targetActorId: exposedTargetActorId, formula: "2d20kl1+5", d20Mode: "disadvantage" })
+      ]);
+      expect(multiTargetAttack.json().rolls).toHaveLength(2);
+      expect(multiTargetAttack.json().chatMessages.map((message: { body: string }) => message.body)).toEqual([
+        expect.stringContaining("Longsword Attack (Resolver Target)"),
+        expect.stringContaining("Longsword Attack (Resolver Exposed Target)")
+      ]);
+      storedActor.data = { ...storedActor.data, conditions: [] };
+      storedTarget.data = { ...storedTarget.data, conditions: [] };
+
+      const wand = createTimestamped("item", {
+        campaignId: "camp_demo",
+        systemId: "dnd-5e-srd",
+        actorId,
+        type: "item",
+        name: "Wand of Paralysis",
+        data: { action: "magic action", condition: "Paralyzed", conditionDuration: "1 minute", save: { ability: "constitution", dc: 15 }, repeatSave: "end of each turn" }
+      });
+      store.state.items.push(wand);
+      const combat = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        headers: authHeaders,
+        payload: {
+          combatants: [
+            { id: "cmbt_resolver_fighter", tokenId: "tok_resolver_fighter", actorId, name: "Resolver Fighter", initiative: 16, defeated: false },
+            { id: "cmbt_resolver_target", tokenId: "tok_resolver_target", actorId: targetActorId, name: "Resolver Target", initiative: 8, defeated: false }
+          ]
+        }
+      });
+      expect(combat.statusCode).toBe(200);
+
+      const rollCountBeforePendingParalysis = store.state.rolls.length;
+      const pendingParalysis = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: `item-${wand.id}-effect`, applyEffect: true, targetActorId }
+      });
+      expect(pendingParalysis.statusCode).toBe(409);
+      expect(pendingParalysis.json()).toEqual(
+        expect.objectContaining({
+          error: "pending_resolution",
+          resolution: expect.objectContaining({
+            pendingSaves: [expect.objectContaining({ actorId: targetActorId, ability: "constitution", dc: 15, requiredForCommit: true })],
+            effects: []
+          })
+        })
+      );
+      expect(store.state.actors.find((actor) => actor.id === targetActorId)?.data.conditions).toEqual([]);
+      expect(store.state.rolls).toHaveLength(rollCountBeforePendingParalysis);
+
+      const paralysis = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: `item-${wand.id}-effect`, applyEffect: true, targetActorId, saveOutcomes: { [targetActorId]: "failure" } }
+      });
+      expect(paralysis.statusCode).toBe(200);
+      expect(paralysis.json().effects).toContainEqual(expect.objectContaining({ type: "condition", targetActorId, conditionId: "paralyzed" }));
+      expect(paralysis.json().updatedActors).toContainEqual(expect.objectContaining({ id: targetActorId, data: expect.objectContaining({ conditions: [expect.objectContaining({ id: "paralyzed" })] }) }));
+      expect(paralysis.json().resolution.conditions).toContainEqual(expect.objectContaining({ operation: "apply", actorId: targetActorId, conditionId: "paralyzed", durationRounds: 10, repeatSave: "end of each turn" }));
+      expect(paralysis.json().resolution.pendingSaves).toContainEqual(expect.objectContaining({ actorId: targetActorId, recurring: true, timing: "end of each turn", conditionIds: ["paralyzed"] }));
+      expect(store.state.actors.find((actor) => actor.id === targetActorId)?.data).toEqual(
+        expect.objectContaining({
+          conditions: [expect.objectContaining({ id: "paralyzed" })],
+          rulesEngine: expect.objectContaining({ activeEffects: expect.arrayContaining([expect.objectContaining({ conditionIds: ["paralyzed"], durationRounds: 10, repeatSave: "end of each turn" })]) })
+        })
+      );
+      expect(store.state.combats.find((item) => item.id === combat.json().id)?.combatants.find((combatant) => combatant.id === "cmbt_resolver_target")?.conditions).toEqual(["paralyzed:10"]);
+      const advancedCombat = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/combats/${combat.json().id}`,
+        headers: authHeaders,
+        payload: { round: 11, combatants: store.state.combats.find((item) => item.id === combat.json().id)?.combatants }
+      });
+      expect(advancedCombat.statusCode).toBe(200);
+      expect(advancedCombat.json().combatants.find((combatant: { id: string }) => combatant.id === "cmbt_resolver_target")?.conditions).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
 
   it("imports system characters from normalized character data", async () => {
     const store = new MemoryStateStore();
@@ -19613,7 +19961,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       expect(adminLogin.statusCode).toBe(200);
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
@@ -20962,7 +21310,7 @@ registerCommand("/state", (input) => {
     const gmContext = provider.requests[1]!.context;
     expect(gmContext.publicSummary).toContain("Session Hook");
     expect(gmContext.gmSecrets.some((secret) => secret.includes("founder's oath"))).toBe(true);
-    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 2")?.visibility).toBe("gm_only");
 
     const playerChat = await app.inject({
@@ -20984,7 +21332,28 @@ registerCommand("/state", (input) => {
 
     try {
       const store = new MemoryStateStore();
+      const legacyMemoryThread = createTimestamped("thr", {
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        provider: "codex-app-server",
+        title: "Memory Extraction"
+      });
+      const legacyMemory = createTimestamped("mem", {
+        campaignId: "camp_demo",
+        text: "Legacy memory extraction already completed.",
+        visibility: "gm_only" as const,
+        sourceIds: [legacyMemoryThread.id]
+      });
+      store.state.aiThreads.push(legacyMemoryThread);
+      store.state.aiMemory.push(legacyMemory);
       app = await buildApp({ store });
+      expect(store.state.aiThreads.find((thread) => thread.id === legacyMemoryThread.id)).toMatchObject({
+        status: "completed",
+        assistantMessage: legacyMemory.text,
+        retryAttempts: 0,
+        eventCount: 0,
+        toolCallCount: 0
+      });
       const thread = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/ai/threads",
@@ -21016,9 +21385,17 @@ registerCommand("/state", (input) => {
         }
       });
       expect(extracted.statusCode).toBe(200);
-      expect(extracted.json().thread.provider).toBe("codex-app-server");
+      expect(extracted.json().thread).toMatchObject({
+        provider: "codex-app-server",
+        status: "completed",
+        retryAttempts: 0,
+        toolCallCount: 0
+      });
+      expect(extracted.json().thread.durationMs).toEqual(expect.any(Number));
+      expect(extracted.json().thread.eventCount).toBeGreaterThan(0);
       expect(extracted.json().memory.text).toContain("silver door opens at moonrise");
       expect(extracted.json().memory.sourceIds).toContain(extracted.json().thread.id);
+      expect(store.state.aiThreads.find((thread) => thread.id === extracted.json().thread.id)).toMatchObject({ status: "completed" });
       expect(store.state.aiMemory.some((fact) => fact.text.includes("silver door opens at moonrise"))).toBe(true);
 
       const blockedExtraction = await app.inject({
@@ -21040,7 +21417,7 @@ registerCommand("/state", (input) => {
     }
   });
 
-  it("can select the OpenAI Responses ai provider from configuration", async () => {
+  it("rejects direct OpenAI API-key provider configuration", async () => {
     const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OPENAI_API_KEY", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_ADMIN_USER_IDS"]);
     process.env.OTTE_AI_PROVIDER = "openai-responses";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "1234";
@@ -21057,10 +21434,9 @@ registerCommand("/state", (input) => {
         payload: { prompt: "Summarize the party state" }
       });
 
-      expect(thread.statusCode).toBe(200);
-      expect(thread.json().thread.provider).toBe("openai-responses");
-      expect(thread.json().assistantMessage).toContain("Set OPENAI_API_KEY");
-      expect(thread.json().events).toContainEqual(expect.objectContaining({ type: "message.completed" }));
+      expect(thread.statusCode).toBe(502);
+      expect(thread.json().thread.provider).toBe("unavailable-ai-provider");
+      expect(thread.json().message).toContain("Direct OpenAI API-key providers are disabled");
 
       const operations = await app.inject({
         method: "GET",
@@ -21068,12 +21444,13 @@ registerCommand("/state", (input) => {
         headers: authHeaders
       });
       expect(operations.statusCode).toBe(200);
-      expect(operations.json().runtime.openai).toEqual(
+      expect(operations.json().runtime.directOpenAi).toEqual(
         expect.objectContaining({
-          apiKeyConfigured: false,
-          timeoutMs: 1234
+          disabled: true,
+          replacementProvider: "codex-app-server"
         })
       );
+      expect(operations.json().runtimePosture.actionReasons).toContain("direct_openai_provider_disabled");
     } finally {
       await app?.close();
       restoreEnv(previousEnv);
@@ -21563,6 +21940,88 @@ registerCommand("/state", (input) => {
     }
   });
 
+  it("does not silently create SVG placeholders when Codex app-server image generation is disabled", async () => {
+    const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OTTE_AI_IMAGE_PROVIDER", "OPENAI_API_KEY", "OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_AI_PROVIDER = "codex-app-server";
+    process.env.OTTE_AI_IMAGE_PROVIDER = "disabled";
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    delete process.env.OPENAI_API_KEY;
+    const store = new MemoryStateStore();
+    const noopProvider: AiProvider = {
+      id: "noop",
+      label: "Noop Provider",
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {}
+    };
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+
+    try {
+      app = await buildApp({ store, aiProvider: noopProvider });
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/generate-map-asset",
+        headers: authHeaders,
+        payload: {
+          prompt: "Generate a forest ambush battlemap.",
+          sceneId: "scn_vault_entry",
+          outputFormat: "png"
+        }
+      });
+
+      expect(response.statusCode).toBe(502);
+      expect(response.json()).toEqual(
+        expect.objectContaining({
+          error: "tool_failed",
+          message: expect.stringContaining("codex app-server")
+        })
+      );
+      expect(store.state.proposals.some((proposal) => proposal.title.includes("Generated map"))).toBe(false);
+      expect(store.state.assets.some((asset) => asset.mimeType === "image/svg+xml")).toBe(false);
+    } finally {
+      await app?.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
+  it("rejects generated image outputs that are not raster image bytes", async () => {
+    const store = new MemoryStateStore();
+    const assetStorage = new MemoryAssetStorage();
+    const imageAssetGenerator: ImageAssetGenerator = {
+      id: "svg-placeholder",
+      label: "SVG Placeholder Generator",
+      async generate(input) {
+        return {
+          body: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><text>${input.prompt}</text></svg>`),
+          mimeType: "image/svg+xml",
+          provider: "test-svg-placeholder",
+          sourcePrompt: input.prompt
+        };
+      }
+    };
+    const app = await buildApp({ store, assetStorage, imageAssetGenerator });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/generate-map-asset",
+      headers: authHeaders,
+      payload: {
+        prompt: "Generate a forest ambush battlemap.",
+        sceneId: "scn_vault_entry",
+        outputFormat: "png"
+      }
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual(
+      expect.objectContaining({
+        error: "image_generation_failed",
+        message: expect.stringContaining("not a raster PNG, JPEG, or WebP image")
+      })
+    );
+    expect(store.state.proposals.some((proposal) => proposal.title.includes("Generated map"))).toBe(false);
+    expect(assetStorage.objects.size).toBe(0);
+    await app.close();
+  });
+
   it("lets server admins inspect redacted ai operations across campaigns", async () => {
     const previousEnv = snapshotEnv([
       "NODE_ENV",
@@ -21630,13 +22089,13 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
 
@@ -21845,10 +22304,7 @@ registerCommand("/state", (input) => {
         actionRequired: true,
         actionReasons: [
           "ai_provider_mismatch",
-          "openai_api_key_missing",
-          "openai_timeout_disabled",
-          "openai_model_default_in_production",
-          "openai_base_url_invalid",
+          "direct_openai_provider_disabled",
           "ai_provider_retries_disabled",
           "failed_threads",
           "provider_errors",
@@ -21873,26 +22329,20 @@ registerCommand("/state", (input) => {
           expect.objectContaining({
             code: "review_ai_runtime_config",
             severity: "error",
-            affectedCount: 6,
+            affectedCount: 3,
             samples: [
               expect.objectContaining({
                 selectedProvider: "openai-responses",
                 activeProvider: "codex-ops-test",
                 providerMismatch: true,
                 retryAttempts: 0,
-                openaiApiKeyConfigured: false,
-                openaiTimeoutMs: 0,
-                openaiModel: "gpt-5-mini",
-                openaiModelConfigured: false,
-                openaiBaseUrl: "not a url",
-                openaiBaseUrlValid: false,
-                openaiBaseUrlIssue: "invalid_url",
+                directOpenAi: { disabled: true, replacementProvider: "codex-app-server" },
                 costRatesConfigured: { inputTokens: true, outputTokens: true },
                 costRatesComplete: true,
                 invalidCostConfig: [],
                 invalidProviderThresholdConfig: [],
                 invalidRuntimeControlConfig: [],
-                actionReasons: ["ai_provider_mismatch", "openai_api_key_missing", "openai_timeout_disabled", "openai_model_default_in_production", "openai_base_url_invalid", "ai_provider_retries_disabled"]
+                actionReasons: ["ai_provider_mismatch", "direct_openai_provider_disabled", "ai_provider_retries_disabled"]
               })
             ]
           }),
@@ -21982,15 +22432,7 @@ registerCommand("/state", (input) => {
           selectedProvider: "openai-responses",
           activeProvider: "codex-ops-test",
           retryAttempts: 0,
-          openai: expect.objectContaining({
-            apiKeyConfigured: false,
-            timeoutMs: 0,
-            model: "gpt-5-mini",
-            modelConfigured: false,
-            baseUrl: "not a url",
-            baseUrlValid: false,
-            baseUrlIssue: "invalid_url"
-          }),
+          directOpenAi: { disabled: true, replacementProvider: "codex-app-server" },
           costRatesConfigured: {
             inputTokens: true,
             outputTokens: true
@@ -22013,18 +22455,10 @@ registerCommand("/state", (input) => {
           invalidCostConfig: [],
           invalidProviderThresholdConfig: [],
           invalidRuntimeControlConfig: [],
-          openai: expect.objectContaining({
-            apiKeyConfigured: false,
-            timeoutMs: 0,
-            model: "gpt-5-mini",
-            modelConfigured: false,
-            baseUrl: "not a url",
-            baseUrlValid: false,
-            baseUrlIssue: "invalid_url"
-          }),
+          directOpenAi: { disabled: true, replacementProvider: "codex-app-server" },
           actionRequired: true,
-          actionReasons: ["ai_provider_mismatch", "openai_api_key_missing", "openai_timeout_disabled", "openai_model_default_in_production", "openai_base_url_invalid", "ai_provider_retries_disabled"],
-          remediation: "Configure the intended AI provider, missing provider credentials, an explicit OpenAI model for production, valid OpenAI provider base URLs with HTTPS in production, both AI token cost rates or neither, numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, enabled OpenAI provider timeouts outside local debugging, and a nonzero retry budget for transient provider failures."
+          actionReasons: ["ai_provider_mismatch", "direct_openai_provider_disabled", "ai_provider_retries_disabled"],
+          remediation: "Configure the intended AI provider, use OTTE_AI_PROVIDER=codex-app-server for OpenAI-backed AI, start and authenticate Codex app-server, set both AI token cost rates or neither, keep numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, and keep a nonzero retry budget for transient provider failures."
         },
         totals: {
           threadCount: 4,
@@ -22082,9 +22516,9 @@ registerCommand("/state", (input) => {
           })
         ],
         toolCatalog: expect.objectContaining({
-          toolCount: 20,
+          toolCount: 22,
           permissionSafeToolCount: 12,
-          proposalGatedToolCount: 8,
+          proposalGatedToolCount: 10,
           failClosedToolCount: 0,
           actionRequired: false,
           actionReasons: [],
@@ -22443,10 +22877,7 @@ registerCommand("/state", (input) => {
           actionRequired: true,
           actionReasons: [
             "ai_provider_mismatch",
-            "openai_api_key_missing",
-            "openai_timeout_disabled",
-            "openai_model_default_in_production",
-            "openai_base_url_invalid",
+            "direct_openai_provider_disabled",
             "ai_provider_retries_disabled",
             "failed_threads",
             "provider_errors",
@@ -22914,7 +23345,7 @@ registerCommand("/state", (input) => {
     }
   });
 
-  it("flags insecure OpenAI base URLs in production runtime posture", async () => {
+  it("flags direct OpenAI provider selections as disabled in production runtime posture", async () => {
     const previousEnv = snapshotEnv(["NODE_ENV", "OTTE_ADMIN_USER_IDS", "OTTE_AI_PROVIDER", "OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_BASE_URL", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
     process.env.NODE_ENV = "production";
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
@@ -22941,7 +23372,7 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
 
@@ -22954,28 +23385,14 @@ registerCommand("/state", (input) => {
       expect(operations.statusCode).toBe(200);
       expect(operations.json()).toMatchObject({
         actionRequired: true,
-        actionReasons: ["ai_provider_mismatch", "openai_base_url_insecure"],
+        actionReasons: ["ai_provider_mismatch", "direct_openai_provider_disabled"],
         runtime: {
-          openai: expect.objectContaining({
-            apiKeyConfigured: true,
-            modelConfigured: true,
-            baseUrl: "http://api.example.test/v1",
-            baseUrlValid: true,
-            baseUrlInsecureInProduction: true,
-            timeoutMs: 30000
-          })
+          directOpenAi: { disabled: true, replacementProvider: "codex-app-server" }
         },
         runtimePosture: {
           actionRequired: true,
-          actionReasons: ["ai_provider_mismatch", "openai_base_url_insecure"],
-          openai: expect.objectContaining({
-            apiKeyConfigured: true,
-            modelConfigured: true,
-            baseUrl: "http://api.example.test/v1",
-            baseUrlValid: true,
-            baseUrlInsecureInProduction: true,
-            timeoutMs: 30000
-          })
+          actionReasons: ["ai_provider_mismatch", "direct_openai_provider_disabled"],
+          directOpenAi: { disabled: true, replacementProvider: "codex-app-server" }
         },
         remediationQueue: [
           expect.objectContaining({
@@ -22987,12 +23404,8 @@ registerCommand("/state", (input) => {
                 selectedProvider: "openai-responses",
                 activeProvider: "codex-ops-test",
                 providerMismatch: true,
-                openaiBaseUrl: "http://api.example.test/v1",
-                openaiBaseUrlValid: true,
-                openaiBaseUrlInsecureInProduction: true,
-                openaiModel: "gpt-test",
-                openaiModelConfigured: true,
-                actionReasons: ["ai_provider_mismatch", "openai_base_url_insecure"]
+                directOpenAi: { disabled: true, replacementProvider: "codex-app-server" },
+                actionReasons: ["ai_provider_mismatch", "direct_openai_provider_disabled"]
               })
             ]
           })
@@ -23017,16 +23430,14 @@ registerCommand("/state", (input) => {
       "OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K"
     ]);
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
-    process.env.OTTE_AI_PROVIDER = "openai-responses";
-    process.env.OPENAI_API_KEY = "test-openai-key";
-    process.env.OPENAI_BASE_URL = "https://api.openai.com/v1";
+    process.env.OTTE_AI_PROVIDER = "codex-app-server";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "30000";
     process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "1";
     process.env.OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K = "0.01";
     delete process.env.OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K;
 
     class PartialCostRateProvider implements AiProvider {
-      id = "openai-responses";
+      id = "codex-app-server";
       label = "Codex Ops Test";
 
       async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
@@ -23041,7 +23452,7 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
 
       const operations = await app.inject({
@@ -23070,7 +23481,7 @@ registerCommand("/state", (input) => {
           },
           costRatesComplete: false,
           invalidCostConfig: [],
-          remediation: "Configure the intended AI provider, missing provider credentials, an explicit OpenAI model for production, valid OpenAI provider base URLs with HTTPS in production, both AI token cost rates or neither, numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, enabled OpenAI provider timeouts outside local debugging, and a nonzero retry budget for transient provider failures."
+          remediation: "Configure the intended AI provider, use OTTE_AI_PROVIDER=codex-app-server for OpenAI-backed AI, start and authenticate Codex app-server, set both AI token cost rates or neither, keep numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, and keep a nonzero retry budget for transient provider failures."
         },
         remediationQueue: [
           expect.objectContaining({
@@ -23109,9 +23520,7 @@ registerCommand("/state", (input) => {
       "OTTE_AI_COST_BUDGET_USD"
     ]);
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
-    process.env.OTTE_AI_PROVIDER = "openai-responses";
-    process.env.OPENAI_API_KEY = "test-openai-key";
-    process.env.OPENAI_BASE_URL = "https://api.openai.com/v1";
+    process.env.OTTE_AI_PROVIDER = "codex-app-server";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "30000";
     process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "1";
     process.env.OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K = "not-a-number";
@@ -23119,7 +23528,7 @@ registerCommand("/state", (input) => {
     process.env.OTTE_AI_COST_BUDGET_USD = "-1";
 
     class InvalidCostConfigProvider implements AiProvider {
-      id = "openai-responses";
+      id = "codex-app-server";
       label = "Codex Ops Test";
 
       async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
@@ -23134,7 +23543,7 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
 
       const operations = await app.inject({
@@ -23205,9 +23614,7 @@ registerCommand("/state", (input) => {
       "OTTE_AI_PROVIDER_RUNNING_THREAD_THRESHOLD"
     ]);
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
-    process.env.OTTE_AI_PROVIDER = "openai-responses";
-    process.env.OPENAI_API_KEY = "test-openai-key";
-    process.env.OPENAI_BASE_URL = "https://api.openai.com/v1";
+    process.env.OTTE_AI_PROVIDER = "codex-app-server";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "30000";
     process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "1";
     process.env.OTTE_AI_PROVIDER_FAILURE_RATE_THRESHOLD = "not-a-threshold";
@@ -23215,7 +23622,7 @@ registerCommand("/state", (input) => {
     process.env.OTTE_AI_PROVIDER_RUNNING_THREAD_THRESHOLD = "3";
 
     class InvalidProviderThresholdProvider implements AiProvider {
-      id = "openai-responses";
+      id = "codex-app-server";
       label = "Codex Ops Test";
 
       async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
@@ -23230,7 +23637,7 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
 
       const operations = await app.inject({
@@ -23289,14 +23696,12 @@ registerCommand("/state", (input) => {
       "OTTE_AI_PROVIDER_RETRY_ATTEMPTS"
     ]);
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
-    process.env.OTTE_AI_PROVIDER = "openai-responses";
-    process.env.OPENAI_API_KEY = "test-openai-key";
-    process.env.OPENAI_BASE_URL = "https://api.openai.com/v1";
+    process.env.OTTE_AI_PROVIDER = "codex-app-server";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "not-a-timeout";
     process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "-2";
 
     class InvalidRuntimeControlProvider implements AiProvider {
-      id = "openai-responses";
+      id = "codex-app-server";
       label = "Codex Ops Test";
 
       async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
@@ -23311,7 +23716,7 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
 
       const operations = await app.inject({
@@ -23466,6 +23871,8 @@ registerCommand("/state", (input) => {
         yield { type: "tool.started", toolName: "draft_journal_entry", input: { title: "Mirror Clue", body: "The western mirror answers to moonlight.", visibility: "gm_only", tags: ["ai", "clue"] } };
         yield { type: "tool.started", toolName: "draft_scene", input: { name: "Mirror Annex", width: 900, height: 700, gridSize: 50 } };
         yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: 220, y: 240, disposition: "friendly" } };
+        yield { type: "tool.started", toolName: "generate_map_asset", input: { prompt: "Mirror-lit vault battlemap with moon doors.", name: "Mirror Vault Map", sceneId: "scn_vault_entry", size: "1536x1024", quality: "low", outputFormat: "png" } };
+        yield { type: "tool.started", toolName: "generate_token_asset", input: { prompt: "Valen Ash heroic fighter token portrait.", name: "Valen Token Art", tokenId: "tok_valen", size: "1024x1024", quality: "low", outputFormat: "png" } };
         yield { type: "tool.started", toolName: "draft_actor_update", input: { actorId: "act_valen", data: { resources: { focus: 4 } } } };
         yield { type: "tool.started", toolName: "roll_dice", input: { formula: "1d20+5", label: "AI Perception" } };
         yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: "act_valen", actionName: "Healing Word Healing", applyEffect: true, targetActorId: "act_valen" } };
@@ -23669,7 +24076,21 @@ registerCommand("/state", (input) => {
         difficulty: "hard"
       })
     );
-    const gmApp = await buildApp({ store: gmStore, aiProvider: gmProvider });
+    const gmAssetStorage = new MemoryAssetStorage("ai-generated-assets");
+    const gmImageGenerator = {
+      id: "test-image-generator",
+      label: "Test Image Generator",
+      async generate(input) {
+        return {
+          body: tinyPng,
+          mimeType: `image/${input.outputFormat ?? "png"}`,
+          provider: "test",
+          model: "test-image-model",
+          sourcePrompt: input.prompt
+        };
+      }
+    } satisfies ImageAssetGenerator;
+    const gmApp = await buildApp({ store: gmStore, aiProvider: gmProvider, assetStorage: gmAssetStorage, imageAssetGenerator: gmImageGenerator });
     const gmThread = await gmApp.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/ai/threads",
@@ -23677,9 +24098,11 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Read the compendium, remember a key, draft an encounter, and roll dice." }
     });
     expect(gmThread.statusCode).toBe(200);
-    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_encounter")?.parameters?.required).toEqual(["name", "summary"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_token_update")?.requiredPermissions).toEqual(["ai.proposeChanges", "token.update"]);
+    expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "generate_map_asset")?.requiredPermissions).toEqual(["ai.proposeChanges", "scene.create", "scene.update"]);
+    expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "generate_token_asset")?.requiredPermissions).toEqual(["ai.proposeChanges", "scene.create", "token.update"]);
     expect(gmProvider.requests[0]!.context.actors?.map((actor) => actor.name)).toContain("Valen Ash");
     expect(gmProvider.requests[0]!.context.actors?.find((actor) => actor.id === "act_valen")?.actions).toEqual(
       expect.arrayContaining([expect.objectContaining({ rollId: "spell-item_ai_healing_word-healing", label: "Healing Word Healing" })])
@@ -23883,16 +24306,20 @@ registerCommand("/state", (input) => {
             ]
           })
         }),
-        expect.objectContaining({ type: "tool.completed", toolName: "draft_encounter", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "draft_encounter", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 2 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_journal_entry", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_scene", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_token_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "generate_map_asset", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 2, assetId: expect.any(String), sceneId: "scn_vault_entry" }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "generate_token_asset", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 2, assetId: expect.any(String), tokenId: "tok_valen" }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_actor_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "roll_dice", output: expect.objectContaining({ rollId: expect.any(String), formula: "1d20+5", label: "AI Perception" }) }),
         expect.objectContaining({
           type: "tool.completed",
           toolName: "use_actor_action",
           output: expect.objectContaining({
+            proposalId: expect.any(String),
+            changeCount: 3,
             actorId: "act_valen",
             actionRollId: "spell-item_ai_healing_word-healing",
             consumed: [{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }],
@@ -23904,17 +24331,50 @@ registerCommand("/state", (input) => {
     );
     expect(gmStore.state.aiMemory.some((fact) => fact.text === "The moon key opens the observatory.")).toBe(true);
     const encounterProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Encounter: Mirror Knight");
+    expect(encounterProposal?.changesJson.map((change) => change.entity)).toEqual(["encounter", "scene"]);
     expect(encounterProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "encounter", action: "create" }));
+    expect(encounterProposal?.changesJson[1]).toEqual(
+      expect.objectContaining({
+        entity: "scene",
+        action: "create",
+        data: expect.objectContaining({
+          name: "Mirror Knight Scene",
+          active: false,
+          folder: "ai/encounters",
+          metadata: expect.objectContaining({
+            source: "ai_encounter_design",
+            encounterName: "Mirror Knight"
+          })
+        })
+      })
+    );
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Journal: Mirror Clue")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "journal", action: "create" }));
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Scene: Mirror Annex")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "scene", action: "create" }));
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Token: Valen Ash")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "token", action: "update", id: "tok_valen", data: expect.objectContaining({ x: 220, y: 240 }) }));
+    const mapAssetProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Generated map: Mirror Vault Map");
+    expect(mapAssetProposal?.changesJson.map((change) => change.entity)).toEqual(["asset", "scene"]);
+    expect(mapAssetProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "asset", action: "create", data: expect.objectContaining({ name: "Mirror Vault Map", mimeType: "image/png", folder: "maps/generated" }) }));
+    expect(mapAssetProposal?.changesJson[1]).toEqual(expect.objectContaining({ entity: "scene", action: "update", id: "scn_vault_entry", data: expect.objectContaining({ backgroundAssetId: mapAssetProposal?.changesJson[0]?.data.id }) }));
+    const mapSceneUpdate = mapAssetProposal?.changesJson[1]?.data as { metadata?: { generatedBackgroundPrompt?: string } } | undefined;
+    expect(mapSceneUpdate?.metadata?.generatedBackgroundPrompt).toContain("gridless virtual tabletop background");
+    const tokenAssetProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Generated token: Valen Token Art");
+    expect(tokenAssetProposal?.changesJson.map((change) => change.entity)).toEqual(["asset", "token"]);
+    expect(tokenAssetProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "asset", action: "create", data: expect.objectContaining({ name: "Valen Token Art", mimeType: "image/png", folder: "tokens/generated" }) }));
+    expect(tokenAssetProposal?.changesJson[1]).toEqual(expect.objectContaining({ entity: "token", action: "update", id: "tok_valen", data: expect.objectContaining({ imageAssetId: tokenAssetProposal?.changesJson[0]?.data.id }) }));
+    const mapAssetRecord = mapAssetProposal?.changesJson[0]?.data as MapAsset | undefined;
+    const tokenAssetRecord = tokenAssetProposal?.changesJson[0]?.data as MapAsset | undefined;
+    expect(gmAssetStorage.objects.has(mapAssetRecord?.storage?.key ?? "")).toBe(true);
+    expect(gmAssetStorage.objects.has(tokenAssetRecord?.storage?.key ?? "")).toBe(true);
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Actor: Valen Ash")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "actor", action: "update", id: "act_valen" }));
-    expect(gmStore.state.rolls).toHaveLength(5);
+    const actorActionProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Actor action: Valen Ash Healing Word Healing");
+    expect(actorActionProposal?.changesJson.map((change) => change.entity)).toEqual(["actor", "roll", "chat"]);
+    expect(actorActionProposal?.changesJson.find((change) => change.entity === "roll")).toEqual(expect.objectContaining({ action: "create" }));
+    expect(actorActionProposal?.changesJson.find((change) => change.entity === "chat")).toEqual(expect.objectContaining({ action: "create" }));
+    expect(gmStore.state.rolls).toHaveLength(4);
     expect(gmStore.state.chat.some((message) => message.body.includes("AI Perception: 1d20+5"))).toBe(true);
-    expect(gmStore.state.chat.some((message) => message.body.includes("Valen Ash Healing Word Healing"))).toBe(true);
-    expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.spellSlots).toEqual({ level1: { current: 0, max: 1, recovery: "long" } });
-    const actorActionOutput = gmStore.state.aiToolCalls.find((call) => call.toolName === "use_actor_action" && call.status === "completed")?.output as { effect: { after: number } };
-    expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.hp).toEqual({ current: actorActionOutput.effect.after, max: 22 });
+    expect(gmStore.state.chat.some((message) => message.body.includes("Valen Ash Healing Word Healing"))).toBe(false);
+    expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.spellSlots).toEqual({ level1: { current: 1, max: 1, recovery: "long" } });
+    expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.hp).toEqual({ current: 18, max: 22 });
 
     const observedToolCalls = await gmApp.inject({
       method: "GET",
@@ -23923,7 +24383,7 @@ registerCommand("/state", (input) => {
     });
     expect(observedToolCalls.statusCode).toBe(200);
     expect(observedToolCalls.json().map((call: { toolName: string }) => call.toolName)).toEqual(
-      expect.arrayContaining(["read_compendium", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "roll_dice", "use_actor_action", "unknown_tool"])
+      expect.arrayContaining(["read_compendium", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "roll_dice", "use_actor_action", "unknown_tool"])
     );
     expect(gmStore.state.aiToolCalls.find((call) => call.toolName === "unknown_tool" && call.status === "failed")?.output).toEqual({
       error: "unknown_tool",
@@ -24085,6 +24545,8 @@ registerCommand("/state", (input) => {
         expect.objectContaining({ toolName: "draft_journal_entry", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "draft_scene", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "draft_token_update", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "generate_map_asset", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "generate_token_asset", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "draft_actor_update", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "use_actor_action", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "read_compendium", output: expect.objectContaining({ systemId: "generic-fantasy" }) }),
@@ -24095,6 +24557,98 @@ registerCommand("/state", (input) => {
     expect(playerStore.state.proposals.some((proposal) => proposal.title === "Encounter: Mirror Knight")).toBe(false);
     expect(playerStore.state.rolls).toHaveLength(4);
     await playerApp.close();
+  });
+
+  it("routes AI D&D actor actions through resolver proposals and pending-save guards", async () => {
+    class DndResolverToolProvider implements AiProvider {
+      id = "dnd-resolver-tool-ai";
+      label = "D&D Resolver Tool AI";
+      actorId = "";
+      targetActorId = "";
+      wandRollId = "";
+      requests: AiProviderRequest[] = [];
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.requests.push(input);
+        yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: this.actorId, actionRollId: "feature-second-wind-healing", applyEffect: true } };
+        yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: this.actorId, actionRollId: this.wandRollId, applyEffect: true, targetActorId: this.targetActorId } };
+        yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: this.actorId, actionRollId: this.wandRollId, applyEffect: true, targetActorId: this.targetActorId, saveOutcomes: { [this.targetActorId]: "failure" } } };
+        yield { type: "message.completed", content: "D&D actions requested" };
+      }
+    }
+
+    const provider = new DndResolverToolProvider();
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: provider });
+    const fighter = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+      headers: authHeaders,
+      payload: { templateId: "fighter", name: "AI Resolver Fighter", ownerUserId: "usr_demo_player" }
+    });
+    expect(fighter.statusCode).toBe(200);
+    const target = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+      headers: authHeaders,
+      payload: { templateId: "fighter", name: "AI Resolver Target", ownerUserId: "usr_demo_player" }
+    });
+    expect(target.statusCode).toBe(200);
+    provider.actorId = fighter.json().actor.id;
+    provider.targetActorId = target.json().actor.id;
+    const wand = createTimestamped("item", {
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: provider.actorId,
+      type: "item",
+      name: "Wand of Paralysis",
+      data: { action: "magic action", condition: "Paralyzed", conditionDuration: "1 minute", save: { ability: "constitution", dc: 15 }, repeatSave: "end of each turn" }
+    });
+    store.state.items.push(wand);
+    provider.wandRollId = `item-${wand.id}-effect`;
+
+    const thread = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Use two D&D actions." }
+    });
+    expect(thread.statusCode).toBe(200);
+    const actionEvents = thread.json().events.filter((event: { type: string; toolName?: string }) => event.type === "tool.completed" && event.toolName === "use_actor_action");
+    expect(actionEvents[0].output).toEqual(
+      expect.objectContaining({
+        proposalId: expect.any(String),
+        actorId: provider.actorId,
+        actionRollId: "feature-second-wind-healing",
+        consumed: [{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }],
+        effect: expect.objectContaining({ type: "healing", targetActorId: provider.actorId }),
+        resolution: expect.objectContaining({ commitMode: "commit", effects: [expect.objectContaining({ type: "healing", targetActorId: provider.actorId })] })
+      })
+    );
+    expect(actionEvents[1].output).toEqual(
+      expect.objectContaining({
+        error: "pending_resolution",
+        resolution: expect.objectContaining({
+          pendingSaves: [expect.objectContaining({ actorId: provider.targetActorId, ability: "constitution", dc: 15, requiredForCommit: true })],
+          effects: []
+        })
+      })
+    );
+    expect(actionEvents[2].output).toEqual(
+      expect.objectContaining({
+        proposalId: expect.any(String),
+        actorId: provider.actorId,
+        actionRollId: provider.wandRollId,
+        effect: expect.objectContaining({ type: "condition", targetActorId: provider.targetActorId, conditionId: "paralyzed" }),
+        resolution: expect.objectContaining({
+          commitMode: "commit",
+          effects: [expect.objectContaining({ type: "condition", targetActorId: provider.targetActorId, conditionId: "paralyzed" })],
+          pendingSaves: [expect.objectContaining({ actorId: provider.targetActorId, recurring: true, timing: "end of each turn", conditionIds: ["paralyzed"] })]
+        })
+      })
+    );
+    expect(store.state.actors.find((actor) => actor.id === provider.targetActorId)?.data.conditions).toEqual([]);
+    await app.close();
   });
 
   it("keeps ai provider tool advertisement covered by role permission invariants", async () => {
@@ -24175,7 +24729,7 @@ registerCommand("/state", (input) => {
       const gmTools = provider.requests[0]!.tools;
       const assistantTools = provider.requests[1]!.tools;
       const playerTools = provider.requests[2]!.tools;
-      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
 
       for (const tool of gmTools) {
         expect(tool.requiredPermissions.length, `${tool.name} should declare required permissions`).toBeGreaterThan(0);
@@ -24188,7 +24742,7 @@ registerCommand("/state", (input) => {
         if (!advertisedTool.permissionSafe) expect(advertisedTool.requiredPermissions).toContain("ai.proposeChanges");
       }
 
-      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
       expect(assistantTools.map((tool) => tool.name)).not.toContain("draft_encounter");
       for (const tool of assistantTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("assistant_gm").includes(permission))).toBe(true);
@@ -24233,6 +24787,8 @@ registerCommand("/state", (input) => {
         yield { type: "tool.started", toolName: "draft_journal_entry", input: { title: "Restricted Note", body: "Requires journal create." } };
         yield { type: "tool.started", toolName: "draft_scene", input: { name: "Restricted Scene" } };
         yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: 300 } };
+        yield { type: "tool.started", toolName: "generate_map_asset", input: { prompt: "Restricted map asset", sceneId: "scn_vault_entry" } };
+        yield { type: "tool.started", toolName: "generate_token_asset", input: { prompt: "Restricted token asset", tokenId: "tok_valen" } };
         yield { type: "tool.started", toolName: "draft_actor_update", input: { actorId: "act_valen", data: { hp: { current: 1 } } } };
         yield { type: "message.completed", content: "Restricted edits requested" };
       }
@@ -24265,10 +24821,35 @@ registerCommand("/state", (input) => {
         expect.objectContaining({ toolName: "draft_journal_entry", output: { error: "missing_permission", permission: "journal.create" } }),
         expect.objectContaining({ toolName: "draft_scene", output: { error: "missing_permission", permission: "scene.create" } }),
         expect.objectContaining({ toolName: "draft_token_update", output: { error: "missing_permission", permission: "token.update" } }),
+        expect.objectContaining({ toolName: "generate_map_asset", output: { error: "missing_permission", permission: "scene.create" } }),
+        expect.objectContaining({ toolName: "generate_token_asset", output: { error: "missing_permission", permission: "scene.create" } }),
         expect.objectContaining({ toolName: "draft_actor_update", output: { error: "missing_permission", permission: "actor.update" } })
       ])
     );
     expect(store.state.proposals.some((proposal) => proposal.title.startsWith("Restricted"))).toBe(false);
+
+    const directRestrictedProposal = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/proposals",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: {
+        title: "Restricted Direct AI Proposal",
+        createdByType: "ai",
+        changesJson: [
+          {
+            entity: "journal",
+            action: "create",
+            data: {
+              title: "Direct Restricted Note",
+              body: "Direct proposal creation should honor journal.create too."
+            }
+          }
+        ]
+      }
+    });
+    expect(directRestrictedProposal.statusCode).toBe(403);
+    expect(directRestrictedProposal.json()).toMatchObject({ error: "forbidden", message: "Missing permission: journal.create" });
+    expect(store.state.proposals.some((proposal) => proposal.title === "Restricted Direct AI Proposal")).toBe(false);
     await app.close();
   });
 
@@ -24350,6 +24931,18 @@ registerCommand("/state", (input) => {
     });
     expect(encounterDraft.statusCode).toBe(200);
     const proposalId = encounterDraft.json().proposal.id as string;
+    expect(encounterDraft.json().scene).toEqual(
+      expect.objectContaining({
+        name: "AI Draft Encounter Scene",
+        active: false,
+        folder: "ai/encounters",
+        metadata: expect.objectContaining({
+          source: "ai_encounter_design",
+          encounterName: "AI Draft Encounter"
+        })
+      })
+    );
+    expect(encounterDraft.json().proposal.changesJson.map((change: { entity: string }) => change.entity)).toEqual(["encounter", "scene"]);
     expect(encounterDraft.json().proposal.history).toEqual([
       expect.objectContaining({ action: "created", status: "pending", actorUserId: "usr_demo_gm", actorType: "ai", auditAction: "ai.proposal.created" })
     ]);
@@ -24387,6 +24980,7 @@ registerCommand("/state", (input) => {
     expect(applied.json().status).toBe("applied");
     expect(applied.json().history).toEqual(expect.arrayContaining([expect.objectContaining({ action: "applied", status: "applied", previousStatus: "approved", actorUserId: "usr_demo_gm", auditAction: "proposal.applied" })]));
     expect(store.state.encounters.some((encounter) => encounter.name === "AI Draft Encounter" && encounter.difficulty === "hard")).toBe(true);
+    expect(store.state.scenes.some((scene) => scene.name === "AI Draft Encounter Scene" && scene.metadata.source === "ai_encounter_design")).toBe(true);
 
     const reapproved = await app.inject({
       method: "POST",
@@ -24402,6 +24996,26 @@ registerCommand("/state", (input) => {
     });
     expect(replayed.statusCode).toBe(409);
     expect(store.state.encounters.filter((encounter) => encounter.name === "AI Draft Encounter" && encounter.difficulty === "hard")).toHaveLength(1);
+    expect(store.state.scenes.filter((scene) => scene.name === "AI Draft Encounter Scene" && scene.metadata.source === "ai_encounter_design")).toHaveLength(1);
+
+    const crossScopedProposal = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/proposals",
+      headers: authHeaders,
+      payload: {
+        title: "Cross Scoped Scene Move",
+        changesJson: [
+          {
+            entity: "scene",
+            action: "update",
+            id: "scn_vault_entry",
+            data: { campaignId: "camp_other" }
+          }
+        ]
+      }
+    });
+    expect(crossScopedProposal.statusCode).toBe(400);
+    expect(crossScopedProposal.json().message).toContain("moves a scene outside this campaign");
 
     const forgedProposal = await app.inject({
       method: "POST",
@@ -25076,7 +25690,7 @@ registerCommand("/state", (input) => {
       const productionLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const productionAuthHeaders = { authorization: `Bearer ${productionLogin.json().token}` };
       const signingSecret = process.env.OTTE_ASSET_URL_SIGNING_SECRET;
@@ -25573,7 +26187,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const invalidConfig = [
         "OTTE_ASSET_QUOTA_BYTES",
@@ -25653,7 +26267,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const invalidUrlConfig = ["OTTE_ASSET_CDN_BASE_URL", "OTTE_PUBLIC_URL", "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL"];
       const storage = await app.inject({
@@ -25732,7 +26346,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const insecureUrlConfig = ["OTTE_ASSET_CDN_BASE_URL", "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL"];
       const storage = await app.inject({
@@ -25807,7 +26421,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const missingTokenConfig = ["OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN", "OTTE_ASSET_TRUST_WEBHOOK_TOKEN"];
       const storage = await app.inject({
@@ -25896,7 +26510,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -25979,7 +26593,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -26069,7 +26683,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -26143,7 +26757,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -26232,7 +26846,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -26377,6 +26991,91 @@ registerCommand("/state", (input) => {
     }
   });
 
+  it("counts pending generated asset proposals against quota and cleans rejected bytes", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ASSET_QUOTA_BYTES"]);
+    process.env.OTTE_ASSET_QUOTA_BYTES = String(tinyPng.length + 1);
+
+    const store = new MemoryStateStore();
+    const assetStorage = new MemoryAssetStorage("ai-quota-assets");
+    const imageAssetGenerator = {
+      id: "quota-image-generator",
+      label: "Quota Image Generator",
+      async generate(input) {
+        return {
+          body: tinyPng,
+          mimeType: `image/${input.outputFormat ?? "png"}`,
+          provider: "test",
+          model: "quota-test-model",
+          sourcePrompt: input.prompt
+        };
+      }
+    } satisfies ImageAssetGenerator;
+    const app = await buildApp({ store, assetStorage, imageAssetGenerator });
+
+    try {
+      const generated = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/generate-token-asset",
+        headers: authHeaders,
+        payload: {
+          prompt: "Valen token art",
+          name: "Quota Token Art",
+          tokenId: "tok_valen",
+          size: "1024x1024",
+          quality: "low",
+          outputFormat: "png"
+        }
+      });
+      expect(generated.statusCode).toBe(200);
+      const proposal = store.state.proposals.find((item) => item.id === generated.json().proposalId)!;
+      const generatedAsset = proposal.changesJson.find((change) => change.entity === "asset")?.data as MapAsset | undefined;
+      expect(generatedAsset?.storage?.key).toEqual(expect.any(String));
+      expect(assetStorage.objects.has(generatedAsset?.storage?.key ?? "")).toBe(true);
+
+      const storageInfo = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/assets/storage",
+        headers: authHeaders
+      });
+      expect(storageInfo.statusCode).toBe(200);
+      expect(storageInfo.json()).toMatchObject({
+        pendingProposalAssetCount: 1,
+        pendingProposalAssetBytes: tinyPng.length,
+        usedBytes: tinyPng.length,
+        remainingBytes: 1
+      });
+
+      const overQuota = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/generate-token-asset",
+        headers: authHeaders,
+        payload: {
+          prompt: "Another Valen token art",
+          name: "Second Quota Token Art",
+          tokenId: "tok_valen",
+          size: "1024x1024",
+          quality: "low",
+          outputFormat: "png"
+        }
+      });
+      expect(overQuota.statusCode).toBe(413);
+      expect(overQuota.json()).toMatchObject({ error: "asset_quota_exceeded", usedBytes: tinyPng.length, incomingBytes: tinyPng.length });
+
+      const rejected = await app.inject({
+        method: "POST",
+        url: `/api/v1/proposals/${proposal.id}/reject`,
+        headers: authHeaders
+      });
+      expect(rejected.statusCode).toBe(200);
+      expect(assetStorage.objects.has(generatedAsset?.storage?.key ?? "")).toBe(false);
+      const rejectedAsset = proposal.changesJson.find((change) => change.entity === "asset")?.data as MapAsset | undefined;
+      expect(rejectedAsset?.lifecycle).toMatchObject({ status: "deleted", cleanupReason: "rejected_proposal", storageDeletedAt: expect.any(String) });
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("recommends configuring scheduled cleanup when production cleanup backlog exists", async () => {
     const previousEnv = snapshotEnv([
       "NODE_ENV",
@@ -26419,7 +27118,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -28079,14 +28778,14 @@ registerCommand("/state", (input) => {
       expect.objectContaining({
         status: "applied",
         appliedRecords: [
-          { collection: "journals", id: "jnl_imp_rumor_ember_key", entityId: "rumor_ember_key" },
-          { collection: "items", id: "item_imp_asterite_token", entityId: "asterite_token" }
+          { collection: "journals", id: "jnl_imp_camp_demo_rumor_ember_key", entityId: "rumor_ember_key" },
+          { collection: "items", id: "item_imp_camp_demo_asterite_token", entityId: "asterite_token" }
         ]
       })
     );
-    expect(store.state.journals.map((journal) => journal.id)).toContain("jnl_imp_rumor_ember_key");
-    expect(store.state.items.map((item) => item.id)).toContain("item_imp_asterite_token");
-    expect(store.state.actors.map((actor) => actor.id)).not.toContain("act_imp_private_npc");
+    expect(store.state.journals.map((journal) => journal.id)).toContain("jnl_imp_camp_demo_rumor_ember_key");
+    expect(store.state.items.map((item) => item.id)).toContain("item_imp_camp_demo_asterite_token");
+    expect(store.state.actors.map((actor) => actor.id)).not.toContain("act_imp_camp_demo_private_npc");
 
     const blockedDelete = await app.inject({
       method: "DELETE",
@@ -28103,8 +28802,8 @@ registerCommand("/state", (input) => {
     });
     expect(rolledBack.statusCode).toBe(200);
     expect(rolledBack.json().status).toBe("rolled_back");
-    expect(store.state.journals.map((journal) => journal.id)).not.toContain("jnl_imp_rumor_ember_key");
-    expect(store.state.items.map((item) => item.id)).not.toContain("item_imp_asterite_token");
+    expect(store.state.journals.map((journal) => journal.id)).not.toContain("jnl_imp_camp_demo_rumor_ember_key");
+    expect(store.state.items.map((item) => item.id)).not.toContain("item_imp_camp_demo_asterite_token");
 
     const deleted = await app.inject({
       method: "DELETE",
@@ -28124,6 +28823,63 @@ registerCommand("/state", (input) => {
     expect(store.state.auditLogs.map((log) => log.action)).toEqual(
       expect.arrayContaining(["contentImport.previewed", "contentImport.applied", "contentImport.rolledBack", "contentImport.deleted"])
     );
+
+    await app.close();
+  });
+
+  it("namespaces imported content records by campaign so reusable source ids do not collide", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const createdCampaign = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: { name: "Second Import Campaign" }
+    });
+    expect(createdCampaign.statusCode).toBe(200);
+    const secondCampaignId = createdCampaign.json().id as string;
+
+    async function previewAndApply(campaignId: string) {
+      const previewed = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaignId}/content-imports/preview`,
+        headers: authHeaders,
+        payload: {
+          source: {
+            sourceType: "manual",
+            sourceName: "Reusable source ids",
+            license: { name: "Private table note", usage: "private_home_game" }
+          },
+          entities: [
+            {
+              id: "shared_note",
+              kind: "journal",
+              name: "Shared Source Note",
+              selectedByDefault: true,
+              data: { body: "Campaign-local note.", visibility: "gm_only" }
+            }
+          ]
+        }
+      });
+      expect(previewed.statusCode).toBe(200);
+      const applied = await app.inject({
+        method: "POST",
+        url: `/api/v1/content-imports/${previewed.json().id}/apply`,
+        headers: authHeaders,
+        payload: { selectedEntityIds: ["shared_note"] }
+      });
+      expect(applied.statusCode).toBe(200);
+      return applied.json().appliedRecords[0].id as string;
+    }
+
+    const firstRecordId = await previewAndApply("camp_demo");
+    const secondRecordId = await previewAndApply(secondCampaignId);
+
+    expect(firstRecordId).toBe("jnl_imp_camp_demo_shared_note");
+    expect(secondRecordId).toBe(`jnl_imp_${secondCampaignId}_shared_note`);
+    expect(firstRecordId).not.toBe(secondRecordId);
+    expect(store.state.journals.map((journal) => journal.id)).toEqual(expect.arrayContaining([firstRecordId, secondRecordId]));
 
     await app.close();
   });
@@ -28553,7 +29309,7 @@ registerCommand("/state", (input) => {
     await app.close();
   });
 
-  it("broadcasts beta dogfood realtime events to one GM and three players with reconnect", async () => {
+  it("broadcasts beta dogfood realtime events to one GM and three players with duplicate-client churn and reconnect", async () => {
     type RealtimeTestSocket = {
       onopen: (() => void) | null;
       onmessage: ((event: { data: unknown }) => void) | null;
@@ -28561,7 +29317,7 @@ registerCommand("/state", (input) => {
       close(): void;
     };
     type RealtimeEventMessage = { type?: string; targetId?: string; payload?: unknown; error?: string };
-    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string) => RealtimeTestSocket }).WebSocket;
+    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string, protocols?: string[]) => RealtimeTestSocket }).WebSocket;
     if (!maybeWebSocket) throw new Error("WebSocket is not available in this Node runtime");
     const TestWebSocket = maybeWebSocket;
 
@@ -28588,7 +29344,7 @@ registerCommand("/state", (input) => {
 
     async function openClient(userId: string) {
       const token = await loginToken(userId);
-      const socket = new TestWebSocket(`ws://127.0.0.1:${address.port}/api/v1/realtime?campaignId=camp_beta_ember_vault&sessionToken=${encodeURIComponent(token)}`);
+      const socket = new TestWebSocket(`ws://127.0.0.1:${address.port}/api/v1/realtime?campaignId=camp_beta_ember_vault`, ["otte.v1", `otte.auth.${token}`]);
       const messages: RealtimeEventMessage[] = [];
       const waiters: Array<{ predicate: (message: RealtimeEventMessage) => boolean; resolve: (message: RealtimeEventMessage) => void; timer: NodeJS.Timeout }> = [];
       socket.onmessage = (event) => {
@@ -28638,7 +29394,9 @@ registerCommand("/state", (input) => {
       };
     }
 
-    const clients = await Promise.all([openClient("usr_demo_gm"), openClient("usr_demo_player"), openClient("usr_beta_player_2"), openClient("usr_beta_player_3")]);
+    const primaryClients = await Promise.all([openClient("usr_demo_gm"), openClient("usr_demo_player"), openClient("usr_beta_player_2"), openClient("usr_beta_player_3")]);
+    const duplicatePlayer = await openClient("usr_beta_player_2");
+    const clients = [...primaryClients, duplicatePlayer];
     try {
       const moved = await app.inject({
         method: "PATCH",
@@ -28648,6 +29406,7 @@ registerCommand("/state", (input) => {
       });
       expect(moved.statusCode).toBe(200);
       await Promise.all(clients.map((client) => client.waitFor("token.moved", "tok_beta_valen")));
+      duplicatePlayer.close();
 
       const roll = await app.inject({
         method: "POST",
@@ -28656,7 +29415,9 @@ registerCommand("/state", (input) => {
         payload: { campaignId: "camp_beta_ember_vault", formula: "1d20+4", label: "GM+3 Realtime Dice" }
       });
       expect(roll.statusCode).toBe(200);
-      await Promise.all(clients.map((client) => client.waitFor("dice.roll.created", roll.json().id)));
+      await Promise.all(primaryClients.map((client) => client.waitFor("dice.roll.created", roll.json().id)));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(duplicatePlayer.messages.some((message) => message.type === "dice.roll.created" && message.targetId === roll.json().id)).toBe(false);
 
       const chat = await app.inject({
         method: "POST",
@@ -28665,7 +29426,7 @@ registerCommand("/state", (input) => {
         payload: { campaignId: "camp_beta_ember_vault", sceneId: "scn_beta_vault", body: "GM+3 realtime chat checkpoint", visibility: "public" }
       });
       expect(chat.statusCode).toBe(200);
-      await Promise.all(clients.map((client) => client.waitFor("chat.message.created", chat.json().id)));
+      await Promise.all(primaryClients.map((client) => client.waitFor("chat.message.created", chat.json().id)));
 
       const whisper = await app.inject({
         method: "POST",
@@ -28674,9 +29435,10 @@ registerCommand("/state", (input) => {
         payload: { campaignId: "camp_beta_ember_vault", sceneId: "scn_beta_vault", body: "Private realtime checkpoint", type: "whisper", recipientUserIds: ["usr_beta_player_2"] }
       });
       expect(whisper.statusCode).toBe(200);
-      await Promise.all([clients[0]!.waitFor("chat.message.created", whisper.json().id), clients[2]!.waitFor("chat.message.created", whisper.json().id)]);
+      await Promise.all([primaryClients[0]!.waitFor("chat.message.created", whisper.json().id), primaryClients[2]!.waitFor("chat.message.created", whisper.json().id)]);
       await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(clients[3]!.messages.some((message) => message.type === "chat.message.created" && message.targetId === whisper.json().id)).toBe(false);
+      expect(primaryClients[3]!.messages.some((message) => message.type === "chat.message.created" && message.targetId === whisper.json().id)).toBe(false);
+      expect(duplicatePlayer.messages.some((message) => message.type === "chat.message.created" && message.targetId === whisper.json().id)).toBe(false);
 
       const journal = await app.inject({
         method: "POST",
@@ -28685,7 +29447,7 @@ registerCommand("/state", (input) => {
         payload: { title: "GM+3 Realtime Journal", body: "Public reconnect checkpoint.", visibility: "public", tags: ["realtime", "beta"] }
       });
       expect(journal.statusCode).toBe(200);
-      await Promise.all(clients.map((client) => client.waitFor("journal.created", journal.json().id)));
+      await Promise.all(primaryClients.map((client) => client.waitFor("journal.created", journal.json().id)));
 
       const combat = await app.inject({
         method: "POST",
@@ -28700,9 +29462,13 @@ registerCommand("/state", (input) => {
         }
       });
       expect(combat.statusCode).toBe(200);
-      await Promise.all(clients.map((client) => client.waitFor("combat.started", combat.json().id)));
+      await Promise.all(primaryClients.map((client) => client.waitFor("combat.started", combat.json().id)));
 
       clients[3]!.close();
+      for (let index = 0; index < 3; index += 1) {
+        const churnedPlayer = await openClient("usr_beta_player_3");
+        churnedPlayer.close();
+      }
       const reconnectedPlayer = await openClient("usr_beta_player_3");
       clients[3] = reconnectedPlayer;
       const reconnectChat = await app.inject({
@@ -28712,7 +29478,8 @@ registerCommand("/state", (input) => {
         payload: { campaignId: "camp_beta_ember_vault", sceneId: "scn_beta_vault", body: "Reconnect checkpoint", visibility: "public" }
       });
       expect(reconnectChat.statusCode).toBe(200);
-      await reconnectedPlayer.waitFor("chat.message.created", reconnectChat.json().id);
+      await Promise.all([clients[0]!, clients[1]!, clients[2]!, reconnectedPlayer].map((client) => client.waitFor("chat.message.created", reconnectChat.json().id)));
+      expect(duplicatePlayer.messages.some((message) => message.type === "chat.message.created" && message.targetId === reconnectChat.json().id)).toBe(false);
     } finally {
       clients.forEach((client) => client.close());
       await app.close();

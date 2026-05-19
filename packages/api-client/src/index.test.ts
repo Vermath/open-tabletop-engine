@@ -39,15 +39,15 @@ describe("OpenTabletopClient", () => {
     }
 
     const client = new OpenTabletopClient("https://api.test/base", { token: "ots_test" });
-    expect(client.realtimeUrl(campaignId)).toBe("wss://api.test/api/v1/realtime?campaignId=camp_client&sessionToken=ots_test");
-    expect(client.realtimeUrl(campaignId, { token: "override_token" })).toBe("wss://api.test/api/v1/realtime?campaignId=camp_client&sessionToken=override_token");
+    expect(client.realtimeUrl(campaignId)).toBe("wss://api.test/api/v1/realtime?campaignId=camp_client");
+    expect(client.realtimeUrl(campaignId, { token: "override_token" })).toBe("wss://api.test/api/v1/realtime?campaignId=camp_client");
 
     const localClient = new OpenTabletopClient("http://localhost:4000", {});
     expect(localClient.realtimeUrl(campaignId)).toBe("ws://localhost:4000/api/v1/realtime?campaignId=camp_client");
 
     const socket = client.connectRealtime(campaignId, { WebSocket: MockWebSocket as unknown as typeof WebSocket, protocols: ["otte.v1"] });
     expect(socket).toBeInstanceOf(MockWebSocket);
-    expect(sockets).toEqual([{ url: "wss://api.test/api/v1/realtime?campaignId=camp_client&sessionToken=ots_test", protocols: ["otte.v1"] }]);
+    expect(sockets).toEqual([{ url: "wss://api.test/api/v1/realtime?campaignId=camp_client", protocols: ["otte.v1", "otte.auth.ots_test"] }]);
 
     expect(client.parseRealtimeMessage({ data: "{\"id\":\"evt_client\",\"campaignId\":\"camp_client\",\"type\":\"chat.message.created\",\"timestamp\":\"2026-05-15T00:00:00.000Z\",\"payload\":{\"messageId\":\"msg_client\"}}" } as MessageEvent<string>)).toMatchObject({
       id: "evt_client",
@@ -292,6 +292,8 @@ describe("OpenTabletopClient", () => {
       client.retryAiToolCall(campaignId, toolCallId),
       client.aiSessionRecap(campaignId, { transcript: "Transcript" }),
       client.aiEncounterDesign(campaignId, { prompt: "Encounter" }),
+      client.aiGenerateMapAsset(campaignId, { prompt: "Map", sceneId }),
+      client.aiGenerateTokenAsset(campaignId, { prompt: "Token", tokenId }),
       client.plugins(),
       client.registerPlugin({ packageId: pluginId }),
       client.syncPluginRegistry(),

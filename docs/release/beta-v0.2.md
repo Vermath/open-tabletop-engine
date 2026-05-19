@@ -26,7 +26,7 @@ Beta v0.2 moved OpenTabletop Engine from public-alpha one-shot proof toward outs
 - Beta v0.2 acceptance is complete in `docs/verification/beta-acceptance.md`.
 - Safe content import primitives were API-first in beta v0.2; v0.3 adds web preview/apply/rollback/delete UX.
 - Outside-dogfood onboarding, redacted report bundles, and broader recovery proof are v0.3 work.
-- Marketplace-scale distribution, payments, and exhaustive rules-system coverage remain post-beta.
+- Community-scale plugin distribution and exhaustive rules-system coverage remain post-beta; no commercial marketplace rails are required for this free OSS project.
 
 ## Validation Targets
 

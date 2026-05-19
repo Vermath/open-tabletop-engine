@@ -10,6 +10,7 @@ const checker = join(repoRoot, "scripts", "check-v1-release-evidence.mjs");
 const templates = join(repoRoot, "scripts", "v1-evidence-templates.mjs");
 const handoff = join(repoRoot, "scripts", "v1-release-handoff.mjs");
 const completionAudit = join(repoRoot, "scripts", "v1-completion-audit.mjs");
+const worktreeCheck = join(repoRoot, "scripts", "check-release-worktree-clean.mjs");
 
 runFailsWhenEvidenceIsMissing();
 runPassesWhenEvidenceIsComplete();
@@ -64,6 +65,8 @@ runHandoffSeparatesRemainingAndSatisfiedGates();
 runHandoffReportsCompleteVerifierStatus();
 runHandoffRejectsShortReleaseTargetCommit();
 runHandoffGateMetadataMatchesVerifier();
+runReleaseWorktreeCheckFailsWhenDirty();
+runReleaseWorktreeCheckAllowsExplicitFixtureOverride();
 runCompletionAuditReportsFailedEvidenceAndContinues();
 runCompletionAuditPassesWhenAllGatesPass();
 runCompletionAuditHonorsReleaseTargetCommit();
@@ -1079,6 +1082,7 @@ function runCompletionAuditReportsFailedEvidenceAndContinues() {
     const result = runCompletionAudit(root);
     assert(result.status === 1, "completion audit should fail when release evidence is incomplete");
     assert(result.stdout.includes(`v1 completion audit target: ${commit} (OTTE_RELEASE_COMMIT)`), "completion audit should print the verifier target");
+    assert(result.stdout.includes("PASS: Release worktree cleanliness"), "completion audit should summarize release worktree check");
     assert(result.stdout.includes("FAIL: Final release evidence"), "completion audit should summarize failed evidence");
     assert(result.stdout.includes("PASS: Open P0/P1 issue audit"), "completion audit should continue through issue gate");
     assert(result.stdout.includes("PASS: Public docs site guard"), "completion audit should continue through docs gate");
@@ -1094,6 +1098,7 @@ function runCompletionAuditPassesWhenAllGatesPass() {
   try {
     const result = runCompletionAudit(root);
     assert(result.status === 0, "completion audit should pass when evidence, issues, and docs gates pass");
+    assert(result.stdout.includes("PASS: Release worktree cleanliness"), "completion audit should summarize release worktree pass");
     assert(result.stdout.includes("PASS: Final release evidence"), "completion audit should summarize evidence pass");
     assert(result.stdout.includes("PASS: Open P0/P1 issue audit"), "completion audit should summarize issue pass");
     assert(result.stdout.includes("PASS: Public docs site guard"), "completion audit should summarize docs pass");
@@ -1111,6 +1116,7 @@ function runCompletionAuditHonorsReleaseTargetCommit() {
     const result = runCompletionAudit(root, { releaseCommit: hostedCommit });
     assert(result.status === 0, "completion audit should pass when evidence matches the supplied release target");
     assert(result.stdout.includes(`v1 completion audit target: ${hostedCommit} (OTTE_RELEASE_COMMIT)`), "completion audit should print supplied release target");
+    assert(result.stdout.includes("PASS: Release worktree cleanliness"), "completion audit should summarize release worktree pass for supplied release target");
     assert(result.stdout.includes(`Checking v1 release evidence for commit ${hostedCommit} (OTTE_RELEASE_COMMIT).`), "completion audit should pass the release target to the evidence verifier");
     assert(result.stdout.includes("v1 completion audit passed."), "completion audit should report success for supplied release target");
   } finally {
@@ -1125,8 +1131,36 @@ function runCompletionAuditRejectsShortReleaseTargetCommit() {
     const result = runCompletionAudit(root, { releaseCommit: commit.slice(0, 12) });
     assert(result.status === 1, "completion audit should fail when release target commit is abbreviated");
     assert(result.stderr.includes("OTTE_RELEASE_COMMIT must be a full 40-character commit SHA"), "completion audit should surface full-SHA requirement from evidence verifier");
+    assert(result.stdout.includes("PASS: Release worktree cleanliness"), "completion audit should continue after release worktree gate");
     assert(result.stdout.includes("PASS: Open P0/P1 issue audit"), "completion audit should still continue through issue gate after verifier target failure");
     assert(result.stdout.includes("PASS: Public docs site guard"), "completion audit should still continue through docs gate after verifier target failure");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runReleaseWorktreeCheckFailsWhenDirty() {
+  const root = gitFixtureRoot();
+
+  try {
+    writeFileSync(join(root, "release.txt"), "dirty release evidence\n");
+    const result = runWorktreeCheck(root);
+    assert(result.status === 1, "release worktree check should fail on dirty tracked files");
+    assert(result.stderr.includes("Release audit requires a clean git worktree"), "dirty worktree check should explain release evidence risk");
+    assert(result.stderr.includes("release.txt"), "dirty worktree check should name dirty files");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runReleaseWorktreeCheckAllowsExplicitFixtureOverride() {
+  const root = gitFixtureRoot();
+
+  try {
+    writeFileSync(join(root, "release.txt"), "fixture-only dirty state\n");
+    const result = runWorktreeCheck(root, { allowDirty: true });
+    assert(result.status === 0, "release worktree check should allow dirty fixture override");
+    assert(result.stdout.includes("Release worktree check skipped by OTTE_ALLOW_DIRTY_RELEASE_AUDIT=true"), "dirty override should be explicit in output");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1260,6 +1294,7 @@ function runChecker(root, options = {}) {
     cwd: repoRoot,
     env: {
       ...process.env,
+      OTTE_ALLOW_DIRTY_RELEASE_AUDIT: "true",
       OTTE_EVIDENCE_ROOT: root,
       OTTE_RELEASE_COMMIT: options.releaseCommit ?? commit
     },
@@ -1272,6 +1307,7 @@ function runHandoff(root, options = {}) {
     cwd: repoRoot,
     env: {
       ...process.env,
+      OTTE_ALLOW_DIRTY_RELEASE_AUDIT: "true",
       OTTE_EVIDENCE_ROOT: root,
       OTTE_RELEASE_COMMIT: options.releaseCommit ?? commit
     },
@@ -1284,12 +1320,40 @@ function runCompletionAudit(root, options = {}) {
     cwd: repoRoot,
     env: {
       ...process.env,
+      OTTE_ALLOW_DIRTY_RELEASE_AUDIT: "true",
       OTTE_EVIDENCE_ROOT: root,
       OTTE_RELEASE_COMMIT: options.releaseCommit ?? commit,
       OTTE_OPEN_ISSUES_JSON: "[]"
     },
     encoding: "utf8"
   });
+}
+
+function gitFixtureRoot() {
+  const root = mkdtempSync(join(tmpdir(), "otte-release-worktree-"));
+  runGit(root, ["init"]);
+  writeFileSync(join(root, "release.txt"), "clean release evidence\n");
+  runGit(root, ["add", "."]);
+  runGit(root, ["-c", "user.email=release@example.test", "-c", "user.name=Release Test", "commit", "-m", "initial release fixture"]);
+  return root;
+}
+
+function runWorktreeCheck(root, options = {}) {
+  const env = { ...process.env };
+  delete env.OTTE_ALLOW_DIRTY_RELEASE_AUDIT;
+  if (options.allowDirty) env.OTTE_ALLOW_DIRTY_RELEASE_AUDIT = "true";
+  return spawnSync(process.execPath, [worktreeCheck], {
+    cwd: root,
+    env,
+    encoding: "utf8"
+  });
+}
+
+function runGit(root, args) {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
+  }
 }
 
 function assert(condition, message) {

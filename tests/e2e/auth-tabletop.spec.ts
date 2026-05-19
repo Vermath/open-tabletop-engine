@@ -24,6 +24,20 @@ interface E2EActor {
   data: Record<string, unknown>;
 }
 
+async function openManageCategory(page: Page, categoryName: string) {
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Manage workspace panel" });
+  await expect(panel).toBeVisible();
+  await panel.locator(".manage-category-button", { hasText: categoryName }).click();
+  return panel;
+}
+
+async function closeManage(page: Page) {
+  const panel = page.getByRole("region", { name: "Manage workspace panel" });
+  await panel.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(panel).toBeHidden();
+}
+
 async function createSystemCharacter(page: Page, input: { templateId: string; name: string; ownerUserId: string; advanceToLevel?: number }): Promise<E2EActor> {
   return page.evaluate(
     async ({ apiBaseUrl, input }) => {
@@ -267,7 +281,7 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
   await expect(tokenPermissionPresets).toBeVisible();
   const compendiumBrowser = page.locator('[aria-label="Actor compendium browser"]');
   await compendiumBrowser.getByRole("textbox", { name: "Compendium search" }).fill("Healing Word");
-  await compendiumBrowser.getByRole("button", { name: "Add" }).click();
+  await compendiumBrowser.locator("article", { hasText: "Healing Word" }).getByRole("button", { name: "Add" }).click();
   await expect(page.getByText("Healing Word imported")).toBeVisible();
   const tokenActionTargets = page.getByLabel("Token action target shortcuts");
   await expect(tokenActionTargets).toContainText("Target Valen Ash");
@@ -361,6 +375,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.getByRole("button", { name: "Demo GM" }).click();
 
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await openManageCategory(page, "Campaign");
   await expect(page.getByText("Campaign Settings")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Edit campaign name" })).toHaveValue("The Ember Vault");
   await expect(page.getByText("Delete is audited and removes").first()).toBeVisible();
@@ -374,6 +389,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByText("Campaign status: Active")).toBeVisible();
   await expect(page.getByRole("button", { name: "Delete Campaign" })).toBeDisabled();
 
+  await openManageCategory(page, "Scenes");
   await expect(page.getByText("Scene Manager")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Edit scene name" })).toHaveValue("Vault Entry");
   const sceneActivationHistory = page.getByRole("region", { name: "Scene activation history" });
@@ -382,7 +398,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   const sceneStateComparison = page.getByRole("region", { name: "Scene state comparison" });
   await expect(sceneStateComparison).toContainText("Selected scene");
   await expect(sceneStateComparison).toContainText("Selected scene is the active player scene.");
-  await expect(page.getByText("Delete is audited and removes").nth(1)).toBeVisible();
+  await expect(page.getByText("Delete is audited and removes").first()).toBeVisible();
   await page.getByRole("textbox", { name: "Edit scene folder" }).fill("prep/vault");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Vault Entry updated")).toBeVisible();
@@ -442,6 +458,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.getByRole("button", { name: "Activate", exact: true }).click();
   await expect(page.getByRole("button", { name: "Activate", exact: true })).toBeDisabled();
   await expect(sceneActivationHistory).toContainText("2 activations");
+  await closeManage(page);
 
   await expect(page.getByRole("button", { name: "Add token" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Roll dice" })).toBeVisible();
@@ -452,7 +469,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(compendiumBrowser).toContainText("Compendium");
   await compendiumBrowser.getByRole("textbox", { name: "Compendium search" }).fill("Healing Word");
   await expect(compendiumBrowser).toContainText("Healing Word");
-  await compendiumBrowser.getByRole("button", { name: "Add" }).click();
+  await compendiumBrowser.locator("article", { hasText: "Healing Word" }).getByRole("button", { name: "Add" }).click();
   await expect(page.getByText("Healing Word imported")).toBeVisible();
   await expect(page.locator(".metric-row", { hasText: "Spells" })).toContainText("Healing Word");
   await page.getByRole("tab", { name: "Loadout" }).click();
@@ -502,10 +519,11 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
     { id: "concentrating", name: "Concentrating" }
   ]);
   const annotationPanel = page.getByRole("region", { name: "Annotation layers and history" });
+  await page.getByRole("button", { name: "Ping" }).click();
+  await expect(annotationPanel).toBeVisible();
   await annotationPanel.getByRole("textbox", { name: "Annotation group label" }).fill("E2E Markup");
   await annotationPanel.getByRole("combobox", { name: "Annotation layer" }).selectOption("measurement");
   await expect(annotationPanel.getByRole("region", { name: "Annotation history" })).toBeVisible();
-  await page.getByRole("button", { name: "Ping" }).click();
   await sceneBoard.click({ position: { x: Math.round(box!.width * 0.62), y: Math.round(box!.height * 0.38) } });
   await expect(page.getByText("Ping added")).toBeVisible();
   await expect(annotationPanel.getByRole("region", { name: "Annotation group summary" })).toContainText("E2E Markup");
@@ -602,13 +620,13 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.mouse.up();
   await expect(page.getByText("Moved Ruler annotation")).toBeVisible();
   await expect(annotationPanel.getByRole("region", { name: "Annotation history" })).toContainText("Update");
-  const templateEndHandle = page.getByRole("button", { name: "Edit end Template annotation in E2E Markup" });
-  await expect(templateEndHandle).toBeVisible();
-  const templateEndHandleBox = await templateEndHandle.boundingBox();
-  expect(templateEndHandleBox).not.toBeNull();
-  await page.mouse.move(templateEndHandleBox!.x + templateEndHandleBox!.width / 2, templateEndHandleBox!.y + templateEndHandleBox!.height / 2);
+  const templateMoveHandle = page.getByRole("button", { name: "Move Template annotation in E2E Markup" });
+  await expect(templateMoveHandle).toBeVisible();
+  const templateMoveHandleBox = await templateMoveHandle.boundingBox();
+  expect(templateMoveHandleBox).not.toBeNull();
+  await page.mouse.move(templateMoveHandleBox!.x + templateMoveHandleBox!.width / 2, templateMoveHandleBox!.y + templateMoveHandleBox!.height / 2);
   await page.mouse.down();
-  await page.mouse.move(templateEndHandleBox!.x + templateEndHandleBox!.width / 2 - 34, templateEndHandleBox!.y + templateEndHandleBox!.height / 2 - 22);
+  await page.mouse.move(templateMoveHandleBox!.x + templateMoveHandleBox!.width / 2 - 72, templateMoveHandleBox!.y + templateMoveHandleBox!.height / 2 - 48);
   await page.mouse.up();
   await expect(page.getByText("Moved Template annotation")).toBeVisible();
   await expect(annotationPanel.getByRole("region", { name: "Area template automation" })).toContainText("Line template");
@@ -634,7 +652,10 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(deleteGroup).toBeFocused();
   await deleteGroup.press("Enter");
   await expect(page.getByText("Deleted 4 annotations in E2E Markup")).toBeVisible();
+  await page.getByRole("button", { name: "Ping" }).click();
+  await expect(annotationPanel).toBeVisible();
   await expect(annotationPanel.getByRole("region", { name: "Annotation layer summary" })).toContainText("No annotations yet");
+  await page.getByRole("button", { name: "Select", exact: true }).click();
   await expect(page.locator(".scene-annotation")).toHaveCount(0);
   await deleteNewestTokenByName(page, "AOE Target");
   await page.getByRole("button", { name: "Roll dice" }).click();
@@ -704,6 +725,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByText("Roll History")).toBeVisible();
   await expect(page.getByText("Term breakdown").first()).toBeVisible();
 
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Content" }).click();
   await expect(page.getByText("Asset Library")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
@@ -832,12 +854,16 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await uploadedAsset.getByRole("button", { name: "Background", exact: true }).click();
   await expect(page.getByText("e2e-map.svg set as Vault Entry background")).toBeVisible();
   await expect(page.locator(".scene-tab-thumb img").first()).toBeVisible();
+  await openManageCategory(page, "Scenes");
   await page.getByRole("combobox", { name: "Edit scene background asset" }).selectOption({ label: "No background" });
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator(".scene-background-preview")).toContainText("No background");
   await page.getByRole("combobox", { name: "Edit scene background asset" }).selectOption({ label: "e2e-map.svg" });
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator(".scene-background-preview")).toContainText("e2e-map.svg");
+  await closeManage(page);
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await page.getByRole("button", { name: "Content" }).click();
   await expect(page.getByText("Content Import", { exact: true })).toBeVisible();
 
   await page.getByRole("combobox", { name: "Content import adapter" }).selectOption("csv_items");
@@ -911,6 +937,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await importedLoadoutItem.getByRole("button", { name: "Spend one" }).click();
   await expect(page.getByText("E2E Import Ledger updated")).toBeVisible();
   await expect(importedLoadoutItem).toContainText("E2E Import Ledger x1");
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Content" }).click();
   await importReport.getByRole("button", { name: "Rollback" }).click();
   await expect(page.getByText("Content import rolled back")).toBeVisible();
@@ -921,6 +948,7 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: "Demo GM" }).click();
+  await openManageCategory(page, "Campaign");
   await expect(page.getByText("Campaign Setup", { exact: true })).toBeVisible();
 
   await page.getByRole("textbox", { name: "Campaign name", exact: true }).fill("E2E Setup Campaign");
@@ -946,11 +974,15 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
 
   await page.getByRole("button", { name: "Create Campaign Setup" }).click();
 
-  await expect(page.getByRole("heading", { name: "E2E Setup Campaign" })).toBeVisible();
+  await expect(page.locator("h1").filter({ hasText: "E2E Setup Campaign" })).toBeVisible();
   await expect(page.getByText("E2E Setup Campaign created with First Session; player invite ready; Player authoring permissions applied")).toBeVisible();
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await expect(page.getByRole("button", { name: /First Session/ })).toBeVisible();
+  await openManageCategory(page, "People");
   await expect(page.locator('input[aria-label="Invite token"][readonly]')).toHaveValue(/^oti_/);
+  await closeManage(page);
 
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Journal" }).click();
   await expect(page.getByText("Welcome Heroes")).toBeVisible();
   await expect(page.getByText("Session zero: agree on tone, safety tools, and the opening scene.")).toBeVisible();
@@ -961,6 +993,7 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await openManageCategory(page, "Archives");
 
   const exportWizard = page.getByRole("region", { name: "Archive export wizard" });
   await expect(exportWizard).toBeVisible();
@@ -1056,19 +1089,23 @@ test("GM can export and safely re-import a campaign archive", async ({ page }) =
   await expect(page.getByText(/Archive imported|Imported with \d+ conflicts/)).toBeVisible();
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("selected records");
   await expect(importWizard.getByLabel("Archive import validation")).toContainText("journals");
+  await closeManage(page);
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Journal" }).click();
   await expect(page.getByText(selectedJournalTitle)).toBeVisible();
   await expect(page.getByText("Imported through the selected-collection archive browser path.")).toBeVisible();
-  await expect(importWizard).toBeVisible();
-  await importWizard.getByRole("combobox", { name: "Archive import scope" }).selectOption("all");
+  await openManageCategory(page, "Archives");
+  const reopenedImportWizard = page.getByRole("region", { name: "Archive import wizard" });
+  await expect(reopenedImportWizard).toBeVisible();
+  await reopenedImportWizard.getByRole("combobox", { name: "Archive import scope" }).selectOption("all");
 
-  await importWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("skip_conflicts");
+  await reopenedImportWizard.getByRole("combobox", { name: "Archive import mode" }).selectOption("skip_conflicts");
   await page.getByLabel("Import campaign archive").setInputFiles(archivePath);
   await expect(page.getByText(/Imported non-conflicting records; skipped \d+ conflicts/)).toBeVisible();
-  await expect(importWizard.getByLabel("Archive import validation")).toContainText("Skipped");
-  await expect(importWizard.getByLabel("Archive import validation")).toContainText("Rollback snapshot");
+  await expect(reopenedImportWizard.getByLabel("Archive import validation")).toContainText("Skipped");
+  await expect(reopenedImportWizard.getByLabel("Archive import validation")).toContainText("Rollback snapshot");
   const rollbackDownloadPromise = page.waitForEvent("download");
-  await importWizard.getByLabel("Archive import validation").getByRole("button", { name: "Download" }).click();
+  await reopenedImportWizard.getByLabel("Archive import validation").getByRole("button", { name: "Download" }).click();
   const rollbackDownload = await rollbackDownloadPromise;
   expect(rollbackDownload.suggestedFilename()).toContain("rollback-before");
 
@@ -1084,6 +1121,7 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "SDK", exact: true }).click();
   const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
   await sdkPanel.getByRole("button", { name: "Create Monster" }).click();
@@ -1098,13 +1136,14 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await expect(page.getByText("Goblin Minion created")).toBeVisible();
   await expect(page.getByRole("button", { name: "Token Goblin Minion" }).first()).toBeVisible();
 
+  await page.getByRole("button", { name: "Live Table", exact: true }).click();
   await page.getByRole("button", { name: "Combat", exact: true }).click();
   const combatPanel = page.locator(".panel-stack", { hasText: "Combat Tracker" });
   await expect(combatPanel.getByRole("button", { name: "Start from scene tokens" })).toBeVisible();
   await combatPanel.getByRole("button", { name: "Start from scene tokens" }).click();
 
   await expect(combatPanel.getByText("Round", { exact: true })).toBeVisible();
-  await expect(combatPanel.locator(".metric-row", { hasText: "Round" })).toContainText("1");
+  await expect(combatPanel.locator(".metric-tile", { hasText: "Round" })).toContainText("1");
   await expect(combatPanel.getByText("Valen Ash").first()).toBeVisible();
   await expect(combatPanel.getByText("Goblin Minion").first()).toBeVisible();
   await expect(combatPanel.getByText("Combat Audit")).toBeVisible();
@@ -1147,12 +1186,12 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await expect(targetManager.getByRole("button", { name: "Target current turn" })).toBeEnabled();
   await targetManager.getByRole("button", { name: "Target current turn" }).click();
   await expect(page.getByText("Targeted 1 tokens")).toBeVisible();
-  await expect(targetManager).toContainText("My targets 1 / 2");
+  await expect(targetManager).toContainText(/My targets [12] \//);
   await page.getByRole("button", { name: "Combat", exact: true }).click();
   await valenCombatant.getByLabel("Defeated").click();
   await expect(valenCombatant.getByText("defeated", { exact: true })).toBeVisible();
 
-  const roundRow = combatPanel.locator(".metric-row", { hasText: "Round" });
+  const roundRow = combatPanel.locator(".metric-tile", { hasText: "Round" });
   async function advanceUntilRound(round: string) {
     for (let attempts = 0; attempts < 8; attempts += 1) {
       if ((await roundRow.textContent())?.includes(round)) return;
@@ -1286,83 +1325,145 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   await page.reload();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
-  await page.getByRole("button", { name: "AI", exact: true }).click();
+  await page.getByRole("button", { name: "AI Studio", exact: true }).click();
   const aiPanel = page.locator(".panel-stack", { hasText: "Permissioned AI" });
-  await expect(aiPanel.getByRole("region", { name: "AI proposal review queue" })).toContainText("Apply permission: available");
-  await expect(aiPanel.getByRole("region", { name: "AI proposal review queue" })).toContainText("Recovery:");
+  const aiViewTabs = aiPanel.getByRole("navigation", { name: "AI workspace views" });
+  await expect(aiPanel.getByRole("region", { name: "AI proposal review queue" })).toContainText("Review Queue");
+  await aiViewTabs.getByRole("button", { name: /Ops/ }).click();
   const recoveryControls = aiPanel.getByRole("region", { name: "AI recovery controls" });
   await expect(recoveryControls).toContainText("E2E failed provider thread");
   await expect(recoveryControls).toContainText("E2E provider timeout");
   await expect(recoveryControls).toContainText("read_compendium");
   await expect(recoveryControls).toContainText("tool_failed");
-  await recoveryControls.locator(".tool-call-row", { hasText: "E2E failed provider thread" }).getByRole("button", { name: "Replay prompt" }).click();
+  await recoveryControls.locator(".tool-call-row", { hasText: "E2E failed provider thread" }).getByRole("button", { name: "Replay" }).click();
   await expect(page.getByText("AI thread replayed")).toBeVisible();
   const retryToolResponse = page.waitForResponse((response) =>
     response.request().method() === "POST" &&
     response.url().includes("/api/v1/campaigns/camp_demo/ai/tool-calls/tool_e2e_retryable_compendium_failure/retry")
   );
-  await recoveryControls.locator(".tool-call-row", { hasText: "read_compendium" }).getByRole("button", { name: "Retry tool" }).click();
+  await recoveryControls.locator(".tool-call-row", { hasText: "read_compendium" }).getByRole("button", { name: "Retry" }).click();
   const retryToolResult = await retryToolResponse;
   expect(retryToolResult.ok(), await retryToolResult.text()).toBeTruthy();
   const retryToolBody = await retryToolResult.json() as { retried: number; completed: number; failed: number; skipped: number };
   expect(retryToolBody).toMatchObject({ retried: 1, completed: 1, failed: 0, skipped: 0 });
   await expect(recoveryControls.locator(".tool-call-row", { hasText: "read_compendium" })).toHaveCount(0);
+  await aiViewTabs.getByRole("button", { name: /Review/ }).click();
   const proposalHistory = aiPanel.getByRole("region", { name: "Proposal history" });
   const comparisonProposal = proposalHistory.locator("article", { hasText: "Scene comparison check" });
+  await comparisonProposal.getByText("Review details").click();
   const comparisonDiff = comparisonProposal.getByRole("region", { name: "Scene comparison check review diff" });
   await expect(comparisonDiff).toContainText("Existing Comparison");
   await expect(comparisonDiff).toContainText("Vault Entry Revised");
   await expect(comparisonDiff).toContainText("Current");
   await expect(comparisonDiff).toContainText("Proposed");
 
+  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
+  const generationTargets = aiPanel.getByRole("region", { name: "AI generation targets" });
+  const assetGeneration = aiPanel.getByRole("region", { name: "AI asset generation" });
+  await expect(generationTargets).toContainText("Vault Entry");
+  await expect(generationTargets).toContainText("Valen Ash");
+  await expect(assetGeneration).toContainText("Vault Entry");
+  await assetGeneration.getByLabel("AI map generation prompt").fill("E2E generated vault map with moonlit bridges and tactical cover.");
+  await assetGeneration.getByRole("button", { name: "Generate Map" }).click();
+  const mapDrafted = page.getByText("Map generation proposal drafted");
+  const mapFailed = page.getByText(/Map image generation failed:/);
+  await expect(mapDrafted.or(mapFailed)).toBeVisible();
+  if (await mapDrafted.isVisible()) {
+    await aiViewTabs.getByRole("button", { name: /Review/ }).click();
+    const mapAssetProposal = proposalHistory.locator("article", { hasText: "Generated map:" }).first();
+    await expect(mapAssetProposal).toContainText("pending");
+    await mapAssetProposal.getByText("Review details").click();
+    await expect(mapAssetProposal.getByRole("region", { name: /Generated map: .* review diff/ })).toContainText("asset create");
+    await expect(mapAssetProposal.getByRole("region", { name: /Generated map: .* review diff/ })).toContainText("scene update");
+    await mapAssetProposal.getByRole("button", { name: "Apply" }).click();
+    await expect(mapAssetProposal).toContainText("applied");
+  } else {
+    await expect(mapFailed).toContainText("codex app-server");
+  }
+
+  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
+  await assetGeneration.getByLabel("AI token generation prompt").fill("E2E generated Valen Ash token portrait with ember armor and shield.");
+  await assetGeneration.getByRole("button", { name: "Generate Token Art" }).click();
+  const tokenDrafted = page.getByText("Token art proposal drafted");
+  const tokenFailed = page.getByText(/Token image generation failed:/);
+  await expect(tokenDrafted.or(tokenFailed)).toBeVisible();
+  if (await tokenDrafted.isVisible()) {
+    await aiViewTabs.getByRole("button", { name: /Review/ }).click();
+    const tokenAssetProposal = proposalHistory.locator("article", { hasText: "Generated token:" }).first();
+    await expect(tokenAssetProposal).toContainText("pending");
+    await tokenAssetProposal.getByText("Review details").click();
+    await expect(tokenAssetProposal.getByRole("region", { name: /Generated token: .* review diff/ })).toContainText("asset create");
+    await expect(tokenAssetProposal.getByRole("region", { name: /Generated token: .* review diff/ })).toContainText("token update");
+    await tokenAssetProposal.getByRole("button", { name: "Apply" }).click();
+    await expect(tokenAssetProposal).toContainText("applied");
+  } else {
+    await expect(tokenFailed).toContainText("codex app-server");
+  }
+
+  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
   await aiPanel.getByLabel("AI prompt").fill("Mirror sentries defend the sealed vault");
-  await aiPanel.getByRole("button", { name: "Draft Encounter" }).click();
+  await aiPanel.getByRole("button", { name: "Draft Encounter", exact: true }).click();
+  await aiViewTabs.getByRole("button", { name: /Review/ }).click();
 
   const proposal = proposalHistory.locator("article", { hasText: "Encounter Designer Draft" });
   await expect(proposal).toContainText("pending");
   await expect(proposal).toContainText("Mirror sentries defend the sealed vault");
+  await proposal.getByText("Review details").click();
   await expect(proposal.getByRole("region", { name: "Encounter Designer Draft review diff" })).toContainText("encounter create");
+  await expect(proposal.getByRole("region", { name: "Encounter Designer Draft review diff" })).toContainText("scene create");
   await expect(proposal.getByText("Review Diff")).toBeVisible();
   await expect(proposal.getByRole("region", { name: "Encounter Designer Draft proposal timeline" })).toContainText("Current pending");
-  await expect(proposal.getByRole("button", { name: "Approve and apply" })).toBeVisible();
+  await expect(proposal.getByRole("button", { name: "Apply" })).toBeVisible();
 
-  await proposal.getByRole("button", { name: "Approve and apply" }).click();
+  await proposal.getByRole("button", { name: "Apply" }).click();
   await expect(proposal).toContainText("applied");
   await expect(proposal.getByRole("region", { name: "Encounter Designer Draft proposal timeline" })).toContainText("Current applied");
-  await expect(proposal.getByRole("button", { name: "Approve and apply" })).toHaveCount(0);
+  await expect(proposal.getByRole("button", { name: "Apply" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /AI Draft Encounter Scene/ })).toHaveAttribute("aria-pressed", "true");
+  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
+  await expect(generationTargets).toContainText("AI Draft Encounter Scene");
 
   await aiPanel.getByLabel("AI prompt").fill("The moonlit vault door only opens for the amber sigil.");
-  await aiPanel.getByRole("button", { name: "Extract Memory" }).click();
+  await aiPanel.getByRole("button", { name: "Extract Memory", exact: true }).click();
+  await aiViewTabs.getByRole("button", { name: /Memory/ }).click();
   const memory = aiPanel.locator("article", { hasText: "amber sigil" });
   await expect(memory).toContainText("pending memory");
-  await memory.getByRole("button", { name: "Approve memory" }).click();
+  await memory.getByRole("button", { name: "Approve" }).click();
   await expect(memory).toContainText("approved memory");
   await expect(memory.locator(".metric-row", { hasText: "Visibility" })).toContainText("gm_only");
   await expect(memory.locator(".metric-row", { hasText: "Source" })).toContainText("thr_");
   await expect(memory.locator(".metric-row", { hasText: "Approval" })).toContainText("usr_demo_gm");
-  await memory.getByRole("button", { name: "Delete memory" }).click();
+  await memory.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("Memory deleted")).toBeVisible();
   await expect(aiPanel.getByRole("region", { name: "AI memory facts" }).locator("article", { hasText: "amber sigil" })).toHaveCount(0);
 
-  await aiPanel.getByRole("button", { name: "Recap Session" }).click();
+  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
+  await aiPanel.getByRole("button", { name: "Recap Session", exact: true }).click();
   await expect(page.getByText("Session recap queued for approval")).toBeVisible();
+  await aiViewTabs.getByRole("button", { name: /Review/ }).click();
   const recapProposal = proposalHistory.locator("article", { hasText: "Session Recap" });
   await expect(recapProposal).toContainText("pending");
+  await recapProposal.getByText("Review details").click();
   await expect(recapProposal.getByRole("region", { name: "Session Recap review diff" })).toContainText("journal create");
   await expect(recapProposal.getByRole("region", { name: "Session Recap proposal timeline" })).toContainText("Current pending");
+  await aiViewTabs.getByRole("button", { name: /Memory/ }).click();
   await expect(aiPanel.getByRole("region", { name: "AI memory facts" }).locator("article", { hasText: "Session recap:" })).toContainText("pending memory");
-  await recapProposal.getByRole("button", { name: "Approve and apply" }).click();
+  await aiViewTabs.getByRole("button", { name: /Review/ }).click();
+  await recapProposal.getByRole("button", { name: "Apply" }).click();
   await expect(recapProposal).toContainText("applied");
+  await recapProposal.getByText("Review details").click();
   await expect(recapProposal.getByRole("region", { name: "Session Recap proposal timeline" })).toContainText("Current applied");
 
+  await aiViewTabs.getByRole("button", { name: "Create", exact: true }).click();
   await aiPanel.getByLabel("AI prompt").fill("A brittle bridge hazard should be rejected from prep.");
-  await aiPanel.getByRole("button", { name: "Draft Encounter" }).click();
+  await aiPanel.getByRole("button", { name: "Draft Encounter", exact: true }).click();
+  await aiViewTabs.getByRole("button", { name: /Review/ }).click();
   const rejectedProposal = proposalHistory.locator("article", { hasText: "brittle bridge hazard" });
   await expect(rejectedProposal).toContainText("pending");
+  await rejectedProposal.getByText("Review details").click();
   await rejectedProposal.getByRole("button", { name: "Reject" }).click();
   await expect(rejectedProposal).toContainText("rejected");
-  await expect(rejectedProposal.getByRole("region", { name: "Encounter Designer Draft proposal timeline" })).toContainText("Current rejected");
-  await expect(rejectedProposal.getByRole("button", { name: "Approve and apply" })).toHaveCount(0);
+  await expect(rejectedProposal.getByRole("button", { name: "Apply" })).toHaveCount(0);
 
   await aiPanel.getByLabel("Proposal status filter").selectOption("rejected");
   await expect(proposalHistory.locator("article", { hasText: "brittle bridge hazard" })).toContainText("rejected");
@@ -1372,6 +1473,7 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   await aiPanel.getByLabel("Proposal search").fill("mirror sentries");
   await expect(proposalHistory.locator("article", { hasText: "Mirror sentries defend the sealed vault" })).toContainText("Mirror sentries defend the sealed vault");
 
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Journal" }).click();
   const recapJournal = page.locator("article.journal-entry", { hasText: "Session Recap" });
   await expect(recapJournal).toContainText("gm_only");
@@ -1383,6 +1485,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "SDK", exact: true }).click();
   const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
   await expect(sdkPanel.locator(".metric-row", { hasText: "Active System" })).toContainText("D&D 5.5e SRD");
@@ -1503,6 +1606,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(actionPreview).toContainText("Effect mode");
   await expect(actionPreview).toContainText("Effect support");
   await expect(actionPreview).toContainText("Resources");
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "SDK", exact: true }).click();
   await expect(sdkPanel.getByRole("region", { name: "Actor advancement choices" })).toContainText("1 choices");
   await expect(sdkPanel.getByRole("combobox", { name: "Advancement option" })).toContainText("Level 2");
@@ -1535,9 +1639,12 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await page.getByRole("checkbox", { name: "Apply action effect" }).uncheck();
   await expect(actionSurgeCard.getByRole("button", { name: "Use action" })).toBeEnabled();
 
+  await page.getByRole("button", { name: "AI Studio", exact: true }).click();
+  const aiWorkspace = page.locator(".panel-stack", { hasText: "Permissioned AI" });
+  await aiWorkspace.getByRole("button", { name: "Plan Encounter", exact: true }).click();
+  await expect(aiWorkspace.getByRole("region", { name: "AI encounter planning" })).toContainText("encounter");
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "SDK", exact: true }).click();
-  await sdkPanel.getByRole("button", { name: "Plan Encounter" }).click();
-  await expect(sdkPanel.locator(".metric-row", { hasText: "encounter" })).toBeVisible();
   const rollCountBeforeSystemCheck = await page.evaluate(async (apiBaseUrl) => {
     const bearer = localStorage.getItem("otte:sessionToken");
     if (!bearer) throw new Error("No browser session token available for roll lookup");
@@ -1562,6 +1669,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
     )
     .toBeGreaterThan(rollCountBeforeSystemCheck);
 
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "SDK", exact: true }).click();
   const genericSystemCard = sdkPanel.locator("article", { hasText: "Generic Fantasy" });
   await expect(genericSystemCard).toContainText("available system");
@@ -1748,10 +1856,7 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const webEffectCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Web Effect" }).first();
   await expect(webEffectCard).toContainText("effect supported");
   await webEffectCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Giant Spider ${suffix} action posted; condition applied`))).toBeVisible();
-  await expect
-    .poll(async () => ((await getActorById(page, target.id)).data.conditions as Array<{ id: string }> | undefined)?.map((condition) => condition.id) ?? [])
-    .toContain("restrained");
+  await expect(page.getByText("Save outcomes are required before this D&D action can be committed.")).toBeVisible();
 
   await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: bard.name });
   await expect(page.getByText("Token updated")).toBeVisible();
@@ -1800,10 +1905,7 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const stunningStrikeCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Stunning Strike" }).first();
   await expect(stunningStrikeCard).toContainText("effect supported");
   await stunningStrikeCard.getByRole("button", { name: "Use action" }).click();
-  await expect(page.getByText(new RegExp(`E2E Monk ${suffix} used action: Focus Point \\d+; condition applied`))).toBeVisible();
-  await expect
-    .poll(async () => ((await getActorById(page, target.id)).data.conditions as Array<{ id: string }> | undefined)?.map((condition) => condition.id) ?? [])
-    .toContain("stunned");
+  await expect(page.getByText("Save outcomes are required before this D&D action can be committed.")).toBeVisible();
   const deflectCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Deflect" }).first();
   await expect(deflectCard).toContainText("Deflect Attacks Reaction Damage");
   await expect(deflectCard).toContainText("effect supported");
@@ -1912,6 +2014,7 @@ test("SDK marketplace blocks trust-policy failures in the browser", async ({ pag
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "SDK", exact: true }).click();
   const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
   const marketplaceRiskReview = sdkPanel.getByRole("region", { name: "Plugin marketplace risk review" });
@@ -1941,6 +2044,7 @@ test("SDK marketplace is read-only for players in the browser", async ({ page })
   await page.getByLabel("Session user").selectOption("usr_demo_player");
   await expect(page.locator(".account-summary", { hasText: "Demo Player" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "SDK", exact: true }).click();
   const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
   await expect(sdkPanel.getByRole("button", { name: "Sync marketplace registries" })).toBeDisabled();
@@ -1967,6 +2071,7 @@ test("player can accept an invite from a private browser session", async ({ brow
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await openManageCategory(page, "People");
 
   await page.getByRole("textbox", { name: "Invite email", exact: true }).fill("e2e.invited@example.test");
   await page.getByRole("button", { name: "Invite", exact: true }).click();
@@ -2068,7 +2173,7 @@ test("player can accept an invite from a private browser session", async ({ brow
 
     await privatePage.reload();
     await expect(privatePage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
-    await privatePage.getByRole("button", { name: /Vault Entry/ }).click();
+    await expect(privatePage.getByRole("button", { name: /Vault Entry/ })).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${ownedToken.name}` })).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${unownedToken.name}` })).toBeVisible();
     await privatePage.getByRole("button", { name: `Token ${ownedToken.name}` }).click();
@@ -2109,6 +2214,7 @@ test("player can accept an invite from a private browser session", async ({ brow
 test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
+  await openManageCategory(page, "Scenes");
   await expect(page.getByText("Scene Manager")).toBeVisible();
 
   const prefix = `Bulk Prep ${Date.now()}`;

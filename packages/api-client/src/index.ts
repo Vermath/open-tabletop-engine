@@ -215,15 +215,13 @@ export class OpenTabletopClient {
     if (url.protocol === "http:") url.protocol = "ws:";
     if (url.protocol === "https:") url.protocol = "wss:";
     url.searchParams.set("campaignId", campaignId);
-    const token = options.token ?? this.options.token;
-    if (token) url.searchParams.set("sessionToken", token);
     return url.toString();
   }
 
   connectRealtime(campaignId: string, options: OpenTabletopRealtimeOptions = {}): WebSocket {
     const WebSocketCtor = options.WebSocket ?? globalThis.WebSocket;
     if (!WebSocketCtor) throw new Error("WebSocket is not available; pass a WebSocket constructor in OpenTabletopRealtimeOptions.");
-    return new WebSocketCtor(this.realtimeUrl(campaignId, options), options.protocols);
+    return new WebSocketCtor(this.realtimeUrl(campaignId, options), realtimeProtocols(options.protocols, options.token ?? this.options.token));
   }
 
   parseRealtimeMessage<TEvent extends EngineEvent = EngineEvent>(message: string | MessageEvent<string>): TEvent {
@@ -673,6 +671,14 @@ export class OpenTabletopClient {
     return this.post(routes.aiEncounterDesign(campaignId), input);
   }
 
+  async aiGenerateMapAsset(campaignId: string, input: { prompt: string; name?: string; sceneId?: string; size?: string; quality?: string; outputFormat?: "png" | "jpeg" | "webp" }): Promise<unknown> {
+    return this.post(routes.aiGenerateMapAsset(campaignId), input);
+  }
+
+  async aiGenerateTokenAsset(campaignId: string, input: { prompt: string; name?: string; tokenId?: string; size?: string; quality?: string; outputFormat?: "png" | "jpeg" | "webp" }): Promise<unknown> {
+    return this.post(routes.aiGenerateTokenAsset(campaignId), input);
+  }
+
   async plugins(campaignId?: string): Promise<PluginRuntimeInfo[]> {
     return this.get(campaignId ? routes.campaignPlugins(campaignId) : routes.plugins);
   }
@@ -889,4 +895,10 @@ export class OpenTabletopClient {
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
   }
+}
+
+function realtimeProtocols(protocols: string | string[] | undefined, token: string | undefined): string[] | undefined {
+  const list = protocols === undefined ? ["otte.v1"] : Array.isArray(protocols) ? [...protocols] : [protocols];
+  if (token) list.push(`otte.auth.${token}`);
+  return list.length > 0 ? [...new Set(list)] : undefined;
 }

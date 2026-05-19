@@ -73,7 +73,7 @@ Ship OpenTabletop Engine beta v0.2 from the public-alpha baseline. Beta should m
 | Roll20 UI/brand/assets/sheets/marketplace/workflow cloning | Blocked | Explicitly prohibited; beta must keep original UX and assets. |
 | Proprietary D&D, Roll20, or D&D Beyond content | Blocked | Explicitly prohibited; only SRD/open/legal content can ship. |
 | D&D Beyond scraping or auth bypass | Blocked | Explicitly prohibited. Only safe public/permitted APIs or user-provided/exported data can be adapter inputs. |
-| Marketplace payments and broad third-party distribution | Post-beta | Requires broader trust, moderation, payment, and review operations beyond beta v0.2. |
+| Community-scale plugin distribution | Post-beta | Requires broader trust, moderation, registry, and review operations beyond beta v0.2; the project is free OSS and does not require commercial marketplace rails. |
 | Exhaustive rules-system coverage | Post-beta | Beta should prove the primary SRD system and honest limits, not every system edge case. |
 
 ## Next Concrete Work

@@ -212,6 +212,7 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await chatExportFormat.selectOption("ndjson");
   await expect(chatExportFormat).toHaveValue("ndjson");
 
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Content" }).click();
   const assetSearch = page.getByRole("textbox", { name: "Asset search" });
   await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Quota health");
@@ -220,7 +221,7 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await assetSearch.fill("vault");
   await expect(assetSearch).toHaveValue("vault");
 
-  await page.getByRole("button", { name: "AI", exact: true }).click();
+  await page.getByRole("button", { name: "AI Studio", exact: true }).click();
   const aiPrompt = page.getByLabel("AI prompt");
   await expect(page.getByRole("region", { name: "AI proposal review queue" })).toBeVisible();
   await aiPrompt.focus();
@@ -228,6 +229,7 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await aiPrompt.fill("accessibility review prompt");
   await expect(aiPrompt).toHaveValue("accessibility review prompt");
 
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "SDK", exact: true }).click();
   const pluginSearch = page.getByRole("textbox", { name: "Plugin marketplace search" });
   await expect(page.getByRole("region", { name: "Plugin marketplace filters" })).toBeVisible();
@@ -254,6 +256,10 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
   await tabUntilFocused(page, chatSearch);
   await chatSearch.fill("Valen");
   await expect(chatSearch).toHaveValue("Valen");
+
+  const prepWorkspace = page.getByRole("button", { name: "Prep", exact: true });
+  await tabUntilFocused(page, prepWorkspace);
+  await prepWorkspace.press("Enter");
 
   const contentNav = page.getByRole("button", { name: "Content" });
   await tabUntilFocused(page, contentNav);

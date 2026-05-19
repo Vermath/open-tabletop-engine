@@ -2134,7 +2134,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
   - Generic Fantasy leveled spell actions now spend matching spell slots, while cantrips and no-cost item actions remain read-only.
   - Stellar Frontiers actions now spend strain for strain-cost talents and decrement consumable gear quantities such as Med Patch.
   - Mystic Noir clue and ritual actions now spend configured actor resource pools such as `lead` and `ward`.
-  - The system roll endpoint accepts `consumeResources: true`, requires owned-actor or GM edit permission before mutating state, returns `409` when a paid action is depleted, and includes usage, actor, and sheet data in the response.
+  - The system roll endpoint accepts `consumeResources: true`, requires owned-actor or GM edit permission before mutating state, returns `409` when a resource-cost action is depleted, and includes usage, actor, and sheet data in the response.
   - The browser actor panel now exposes a `Use` action button, posts consuming rolls, and shows item quantities in inventory/spell/talent/clue/ritual lists.
   - Updated REST and System SDK docs for stateful action use.
 - Automated validation:

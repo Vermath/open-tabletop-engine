@@ -44,15 +44,22 @@ export function consumeSsoRedirect(): string | undefined {
 }
 
 export async function loginSession(userId = getSessionUserId()): Promise<SessionLoginInfo> {
+  const demoEmail = demoLoginEmail(userId);
   const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ userId })
+    body: JSON.stringify(demoEmail ? { email: demoEmail } : { userId })
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
   storeSession(login);
   return login;
+}
+
+function demoLoginEmail(userId: string): string | undefined {
+  if (userId === "usr_demo_gm") return "gm@example.test";
+  if (userId === "usr_demo_player") return "player@example.test";
+  return undefined;
 }
 
 export async function loginPasswordSession(input: { email: string; password: string; mfaCode?: string; recoveryCode?: string }): Promise<SessionLoginInfo> {
@@ -2577,10 +2584,31 @@ export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
   return { users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings };
 }
 
+type DisplayMapAsset = MapAsset & { deliveryUrl?: string };
+
 export function assetBlobUrl(asset: MapAsset): string {
-  if (/^(https?:|data:|blob:)/.test(asset.url)) return asset.url;
-  const separator = asset.url.includes("?") ? "&" : "?";
-  return `${baseUrl}${asset.url}${separator}sessionToken=${encodeURIComponent(getSessionToken())}`;
+  const displayAsset = asset as DisplayMapAsset;
+  const url = displayAsset.deliveryUrl ?? asset.url;
+  if (/^(https?:|data:|blob:)/.test(url)) return url;
+  return `${baseUrl}${url}`;
+}
+
+async function assetDeliveryUrl(assetId: string): Promise<{ url: string; expiresAt: string }> {
+  return apiPost<{ url: string; expiresAt: string }>(`/api/v1/assets/${assetId}/delivery-url`, { expiresInSeconds: 300, disposition: "inline" });
+}
+
+async function withAssetDeliveryUrls(assets: MapAsset[]): Promise<MapAsset[]> {
+  return Promise.all(
+    assets.map(async (asset) => {
+      if (!asset.url.startsWith("/api/v1/assets/")) return asset;
+      try {
+        const delivery = await assetDeliveryUrl(asset.id);
+        return { ...asset, deliveryUrl: delivery.url } satisfies DisplayMapAsset;
+      } catch {
+        return asset;
+      }
+    })
+  );
 }
 
 export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean; folder?: string; tags?: string[] }): Promise<{ asset: MapAsset; scene?: Scene }> {
@@ -2654,6 +2682,8 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   }
   const scenes = await snapshotGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
   const selectedSceneId = scenes.find((scene) => scene.id === sceneId)?.id ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
+  const activeSceneId = scenes.find((scene) => scene.active)?.id;
+  const tokenSceneIds = [...new Set([selectedSceneId, activeSceneId].filter((id): id is string => Boolean(id)))];
   const members = await snapshotGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`);
   const currentMember = members.find((member) => member.user.id === session.user.id);
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
@@ -2661,7 +2691,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     snapshotGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
     snapshotGet<CampaignAssetStorageInfo>(`/api/v1/campaigns/${selectedCampaignId}/assets/storage`),
     currentMember?.permissions.includes("token.reveal") ? snapshotGet<FogPreset[]>(`/api/v1/campaigns/${selectedCampaignId}/fog-presets`) : Promise.resolve([]),
-    selectedSceneId ? snapshotGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
+    tokenSceneIds.length > 0 ? Promise.all(tokenSceneIds.map((id) => snapshotGet<Token[]>(`/api/v1/scenes/${id}/tokens`))).then((sceneTokens) => sceneTokens.flat()) : Promise.resolve([]),
     selectedSceneId ? snapshotGet<VisionSnapshot>(`/api/v1/scenes/${selectedSceneId}/vision`) : Promise.resolve(undefined),
     snapshotGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
     snapshotGet<Item[]>(`/api/v1/campaigns/${selectedCampaignId}/items`),
@@ -2684,6 +2714,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   const combatAudit = activeCombatId ? await snapshotGet<AuditLog[]>(`/api/v1/combats/${activeCombatId}/audit`) : [];
   const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
   const characterTemplates = activeSystemId ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
+  const displayAssets = await withAssetDeliveryUrls(assets);
   return {
     session,
     workspaceDefaults,
@@ -2694,7 +2725,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     members,
     scenes,
     fogPresets,
-    assets,
+    assets: displayAssets,
     assetStorage,
     tokens,
     vision,

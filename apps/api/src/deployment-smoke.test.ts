@@ -13,7 +13,9 @@ describe("deployment smoke", () => {
   it("keeps the release gate wired to Docker Compose and production-like deployment checks", () => {
     const packageJson = JSON.parse(readWorkspaceFile("package.json")) as { scripts: Record<string, string> };
     expect(packageJson.scripts["deployment:smoke"]).toBe('pnpm --filter @open-tabletop/api test -- --run -t "deployment smoke"');
+    expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:worktree:check");
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm deployment:smoke");
+    expect(packageJson.scripts["release:smoke"]).toContain("pnpm perf:soak");
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:issues:test");
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:issues:check");
 

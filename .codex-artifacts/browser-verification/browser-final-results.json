@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "verifiedWith": "browser@openai-bundled via Codex in-app browser",
+  "repairedPluginCache": true,
+  "checkedViewports": [
+    "1280x800",
+    "1000x800",
+    "760x800",
+    "390x844"
+  ],
+  "checks": [
+    "workspace mode switching",
+    "Live Table scene board, zoom controls, and layer stack",
+    "Prep workspace tabs and prep scene controls",
+    "AI Studio workspace tabs, intent cards, generation targets, and proposal history",
+    "Manage drawer categories",
+    "no horizontal document overflow"
+  ],
+  "screenshots": [
+    "D:/open_tabletop_engine/.codex-artifacts/browser-verification/browser-live-table-1280x800.png",
+    "D:/open_tabletop_engine/.codex-artifacts/browser-verification/browser-prep-1280x800.png",
+    "D:/open_tabletop_engine/.codex-artifacts/browser-verification/browser-ai-studio-1280x800.png",
+    "D:/open_tabletop_engine/.codex-artifacts/browser-verification/browser-ai-studio-390x844.png"
+  ]
+}

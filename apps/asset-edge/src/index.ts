@@ -66,14 +66,20 @@ export async function handleAssetEdgeRequest(request: Request, env: AssetEdgeEnv
     method: request.method,
     headers: originHeaders
   });
-  const response = await fetcher(originRequest, {
-    cf: {
-      cacheEverything: true,
-      cacheTtl: ttlSeconds,
-      cacheKey: edgeCacheKey(url, path)
-    }
-  } as EdgeFetchInit);
-  return edgeAssetResponse(response, ttlSeconds);
+  const rangeRequest = request.headers.has("range");
+  const response = await fetcher(
+    originRequest,
+    rangeRequest
+      ? undefined
+      : ({
+          cf: {
+            cacheEverything: true,
+            cacheTtl: ttlSeconds,
+            cacheKey: edgeCacheKey(url, path)
+          }
+        } as EdgeFetchInit)
+  );
+  return edgeAssetResponse(response, ttlSeconds, !rangeRequest);
 }
 
 export async function createAssetEdgeSignature(assetId: string, expiresAt: string, disposition: string, secret: string): Promise<string> {
@@ -112,11 +118,11 @@ function forwardedOriginHeaders(headers: Headers): Headers {
   return forwarded;
 }
 
-function edgeAssetResponse(response: Response, ttlSeconds: number): Response {
+function edgeAssetResponse(response: Response, ttlSeconds: number, cacheable: boolean): Response {
   const headers = new Headers(response.headers);
   headers.delete("set-cookie");
   headers.set("x-otte-asset-edge", "validated");
-  if (response.ok || response.status === 206 || response.status === 304) {
+  if (cacheable && (response.ok || response.status === 304)) {
     headers.set("cache-control", `public, max-age=${ttlSeconds}`);
   } else {
     headers.set("cache-control", "no-store");

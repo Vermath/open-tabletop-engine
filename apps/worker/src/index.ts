@@ -164,7 +164,7 @@ export async function runWorkerCli(
       const result = await runLeasedWorkerLoop({
         apiBaseUrl: env.OTTE_API_URL ?? env.API_URL ?? "http://127.0.0.1:4000",
         sessionToken: env.OTTE_SESSION_TOKEN,
-        userId: env.OTTE_USER_ID ?? "usr_demo_gm",
+        userId: env.OTTE_USER_ID,
         workerId: env.OTTE_WORKER_ID,
         leaseSeconds: envNumber(env.OTTE_WORKER_LEASE_SECONDS),
         pollIntervalMs: envNumber(env.OTTE_WORKER_POLL_INTERVAL_MS),
@@ -181,7 +181,7 @@ export async function runWorkerCli(
       const result = await runLeasedWorkerJob({
         apiBaseUrl: env.OTTE_API_URL ?? env.API_URL ?? "http://127.0.0.1:4000",
         sessionToken: env.OTTE_SESSION_TOKEN,
-        userId: env.OTTE_USER_ID ?? "usr_demo_gm",
+        userId: env.OTTE_USER_ID,
         workerId: env.OTTE_WORKER_ID,
         leaseSeconds: envNumber(env.OTTE_WORKER_LEASE_SECONDS)
       });
@@ -192,7 +192,7 @@ export async function runWorkerCli(
     const result = await runWorkerJob(job, {
       apiBaseUrl: env.OTTE_API_URL ?? env.API_URL ?? "http://127.0.0.1:4000",
       sessionToken: env.OTTE_SESSION_TOKEN,
-      userId: env.OTTE_USER_ID ?? "usr_demo_gm"
+      userId: env.OTTE_USER_ID
     });
     stdout.write(`${JSON.stringify(result)}\n`);
     return 0;

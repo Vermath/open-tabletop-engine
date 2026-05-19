@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { releaseWorktreeFailureMessage, releaseWorktreeStatus } from "./release-worktree-clean.mjs";
 import { releaseEvidenceGateById, requiredAssistiveTechnologyEnvironments } from "./v1-release-gates.mjs";
 
 const repoRoot = process.cwd();
@@ -10,6 +11,12 @@ const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "
 
 if (!fullSha(currentCommit)) {
   console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${currentCommit}.`);
+  process.exit(1);
+}
+
+const worktreeStatus = releaseWorktreeStatus({ cwd: repoRoot, commit: currentCommit });
+if (!worktreeStatus.ok) {
+  console.error(releaseWorktreeFailureMessage(worktreeStatus));
   process.exit(1);
 }
 

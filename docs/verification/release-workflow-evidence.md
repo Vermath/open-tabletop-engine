@@ -8,7 +8,7 @@ Local commands such as `pnpm release:smoke` and `pnpm docs:site:check` are usefu
 
 - 2026-05-15: `pnpm release:smoke` passed locally on Windows from the repository root for pre-evidence-commit candidate `aa3ebb01984da59467207d3eb8c6b7bf0bacb0b5`.
 - Covered gates: `pnpm check`, seeded and clean-bootstrap Playwright E2E, `pnpm security:smoke`, `pnpm migration:smoke`, `pnpm deployment:smoke`, `pnpm perf:smoke`, `pnpm docs:site:test`, `pnpm v1:evidence:test`, `pnpm v1:issues:test`, and live `pnpm v1:issues:check`.
-- Notes: This clears the local release-smoke blocker for the pre-evidence-commit candidate only. Final release acceptance still requires a hosted workflow run tied to the release candidate commit.
+- Notes: This clears the local release-smoke blocker for the pre-evidence-commit candidate only. Current `pnpm release:smoke` also includes `pnpm v1:worktree:check` and `pnpm perf:soak`, so final release acceptance still requires a fresh hosted workflow run tied to the final release candidate commit.
 
 ## Hosted Workflow Evidence: Release Smoke
 

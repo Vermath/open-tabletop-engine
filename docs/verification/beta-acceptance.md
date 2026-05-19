@@ -33,7 +33,7 @@ Accepted for beta v0.2 publication and pushed to GitHub on `main`.
 - Roll20 UI/brand/assets/sheets/marketplace/workflow cloning: blocked by project rules.
 - Proprietary D&D, Roll20, or D&D Beyond content: blocked by project rules.
 - D&D Beyond scraping or auth bypass: blocked by project rules.
-- Marketplace payments, broad third-party content distribution, and exhaustive rules-system coverage: post-beta.
+- Community-scale plugin distribution, broad third-party content distribution, and exhaustive rules-system coverage: post-beta; no commercial marketplace rails are required for this free OSS project.
 
 ## Final Commands
 

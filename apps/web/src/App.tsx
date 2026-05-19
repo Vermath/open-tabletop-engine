@@ -1,5 +1,6 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
-import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Hand, KeyRound, Lightbulb, LockKeyhole, Mail, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X } from "lucide-react";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 
@@ -27,6 +28,33 @@ type ArchiveRedactionMode = "portable";
 type ArchiveImportMode = "upsert" | "reject_conflicts" | "skip_conflicts" | "dry_run";
 type ArchiveImportScope = "all" | "assets_only" | "selected_collections";
 type ArchiveImportCollection = "assets" | "scenes" | "tokens" | "actors" | "items" | "journals" | "handouts" | "chat" | "rolls" | "diceMacros" | "encounters" | "combats" | "contentImports" | "fogPresets";
+type ManageCategoryId = "account" | "campaign" | "people" | "scenes" | "archives" | "serverAdmin";
+type WorkspaceMode = "live" | "prep" | "ai" | "manage";
+type InspectorTab = "actors" | "journal" | "chat" | "combat" | "content" | "plugins";
+type AiGenerationJobKind = "map" | "token" | "tokenBatch";
+type RulesSaveOutcome = "success" | "failure";
+type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string };
+
+interface ActorActionResolutionPreview {
+  commitMode: "commit" | "preview";
+  blocked?: { reason: string; code: string };
+  rolls?: Array<{ rollId: string; label: string; formula: string; d20Mode?: string; targetActorId?: string; advantageSources?: string[]; disadvantageSources?: string[] }>;
+  resourceConsumption?: Array<{ label: string; amount: number; remaining: number }>;
+  conditions?: Array<{ actorId: string; operation: string; conditionName?: string; reason: string }>;
+  pendingSaves?: Array<{ actorId: string; ability: string; dc?: number; reason: string; requiredForCommit?: boolean }>;
+  pendingReactions?: Array<{ actorId: string; reason: string }>;
+  warnings?: string[];
+  pendingChoice?: { kind?: "effect" | "damageType" | "resistance" | "manual"; reason: string; options: string[] };
+  manualResolutionRequired?: { reason: string };
+  attunement?: { limit: number; attunedItemIds: string[]; overLimitBy: number };
+}
+
+interface AiGenerationJob {
+  id: string;
+  kind: AiGenerationJobKind;
+  label: string;
+  detail?: string;
+}
 
 const annotationLayers: SceneAnnotationLayer[] = ["measurement", "effects", "drawings", "notes"];
 
@@ -149,6 +177,23 @@ function persistSavedDiceFormulas(formulas: string[]): void {
   localStorage.setItem("otte:savedDiceFormulas", JSON.stringify(formulas.slice(0, 12)));
 }
 
+function initialStoredId(key: string, fallback: string): string {
+  try {
+    return localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function persistStoredId(key: string, value: string): void {
+  try {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {
+    // Selection persistence is a convenience; private-mode storage failures should not block the table.
+  }
+}
+
 type CampaignImportResult = {
   importedCampaignIds: string[];
   counts: Record<string, number>;
@@ -200,6 +245,8 @@ type RulesCompendiumEntry = {
   summary: string;
   data: Record<string, unknown>;
 };
+
+type TokenVisionPatch = Partial<Pick<Token, "visionEnabled" | "visionRadius" | "dimVisionRadius">> & { brightVisionRadius?: number | null };
 
 type AdvancementOptionInfo = {
   id: string;
@@ -355,6 +402,18 @@ function isUsableImageAsset(asset: MapAsset): boolean {
   return asset.mimeType.startsWith("image/") && asset.lifecycle?.status !== "deleted";
 }
 
+const gridlessMapPromptMarker = "gridless virtual tabletop background";
+
+function sceneGridOverlayVisible(scene: Scene): boolean {
+  const explicit = scene.metadata?.gridOverlayVisible;
+  if (typeof explicit === "boolean") return explicit;
+  const generatedPrompt = scene.metadata?.generatedBackgroundPrompt;
+  if (typeof generatedPrompt === "string" && generatedPrompt.trim()) {
+    return generatedPrompt.toLowerCase().includes(gridlessMapPromptMarker);
+  }
+  return true;
+}
+
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
     campaigns: [],
@@ -387,9 +446,11 @@ export function App() {
   const [currentUserId, setCurrentUserId] = useState(getSessionUserId());
   const [sessionToken, setSessionToken] = useState(getSessionToken());
   const [snapshotReady, setSnapshotReady] = useState(false);
-  const [campaignId, setCampaignId] = useState("camp_demo");
-  const [sceneId, setSceneId] = useState("scn_vault_entry");
-  const [selectedTokenId, setSelectedTokenId] = useState("tok_valen");
+  const [campaignId, setCampaignId] = useState(() => initialStoredId("otte:selectedCampaignId", "camp_demo"));
+  const [sceneId, setSceneId] = useState(() => initialStoredId("otte:selectedSceneId", "scn_vault_entry"));
+  const [selectedTokenId, setSelectedTokenIdState] = useState("tok_valen");
+  const [selectedTokenIds, setSelectedTokenIds] = useState<string[]>(["tok_valen"]);
+  const [battleMapZoom, setBattleMapZoom] = useState(1);
   const [fogBrushMode, setFogBrushMode] = useState<FogMode | null>(null);
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>(null);
   const [annotationLayer, setAnnotationLayer] = useState<SceneAnnotationLayer>("measurement");
@@ -402,13 +463,18 @@ export function App() {
   const [templateDamageFormula, setTemplateDamageFormula] = useState("");
   const [templateDamageType, setTemplateDamageType] = useState("");
   const [annotationSnapToGrid, setAnnotationSnapToGrid] = useState(true);
-  const [tab, setTab] = useState<"actors" | "journal" | "chat" | "combat" | "content" | "ai" | "plugins" | "admin">("actors");
+  const [tab, setTab] = useState<InspectorTab>("actors");
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("live");
+  const [manageCategory, setManageCategory] = useState<ManageCategoryId>("campaign");
   const [status, setStatus] = useState("Loading campaign");
   const [diceFormula, setDiceFormula] = useState("1d20+5");
   const [diceVisibility, setDiceVisibility] = useState<DiceRoll["visibility"]>("public");
   const [savedDiceFormulas, setSavedDiceFormulas] = useState<string[]>(initialSavedDiceFormulas);
   const [chatBody, setChatBody] = useState("");
   const [aiPrompt, setAiPrompt] = useState("Draft a balanced vault guardian encounter for this party.");
+  const [aiMapPrompt, setAiMapPrompt] = useState("Generate a gridless top-down ember vault battlemap with broken pillars, lava-lit channels, and clear tactical lanes. Do not draw square grids, coordinates, tokens, labels, or UI overlays.");
+  const [aiTokenPrompt, setAiTokenPrompt] = useState("Generate token art for this character with a clean silhouette, readable equipment, and no text.");
+  const [aiGenerationJobs, setAiGenerationJobs] = useState<AiGenerationJob[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole>("player");
   const [inviteToken, setInviteToken] = useState("");
@@ -515,6 +581,7 @@ export function App() {
   const [sceneEditGridSize, setSceneEditGridSize] = useState(50);
   const [sceneEditActive, setSceneEditActive] = useState(false);
   const [sceneEditBackgroundAssetId, setSceneEditBackgroundAssetId] = useState("");
+  const [sceneEditGridOverlayVisible, setSceneEditGridOverlayVisible] = useState(true);
   const [sceneDuplicateName, setSceneDuplicateName] = useState("");
   const [sceneFolderFilter, setSceneFolderFilter] = useState("all");
   const [sceneSearch, setSceneSearch] = useState("");
@@ -524,8 +591,7 @@ export function App() {
   const [newTokenName, setNewTokenName] = useState("");
   const [newTokenActorId, setNewTokenActorId] = useState("");
   const [newTokenDisposition, setNewTokenDisposition] = useState<Token["disposition"]>("neutral");
-  const [newTokenWidth, setNewTokenWidth] = useState(50);
-  const [newTokenHeight, setNewTokenHeight] = useState(50);
+  const [newTokenFootprintCells, setNewTokenFootprintCells] = useState(1);
   const [newJournalTitle, setNewJournalTitle] = useState("");
   const [newJournalBody, setNewJournalBody] = useState("");
   const [newJournalVisibility, setNewJournalVisibility] = useState<Visibility>("gm_only");
@@ -553,6 +619,7 @@ export function App() {
   const tokenDropHandledRef = useRef(false);
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
+  const activeOrganizationId = snapshot.session?.organization?.id ?? snapshot.session?.session?.activeOrganizationId ?? snapshot.organizations[0]?.id ?? "";
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
   const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
   const orderedScenes = [...snapshot.scenes].sort(compareScenesForDisplay);
@@ -578,7 +645,14 @@ export function App() {
     .filter((asset) => !normalizedCanvasAssetSearch || [asset.name, asset.folder ?? "", ...(asset.tags ?? [])].some((value) => value.toLocaleLowerCase().includes(normalizedCanvasAssetSearch)));
   const selectedMapAsset = snapshot.assets.find((asset) => asset.id === selectedScene?.backgroundAssetId);
   const selectedCanvasAsset = visibleCanvasImageAssets.find((asset) => asset.id === canvasAssetId);
-  const selectedToken = snapshot.tokens.find((token) => token.id === selectedTokenId);
+  const selectedToken = snapshot.tokens.find((token) => token.id === selectedTokenId && (!selectedScene || token.sceneId === selectedScene.id));
+  const selectedTokenIdSet = useMemo(() => new Set(selectedTokenIds), [selectedTokenIds]);
+  const selectedTokens = snapshot.tokens.filter((token) => selectedTokenIdSet.has(token.id) && (!selectedScene || token.sceneId === selectedScene.id));
+  const sessionPulseStatus = status.toLowerCase().includes("realtime") || status.toLowerCase().includes("connected")
+    ? "Connected"
+    : status.toLowerCase().includes("loading")
+      ? "Loading"
+      : "Ready";
   const activeSystemId = snapshot.systems.find((system) => system.active)?.id ?? selectedCampaign?.defaultSystemId;
   const selectedActor = snapshot.actors.find((actor) => actor.id === selectedToken?.actorId) ?? snapshot.actors.find((actor) => actor.systemId === activeSystemId) ?? snapshot.actors[0];
   const activeCombat = snapshot.combats.find((combat) => combat.active);
@@ -627,6 +701,21 @@ export function App() {
   const activeMapAsset = snapshot.assets.find((asset) => asset.id === activeScene?.backgroundAssetId);
   const selectedSceneTokens = selectedScene ? snapshot.tokens.filter((token) => token.sceneId === selectedScene.id) : [];
   const activeSceneTokens = activeScene ? snapshot.tokens.filter((token) => token.sceneId === activeScene.id) : [];
+  const pendingTokenArtProposalTokenIds = useMemo(() => {
+    const tokenIds = new Set<string>();
+    for (const proposal of snapshot.proposals) {
+      if (proposal.status !== "pending" && proposal.status !== "approved") continue;
+      for (const change of proposal.changesJson) {
+        if (change.entity !== "token" || change.action !== "update" || typeof change.id !== "string") continue;
+        if (typeof change.data.imageAssetId === "string" && change.data.imageAssetId.trim()) tokenIds.add(change.id);
+      }
+    }
+    return tokenIds;
+  }, [snapshot.proposals]);
+  const selectedSceneTokensPendingArt = selectedSceneTokens.filter((token) => !token.imageAssetId && pendingTokenArtProposalTokenIds.has(token.id));
+  const selectedSceneTokensNeedingArt = selectedSceneTokens.filter((token) => !token.imageAssetId && !pendingTokenArtProposalTokenIds.has(token.id));
+  const isAiGeneratingMap = aiGenerationJobs.some((job) => job.kind === "map");
+  const isAiGeneratingTokenArt = aiGenerationJobs.some((job) => job.kind === "token" || job.kind === "tokenBatch");
   const selectedSceneTokenNames = selectedSceneTokens.map((token) => token.name).sort((left, right) => left.localeCompare(right));
   const activeSceneTokenNames = activeSceneTokens.map((token) => token.name).sort((left, right) => left.localeCompare(right));
   const activeSceneTokenNameSet = new Set(activeSceneTokenNames);
@@ -698,7 +787,7 @@ export function App() {
   }, {});
   const latestAreaTemplate = [...(selectedScene?.annotations ?? [])].reverse().find((annotation) => annotation.kind === "template");
   const canUpdateSelectedActor = hasPermission("actor.update") || (selectedActor?.ownerUserId === currentUserId && hasPermission("actor.updateOwned"));
-  const activeOrganization = snapshot.organizations.find((organization) => organization.id === (snapshot.session?.organization?.id ?? snapshot.session?.session?.activeOrganizationId));
+  const activeOrganization = snapshot.organizations.find((organization) => organization.id === activeOrganizationId);
   const canManageActiveOrganization = activeOrganization?.role === "owner" || activeOrganization?.role === "admin";
 
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean } = {}) {
@@ -709,8 +798,11 @@ export function App() {
     const scene = next.scenes.find((item) => item.id === nextSceneId) ?? next.scenes.find((item) => item.active) ?? next.scenes[0];
     setCampaignId(campaign?.id ?? "");
     setSceneId(scene?.id ?? "");
-    const token = next.tokens.find((item) => item.id === selectedTokenId) ?? next.tokens[0];
-    setSelectedTokenId(token?.id ?? "");
+    const sceneTokens = scene ? next.tokens.filter((item) => item.sceneId === scene.id) : next.tokens;
+    const validSelection = selectedTokenIds.filter((id) => sceneTokens.some((item) => item.id === id));
+    const token = sceneTokens.find((item) => item.id === selectedTokenId) ?? sceneTokens.find((item) => validSelection.includes(item.id)) ?? sceneTokens[0];
+    setSelectedTokenIdState(token?.id ?? "");
+    setSelectedTokenIds(token ? (validSelection.length ? validSelection : [token.id]) : []);
     setSnapshotReady(true);
     if (options.syncStatus !== false) setStatus("Synced");
   }
@@ -773,6 +865,14 @@ export function App() {
   }, [snapshot.workspaceDefaults]);
 
   useEffect(() => {
+    persistStoredId("otte:selectedCampaignId", campaignId);
+  }, [campaignId]);
+
+  useEffect(() => {
+    persistStoredId("otte:selectedSceneId", sceneId);
+  }, [sceneId]);
+
+  useEffect(() => {
     if (resetMode) return;
     let cancelled = false;
     loadBootstrapStatus()
@@ -798,10 +898,20 @@ export function App() {
           setAuthStatus("Sign in or register to open a campaign");
           return;
         }
-        refresh().catch((error) => setStatus(`API offline: ${error instanceof Error ? error.message : String(error)}`));
+        refresh().catch((error) => {
+          const message = errorMessage(error);
+          if (/unauthorized|missing session token|session token/i.test(message)) {
+            setSessionToken("");
+            setAuthRequired(true);
+            setStatus("Sign in required");
+            setAuthStatus("Sign in or register to open a campaign");
+            return;
+          }
+          setStatus(`API offline at ${apiBase || "http://localhost:4000"}: ${message}. Start it with pnpm --filter @open-tabletop/api dev.`);
+        });
       })
       .catch((error) => {
-        if (!cancelled) setStatus(`API offline: ${error instanceof Error ? error.message : String(error)}`);
+        if (!cancelled) setStatus(`API offline at ${apiBase || "http://localhost:4000"}: ${error instanceof Error ? error.message : String(error)}. Start it with pnpm --filter @open-tabletop/api dev.`);
       });
     return () => {
       cancelled = true;
@@ -810,8 +920,8 @@ export function App() {
 
   useEffect(() => {
     if (!campaignId || !sessionToken) return;
-    const wsUrl = `${apiBase || window.location.origin}`.replace(/^http/, "ws") + `/api/v1/realtime?campaignId=${campaignId}&sessionToken=${encodeURIComponent(sessionToken)}`;
-    const socket = new WebSocket(wsUrl);
+    const wsUrl = `${apiBase || window.location.origin}`.replace(/^http/, "ws") + `/api/v1/realtime?campaignId=${encodeURIComponent(campaignId)}`;
+    const socket = new WebSocket(wsUrl, ["otte.v1", `otte.auth.${sessionToken}`]);
     socket.onopen = () => setStatus("Realtime connected");
     socket.onmessage = () => {
       refresh(campaignId, sceneId, { syncStatus: false }).catch(() => setStatus("Realtime refresh failed"));
@@ -821,13 +931,19 @@ export function App() {
   }, [campaignId, sceneId, sessionToken]);
 
   useEffect(() => {
-    if (tab !== "admin" || !snapshot.session?.serverAdmin) return;
+    if (workspaceMode !== "manage" || manageCategory !== "serverAdmin" || !snapshot.session?.serverAdmin) return;
     refreshAdmin().catch((error) => setAdminStatus(error instanceof Error ? error.message : String(error)));
-  }, [tab, snapshot.session?.serverAdmin]);
+  }, [manageCategory, workspaceMode, snapshot.session?.serverAdmin]);
 
   useEffect(() => {
-    if (tab === "admin" && snapshot.session && !snapshot.session.serverAdmin) setTab("ai");
-  }, [tab, snapshot.session?.serverAdmin, snapshot.session?.user.id]);
+    if (workspaceMode === "live" && tab !== "actors" && tab !== "chat" && tab !== "combat") setTab("actors");
+    if (workspaceMode === "prep" && tab !== "actors" && tab !== "journal" && tab !== "content" && tab !== "plugins") setTab("content");
+    if (workspaceMode === "manage" && tab !== "actors" && tab !== "journal" && tab !== "content" && tab !== "plugins") setTab("actors");
+  }, [tab, workspaceMode]);
+
+  useEffect(() => {
+    if (manageCategory === "serverAdmin" && snapshot.session && !snapshot.session.serverAdmin) setManageCategory("campaign");
+  }, [manageCategory, snapshot.session?.serverAdmin, snapshot.session?.user.id]);
 
   useEffect(() => {
     if (!selectedActor || tab !== "actors") return;
@@ -880,9 +996,10 @@ export function App() {
     setSceneEditGridSize(selectedScene.gridSize);
     setSceneEditActive(selectedScene.active);
     setSceneEditBackgroundAssetId(selectedScene.backgroundAssetId ?? "");
+    setSceneEditGridOverlayVisible(sceneGridOverlayVisible(selectedScene));
     setSceneDuplicateName(`${selectedScene.name} Copy`);
     setSceneDeleteConfirm("");
-  }, [selectedScene?.id, selectedScene?.name, selectedScene?.folder, selectedScene?.width, selectedScene?.height, selectedScene?.gridSize, selectedScene?.active, selectedScene?.backgroundAssetId]);
+  }, [selectedScene?.id, selectedScene?.name, selectedScene?.folder, selectedScene?.width, selectedScene?.height, selectedScene?.gridSize, selectedScene?.active, selectedScene?.backgroundAssetId, selectedScene?.metadata]);
 
   useEffect(() => {
     if (sceneFolderFilter === "all") return;
@@ -1243,7 +1360,11 @@ export function App() {
       height: Math.max(200, sceneEditHeight),
       gridSize: Math.max(10, sceneEditGridSize),
       backgroundAssetId: sceneEditBackgroundAssetId || null,
-      active: sceneEditActive
+      active: sceneEditActive,
+      metadata: {
+        ...selectedScene.metadata,
+        gridOverlayVisible: sceneEditGridOverlayVisible
+      }
     });
     setStatus(`${scene.name} updated`);
     await refresh(campaignId, scene.id);
@@ -1383,23 +1504,24 @@ export function App() {
     const actorId = (options.actorId ?? newTokenActorId) || undefined;
     const actor = actorId ? snapshot.actors.find((item) => item.id === actorId) : undefined;
     const imageAssetId = options.imageAssetId;
-    const width = Math.max(1, newTokenWidth || selectedScene.gridSize);
-    const height = Math.max(1, newTokenHeight || selectedScene.gridSize);
+    const footprintCells = Math.max(1, newTokenFootprintCells || 1);
+    const width = selectedScene.gridSize * footprintCells;
+    const height = selectedScene.gridSize * footprintCells;
     const centerX = options.x ?? selectedScene.width / 2;
     const centerY = options.y ?? selectedScene.height / 2;
-    const x = Math.max(0, Math.min(selectedScene.width - width, Math.round(centerX - width / 2)));
-    const y = Math.max(0, Math.min(selectedScene.height - height, Math.round(centerY - height / 2)));
+    const position = tokenCoordinatesFromCenter(selectedScene, width, height, centerX, centerY);
     const token = await apiPost<Token>(`/api/v1/scenes/${selectedScene.id}/tokens`, {
       actorId,
       imageAssetId,
       name: options.name?.trim() || actor?.name || newTokenName.trim() || "New Token",
-      x,
-      y,
+      x: position.x,
+      y: position.y,
       width,
       height,
+      layer: options.layer ?? "player",
       disposition: options.disposition ?? (actor ? "friendly" : newTokenDisposition)
     });
-    setSelectedTokenId(token.id);
+    selectSingleToken(token.id);
     setNewTokenName("");
     setNewTokenActorId("");
     setStatus(`${token.name} ${options.x !== undefined || options.y !== undefined ? "placed on scene" : "created"}`);
@@ -1412,6 +1534,7 @@ export function App() {
       actorId: payload.actorId,
       imageAssetId: payload.imageAssetId,
       name: payload.name,
+      layer: payload.layer ?? (payload.type === "asset" ? "map" : "player"),
       disposition: payload.disposition,
       x: point.x,
       y: point.y
@@ -1426,6 +1549,7 @@ export function App() {
     await createToken({
       imageAssetId: asset.id,
       name: asset.name,
+      layer: "map",
       disposition: "neutral",
       x: Math.round(((clientX - rect.left) / rect.width) * selectedScene.width),
       y: Math.round(((clientY - rect.top) / rect.height) * selectedScene.height)
@@ -1439,27 +1563,28 @@ export function App() {
   async function placeCanvasAssetTokens(asset: MapAsset, requestedCount: number) {
     if (!selectedScene) return;
     const count = Math.max(1, Math.min(6, Math.round(requestedCount) || 1));
-    const width = Math.max(1, newTokenWidth || selectedScene.gridSize);
-    const height = Math.max(1, newTokenHeight || selectedScene.gridSize);
+    const footprintCells = Math.max(1, newTokenFootprintCells || 1);
+    const width = selectedScene.gridSize * footprintCells;
+    const height = selectedScene.gridSize * footprintCells;
     const spacing = width + 12;
     let lastToken: Token | undefined;
     for (let index = 0; index < count; index += 1) {
       const offset = (index - (count - 1) / 2) * spacing;
       const centerX = selectedScene.width / 2 + offset;
       const centerY = selectedScene.height / 2;
-      const x = Math.max(0, Math.min(selectedScene.width - width, Math.round(centerX - width / 2)));
-      const y = Math.max(0, Math.min(selectedScene.height - height, Math.round(centerY - height / 2)));
+      const position = tokenCoordinatesFromCenter(selectedScene, width, height, centerX, centerY);
       lastToken = await apiPost<Token>(`/api/v1/scenes/${selectedScene.id}/tokens`, {
         imageAssetId: asset.id,
         name: asset.name,
-        x,
-        y,
+        x: position.x,
+        y: position.y,
         width,
         height,
+        layer: "map",
         disposition: "neutral"
       });
     }
-    if (lastToken) setSelectedTokenId(lastToken.id);
+    if (lastToken) selectSingleToken(lastToken.id);
     await refresh();
     setStatus(count === 1 ? `${asset.name} placed on scene` : `Placed ${count} ${asset.name} tokens`);
   }
@@ -1516,7 +1641,7 @@ export function App() {
     setImportStatus("Archive import failure dismissed");
   }
 
-  async function updateSelectedTokenVision(patch: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>) {
+  async function updateSelectedTokenVision(patch: TokenVisionPatch) {
     if (!selectedToken) return;
     await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, patch);
     await refresh();
@@ -1532,7 +1657,7 @@ export function App() {
   async function deleteSelectedToken() {
     if (!selectedToken) return;
     await apiDelete<Token>(`/api/v1/tokens/${selectedToken.id}`);
-    setSelectedTokenId("");
+    clearTokenSelection();
     setStatus("Token deleted");
     await refresh();
   }
@@ -1566,6 +1691,27 @@ export function App() {
     });
     setStatus("Map uploaded");
     await refresh(campaignId, selectedScene.id);
+  }
+
+  async function uploadSelectedTokenImage(file: File, input?: HTMLInputElement) {
+    if (!selectedCampaign || !selectedToken) return;
+    setStatus(`Uploading ${file.name} for ${selectedToken.name}...`);
+    try {
+      const result = await apiUploadAsset({
+        campaignId: selectedCampaign.id,
+        sceneId: selectedScene?.id,
+        file,
+        folder: "tokens",
+        tags: ["token"]
+      });
+      await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, { imageAssetId: result.asset.id });
+      setStatus(`${selectedToken.name} image updated`);
+      await refresh(selectedCampaign.id, selectedScene?.id ?? sceneId);
+    } catch (error) {
+      setStatus(`Token image upload failed: ${errorMessage(error)}`);
+    } finally {
+      if (input) input.value = "";
+    }
   }
 
   async function uploadAssetToLibrary(file: File, setAsBackground: boolean, retryInput?: { folder: string; tags: string }) {
@@ -1705,6 +1851,42 @@ export function App() {
     setFogBrushMode(null);
     setAnnotationTool(null);
     setStatus("Select tool active");
+  }
+
+  function zoomBattleMap(delta: number) {
+    setBattleMapZoom((current) => clampBattleMapZoom(current + delta));
+  }
+
+  function resetBattleMapZoom() {
+    setBattleMapZoom(1);
+  }
+
+  function selectSingleToken(tokenId: string) {
+    setSelectedTokenIdState(tokenId);
+    setSelectedTokenIds(tokenId ? [tokenId] : []);
+  }
+
+  function selectCanvasToken(tokenId: string, options: TokenSelectionOptions = {}) {
+    if (options.additive) {
+      setSelectedTokenIds((current) => {
+        const alreadySelected = current.includes(tokenId);
+        const next = alreadySelected ? current.filter((id) => id !== tokenId) : [...current, tokenId];
+        setSelectedTokenIdState(alreadySelected ? next[next.length - 1] ?? "" : tokenId);
+        return next;
+      });
+      return;
+    }
+    if (options.preserveExisting) {
+      setSelectedTokenIdState(tokenId);
+      setSelectedTokenIds((current) => (current.includes(tokenId) ? current : [...current, tokenId]));
+      return;
+    }
+    selectSingleToken(tokenId);
+  }
+
+  function clearTokenSelection() {
+    setSelectedTokenIdState("");
+    setSelectedTokenIds([]);
   }
 
   function setAnnotationLayerVisible(layer: SceneAnnotationLayer, visible: boolean) {
@@ -2170,7 +2352,7 @@ export function App() {
   }
 
   async function startCombat() {
-    const combatants = snapshot.tokens.map((token, index) => {
+    const combatants = selectedSceneTokens.map((token, index) => {
       const actor = snapshot.actors.find((candidate) => candidate.id === token.actorId);
       const resource = actor ? actorCombatResource(actor) : undefined;
       return {
@@ -2234,10 +2416,97 @@ export function App() {
   async function askAi() {
     await apiPost(`/api/v1/campaigns/${campaignId}/ai/encounter-design`, {
       prompt: aiPrompt,
-      difficulty: "standard"
+      difficulty: "standard",
+      sceneName: "AI Draft Encounter Scene",
+      sceneWidth: selectedScene?.width,
+      sceneHeight: selectedScene?.height,
+      gridSize: selectedScene?.gridSize
     });
-    setStatus("Encounter proposal drafted");
+    setStatus("Encounter and scene proposal drafted");
     await refresh();
+  }
+
+  async function trackAiGenerationJob(job: AiGenerationJob, task: () => Promise<void>) {
+    setAiGenerationJobs((jobs) => [...jobs.filter((item) => item.id !== job.id), job]);
+    try {
+      await task();
+    } catch (error) {
+      setStatus(`${job.label} failed: ${errorMessage(error)}`);
+    } finally {
+      setAiGenerationJobs((jobs) => jobs.filter((item) => item.id !== job.id));
+    }
+  }
+
+  async function generateAiMapAsset() {
+    if (!selectedScene) return;
+    const prompt = aiMapPrompt.trim();
+    if (!prompt) return;
+    await trackAiGenerationJob({ id: `map:${selectedScene.id}`, kind: "map", label: "Map image generation", detail: selectedScene.name }, async () => {
+      setStatus(`Generating map art for ${selectedScene.name}...`);
+      await apiPost(`/api/v1/campaigns/${campaignId}/ai/generate-map-asset`, {
+        prompt,
+        name: `${selectedScene.name} Generated Map`,
+        sceneId: selectedScene.id,
+        size: "1536x1024",
+        quality: "low",
+        outputFormat: "png"
+      });
+      setStatus("Map image proposal drafted");
+      await refresh();
+    });
+  }
+
+  async function generateAiTokenAsset() {
+    if (!selectedToken) return;
+    const prompt = aiTokenPrompt.trim();
+    if (!prompt) return;
+    await trackAiGenerationJob({ id: `token:${selectedToken.id}`, kind: "token", label: "Token image generation", detail: selectedToken.name }, async () => {
+      setStatus(`Generating token art for ${selectedToken.name}...`);
+      await apiPost(`/api/v1/campaigns/${campaignId}/ai/generate-token-asset`, {
+        prompt,
+        name: `${selectedToken.name} Generated Token`,
+        tokenId: selectedToken.id,
+        size: "1024x1024",
+        quality: "low",
+        outputFormat: "png"
+      });
+      setStatus("Token art proposal drafted");
+      await refresh();
+    });
+  }
+
+  async function generateAiSceneTokenAssets() {
+    if (!selectedScene) return;
+    const prompt = aiTokenPrompt.trim();
+    if (!prompt) return;
+    const tokens = selectedSceneTokensNeedingArt;
+    if (tokens.length === 0) {
+      setStatus("All selected scene tokens already have token art or pending art proposals");
+      return;
+    }
+    await trackAiGenerationJob({ id: `token-batch:${selectedScene.id}`, kind: "tokenBatch", label: "Scene token art generation", detail: `${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}` }, async () => {
+      setStatus(`Generating token art for ${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}...`);
+      for (const token of tokens) {
+        const tokenPrompt = [
+          prompt,
+          "",
+          `Create distinct token art for ${token.name}.`,
+          `Scene: ${selectedScene.name}.`,
+          `Disposition: ${token.disposition}.`,
+          token.notes ? `Token notes: ${token.notes.slice(0, 240)}` : ""
+        ].filter(Boolean).join("\n");
+        await apiPost(`/api/v1/campaigns/${campaignId}/ai/generate-token-asset`, {
+          prompt: tokenPrompt,
+          name: `${token.name} Generated Token`,
+          tokenId: token.id,
+          size: "1024x1024",
+          quality: "low",
+          outputFormat: "png"
+        });
+      }
+      setStatus(`Token art proposals drafted for ${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}`);
+      await refresh();
+    });
   }
 
   async function replayAiThread(thread: AiThread) {
@@ -2270,8 +2539,16 @@ export function App() {
   }
 
   async function approveAndApply(proposal: Proposal) {
+    const createdSceneId = createdSceneIdFromProposal(proposal);
     await apiPost(`/api/v1/proposals/${proposal.id}/approve`, {});
-    await apiPost(`/api/v1/proposals/${proposal.id}/apply`, {});
+    const applied = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/apply`, {});
+    const appliedSceneId = createdSceneIdFromProposal(applied) ?? createdSceneId;
+    if (appliedSceneId) {
+      setSceneId(appliedSceneId);
+      setStatus("Proposal applied; opened new scene");
+      await refresh(campaignId, appliedSceneId);
+      return;
+    }
     setStatus("Proposal applied");
     await refresh();
   }
@@ -2305,9 +2582,13 @@ export function App() {
   }
 
   async function syncPluginRegistries() {
-    const result = await apiPost<{ registries: unknown[]; plugins: unknown[] }>("/api/v1/plugins/registry/sync", { campaignId });
-    setStatus(`Plugin registries synced: ${result.registries.length} registries, ${result.plugins.length} packages`);
-    await refresh();
+    try {
+      const result = await apiPost<{ registries: unknown[]; plugins: unknown[] }>("/api/v1/plugins/registry/sync", { campaignId });
+      setStatus(`Plugin registries synced: ${result.registries.length} registries, ${result.plugins.length} packages`);
+      await refresh();
+    } catch (error) {
+      setStatus(`Plugin registry sync failed: ${errorMessage(error)}`);
+    }
   }
 
   async function installSystem(system: SystemRuntimeInfo) {
@@ -2334,20 +2615,23 @@ export function App() {
     await refresh();
   }
 
-  async function useActorAction(rollId: string, options: { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean } = {}) {
+  async function useActorAction(rollId: string, options: ActorActionCommitOptions = {}) {
     if (!selectedActor) return;
     try {
-      const used = await apiPost<{ actor?: Actor; usage?: { consumed?: Array<{ label: string; remaining: number }> }; effect?: { type: string; targetActorId: string; amount?: number } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
+      const used = await apiPost<{ actor?: Actor; updatedActors?: Actor[]; usage?: { consumed?: Array<{ label: string; remaining: number }> }; effect?: { type: string; targetActorId: string; amount?: number }; resolution?: ActorActionResolutionPreview }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
         rollId,
         consumeResources: options.consumeResources ?? true,
         applyEffect: options.applyEffect,
-        targetActorId: options.applyEffect ? options.targetActorId : undefined
+        targetActorId: options.targetActorId,
+        saveOutcomes: options.saveOutcomes,
+        effectChoice: options.effectChoice
       });
       const spent = used.usage?.consumed?.map((item) => `${item.label} ${item.remaining}`).join(", ");
       const applied = used.effect ? `; ${used.effect.type} applied` : "";
-      if (used.actor) {
-        const updatedActor = used.actor;
-        setSnapshot((current) => ({ ...current, actors: current.actors.map((actor) => (actor.id === updatedActor.id ? updatedActor : actor)) }));
+      const updatedActors = used.updatedActors && used.updatedActors.length > 0 ? used.updatedActors : used.actor ? [used.actor] : [];
+      if (updatedActors.length > 0) {
+        const updates = new Map(updatedActors.map((updatedActor) => [updatedActor.id, updatedActor]));
+        setSnapshot((current) => ({ ...current, actors: current.actors.map((actor) => updates.get(actor.id) ?? actor) }));
       }
       setStatus(spent ? `${selectedActor.name} used action: ${spent}${applied}` : `${selectedActor.name} action posted${applied}`);
     } catch (error) {
@@ -2928,9 +3212,84 @@ export function App() {
     );
   }
 
+  const manageCategories = [
+    { id: "account", label: "Account", description: "Profile, workspace, password, and MFA", icon: <UserCog size={16} />, badge: snapshot.organizations.length > 0 ? formatNumber(snapshot.organizations.length) : undefined },
+    { id: "campaign", label: "Campaign", description: "Create, edit, archive, and permissions", icon: <Shield size={16} />, badge: selectedCampaign?.archivedAt ? "archived" : "active" },
+    { id: "people", label: "People", description: "Invites and table joining", icon: <UserPlus size={16} />, badge: formatNumber(snapshot.organizationInvites.filter((invite) => invite.status === "pending").length) },
+    { id: "scenes", label: "Scenes", description: "Scene creation, ordering, maps, and activation", icon: <MapPin size={16} />, badge: formatNumber(accessibleScenes.length) },
+    { id: "archives", label: "Archives", description: "Portable exports, imports, and recovery", icon: <Download size={16} />, badge: archiveImportReport ? "ready" : undefined },
+    { id: "serverAdmin", label: "Server Admin", description: "Operational admin tools", icon: <UserCog size={16} />, visible: Boolean(snapshot.session?.serverAdmin), badge: adminSnapshot ? "synced" : undefined }
+  ] satisfies Array<{ id: ManageCategoryId; label: string; description: string; icon: React.ReactNode; badge?: string; visible?: boolean }>;
+  const visibleManageCategories = manageCategories.filter((category) => category.visible !== false);
+  const activeManageCategory = visibleManageCategories.some((category) => category.id === manageCategory) ? manageCategory : "campaign";
+  const adminPanel = snapshot.session?.serverAdmin ? <AdminPanel admin={adminSnapshot} campaigns={snapshot.campaigns} systems={snapshot.systems} workspaceDefaults={snapshot.workspaceDefaults} organizationMembers={snapshot.organizationMembers} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onRevokeRiskSessions={revokeAdminRiskSessions} onPruneExpiredPasswordResets={pruneExpiredPasswordResets} onRetryEmail={retryAdminEmail} onRetryAllEmails={retryAllAdminEmails} onRetryAiToolCall={retryAdminAiToolCall} onFailStaleAiThreads={failStaleAiThreads} onFailStaleAiToolCalls={failStaleAiToolCalls} onRejectStaleAiProposals={rejectStaleAiProposals} onCleanupStoredAssetBytes={cleanupStoredAssetBytes} onMigrateStoredAssetBytes={migrateStoredAssetBytes} onQuarantineAssetIntegrityFailures={quarantineAssetIntegrityFailures} onPurgeAssetCdnCache={purgeAssetCdnCache} onUpdatePluginReview={updatePluginReview} onSyncPluginRegistries={syncAdminPluginRegistries} onUpdateWorkspaceDefaults={updateOrganizationWorkspaceDefaults} onAddOrganizationMember={addOrganizationMember} onUpdateOrganizationMember={updateOrganizationMember} onRemoveOrganizationMember={deleteOrganizationMember} onCreateScimMapping={createScimGroupRoleMapping} onDeleteScimMapping={deleteScimGroupRoleMapping} /> : null;
+  const workspaceModeOptions = [
+    { id: "live", label: "Live Table", icon: <Eye size={15} /> },
+    { id: "prep", label: "Prep", icon: <MapPin size={15} /> },
+    { id: "ai", label: "AI Studio", icon: <Bot size={15} /> },
+    { id: "manage", label: "Manage", icon: <Boxes size={15} /> }
+  ] satisfies Array<{ id: WorkspaceMode; label: string; icon: React.ReactNode }>;
+  const workspaceEyebrow = workspaceMode === "ai" ? "AI Studio" : workspaceMode === "prep" ? "Prep" : workspaceMode === "manage" ? "Manage" : (selectedCampaign?.defaultSystemId ?? "No system");
+  const workspaceHeading = workspaceMode === "ai" ? "Build, review, and apply generated table content" : workspaceMode === "prep" ? "Prep scenes, assets, journals, and imports" : workspaceMode === "manage" ? (selectedCampaign?.name ?? "Workspace settings") : (selectedCampaign?.name ?? "Create a campaign");
+  const showSceneTabs = workspaceMode !== "manage" || activeManageCategory === "scenes";
+  const showScenePrepControls = workspaceMode === "prep";
+  const showSceneSelectionControls = workspaceMode === "prep" || (workspaceMode === "manage" && activeManageCategory === "scenes");
+  const showQuickCreate = workspaceMode === "live" || workspaceMode === "prep";
+  const showTableWorkspace = workspaceMode === "live" || workspaceMode === "prep";
+  const showConsoleDock = workspaceMode !== "manage";
+  const inspectorTabs: InspectorTab[] = workspaceMode === "live"
+    ? ["actors", "chat", "combat"]
+    : ["actors", "journal", "content", "plugins"];
+  const aiPanelElement = (
+    <AiPanel
+      prompt={aiPrompt}
+      setPrompt={setAiPrompt}
+      askAi={askAi}
+      mapPrompt={aiMapPrompt}
+      setMapPrompt={setAiMapPrompt}
+      generateMapAsset={generateAiMapAsset}
+      tokenPrompt={aiTokenPrompt}
+      setTokenPrompt={setAiTokenPrompt}
+      generateTokenAsset={generateAiTokenAsset}
+      generateSceneTokenAssets={generateAiSceneTokenAssets}
+      generationJobs={aiGenerationJobs}
+      selectedSceneName={selectedScene?.name}
+      selectedTokenId={selectedToken?.id}
+      selectedTokenName={selectedToken?.name}
+      tokenOptions={selectedSceneTokens}
+      selectToken={selectSingleToken}
+      tokenArtMissingCount={selectedSceneTokensNeedingArt.length}
+      tokenArtPendingCount={selectedSceneTokensPendingArt.length}
+      replayAiThread={replayAiThread}
+      retryAiToolCall={retryAiToolCall}
+      recapSession={recapSession}
+      extractMemory={extractMemory}
+      proposals={snapshot.proposals}
+      records={snapshot}
+      memory={snapshot.memory}
+      aiThreads={snapshot.aiThreads}
+      aiUsage={snapshot.aiUsage}
+      aiToolCalls={snapshot.aiToolCalls}
+      activeSystemName={(snapshot.systems.find((item) => item.active) ?? snapshot.systems[0])?.name}
+      encounterPlan={encounterPlan}
+      planEncounter={planSystemEncounter}
+      approveAndApply={approveAndApply}
+      rejectProposal={rejectProposalReview}
+      approveMemory={approveMemory}
+      deleteMemory={deleteMemory}
+      canDraftEncounter={hasPermission("ai.proposeChanges") && hasPermission("campaign.update") && hasPermission("scene.create")}
+      canPropose={hasPermission("ai.proposeChanges")}
+      canApply={hasPermission("ai.applyChanges")}
+      canPlanEncounter={Boolean(snapshot.systems.length > 0 && hasPermission("combat.manage"))}
+      canGenerateMap={Boolean(selectedScene && !isAiGeneratingMap && hasPermission("ai.proposeChanges") && hasPermission("scene.create") && hasPermission("scene.update"))}
+      canGenerateToken={Boolean(selectedToken && !isAiGeneratingTokenArt && hasPermission("ai.proposeChanges") && hasPermission("scene.create") && hasPermission("token.update"))}
+      canGenerateTokenBatch={Boolean(selectedScene && !isAiGeneratingTokenArt && selectedSceneTokensNeedingArt.length > 0 && hasPermission("ai.proposeChanges") && hasPermission("scene.create") && hasPermission("token.update"))}
+    />
+  );
+
   return (
     <main className="shell" aria-label="OpenTabletop workspace">
-      <aside className="rail">
+      <aside className={`rail rail-${workspaceMode} ${workspaceMode === "manage" ? "rail-manage" : "rail-play"}`}>
         <div>
           <div className="brand">OpenTabletop</div>
           <div className="subtle">API-first VTT engine</div>
@@ -2964,6 +3323,73 @@ export function App() {
             )}
           </select>
         </label>
+        <p className="account-summary rail-session-summary">
+          {snapshot.session?.user.displayName ?? currentUserId}
+        </p>
+        <div className="rail-mode workspace-mode-switcher" role="group" aria-label="Workspace mode">
+          {workspaceModeOptions.map((mode) => (
+            <button className={workspaceMode === mode.id ? "ghost-button active" : "ghost-button"} key={mode.id} type="button" onClick={() => setWorkspaceMode(mode.id)}>
+              {mode.icon} {mode.label}
+            </button>
+          ))}
+        </div>
+        <section className="party-rail" aria-label="Party">
+          <div className="operator-heading">
+            <div className="section-title">Party</div>
+            <span>{formatNumber(snapshot.actors.length)} actors</span>
+          </div>
+          <div className="party-list">
+            {snapshot.actors.slice(0, 4).map((actor) => (
+              <button
+                className={actor.id === selectedActor?.id ? "party-row selected" : "party-row"}
+                key={actor.id}
+                type="button"
+                onClick={() => {
+                  const token = snapshot.tokens.find((item) => item.actorId === actor.id && item.sceneId === sceneId);
+                  if (token) selectSingleToken(token.id);
+                  setTab("actors");
+                }}
+              >
+                <span className="party-avatar">{actor.name.slice(0, 2).toUpperCase()}</span>
+                <span>
+                  <strong>{actor.name}</strong>
+                  <small>{stringValue(actor.data.class) || actor.systemId || "Character"}</small>
+                </span>
+              </button>
+            ))}
+            {snapshot.actors.length === 0 && <p className="account-summary">No actors yet.</p>}
+          </div>
+        </section>
+        <section className="rail-admin" hidden={workspaceMode !== "manage"} aria-label="Manage workspace panel">
+          <div className="manage-drawer-heading">
+            <div>
+              <div className="section-title">Manage</div>
+              <strong>{selectedCampaign?.name ?? "Workspace"}</strong>
+            </div>
+            <button className="ghost-button manage-drawer-close" type="button" onClick={() => setWorkspaceMode("live")}>
+              <X size={16} /> Close
+            </button>
+          </div>
+          <nav className="manage-category-list" aria-label="Manage sections">
+            {visibleManageCategories.map((category) => (
+              <button
+                className={category.id === activeManageCategory ? "manage-category-button active" : "manage-category-button"}
+                key={category.id}
+                type="button"
+                onClick={() => setManageCategory(category.id)}
+              >
+                {category.icon}
+                <span>
+                  <strong>{category.label}</strong>
+                  <small>{category.description}</small>
+                </span>
+                {category.badge && <em>{category.badge}</em>}
+              </button>
+            ))}
+          </nav>
+          <div className="manage-category-content">
+            {activeManageCategory === "account" && (
+              <div className="manage-card-grid">
         {ssoEnabled && (
           <button className="ghost-button" onClick={() => startSso().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
             <Shield size={16} /> SSO
@@ -2979,13 +3405,14 @@ export function App() {
           {snapshot.organizations.length > 0 && (
             <label className="mini-form">
               <span>Workspace</span>
-              <select aria-label="Active organization workspace" value={snapshot.session?.organization?.id ?? snapshot.session?.session?.activeOrganizationId ?? snapshot.organizations[0]?.id ?? ""} onChange={(event) => switchActiveOrganization(event.target.value).catch((error) => setAccountStatus(error instanceof Error ? error.message : String(error)))}>
+              <select aria-label="Active organization workspace" value={activeOrganizationId} onChange={(event) => switchActiveOrganization(event.target.value).catch((error) => setAccountStatus(error instanceof Error ? error.message : String(error)))}>
                 {snapshot.organizations.map((organization) => (
                   <option key={organization.id} value={organization.id}>
                     {organization.name} - {organization.role} - {organization.campaignCount} campaigns
                   </option>
                 ))}
               </select>
+              {activeOrganization && <small className="mini-form-meta">{titleCaseLabel(activeOrganization.role)} - {formatNumber(activeOrganization.campaignCount)} campaigns</small>}
             </label>
           )}
           <form
@@ -3043,6 +3470,10 @@ export function App() {
           </form>
           <div className="status">{accountStatus}</div>
         </section>
+              </div>
+            )}
+            {activeManageCategory === "campaign" && (
+              <div className="manage-card-grid">
         <form
           className="account-box"
           onSubmit={(event) => {
@@ -3173,6 +3604,10 @@ export function App() {
             )}
           </form>
         )}
+              </div>
+            )}
+            {activeManageCategory === "people" && (
+              <div className="manage-card-grid">
         {(hasPermission("campaign.update") || canManageActiveOrganization) && (
           <form
             className="account-box"
@@ -3226,6 +3661,52 @@ export function App() {
             <ChevronRight size={16} /> Join
           </button>
         </form>
+              </div>
+            )}
+            {activeManageCategory === "scenes" && (
+              <div className="manage-card-grid">
+        <div className="scene-filter-panel manage-scene-filter-panel" aria-label="Scene prep filters">
+          <select
+            aria-label="Scene folder filter"
+            value={sceneFolderFilter}
+            onChange={(event) => {
+              const nextFolder = event.target.value;
+              setSceneFolderFilter(nextFolder);
+              const nextScene = nextFolder === "all" ? orderedScenes[0] : orderedScenes.find((scene) => scene.folder === nextFolder);
+              if (nextScene && (nextFolder !== "all" || !selectedScene)) setSceneId(nextScene.id);
+            }}
+          >
+            <option value="all">All scenes ({formatNumber(accessibleScenes.length)})</option>
+            {sceneFolderOptions.map((folder) => (
+              <option key={folder} value={folder}>
+                {folder} ({formatNumber(sceneFolderCounts[folder] ?? 0)})
+              </option>
+            ))}
+          </select>
+          <input aria-label="Scene search" value={sceneSearch} placeholder="Search scenes" onChange={(event) => setSceneSearch(event.target.value)} />
+          <span role="status" aria-label="Scene filter summary">{formatNumber(visibleScenes.length)} of {formatNumber(accessibleScenes.length)} scenes</span>
+          <span role="status" aria-label="Scene selection summary">{formatNumber(selectedPrepScenes.length)} selected</span>
+          {hasPermission("scene.update") && (
+            <div className="button-row">
+              <input aria-label="Bulk scene folder" value={bulkSceneFolder} placeholder="Move visible to folder" onChange={(event) => setBulkSceneFolder(event.target.value)} />
+              <button className="ghost-button" type="button" disabled={visibleScenes.length === 0} onClick={() => moveVisibleScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                Move visible scenes
+              </button>
+              <button className="ghost-button" type="button" disabled={visibleScenes.length === 0} onClick={selectVisiblePrepScenes}>
+                Select visible scenes
+              </button>
+              <button className="ghost-button" type="button" disabled={selectedPrepScenes.length === 0} onClick={clearPrepSceneSelection}>
+                Clear selected scenes
+              </button>
+              <button className="ghost-button" type="button" disabled={selectedPrepScenes.length === 0} onClick={() => moveSelectedPrepScenesToFolder().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                Move selected scenes
+              </button>
+              <button className="ghost-button" type="button" disabled={selectedPrepScenes.length === 0} onClick={() => duplicateSelectedPrepScenes().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                Duplicate selected scenes
+              </button>
+            </div>
+          )}
+        </div>
         <button className="ghost-button" onClick={createScene} disabled={!hasPermission("scene.create")} title={hasPermission("scene.create") ? "Create scene" : "Requires scene.create"}>
           <Plus size={16} /> Scene
         </button>
@@ -3292,6 +3773,10 @@ export function App() {
             <label className="inline-check">
               <input type="checkbox" checked={sceneEditActive} onChange={(event) => setSceneEditActive(event.target.checked)} />
               <span>Active player scene</span>
+            </label>
+            <label className="inline-check">
+              <input type="checkbox" checked={sceneEditGridOverlayVisible} onChange={(event) => setSceneEditGridOverlayVisible(event.target.checked)} />
+              <span>Show VTT grid overlay</span>
             </label>
             <section className="asset-pressure-list" aria-label="Scene activation history">
               <div className="operator-row tool-call-row">
@@ -3376,6 +3861,26 @@ export function App() {
             )}
           </form>
         )}
+        <button className="ghost-button" onClick={() => document.getElementById("map-upload-file")?.click()} disabled={!hasPermission("scene.create") || !hasPermission("scene.update")} title={hasPermission("scene.create") && hasPermission("scene.update") ? "Upload map" : "Requires scene.create and scene.update"}>
+          <Upload size={16} /> Map
+        </button>
+        <input
+          id="map-upload-file"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+          hidden
+          onChange={async (event) => {
+            const input = event.currentTarget;
+            const file = input.files?.[0];
+            if (!file) return;
+            await uploadMap(file);
+            input.value = "";
+          }}
+        />
+              </div>
+            )}
+            {activeManageCategory === "archives" && (
+              <div className="manage-card-grid">
         <section className="account-box" aria-label="Archive export wizard">
           <div className="section-title">Archive Export</div>
           <select aria-label="Archive export scope" value={archiveExportScope} onChange={(event) => setArchiveExportScope(event.target.value as ArchiveExportScope)}>
@@ -3502,9 +4007,6 @@ export function App() {
             </div>
           )}
         </section>
-        <button className="ghost-button" onClick={() => document.getElementById("map-upload-file")?.click()} disabled={!hasPermission("scene.create") || !hasPermission("scene.update")} title={hasPermission("scene.create") && hasPermission("scene.update") ? "Upload map" : "Requires scene.create and scene.update"}>
-          <Upload size={16} /> Map
-        </button>
         <input
           id="import-file"
           type="file"
@@ -3515,18 +4017,6 @@ export function App() {
             const file = event.target.files?.[0];
             if (!file) return;
             await importCampaignArchive(file, event.currentTarget);
-          }}
-        />
-        <input
-          id="map-upload-file"
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
-          hidden
-          onChange={async (event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            await uploadMap(file);
-            event.target.value = "";
           }}
         />
         <div id="import-status" className="import-status" role="status" aria-live="polite">
@@ -3546,16 +4036,29 @@ export function App() {
             </div>
           </div>
         )}
+              </div>
+            )}
+            {activeManageCategory === "serverAdmin" && (
+              <div className="manage-admin-panel">
+                {adminPanel}
+              </div>
+            )}
+          </div>
+        </section>
         <div className="status" role="status" aria-live="polite">{status}</div>
       </aside>
 
       <section className="workspace">
         <header className="topbar">
           <div>
-            <div className="eyebrow">{selectedCampaign?.defaultSystemId ?? "No system"}</div>
-            <h1>{selectedCampaign?.name ?? "Create a campaign"}</h1>
+            <div className="eyebrow">{workspaceEyebrow}</div>
+            <h1>{workspaceHeading}</h1>
+            <div className="session-pulse" aria-label={`Session connection: ${sessionPulseStatus}`}>
+              <span aria-hidden="true" />
+              {sessionPulseStatus}
+            </div>
           </div>
-          <div className="scene-filter-panel" aria-label="Scene prep filters">
+          <div className="scene-filter-panel workspace-scene-filter-panel" hidden={!showScenePrepControls} aria-label="Scene prep filters">
             <select
               aria-label="Scene folder filter"
               value={sceneFolderFilter}
@@ -3597,13 +4100,13 @@ export function App() {
               </div>
             )}
           </div>
-          <div className="scene-tabs">
+          {showSceneTabs && <div className="scene-tabs">
             {visibleScenes.map((scene) => {
               const backgroundAsset = snapshot.assets.find((asset) => asset.id === scene.backgroundAssetId && isUsableImageAsset(asset));
-              const sceneSelected = selectedPrepSceneIds.includes(scene.id);
+              const sceneSelected = showSceneSelectionControls && selectedPrepSceneIds.includes(scene.id);
               return (
                 <div key={scene.id} className={sceneSelected ? "scene-tab-wrap selected" : "scene-tab-wrap"}>
-                  {hasPermission("scene.update") && (
+                  {showSceneSelectionControls && hasPermission("scene.update") && (
                     <input
                       aria-label={`Select scene ${scene.name}`}
                       checked={sceneSelected}
@@ -3621,9 +4124,10 @@ export function App() {
               );
             })}
             {visibleScenes.length === 0 && <span className="empty-state compact">No scenes match filters.</span>}
-          </div>
+          </div>}
           <form
             className="quick-create-form"
+            hidden={!showQuickCreate}
             onSubmit={(event) => {
               event.preventDefault();
               createToken().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
@@ -3643,16 +4147,26 @@ export function App() {
               <option value="neutral">Neutral</option>
               <option value="hostile">Hostile</option>
             </select>
+            <select aria-label="Token footprint" value={newTokenFootprintCells} onChange={(event) => setNewTokenFootprintCells(Math.max(1, Number(event.target.value) || 1))}>
+              <option value={1}>1x1</option>
+              <option value={2}>2x2</option>
+              <option value={3}>3x3</option>
+              <option value={4}>4x4</option>
+            </select>
             <button className="primary-button" type="submit" disabled={!hasPermission("token.create")} title={hasPermission("token.create") ? "Create token" : "Requires token.create"}>
               <Plus size={16} /> Token
             </button>
           </form>
         </header>
 
-        <div className="table-grid">
+        {showTableWorkspace ? (
+        <div className={`table-grid workspace-${workspaceMode}`}>
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
             <Toolbar onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
-            {hasPermission("token.reveal") && (
+            <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
+            {selectedTokens.length > 1 && <MapSelectionStatus selectedCount={selectedTokens.length} onClear={clearTokenSelection} />}
+            <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onToggleAnnotationLayer={setAnnotationLayerVisible} />
+            {hasPermission("token.reveal") && (fogBrushMode || toolReport) && (
               <section className="table-tool-panel" aria-label="Fog and vision tools">
                 <input aria-label="Fog preset name" value={fogPresetName} placeholder="Preset name" onChange={(event) => setFogPresetName(event.target.value)} />
                 <select aria-label="Fog preset mode" value={fogPresetMode} onChange={(event) => setFogPresetMode(event.target.value as "replace" | "append")}>
@@ -3664,6 +4178,7 @@ export function App() {
                 {toolReport && <pre>{toolReport}</pre>}
               </section>
             )}
+            {(annotationTool || ((selectedScene?.annotations?.length ?? 0) > 0 && !fogBrushMode) || (workspaceMode === "prep" && !fogBrushMode)) && (
             <section className="table-tool-panel" aria-label="Annotation layers and history">
               <select aria-label="Annotation layer" value={annotationLayer} onChange={(event) => setAnnotationLayer(event.target.value as SceneAnnotationLayer)}>
                 <option value="measurement">Measurement</option>
@@ -3771,109 +4286,136 @@ export function App() {
                 ) : null}
               </div>
             </section>
-            {!annotationTool && !fogBrushMode && (
-            <section className="table-tool-panel" aria-label="Canvas asset picker">
-              <select aria-label="Canvas asset folder" value={canvasAssetFolder} onChange={(event) => { setCanvasAssetFolder(event.target.value); setCanvasAssetId(""); }}>
-                <option value="all">All asset folders</option>
-                {canvasAssetFolderOptions.map((folder) => (
-                  <option key={folder} value={folder}>
-                    {folder}
-                  </option>
-                ))}
-              </select>
-              <select aria-label="Canvas asset picker" value={selectedCanvasAsset?.id ?? ""} onChange={(event) => setCanvasAssetId(event.target.value)}>
-                <option value="">Select image asset</option>
-                {visibleCanvasImageAssets.map((asset) => (
-                  <option key={asset.id} value={asset.id}>
-                    {asset.name}
-                  </option>
-                ))}
-              </select>
-              <input aria-label="Canvas image search" value={canvasAssetSearch} placeholder="Search assets" onChange={(event) => { setCanvasAssetSearch(event.target.value); setCanvasAssetId(""); }} />
-              <div className="canvas-asset-grid" role="region" aria-label="Canvas asset thumbnail grid">
-                {visibleCanvasImageAssets.length === 0 ? (
-                  <span>No image assets in this folder</span>
-                ) : (
-                  visibleCanvasImageAssets.map((asset) => (
-                    <button
-                      key={asset.id}
-                      className="canvas-asset-tile"
-                      type="button"
-                      draggable={hasPermission("token.create")}
-                      aria-pressed={asset.id === selectedCanvasAsset?.id}
-                      aria-label={`Select canvas asset ${asset.name}`}
-                      title={hasPermission("token.create") ? "Drag asset to the scene" : "Requires token.create"}
-                      onClick={() => setCanvasAssetId(asset.id)}
-                      onDragStart={(event) => {
-                        const imageUrl = assetBlobUrl(asset);
-                        event.currentTarget.closest(".table-area")?.classList.add("canvas-asset-dragging");
-                        setCanvasAssetDragging(true);
-                        tokenDropHandledRef.current = false;
-                        writeTokenDropData(event.dataTransfer, { type: "asset", id: asset.id, imageAssetId: asset.id, name: asset.name, disposition: "neutral" });
-                        setTokenDropPreview(event.dataTransfer, asset.name, imageUrl);
-                      }}
-                      onDragEnd={(event) => {
-                        event.currentTarget.closest(".table-area")?.classList.remove("canvas-asset-dragging");
-                        setCanvasAssetDragging(false);
-                        createTokenFromAssetDragEnd(asset, event.clientX, event.clientY).catch(console.error);
-                      }}
-                    >
-                      <img src={assetBlobUrl(asset)} alt="" />
-                      <span>{asset.name}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-              {selectedCanvasAsset && (
-                <article className="asset-card" aria-label="Selected canvas asset preview">
-                  <div className="asset-thumb">
-                    <img src={assetBlobUrl(selectedCanvasAsset)} alt="" />
+            )}
+            {workspaceMode === "prep" && !fogBrushMode && tab === "content" && (
+            <section className="table-tool-panel canvas-asset-dock" aria-label="Canvas asset picker">
+              <details open>
+                <summary>
+                  <Upload size={15} /> Assets
+                </summary>
+                <div className="canvas-asset-dock-body">
+                  <select aria-label="Canvas asset folder" value={canvasAssetFolder} onChange={(event) => { setCanvasAssetFolder(event.target.value); setCanvasAssetId(""); }}>
+                    <option value="all">All asset folders</option>
+                    {canvasAssetFolderOptions.map((folder) => (
+                      <option key={folder} value={folder}>
+                        {folder}
+                      </option>
+                    ))}
+                  </select>
+                  <select aria-label="Canvas asset picker" value={selectedCanvasAsset?.id ?? ""} onChange={(event) => setCanvasAssetId(event.target.value)}>
+                    <option value="">Select image asset</option>
+                    {visibleCanvasImageAssets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input aria-label="Canvas image search" value={canvasAssetSearch} placeholder="Search assets" onChange={(event) => { setCanvasAssetSearch(event.target.value); setCanvasAssetId(""); }} />
+                  <div className="canvas-asset-grid" role="region" aria-label="Canvas asset thumbnail grid">
+                    {visibleCanvasImageAssets.length === 0 ? (
+                      <span>No image assets in this folder</span>
+                    ) : (
+                      visibleCanvasImageAssets.map((asset) => (
+                        <button
+                          key={asset.id}
+                          className="canvas-asset-tile"
+                          type="button"
+                          draggable={hasPermission("token.create")}
+                          aria-pressed={asset.id === selectedCanvasAsset?.id}
+                          aria-label={`Select canvas asset ${asset.name}`}
+                          title={hasPermission("token.create") ? "Drag asset to the scene" : "Requires token.create"}
+                          onClick={() => setCanvasAssetId(asset.id)}
+                          onDragStart={(event) => {
+                            const imageUrl = assetBlobUrl(asset);
+                            event.currentTarget.closest(".table-area")?.classList.add("canvas-asset-dragging");
+                            setCanvasAssetDragging(true);
+                            tokenDropHandledRef.current = false;
+                            writeTokenDropData(event.dataTransfer, { type: "asset", id: asset.id, imageAssetId: asset.id, name: asset.name, layer: "map", disposition: "neutral" });
+                            setTokenDropPreview(event.dataTransfer, asset.name, imageUrl);
+                          }}
+                          onDragEnd={(event) => {
+                            event.currentTarget.closest(".table-area")?.classList.remove("canvas-asset-dragging");
+                            setCanvasAssetDragging(false);
+                            createTokenFromAssetDragEnd(asset, event.clientX, event.clientY).catch(console.error);
+                          }}
+                        >
+                          <img src={assetBlobUrl(asset)} alt="" />
+                          <span>{asset.name}</span>
+                        </button>
+                      ))
+                    )}
                   </div>
-                  <div className="asset-detail">
-                    <strong>{selectedCanvasAsset.name}</strong>
-                    <span>{selectedCanvasAsset.folder ?? "No folder"} - {formatStorageBytes(selectedCanvasAsset.sizeBytes)}</span>
-                    <span>{selectedCanvasAsset.tags?.join(", ") || "No tags"}</span>
-                  </div>
-                </article>
-              )}
-              <label className="compact-field">
-                <span>Count</span>
-                <input aria-label="Canvas asset placement count" type="number" min={1} max={6} value={canvasAssetPlacementCount} onChange={(event) => setCanvasAssetPlacementCount(Math.max(1, Math.min(6, Number(event.target.value) || 1)))} />
-              </label>
-              <button className="ghost-button" type="button" disabled={!selectedCanvasAsset || !selectedScene || !hasPermission("token.create")} onClick={() => selectedCanvasAsset && placeCanvasAssetTokens(selectedCanvasAsset, canvasAssetPlacementCount).catch(console.error)}>
-                <MapPin size={16} /> Place selected canvas asset
-              </button>
-              <button className="ghost-button" type="button" disabled={!selectedCanvasAsset || !selectedScene || !hasPermission("scene.update")} onClick={() => selectedCanvasAsset && setSceneBackgroundFromAsset(selectedCanvasAsset).catch(console.error)}>
-                <Eye size={16} /> Set selected canvas background
-              </button>
+                  {selectedCanvasAsset && (
+                    <article className="asset-card" aria-label="Selected canvas asset preview">
+                      <div className="asset-thumb">
+                        <img src={assetBlobUrl(selectedCanvasAsset)} alt="" />
+                      </div>
+                      <div className="asset-detail">
+                        <strong>{selectedCanvasAsset.name}</strong>
+                        <span>{selectedCanvasAsset.folder ?? "No folder"} - {formatStorageBytes(selectedCanvasAsset.sizeBytes)}</span>
+                        <span>{selectedCanvasAsset.tags?.join(", ") || "No tags"}</span>
+                      </div>
+                    </article>
+                  )}
+                  <label className="compact-field">
+                    <span>Count</span>
+                    <input aria-label="Canvas asset placement count" type="number" min={1} max={6} value={canvasAssetPlacementCount} onChange={(event) => setCanvasAssetPlacementCount(Math.max(1, Math.min(6, Number(event.target.value) || 1)))} />
+                  </label>
+                  <button className="ghost-button" type="button" disabled={!selectedCanvasAsset || !selectedScene || !hasPermission("token.create")} onClick={() => selectedCanvasAsset && placeCanvasAssetTokens(selectedCanvasAsset, canvasAssetPlacementCount).catch(console.error)}>
+                    <MapPin size={16} /> Place selected canvas asset
+                  </button>
+                  <button className="ghost-button" type="button" disabled={!selectedCanvasAsset || !selectedScene || !hasPermission("scene.update")} onClick={() => selectedCanvasAsset && setSceneBackgroundFromAsset(selectedCanvasAsset).catch(console.error)}>
+                    <Eye size={16} /> Set selected canvas background
+                  </button>
+                </div>
+              </details>
             </section>
             )}
-            {selectedScene ? <SceneCanvas scene={selectedScene} backgroundAsset={selectedMapAsset} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} onSelect={setSelectedTokenId} onMoved={refresh} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+            {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} onSelect={selectCanvasToken} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
           <aside className="inspector">
-            <div className="tabs">
-              <TabButton active={tab === "actors"} icon={<Users size={15} />} label="Actors" onClick={() => setTab("actors")} />
-              <TabButton active={tab === "journal"} icon={<ScrollText size={15} />} label="Journal" onClick={() => setTab("journal")} />
-              <TabButton active={tab === "chat"} icon={<MessageSquare size={15} />} label="Chat" onClick={() => setTab("chat")} />
-              <TabButton active={tab === "combat"} icon={<Swords size={15} />} label="Combat" onClick={() => setTab("combat")} />
-              <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Content" onClick={() => setTab("content")} />
-              <TabButton active={tab === "ai"} icon={<Bot size={15} />} label="AI" onClick={() => setTab("ai")} />
-              <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="SDK" onClick={() => setTab("plugins")} />
-              {snapshot.session?.serverAdmin && <TabButton active={tab === "admin"} icon={<UserCog size={15} />} label="Admin" onClick={() => setTab("admin")} />}
+            <div className="tabs inspector-tabs" role="tablist" aria-label="Inspector panels">
+              {inspectorTabs.includes("actors") && <TabButton active={tab === "actors"} icon={<Users size={15} />} label="Actors" onClick={() => setTab("actors")} />}
+              {inspectorTabs.includes("journal") && <TabButton active={tab === "journal"} icon={<ScrollText size={15} />} label="Journal" onClick={() => setTab("journal")} />}
+              {inspectorTabs.includes("chat") && <TabButton active={tab === "chat"} icon={<MessageSquare size={15} />} label="Chat" onClick={() => setTab("chat")} />}
+              {inspectorTabs.includes("combat") && <TabButton active={tab === "combat"} icon={<Swords size={15} />} label="Combat" onClick={() => setTab("combat")} />}
+              {inspectorTabs.includes("content") && <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Content" onClick={() => setTab("content")} />}
+              {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="SDK" onClick={() => setTab("plugins")} />}
             </div>
-            {tab === "actors" && <ActorPanel actor={selectedActor} token={selectedToken} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatPanel messages={snapshot.chat} rolls={snapshot.rolls} members={snapshot.members} search={chatSearch} setSearch={setChatSearch} typeFilter={chatTypeFilter} setTypeFilter={setChatTypeFilter} visibilityFilter={chatVisibilityFilter} setVisibilityFilter={setChatVisibilityFilter} canModerate={hasPermission("chat.moderate")} onReplyMessage={setChatReplyToMessageId} onModerateMessage={moderateChatMessage} onDeleteMessage={deleteChatMessage} onExport={exportChatHistory} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
-            {tab === "ai" && <AiPanel prompt={aiPrompt} setPrompt={setAiPrompt} askAi={askAi} replayAiThread={replayAiThread} retryAiToolCall={retryAiToolCall} recapSession={recapSession} extractMemory={extractMemory} proposals={snapshot.proposals} records={snapshot} memory={snapshot.memory} aiThreads={snapshot.aiThreads} aiUsage={snapshot.aiUsage} aiToolCalls={snapshot.aiToolCalls} approveAndApply={approveAndApply} rejectProposal={rejectProposalReview} approveMemory={approveMemory} deleteMemory={deleteMemory} canPropose={hasPermission("ai.proposeChanges")} canApply={hasPermission("ai.applyChanges")} />}
-            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} encounterPlan={encounterPlan} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onPlanEncounter={planSystemEncounter} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canPlanEncounter={hasPermission("combat.manage")} canRollSystem={hasPermission("dice.roll")} />}
-            {tab === "admin" && snapshot.session?.serverAdmin && <AdminPanel admin={adminSnapshot} campaigns={snapshot.campaigns} systems={snapshot.systems} workspaceDefaults={snapshot.workspaceDefaults} organizationMembers={snapshot.organizationMembers} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onRevokeRiskSessions={revokeAdminRiskSessions} onPruneExpiredPasswordResets={pruneExpiredPasswordResets} onRetryEmail={retryAdminEmail} onRetryAllEmails={retryAllAdminEmails} onRetryAiToolCall={retryAdminAiToolCall} onFailStaleAiThreads={failStaleAiThreads} onFailStaleAiToolCalls={failStaleAiToolCalls} onRejectStaleAiProposals={rejectStaleAiProposals} onCleanupStoredAssetBytes={cleanupStoredAssetBytes} onMigrateStoredAssetBytes={migrateStoredAssetBytes} onQuarantineAssetIntegrityFailures={quarantineAssetIntegrityFailures} onPurgeAssetCdnCache={purgeAssetCdnCache} onUpdatePluginReview={updatePluginReview} onSyncPluginRegistries={syncAdminPluginRegistries} onUpdateWorkspaceDefaults={updateOrganizationWorkspaceDefaults} onAddOrganizationMember={addOrganizationMember} onUpdateOrganizationMember={updateOrganizationMember} onRemoveOrganizationMember={deleteOrganizationMember} onCreateScimMapping={createScimGroupRoleMapping} onDeleteScimMapping={deleteScimGroupRoleMapping} />}
+            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
         </div>
+        ) : workspaceMode === "ai" ? (
+          <section className="ai-studio-stage" aria-label="AI Studio workspace">
+            {aiPanelElement}
+          </section>
+        ) : (
+          <section className="manage-workspace-stage" aria-label="Manage workspace">
+            <div className="operator-section manage-stage-card">
+              <div className="operator-heading">
+                <div>
+                  <div className="section-title">Manage</div>
+                  <h2>{selectedCampaign?.name ?? "Workspace settings"}</h2>
+                </div>
+                <UserCog size={18} />
+              </div>
+              <p className="account-summary">Use the Manage drawer on the left for account, campaign, people, scenes, archives, and server-admin operations.</p>
+              <div className="metric-grid">
+                <MetricTile label="Campaigns" value={formatNumber(snapshot.campaigns.length)} />
+                <MetricTile label="Scenes" value={formatNumber(accessibleScenes.length)} />
+                <MetricTile label="Invites" value={formatNumber(snapshot.organizationInvites.filter((invite) => invite.status === "pending").length)} />
+              </div>
+            </div>
+          </section>
+        )}
 
-        <footer className="console">
+        {showConsoleDock && <footer className="console">
           <div className="dice-box">
             <WandSparkles size={17} />
             <input value={diceFormula} onChange={(event) => setDiceFormula(event.target.value)} aria-label="Dice formula" />
@@ -3957,7 +4499,7 @@ export function App() {
               <Send size={17} />
             </button>
           </div>
-        </footer>
+        </footer>}
       </section>
     </main>
   );
@@ -3986,6 +4528,33 @@ interface AnnotationMoveDraft {
   current: VisionPoint;
 }
 
+interface TokenDragDraft {
+  tokenId: string;
+  pointerId: number;
+  offsetX: number;
+  offsetY: number;
+  x: number;
+  y: number;
+  settling?: boolean;
+}
+
+interface MapPanDraft {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startScrollLeft: number;
+  startScrollTop: number;
+  moved: boolean;
+  clearSelectionOnClick: boolean;
+}
+
+interface TokenSelectionOptions {
+  additive?: boolean;
+  preserveExisting?: boolean;
+}
+
+type TokenPositionOverrides = Record<string, Pick<Token, "x" | "y">>;
+
 interface TokenDropPayload {
   type: "actor" | "asset";
   id: string;
@@ -3993,10 +4562,131 @@ interface TokenDropPayload {
   actorId?: string;
   imageAssetId?: string;
   disposition?: Token["disposition"];
+  layer?: TokenLayer;
 }
 
+const tokenLayers: Array<{ id: TokenLayer; label: string; description: string }> = [
+  { id: "player", label: "Player layer", description: "Normal player-visible, selectable combat tokens." },
+  { id: "map", label: "Map layer", description: "Scene props and map dressing below player tokens." },
+  { id: "gm", label: "GM layer", description: "GM-only tokens and notes hidden from players." }
+];
+const tokenLayerRanks: Record<TokenLayer, number> = { map: 0, player: 1, gm: 2 };
+const tokenVisualScale = 0.78;
+const largeTokenVisualScale = 0.9;
+const battleMapZoomMin = 0.5;
+const battleMapZoomMax = 2;
+const battleMapZoomStep = 0.25;
 const tokenDropMime = "application/x-open-tabletop-token";
 const itemDropMime = "application/x-open-tabletop-item";
+
+function clampSceneCoordinate(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function clampBattleMapZoom(value: number): number {
+  return Math.max(battleMapZoomMin, Math.min(battleMapZoomMax, Number(value.toFixed(2))));
+}
+
+function formatBattleMapZoom(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function tokenLayer(token?: Pick<Token, "layer">): TokenLayer {
+  return token?.layer === "map" || token?.layer === "gm" || token?.layer === "player" ? token.layer : "player";
+}
+
+function tokenLayerLabel(layer: TokenLayer): string {
+  return tokenLayers.find((item) => item.id === layer)?.label ?? "Player layer";
+}
+
+function MapLayerStack(props: { scene?: Scene; tokens: Token[]; fogActive: boolean; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; onToggleAnnotationLayer(layer: SceneAnnotationLayer, visible: boolean): void }) {
+  const sceneTokens = props.scene ? props.tokens.filter((token) => token.sceneId === props.scene!.id) : [];
+  const layerCounts = tokenLayers.reduce<Record<TokenLayer, number>>((counts, layer) => {
+    counts[layer.id] = sceneTokens.filter((token) => tokenLayer(token) === layer.id).length;
+    return counts;
+  }, { map: 0, player: 0, gm: 0 });
+  const annotationCount = props.scene?.annotations?.length ?? 0;
+  const visibleAnnotationCount = annotationLayers.filter((layer) => props.visibleAnnotationLayers[layer]).length;
+  return (
+    <aside className="map-layer-stack" aria-label="Map layer stack">
+      <div className="map-layer-stack-heading">
+        <span>Layers</span>
+        <strong>{props.scene?.name ?? "No scene"}</strong>
+      </div>
+      <div className="map-layer-row">
+        <span>Map</span>
+        <strong>{props.scene?.backgroundAssetId ? "background" : "empty"}</strong>
+      </div>
+      {tokenLayers.map((layer) => (
+        <div className="map-layer-row" key={layer.id}>
+          <span>{layer.label.replace(" layer", "")}</span>
+          <strong>{formatNumber(layerCounts[layer.id])}</strong>
+        </div>
+      ))}
+      <details className="map-layer-row map-layer-details">
+        <summary>
+          <span>Annotations</span>
+          <strong>{formatNumber(annotationCount)} / {formatNumber(visibleAnnotationCount)} shown</strong>
+        </summary>
+        <div className="map-layer-toggles">
+          {annotationLayers.map((layer) => (
+            <label className="inline-check" key={layer}>
+              <input type="checkbox" checked={props.visibleAnnotationLayers[layer]} onChange={(event) => props.onToggleAnnotationLayer(layer, event.target.checked)} />
+              <span>{titleCaseLabel(layer)}</span>
+            </label>
+          ))}
+        </div>
+      </details>
+      <div className="map-layer-row">
+        <span>Fog</span>
+        <strong>{props.fogActive ? "active" : "off"}</strong>
+      </div>
+    </aside>
+  );
+}
+
+function snapTokenAxisToGrid(position: number, size: number, sceneSize: number, gridSize: number): number {
+  const safeSize = Math.max(1, Math.round(size) || 1);
+  const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
+  const maxPosition = Math.max(0, sceneSize - safeSize);
+  const gridCells = Math.max(1, Math.round(safeSize / safeGridSize));
+  const isGridSized = Math.abs(safeSize - gridCells * safeGridSize) <= 1;
+  if (isGridSized) {
+    return clampSceneCoordinate(Math.round(position / safeGridSize) * safeGridSize, 0, maxPosition);
+  }
+  const center = position + safeSize / 2;
+  const firstCenter = safeSize / 2;
+  const lastCenter = Math.max(firstCenter, sceneSize - safeSize / 2);
+  const snappedCenter = Math.round((center - safeGridSize / 2) / safeGridSize) * safeGridSize + safeGridSize / 2;
+  return Math.round(clampSceneCoordinate(snappedCenter, firstCenter, lastCenter) - safeSize / 2);
+}
+
+function boundedTokenCoordinates(scene: Pick<Scene, "width" | "height">, token: Pick<Token, "width" | "height">, x: number, y: number): Pick<Token, "x" | "y"> {
+  const width = Math.max(1, Math.round(token.width) || 1);
+  const height = Math.max(1, Math.round(token.height) || 1);
+  return {
+    x: clampSceneCoordinate(Math.round(x), 0, Math.max(0, scene.width - width)),
+    y: clampSceneCoordinate(Math.round(y), 0, Math.max(0, scene.height - height))
+  };
+}
+
+function snappedTokenCoordinates(scene: Pick<Scene, "width" | "height" | "gridSize">, token: Pick<Token, "width" | "height">, x: number, y: number): Pick<Token, "x" | "y"> {
+  return boundedTokenCoordinates(
+    scene,
+    token,
+    snapTokenAxisToGrid(x, token.width, scene.width, scene.gridSize),
+    snapTokenAxisToGrid(y, token.height, scene.height, scene.gridSize)
+  );
+}
+
+function tokenCoordinatesFromCenter(scene: Pick<Scene, "width" | "height" | "gridSize">, width: number, height: number, centerX: number, centerY: number): Pick<Token, "x" | "y"> {
+  return snappedTokenCoordinates(scene, { width, height }, centerX - width / 2, centerY - height / 2);
+}
+
+function tokenVisualScaleFor(token: Pick<Token, "width" | "height">, gridSize: number): number {
+  const largestSideInCells = Math.max(token.width, token.height) / Math.max(1, gridSize);
+  return largestSideInCells > 1.1 ? largeTokenVisualScale : tokenVisualScale;
+}
 
 function writeTokenDropData(dataTransfer: DataTransfer, payload: TokenDropPayload): void {
   dataTransfer.effectAllowed = "copy";
@@ -4033,6 +4723,7 @@ function readTokenDropData(dataTransfer: DataTransfer): TokenDropPayload | undef
       name: parsed.name,
       actorId: typeof parsed.actorId === "string" ? parsed.actorId : undefined,
       imageAssetId: typeof parsed.imageAssetId === "string" ? parsed.imageAssetId : undefined,
+      layer: parsed.layer === "map" || parsed.layer === "player" || parsed.layer === "gm" ? parsed.layer : undefined,
       disposition: parsed.disposition === "friendly" || parsed.disposition === "neutral" || parsed.disposition === "hostile" ? parsed.disposition : undefined
     };
   } catch {
@@ -4060,17 +4751,33 @@ function hasItemDropData(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(itemDropMime);
 }
 
-function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; onSelect(id: string): void; onMoved(): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
-  const [dragging, setDragging] = useState<string | null>(null);
+function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
+  const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
+  const [tokenPositionOverrides, setTokenPositionOverrides] = useState<TokenPositionOverrides>({});
   const [dropActive, setDropActive] = useState(false);
+  const [mapPanning, setMapPanning] = useState(false);
   const [fogStroke, setFogStroke] = useState<FogStrokeDraft | null>(null);
   const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null);
   const [annotationMoveDraft, setAnnotationMoveDraft] = useState<AnnotationMoveDraft | null>(null);
+  const tokenDragRef = useRef<TokenDragDraft | null>(null);
+  const pointerSelectedTokenRef = useRef<string | null>(null);
+  const mapPanRef = useRef<MapPanDraft | null>(null);
   const fogStrokeRef = useRef<FogStrokeDraft | null>(null);
   const annotationDraftRef = useRef<AnnotationDraft | null>(null);
   const annotationMoveDraftRef = useRef<AnnotationMoveDraft | null>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const tokens = useMemo(() => props.tokens.filter((token) => token.sceneId === props.scene.id), [props.tokens, props.scene.id]);
+  const orderedTokens = useMemo(
+    () =>
+      tokens
+        .map((token, index) => ({ token, index }))
+        .sort((left, right) => tokenLayerRanks[tokenLayer(left.token)] - tokenLayerRanks[tokenLayer(right.token)] || left.index - right.index)
+        .map(({ token }) => token),
+    [tokens]
+  );
+  const selectedTokenIdSet = useMemo(() => new Set(props.selectedTokenIds), [props.selectedTokenIds]);
+  const tokenImageAssets = useMemo(() => new Map(props.assets.filter(isUsableImageAsset).map((asset) => [asset.id, asset])), [props.assets]);
   const visibleAnnotations = useMemo(() => (props.scene.annotations ?? []).filter((annotation) => props.visibleAnnotationLayers[annotation.layer ?? defaultAnnotationLayer(annotation.kind)] !== false), [props.scene.annotations, props.visibleAnnotationLayers]);
   const displayAnnotations = useMemo(
     () => visibleAnnotations.map((annotation) => (annotationMoveDraft?.annotationId === annotation.id ? { ...annotation, points: annotationMoveDraft.points } : annotation)),
@@ -4081,15 +4788,27 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
   const revealedPolygons = useMemo(() => (vision?.fogActive ? vision.polygons.filter((polygon) => polygon.source !== "light" && polygon.mode !== "hide" && polygon.points.length > 2) : []), [vision]);
   const hiddenPolygons = useMemo(() => (vision?.fogActive ? vision.polygons.filter((polygon) => polygon.source === "fog" && polygon.mode === "hide" && polygon.points.length > 2) : []), [vision]);
   const maskId = `vision-mask-${props.scene.id}`;
+  const boardStyle = {
+    aspectRatio: `${props.scene.width} / ${props.scene.height}`,
+    "--scene-aspect": String(props.scene.width / props.scene.height),
+    "--map-zoom": String(props.zoom)
+  } as CSSProperties;
+  const showGridOverlay = sceneGridOverlayVisible(props.scene);
 
-  async function moveToken(token: Token, clientX: number, clientY: number) {
-    const rect = boardRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = Math.max(0, Math.round(((clientX - rect.left) / rect.width) * props.scene.width - token.width / 2));
-    const y = Math.max(0, Math.round(((clientY - rect.top) / rect.height) * props.scene.height - token.height / 2));
-    await apiPatch(`/api/v1/tokens/${token.id}`, { x, y });
-    await props.onMoved();
-  }
+  useEffect(() => {
+    setTokenPositionOverrides((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const [tokenId, override] of Object.entries(current)) {
+        const token = tokens.find((item) => item.id === tokenId);
+        if (!token || (token.x === override.x && token.y === override.y)) {
+          delete next[tokenId];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [tokens]);
 
   function boardPoint(clientX: number, clientY: number): VisionPoint | undefined {
     const rect = boardRef.current?.getBoundingClientRect();
@@ -4098,6 +4817,151 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
       x: Math.max(0, Math.min(props.scene.width, Math.round(((clientX - rect.left) / rect.width) * props.scene.width))),
       y: Math.max(0, Math.min(props.scene.height, Math.round(((clientY - rect.top) / rect.height) * props.scene.height)))
     };
+  }
+
+  function isClientPointInsideBoard(clientX: number, clientY: number): boolean {
+    const rect = boardRef.current?.getBoundingClientRect();
+    if (!rect) return false;
+    return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+  }
+
+  function startMapPan(event: ReactPointerEvent<HTMLDivElement>) {
+    if (props.fogBrushMode || props.annotationTool || event.button !== 0) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    mapPanRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startScrollLeft: viewport.scrollLeft,
+      startScrollTop: viewport.scrollTop,
+      moved: false,
+      clearSelectionOnClick: !event.shiftKey && !event.ctrlKey && !event.metaKey
+    };
+    setMapPanning(true);
+    tokenDragRef.current = null;
+    setTokenDrag(null);
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveMapPan(clientX: number, clientY: number, pointerId: number): boolean {
+    const current = mapPanRef.current;
+    const viewport = viewportRef.current;
+    if (!current || current.pointerId !== pointerId || !viewport) return false;
+    const deltaX = clientX - current.startClientX;
+    const deltaY = clientY - current.startClientY;
+    viewport.scrollLeft = current.startScrollLeft - deltaX;
+    viewport.scrollTop = current.startScrollTop - deltaY;
+    if (!current.moved && Math.hypot(deltaX, deltaY) > 4) {
+      mapPanRef.current = { ...current, moved: true };
+    }
+    return true;
+  }
+
+  function finishMapPan(pointerId: number): boolean {
+    const current = mapPanRef.current;
+    if (!current || current.pointerId !== pointerId) return false;
+    mapPanRef.current = null;
+    setMapPanning(false);
+    if (!current.moved && current.clearSelectionOnClick) props.onClearSelection();
+    return true;
+  }
+
+  function cancelMapPan(pointerId: number) {
+    if (mapPanRef.current?.pointerId !== pointerId) return;
+    mapPanRef.current = null;
+    setMapPanning(false);
+  }
+
+  function boundedTokenPosition(token: Token, x: number, y: number): Pick<TokenDragDraft, "x" | "y"> {
+    return boundedTokenCoordinates(props.scene, token, x, y);
+  }
+
+  function snappedTokenPosition(token: Token, x: number, y: number): Pick<TokenDragDraft, "x" | "y"> {
+    return snappedTokenCoordinates(props.scene, token, x, y);
+  }
+
+  function renderedTokenPosition(token: Token): Pick<TokenDragDraft, "x" | "y"> {
+    return tokenPositionOverrides[token.id] ?? { x: token.x, y: token.y };
+  }
+
+  function tokenPositionFromPointer(token: Token, clientX: number, clientY: number, offsetX: number, offsetY: number): Pick<TokenDragDraft, "x" | "y"> | undefined {
+    const point = boardPoint(clientX, clientY);
+    if (!point) return undefined;
+    return boundedTokenPosition(token, point.x - offsetX, point.y - offsetY);
+  }
+
+  function startTokenDrag(token: Token, event: ReactPointerEvent<HTMLButtonElement>) {
+    const point = boardPoint(event.clientX, event.clientY);
+    if (!point) return;
+    const renderedPosition = renderedTokenPosition(token);
+    const start = boundedTokenPosition(token, renderedPosition.x, renderedPosition.y);
+    const next = {
+      tokenId: token.id,
+      pointerId: event.pointerId,
+      offsetX: point.x - start.x,
+      offsetY: point.y - start.y,
+      x: start.x,
+      y: start.y
+    };
+    tokenDragRef.current = next;
+    setTokenDrag(next);
+    pointerSelectedTokenRef.current = token.id;
+    props.onSelect(token.id, {
+      additive: event.shiftKey || event.ctrlKey || event.metaKey,
+      preserveExisting: selectedTokenIdSet.has(token.id) && props.selectedTokenIds.length > 1
+    });
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveTokenDrag(clientX: number, clientY: number, pointerId: number) {
+    const current = tokenDragRef.current;
+    if (!current || current.pointerId !== pointerId) return;
+    const token = tokens.find((item) => item.id === current.tokenId);
+    if (!token) return;
+    const position = tokenPositionFromPointer(token, clientX, clientY, current.offsetX, current.offsetY);
+    if (!position) return;
+    if (current.x === position.x && current.y === position.y) return;
+    const next = { ...current, ...position };
+    tokenDragRef.current = next;
+    setTokenDrag(next);
+  }
+
+  function cancelTokenDrag(pointerId: number) {
+    if (tokenDragRef.current?.pointerId !== pointerId) return;
+    tokenDragRef.current = null;
+    setTokenDrag(null);
+  }
+
+  function finishTokenDrag(pointerId: number) {
+    const current = tokenDragRef.current;
+    if (!current || current.pointerId !== pointerId) return;
+    const token = tokens.find((item) => item.id === current.tokenId);
+    if (!token) {
+      tokenDragRef.current = null;
+      setTokenDrag(null);
+      return;
+    }
+    const snapped = snappedTokenPosition(token, current.x, current.y);
+    tokenDragRef.current = null;
+    setTokenDrag(null);
+    if (token.x === snapped.x && token.y === snapped.y) {
+      return;
+    }
+    setTokenPositionOverrides((overrides) => ({ ...overrides, [token.id]: snapped }));
+    apiPatch<Token>(`/api/v1/tokens/${token.id}`, snapped)
+      .then(() => props.onMoved())
+      .catch((error) => {
+        console.error(error);
+        setTokenPositionOverrides((overrides) => {
+          const next = { ...overrides };
+          delete next[token.id];
+          return next;
+        });
+      });
   }
 
   function appendFogStrokePoint(clientX: number, clientY: number, pointerId: number) {
@@ -4187,10 +5051,11 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
   }
 
   return (
-    <div
-      ref={boardRef}
-      className={`scene-board ${props.fogBrushMode || props.annotationTool ? "brush-mode" : ""} ${dropActive ? "drop-active" : ""}`}
-      style={{ aspectRatio: `${props.scene.width} / ${props.scene.height}` }}
+    <div ref={viewportRef} className={`scene-viewport ${mapPanning ? "panning" : ""}`} role="region" aria-label={`${props.scene.name} battle map viewport`}>
+      <div
+        ref={boardRef}
+        className={`scene-board ${props.fogBrushMode || props.annotationTool ? "brush-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
+        style={boardStyle}
       onDragEnter={(event) => {
         if (!props.canDropToken || props.fogBrushMode || props.annotationTool || !hasTokenDropData(event.dataTransfer)) return;
         event.preventDefault();
@@ -4200,9 +5065,10 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
         if (!props.canDropToken || props.fogBrushMode || props.annotationTool || !hasTokenDropData(event.dataTransfer)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
+        if (!dropActive) setDropActive(true);
       }}
       onDragLeave={(event) => {
-        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        if (isClientPointInsideBoard(event.clientX, event.clientY)) return;
         setDropActive(false);
       }}
       onDrop={(event) => {
@@ -4219,7 +5085,8 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
         if (!point) return;
         if (props.annotationTool) {
           event.currentTarget.setPointerCapture(event.pointerId);
-          setDragging(null);
+          tokenDragRef.current = null;
+          setTokenDrag(null);
           if (props.annotationTool === "ping") {
             props.onAnnotationCreate("ping", [point]).catch(console.error);
             return;
@@ -4229,14 +5096,19 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
           setAnnotationDraft(next);
           return;
         }
-        if (!props.fogBrushMode) return;
+        if (!props.fogBrushMode) {
+          startMapPan(event);
+          return;
+        }
         event.currentTarget.setPointerCapture(event.pointerId);
-        setDragging(null);
+        tokenDragRef.current = null;
+        setTokenDrag(null);
         const next = { pointerId: event.pointerId, mode: props.fogBrushMode, points: [point] };
         fogStrokeRef.current = next;
         setFogStroke(next);
       }}
       onPointerMove={(event) => {
+        if (moveMapPan(event.clientX, event.clientY, event.pointerId)) return;
         if (annotationDraftRef.current?.pointerId === event.pointerId) {
           appendAnnotationDraftPoint(event.clientX, event.clientY, event.pointerId);
           return;
@@ -4249,9 +5121,7 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
           moveAnnotationDraft(event.clientX, event.clientY, event.pointerId);
           return;
         }
-        if (!dragging) return;
-        const token = tokens.find((item) => item.id === dragging);
-        if (token) moveToken(token, event.clientX, event.clientY).catch(console.error);
+        moveTokenDrag(event.clientX, event.clientY, event.pointerId);
       }}
       onPointerUp={(event) => {
         if (annotationDraftRef.current?.pointerId === event.pointerId) {
@@ -4266,7 +5136,8 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
           finishAnnotationMove(event.pointerId);
           return;
         }
-        setDragging(null);
+        if (finishMapPan(event.pointerId)) return;
+        finishTokenDrag(event.pointerId);
       }}
       onPointerCancel={(event) => {
         if (annotationDraftRef.current?.pointerId === event.pointerId) {
@@ -4281,16 +5152,22 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
           annotationMoveDraftRef.current = null;
           setAnnotationMoveDraft(null);
         }
-        setDragging(null);
+        cancelMapPan(event.pointerId);
+        cancelTokenDrag(event.pointerId);
+      }}
+      onLostPointerCapture={(event) => {
+        cancelMapPan(event.pointerId);
       }}
     >
       {props.backgroundAsset && <img className="scene-map" src={assetBlobUrl(props.backgroundAsset)} alt="" draggable={false} />}
-      <div
-        className="grid-lines"
-        style={{
-          backgroundSize: `${(props.scene.gridSize / props.scene.width) * 100}% ${(props.scene.gridSize / props.scene.height) * 100}%`
-        }}
-      />
+      {showGridOverlay && (
+        <div
+          className="grid-lines"
+          style={{
+            backgroundSize: `${(props.scene.gridSize / props.scene.width) * 100}% ${(props.scene.gridSize / props.scene.height) * 100}%`
+          }}
+        />
+      )}
       {props.scene.lights.map((light) => (
         <div
           className="light-source"
@@ -4338,7 +5215,8 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
                   event.preventDefault();
                   event.stopPropagation();
                   event.currentTarget.setPointerCapture(event.pointerId);
-                  setDragging(null);
+                  tokenDragRef.current = null;
+                  setTokenDrag(null);
                   startAnnotationMove(annotation, event.clientX, event.clientY, event.pointerId, handle.mode, handle.pointIndex);
                 }}
                 onPointerMove={(event) => {
@@ -4394,29 +5272,72 @@ function SceneCanvas(props: { scene: Scene; backgroundAsset?: MapAsset; tokens: 
           <SceneAnnotationShape annotation={draftAnnotation(annotationDraft, props.templateShape)} scene={props.scene} />
         </svg>
       )}
-      {tokens.map((token) => (
-        <button
-          key={token.id}
-          className={`token ${token.disposition} ${props.selectedTokenId === token.id ? "selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""}`}
-          style={{
-            left: `${(token.x / props.scene.width) * 100}%`,
-            top: `${(token.y / props.scene.height) * 100}%`,
-            width: `${(token.width / props.scene.width) * 100}%`,
-            aspectRatio: `${token.width} / ${token.height}`
-          }}
-          aria-label={`Token ${token.name}`}
-          onPointerDown={(event) => {
-            if (props.fogBrushMode || props.annotationTool) return;
-            props.onSelect(token.id);
-            setDragging(token.id);
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }}
-        >
-          <span>{token.name.slice(0, 2).toUpperCase()}</span>
-          {token.conditions?.length ? <small className="token-condition-count">{token.conditions.length}</small> : null}
-          {token.auras?.length ? <small className="token-aura-count">{token.auras.length}</small> : null}
-        </button>
-      ))}
+      {orderedTokens.map((token) => {
+        const dragPosition = tokenDrag?.tokenId === token.id ? tokenDrag : undefined;
+        const positionOverride = tokenPositionOverrides[token.id];
+        const tokenX = dragPosition?.x ?? positionOverride?.x ?? token.x;
+        const tokenY = dragPosition?.y ?? positionOverride?.y ?? token.y;
+        const visualScale = tokenVisualScaleFor(token, props.scene.gridSize);
+        const visualWidth = token.width * visualScale;
+        const visualHeight = token.height * visualScale;
+        const visualX = tokenX + (token.width - visualWidth) / 2;
+        const visualY = tokenY + (token.height - visualHeight) / 2;
+        const tokenImageAsset = token.imageAssetId ? tokenImageAssets.get(token.imageAssetId) : undefined;
+        const selected = selectedTokenIdSet.has(token.id);
+        const layer = tokenLayer(token);
+        return (
+          <button
+            key={token.id}
+            className={`token layer-${layer} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition && !dragPosition.settling ? "dragging" : ""}`}
+            style={{
+              left: `${(visualX / props.scene.width) * 100}%`,
+              top: `${(visualY / props.scene.height) * 100}%`,
+              width: `${(visualWidth / props.scene.width) * 100}%`,
+              height: `${(visualHeight / props.scene.height) * 100}%`
+            }}
+            aria-label={`${tokenLayerLabel(layer)} token ${token.name}`}
+            aria-pressed={selected}
+            onClick={(event) => {
+              if (pointerSelectedTokenRef.current === token.id) {
+                pointerSelectedTokenRef.current = null;
+                return;
+              }
+              props.onSelect(token.id, { additive: event.shiftKey || event.ctrlKey || event.metaKey, preserveExisting: selected && props.selectedTokenIds.length > 1 });
+            }}
+            onPointerDown={(event) => {
+              if (props.fogBrushMode || props.annotationTool) return;
+              startTokenDrag(token, event);
+            }}
+            onPointerMove={(event) => {
+              if (tokenDragRef.current?.tokenId !== token.id || tokenDragRef.current.pointerId !== event.pointerId) return;
+              event.preventDefault();
+              event.stopPropagation();
+              moveTokenDrag(event.clientX, event.clientY, event.pointerId);
+            }}
+            onPointerUp={(event) => {
+              if (tokenDragRef.current?.tokenId !== token.id || tokenDragRef.current.pointerId !== event.pointerId) return;
+              event.preventDefault();
+              event.stopPropagation();
+              finishTokenDrag(event.pointerId);
+            }}
+            onPointerCancel={(event) => {
+              if (tokenDragRef.current?.tokenId !== token.id || tokenDragRef.current.pointerId !== event.pointerId) return;
+              event.preventDefault();
+              event.stopPropagation();
+              cancelTokenDrag(event.pointerId);
+            }}
+            onLostPointerCapture={(event) => {
+              if (tokenDragRef.current?.tokenId === token.id && tokenDragRef.current.pointerId === event.pointerId) cancelTokenDrag(event.pointerId);
+            }}
+          >
+            {tokenImageAsset && <img className="token-image" src={assetBlobUrl(tokenImageAsset)} alt="" draggable={false} />}
+            <span className="token-label">{token.name.slice(0, 2).toUpperCase()}</span>
+            {token.conditions?.length ? <small className="token-condition-count">{token.conditions.length}</small> : null}
+            {token.auras?.length ? <small className="token-aura-count">{token.auras.length}</small> : null}
+          </button>
+        );
+      })}
+      </div>
     </div>
   );
 }
@@ -4608,82 +5529,133 @@ function tokenCenter(token: Token): { x: number; y: number } {
   return { x: token.x + token.width / 2, y: token.y + token.height / 2 };
 }
 
+function MapZoomControls(props: { zoom: number; onZoomOut(): void; onZoomIn(): void; onReset(): void }) {
+  const atMinimum = props.zoom <= battleMapZoomMin;
+  const atMaximum = props.zoom >= battleMapZoomMax;
+  return (
+    <div className="map-zoom-control" role="group" aria-label="Battle map zoom controls">
+      <button className="tool" type="button" title="Zoom battle map out" aria-label="Zoom battle map out" onClick={props.onZoomOut} disabled={atMinimum}>
+        <ZoomOut size={17} />
+      </button>
+      <span className="map-zoom-value" aria-live="polite">
+        {formatBattleMapZoom(props.zoom)}
+      </span>
+      <button className="tool" type="button" title="Reset battle map zoom" aria-label={`Reset battle map zoom from ${formatBattleMapZoom(props.zoom)}`} onClick={props.onReset}>
+        <RefreshCw size={16} />
+      </button>
+      <button className="tool" type="button" title="Zoom battle map in" aria-label="Zoom battle map in" onClick={props.onZoomIn} disabled={atMaximum}>
+        <ZoomIn size={17} />
+      </button>
+    </div>
+  );
+}
+
+function MapSelectionStatus(props: { selectedCount: number; onClear(): void }) {
+  return (
+    <div className="map-selection-status" role="status" aria-label="Selected tokens">
+      <span>{formatNumber(props.selectedCount)} selected</span>
+      <button className="tool" type="button" title="Clear token selection" aria-label="Clear token selection" onClick={props.onClear}>
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
 function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onHideFog(): void; onRevealFogPolygon(): void; onToggleFogBrush(mode: FogMode): void; onToggleAnnotationTool(kind: SceneAnnotationKind): void; onDeleteLatestAnnotation(): void; onUndoFog(): void; onShowFogHistory(): void; onSampleVisionPoint(): void; onSaveFogPreset(): void; onApplyFogPreset(): void; onDeleteFogPreset(): void; onAddWall(): void; onAddTerrainWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; activeFogBrushMode: FogMode | null; activeAnnotationTool: AnnotationTool; hasFogPresets: boolean; canUpdateScene: boolean; canAnnotate: boolean }) {
   return (
     <div className="toolbar">
       <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select" aria-label="Select" onClick={props.onSelectTool}>
         <Hand size={17} />
       </button>
-      <button className="tool" title="Add token" aria-label="Add token" onClick={props.onCreateToken} disabled={!props.canCreateToken}>
+      <button className="tool" title="Token" aria-label="Add token" tabIndex={1} autoFocus onClick={props.onCreateToken} disabled={!props.canCreateToken}>
         <Plus size={17} />
-      </button>
-      <button className="tool" title="Start combat" aria-label="Start combat" onClick={props.onStartCombat} disabled={!props.canManageCombat}>
-        <Swords size={17} />
-      </button>
-      <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={props.onRevealFog} disabled={!props.canRevealFog}>
-        <Eye size={17} />
-      </button>
-      <button className="tool" title="Hide fog" aria-label="Hide fog" onClick={props.onHideFog} disabled={!props.canRevealFog}>
-        <Eraser size={17} />
-      </button>
-      <button className="tool" title="Reveal polygon fog" aria-label="Reveal polygon fog" onClick={props.onRevealFogPolygon} disabled={!props.canRevealFog}>
-        <Pentagon size={17} />
-      </button>
-      <button className={`tool ${props.activeFogBrushMode === "reveal" ? "active" : ""}`} title="Smooth reveal brush" aria-label="Smooth reveal brush" onClick={() => props.onToggleFogBrush("reveal")} disabled={!props.canRevealFog}>
-        <Paintbrush size={17} />
-      </button>
-      <button className={`tool ${props.activeFogBrushMode === "hide" ? "active" : ""}`} title="Smooth hide brush" aria-label="Smooth hide brush" onClick={() => props.onToggleFogBrush("hide")} disabled={!props.canRevealFog}>
-        <Eraser size={17} />
-      </button>
-      <button className="tool" title="Undo fog change" aria-label="Undo fog change" onClick={props.onUndoFog} disabled={!props.canRevealFog}>
-        <RotateCcw size={17} />
-      </button>
-      <button className="tool" title="Fog history" aria-label="Fog history" onClick={props.onShowFogHistory} disabled={!props.canRevealFog}>
-        <ScrollText size={17} />
-      </button>
-      <button className="tool" title="Sample vision at selected token" aria-label="Sample vision at selected token" onClick={props.onSampleVisionPoint} disabled={!props.canRevealFog}>
-        <Eye size={17} />
-      </button>
-      <button className="tool" title="Save fog preset" aria-label="Save fog preset" onClick={props.onSaveFogPreset} disabled={!props.canRevealFog}>
-        <Download size={17} />
-      </button>
-      <button className="tool" title="Apply latest fog preset" aria-label="Apply latest fog preset" onClick={props.onApplyFogPreset} disabled={!props.canRevealFog || !props.hasFogPresets}>
-        <Upload size={17} />
-      </button>
-      <button className="tool" title="Delete fog preset" aria-label="Delete fog preset" onClick={props.onDeleteFogPreset} disabled={!props.canRevealFog || !props.hasFogPresets}>
-        <UserX size={17} />
-      </button>
-      <button className="tool" title="Add wall" aria-label="Add wall" onClick={props.onAddWall} disabled={!props.canUpdateScene}>
-        <BrickWall size={17} />
-      </button>
-      <button className="tool" title="Add terrain wall" aria-label="Add terrain wall" onClick={props.onAddTerrainWall} disabled={!props.canUpdateScene}>
-        <BrickWall size={17} />
-      </button>
-      <button className="tool" title="Add light" aria-label="Add light" onClick={props.onAddLight} disabled={!props.canUpdateScene}>
-        <Lightbulb size={17} />
-      </button>
-      <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
-        <MapPin size={17} />
       </button>
       <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
         <Ruler size={17} />
       </button>
-      <button className={`tool ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")} disabled={!props.canUpdateScene}>
-        <Circle size={17} />
+      <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
+        <MapPin size={17} />
+      </button>
+      <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={props.onRevealFog} disabled={!props.canRevealFog}>
+        <Eye size={17} />
       </button>
       <button className={`tool ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing" aria-label="Drawing" onClick={() => props.onToggleAnnotationTool("drawing")} disabled={!props.canUpdateScene}>
         <PencilLine size={17} />
       </button>
+      <button className={`tool ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")} disabled={!props.canUpdateScene}>
+        <Circle size={17} />
+      </button>
       <button className="tool" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={props.onDeleteLatestAnnotation} disabled={!props.canUpdateScene}>
         <X size={17} />
       </button>
+      <details className="tool-more">
+        <summary className="tool" title="More tools" aria-label="More tools">
+          <Boxes size={17} />
+        </summary>
+        <div className="tool-more-panel" aria-label="Advanced table tools">
+          <button className="ghost-button" type="button" onClick={props.onStartCombat} disabled={!props.canManageCombat}>
+            <Swords size={15} /> Combat
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onRevealFog} disabled={!props.canRevealFog}>
+            <Eye size={15} /> Reveal fog
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onHideFog} disabled={!props.canRevealFog}>
+            <Eraser size={15} /> Hide fog
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onRevealFogPolygon} disabled={!props.canRevealFog}>
+            <Pentagon size={15} /> Polygon fog
+          </button>
+          <button className={`ghost-button ${props.activeFogBrushMode === "reveal" ? "active" : ""}`} type="button" onClick={() => props.onToggleFogBrush("reveal")} disabled={!props.canRevealFog}>
+            <Paintbrush size={15} /> Reveal brush
+          </button>
+          <button className={`ghost-button ${props.activeFogBrushMode === "hide" ? "active" : ""}`} type="button" onClick={() => props.onToggleFogBrush("hide")} disabled={!props.canRevealFog}>
+            <Eraser size={15} /> Hide brush
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onUndoFog} disabled={!props.canRevealFog}>
+            <RotateCcw size={15} /> Undo fog
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onShowFogHistory} disabled={!props.canRevealFog}>
+            <ScrollText size={15} /> Fog history
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onSampleVisionPoint} disabled={!props.canRevealFog}>
+            <Crosshair size={15} /> Sample vision
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onSaveFogPreset} disabled={!props.canRevealFog}>
+            <Download size={15} /> Save preset
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onApplyFogPreset} disabled={!props.canRevealFog || !props.hasFogPresets}>
+            <Upload size={15} /> Apply preset
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onDeleteFogPreset} disabled={!props.canRevealFog || !props.hasFogPresets}>
+            <UserX size={15} /> Delete preset
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onAddWall} disabled={!props.canUpdateScene}>
+            <BrickWall size={15} /> Wall
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onAddTerrainWall} disabled={!props.canUpdateScene}>
+            <BrickWall size={15} /> Terrain
+          </button>
+          <button className="ghost-button" type="button" onClick={props.onAddLight} disabled={!props.canUpdateScene}>
+            <Lightbulb size={15} /> Light
+          </button>
+          <button className={`ghost-button ${props.activeAnnotationTool === "ping" ? "active" : ""}`} type="button" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
+            <MapPin size={15} /> Ping
+          </button>
+          <button className={`ghost-button ${props.activeAnnotationTool === "template" ? "active" : ""}`} type="button" onClick={() => props.onToggleAnnotationTool("template")} disabled={!props.canUpdateScene}>
+            <Circle size={15} /> Template
+          </button>
+          <button className="ghost-button danger-button" type="button" onClick={props.onDeleteLatestAnnotation} disabled={!props.canUpdateScene}>
+            <X size={15} /> Delete mark
+          </button>
+        </div>
+      </details>
     </div>
   );
 }
 
 function TabButton(props: { active: boolean; icon: React.ReactNode; label: string; onClick(): void }) {
   return (
-    <button className={props.active ? "tab active" : "tab"} onClick={props.onClick}>
+    <button className={props.active ? "tab active" : "tab"} type="button" title={props.label} onClick={props.onClick}>
       {props.icon}
       {props.label}
     </button>
@@ -4911,6 +5883,8 @@ function sameStringSet(left: string[], right: string[]): boolean {
 }
 
 function tokenPermissionPresetLabel(token: Token, playerOwnerIds: string[]): string {
+  if (tokenLayer(token) === "gm") return "GM layer";
+  if (tokenLayer(token) === "map") return "Map layer";
   const tokenOwnerIds = token.ownerUserIds ?? [];
   if (token.hidden && token.locked && tokenOwnerIds.length === 0) return "Hidden GM hold";
   if (!token.hidden && token.locked && tokenOwnerIds.length === 0) return "GM locked";
@@ -4936,13 +5910,18 @@ function slugId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 }
 
-function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>): void; useActorAction(rollId: string, options?: { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean }): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
+function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
   const [sheetView, setSheetView] = useState<"stats" | "loadout" | "actions" | "compendium">("stats");
   const [assignItemId, setAssignItemId] = useState("");
   const [itemDropActive, setItemDropActive] = useState(false);
   const [loadoutSearch, setLoadoutSearch] = useState("");
   const [loadoutFilter, setLoadoutFilter] = useState<ActorLoadoutFilter>("all");
   const [purchaseQuantities, setPurchaseQuantities] = useState<Record<string, number>>({});
+  const [actionPreview, setActionPreview] = useState<ActorActionResolutionPreview | undefined>();
+  const [actionPreviewStatus, setActionPreviewStatus] = useState("");
+  const [actionPreviewRollId, setActionPreviewRollId] = useState("");
+  const [actionSaveOutcomes, setActionSaveOutcomes] = useState<Record<string, RulesSaveOutcome>>({});
+  const [actionEffectChoice, setActionEffectChoice] = useState("");
   const [targetAreaX, setTargetAreaX] = useState("0");
   const [targetAreaY, setTargetAreaY] = useState("0");
   const [targetAreaWidth, setTargetAreaWidth] = useState("1200");
@@ -4951,13 +5930,56 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
   const [fullSheetOpen, setFullSheetOpen] = useState(false);
   const deleteConfirmRef = useRef<HTMLButtonElement | null>(null);
   const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
+  const tokenImageInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     if (deleteDialogOpen) deleteConfirmRef.current?.focus();
   }, [deleteDialogOpen]);
   useEffect(() => {
-    setDeleteDialogOpen(false);
     setFullSheetOpen(false);
   }, [props.token?.id]);
+  useEffect(() => {
+    if (!props.actor || props.actor.systemId !== "dnd-5e-srd" || !props.canUseAction) {
+      setActionPreview(undefined);
+      setActionPreviewStatus("");
+      return;
+    }
+    const actorItems = props.items.filter((item) => item.actorId === props.actor?.id);
+    const actions = actorActionOptions(props.actor, actorItems);
+    const previewAction = actions.find((action) => action.rollId === actionPreviewRollId) ?? actions[0];
+    if (!previewAction) {
+      setActionPreview(undefined);
+      setActionPreviewStatus("");
+      return;
+    }
+    let cancelled = false;
+    setActionPreviewStatus("Previewing");
+    apiPost<{ resolution?: ActorActionResolutionPreview }>(`/api/v1/campaigns/${props.campaignId}/systems/${props.actor.systemId}/actors/${props.actor.id}/roll`, {
+      rollId: previewAction.rollId,
+      targetActorId: props.actionTargetActorId || props.actor.id,
+      applyEffect: props.actionApplyEffect,
+      consumeResources: props.actionConsumeResources,
+      saveOutcomes: Object.keys(actionSaveOutcomes).length > 0 ? actionSaveOutcomes : undefined,
+      effectChoice: actionEffectChoice || undefined,
+      commit: false
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setActionPreview(result.resolution);
+        setActionPreviewStatus(result.resolution ? "Preview ready" : "");
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setActionPreview(undefined);
+        setActionPreviewStatus(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.actor?.id, props.actor?.updatedAt, props.campaignId, props.actionApplyEffect, props.actionConsumeResources, props.actionTargetActorId, props.canUseAction, props.items, actionPreviewRollId, actionSaveOutcomes, actionEffectChoice]);
+  useEffect(() => {
+    setActionSaveOutcomes({});
+    setActionEffectChoice("");
+  }, [props.actor?.id, props.actionTargetActorId, actionPreviewRollId]);
   if (!props.actor) return <div className="panel-empty">No actor selected.</div>;
   const tokenOwnerIds = props.token?.ownerUserIds ?? [];
   const playerOwnerIds = tokenPlayerOwnerIds(props.members);
@@ -4979,6 +6001,26 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
   const clues = actorItems.filter((item) => item.type === "clue");
   const rituals = actorItems.filter((item) => item.type === "ritual");
   const normalizedLoadoutSearch = loadoutSearch.trim().toLocaleLowerCase();
+  const tokenImageAssets = props.assets.filter(isUsableImageAsset);
+  const tokenGridSize = Math.max(1, props.scene?.gridSize ?? 50);
+  const tokenFootprintWidth = props.token ? Math.max(1, Math.round(props.token.width / tokenGridSize)) : 1;
+  const tokenFootprintHeight = props.token ? Math.max(1, Math.round(props.token.height / tokenGridSize)) : 1;
+  const tokenFootprintLabel = tokenFootprintWidth === tokenFootprintHeight ? `${tokenFootprintWidth}x${tokenFootprintHeight}` : `${tokenFootprintWidth}x${tokenFootprintHeight}`;
+
+  function updateTokenSize(width: number, height: number) {
+    const safeWidth = Math.max(1, Math.round(width) || 1);
+    const safeHeight = Math.max(1, Math.round(height) || 1);
+    if (!props.token || !props.scene) {
+      props.updateToken({ width: safeWidth, height: safeHeight });
+      return;
+    }
+    const center = tokenCenter(props.token);
+    props.updateToken({ width: safeWidth, height: safeHeight, ...tokenCoordinatesFromCenter(props.scene, safeWidth, safeHeight, center.x, center.y) });
+  }
+
+  function setTokenFootprint(cells: number) {
+    updateTokenSize(tokenGridSize * cells, tokenGridSize * cells);
+  }
   const filteredActorItems = actorItems.filter((item) => {
     const data = recordValue(item.data);
     const isMagic = item.type === "spell" || item.type === "talent" || item.type === "ritual";
@@ -4998,9 +6040,20 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
   const actionOptions = actorActionOptions(props.actor, actorItems);
   const actionLabels = actionOptions.map((option) => option.description);
   const firstAction = actionOptions[0];
-  const firstActionSupportsEffect = actorActionSupportsEffect(firstAction);
+  const previewAction = actionOptions.find((action) => action.rollId === actionPreviewRollId) ?? firstAction;
+  const previewActionSupportsEffect = actorActionSupportsEffect(previewAction);
+  const requiredPendingSaves = actionPreview?.pendingSaves?.filter((save) => save.requiredForCommit !== false) ?? [];
+  const missingRequiredSaveOutcomes = requiredPendingSaves.some((save) => !actionSaveOutcomes[save.actorId]);
+  const actionPreviewRequiresInput = Boolean(missingRequiredSaveOutcomes || (actionPreview?.pendingChoice && !actionEffectChoice) || (props.actionApplyEffect && actionPreview?.manualResolutionRequired));
   const actionTargetActorId = props.actionTargetActorId || props.actor.id;
   const selectedActionTarget = props.actors.find((actor) => actor.id === actionTargetActorId) ?? props.actor;
+  const actionSaveOutcomePayload = Object.keys(actionSaveOutcomes).length > 0 ? actionSaveOutcomes : undefined;
+  const actionEffectChoicePayload = actionEffectChoice || undefined;
+  const previewActionCommitOptions: ActorActionCommitOptions = { targetActorId: actionTargetActorId, applyEffect: props.actionApplyEffect, consumeResources: props.actionConsumeResources, saveOutcomes: actionSaveOutcomePayload, effectChoice: actionEffectChoicePayload };
+  const baseActionCommitOptions: ActorActionCommitOptions = { targetActorId: actionTargetActorId, applyEffect: props.actionApplyEffect, consumeResources: props.actionConsumeResources };
+  const commitOptionsForAction = (rollId: string): ActorActionCommitOptions => (rollId === previewAction?.rollId ? previewActionCommitOptions : baseActionCommitOptions);
+  const actionSaveActorName = (actorId: string): string => props.actors.find((actor) => actor.id === actorId)?.name ?? actorId;
+  const updateActionSaveOutcome = (actorId: string, outcome: RulesSaveOutcome) => setActionSaveOutcomes((current) => ({ ...current, [actorId]: outcome }));
   const sceneTargetTokens = props.token ? props.tokens.filter((token) => token.sceneId === props.token?.sceneId) : props.tokens;
   const targetedSceneTokens = sceneTargetTokens.filter((token) => token.targetedByUserIds?.includes(props.currentUserId));
   const hostileSceneTokens = sceneTargetTokens.filter((token) => token.disposition === "hostile");
@@ -5040,11 +6093,28 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
     .slice(0, 8);
   return (
     <div className="panel-stack">
-      <div className="section-title">Selected Actor</div>
-      <h2>{props.actor.name}</h2>
-      <button className="ghost-button wide" type="button" onClick={() => setFullSheetOpen(true)}>
-        <FileText size={16} /> Open Full Sheet
-      </button>
+      <header className="panel-hero actor-hero">
+        <div>
+          <div className="section-title">Selected Actor</div>
+          <h2>{props.actor.name}</h2>
+          <div className="admin-meta">
+            <span>{props.actor.systemId}</span>
+            <span>{props.token ? `Token ${props.token.name}` : "No linked token"}</span>
+            {combatState.length > 0 && <span>{combatState[0]}</span>}
+          </div>
+        </div>
+        <button className="ghost-button" type="button" onClick={() => setFullSheetOpen(true)}>
+          <FileText size={16} /> Open Full Sheet
+        </button>
+      </header>
+      <section className="operator-section actor-at-a-glance" aria-label="Actor at a glance">
+        <div className="metric-grid">
+          <MetricTile label="HP" value={`${hp?.current ?? "?"}/${hp?.max ?? "?"}`} />
+          <MetricTile label="AC" value={armorClass ? (armorClass.label ? `${armorClass.value} ${armorClass.label}` : String(armorClass.value)) : "n/a"} />
+          <MetricTile label="Conditions" value={conditions.length > 0 ? conditions.join(", ") : "None"} />
+          <MetricTile label="Resources" value={resources.length > 0 ? resources.join(", ") : "None"} />
+        </div>
+      </section>
       {fullSheetOpen && (
         <div className="modal-backdrop" role="presentation">
           <div className="modal-dialog actor-sheet-dialog" role="dialog" aria-modal="true" aria-labelledby={`actor-full-sheet-title-${props.actor.id}`}>
@@ -5053,7 +6123,7 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
                 <div className="section-title">Character Sheet</div>
                 <h2 id={`actor-full-sheet-title-${props.actor.id}`}>{props.actor.name} full character sheet</h2>
               </div>
-              <button className="ghost-button" type="button" onClick={() => setFullSheetOpen(false)}>
+              <button className="ghost-button" type="button" aria-label="Close full character sheet" onClick={() => setFullSheetOpen(false)}>
                 <X size={16} /> Close
               </button>
             </div>
@@ -5101,7 +6171,7 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
                   <article className="operator-item admin-item" key={`full-sheet-action-${action.rollId}`}>
                     <strong>{action.label}</strong>
                     <p>{action.description}</p>
-                    <button className="ghost-button" type="button" disabled={!props.canUseAction} onClick={() => props.useActorAction(action.rollId, { targetActorId: actionTargetActorId, applyEffect: props.actionApplyEffect, consumeResources: props.actionConsumeResources })}>
+                    <button className="ghost-button" type="button" disabled={!props.canUseAction} onClick={() => props.useActorAction(action.rollId, commitOptionsForAction(action.rollId))}>
                       <WandSparkles size={14} /> Use action
                     </button>
                   </article>
@@ -5146,7 +6216,10 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
               aria-label={`Place ${actor.name} actor on scene`}
               title={props.canCreateToken ? "Drag actor to the scene" : "Requires token.create"}
               disabled={!props.canCreateToken}
-              onDragStart={(event) => writeTokenDropData(event.dataTransfer, { type: "actor", id: actor.id, actorId: actor.id, name: actor.name, disposition: "friendly" })}
+              onDragStart={(event) => {
+                writeTokenDropData(event.dataTransfer, { type: "actor", id: actor.id, actorId: actor.id, name: actor.name, disposition: "friendly" });
+                setTokenDropPreview(event.dataTransfer, actor.name);
+              }}
             >
               <Users size={14} />
               <span>{actor.name}</span>
@@ -5351,8 +6424,8 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
             <>
               <div className="asset-pressure-list" role="region" aria-label="Action resolution preview">
                 <div className="operator-row tool-call-row">
-                  <span>Primary action</span>
-                  <strong>{firstAction?.label ?? "No action"}</strong>
+                  <span>Previewed action</span>
+                  <strong>{previewAction?.label ?? "No action"}</strong>
                 </div>
                 <div className="operator-row tool-call-row">
                   <span>Target actor</span>
@@ -5368,21 +6441,94 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
                 </div>
                 <div className="operator-row tool-call-row">
                   <span>Effect support</span>
-                  <strong>{firstAction ? (firstActionSupportsEffect ? "supported" : "roll only") : "no action"}</strong>
+                  <strong>{previewAction ? (previewActionSupportsEffect ? "supported" : "roll only") : "no action"}</strong>
                 </div>
                 <div className="operator-row tool-call-row">
                   <span>Resources</span>
                   <strong>{props.actionConsumeResources ? "consume resources" : "do not consume"}</strong>
                 </div>
-                {firstAction && <p>{firstAction.description}</p>}
-                {firstAction && props.actionApplyEffect && !firstActionSupportsEffect && <p className="admin-status">Effect unsupported: clear Apply action effect to roll this action.</p>}
-                <button className="ghost-button" type="button" disabled={!props.canUseAction || !firstAction || (props.actionApplyEffect && !firstActionSupportsEffect)} onClick={() => firstAction && props.useActorAction(firstAction.rollId, { targetActorId: actionTargetActorId, applyEffect: props.actionApplyEffect, consumeResources: props.actionConsumeResources })}>
+                {actionPreviewStatus && (
+                  <div className="operator-row tool-call-row">
+                    <span>Resolver</span>
+                    <strong>{actionPreviewStatus}</strong>
+                  </div>
+                )}
+                {actionPreview?.rolls?.[0] && (
+                  <div className="operator-row tool-call-row">
+                    <span>Roll preview</span>
+                    <strong>{actionPreview.rolls[0].d20Mode && actionPreview.rolls[0].d20Mode !== "normal" ? `${actionPreview.rolls[0].formula} (${actionPreview.rolls[0].d20Mode})` : actionPreview.rolls[0].formula}</strong>
+                  </div>
+                )}
+                {actionPreview?.resourceConsumption && actionPreview.resourceConsumption.length > 0 && (
+                  <div className="operator-row tool-call-row">
+                    <span>Spend</span>
+                    <strong>{actionPreview.resourceConsumption.map((resource) => `${resource.label} ${resource.amount} (${resource.remaining} left)`).join(", ")}</strong>
+                  </div>
+                )}
+                {actionPreview?.conditions && actionPreview.conditions.length > 0 && (
+                  <div className="operator-row tool-call-row">
+                    <span>Conditions</span>
+                    <strong>{actionPreview.conditions.map((condition) => condition.conditionName ?? condition.operation).join(", ")}</strong>
+                  </div>
+                )}
+                {actionPreview?.pendingSaves?.map((save) => (
+                  <div className="operator-row tool-call-row" key={`action-save-${save.actorId}-${save.ability}-${save.reason}`}>
+                    <span>{actionSaveActorName(save.actorId)} {titleCaseLabel(save.ability)} save{save.dc ? ` DC ${save.dc}` : ""}</span>
+                    {save.requiredForCommit !== false ? (
+                      <div className="button-row" role="group" aria-label={`${actionSaveActorName(save.actorId)} ${save.ability} save outcome`}>
+                        <button className={actionSaveOutcomes[save.actorId] === "success" ? "ghost-button active" : "ghost-button"} type="button" aria-pressed={actionSaveOutcomes[save.actorId] === "success"} onClick={() => updateActionSaveOutcome(save.actorId, "success")}>
+                          <Check size={14} /> Success
+                        </button>
+                        <button className={actionSaveOutcomes[save.actorId] === "failure" ? "ghost-button active" : "ghost-button"} type="button" aria-pressed={actionSaveOutcomes[save.actorId] === "failure"} onClick={() => updateActionSaveOutcome(save.actorId, "failure")}>
+                          <X size={14} /> Failure
+                        </button>
+                      </div>
+                    ) : (
+                      <strong>{save.reason}</strong>
+                    )}
+                  </div>
+                ))}
+                {actionPreview?.pendingReactions && actionPreview.pendingReactions.length > 0 && (
+                  <div className="operator-row tool-call-row">
+                    <span>Reactions</span>
+                    <strong>{actionPreview.pendingReactions.map((reaction) => reaction.reason).join(", ")}</strong>
+                  </div>
+                )}
+                {actionPreview?.attunement && actionPreview.attunement.overLimitBy > 0 && (
+                  <div className="operator-row tool-call-row">
+                    <span>Attunement</span>
+                    <strong>{actionPreview.attunement.attunedItemIds.length}/{actionPreview.attunement.limit}</strong>
+                  </div>
+                )}
+                {previewAction && <p>{previewAction.description}</p>}
+                {previewAction && props.actionApplyEffect && !previewActionSupportsEffect && <p className="admin-status">Effect unsupported: clear Apply action effect to roll this action.</p>}
+                {actionPreview?.blocked && <p className="admin-status">{actionPreview.blocked.reason}</p>}
+                {actionPreview?.pendingChoice && (
+                  <div className="operator-row tool-call-row">
+                    <span>{actionPreview.pendingChoice.reason}</span>
+                    <select aria-label="Action effect choice" value={actionEffectChoice} onChange={(event) => setActionEffectChoice(event.target.value)}>
+                      <option value="">Choose option</option>
+                      {actionPreview.pendingChoice.options.map((option) => (
+                        <option key={`action-choice-${option}`} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {actionPreview?.manualResolutionRequired && <p className="admin-status">Manual resolution required: {actionPreview.manualResolutionRequired.reason}</p>}
+                {actionPreviewRequiresInput && <p className="admin-status">Resolve the pending save, choice, or manual step before committing this action.</p>}
+                {actionPreview?.warnings?.map((warning) => <p className="admin-status" key={`action-preview-warning-${warning}`}>{warning}</p>)}
+                <button className="ghost-button" type="button" disabled={!props.canUseAction || !previewAction || Boolean(actionPreview?.blocked) || actionPreviewRequiresInput || (props.actionApplyEffect && !previewActionSupportsEffect)} onClick={() => previewAction && props.useActorAction(previewAction.rollId, previewActionCommitOptions)}>
                   <WandSparkles size={14} /> Use previewed action
                 </button>
               </div>
               {actionOptions.map((action) => {
                 const supportsEffect = actorActionSupportsEffect(action);
                 const unsupportedEffect = props.actionApplyEffect && !supportsEffect;
+                const isPreviewed = action.rollId === previewAction?.rollId;
+                const previewBlocked = isPreviewed ? actionPreview?.blocked : undefined;
+                const previewRequiresInput = isPreviewed ? actionPreviewRequiresInput : false;
                 return (
                   <article className="operator-item admin-item" key={action.rollId}>
                     <strong>{action.label}</strong>
@@ -5391,9 +6537,16 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
                       <span>{supportsEffect ? "effect supported" : "roll only action"}</span>
                     </div>
                     {unsupportedEffect && <p className="admin-status">Effect unsupported: clear Apply action effect to roll this action.</p>}
-                    <button className="ghost-button" type="button" disabled={!props.canUseAction || unsupportedEffect} onClick={() => props.useActorAction(action.rollId, { targetActorId: actionTargetActorId, applyEffect: props.actionApplyEffect, consumeResources: props.actionConsumeResources })}>
-                      <WandSparkles size={14} /> Use action
-                    </button>
+                    {previewBlocked && <p className="admin-status">{previewBlocked.reason}</p>}
+                    {previewRequiresInput && <p className="admin-status">Resolve pending inputs before committing.</p>}
+                    <div className="button-row">
+                      <button className={isPreviewed ? "ghost-button active" : "ghost-button"} type="button" aria-pressed={isPreviewed} disabled={!props.canUseAction} onClick={() => setActionPreviewRollId(action.rollId)}>
+                        <Eye size={14} /> Preview
+                      </button>
+                      <button className="ghost-button" type="button" disabled={!props.canUseAction || unsupportedEffect || Boolean(previewBlocked) || previewRequiresInput} onClick={() => props.useActorAction(action.rollId, commitOptionsForAction(action.rollId))}>
+                        <WandSparkles size={14} /> Use action
+                      </button>
+                    </div>
                   </article>
                 );
               })}
@@ -5413,9 +6566,9 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
           </div>
           <div className="metric-row">
             <span>Token State</span>
-            <strong>{[...(props.token.conditions?.map((condition) => condition.name) ?? []), ...(props.token.auras?.map((aura) => `${aura.name} ${aura.radius}`) ?? []), ...(props.token.ownerUserIds?.length ? [`Owners ${props.token.ownerUserIds.length}`] : []), ...(props.token.targetedByUserIds?.length ? [`Targeted ${props.token.targetedByUserIds.length}`] : [])].join(", ") || "Ready"}</strong>
+            <strong>{[tokenLayerLabel(tokenLayer(props.token)), ...(props.token.conditions?.map((condition) => condition.name) ?? []), ...(props.token.auras?.map((aura) => `${aura.name} ${aura.radius}`) ?? []), ...(props.token.ownerUserIds?.length ? [`Owners ${props.token.ownerUserIds.length}`] : []), ...(props.token.targetedByUserIds?.length ? [`Targeted ${props.token.targetedByUserIds.length}`] : [])].join(", ") || "Ready"}</strong>
           </div>
-          <div className="inspector-grid" key={props.token.id}>
+          <div className="inspector-grid" key={`${props.token.id}-${props.token.x}-${props.token.y}-${props.token.width}-${props.token.height}-${props.token.imageAssetId ?? "marker"}`}>
             <label>
               <span>Name</span>
               <input aria-label="Token inspector name" defaultValue={props.token.name} disabled={!props.canUpdateToken} onBlur={(event) => props.updateToken({ name: event.currentTarget.value.trim() || props.token!.name })} />
@@ -5472,13 +6625,51 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
               <span>Image</span>
               <select aria-label="Token image asset" value={props.token.imageAssetId ?? ""} disabled={!props.canUpdateToken} onChange={(event) => props.updateToken({ imageAssetId: event.target.value || undefined })}>
                 <option value="">Default marker</option>
-                {props.assets.map((asset) => (
+                {tokenImageAssets.map((asset) => (
                   <option key={asset.id} value={asset.id}>
                     {asset.name}
                   </option>
                 ))}
               </select>
             </label>
+            <label>
+              <span>Layer</span>
+              <select aria-label="Token layer" value={tokenLayer(props.token)} disabled={!props.canUpdateToken} onChange={(event) => props.updateToken({ layer: event.target.value as TokenLayer })}>
+                {tokenLayers.map((layer) => (
+                  <option key={layer.id} value={layer.id}>
+                    {layer.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="token-image-actions">
+              <button className="ghost-button" type="button" disabled={!props.canUpdateToken} onClick={() => tokenImageInputRef.current?.click()}>
+                <Upload size={14} /> Upload image
+              </button>
+              <input
+                ref={tokenImageInputRef}
+                aria-label="Upload token image"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                hidden
+                onChange={(event) => {
+                  const input = event.currentTarget;
+                  const file = input.files?.[0];
+                  if (file) props.onUploadTokenImage(file, input).catch(console.error);
+                }}
+              />
+            </div>
+            <div className="sheet-row token-size-presets" aria-label="Token footprint presets">
+              <span>Footprint</span>
+              <strong>{tokenFootprintLabel} grid</strong>
+              <div className="button-row">
+                {[1, 2, 3, 4].map((cells) => (
+                  <button className="ghost-button" type="button" key={cells} disabled={!props.canUpdateToken || !props.scene} onClick={() => setTokenFootprint(cells)}>
+                    {cells}x{cells}
+                  </button>
+                ))}
+              </div>
+            </div>
             <label>
               <span>X</span>
               <input aria-label="Token x" type="number" defaultValue={props.token.x} disabled={!props.canUpdateToken} onBlur={(event) => props.updateToken({ x: Number(event.currentTarget.value) })} />
@@ -5489,11 +6680,11 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
             </label>
             <label>
               <span>Width</span>
-              <input aria-label="Token width" type="number" min={1} defaultValue={props.token.width} disabled={!props.canUpdateToken} onBlur={(event) => props.updateToken({ width: Math.max(1, Number(event.currentTarget.value)) })} />
+              <input aria-label="Token width" type="number" min={1} defaultValue={props.token.width} disabled={!props.canUpdateToken} onBlur={(event) => updateTokenSize(Number(event.currentTarget.value), props.token!.height)} />
             </label>
             <label>
               <span>Height</span>
-              <input aria-label="Token height" type="number" min={1} defaultValue={props.token.height} disabled={!props.canUpdateToken} onBlur={(event) => props.updateToken({ height: Math.max(1, Number(event.currentTarget.value)) })} />
+              <input aria-label="Token height" type="number" min={1} defaultValue={props.token.height} disabled={!props.canUpdateToken} onBlur={(event) => updateTokenSize(props.token!.width, Number(event.currentTarget.value))} />
             </label>
             <label className="inline-check">
               <input type="checkbox" checked={props.token.hidden} disabled={!props.canUpdateToken} onChange={(event) => props.updateToken({ hidden: event.target.checked })} />
@@ -5757,8 +6948,8 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
             <input aria-label="Consume action resources" type="checkbox" checked={props.actionConsumeResources} disabled={!props.canUseAction} onChange={(event) => props.setActionConsumeResources(event.target.checked)} />
             <span>Consume spell slots, item charges, or class resources</span>
           </label>
-          <button className="ghost-button wide" onClick={() => props.useActorAction(firstAction.rollId, { targetActorId: actionTargetActorId, applyEffect: props.actionApplyEffect, consumeResources: props.actionConsumeResources })} disabled={!props.canUseAction}>
-            <WandSparkles size={16} /> Use {firstAction.label}
+          <button className="ghost-button wide" onClick={() => previewAction && props.useActorAction(previewAction.rollId, previewActionCommitOptions)} disabled={!props.canUseAction || !previewAction || Boolean(actionPreview?.blocked) || actionPreviewRequiresInput}>
+            <WandSparkles size={16} /> Use {previewAction?.label ?? firstAction.label}
           </button>
         </>
       )}
@@ -5838,7 +7029,10 @@ function ActorPanel(props: { actor?: Actor; token?: Token; scene?: Scene; curren
           )}
         </div>
       </section>
-      <pre>{JSON.stringify(props.actor.data, null, 2)}</pre>
+      <details className="operator-section raw-data-details">
+        <summary>Raw actor data</summary>
+        <pre>{JSON.stringify(props.actor.data, null, 2)}</pre>
+      </details>
     </div>
   );
 }
@@ -7244,9 +8438,9 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.floor(value)));
 }
 
-function tokenBrightVisionPatch(value: string): Partial<Pick<Token, "brightVisionRadius">> {
+function tokenBrightVisionPatch(value: string): TokenVisionPatch {
   const radius = Number(value);
-  return Number.isFinite(radius) && radius > 0 ? { brightVisionRadius: radius } : {};
+  return Number.isFinite(radius) && radius > 0 ? { brightVisionRadius: radius } : { brightVisionRadius: null };
 }
 
 function formatFogHistoryEntry(entry: FogHistoryEntry): string {
@@ -7351,15 +8545,37 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function createdSceneIdFromProposal(proposal: Proposal): string | undefined {
+  for (const change of proposal.changesJson) {
+    if (change.entity !== "scene" || change.action !== "create") continue;
+    const data = recordValue(change.data);
+    if (typeof data.id === "string" && data.id.trim()) return data.id;
+  }
+  return undefined;
+}
+
 function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle(value: string): void; body: string; setBody(value: string): void; visibility: Visibility; setVisibility(value: Visibility): void; tags: string; setTags(value: string): void; onCreate(): void; canCreate: boolean }) {
+  const publicCount = props.journals.filter((journal) => journal.visibility === "public").length;
+  const gmOnlyCount = props.journals.filter((journal) => journal.visibility === "gm_only").length;
+  const taggedCount = props.journals.filter((journal) => journal.tags.length > 0).length;
   return (
     <div className="panel-stack">
-      <div className="panel-heading">
-        <div className="section-title">Journal</div>
+      <header className="panel-hero">
+        <div>
+          <div className="section-title">Journal</div>
+          <h2>Campaign Notes</h2>
+          <p className="panel-subtitle">{formatNumber(props.journals.length)} entries</p>
+        </div>
         <button className="icon-button" title="Create journal entry" aria-label="Create journal entry" onClick={props.onCreate} disabled={!props.canCreate}>
           <Plus size={16} />
         </button>
-      </div>
+      </header>
+      <section className="metric-grid panel-summary-grid" aria-label="Journal summary">
+        <MetricTile label="Public" value={formatNumber(publicCount)} />
+        <MetricTile label="GM Only" value={formatNumber(gmOnlyCount)} />
+        <MetricTile label="Tagged" value={formatNumber(taggedCount)} />
+        <MetricTile label="Drafting" value={props.title.trim() ? "Active" : "Idle"} />
+      </section>
       <form
         className="operator-section content-import-form"
         onSubmit={(event) => {
@@ -7392,13 +8608,22 @@ function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle
           <Plus size={16} /> Create Entry
         </button>
       </form>
-      {props.journals.map((journal) => (
-        <article className="journal-entry" key={journal.id}>
-          <span>{journal.visibility}</span>
-          <h3>{journal.title}</h3>
-          <p>{journal.body}</p>
-        </article>
-      ))}
+      <section className="journal-list" aria-label="Journal entries">
+        {props.journals.length === 0 ? (
+          <div className="empty-state compact">No journal entries yet.</div>
+        ) : (
+          props.journals.map((journal) => (
+            <article className="journal-entry" key={journal.id}>
+              <div className="operator-heading">
+                <span>{journal.visibility}</span>
+                {journal.tags.length > 0 && <strong>{journal.tags.slice(0, 2).join(", ")}</strong>}
+              </div>
+              <h3>{journal.title}</h3>
+              <p>{journal.body}</p>
+            </article>
+          ))
+        )}
+      </section>
     </div>
   );
 }
@@ -7484,6 +8709,12 @@ function ChatPanel(props: { messages: ChatMessage[]; rolls: DiceRoll[]; members:
           </button>
         </div>
       </div>
+      <section className="metric-grid panel-summary-grid" aria-label="Chat summary">
+        <MetricTile label="Filtered" value={formatNumber(filteredMessages.length)} />
+        <MetricTile label="Rolls" value={formatNumber(props.rolls.length)} />
+        <MetricTile label="Replies" value={formatNumber(replyMessages.length)} />
+        <MetricTile label="Review" value={formatNumber(openReviewCount)} />
+      </section>
       <div className="operator-section content-import-form">
         <div className="admin-form-grid">
           <label>
@@ -7552,7 +8783,7 @@ function ChatPanel(props: { messages: ChatMessage[]; rolls: DiceRoll[]; members:
           <div className="button-row">
             <button className="ghost-button" type="button" onClick={() => props.setVisibilityFilter("whisper")}>Whispers</button>
             <button className="ghost-button" type="button" onClick={() => props.setVisibilityFilter("gm_only")}>GM only</button>
-            <button className="ghost-button" type="button" onClick={() => props.setTypeFilter("ai")}>AI</button>
+            <button className="ghost-button" type="button" onClick={() => props.setTypeFilter("ai")}>AI messages</button>
             <button className="ghost-button" type="button" onClick={() => { props.setTypeFilter("all"); props.setVisibilityFilter("all"); props.setSearch(""); }}>All chat</button>
           </div>
           <div className="operator-list">
@@ -7692,54 +8923,86 @@ function ChatPanel(props: { messages: ChatMessage[]; rolls: DiceRoll[]; members:
 }
 
 function CombatPanel(props: { combat?: Combat; auditLogs: AuditLog[]; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; canManage: boolean }) {
+  const combatants = props.combat?.combatants ?? [];
+  const activeCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
+  const readyCount = combatants.filter((combatant) => combatant.readiness === "ready").length;
+  const defeatedCount = combatants.filter((combatant) => combatant.defeated).length;
   return (
     <div className="panel-stack">
-      <div className="panel-heading">
-        <div className="section-title">Combat Tracker</div>
+      <header className="panel-hero combat-hero">
+        <div>
+          <div className="section-title">Combat Tracker</div>
+          <h2>{props.combat ? `Round ${props.combat.round}` : "No Active Combat"}</h2>
+          <p className="panel-subtitle">{activeCombatant ? `Turn: ${activeCombatant.name}` : "Start from scene tokens when ready"}</p>
+        </div>
         <button className="icon-button" title="Start combat" aria-label="Start combat" onClick={props.onStart} disabled={!props.canManage}>
           <Swords size={16} />
         </button>
-      </div>
+      </header>
       {props.combat ? (
         <>
-          <div className="metric-row">
-            <span>Round</span>
-            <strong>{props.combat.round}</strong>
-          </div>
+          <section className="metric-grid panel-summary-grid" aria-label="Combat summary">
+            <MetricTile label="Round" value={formatNumber(props.combat.round)} />
+            <MetricTile label="Combatants" value={formatNumber(combatants.length)} />
+            <MetricTile label="Ready" value={formatNumber(readyCount)} />
+            <MetricTile label="Defeated" value={formatNumber(defeatedCount)} />
+          </section>
           <div className="admin-actions">
-            <button className="ghost-button" onClick={() => props.onPrevious(props.combat!)} disabled={!props.canManage || props.combat.combatants.length === 0}>
+            <button className="ghost-button" onClick={() => props.onPrevious(props.combat!)} disabled={!props.canManage || combatants.length === 0}>
               <RotateCcw size={14} /> Previous
             </button>
-            <button className="ghost-button" onClick={() => props.onNext(props.combat!)} disabled={!props.canManage || props.combat.combatants.length === 0}>
+            <button className="ghost-button" onClick={() => props.onNext(props.combat!)} disabled={!props.canManage || combatants.length === 0}>
               <ChevronRight size={14} /> Next
             </button>
             <button className="ghost-button" onClick={() => props.onEnd(props.combat!)} disabled={!props.canManage}>
               <X size={14} /> End
             </button>
           </div>
-          {props.combat.combatants.map((combatant, index) => (
+          {combatants.map((combatant, index) => (
             <div className={index === props.combat?.turnIndex ? "combatant active" : "combatant"} key={combatant.id}>
-              <div>
-                <span>{combatant.defeated ? "defeated" : combatant.readiness === "ready" ? "ready" : combatant.readiness === "delayed" ? "delayed" : index === props.combat?.turnIndex ? "active" : "waiting"}</span>
-                <strong>{combatant.name}</strong>
+              <div className="combatant-header">
+                <div>
+                  <span>{combatant.defeated ? "defeated" : combatant.readiness === "ready" ? "ready" : combatant.readiness === "delayed" ? "delayed" : index === props.combat?.turnIndex ? "active" : "waiting"}</span>
+                  <strong>{combatant.name}</strong>
+                </div>
+                <span className="status-pill">{index === props.combat?.turnIndex ? "turn" : `#${index + 1}`}</span>
               </div>
-              <input aria-label={`${combatant.name} initiative`} type="number" value={combatant.initiative} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { initiative: Number(event.target.value) })} />
-              <select aria-label={`${combatant.name} readiness`} value={combatant.readiness ?? "normal"} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { readiness: event.target.value as NonNullable<typeof combatant.readiness> })}>
-                <option value="normal">Normal turn</option>
-                <option value="ready">Ready action</option>
-                <option value="delayed">Delayed turn</option>
-              </select>
-              <input aria-label={`${combatant.name} combat conditions`} value={formatCombatantConditions(combatant)} disabled={!props.canManage} placeholder="prone, stunned" onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { conditions: parseCombatantConditions(event.target.value) })} />
-              <input aria-label={`${combatant.name} death save successes`} type="number" min={0} max={3} value={combatant.deathSaveSuccesses ?? 0} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveSuccesses: boundedCombatCounter(event.target.value) })} />
-              <input aria-label={`${combatant.name} death save failures`} type="number" min={0} max={3} value={combatant.deathSaveFailures ?? 0} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveFailures: boundedCombatCounter(event.target.value) })} />
-              <label className="inline-check">
-                <input type="checkbox" checked={combatant.defeated} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { defeated: event.target.checked })} />
-                <span>Defeated</span>
-              </label>
-              <label className="inline-check">
-                <input type="checkbox" checked={combatant.resourceUsed ?? false} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { resourceUsed: event.target.checked })} />
-                <span>{combatant.resourceLabel ? `${combatant.resourceLabel} used` : "Resource used"}</span>
-              </label>
+              <div className="combatant-controls">
+                <label>
+                  <span>Initiative</span>
+                  <input aria-label={`${combatant.name} initiative`} type="number" value={combatant.initiative} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { initiative: Number(event.target.value) })} />
+                </label>
+                <label>
+                  <span>Readiness</span>
+                  <select aria-label={`${combatant.name} readiness`} value={combatant.readiness ?? "normal"} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { readiness: event.target.value as NonNullable<typeof combatant.readiness> })}>
+                    <option value="normal">Normal turn</option>
+                    <option value="ready">Ready action</option>
+                    <option value="delayed">Delayed turn</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Conditions</span>
+                  <input aria-label={`${combatant.name} combat conditions`} value={formatCombatantConditions(combatant)} disabled={!props.canManage} placeholder="prone, stunned" onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { conditions: parseCombatantConditions(event.target.value) })} />
+                </label>
+                <label>
+                  <span>Successes</span>
+                  <input aria-label={`${combatant.name} death save successes`} type="number" min={0} max={3} value={combatant.deathSaveSuccesses ?? 0} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveSuccesses: boundedCombatCounter(event.target.value) })} />
+                </label>
+                <label>
+                  <span>Failures</span>
+                  <input aria-label={`${combatant.name} death save failures`} type="number" min={0} max={3} value={combatant.deathSaveFailures ?? 0} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveFailures: boundedCombatCounter(event.target.value) })} />
+                </label>
+              </div>
+              <div className="combatant-flags">
+                <label className="inline-check">
+                  <input type="checkbox" checked={combatant.defeated} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { defeated: event.target.checked })} />
+                  <span>Defeated</span>
+                </label>
+                <label className="inline-check">
+                  <input type="checkbox" checked={combatant.resourceUsed ?? false} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { resourceUsed: event.target.checked })} />
+                  <span>{combatant.resourceLabel ? `${combatant.resourceLabel} used` : "Resource used"}</span>
+                </label>
+              </div>
               <div className="account-summary">
                 Death saves {combatant.deathSaveSuccesses ?? 0}/3 successes, {combatant.deathSaveFailures ?? 0}/3 failures
                 {combatant.deathSaveOutcome ? ` - Outcome: ${combatant.deathSaveOutcome}` : ""}
@@ -8135,10 +9398,11 @@ function ContentImportPanel(props: {
           accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,text/plain,application/json"
           hidden
           onChange={async (event) => {
-            const file = event.target.files?.[0];
+            const input = event.currentTarget;
+            const file = input.files?.[0];
             if (!file) return;
             await props.onUploadAsset(file, false);
-            event.currentTarget.value = "";
+            input.value = "";
           }}
         />
         <input
@@ -8147,10 +9411,11 @@ function ContentImportPanel(props: {
           accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
           hidden
           onChange={async (event) => {
-            const file = event.target.files?.[0];
+            const input = event.currentTarget;
+            const file = input.files?.[0];
             if (!file) return;
             await props.onUploadAsset(file, true);
-            event.currentTarget.value = "";
+            input.value = "";
           }}
         />
         <div className="admin-status" role="status" aria-live="polite">{props.assetStatus}</div>
@@ -8253,7 +9518,10 @@ function ContentImportPanel(props: {
                         title={props.canCreateToken && !isDeleted && isImage ? "Drag asset to the scene" : "Requires token.create and an active image asset"}
                         disabled={!props.canCreateToken || isDeleted || !isImage}
                         onClick={() => props.onPlaceAssetToken(asset).catch(console.error)}
-                        onDragStart={(event) => writeTokenDropData(event.dataTransfer, { type: "asset", id: asset.id, imageAssetId: asset.id, name: asset.name, disposition: "neutral" })}
+                        onDragStart={(event) => {
+                          writeTokenDropData(event.dataTransfer, { type: "asset", id: asset.id, imageAssetId: asset.id, name: asset.name, layer: "map", disposition: "neutral" });
+                          setTokenDropPreview(event.dataTransfer, asset.name, assetBlobUrl(asset));
+                        }}
                       >
                         <MapPin size={16} /> Token
                       </button>
@@ -11656,7 +12924,12 @@ function aiToolCallErrorCode(output: unknown): string | undefined {
   return typeof error === "string" && error.trim() ? error.trim() : undefined;
 }
 
-function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; replayAiThread(thread: AiThread): void; retryAiToolCall(toolCall: AiToolCall): void; recapSession(): void; extractMemory(): void; proposals: Proposal[]; records: ProposalRecordCollections; memory: AiMemoryFact[]; aiThreads: AiThread[]; aiUsage?: AiUsageSummary; aiToolCalls: AiToolCall[]; approveAndApply(proposal: Proposal): void; rejectProposal(proposal: Proposal): void; approveMemory(fact: AiMemoryFact): void; deleteMemory(fact: AiMemoryFact): void; canPropose: boolean; canApply: boolean }) {
+type AiPanelView = "create" | "review" | "memory" | "operations";
+type AiIntentId = "encounter" | "map" | "tokenBatch" | "selectedToken" | "recap" | "memory";
+
+function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(): void; mapPrompt: string; setMapPrompt(value: string): void; generateMapAsset(): void; tokenPrompt: string; setTokenPrompt(value: string): void; generateTokenAsset(): void; generateSceneTokenAssets(): void; generationJobs: AiGenerationJob[]; selectedSceneName?: string; selectedTokenId?: string; selectedTokenName?: string; tokenOptions: Token[]; selectToken(tokenId: string): void; tokenArtMissingCount: number; tokenArtPendingCount: number; replayAiThread(thread: AiThread): void; retryAiToolCall(toolCall: AiToolCall): void; recapSession(): void; extractMemory(): void; activeSystemName?: string; encounterPlan?: EncounterPlanInfo; planEncounter(): void; proposals: Proposal[]; records: ProposalRecordCollections; memory: AiMemoryFact[]; aiThreads: AiThread[]; aiUsage?: AiUsageSummary; aiToolCalls: AiToolCall[]; approveAndApply(proposal: Proposal): void; rejectProposal(proposal: Proposal): void; approveMemory(fact: AiMemoryFact): void; deleteMemory(fact: AiMemoryFact): void; canDraftEncounter: boolean; canPropose: boolean; canApply: boolean; canPlanEncounter: boolean; canGenerateMap: boolean; canGenerateToken: boolean; canGenerateTokenBatch: boolean }) {
+  const [activeView, setActiveView] = useState<AiPanelView>("create");
+  const [activeIntent, setActiveIntent] = useState<AiIntentId>("encounter");
   const [proposalStatusFilter, setProposalStatusFilter] = useState<Proposal["status"] | "all">("all");
   const [proposalSearch, setProposalSearch] = useState("");
   const proposalSearchTerm = proposalSearch.trim().toLowerCase();
@@ -11665,148 +12938,455 @@ function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(
     if (!proposalSearchTerm) return true;
     return [proposal.title, proposal.summary, proposal.status, proposal.createdByType, proposal.changesJson.map((change) => `${change.entity} ${change.action}`).join(" ")].some((value) => value.toLowerCase().includes(proposalSearchTerm));
   });
+  const orderedProposals = [...filteredProposals].sort((left, right) => proposalStatusSort(left.status) - proposalStatusSort(right.status) || right.updatedAt.localeCompare(left.updatedAt));
   const pendingCount = props.proposals.filter((proposal) => proposal.status === "pending").length;
   const approvedCount = props.proposals.filter((proposal) => proposal.status === "approved").length;
   const appliedCount = props.proposals.filter((proposal) => proposal.status === "applied").length;
   const rejectedCount = props.proposals.filter((proposal) => proposal.status === "rejected").length;
+  const reviewCount = pendingCount + approvedCount;
+  const memoryPendingCount = props.memory.filter((fact) => !fact.approvedByUserId).length;
   const staleReviewCount = props.proposals.filter((proposal) => (proposal.status === "pending" || proposal.status === "approved") && Date.now() - new Date(proposal.updatedAt).getTime() > 24 * 60 * 60 * 1000).length;
   const failedThreads = props.aiThreads.filter((thread) => thread.status === "failed");
   const retryableToolCalls = props.aiToolCalls.filter((call) => call.status === "failed" && call.retry === undefined && (aiToolCallErrorCode(call.output) === "tool_failed" || aiToolCallErrorCode(call.output) === "stale_tool_call"));
   const failedThreadCount = failedThreads.length;
   const failedToolCount = props.aiToolCalls.filter((call) => call.status === "failed").length;
+  const operationsAttentionCount = failedThreadCount + retryableToolCalls.length + staleReviewCount;
+  const recentAssetProposals = props.proposals
+    .flatMap((proposal) => proposalAssetPreviews(proposal).map((asset) => ({ proposal, asset })))
+    .filter(({ proposal }) => proposal.status === "pending" || proposal.status === "approved")
+    .sort((left, right) => right.proposal.updatedAt.localeCompare(left.proposal.updatedAt))
+    .slice(0, 4);
+  const tokenArtStatus = props.tokenArtMissingCount === 0
+    ? `${formatNumber(props.tokenArtPendingCount)} pending`
+    : `${formatNumber(props.tokenArtMissingCount)} missing${props.tokenArtPendingCount > 0 ? ` / ${formatNumber(props.tokenArtPendingCount)} pending` : ""}`;
+  const tokenArtSummaryCount = props.tokenArtMissingCount > 0 ? props.tokenArtMissingCount : props.tokenArtPendingCount;
+  const tokenArtSummaryLabel = props.tokenArtMissingCount > 0 ? "missing art" : "pending art";
+  const isGeneratingMap = props.generationJobs.some((job) => job.kind === "map");
+  const isGeneratingSelectedToken = props.generationJobs.some((job) => job.kind === "token");
+  const isGeneratingTokenBatch = props.generationJobs.some((job) => job.kind === "tokenBatch");
+  const intentOptions = [
+    { id: "encounter", label: "Encounter + Scene", detail: "Draft a reviewable encounter and table setup.", icon: <Swords size={16} />, disabled: !props.canDraftEncounter },
+    { id: "map", label: "Generate Map", detail: "Create raster battlemap art for the selected scene.", icon: <MapIcon size={16} />, disabled: !props.canGenerateMap },
+    { id: "tokenBatch", label: "Missing Token Art", detail: "Generate art for every scene token missing imagery.", icon: <Boxes size={16} />, disabled: !props.canGenerateTokenBatch },
+    { id: "selectedToken", label: "Selected Token Art", detail: "Generate art for the currently selected token.", icon: <ImageIcon size={16} />, disabled: !props.canGenerateToken },
+    { id: "recap", label: "Session Recap", detail: "Draft a recap proposal from current session context.", icon: <ScrollText size={16} />, disabled: !props.canPropose },
+    { id: "memory", label: "Extract Memory", detail: "Queue campaign memory facts for review.", icon: <FileText size={16} />, disabled: !props.canPropose }
+  ] satisfies Array<{ id: AiIntentId; label: string; detail: string; icon: React.ReactNode; disabled: boolean }>;
+  const activeIntentOption = intentOptions.find((intent) => intent.id === activeIntent) ?? intentOptions[0]!;
   return (
-    <div className="panel-stack">
-      <div className="section-title">Permissioned AI</div>
-      <textarea aria-label="AI prompt" value={props.prompt} onChange={(event) => props.setPrompt(event.target.value)} />
-      <button className="primary-button wide" onClick={props.askAi} disabled={!props.canPropose}>
-        <Bot size={16} /> Draft Encounter
-      </button>
-      <button className="ghost-button wide" onClick={props.recapSession} disabled={!props.canPropose}>
-        <ScrollText size={16} /> Recap Session
-      </button>
-      <button className="ghost-button wide" onClick={props.extractMemory} disabled={!props.canPropose}>
-        <FileText size={16} /> Extract Memory
-      </button>
-      {props.canPropose && <AiOperationsPanel summary={props.aiUsage} threads={props.aiThreads} toolCalls={props.aiToolCalls} />}
-      <section className="operator-section" aria-label="AI proposal review queue">
-        <div className="operator-heading">
-          <div className="section-title">Review Queue</div>
-          <strong>{filteredProposals.length}/{props.proposals.length}</strong>
+    <div className="panel-stack ai-workspace">
+      <header className="ai-command-header">
+        <div>
+          <div className="section-title">Permissioned AI</div>
+          <h2>AI Workspace</h2>
         </div>
-        <p className="account-summary">Apply permission: {props.canApply ? "available" : "missing"}; AI and plugin work stays reviewable until a permitted user applies it.</p>
-        <p className="account-summary">Recovery: {failedThreadCount} failed threads, {failedToolCount} failed tools, {staleReviewCount} stale reviews older than 24h.</p>
-        <div className="metric-grid">
-          <MetricTile label="Pending" value={formatNumber(pendingCount)} />
-          <MetricTile label="Approved" value={formatNumber(approvedCount)} />
-          <MetricTile label="Applied" value={formatNumber(appliedCount)} />
-          <MetricTile label="Rejected" value={formatNumber(rejectedCount)} />
-          <MetricTile label="Stale Reviews" value={formatNumber(staleReviewCount)} />
-          <MetricTile label="Failed Tools" value={formatNumber(failedToolCount)} />
+        <div className="ai-status-strip" aria-label="AI status summary">
+          <span><strong>{formatNumber(reviewCount)}</strong> review</span>
+          <span><strong>{formatNumber(tokenArtSummaryCount)}</strong> {tokenArtSummaryLabel}</span>
+          <span><strong>{formatNumber(failedToolCount)}</strong> failed</span>
         </div>
-        {(failedThreads.length > 0 || retryableToolCalls.length > 0) && (
-          <section className="operator-section" aria-label="AI recovery controls">
+      </header>
+
+      <nav className="ai-view-tabs" aria-label="AI workspace views">
+        <button className={`tab ${activeView === "create" ? "active" : ""}`} type="button" onClick={() => setActiveView("create")}>
+          <Bot size={14} /> Create
+        </button>
+        <button className={`tab ${activeView === "review" ? "active" : ""}`} type="button" onClick={() => setActiveView("review")}>
+          <Check size={14} /> Review <span className="ai-tab-count">{formatNumber(reviewCount)}</span>
+        </button>
+        <button className={`tab ${activeView === "memory" ? "active" : ""}`} type="button" onClick={() => setActiveView("memory")}>
+          <FileText size={14} /> Memory <span className="ai-tab-count">{formatNumber(memoryPendingCount)}</span>
+        </button>
+        <button className={`tab ${activeView === "operations" ? "active" : ""}`} type="button" onClick={() => setActiveView("operations")}>
+          <Activity size={14} /> Ops <span className="ai-tab-count">{formatNumber(operationsAttentionCount)}</span>
+        </button>
+      </nav>
+
+      {props.generationJobs.length > 0 && (
+        <div className="ai-generation-strip" role="status" aria-live="polite">
+          {props.generationJobs.map((job) => (
+            <span key={job.id}>
+              <RefreshCw size={14} /> {job.label}{job.detail ? `: ${job.detail}` : ""}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {activeView === "create" && (
+        <section className="ai-view-panel ai-create-workflow" aria-label="AI creation workflow">
+          <section className="operator-section ai-intent-panel" aria-label="AI intent selection">
             <div className="operator-heading">
-              <div className="section-title">Recovery Controls</div>
-              <RotateCcw size={15} />
+              <div>
+                <div className="section-title">Intent</div>
+                <p className="account-summary">Choose what Codex should prepare.</p>
+              </div>
+              <Bot size={16} />
             </div>
-            <div className="operator-list">
-              {failedThreads.slice(0, 3).map((thread) => (
-                <div className="operator-row tool-call-row" key={`failed-thread-${thread.id}`}>
-                  <span>{thread.title}</span>
-                  <strong>{thread.providerError ?? "provider failed"}</strong>
-                  <button className="ghost-button" type="button" onClick={() => props.replayAiThread(thread)} disabled={!props.canPropose}>
-                    <RotateCcw size={14} /> Replay prompt
-                  </button>
-                </div>
-              ))}
-              {retryableToolCalls.slice(0, 4).map((toolCall) => (
-                <div className="operator-row tool-call-row" key={`retry-tool-${toolCall.id}`}>
-                  <span>{toolCall.toolName}</span>
-                  <strong>{aiToolCallErrorCode(toolCall.output) ?? "retryable failure"}</strong>
-                  <button className="ghost-button" type="button" onClick={() => props.retryAiToolCall(toolCall)} disabled={!props.canPropose}>
-                    <RefreshCw size={14} /> Retry tool
-                  </button>
-                </div>
+            <div className="ai-intent-grid">
+              {intentOptions.map((intent) => (
+                <button className={activeIntent === intent.id ? "ai-intent-card active" : "ai-intent-card"} disabled={intent.disabled} key={intent.id} type="button" onClick={() => setActiveIntent(intent.id)}>
+                  {intent.icon}
+                  <span>
+                    <strong>{intent.label}</strong>
+                    <small>{intent.detail}</small>
+                  </span>
+                </button>
               ))}
             </div>
           </section>
-        )}
-        <div className="admin-form-grid">
-          <label>
-            Status
-            <select aria-label="Proposal status filter" value={proposalStatusFilter} onChange={(event) => setProposalStatusFilter(event.target.value as Proposal["status"] | "all")}>
-              <option value="all">All proposals</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="applied">Applied</option>
-              <option value="rejected">Rejected</option>
-              <option value="draft">Draft</option>
-              <option value="reverted">Reverted</option>
-            </select>
-          </label>
-          <label>
-            Search
-            <input aria-label="Proposal search" value={proposalSearch} onChange={(event) => setProposalSearch(event.target.value)} placeholder="title, summary, entity" />
-          </label>
-        </div>
-      </section>
-      {props.memory.length > 0 && (
-        <section className="panel-stack" aria-label="AI memory facts">
-          {props.memory.map((fact) => (
-            <article className="proposal" key={fact.id}>
-              <span>{fact.approvedByUserId ? "approved memory" : "pending memory"}</span>
-              <p>{fact.text}</p>
-              <div className="metric-row">
-                <span>Visibility</span>
-                <strong>{fact.visibility}</strong>
+
+          <section className="operator-section ai-target-panel" aria-label="AI generation targets">
+            <div className="operator-heading">
+              <div>
+                <div className="section-title">Targets</div>
+                <p className="account-summary">{activeIntentOption.label}</p>
               </div>
-              <div className="metric-row">
-                <span>Source</span>
-                <strong>{fact.sourceIds.length ? fact.sourceIds.join(", ") : "manual"}</strong>
+              <Crosshair size={16} />
+            </div>
+            <div className="metric-grid">
+              <MetricTile label="Scene" value={props.selectedSceneName ?? "No scene"} />
+              <MetricTile label="Selected token" value={props.selectedTokenName ?? "No token"} />
+              <MetricTile label="Missing art" value={formatNumber(props.tokenArtMissingCount)} />
+              <MetricTile label="Pending art" value={formatNumber(props.tokenArtPendingCount)} />
+            </div>
+            <div className="ai-trust-note">
+              <Shield size={15} />
+              <span>Generated content is stored as asset/proposal work and does not mutate the campaign until review is applied.</span>
+            </div>
+          </section>
+
+          <section className="operator-section ai-prompt-card" aria-label="AI encounter tools">
+            <div className="operator-heading">
+              <div>
+                <div className="section-title">Encounter</div>
+                <p className="account-summary">Reviewable proposals only</p>
               </div>
-              <div className="metric-row">
-                <span>Approval</span>
-                <strong>{fact.approvedByUserId ?? "pending review"}</strong>
-              </div>
-              {!fact.approvedByUserId && (
-                <button className="ghost-button" onClick={() => props.approveMemory(fact)} disabled={!props.canApply}>
-                  <Check size={15} /> Approve memory
-                </button>
-              )}
-              <button className="ghost-button" type="button" onClick={() => props.deleteMemory(fact)} disabled={!props.canApply}>
-                <X size={15} /> Delete memory
+              <Bot size={16} />
+            </div>
+            <label className="ai-field">
+              Prompt
+              <textarea aria-label="AI prompt" value={props.prompt} onChange={(event) => props.setPrompt(event.target.value)} />
+            </label>
+            <div className="button-row ai-action-row">
+              <button className="primary-button" type="button" onClick={props.askAi} disabled={!props.canDraftEncounter}>
+                <Bot size={16} /> Draft Encounter
               </button>
-            </article>
-          ))}
+              <button className="ghost-button" type="button" onClick={props.recapSession} disabled={!props.canPropose}>
+                <ScrollText size={16} /> Recap Session
+              </button>
+              <button className="ghost-button" type="button" onClick={props.extractMemory} disabled={!props.canPropose}>
+                <FileText size={16} /> Extract Memory
+              </button>
+            </div>
+          </section>
+
+          <section className="operator-section ai-planning-panel" aria-label="AI encounter planning">
+            <div className="operator-heading">
+              <div>
+                <div className="section-title">Planning</div>
+                <p className="account-summary">{props.activeSystemName ? `${props.activeSystemName} encounter support` : "No active rules system"}</p>
+              </div>
+              <Swords size={16} />
+            </div>
+            <button className="ghost-button wide" type="button" onClick={props.planEncounter} disabled={!props.canPlanEncounter}>
+              <Swords size={16} /> Plan Encounter
+            </button>
+            {props.encounterPlan ? (
+              <div className="metric-grid">
+                <MetricTile label="Difficulty" value={`${titleCaseLabel(props.encounterPlan.difficulty)} encounter`} />
+                <MetricTile label="Threat" value={`${props.encounterPlan.threatBudget}/${props.encounterPlan.partyRating}`} />
+              </div>
+            ) : (
+              <div className="empty-state compact">No encounter plan generated in this session.</div>
+            )}
+          </section>
+
+          <section className="operator-section ai-assets-panel" aria-label="AI asset generation">
+            <div className="operator-heading">
+              <div>
+                <div className="section-title">Assets</div>
+                <p className="account-summary">Map and token art proposals</p>
+              </div>
+              <ImageIcon size={16} />
+            </div>
+            {recentAssetProposals.length > 0 && (
+              <section className="ai-generated-preview" aria-label="Recently generated asset previews">
+                <div className="operator-heading">
+                  <div>
+                    <div className="section-title">Generated Art</div>
+                    <p className="account-summary">Pending review, visible before applying</p>
+                  </div>
+                  <strong>{formatNumber(recentAssetProposals.length)}</strong>
+                </div>
+                <div className="ai-generated-preview-grid">
+                  {recentAssetProposals.map(({ proposal, asset }) => (
+                    <article className="ai-generated-preview-card" key={`${proposal.id}-${asset.id}`}>
+                      <ProposalAssetPreview asset={asset} />
+                      <div className="ai-generated-preview-meta">
+                        <span>{proposal.status}</span>
+                        <strong>{proposal.title}</strong>
+                      </div>
+                      <div className="button-row ai-action-row">
+                        <button className="ghost-button" type="button" onClick={() => props.approveAndApply(proposal)} disabled={!props.canApply}>
+                          <Check size={15} /> Apply
+                        </button>
+                        <button className="ghost-button" type="button" onClick={() => props.rejectProposal(proposal)} disabled={!props.canApply}>
+                          <X size={15} /> Reject
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+            <div className="ai-asset-grid">
+              <section className="ai-asset-task" aria-label="Map generation">
+                <div className="operator-heading">
+                  <strong>Map</strong>
+                  <span>{props.selectedSceneName ?? "No scene"}</span>
+                </div>
+                <label className="ai-field">
+                  Prompt
+                  <textarea aria-label="AI map generation prompt" value={props.mapPrompt} onChange={(event) => props.setMapPrompt(event.target.value)} />
+                </label>
+                <button className="ghost-button wide" type="button" onClick={props.generateMapAsset} disabled={!props.canGenerateMap}>
+                  <MapIcon size={16} /> {isGeneratingMap ? "Generating Map" : "Generate Map"}
+                </button>
+              </section>
+
+              <section className="ai-asset-task" aria-label="Token art generation">
+                <div className="operator-heading">
+                  <strong>Token Art</strong>
+                  <span>{tokenArtStatus}</span>
+                </div>
+                <label className="ai-field">
+                  Prompt
+                  <textarea aria-label="AI token generation prompt" value={props.tokenPrompt} onChange={(event) => props.setTokenPrompt(event.target.value)} />
+                </label>
+                <label className="ai-field">
+                  Target
+                  <select aria-label="AI token generation target" value={props.selectedTokenId ?? ""} onChange={(event) => props.selectToken(event.target.value)} disabled={props.tokenOptions.length === 0}>
+                    <option value="">No token</option>
+                    {props.tokenOptions.map((token) => (
+                      <option value={token.id} key={token.id}>
+                        {token.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="ai-target-row">
+                  <span>Selected</span>
+                  <strong>{props.selectedTokenName ?? "No token"}</strong>
+                </div>
+                <div className="button-row ai-action-row">
+                  <button className="ghost-button" type="button" onClick={props.generateTokenAsset} disabled={!props.canGenerateToken}>
+                    <ImageIcon size={16} /> {isGeneratingSelectedToken ? "Generating Token Art" : "Generate Token Art"}
+                  </button>
+                  <button className="ghost-button" type="button" onClick={props.generateSceneTokenAssets} disabled={!props.canGenerateTokenBatch}>
+                    <Boxes size={16} /> {isGeneratingTokenBatch ? "Generating Missing Art" : "Generate Missing Art"}
+                  </button>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section className="operator-section ai-review-toolbar" aria-label="AI proposal review queue">
+            <div className="operator-heading">
+              <div>
+                <div className="section-title">Review Queue</div>
+                <p className="account-summary">Pending and approved proposals</p>
+              </div>
+              <strong>{formatNumber(reviewCount)}</strong>
+            </div>
+            <div className="metric-grid">
+              <MetricTile label="Pending" value={formatNumber(pendingCount)} />
+              <MetricTile label="Approved" value={formatNumber(approvedCount)} />
+              <MetricTile label="Applied" value={formatNumber(appliedCount)} />
+              <MetricTile label="Rejected" value={formatNumber(rejectedCount)} />
+            </div>
+            <button className="ghost-button wide" type="button" onClick={() => setActiveView("review")}>
+              <Check size={16} /> Open Review
+            </button>
+          </section>
         </section>
       )}
-      <section className="panel-stack" aria-label="Proposal history">
-        {filteredProposals.length === 0 ? (
-          <div className="empty-state compact">No proposals match the current filters.</div>
-        ) : (
-          filteredProposals.map((proposal) => (
-            <article className="proposal" key={proposal.id}>
-              <span>{proposal.status}</span>
-              <h3>{proposal.title}</h3>
-              <p>{proposal.summary}</p>
-              <ProposalDiffPreview proposal={proposal} records={props.records} />
-              <ProposalTimeline proposal={proposal} />
-              {proposal.status !== "applied" && proposal.status !== "rejected" && (
-                <>
-                  <button className="ghost-button" onClick={() => props.approveAndApply(proposal)} disabled={!props.canApply}>
-                    <Check size={15} /> Approve and apply
+
+      {activeView === "review" && (
+        <section className="ai-view-panel" aria-label="AI proposal review queue">
+          <section className="operator-section ai-review-toolbar">
+            <div className="operator-heading">
+              <div>
+                <div className="section-title">Review Queue</div>
+                <p className="account-summary">Apply permission: {props.canApply ? "available" : "missing"}</p>
+              </div>
+              <strong>{formatNumber(orderedProposals.length)}/{formatNumber(props.proposals.length)}</strong>
+            </div>
+            <div className="metric-grid">
+              <MetricTile label="Pending" value={formatNumber(pendingCount)} />
+              <MetricTile label="Approved" value={formatNumber(approvedCount)} />
+              <MetricTile label="Applied" value={formatNumber(appliedCount)} />
+              <MetricTile label="Rejected" value={formatNumber(rejectedCount)} />
+            </div>
+            <div className="admin-form-grid">
+              <label>
+                Status
+                <select aria-label="Proposal status filter" value={proposalStatusFilter} onChange={(event) => setProposalStatusFilter(event.target.value as Proposal["status"] | "all")}>
+                  <option value="all">All proposals</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="applied">Applied</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="draft">Draft</option>
+                  <option value="reverted">Reverted</option>
+                </select>
+              </label>
+              <label>
+                Search
+                <input aria-label="Proposal search" value={proposalSearch} onChange={(event) => setProposalSearch(event.target.value)} placeholder="title, summary, entity" />
+              </label>
+            </div>
+          </section>
+          <section className="ai-proposal-list" aria-label="Proposal history">
+            {orderedProposals.length === 0 ? (
+              <div className="empty-state compact">No proposals match the current filters.</div>
+            ) : (
+              orderedProposals.map((proposal) => (
+                <AiProposalReviewCard
+                  canApply={props.canApply}
+                  key={proposal.id}
+                  proposal={proposal}
+                  records={props.records}
+                  onApply={props.approveAndApply}
+                  onReject={props.rejectProposal}
+                />
+              ))
+            )}
+          </section>
+        </section>
+      )}
+
+      {activeView === "memory" && (
+        <section className="ai-view-panel ai-memory-list" aria-label="AI memory facts">
+          {props.memory.length === 0 ? (
+            <div className="empty-state compact">No AI memory facts recorded.</div>
+          ) : (
+            props.memory.map((fact) => (
+              <article className="proposal ai-memory-card" key={fact.id}>
+                <span>{fact.approvedByUserId ? "approved memory" : "pending memory"}</span>
+                <p>{fact.text}</p>
+                <div className="metric-row">
+                  <span>Visibility</span>
+                  <strong>{fact.visibility}</strong>
+                </div>
+                <div className="metric-row">
+                  <span>Source</span>
+                  <strong>{fact.sourceIds.length ? fact.sourceIds.join(", ") : "manual"}</strong>
+                </div>
+                <div className="metric-row">
+                  <span>Approval</span>
+                  <strong>{fact.approvedByUserId ?? "pending review"}</strong>
+                </div>
+                <div className="button-row ai-action-row">
+                  {!fact.approvedByUserId && (
+                    <button className="ghost-button" type="button" onClick={() => props.approveMemory(fact)} disabled={!props.canApply}>
+                      <Check size={15} /> Approve
+                    </button>
+                  )}
+                  <button className="ghost-button" type="button" onClick={() => props.deleteMemory(fact)} disabled={!props.canApply}>
+                    <X size={15} /> Delete
                   </button>
-                  <button className="ghost-button" onClick={() => props.rejectProposal(proposal)} disabled={!props.canApply}>
-                    <X size={15} /> Reject
-                  </button>
-                </>
-              )}
-            </article>
-          ))
-        )}
-      </section>
+                </div>
+              </article>
+            ))
+          )}
+        </section>
+      )}
+
+      {activeView === "operations" && (
+        <section className="ai-view-panel" aria-label="AI operations and recovery">
+          {props.canPropose && <AiOperationsPanel summary={props.aiUsage} threads={props.aiThreads} toolCalls={props.aiToolCalls} />}
+          <section className="operator-section" aria-label="AI recovery controls">
+            <div className="operator-heading">
+              <div>
+                <div className="section-title">Recovery</div>
+                <p className="account-summary">{formatNumber(failedThreadCount)} failed threads, {formatNumber(failedToolCount)} failed tools, {formatNumber(staleReviewCount)} stale reviews</p>
+              </div>
+              <RotateCcw size={15} />
+            </div>
+            {failedThreads.length === 0 && retryableToolCalls.length === 0 ? (
+              <div className="empty-state compact">No retryable AI failures.</div>
+            ) : (
+              <div className="operator-list">
+                {failedThreads.slice(0, 3).map((thread) => (
+                  <div className="operator-row tool-call-row" key={`failed-thread-${thread.id}`}>
+                    <span>{thread.title}</span>
+                    <strong>{thread.providerError ?? "provider failed"}</strong>
+                    <button className="ghost-button" type="button" onClick={() => props.replayAiThread(thread)} disabled={!props.canPropose}>
+                      <RotateCcw size={14} /> Replay
+                    </button>
+                  </div>
+                ))}
+                {retryableToolCalls.slice(0, 4).map((toolCall) => (
+                  <div className="operator-row tool-call-row" key={`retry-tool-${toolCall.id}`}>
+                    <span>{toolCall.toolName}</span>
+                    <strong>{aiToolCallErrorCode(toolCall.output) ?? "retryable failure"}</strong>
+                    <button className="ghost-button" type="button" onClick={() => props.retryAiToolCall(toolCall)} disabled={!props.canPropose}>
+                      <RefreshCw size={14} /> Retry
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </section>
+      )}
     </div>
   );
+}
+
+function AiProposalReviewCard(props: { proposal: Proposal; records: ProposalRecordCollections; canApply: boolean; onApply(proposal: Proposal): void; onReject(proposal: Proposal): void }) {
+  const generatedAssets = proposalAssetPreviews(props.proposal);
+  return (
+    <article className="proposal ai-proposal-card">
+      <div className="operator-heading">
+        <span>{props.proposal.status}</span>
+        <strong>{formatNumber(props.proposal.changesJson.length)} changes</strong>
+      </div>
+      <h3>{props.proposal.title}</h3>
+      {generatedAssets.length > 0 && (
+        <div className="ai-proposal-asset-strip" aria-label={`${props.proposal.title} generated asset previews`}>
+          {generatedAssets.map((asset) => (
+            <ProposalAssetPreview asset={asset} key={asset.id} />
+          ))}
+        </div>
+      )}
+      <p>{props.proposal.summary}</p>
+      <details className="proposal-detail">
+        <summary>Review details</summary>
+        <ProposalDiffPreview proposal={props.proposal} records={props.records} />
+        <ProposalTimeline proposal={props.proposal} />
+      </details>
+      {props.proposal.status !== "applied" && props.proposal.status !== "rejected" && (
+        <div className="button-row ai-action-row">
+          <button className="ghost-button" type="button" onClick={() => props.onApply(props.proposal)} disabled={!props.canApply}>
+            <Check size={15} /> Apply
+          </button>
+          <button className="ghost-button" type="button" onClick={() => props.onReject(props.proposal)} disabled={!props.canApply}>
+            <X size={15} /> Reject
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function proposalStatusSort(status: Proposal["status"]): number {
+  if (status === "pending") return 0;
+  if (status === "approved") return 1;
+  if (status === "draft") return 2;
+  if (status === "applied") return 3;
+  if (status === "rejected") return 4;
+  return 5;
 }
 
 type ProposalTimelineEvent = {
@@ -11927,7 +13507,7 @@ function proposalReviewDetail(proposal: Proposal, changeSummary: string): string
 }
 
 type ProposalChange = Proposal["changesJson"][number];
-type ProposalRecordCollections = Pick<Snapshot, "campaigns" | "scenes" | "tokens" | "actors" | "items" | "journals" | "chat" | "encounters" | "combats">;
+type ProposalRecordCollections = Pick<Snapshot, "campaigns" | "scenes" | "tokens" | "actors" | "items" | "journals" | "chat" | "encounters" | "combats" | "assets">;
 type ProposalComparableRecord = ProposalRecordCollections[keyof ProposalRecordCollections][number];
 
 function ProposalDiffPreview(props: { proposal: Proposal; records: ProposalRecordCollections }) {
@@ -11951,6 +13531,7 @@ function ProposalDiffPreview(props: { proposal: Proposal; records: ProposalRecor
 function ProposalChangePreview(props: { change: ProposalChange; index: number; records: ProposalRecordCollections }) {
   const existing = proposalExistingRecord(props.records, props.change);
   const entries = Object.entries(props.change.data).slice(0, 8);
+  const generatedAsset = proposalAssetPreview(props.change);
   return (
     <div className="proposal-change">
       <div className="operator-row">
@@ -11965,11 +13546,78 @@ function ProposalChangePreview(props: { change: ProposalChange; index: number; r
           </div>
         ))}
       </dl>
+      {generatedAsset && <ProposalAssetPreview asset={generatedAsset} />}
       {props.change.action !== "create" && (
         <ProposalExistingComparison change={props.change} existing={existing} entries={entries} index={props.index} />
       )}
     </div>
   );
+}
+
+function ProposalAssetPreview(props: { asset: MapAsset }) {
+  const [deliveryUrl, setDeliveryUrl] = useState<string | undefined>(() => (props.asset.url.startsWith("/api/v1/assets/") ? undefined : assetBlobUrl(props.asset)));
+  const [previewFailed, setPreviewFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setPreviewFailed(false);
+    if (!props.asset.url.startsWith("/api/v1/assets/")) {
+      setDeliveryUrl(assetBlobUrl(props.asset));
+      return () => {
+        cancelled = true;
+      };
+    }
+    setDeliveryUrl(undefined);
+    apiPost<{ url: string; expiresAt: string }>(`/api/v1/assets/${props.asset.id}/delivery-url`, { expiresInSeconds: 300, disposition: "inline" })
+      .then((delivery) => {
+        if (!cancelled) setDeliveryUrl(delivery.url);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPreviewFailed(true);
+          setDeliveryUrl(undefined);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.asset.id, props.asset.url]);
+
+  return (
+    <figure className="proposal-asset-preview">
+      {deliveryUrl ? (
+        <img src={deliveryUrl} alt={`${props.asset.name} generated asset preview`} onError={() => setPreviewFailed(true)} />
+      ) : (
+        <div className="proposal-asset-preview-placeholder">{previewFailed ? "Preview unavailable" : "Preparing preview"}</div>
+      )}
+      <figcaption>{props.asset.name} | {props.asset.mimeType} | {formatNumber(props.asset.sizeBytes)} bytes</figcaption>
+    </figure>
+  );
+}
+
+function proposalAssetPreview(change: ProposalChange): MapAsset | undefined {
+  if (change.entity !== "asset" || change.action !== "create") return undefined;
+  const data = change.data;
+  if (
+    typeof data.id !== "string" ||
+    typeof data.campaignId !== "string" ||
+    typeof data.name !== "string" ||
+    typeof data.url !== "string" ||
+    typeof data.mimeType !== "string" ||
+    typeof data.sizeBytes !== "number" ||
+    !isGeneratedAssetPreviewMime(data.mimeType)
+  ) {
+    return undefined;
+  }
+  return data as unknown as MapAsset;
+}
+
+function proposalAssetPreviews(proposal: Proposal): MapAsset[] {
+  return proposal.changesJson.map(proposalAssetPreview).filter((asset): asset is MapAsset => Boolean(asset));
+}
+
+function isGeneratedAssetPreviewMime(mimeType: string): boolean {
+  return mimeType === "image/png" || mimeType === "image/jpeg" || mimeType === "image/webp";
 }
 
 function ProposalExistingComparison(props: { change: ProposalChange; existing?: ProposalComparableRecord; entries: Array<[string, unknown]>; index: number }) {
@@ -12018,6 +13666,8 @@ function proposalExistingRecord(records: ProposalRecordCollections, change: Prop
       return records.encounters.find((item) => item.id === change.id);
     case "combat":
       return records.combats.find((item) => item.id === change.id);
+    case "asset":
+      return records.assets.find((item) => item.id === change.id);
     default:
       return undefined;
   }
@@ -12179,7 +13829,7 @@ function formatDateTime(value?: string): string {
   return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; importedActor?: Actor; createdMonster?: Actor; encounterPlan?: EncounterPlanInfo; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version?: string): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onCreateMonster(): void; onAdvanceActor(optionId?: string): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onPlanEncounter(): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canPlanEncounter: boolean; canRollSystem: boolean }) {
+function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version?: string): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onCreateMonster(): void; onAdvanceActor(optionId?: string): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
   const [pluginSearch, setPluginSearch] = useState("");
   const [pluginSourceFilter, setPluginSourceFilter] = useState<"all" | "local" | "registry">("all");
   const [pluginStatusFilter, setPluginStatusFilter] = useState<"all" | "installed" | "available" | "upgrade">("all");
@@ -12593,17 +14243,6 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
       <button className="ghost-button wide" onClick={() => props.onRestActor("long")} disabled={!props.actor || !props.canRestActor}>
         <RefreshCw size={16} /> Long Rest
       </button>
-      <button className="ghost-button wide" onClick={props.onPlanEncounter} disabled={!activeSystem || !props.canPlanEncounter}>
-        <Swords size={16} /> Plan Encounter
-      </button>
-      {props.encounterPlan && (
-        <div className="metric-row">
-          <span>{props.encounterPlan.difficulty} encounter</span>
-          <strong>
-            {props.encounterPlan.threatBudget}/{props.encounterPlan.partyRating}
-          </strong>
-        </div>
-      )}
       <button className="primary-button wide" onClick={props.onSystemRoll} disabled={!props.actor || !props.canRollSystem}>
         <ChevronRight size={16} /> {rollLabel}
       </button>

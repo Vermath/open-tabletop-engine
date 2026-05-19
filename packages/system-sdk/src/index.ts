@@ -1,4 +1,4 @@
-import type { Actor, Item, PermissionName } from "@open-tabletop/core";
+import type { Actor, Combat, Item, PermissionName } from "@open-tabletop/core";
 
 export interface JsonSchema {
   $schema?: string;
@@ -180,6 +180,173 @@ export interface SystemActionUseResult {
   consumed: SystemActionConsumption[];
   data: Record<string, unknown>;
   items: Item[];
+}
+
+export type RulesResolutionCommitMode = "commit" | "preview";
+export type RulesSaveOutcome = "success" | "failure";
+export type RulesD20Mode = "normal" | "advantage" | "disadvantage";
+
+export interface RulesResolutionTargetInput {
+  actor: Actor;
+  items?: Item[];
+  saveOutcome?: RulesSaveOutcome;
+  rollTotal?: number;
+  damageTaken?: number;
+}
+
+export interface RulesResolverOptions extends SystemActionUseOptions {
+  consumeResources?: boolean;
+  applyEffect?: boolean;
+  commit?: boolean;
+  effectChoice?: string;
+  saveOutcomes?: Record<string, RulesSaveOutcome>;
+  reactionUse?: boolean;
+  rechargeCheck?: number;
+}
+
+export interface RulesResolutionRoll {
+  rollId: string;
+  label: string;
+  baseFormula: string;
+  formula: string;
+  targetActorId?: string;
+  d20Mode?: RulesD20Mode;
+  advantageSources: string[];
+  disadvantageSources: string[];
+  saveOutcome?: RulesSaveOutcome;
+}
+
+export interface RulesResolutionActorUpdate {
+  actorId: string;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  reason: string;
+}
+
+export interface RulesResolutionConditionChange {
+  actorId: string;
+  operation: "apply" | "remove" | "startConcentration" | "replaceConcentration" | "breakConcentration" | "expire";
+  conditionId?: string;
+  conditionName?: string;
+  duration?: string;
+  durationRounds?: number;
+  expiresAtRound?: number;
+  repeatSave?: string;
+  reason: string;
+}
+
+export interface RulesResolutionPendingSave {
+  actorId: string;
+  ability: string;
+  dc?: number;
+  reason: string;
+  success?: unknown;
+  requiredForCommit?: boolean;
+  recurring?: boolean;
+  timing?: string;
+  conditionIds?: string[];
+}
+
+export interface RulesResolutionEffectResult {
+  type: "damage" | "healing" | "condition" | "utility";
+  targetActorId: string;
+  targetActorName: string;
+  pool?: string;
+  amount?: number;
+  before?: number | string[];
+  after?: number | string[];
+  max?: number;
+  damageType?: string;
+  damageTypes?: string[];
+  effectChoice?: string;
+  choiceKind?: RulesResolutionChoice["kind"];
+  resistance?: string[];
+  immunity?: string[];
+  vulnerability?: string[];
+  duration?: string;
+  conditionId?: string;
+  conditionName?: string;
+  alreadyPresent?: boolean;
+}
+
+export interface RulesResolutionPendingReaction {
+  actorId: string;
+  reason: string;
+  actionRollId?: string;
+}
+
+export interface RulesResolutionChoice {
+  kind: "effect" | "damageType" | "resistance" | "manual";
+  reason: string;
+  options: string[];
+}
+
+export interface RulesResolutionBlocked {
+  code: string;
+  reason: string;
+}
+
+export interface RulesResolutionAuditEvent {
+  code: string;
+  actorId: string;
+  targetActorId?: string;
+  rollId: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+export interface RulesActionResolutionResult {
+  systemId: string;
+  actorId: string;
+  rollId: string;
+  commitMode: RulesResolutionCommitMode;
+  action: {
+    label: string;
+    kind: "action" | "bonusAction" | "reaction" | "free";
+    metadata: Record<string, unknown>;
+  };
+  rolls: RulesResolutionRoll[];
+  resourceConsumption: SystemActionConsumption[];
+  usage?: SystemActionUseResult;
+  actorUpdates: RulesResolutionActorUpdate[];
+  itemUpdates: Item[];
+  effects: RulesResolutionEffectResult[];
+  conditions: RulesResolutionConditionChange[];
+  pendingSaves: RulesResolutionPendingSave[];
+  pendingReactions: RulesResolutionPendingReaction[];
+  warnings: string[];
+  auditEvents: RulesResolutionAuditEvent[];
+  blocked?: RulesResolutionBlocked;
+  pendingChoice?: RulesResolutionChoice;
+  manualResolutionRequired?: {
+    reason: string;
+    metadata: Record<string, unknown>;
+  };
+  attunement?: Dnd5eSrdAttunementState;
+}
+
+export interface Dnd5eSrdActionResolutionInput {
+  actor: Actor;
+  items?: Item[];
+  roll: QuickRoll;
+  targets?: RulesResolutionTargetInput[];
+  combat?: Combat;
+  options?: RulesResolverOptions;
+  now?: string;
+}
+
+export interface Dnd5eSrdConcentrationDamageResult {
+  data: Record<string, unknown>;
+  pendingSave?: RulesResolutionPendingSave;
+  condition?: RulesResolutionConditionChange;
+  auditEvent?: RulesResolutionAuditEvent;
+}
+
+export interface Dnd5eSrdAttunementState {
+  limit: number;
+  attunedItemIds: string[];
+  overLimitBy: number;
+  canAttuneMore: boolean;
 }
 
 export interface Dnd5eSrdEquipmentPurchaseResult {
@@ -1552,12 +1719,56 @@ export function dnd5eSrdActionRolls(actor: Actor, items: Item[] = []): QuickRoll
   const attackRolls = dnd5eSrdAttackRolls(actor, actionItems, attacksPerAction);
   const effectRolls = dnd5eSrdEffectRolls(actor, actionItems);
   const damageAndEffectRolls = genericFantasyActionRolls(actor, actionItems).map((roll) => {
+    const metadata = dnd5eSrdGenericActionRollMetadata(actor, actionItems, roll);
+    const rollWithMetadata = Object.keys(metadata).length > 0 ? { ...roll, metadata: { ...roll.metadata, ...metadata } } : roll;
     const martialArtsFormula = dnd5eSrdMonkWeaponDamageFormulaForRoll(actor, actionItems, roll.id);
-    const nextRoll = martialArtsFormula ? { ...roll, formula: martialArtsFormula, metadata: { ...roll.metadata, martialArts: { die: dnd5eSrdMartialArtsDie(actor), dexterousAttacks: true } } } : roll;
+    const nextRoll = martialArtsFormula ? { ...rollWithMetadata, formula: martialArtsFormula, metadata: { ...rollWithMetadata.metadata, martialArts: { die: dnd5eSrdMartialArtsDie(actor), dexterousAttacks: true } } } : rollWithMetadata;
     if (attacksPerAction <= 1 || !dnd5eSrdIsWeaponDamageRoll(actor, actionItems, roll.id)) return nextRoll;
     return { ...nextRoll, metadata: { ...nextRoll.metadata, attacksPerAction, feature: "Extra Attack" } };
   });
   return [...attackRolls, ...effectRolls, ...damageAndEffectRolls];
+}
+
+function dnd5eSrdGenericActionRollMetadata(actor: Actor, items: Item[], roll: QuickRoll): Record<string, unknown> {
+  const item = items.find((candidate) => roll.id === `${candidate.type === "spell" ? "spell" : "item"}-${candidate.id}-damage` || roll.id === `${candidate.type === "spell" ? "spell" : "item"}-${candidate.id}-secondary-damage` || roll.id === `${candidate.type === "spell" ? "spell" : "item"}-${candidate.id}-versatile-damage` || roll.id === `${candidate.type === "spell" ? "spell" : "item"}-${candidate.id}-healing`);
+  if (!item) return {};
+  const data = recordValue(item.data);
+  const metadata: Record<string, unknown> = {};
+  const isSecondaryDamage = roll.id.endsWith("-secondary-damage");
+  const isDamage = roll.id.endsWith("-damage");
+  const isHealing = roll.id.endsWith("-healing");
+  let hasResolutionMetadata = false;
+  if (isDamage) {
+    const damageType = stringValue(isSecondaryDamage ? data.secondaryDamageType : data.damageType);
+    const damageTypes = normalizeStringArray(data.damageTypes);
+    const damageTypeOptions = normalizeStringArray(data.damageTypeOptions);
+    if (!isSecondaryDamage && damageTypes.length > 0) {
+      metadata.damageTypes = damageTypes;
+      hasResolutionMetadata = true;
+    }
+    if (!isSecondaryDamage && damageTypeOptions.length > 0) {
+      metadata.damageTypeOptions = damageTypeOptions;
+      hasResolutionMetadata = true;
+    }
+    const save = dnd5eSrdEffectSaveMetadata(actor, data, item.type === "spell");
+    if (Object.keys(save).length > 0) {
+      metadata.save = save;
+      hasResolutionMetadata = true;
+    }
+    if (hasResolutionMetadata && damageType) metadata.damageType = damageType;
+  }
+  if ((isDamage || isHealing) && hasResolutionMetadata) {
+    const action = stringValue(data.action);
+    const range = stringValue(data.range);
+    const area = stringValue(data.area);
+    const duration = stringValue(data.duration);
+    if (action) metadata.action = action;
+    if (range) metadata.range = range;
+    if (area) metadata.area = area;
+    if (duration) metadata.duration = duration;
+    if (booleanValue(data.concentration)) metadata.concentration = true;
+  }
+  return metadata;
 }
 
 function dnd5eSrdActionAvailableItems(actor: Actor, items: Item[]): Item[] {
@@ -1678,6 +1889,8 @@ function dnd5eSrdHasEffectRollData(data: Record<string, unknown>): boolean {
     normalizeStringArray(data.blockedBy).length > 0 ||
     (booleanValue(data.consumable) && normalizeStringArray(data.resistance).length > 0) ||
     (booleanValue(data.consumable) && normalizeStringArray(data.resistanceChoice).length > 0) ||
+    normalizeStringArray(data.resistanceChoices).length > 0 ||
+    (Array.isArray(data.effectOptions) && data.effectOptions.length > 0) ||
     (booleanValue(data.consumable) && normalizeStringArray(data.skillAdvantage).length > 0) ||
     stringValue(data.damageBonusFormula) ||
     stringValue(data.damagePenaltyFormula) ||
@@ -1730,12 +1943,19 @@ function dnd5eSrdEffectMetadata(actor: Actor, data: Record<string, unknown>, def
   const healing = stringValue(data.healing);
   const targetCount = numericValue(data.targetCount, Number.NaN);
   const save = dnd5eSrdEffectSaveMetadata(actor, data, defaultSaveDcToSpellSaveDc);
+  const repeatSave = stringValue(data.repeatSave);
+  const repeatSaveRecord = recordValue(data.repeatSave);
+  const repeatSaveTiming = stringValue(data.repeatSaveTiming);
+  const repeatSaveTimings = normalizeStringArray(data.repeatSaveTiming);
+  const repeatSaveAbility = stringValue(data.repeatSaveAbility);
   const affectedRolls = normalizeStringArray(data.affectedRolls);
   const commandOptions = normalizeStringArray(data.commandOptions);
   const conditionsEnded = normalizeStringArray(data.conditionsEnded);
   const effects = normalizeStringArray(data.effects);
   const resistance = normalizeStringArray(data.resistance);
   const resistanceChoice = normalizeStringArray(data.resistanceChoice);
+  const resistanceChoices = normalizeStringArray(data.resistanceChoices);
+  const effectOptions = Array.isArray(data.effectOptions) ? data.effectOptions : [];
   const skillAdvantage = normalizeStringArray(data.skillAdvantage);
   const endsWhen = normalizeStringArray(data.endsWhen);
   const additionalConditions = normalizeStringArray(data.additionalConditions);
@@ -1759,6 +1979,11 @@ function dnd5eSrdEffectMetadata(actor: Actor, data: Record<string, unknown>, def
   if (booleanValue(data.ritual)) metadata.ritual = true;
   if (Number.isFinite(targetCount)) metadata.targetCount = targetCount;
   if (Object.keys(save).length > 0) metadata.save = save;
+  if (repeatSave) metadata.repeatSave = repeatSave;
+  if (Object.keys(repeatSaveRecord).length > 0) metadata.repeatSave = repeatSaveRecord;
+  if (repeatSaveTiming) metadata.repeatSaveTiming = repeatSaveTiming;
+  if (repeatSaveTimings.length > 0) metadata.repeatSaveTiming = repeatSaveTimings;
+  if (repeatSaveAbility) metadata.repeatSaveAbility = repeatSaveAbility;
   if (condition) metadata.condition = condition;
   if (conditionDuration) metadata.conditionDuration = conditionDuration;
   if (affectedRolls.length > 0) metadata.affectedRolls = affectedRolls;
@@ -1767,6 +1992,8 @@ function dnd5eSrdEffectMetadata(actor: Actor, data: Record<string, unknown>, def
   if (effects.length > 0) metadata.effects = effects;
   if (resistance.length > 0) metadata.resistance = resistance;
   if (resistanceChoice.length > 0) metadata.resistanceChoice = resistanceChoice;
+  if (resistanceChoices.length > 0) metadata.resistanceChoices = resistanceChoices;
+  if (effectOptions.length > 0) metadata.effectOptions = cloneJsonRecord({ effectOptions }).effectOptions;
   if (skillAdvantage.length > 0) metadata.skillAdvantage = skillAdvantage;
   if (endsWhen.length > 0) metadata.endsWhen = endsWhen;
   if (additionalConditions.length > 0) metadata.additionalConditions = additionalConditions;
@@ -15239,6 +15466,918 @@ export function dnd5eSrdActionFormula(actor: Actor, items: Item[] = [], rollId: 
   if (rollId.endsWith("-attack") || rollId.endsWith("-effect")) return dnd5eSrdActionRolls(actor, actionItems).find((roll) => roll.id === rollId)?.formula;
   const slotLevel = dnd5eSrdSpellActionSlotLevel(actor, actionItems, rollId, options);
   return genericFantasyActionFormula(actor, actionItems, rollId, slotLevel ? { ...options, spellSlotLevel: slotLevel } : options);
+}
+
+export function resolveDnd5eSrdAction(input: Dnd5eSrdActionResolutionInput): RulesActionResolutionResult {
+  const items = input.items ?? [];
+  const targets = input.targets ?? [];
+  const options = input.options ?? {};
+  const now = input.now ?? new Date().toISOString();
+  const commitMode: RulesResolutionCommitMode = options.commit === false ? "preview" : "commit";
+  const metadata = recordValue(input.roll.metadata);
+  const actionKind = dnd5eSrdResolutionActionKind(input.roll);
+  const warnings: string[] = [];
+  const conditions: RulesResolutionConditionChange[] = [];
+  const pendingSaves: RulesResolutionPendingSave[] = [];
+  const pendingReactions: RulesResolutionPendingReaction[] = [];
+  const auditEvents: RulesResolutionAuditEvent[] = [];
+  const effects: RulesResolutionEffectResult[] = [];
+  const actorUpdates = new Map<string, RulesResolutionActorUpdate>();
+  const itemUpdates = new Map<string, Item>();
+  const targetDataByActorId = new Map<string, Record<string, unknown>>();
+  let actorData = cloneJsonRecord(input.actor.data);
+  let usage: SystemActionUseResult | undefined;
+  let blocked = dnd5eSrdResolutionBlock(input.actor, actionKind);
+  const targetInputs = targets.length > 0 ? targets : [];
+  const rolls = dnd5eSrdResolutionRolls(input.actor, targetInputs, input.roll, options);
+  const targetActorForResolution = (target: RulesResolutionTargetInput): Actor => ({
+    ...target.actor,
+    data: target.actor.id === input.actor.id ? actorData : targetDataByActorId.get(target.actor.id) ?? target.actor.data
+  });
+  const setResolvedTargetData = (target: RulesResolutionTargetInput, data: Record<string, unknown>, reason: string) => {
+    if (target.actor.id === input.actor.id) {
+      actorData = data;
+      return;
+    }
+    targetDataByActorId.set(target.actor.id, data);
+    actorUpdates.set(target.actor.id, {
+      actorId: target.actor.id,
+      before: cloneJsonRecord(target.actor.data),
+      after: data,
+      reason
+    });
+  };
+
+  if (options.consumeResources && !blocked) {
+    try {
+      usage = useDnd5eSrdAction(input.actor, items, input.roll.id, options);
+      actorData = cloneJsonRecord(usage.data);
+      for (const updatedItem of usage.items) itemUpdates.set(updatedItem.id, updatedItem);
+    } catch (error) {
+      blocked = {
+        code: "resource_unavailable",
+        reason: error instanceof Error ? error.message : "System action resources are unavailable"
+      };
+    }
+  }
+
+  const recharge = stringValue(metadata.recharge);
+  if (recharge && !blocked) {
+    const rechargeResult = dnd5eSrdApplyRechargeResolution(actorData, input.roll, recharge, options, now);
+    actorData = rechargeResult.data;
+    warnings.push(...rechargeResult.warnings);
+    auditEvents.push(...rechargeResult.auditEvents);
+    if (rechargeResult.blocked) blocked = rechargeResult.blocked;
+  }
+
+  if ((options.reactionUse || actionKind === "reaction") && !blocked) {
+    const reactionResult = dnd5eSrdApplyReactionUse(actorData, input.actor.id, input.roll.id, input.combat, now);
+    actorData = reactionResult.data;
+    auditEvents.push(...reactionResult.auditEvents);
+    if (reactionResult.blocked) blocked = reactionResult.blocked;
+  }
+
+  if (metadata.concentration === true && !blocked) {
+    const concentrationResult = dnd5eSrdStartConcentration(actorData, input.actor, input.roll, targetInputs.map((target) => target.actor.id), now);
+    actorData = concentrationResult.data;
+    conditions.push(...concentrationResult.conditions);
+    warnings.push(...concentrationResult.warnings);
+    auditEvents.push(...concentrationResult.auditEvents);
+  }
+
+  for (const target of targetInputs) {
+    const damageTaken = Math.floor(numericValue(target.damageTaken, Number.NaN));
+    if (!Number.isFinite(damageTaken) || damageTaken <= 0) continue;
+    const resolvedTarget = targetActorForResolution(target);
+    const concentrationDamage = resolveDnd5eSrdConcentrationDamage(resolvedTarget, damageTaken, dnd5eSrdTargetSaveOutcome(target.actor.id, target, options), now, input.roll.id);
+    if (concentrationDamage.pendingSave) pendingSaves.push(concentrationDamage.pendingSave);
+    if (concentrationDamage.condition) conditions.push(concentrationDamage.condition);
+    if (concentrationDamage.auditEvent) auditEvents.push(concentrationDamage.auditEvent);
+    if (JSON.stringify(concentrationDamage.data) !== JSON.stringify(resolvedTarget.data)) {
+      setResolvedTargetData(target, concentrationDamage.data, "concentration-damage");
+    }
+  }
+
+  const save = recordValue(metadata.save);
+  const saveAbility = stringValue(save.ability);
+  if (saveAbility) {
+    for (const target of targetInputs) {
+      const outcome = dnd5eSrdTargetSaveOutcome(target.actor.id, target, options);
+      if (outcome) continue;
+      pendingSaves.push({
+        actorId: target.actor.id,
+        ability: saveAbility,
+        dc: Number.isFinite(numericValue(save.dc, Number.NaN)) ? numericValue(save.dc, Number.NaN) : undefined,
+        reason: `${input.roll.label} requires a ${titleCaseWords(saveAbility)} save`,
+        success: save.success,
+        requiredForCommit: Boolean(options.applyEffect)
+      });
+    }
+  }
+
+  if (options.applyEffect && !blocked) {
+    for (const target of targetInputs) {
+      const resolvedTarget = targetActorForResolution(target);
+      const effectResult = dnd5eSrdApplyTargetEffectResolution(resolvedTarget, input.actor.id, input.roll, metadata, target.rollTotal, dnd5eSrdTargetSaveOutcome(target.actor.id, target, options), options, input.combat, now);
+      if (!effectResult) continue;
+      effects.push(...effectResult.effects);
+      conditions.push(...effectResult.conditions);
+      pendingSaves.push(...effectResult.pendingSaves);
+      auditEvents.push(...effectResult.auditEvents);
+      if (JSON.stringify(effectResult.data) !== JSON.stringify(resolvedTarget.data)) {
+        setResolvedTargetData(target, effectResult.data, "target-effect");
+      }
+    }
+  }
+
+  const reactionPrompt = dnd5eSrdPendingReaction(input.actor, input.roll, metadata);
+  if (reactionPrompt) pendingReactions.push(reactionPrompt);
+
+  const pendingChoice = dnd5eSrdPendingChoice(metadata, options);
+  const manualResolutionRequired = dnd5eSrdManualResolution(input.roll, metadata, pendingChoice, options);
+  if (manualResolutionRequired) warnings.push(manualResolutionRequired.reason);
+
+  const attunement = dnd5eSrdAttunementStateForData(actorData);
+  if (attunement.overLimitBy > 0) {
+    warnings.push(`Attunement limit exceeded by ${attunement.overLimitBy}; attuned item effects should be corrected before play continues.`);
+  }
+
+  if (JSON.stringify(actorData) !== JSON.stringify(input.actor.data)) {
+    actorUpdates.set(input.actor.id, {
+      actorId: input.actor.id,
+      before: cloneJsonRecord(input.actor.data),
+      after: actorData,
+      reason: "action-resolution"
+    });
+  }
+
+  return {
+    systemId: DND_5E_SRD_SYSTEM_ID,
+    actorId: input.actor.id,
+    rollId: input.roll.id,
+    commitMode,
+    action: {
+      label: input.roll.label,
+      kind: actionKind,
+      metadata
+    },
+    rolls,
+    resourceConsumption: usage?.consumed ?? [],
+    ...(usage ? { usage } : {}),
+    actorUpdates: [...actorUpdates.values()],
+    itemUpdates: [...itemUpdates.values()],
+    effects,
+    conditions,
+    pendingSaves,
+    pendingReactions,
+    warnings,
+    auditEvents,
+    ...(blocked ? { blocked } : {}),
+    ...(pendingChoice ? { pendingChoice } : {}),
+    ...(manualResolutionRequired ? { manualResolutionRequired } : {}),
+    attunement
+  };
+}
+
+export function resolveDnd5eSrdConcentrationDamage(
+  actor: Actor,
+  damageTaken: number,
+  saveOutcome?: RulesSaveOutcome,
+  now = new Date().toISOString(),
+  sourceRollId = "damage"
+): Dnd5eSrdConcentrationDamageResult {
+  const data = cloneJsonRecord(actor.data);
+  const rules = dnd5eSrdRulesEngineState(data);
+  const concentration = recordValue(rules.concentration);
+  const rollId = stringValue(concentration.rollId) ?? "concentration";
+  if (!Object.keys(concentration).length) return { data };
+  const dc = Math.max(10, Math.floor(damageTaken / 2));
+  if (!saveOutcome) {
+    return {
+      data,
+      pendingSave: {
+        actorId: actor.id,
+        ability: "constitution",
+        dc,
+        reason: `Concentration save for ${damageTaken} damage`,
+        success: "concentration maintained"
+      }
+    };
+  }
+  if (saveOutcome === "success") return { data };
+  delete rules.concentration;
+  const nextData = dnd5eSrdDataWithRulesEngineState(data, rules);
+  return {
+    data: nextData,
+    condition: {
+      actorId: actor.id,
+      operation: "breakConcentration",
+      conditionId: "concentration",
+      conditionName: "Concentration",
+      reason: `Failed DC ${dc} Constitution save after ${damageTaken} damage`
+    },
+    auditEvent: {
+      code: "concentration.broken",
+      actorId: actor.id,
+      rollId: sourceRollId,
+      message: `${actor.name} lost concentration on ${stringValue(concentration.label) ?? rollId}`,
+      data: { damageTaken, dc, concentration: cloneJsonRecord(concentration) }
+    }
+  };
+}
+
+export function dnd5eSrdAttunementLimit(actor: Actor): number {
+  const className = stringValue(actor.data.class);
+  const level = Math.floor(numericValue(actor.data.level, 1));
+  const features = normalizeStringArray(actor.data.features).map((feature) => feature.toLowerCase());
+  const subclass = stringValue(actor.data.subclass)?.toLowerCase() ?? "";
+  const thiefUseMagicDevice = className === "Rogue" && level >= 13 && (subclass === "thief" || features.some((feature) => feature.includes("use magic device") || feature.includes("thief")));
+  return thiefUseMagicDevice ? 4 : 3;
+}
+
+export function dnd5eSrdAttunementState(actor: Actor): Dnd5eSrdAttunementState {
+  return dnd5eSrdAttunementStateForData(actor.data);
+}
+
+function dnd5eSrdResolutionActionKind(roll: QuickRoll): RulesActionResolutionResult["action"]["kind"] {
+  const metadata = recordValue(roll.metadata);
+  const action = (stringValue(metadata.action) ?? stringValue(metadata.activation) ?? "").toLowerCase();
+  if (action.includes("reaction") || roll.id.includes("retaliation") || roll.id.includes("cutting-words")) return "reaction";
+  if (action.includes("bonus")) return "bonusAction";
+  if (roll.formula === "0" && !stringValue(metadata.action) && !stringValue(metadata.activation)) return "free";
+  return "action";
+}
+
+function dnd5eSrdResolutionBlock(actor: Actor, actionKind: RulesActionResolutionResult["action"]["kind"]): RulesResolutionBlocked | undefined {
+  const effects = dnd5eSrdConditionEffects(normalizeConditionRecords(actor.data.conditions));
+  const blockingSources = effects.filter((effect) => {
+    if (actionKind === "reaction") return effect.data.reactions === false;
+    if (actionKind === "bonusAction") return effect.data.bonusActions === false || effect.data.actions === false;
+    if (actionKind === "action") return effect.data.actions === false;
+    return false;
+  });
+  if (blockingSources.length === 0) return undefined;
+  const names = blockingSources.map((effect) => dnd5eSrdCompendiumEntry(effect.sourceId)?.name ?? titleCaseWords(effect.sourceId));
+  const label = actionKind === "bonusAction" ? "bonus action" : actionKind;
+  return {
+    code: `${actionKind}_blocked`,
+    reason: `${names.join(", ")} prevents this ${label}.`
+  };
+}
+
+function dnd5eSrdResolutionRolls(actor: Actor, targets: RulesResolutionTargetInput[], roll: QuickRoll, options: RulesResolverOptions): RulesResolutionRoll[] {
+  const rollTargets = dnd5eSrdIsAttackRoll(roll) && targets.length > 0 ? targets : [targets[0]].filter((target): target is RulesResolutionTargetInput => Boolean(target));
+  if (rollTargets.length === 0) return [dnd5eSrdResolutionRollForTarget(actor, undefined, roll, options)];
+  return rollTargets.map((target) => dnd5eSrdResolutionRollForTarget(actor, target, roll, options));
+}
+
+function dnd5eSrdResolutionRollForTarget(actor: Actor, target: RulesResolutionTargetInput | undefined, roll: QuickRoll, options: RulesResolverOptions): RulesResolutionRoll {
+  const targetAware = dnd5eSrdTargetAwareRoll(actor, target?.actor, roll);
+  return {
+    rollId: roll.id,
+    label: roll.label,
+    baseFormula: roll.formula,
+    formula: targetAware.formula,
+    ...(target ? { targetActorId: target.actor.id } : {}),
+    ...(targetAware.d20Mode ? { d20Mode: targetAware.d20Mode } : {}),
+    advantageSources: targetAware.advantageSources,
+    disadvantageSources: targetAware.disadvantageSources,
+    ...(target ? { saveOutcome: dnd5eSrdTargetSaveOutcome(target.actor.id, target, options) } : {})
+  };
+}
+
+function dnd5eSrdIsAttackRoll(roll: QuickRoll): boolean {
+  const metadata = recordValue(roll.metadata);
+  return roll.id.endsWith("-attack") || stringValue(metadata.attackType) !== undefined;
+}
+
+function dnd5eSrdTargetAwareRoll(actor: Actor, target: Actor | undefined, roll: QuickRoll): { formula: string; d20Mode?: RulesD20Mode; advantageSources: string[]; disadvantageSources: string[] } {
+  if (!dnd5eSrdIsAttackRoll(roll)) return { formula: roll.formula, advantageSources: [], disadvantageSources: [] };
+  const advantageSources: string[] = [];
+  const disadvantageSources: string[] = [];
+  for (const effect of dnd5eSrdConditionEffects(normalizeConditionRecords(actor.data.conditions))) {
+    const source = dnd5eSrdCompendiumEntry(effect.sourceId)?.name ?? titleCaseWords(effect.sourceId);
+    if (stringValue(effect.data.attackRolls) === "advantage" || stringValue(effect.data.attackRollsWhileSourceVisible) === "advantage") advantageSources.push(source);
+    if (stringValue(effect.data.attackRolls) === "disadvantage" || stringValue(effect.data.attackRollsWhileSourceVisible) === "disadvantage") disadvantageSources.push(source);
+  }
+  if (target) {
+    for (const effect of dnd5eSrdConditionEffects(normalizeConditionRecords(target.data.conditions))) {
+      const source = dnd5eSrdCompendiumEntry(effect.sourceId)?.name ?? titleCaseWords(effect.sourceId);
+      if (stringValue(effect.data.attacksAgainst) === "advantage") advantageSources.push(`${target.name}: ${source}`);
+      if (stringValue(effect.data.attacksAgainst) === "disadvantage") disadvantageSources.push(`${target.name}: ${source}`);
+    }
+  }
+  const d20Mode: RulesD20Mode = advantageSources.length > 0 && disadvantageSources.length === 0 ? "advantage" : disadvantageSources.length > 0 && advantageSources.length === 0 ? "disadvantage" : "normal";
+  const d20 = d20Mode === "advantage" ? "2d20kh1" : d20Mode === "disadvantage" ? "2d20kl1" : "1d20";
+  return {
+    formula: roll.formula.replace(/^(?:1d20|2d20k[hl]1)/, d20),
+    d20Mode,
+    advantageSources: uniqueStrings(advantageSources),
+    disadvantageSources: uniqueStrings(disadvantageSources)
+  };
+}
+
+function dnd5eSrdTargetSaveOutcome(actorId: string, target: RulesResolutionTargetInput | undefined, options: RulesResolverOptions): RulesSaveOutcome | undefined {
+  return target?.saveOutcome ?? options.saveOutcomes?.[actorId];
+}
+
+function dnd5eSrdStartConcentration(
+  data: Record<string, unknown>,
+  actor: Actor,
+  roll: QuickRoll,
+  targetActorIds: string[],
+  now: string
+): { data: Record<string, unknown>; conditions: RulesResolutionConditionChange[]; warnings: string[]; auditEvents: RulesResolutionAuditEvent[] } {
+  const rules = dnd5eSrdRulesEngineState(data);
+  const previous = recordValue(rules.concentration);
+  const previousRollId = stringValue(previous.rollId);
+  const metadata = recordValue(roll.metadata);
+  const concentration = {
+    rollId: roll.id,
+    label: roll.label,
+    startedAt: now,
+    targetActorIds,
+    duration: stringValue(metadata.duration),
+    sourceActorId: actor.id
+  };
+  rules.concentration = concentration;
+  const activeEffects = Array.isArray(rules.activeEffects) ? rules.activeEffects.filter((effect) => recordValue(effect).concentration !== true) : [];
+  rules.activeEffects = [
+    ...activeEffects,
+    {
+      id: `${roll.id}:${now}`,
+      rollId: roll.id,
+      label: roll.label,
+      startedAt: now,
+      targetActorIds,
+      concentration: true,
+      duration: stringValue(metadata.duration)
+    }
+  ];
+  const replaced = previousRollId && previousRollId !== roll.id;
+  return {
+    data: dnd5eSrdDataWithRulesEngineState(data, rules),
+    conditions: [
+      {
+        actorId: actor.id,
+        operation: replaced ? "replaceConcentration" : "startConcentration",
+        conditionId: "concentration",
+        conditionName: "Concentration",
+        reason: replaced ? `Replaced concentration on ${stringValue(previous.label) ?? previousRollId}` : `Started concentration on ${roll.label}`
+      }
+    ],
+    warnings: replaced ? [`Starting ${roll.label} replaces concentration on ${stringValue(previous.label) ?? previousRollId}.`] : [],
+    auditEvents: [
+      {
+        code: replaced ? "concentration.replaced" : "concentration.started",
+        actorId: actor.id,
+        rollId: roll.id,
+        message: replaced ? `${actor.name} replaced concentration with ${roll.label}` : `${actor.name} started concentration on ${roll.label}`,
+        data: { previous: previousRollId ? cloneJsonRecord(previous) : undefined, concentration }
+      }
+    ]
+  };
+}
+
+function dnd5eSrdApplyReactionUse(
+  data: Record<string, unknown>,
+  actorId: string,
+  rollId: string,
+  combat: Combat | undefined,
+  now: string
+): { data: Record<string, unknown>; blocked?: RulesResolutionBlocked; auditEvents: RulesResolutionAuditEvent[] } {
+  const rules = dnd5eSrdRulesEngineState(data);
+  const combatId = combat?.id ?? "out-of-combat";
+  const round = combat?.round ?? 0;
+  const reactions = recordValue(rules.reactions);
+  const used = recordValue(reactions[combatId]);
+  if (numericValue(used.round, Number.NaN) === round && stringValue(used.rollId)) {
+    return {
+      data,
+      blocked: { code: "reaction_already_used", reason: "Reaction already used this combat round." },
+      auditEvents: []
+    };
+  }
+  reactions[combatId] = { round, rollId, usedAt: now };
+  rules.reactions = reactions;
+  return {
+    data: dnd5eSrdDataWithRulesEngineState(data, rules),
+    auditEvents: [
+      {
+        code: "reaction.used",
+        actorId,
+        rollId,
+        message: "Reaction marked as used for this combat round",
+        data: { combatId, round }
+      }
+    ]
+  };
+}
+
+function dnd5eSrdApplyRechargeResolution(
+  data: Record<string, unknown>,
+  roll: QuickRoll,
+  recharge: string,
+  options: RulesResolverOptions,
+  now: string
+): { data: Record<string, unknown>; blocked?: RulesResolutionBlocked; warnings: string[]; auditEvents: RulesResolutionAuditEvent[] } {
+  const rules = dnd5eSrdRulesEngineState(data);
+  const rechargeState = recordValue(rules.recharge);
+  const current = recordValue(rechargeState[roll.id]);
+  let available = current.available !== false;
+  const warnings: string[] = [];
+  const auditEvents: RulesResolutionAuditEvent[] = [];
+  if (Number.isFinite(numericValue(options.rechargeCheck, Number.NaN))) {
+    const check = Math.floor(numericValue(options.rechargeCheck, 0));
+    available = dnd5eSrdRechargeRollSucceeds(recharge, check);
+    rechargeState[roll.id] = { ...current, recharge, available, lastCheck: check, checkedAt: now };
+    auditEvents.push({
+      code: available ? "recharge.available" : "recharge.unavailable",
+      actorId: "",
+      rollId: roll.id,
+      message: `${roll.label} recharge check ${check} ${available ? "succeeded" : "failed"}`,
+      data: { recharge, check }
+    });
+  }
+  if (!available) {
+    return {
+      data: dnd5eSrdDataWithRulesEngineState(data, { ...rules, recharge: rechargeState }),
+      blocked: { code: "recharge_unavailable", reason: `${roll.label} is not recharged (${recharge}).` },
+      warnings,
+      auditEvents
+    };
+  }
+  rechargeState[roll.id] = { ...current, recharge, available: false, spentAt: now };
+  rules.recharge = rechargeState;
+  warnings.push(`${roll.label} will need recharge ${recharge} before it can be used again.`);
+  return { data: dnd5eSrdDataWithRulesEngineState(data, rules), warnings, auditEvents };
+}
+
+function dnd5eSrdRechargeRollSucceeds(recharge: string, roll: number): boolean {
+  const normalized = recharge.trim().toLowerCase();
+  const range = /^(\d+)\s*-\s*(\d+)$/.exec(normalized);
+  if (range) return roll >= Number(range[1]) && roll <= Number(range[2]);
+  const single = /^(\d+)$/.exec(normalized);
+  if (single) return roll >= Number(single[1]);
+  return !normalized.includes("/day");
+}
+
+function dnd5eSrdPendingReaction(actor: Actor, roll: QuickRoll, metadata: Record<string, unknown>): RulesResolutionPendingReaction | undefined {
+  const reaction = stringValue(metadata.reaction) ?? (roll.id.includes("hellish-rebuke") ? "Hellish Rebuke reaction trigger" : undefined);
+  if (!reaction) return undefined;
+  return { actorId: actor.id, actionRollId: roll.id, reason: reaction };
+}
+
+function dnd5eSrdPendingChoice(metadata: Record<string, unknown>, options: RulesResolverOptions): RulesResolutionChoice | undefined {
+  const found = dnd5eSrdChoiceGroups(metadata).find((choice) => choice.options.length > 0);
+  if (!found) return undefined;
+  const selected = dnd5eSrdResolvedChoice(metadata, options);
+  if (selected?.kind === found.kind) return undefined;
+  return { kind: found.kind, options: found.options, reason: "Choose one option before this action can be fully automated." };
+}
+
+function dnd5eSrdChoiceGroups(metadata: Record<string, unknown>): Array<{ kind: RulesResolutionChoice["kind"]; options: string[] }> {
+  const damageTypeOptions = uniqueStrings([
+    ...dnd5eSrdChoiceOptions(metadata.damageTypeOptions),
+    ...(stringValue(metadata.damageType)?.toLowerCase() === "choice" ? dnd5eSrdChoiceOptions(metadata.damageTypes) : []),
+    ...dnd5eSrdChoiceOptions(metadata.damageTypeChoices)
+  ]);
+  return [
+    { kind: "effect", options: dnd5eSrdChoiceOptions(metadata.effectOptions) },
+    { kind: "damageType", options: damageTypeOptions },
+    { kind: "resistance", options: uniqueStrings([...dnd5eSrdChoiceOptions(metadata.resistanceChoice), ...dnd5eSrdChoiceOptions(metadata.resistanceChoices)]) }
+  ];
+}
+
+function dnd5eSrdChoiceOptions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return uniqueStrings(value.map(dnd5eSrdChoiceOptionLabel).filter((option): option is string => Boolean(option)));
+}
+
+function dnd5eSrdChoiceOptionLabel(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  const record = recordValue(value);
+  return stringValue(record.name) ?? stringValue(record.label) ?? stringValue(record.id) ?? stringValue(record.condition);
+}
+
+function dnd5eSrdResolvedChoice(metadata: Record<string, unknown>, options: RulesResolverOptions): { kind: RulesResolutionChoice["kind"]; value: string; options: string[] } | undefined {
+  const selected = stringValue(options.effectChoice);
+  if (!selected) return undefined;
+  const normalizedSelected = selected.toLowerCase();
+  for (const choice of dnd5eSrdChoiceGroups(metadata)) {
+    const matched = choice.options.find((option) => option.toLowerCase() === normalizedSelected);
+    if (matched) return { kind: choice.kind, value: matched, options: choice.options };
+  }
+  return undefined;
+}
+
+function dnd5eSrdSelectedEffectOption(metadata: Record<string, unknown>, options: RulesResolverOptions): Record<string, unknown> | undefined {
+  const selected = dnd5eSrdResolvedChoice(metadata, options);
+  if (selected?.kind !== "effect" || !Array.isArray(metadata.effectOptions)) return undefined;
+  return metadata.effectOptions.map(recordValue).find((option) => dnd5eSrdChoiceOptionLabel(option)?.toLowerCase() === selected.value.toLowerCase());
+}
+
+function dnd5eSrdManualResolution(roll: QuickRoll, metadata: Record<string, unknown>, pendingChoice: RulesResolutionChoice | undefined, options: RulesResolverOptions): RulesActionResolutionResult["manualResolutionRequired"] | undefined {
+  if (pendingChoice) return { reason: pendingChoice.reason, metadata };
+  const complexKeys = ["summon", "behaviorTable", "commandOptions", "spellcastingAbilityCheck", "blockedBy", "counteredBy", "rayRollFormula"];
+  const hasComplexMetadata = complexKeys.some((key) => key in metadata);
+  const effectType = stringValue(metadata.effectType);
+  if (effectType === "utility" && dnd5eSrdUtilityTraits(metadata, options).hasTraits) return undefined;
+  if (hasComplexMetadata || (roll.formula === "0" && effectType === "utility" && Object.keys(metadata).length > 0)) {
+    return { reason: `${roll.label} has SRD metadata but still needs GM/manual resolution.`, metadata };
+  }
+  return undefined;
+}
+
+function dnd5eSrdApplyTargetEffectResolution(
+  target: Actor,
+  sourceActorId: string,
+  roll: QuickRoll,
+  metadata: Record<string, unknown>,
+  rollTotal: number | undefined,
+  saveOutcome: RulesSaveOutcome | undefined,
+  options: RulesResolverOptions,
+  combat: Combat | undefined,
+  now: string
+): { data: Record<string, unknown>; effects: RulesResolutionEffectResult[]; conditions: RulesResolutionConditionChange[]; pendingSaves: RulesResolutionPendingSave[]; auditEvents: RulesResolutionAuditEvent[] } | undefined {
+  let data = cloneJsonRecord(target.data);
+  const effects: RulesResolutionEffectResult[] = [];
+  const conditions: RulesResolutionConditionChange[] = [];
+  const pendingSaves: RulesResolutionPendingSave[] = [];
+  const auditEvents: RulesResolutionAuditEvent[] = [];
+
+  const poolEffect = dnd5eSrdApplyRollTotalEffectResolution({ ...target, data }, roll, metadata, rollTotal, saveOutcome, options, now);
+  if (poolEffect) {
+    data = poolEffect.data;
+    effects.push(poolEffect.effect);
+    if (poolEffect.condition) conditions.push(poolEffect.condition);
+    if (poolEffect.pendingSave) pendingSaves.push(poolEffect.pendingSave);
+    if (poolEffect.auditEvent) auditEvents.push(poolEffect.auditEvent);
+  }
+
+  const conditionBefore = dnd5eSrdConditionIds(data.conditions);
+  const conditionResult = dnd5eSrdApplyTargetConditionResolution({ ...target, data }, sourceActorId, roll, metadata, saveOutcome, options, combat, now);
+  if (conditionResult) {
+    data = conditionResult.data;
+    const conditionAfter = dnd5eSrdConditionIds(data.conditions);
+    const resolvedChoice = dnd5eSrdResolvedChoice(metadata, options);
+    for (const condition of conditionResult.conditions) {
+      if (condition.operation !== "apply" || !condition.conditionId || !condition.conditionName) continue;
+      effects.push({
+        type: "condition",
+        targetActorId: target.id,
+        targetActorName: target.name,
+        conditionId: condition.conditionId,
+        conditionName: condition.conditionName,
+        before: conditionBefore,
+        after: conditionAfter,
+        alreadyPresent: conditionBefore.includes(condition.conditionId),
+        ...(resolvedChoice ? { effectChoice: resolvedChoice.value, choiceKind: resolvedChoice.kind } : {})
+      });
+    }
+    conditions.push(...conditionResult.conditions);
+    pendingSaves.push(...conditionResult.pendingSaves);
+    auditEvents.push(...conditionResult.auditEvents);
+  }
+
+  const utilityResult = dnd5eSrdApplyUtilityEffectResolution({ ...target, data }, sourceActorId, roll, metadata, options, now);
+  if (utilityResult) {
+    data = utilityResult.data;
+    effects.push(utilityResult.effect);
+    auditEvents.push(utilityResult.auditEvent);
+  }
+
+  if (effects.length === 0 && conditions.length === 0 && pendingSaves.length === 0 && auditEvents.length === 0) return undefined;
+  return { data, effects, conditions, pendingSaves, auditEvents };
+}
+
+function dnd5eSrdUtilityTraits(metadata: Record<string, unknown>, options: RulesResolverOptions): { resistance: string[]; immunity: string[]; vulnerability: string[]; hasTraits: boolean } {
+  const selected = dnd5eSrdResolvedChoice(metadata, options);
+  const selectedEffectOption = dnd5eSrdSelectedEffectOption(metadata, options);
+  const traitSource = selected?.kind === "effect" && Array.isArray(metadata.effectOptions) ? selectedEffectOption ?? {} : metadata;
+  const resistance = uniqueStrings([
+    ...normalizeStringArray(traitSource.resistance).map((value) => value.toLowerCase()),
+    ...(selected?.kind === "resistance" ? [selected.value.toLowerCase()] : [])
+  ]);
+  const immunity = uniqueStrings([...normalizeStringArray(traitSource.immunity), ...normalizeStringArray(traitSource.immunities)].map((value) => value.toLowerCase()));
+  const vulnerability = uniqueStrings([...normalizeStringArray(traitSource.vulnerability), ...normalizeStringArray(traitSource.vulnerabilities)].map((value) => value.toLowerCase()));
+  return { resistance, immunity, vulnerability, hasTraits: resistance.length > 0 || immunity.length > 0 || vulnerability.length > 0 };
+}
+
+function dnd5eSrdApplyUtilityEffectResolution(
+  target: Actor,
+  sourceActorId: string,
+  roll: QuickRoll,
+  metadata: Record<string, unknown>,
+  options: RulesResolverOptions,
+  now: string
+): { data: Record<string, unknown>; effect: RulesResolutionEffectResult; auditEvent: RulesResolutionAuditEvent } | undefined {
+  const traits = dnd5eSrdUtilityTraits(metadata, options);
+  if (!traits.hasTraits) return undefined;
+  const resolvedChoice = dnd5eSrdResolvedChoice(metadata, options);
+  const duration = stringValue(metadata.duration);
+  const rules = dnd5eSrdRulesEngineState(target.data);
+  const activeEffects = Array.isArray(rules.activeEffects) ? rules.activeEffects.map((effect) => cloneJsonRecord(recordValue(effect))) : [];
+  const nextEffect = {
+    id: `${roll.id}:${target.id}:${now}`,
+    rollId: roll.id,
+    label: roll.label,
+    sourceActorId,
+    targetActorId: target.id,
+    startedAt: now,
+    ...(duration ? { duration } : {}),
+    ...(traits.resistance.length > 0 ? { resistance: traits.resistance } : {}),
+    ...(traits.immunity.length > 0 ? { immunity: traits.immunity } : {}),
+    ...(traits.vulnerability.length > 0 ? { vulnerability: traits.vulnerability } : {}),
+    ...(resolvedChoice ? { effectChoice: resolvedChoice.value, choiceKind: resolvedChoice.kind } : {})
+  };
+  rules.activeEffects = [...activeEffects.filter((effect) => stringValue(effect.id) !== nextEffect.id), nextEffect];
+  return {
+    data: dnd5eSrdDataWithRulesEngineState(target.data, rules),
+    effect: {
+      type: "utility",
+      targetActorId: target.id,
+      targetActorName: target.name,
+      ...(duration ? { duration } : {}),
+      ...(traits.resistance.length > 0 ? { resistance: traits.resistance } : {}),
+      ...(traits.immunity.length > 0 ? { immunity: traits.immunity } : {}),
+      ...(traits.vulnerability.length > 0 ? { vulnerability: traits.vulnerability } : {}),
+      ...(resolvedChoice ? { effectChoice: resolvedChoice.value, choiceKind: resolvedChoice.kind } : {})
+    },
+    auditEvent: {
+      code: "utility.applied",
+      actorId: sourceActorId,
+      targetActorId: target.id,
+      rollId: roll.id,
+      message: `${roll.label} applied utility traits to ${target.name}`,
+      data: nextEffect
+    }
+  };
+}
+
+function dnd5eSrdApplyRollTotalEffectResolution(
+  target: Actor,
+  roll: QuickRoll,
+  metadata: Record<string, unknown>,
+  rollTotal: number | undefined,
+  saveOutcome: RulesSaveOutcome | undefined,
+  options: RulesResolverOptions,
+  now: string
+): { data: Record<string, unknown>; effect: RulesResolutionEffectResult; pendingSave?: RulesResolutionPendingSave; condition?: RulesResolutionConditionChange; auditEvent?: RulesResolutionAuditEvent } | undefined {
+  const type = dnd5eSrdRollEffectType(roll);
+  if (!type || !Number.isFinite(numericValue(rollTotal, Number.NaN))) return undefined;
+  const saveAbility = stringValue(recordValue(metadata.save).ability);
+  if (saveAbility && !saveOutcome) return undefined;
+  const adjustedTotal = dnd5eSrdRollEffectTotalForSave(type, metadata, numericValue(rollTotal, 0), saveOutcome);
+  if (adjustedTotal === undefined) return undefined;
+  const pool = dnd5eSrdEffectPool(target);
+  if (!pool) return undefined;
+  const poolValue = recordValue(target.data[pool]);
+  const current = numericValue(poolValue.current, Number.NaN);
+  const max = numericValue(poolValue.max, Number.NaN);
+  if (!Number.isFinite(current) || !Number.isFinite(max)) return undefined;
+  const amount = Math.max(0, Math.floor(adjustedTotal));
+  const after = type === "healing" ? Math.min(max, current + amount) : Math.max(0, current - amount);
+  let data: Record<string, unknown> = {
+    ...target.data,
+    [pool]: {
+      ...poolValue,
+      current: after
+    }
+  };
+  let pendingSave: RulesResolutionPendingSave | undefined;
+  let condition: RulesResolutionConditionChange | undefined;
+  let auditEvent: RulesResolutionAuditEvent | undefined;
+  if (type === "damage" && amount > 0) {
+    const concentration = resolveDnd5eSrdConcentrationDamage({ ...target, data }, amount, options.saveOutcomes?.[`${target.id}:concentration`], now, roll.id);
+    data = concentration.data;
+    pendingSave = concentration.pendingSave;
+    condition = concentration.condition;
+    auditEvent = concentration.auditEvent;
+  }
+  const damageTypes = type === "damage" ? dnd5eSrdDamageTypes(metadata, options) : [];
+  const resolvedChoice = dnd5eSrdResolvedChoice(metadata, options);
+  return {
+    data,
+    effect: {
+      type,
+      targetActorId: target.id,
+      targetActorName: target.name,
+      pool,
+      amount,
+      before: current,
+      after,
+      max,
+      ...(damageTypes.length === 1 ? { damageType: damageTypes[0] } : {}),
+      ...(damageTypes.length > 1 ? { damageTypes } : {}),
+      ...(resolvedChoice ? { effectChoice: resolvedChoice.value, choiceKind: resolvedChoice.kind } : {})
+    },
+    ...(pendingSave ? { pendingSave } : {}),
+    ...(condition ? { condition } : {}),
+    ...(auditEvent ? { auditEvent } : {})
+  };
+}
+
+function dnd5eSrdRollEffectType(roll: QuickRoll): "damage" | "healing" | undefined {
+  const id = roll.id.toLowerCase();
+  const label = roll.label.toLowerCase();
+  if (id.endsWith("-healing") || /\bhealing\b/.test(label)) return "healing";
+  if (id.endsWith("-damage") || /\bdamage\b/.test(label)) return "damage";
+  return undefined;
+}
+
+function dnd5eSrdRollEffectTotalForSave(type: "damage" | "healing", metadata: Record<string, unknown>, total: number, saveOutcome?: RulesSaveOutcome): number | undefined {
+  if (saveOutcome !== "success") return total;
+  const success = stringValue(recordValue(metadata.save).success)?.toLowerCase() ?? "";
+  if (success.includes("half")) return Math.floor(total / 2);
+  if (type === "damage") return 0;
+  return undefined;
+}
+
+function dnd5eSrdDamageTypes(metadata: Record<string, unknown>, options: RulesResolverOptions): string[] {
+  const selected = dnd5eSrdResolvedChoice(metadata, options);
+  if (selected?.kind === "damageType") return [selected.value.toLowerCase()];
+  const damageType = stringValue(metadata.damageType);
+  if (damageType && damageType.toLowerCase() !== "choice") return dnd5eSrdSplitDamageTypes(damageType);
+  const singleOption = dnd5eSrdChoiceOptions(metadata.damageTypes);
+  return singleOption.length === 1 ? [singleOption[0]!.toLowerCase()] : [];
+}
+
+function dnd5eSrdSplitDamageTypes(value: string): string[] {
+  return uniqueStrings(
+    value
+      .split(/[\/,]/)
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function dnd5eSrdEffectPool(actor: Actor): "hp" | undefined {
+  const hp = recordValue(actor.data.hp);
+  return Number.isFinite(numericValue(hp.current, Number.NaN)) && Number.isFinite(numericValue(hp.max, Number.NaN)) ? "hp" : undefined;
+}
+
+function dnd5eSrdConditionIds(value: unknown): string[] {
+  return normalizeConditionRecords(value).map((condition) => condition.id);
+}
+
+function dnd5eSrdApplyTargetConditionResolution(
+  target: Actor,
+  sourceActorId: string,
+  roll: QuickRoll,
+  metadata: Record<string, unknown>,
+  saveOutcome: RulesSaveOutcome | undefined,
+  options: RulesResolverOptions,
+  combat: Combat | undefined,
+  now: string
+): { data: Record<string, unknown>; conditions: RulesResolutionConditionChange[]; pendingSaves: RulesResolutionPendingSave[]; auditEvents: RulesResolutionAuditEvent[] } | undefined {
+  const conditionNames = dnd5eSrdConditionNamesFromMetadata(metadata, options);
+  if (conditionNames.length === 0) return undefined;
+  const save = recordValue(metadata.save);
+  const saveAbility = stringValue(save.ability) ?? stringValue(metadata.repeatSaveAbility);
+  const saveDc = Number.isFinite(numericValue(save.dc, Number.NaN)) ? numericValue(save.dc, Number.NaN) : undefined;
+  if (saveAbility && saveOutcome !== "failure") return undefined;
+  const conditionIds = conditionNames.map(dnd5eSrdConditionId);
+  const duration = stringValue(metadata.conditionDuration) ?? stringValue(metadata.duration);
+  const durationRounds = dnd5eSrdDurationRounds(duration);
+  const repeatSave = dnd5eSrdRepeatSaveTiming(metadata);
+  const expiresAtRound = durationRounds && combat ? combat.round + durationRounds : undefined;
+  const resolvedChoice = dnd5eSrdResolvedChoice(metadata, options);
+  const rules = dnd5eSrdRulesEngineState(target.data);
+  const activeEffects = Array.isArray(rules.activeEffects) ? rules.activeEffects.map((effect) => cloneJsonRecord(recordValue(effect))) : [];
+  const nextEffect = {
+    id: `${roll.id}:${target.id}:${now}`,
+    rollId: roll.id,
+    label: roll.label,
+    sourceActorId,
+    targetActorId: target.id,
+    conditionIds,
+    conditionNames,
+    startedAt: now,
+    ...(duration ? { duration } : {}),
+    ...(durationRounds ? { durationRounds } : {}),
+    ...(expiresAtRound ? { expiresAtRound } : {}),
+    ...(repeatSave ? { repeatSave } : {}),
+    ...(saveAbility ? { saveAbility } : {}),
+    ...(saveDc !== undefined ? { saveDc } : {}),
+    ...(resolvedChoice ? { effectChoice: resolvedChoice.value, choiceKind: resolvedChoice.kind } : {})
+  };
+  rules.activeEffects = [...activeEffects.filter((effect) => stringValue(effect.id) !== nextEffect.id), nextEffect];
+  let data = dnd5eSrdDataWithRulesEngineState(target.data, rules);
+  for (const conditionId of conditionIds) {
+    data = applyDnd5eSrdCondition({ ...target, data }, conditionId, now);
+  }
+  const pendingSaves: RulesResolutionPendingSave[] = repeatSave && saveAbility
+    ? [
+        {
+          actorId: target.id,
+          ability: saveAbility,
+          ...(saveDc !== undefined ? { dc: saveDc } : {}),
+          reason: `${roll.label} grants a repeat save (${repeatSave})`,
+          success: "ends effect",
+          recurring: true,
+          timing: repeatSave,
+          conditionIds
+        }
+      ]
+    : [];
+  const reasonParts = [duration ? `duration ${duration}` : undefined, repeatSave ? `repeat save ${repeatSave}` : undefined].filter((part): part is string => Boolean(part));
+  return {
+    data,
+    conditions: conditionNames.map((conditionName, index) => ({
+      actorId: target.id,
+      operation: "apply",
+      conditionId: conditionIds[index],
+      conditionName,
+      ...(duration ? { duration } : {}),
+      ...(durationRounds ? { durationRounds } : {}),
+      ...(expiresAtRound ? { expiresAtRound } : {}),
+      ...(repeatSave ? { repeatSave } : {}),
+      reason: reasonParts.length > 0 ? `${roll.label} applies ${conditionName} (${reasonParts.join(", ")})` : `${roll.label} applies ${conditionName}`
+    })),
+    pendingSaves,
+    auditEvents: [
+      {
+        code: "condition.applied",
+        actorId: sourceActorId,
+        targetActorId: target.id,
+        rollId: roll.id,
+        message: `${roll.label} applied ${conditionNames.join(", ")} to ${target.name}`,
+        data: nextEffect
+      }
+    ]
+  };
+}
+
+function dnd5eSrdConditionNamesFromMetadata(metadata: Record<string, unknown>, options: RulesResolverOptions): string[] {
+  const failure = recordValue(metadata.failure);
+  const selectedEffectOption = dnd5eSrdSelectedEffectOption(metadata, options);
+  return uniqueStrings([
+    ...dnd5eSrdSplitConditionNames(stringValue(metadata.condition)),
+    ...dnd5eSrdSplitConditionNames(stringValue(failure.condition)),
+    ...dnd5eSrdSplitConditionNames(stringValue(selectedEffectOption?.condition)),
+    ...normalizeStringArray(metadata.conditions).flatMap(dnd5eSrdSplitConditionNames),
+    ...normalizeStringArray(metadata.additionalConditions).flatMap(dnd5eSrdSplitConditionNames),
+    ...normalizeStringArray(selectedEffectOption?.conditions).flatMap(dnd5eSrdSplitConditionNames),
+    ...normalizeStringArray(selectedEffectOption?.additionalConditions).flatMap(dnd5eSrdSplitConditionNames)
+  ]);
+}
+
+function dnd5eSrdSplitConditionNames(value: string | undefined): string[] {
+  return value
+    ? value
+        .split(/[\/,]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+}
+
+function dnd5eSrdConditionId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function dnd5eSrdDurationRounds(duration: string | undefined): number | undefined {
+  if (!duration) return undefined;
+  const normalized = duration.toLowerCase().replace(/^up to\s+/, "").trim();
+  if (normalized.includes("current turn") || normalized.includes("next turn")) return 1;
+  const match = normalized.match(/(\d+)\s*(round|minute|hour|day)s?/);
+  if (!match) return undefined;
+  const amount = Math.max(1, Math.floor(Number(match[1])));
+  const unit = match[2];
+  if (unit === "round") return amount;
+  if (unit === "minute") return amount * 10;
+  if (unit === "hour") return amount * 600;
+  return amount * 14_400;
+}
+
+function dnd5eSrdRepeatSaveTiming(metadata: Record<string, unknown>): string | undefined {
+  const repeatSave = metadata.repeatSave;
+  if (typeof repeatSave === "string" && repeatSave.trim()) return repeatSave.trim();
+  const repeatSaveRecord = recordValue(repeatSave);
+  const repeatSaveTiming = stringValue(repeatSaveRecord.timing);
+  if (repeatSaveTiming) return repeatSaveTiming;
+  const timing = metadata.repeatSaveTiming;
+  if (typeof timing === "string" && timing.trim()) return timing.trim();
+  const timingValues = normalizeStringArray(timing);
+  return timingValues.length > 0 ? timingValues.join(", ") : undefined;
+}
+
+function dnd5eSrdRulesEngineState(data: Record<string, unknown>): Record<string, unknown> {
+  return cloneJsonRecord(recordValue(data.rulesEngine));
+}
+
+function dnd5eSrdDataWithRulesEngineState(data: Record<string, unknown>, rules: Record<string, unknown>): Record<string, unknown> {
+  return { ...data, rulesEngine: rules };
+}
+
+function dnd5eSrdAttunementStateForData(data: Record<string, unknown>): Dnd5eSrdAttunementState {
+  const rules = dnd5eSrdRulesEngineState(data);
+  const source = normalizeStringArray(data.attunedItemIds).length > 0 ? data.attunedItemIds : rules.attunedItemIds;
+  const attunedItemIds = uniqueStrings(normalizeStringArray(source));
+  const pseudoActor = { data } as Actor;
+  const limit = dnd5eSrdAttunementLimit(pseudoActor);
+  const overLimitBy = Math.max(0, attunedItemIds.length - limit);
+  return { limit, attunedItemIds, overLimitBy, canAttuneMore: attunedItemIds.length < limit };
 }
 
 export function useGenericFantasyAction(actor: Actor, items: Item[] = [], rollId: string, options: SystemActionUseOptions = {}): SystemActionUseResult {

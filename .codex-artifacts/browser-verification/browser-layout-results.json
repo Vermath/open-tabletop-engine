@@ -1,0 +1,410 @@
+[
+  {
+    "viewport": "1280x800",
+    "checks": [
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 1280,
+        "clientHeight": 800,
+        "clientWidth": 1280,
+        "horizontalOverflow": false,
+        "inspectorTabs": [
+          "Actors",
+          "Chat",
+          "Combat"
+        ],
+        "liveOk": true,
+        "manageOk": false,
+        "mapLayerStack": "LayersVault EntryMapemptyPlayer1Map0GM0Annotations0 / 4 shownMeasurementEffectsDrawingsNotesFogoff",
+        "mode": "Live Table",
+        "prepOk": false,
+        "sceneBoardHeight": 380,
+        "scrollHeight": 800,
+        "scrollWidth": 1280,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nDND-5E-SRD\nThe Ember Vault\nReady\nVault Entry\nNo actor\nValen Ash\nFriendly\nNeutral\nHostile\n1x1\n2x2\n3x3\n4x4\nToken\n100%\nLAYERS\nVault Entry\nMAP\nempty\nPLAYER\n1\nMAP\n0\nGM\n0\nANNOTATIONS\n0 / 4 shown\nFOG\noff\nVA\nActors\nChat\nCombat\nSELECTED ACTOR\nValen Ash\ngeneric-fantasy\nToken Valen Ash\nOpen Full Sheet\nHP\n18/22\nAC\nn/a\nConditions\nNone\nResources\nFocus 3\nPLACEMENT\n1 actors\nValen Ash\nStats\nLoadout\nActions\nCompendium\nHP\n18/22\nAC\nn/a\nConditions\n0\nResources\n1\nCurrent HP\nActor conditions\nToken\nValen Ash\nVision\n0 bright / 180 ",
+        "workspaceHeight": 800
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 1280,
+        "clientHeight": 800,
+        "clientWidth": 1280,
+        "horizontalOverflow": false,
+        "inspectorTabs": [
+          "Actors",
+          "Journal",
+          "Content",
+          "SDK"
+        ],
+        "liveOk": true,
+        "manageOk": false,
+        "mapLayerStack": "LayersVault EntryMapemptyPlayer1Map0GM0Annotations0 / 4 shownMeasurementEffectsDrawingsNotesFogoff",
+        "mode": "Prep",
+        "prepOk": true,
+        "sceneBoardHeight": 380,
+        "scrollHeight": 800,
+        "scrollWidth": 1280,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nPREP\nPrep scenes, assets, journals, and imports\nReady\nAll scenes (1)\n1 of 1 scenes\n0 selected\nVault Entry\nNo actor\nValen Ash\nFriendly\nNeutral\nHostile\n1x1\n2x2\n3x3\n4x4\nToken\n100%\nLAYERS\nVault Entry\nMAP\nempty\nPLAYER\n1\nMAP\n0\nGM\n0\nANNOTATIONS\n0 / 4 shown\nFOG\noff\nMeasurement\nEffects\nDrawings\nNotes\nCircle\nLine\nCone\nNo save\nStrength\nDexterity\nConstitution\nIntelligence\nWisdom\nCharisma\nSnap templates to grid\nShow Measurement annotations\nShow Effects annotations\nShow Drawings annotations\nShow Notes annotations\nNo ann",
+        "workspaceHeight": 800
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [
+          "Create",
+          "Review 0",
+          "Memory 0",
+          "Ops 0"
+        ],
+        "bodyScrollWidth": 1280,
+        "clientHeight": 800,
+        "clientWidth": 1280,
+        "horizontalOverflow": false,
+        "inspectorTabs": [],
+        "liveOk": false,
+        "manageOk": false,
+        "mapLayerStack": "",
+        "mode": "AI Studio",
+        "prepOk": false,
+        "sceneBoardHeight": null,
+        "scrollHeight": 800,
+        "scrollWidth": 1280,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nAI STUDIO\nBuild, review, and apply generated table content\nReady\nVault Entry\nPERMISSIONED AI\nAI Workspace\n0\nreview\n1\nmissing art\n0\nfailed\nCreate\nReview\n0\nMemory\n0\nOps\n0\nINTENT\n\nChoose what Codex should prepare.\n\nEncounter + Scene\nDraft a reviewable encounter and table setup.\nGenerate Map\nCreate raster battlemap art for the selected scene.\nMissing Token Art\nGenerate art for every scene token missing imagery.\nSelected Token Art\nGenerate art for the currently selected token.\nSession Recap\nDraft a recap propos",
+        "workspaceHeight": 800
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 1280,
+        "clientHeight": 800,
+        "clientWidth": 1280,
+        "horizontalOverflow": false,
+        "inspectorTabs": [],
+        "liveOk": false,
+        "manageOk": false,
+        "mapLayerStack": "",
+        "mode": "Manage",
+        "prepOk": false,
+        "sceneBoardHeight": null,
+        "scrollHeight": 800,
+        "scrollWidth": 1280,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nMANAGE\nThe Ember Vault\nClose\nAccount\nProfile, workspace, password, and MFA\n1\nCampaign\nCreate, edit, archive, and permissions\nactive\nPeople\nInvites and table joining\n0\nScenes\nScene creation, ordering, maps, and activation\n1\nArchives\nPortable exports, imports, and recovery\nCAMPAIGN SETUP\nD&D 5.5e SRD\nGeneric Fantasy\nStellar Frontiers\nMystic Noir\nPrivate\nInvite only\nPublic\nINITIAL SCENE\nPLAYERS AND PERMISSIONS\nCreate starter invite\nPlayer - owns characters and plays live\nObserver - read-only table access\nAssistant G",
+        "workspaceHeight": 800
+      }
+    ],
+    "manageCategories": [
+      "AccountProfile, workspace, password, and MFA1",
+      "CampaignCreate, edit, archive, and permissionsactive",
+      "PeopleInvites and table joining0",
+      "ScenesScene creation, ordering, maps, and activation1",
+      "ArchivesPortable exports, imports, and recovery"
+    ]
+  },
+  {
+    "viewport": "1000x800",
+    "checks": [
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 1000,
+        "clientHeight": 800,
+        "clientWidth": 1000,
+        "horizontalOverflow": false,
+        "inspectorTabs": [
+          "Actors",
+          "Chat",
+          "Combat"
+        ],
+        "liveOk": true,
+        "manageOk": false,
+        "mapLayerStack": "LayersVault EntryMapemptyPlayer1Map0GM0Annotations0 / 4 shownMeasurementEffectsDrawingsNotesFogoff",
+        "mode": "Live Table",
+        "prepOk": false,
+        "sceneBoardHeight": 170.703125,
+        "scrollHeight": 800,
+        "scrollWidth": 1000,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nDND-5E-SRD\nThe Ember Vault\nReady\nVault Entry\nNo actor\nValen Ash\nFriendly\nNeutral\nHostile\n1x1\n2x2\n3x3\n4x4\nToken\n100%\nLAYERS\nVault Entry\nMAP\nempty\nPLAYER\n1\nMAP\n0\nGM\n0\nANNOTATIONS\n0 / 4 shown\nFOG\noff\nVA\nActors\nChat\nCombat\nSELECTED ACTOR\nValen Ash\ngeneric-fantasy\nToken Valen Ash\nOpen Full Sheet\nHP\n18/22\nAC\nn/a\nConditions\nNone\nResources\nFocus 3\nPLACEMENT\n1 actors\nValen Ash\nStats\nLoadout\nActions\nCompendium\nHP\n18/22\nAC\nn/a\nConditions\n0\nResources\n1\nCurrent HP\nActor conditions\nToken\nValen Ash\nVision\n0 bright / 180 ",
+        "workspaceHeight": 608
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 1000,
+        "clientHeight": 800,
+        "clientWidth": 1000,
+        "horizontalOverflow": false,
+        "inspectorTabs": [
+          "Actors",
+          "Journal",
+          "Content",
+          "SDK"
+        ],
+        "liveOk": true,
+        "manageOk": false,
+        "mapLayerStack": "LayersVault EntryMapemptyPlayer1Map0GM0Annotations0 / 4 shownMeasurementEffectsDrawingsNotesFogoff",
+        "mode": "Prep",
+        "prepOk": true,
+        "sceneBoardHeight": 94.703125,
+        "scrollHeight": 800,
+        "scrollWidth": 1000,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nPREP\nPrep scenes, assets, journals, and imports\nReady\nAll scenes (1)\n1 of 1 scenes\n0 selected\nVault Entry\nNo actor\nValen Ash\nFriendly\nNeutral\nHostile\n1x1\n2x2\n3x3\n4x4\nToken\n100%\nLAYERS\nVault Entry\nMAP\nempty\nPLAYER\n1\nMAP\n0\nGM\n0\nANNOTATIONS\n0 / 4 shown\nFOG\noff\nMeasurement\nEffects\nDrawings\nNotes\nCircle\nLine\nCone\nNo save\nStrength\nDexterity\nConstitution\nIntelligence\nWisdom\nCharisma\nSnap templates to grid\nShow Measurement annotations\nShow Effects annotations\nShow Drawings annotations\nShow Notes annotations\nNo ann",
+        "workspaceHeight": 608
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [
+          "Create",
+          "Review 0",
+          "Memory 0",
+          "Ops 0"
+        ],
+        "bodyScrollWidth": 1000,
+        "clientHeight": 800,
+        "clientWidth": 1000,
+        "horizontalOverflow": false,
+        "inspectorTabs": [],
+        "liveOk": false,
+        "manageOk": false,
+        "mapLayerStack": "",
+        "mode": "AI Studio",
+        "prepOk": false,
+        "sceneBoardHeight": null,
+        "scrollHeight": 800,
+        "scrollWidth": 1000,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nAI STUDIO\nBuild, review, and apply generated table content\nReady\nVault Entry\nPERMISSIONED AI\nAI Workspace\n0\nreview\n1\nmissing art\n0\nfailed\nCreate\nReview\n0\nMemory\n0\nOps\n0\nINTENT\n\nChoose what Codex should prepare.\n\nEncounter + Scene\nDraft a reviewable encounter and table setup.\nGenerate Map\nCreate raster battlemap art for the selected scene.\nMissing Token Art\nGenerate art for every scene token missing imagery.\nSelected Token Art\nGenerate art for the currently selected token.\nSession Recap\nDraft a recap propos",
+        "workspaceHeight": 608
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 1000,
+        "clientHeight": 800,
+        "clientWidth": 1000,
+        "horizontalOverflow": false,
+        "inspectorTabs": [],
+        "liveOk": false,
+        "manageOk": false,
+        "mapLayerStack": "",
+        "mode": "Manage",
+        "prepOk": false,
+        "sceneBoardHeight": null,
+        "scrollHeight": 800,
+        "scrollWidth": 1000,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nMANAGE\nThe Ember Vault\nClose\nAccount\nProfile, workspace, password, and MFA\n1\nCampaign\nCreate, edit, archive, and permissions\nactive\nPeople\nInvites and table joining\n0\nScenes\nScene creation, ordering, maps, and activation\n1\nArchives\nPortable exports, imports, and recovery\nCAMPAIGN SETUP\nD&D 5.5e SRD\nGeneric Fantasy\nStellar Frontiers\nMystic Noir\nPrivate\nInvite only\nPublic\nINITIAL SCENE\nPLAYERS AND PERMISSIONS\nCreate starter invite\nPlayer - owns characters and plays live\nObserver - read-only table access\nAssistant G",
+        "workspaceHeight": 608
+      }
+    ],
+    "manageCategories": [
+      "AccountProfile, workspace, password, and MFA1",
+      "CampaignCreate, edit, archive, and permissionsactive",
+      "PeopleInvites and table joining0",
+      "ScenesScene creation, ordering, maps, and activation1",
+      "ArchivesPortable exports, imports, and recovery"
+    ]
+  },
+  {
+    "viewport": "760x800",
+    "checks": [
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 760,
+        "clientHeight": 800,
+        "clientWidth": 760,
+        "horizontalOverflow": false,
+        "inspectorTabs": [
+          "Actors",
+          "Chat",
+          "Combat"
+        ],
+        "liveOk": true,
+        "manageOk": false,
+        "mapLayerStack": "LayersVault EntryMapemptyPlayer1Map0GM0Annotations0 / 4 shownMeasurementEffectsDrawingsNotesFogoff",
+        "mode": "Live Table",
+        "prepOk": false,
+        "sceneBoardHeight": 154.703125,
+        "scrollHeight": 800,
+        "scrollWidth": 760,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nDND-5E-SRD\nThe Ember Vault\nReady\nVault Entry\nNo actor\nValen Ash\nFriendly\nNeutral\nHostile\n1x1\n2x2\n3x3\n4x4\nToken\n100%\nLAYERS\nVault Entry\nMAP\nempty\nPLAYER\n1\nMAP\n0\nGM\n0\nANNOTATIONS\n0 / 4 shown\nFOG\noff\nVA\nActors\nChat\nCombat\nSELECTED ACTOR\nValen Ash\ngeneric-fantasy\nToken Valen Ash\nOpen Full Sheet\nHP\n18/22\nAC\nn/a\nConditions\nNone\nResources\nFocus 3\nPLACEMENT\n1 actors\nValen Ash\nStats\nLoadout\nActions\nCompendium\nHP\n18/22\nAC\nn/a\nConditions\n0\nResources\n1\nCurrent HP\nActor conditions\nToken\nValen Ash\nVision\n0 bright / 180 ",
+        "workspaceHeight": 608
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 760,
+        "clientHeight": 800,
+        "clientWidth": 760,
+        "horizontalOverflow": false,
+        "inspectorTabs": [
+          "Actors",
+          "Journal",
+          "Content",
+          "SDK"
+        ],
+        "liveOk": true,
+        "manageOk": false,
+        "mapLayerStack": "LayersVault EntryMapemptyPlayer1Map0GM0Annotations0 / 4 shownMeasurementEffectsDrawingsNotesFogoff",
+        "mode": "Prep",
+        "prepOk": true,
+        "sceneBoardHeight": 136,
+        "scrollHeight": 800,
+        "scrollWidth": 760,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nPREP\nPrep scenes, assets, journals, and imports\nReady\nAll scenes (1)\n1 of 1 scenes\n0 selected\nVault Entry\nNo actor\nValen Ash\nFriendly\nNeutral\nHostile\n1x1\n2x2\n3x3\n4x4\nToken\n100%\nLAYERS\nVault Entry\nMAP\nempty\nPLAYER\n1\nMAP\n0\nGM\n0\nANNOTATIONS\n0 / 4 shown\nFOG\noff\nMeasurement\nEffects\nDrawings\nNotes\nCircle\nLine\nCone\nNo save\nStrength\nDexterity\nConstitution\nIntelligence\nWisdom\nCharisma\nSnap templates to grid\nShow Measurement annotations\nShow Effects annotations\nShow Drawings annotations\nShow Notes annotations\nNo ann",
+        "workspaceHeight": 608
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [
+          "Create",
+          "Review 0",
+          "Memory 0",
+          "Ops 0"
+        ],
+        "bodyScrollWidth": 760,
+        "clientHeight": 800,
+        "clientWidth": 760,
+        "horizontalOverflow": false,
+        "inspectorTabs": [],
+        "liveOk": false,
+        "manageOk": false,
+        "mapLayerStack": "",
+        "mode": "AI Studio",
+        "prepOk": false,
+        "sceneBoardHeight": null,
+        "scrollHeight": 800,
+        "scrollWidth": 760,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nAI STUDIO\nBuild, review, and apply generated table content\nReady\nVault Entry\nPERMISSIONED AI\nAI Workspace\n0\nreview\n1\nmissing art\n0\nfailed\nCreate\nReview\n0\nMemory\n0\nOps\n0\nINTENT\n\nChoose what Codex should prepare.\n\nEncounter + Scene\nDraft a reviewable encounter and table setup.\nGenerate Map\nCreate raster battlemap art for the selected scene.\nMissing Token Art\nGenerate art for every scene token missing imagery.\nSelected Token Art\nGenerate art for the currently selected token.\nSession Recap\nDraft a recap propos",
+        "workspaceHeight": 608
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 760,
+        "clientHeight": 800,
+        "clientWidth": 760,
+        "horizontalOverflow": false,
+        "inspectorTabs": [],
+        "liveOk": false,
+        "manageOk": false,
+        "mapLayerStack": "",
+        "mode": "Manage",
+        "prepOk": false,
+        "sceneBoardHeight": null,
+        "scrollHeight": 800,
+        "scrollWidth": 760,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nMANAGE\nThe Ember Vault\nClose\nAccount\nProfile, workspace, password, and MFA\n1\nCampaign\nCreate, edit, archive, and permissions\nactive\nPeople\nInvites and table joining\n0\nScenes\nScene creation, ordering, maps, and activation\n1\nArchives\nPortable exports, imports, and recovery\nCAMPAIGN SETUP\nD&D 5.5e SRD\nGeneric Fantasy\nStellar Frontiers\nMystic Noir\nPrivate\nInvite only\nPublic\nINITIAL SCENE\nPLAYERS AND PERMISSIONS\nCreate starter invite\nPlayer - owns characters and plays live\nObserver - read-only table access\nAssistant G",
+        "workspaceHeight": 608
+      }
+    ],
+    "manageCategories": [
+      "AccountProfile, workspace, password, and MFA1",
+      "CampaignCreate, edit, archive, and permissionsactive",
+      "PeopleInvites and table joining0",
+      "ScenesScene creation, ordering, maps, and activation1",
+      "ArchivesPortable exports, imports, and recovery"
+    ]
+  },
+  {
+    "viewport": "390x844",
+    "checks": [
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 390,
+        "clientHeight": 844,
+        "clientWidth": 390,
+        "horizontalOverflow": false,
+        "inspectorTabs": [
+          "Actors",
+          "Chat",
+          "Combat"
+        ],
+        "liveOk": true,
+        "manageOk": false,
+        "mapLayerStack": "LayersVault EntryMapemptyPlayer1Map0GM0Annotations0 / 4 shownMeasurementEffectsDrawingsNotesFogoff",
+        "mode": "Live Table",
+        "prepOk": false,
+        "sceneBoardHeight": 160,
+        "scrollHeight": 844,
+        "scrollWidth": 390,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nDND-5E-SRD\nThe Ember Vault\nReady\nVault Entry\nNo actor\nValen Ash\nFriendly\nNeutral\nHostile\n1x1\n2x2\n3x3\n4x4\nToken\n100%\nLAYERS\nVault Entry\nMAP\nempty\nPLAYER\n1\nMAP\n0\nGM\n0\nANNOTATIONS\n0 / 4 shown\nFOG\noff\nVA\nActors\nChat\nCombat\nSELECTED ACTOR\nValen Ash\ngeneric-fantasy\nToken Valen Ash\nOpen Full Sheet\nHP\n18/22\nAC\nn/a\nConditions\nNone\nResources\nFocus 3\nPLACEMENT\n1 actors\nValen Ash\nStats\nLoadout\nActions\nCompendium\nHP\n18/22\nAC\nn/a\nConditions\n0\nResources\n1\nCurrent HP\nActor conditions\nToken\nValen Ash\nVision\n0 bright / 180 ",
+        "workspaceHeight": 641.453125
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 390,
+        "clientHeight": 844,
+        "clientWidth": 390,
+        "horizontalOverflow": false,
+        "inspectorTabs": [
+          "Actors",
+          "Journal",
+          "Content",
+          "SDK"
+        ],
+        "liveOk": true,
+        "manageOk": false,
+        "mapLayerStack": "LayersVault EntryMapemptyPlayer1Map0GM0Annotations0 / 4 shownMeasurementEffectsDrawingsNotesFogoff",
+        "mode": "Prep",
+        "prepOk": true,
+        "sceneBoardHeight": 160,
+        "scrollHeight": 844,
+        "scrollWidth": 390,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nPREP\nPrep scenes, assets, journals, and imports\nReady\nAll scenes (1)\n1 of 1 scenes\n0 selected\nVault Entry\nNo actor\nValen Ash\nFriendly\nNeutral\nHostile\n1x1\n2x2\n3x3\n4x4\nToken\n100%\nLAYERS\nVault Entry\nMAP\nempty\nPLAYER\n1\nMAP\n0\nGM\n0\nANNOTATIONS\n0 / 4 shown\nFOG\noff\nMeasurement\nEffects\nDrawings\nNotes\nCircle\nLine\nCone\nNo save\nStrength\nDexterity\nConstitution\nIntelligence\nWisdom\nCharisma\nSnap templates to grid\nShow Measurement annotations\nShow Effects annotations\nShow Drawings annotations\nShow Notes annotations\nNo ann",
+        "workspaceHeight": 641.453125
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [
+          "Create",
+          "Review 0",
+          "Memory 0",
+          "Ops 0"
+        ],
+        "bodyScrollWidth": 390,
+        "clientHeight": 844,
+        "clientWidth": 390,
+        "horizontalOverflow": false,
+        "inspectorTabs": [],
+        "liveOk": false,
+        "manageOk": false,
+        "mapLayerStack": "",
+        "mode": "AI Studio",
+        "prepOk": false,
+        "sceneBoardHeight": null,
+        "scrollHeight": 844,
+        "scrollWidth": 390,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nSYNCED\nAI STUDIO\nBuild, review, and apply generated table content\nReady\nVault Entry\nPERMISSIONED AI\nAI Workspace\n0\nreview\n1\nmissing art\n0\nfailed\nCreate\nReview\n0\nMemory\n0\nOps\n0\nINTENT\n\nChoose what Codex should prepare.\n\nEncounter + Scene\nDraft a reviewable encounter and table setup.\nGenerate Map\nCreate raster battlemap art for the selected scene.\nMissing Token Art\nGenerate art for every scene token missing imagery.\nSelected Token Art\nGenerate art for the currently selected token.\nSession Recap\nDraft a recap propos",
+        "workspaceHeight": 641.453125
+      },
+      {
+        "aiOk": false,
+        "aiTabs": [],
+        "bodyScrollWidth": 390,
+        "clientHeight": 844,
+        "clientWidth": 390,
+        "horizontalOverflow": false,
+        "inspectorTabs": [],
+        "liveOk": false,
+        "manageOk": false,
+        "mapLayerStack": "",
+        "mode": "Manage",
+        "prepOk": false,
+        "sceneBoardHeight": null,
+        "scrollHeight": 844,
+        "scrollWidth": 390,
+        "visibleTextHead": "OpenTabletop\nAPI-FIRST VTT ENGINE\nThe Ember Vault\nSESSION\nDemo GM - owner\nDemo Player - player\n\nDemo GM\n\nLive Table\nPrep\nAI Studio\nManage\nPARTY\n1 actors\nVA\nValen Ash\ngeneric-fantasy\nMANAGE\nThe Ember Vault\nClose\nAccount\nProfile, workspace, password, and MFA\n1\nCampaign\nCreate, edit, archive, and permissions\nactive\nPeople\nInvites and table joining\n0\nScenes\nScene creation, ordering, maps, and activation\n1\nArchives\nPortable exports, imports, and recovery\nCAMPAIGN SETUP\nD&D 5.5e SRD\nGeneric Fantasy\nStellar Frontiers\nMystic Noir\nPrivate\nInvite only\nPublic\nINITIAL SCENE\nPLAYERS AND PERMISSIONS\nCreate starter invite\nPlayer - owns characters and plays live\nObserver - read-only table access\nAssistant G",
+        "workspaceHeight": 641.453125
+      }
+    ],
+    "manageCategories": [
+      "AccountProfile, workspace, password, and MFA1",
+      "CampaignCreate, edit, archive, and permissionsactive",
+      "PeopleInvites and table joining0",
+      "ScenesScene creation, ordering, maps, and activation1",
+      "ArchivesPortable exports, imports, and recovery"
+    ]
+  }
+]

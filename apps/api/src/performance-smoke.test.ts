@@ -22,7 +22,7 @@ describe("performance smoke", () => {
     const address = app.server.address();
     if (!address || typeof address === "string") throw new Error("Performance smoke API did not bind to a TCP port");
 
-    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string) => RealtimeTestSocket }).WebSocket;
+    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string, protocols?: string[]) => RealtimeTestSocket }).WebSocket;
     if (!maybeWebSocket) throw new Error("WebSocket is not available in this Node runtime");
     const TestWebSocket = maybeWebSocket;
     const clients: Array<Awaited<ReturnType<typeof openRealtimeClient>>> = [];
@@ -89,16 +89,106 @@ describe("performance smoke", () => {
   });
 });
 
+describe("performance soak", () => {
+  it("keeps repeated large tabletop reads and exports inside soak budgets", async () => {
+    const store = new MemoryStateStore();
+    seedLargeCampaignSurface(store, { tokenCount: 400, chatCount: 700, journalCount: 120 });
+    const app = await buildApp({ store });
+    const samples = {
+      tokenRead: [] as number[],
+      chatExport: [] as number[],
+      compendiumLookup: [] as number[],
+      campaignExport: [] as number[],
+      cycleTotal: [] as number[]
+    };
+
+    try {
+      for (let cycle = 0; cycle < 6; cycle += 1) {
+        const cycleStarted = performance.now();
+        const tokenRead = await measureRequest("soak scene token read", () =>
+          app.inject({
+            method: "GET",
+            url: "/api/v1/scenes/scn_vault_entry/tokens",
+            headers: gmHeaders
+          })
+        );
+        samples.tokenRead.push(tokenRead.durationMs);
+        expect((tokenRead.response.json() as unknown[]).length).toBeGreaterThanOrEqual(400);
+
+        const chatExport = await measureRequest("soak chat history export", () =>
+          app.inject({
+            method: "GET",
+            url: "/api/v1/campaigns/camp_demo/chat/export",
+            headers: gmHeaders
+          })
+        );
+        samples.chatExport.push(chatExport.durationMs);
+        expect((chatExport.response.json() as { count: number }).count).toBeGreaterThanOrEqual(700);
+
+        const compendium = await measureRequest("soak rules compendium lookup", () =>
+          app.inject({
+            method: "GET",
+            url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/compendium",
+            headers: gmHeaders
+          })
+        );
+        samples.compendiumLookup.push(compendium.durationMs);
+        expect((compendium.response.json() as { entries: unknown[] }).entries.length).toBeGreaterThan(50);
+
+        const campaignExport = await measureRequest("soak campaign archive export", () =>
+          app.inject({
+            method: "GET",
+            url: "/api/v1/campaigns/camp_demo/export",
+            headers: gmHeaders
+          })
+        );
+        samples.campaignExport.push(campaignExport.durationMs);
+        const campaignExportBody = campaignExport.response.json() as { data: { tokens: unknown[]; chat: unknown[]; journals: unknown[] } };
+        expect(campaignExportBody.data.tokens.length).toBeGreaterThanOrEqual(400);
+        expect(campaignExportBody.data.chat.length).toBeGreaterThanOrEqual(700);
+        expect(campaignExportBody.data.journals.length).toBeGreaterThanOrEqual(120);
+
+        samples.cycleTotal.push(performance.now() - cycleStarted);
+      }
+
+      expect(percentile(samples.tokenRead, 0.95), "soak token read p95").toBeLessThan(1200);
+      expect(percentile(samples.chatExport, 0.95), "soak chat export p95").toBeLessThan(1800);
+      expect(percentile(samples.compendiumLookup, 0.95), "soak compendium lookup p95").toBeLessThan(1200);
+      expect(percentile(samples.campaignExport, 0.95), "soak campaign export p95").toBeLessThan(3000);
+      expect(percentile(samples.cycleTotal, 0.95), "soak full cycle p95").toBeLessThan(4500);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 async function timeRequest(name: string, maxMs: number, action: () => Promise<{ statusCode: number; json(): unknown }>) {
-  const started = performance.now();
-  const response = await action();
-  const durationMs = performance.now() - started;
-  expect(response.statusCode, name).toBe(200);
+  const { response, durationMs } = await measureRequest(name, action);
   expect(durationMs, `${name} duration`).toBeLessThan(maxMs);
   return response;
 }
 
-function seedLargeCampaignSurface(store: MemoryStateStore): void {
+async function measureRequest(name: string, action: () => Promise<{ statusCode: number; json(): unknown }>) {
+  const started = performance.now();
+  const response = await action();
+  const durationMs = performance.now() - started;
+  expect(response.statusCode, name).toBe(200);
+  return { response, durationMs };
+}
+
+function percentile(values: number[], fraction: number) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1));
+  return sorted[index] ?? 0;
+}
+
+function seedLargeCampaignSurface(
+  store: MemoryStateStore,
+  options: { tokenCount?: number; chatCount?: number; journalCount?: number } = {}
+): void {
+  const tokenCount = options.tokenCount ?? 250;
+  const chatCount = options.chatCount ?? 400;
+  const journalCount = options.journalCount ?? 80;
   const users = [2, 3].map((index) =>
     createTimestamped("usr_perf", {
       id: `usr_perf_player_${index}`,
@@ -114,7 +204,7 @@ function seedLargeCampaignSurface(store: MemoryStateStore): void {
       role: "player"
     }) satisfies CampaignMember
   );
-  const tokens = Array.from({ length: 250 }, (_, index) =>
+  const tokens = Array.from({ length: tokenCount }, (_, index) =>
     createTimestamped("tok_perf", {
       id: `tok_perf_${index}`,
       sceneId: "scn_vault_entry",
@@ -134,7 +224,7 @@ function seedLargeCampaignSurface(store: MemoryStateStore): void {
     }) satisfies Token
   );
 
-  const chat = Array.from({ length: 400 }, (_, index) =>
+  const chat = Array.from({ length: chatCount }, (_, index) =>
     createTimestamped("msg_perf", {
       id: `msg_perf_${index}`,
       campaignId: "camp_demo",
@@ -147,7 +237,7 @@ function seedLargeCampaignSurface(store: MemoryStateStore): void {
     }) satisfies ChatMessage
   );
 
-  const journals = Array.from({ length: 80 }, (_, index) =>
+  const journals = Array.from({ length: journalCount }, (_, index) =>
     createTimestamped("jnl_perf", {
       id: `jnl_perf_${index}`,
       campaignId: "camp_demo",
@@ -171,7 +261,7 @@ function seedLargeCampaignSurface(store: MemoryStateStore): void {
 }
 
 async function openRealtimeClient(
-  TestWebSocket: new (url: string) => {
+  TestWebSocket: new (url: string, protocols?: string[]) => {
     onopen: (() => void) | null;
     onmessage: ((event: { data: unknown }) => void) | null;
     onerror: ((event: unknown) => void) | null;
@@ -190,7 +280,7 @@ async function openRealtimeClient(
   expect(login.statusCode).toBe(200);
 
   const token = login.json().token as string;
-  const socket = new TestWebSocket(`ws://127.0.0.1:${port}/api/v1/realtime?campaignId=camp_demo&sessionToken=${encodeURIComponent(token)}`);
+  const socket = new TestWebSocket(`ws://127.0.0.1:${port}/api/v1/realtime?campaignId=camp_demo`, ["otte.v1", `otte.auth.${token}`]);
   const messages: RealtimeEventMessage[] = [];
   const waiters: Array<{ predicate: (message: RealtimeEventMessage) => boolean; resolve: (message: RealtimeEventMessage) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }> = [];
 

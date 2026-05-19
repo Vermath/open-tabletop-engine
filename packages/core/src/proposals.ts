@@ -118,10 +118,14 @@ function bucketForEntity(state: EngineState, entity: string): any[] {
       return state.journals;
     case "chat":
       return state.chat;
+    case "roll":
+      return state.rolls;
     case "encounter":
       return state.encounters;
     case "combat":
       return state.combats;
+    case "asset":
+      return state.assets;
     default:
       throw new Error(`Unsupported proposal entity: ${entity}`);
   }

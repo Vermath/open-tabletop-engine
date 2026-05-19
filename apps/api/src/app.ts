@@ -2,12 +2,12 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { EchoAiProvider, OpenAiResponsesProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
+import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
-import { CodexAppServerProvider, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
+import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
+import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
+import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type RulesActionResolutionResult, type RulesSaveOutcome, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginInventoryWarning, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -21,9 +21,42 @@ export interface BuildAppOptions {
   assetStorage?: AssetStorage;
   maxAssetBytes?: number;
   aiProvider?: AiProvider;
+  imageAssetGenerator?: ImageAssetGenerator;
   pluginRegistry?: PluginRuntimeRegistry;
   pluginRoot?: string;
   rateLimit?: Partial<RateLimitConfig>;
+}
+
+export interface ImageAssetGenerationInput {
+  kind: "map" | "token";
+  prompt: string;
+  name: string;
+  size?: string;
+  quality?: string;
+  outputFormat?: "png" | "jpeg" | "webp";
+  campaignId: string;
+  userId: string;
+}
+
+export interface GeneratedImageAsset {
+  body: Buffer;
+  mimeType: string;
+  provider: string;
+  model?: string;
+  revisedPrompt?: string;
+  sourcePrompt: string;
+}
+
+export interface ImageAssetGenerator {
+  readonly id: string;
+  readonly label: string;
+  generate(input: ImageAssetGenerationInput): Promise<GeneratedImageAsset>;
+}
+
+interface AiToolRuntime {
+  imageAssetGenerator: ImageAssetGenerator;
+  assetStorage: AssetStorage;
+  maxAssetBytes: number;
 }
 
 interface AdminAuditLogQuery {
@@ -359,6 +392,7 @@ type AdminAuthConnectionProvider = "oidc" | "scim";
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const store = options.store ?? new FileStateStore();
+  repairLegacyMemoryExtractionThreads(store);
   const uploadDir = resolve(options.uploadDir ?? process.env.OTTE_UPLOAD_DIR ?? "uploads");
   const assetStorage = options.assetStorage ?? createAssetStorage({ uploadDir });
   const assetCleanupScheduler = createAssetCleanupScheduler(store, assetStorage, uploadDir);
@@ -367,6 +401,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const hub = new RealtimeHub();
   const broadcast = (event: EngineEvent) => hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId));
   const aiProvider = options.aiProvider ?? createConfiguredAiProvider();
+  const imageAssetGenerator = options.imageAssetGenerator ?? createConfiguredImageAssetGenerator();
+  const aiToolRuntime: AiToolRuntime = { imageAssetGenerator, assetStorage, maxAssetBytes };
   const pluginRegistry = options.pluginRegistry ?? loadPluginRegistry({ pluginRoot: options.pluginRoot });
   const app = Fastify({ logger: true });
 
@@ -1435,6 +1471,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
     const result = rejectStaleAiProposals(store, { ...(request.body ?? {}), actorUserId: adminUserId });
+    const rejectedProposalIds = new Set(result.proposals.map((proposal) => proposal.id));
+    const assetCleanup = result.dryRun
+      ? undefined
+      : await cleanupRejectedProposalAssets(
+          store,
+          assetStorage,
+          uploadDir,
+          store.state.proposals.filter((proposal) => rejectedProposalIds.has(proposal.id)),
+          adminUserId,
+          result.reason
+        );
     appendServerAuditLog(store, adminUserId, {
       action: "admin.aiProposals.rejectStale",
       targetType: "proposal",
@@ -1444,11 +1491,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         includeApproved: result.includeApproved,
         matched: result.matched,
         updated: result.updated,
-        reason: result.reason
+        reason: result.reason,
+        assetCleanup
       }
     });
     store.save();
-    return result;
+    return assetCleanup ? { ...result, assetCleanup } : result;
   });
 
   app.post<{ Body: { dryRun?: boolean; campaignId?: string; limit?: number | string; reason?: string } }>("/api/v1/admin/ai/threads/stale/fail", async (request, reply) => {
@@ -1493,7 +1541,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Body: { dryRun?: boolean; campaignId?: string; threadId?: string; toolCallId?: string; limit?: number | string } }>("/api/v1/admin/ai/tool-calls/retry", async (request, reply) => {
     const adminUserId = requireServerAdmin(store, reply, request.headers);
     if (typeof adminUserId !== "string") return adminUserId;
-    const result = await retryFailedAiToolCalls(store, request.body ?? {});
+    const result = await retryFailedAiToolCalls(store, aiToolRuntime, request.body ?? {});
     appendServerAuditLog(store, adminUserId, {
       action: "admin.aiToolCalls.retry",
       targetType: "ai_tool_call",
@@ -2234,7 +2282,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const url = new URL(request.url ?? "/api/v1/realtime", "http://localhost");
     const campaignId = url.searchParams.get("campaignId") ?? undefined;
     const userId = userIdFromRequest(store, request.url, request.headers);
-    if (!userId || (campaignId && !canCampaign(store, userId, campaignId, "campaign.read"))) {
+    if (!userId || !campaignId || !canCampaign(store, userId, campaignId, "campaign.read")) {
       socket.send(JSON.stringify({ error: "unauthorized" }));
       socket.close();
       return;
@@ -2743,7 +2791,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{ Params: { assetId: string }; Body: { expiresInSeconds?: number; disposition?: "inline" | "attachment" } }>("/api/v1/assets/:assetId/delivery-url", async (request, reply) => {
     const body = request.body ?? {};
-    const asset = store.state.assets.find((item) => item.id === request.params.assetId);
+    const asset = findAssetForDelivery(store, request.params.assetId);
     if (!asset) return notFound(reply, "Asset not found");
     if (!isAssetDeliverable(asset)) return assetUnavailable(reply, asset);
     const allowed = requireCampaignPermission(store, reply, request.headers, asset.campaignId, "scene.read");
@@ -2782,7 +2830,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.get<{ Params: { assetId: string }; Querystring: { userId?: string; expiresAt?: string; signature?: string; disposition?: "inline" | "attachment" } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
-    const asset = store.state.assets.find((item) => item.id === request.params.assetId);
+    const asset = findAssetForDelivery(store, request.params.assetId);
     if (!asset) return notFound(reply, "Asset not found");
     const accessMode = request.query.signature ? "signed" : "session";
     if (!isAssetDeliverable(asset)) {
@@ -3791,7 +3839,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return notFound(reply, "Scene not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "token.create");
     if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const normalizedLayer = normalizeTokenLayerPatch(request.body);
+    if ("error" in normalizedLayer) return badRequest(reply, normalizedLayer.error);
+    const defaultOwnerUserIds = request.body.ownerUserIds === undefined && !canReadHiddenTokens(store, userId, campaignId) ? [userId] : [];
     const token = createTimestamped("tok", {
       sceneId: scene.id,
       actorId: request.body.actorId,
@@ -3801,6 +3853,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       width: request.body.width ?? scene.gridSize,
       height: request.body.height ?? scene.gridSize,
       rotation: request.body.rotation ?? 0,
+      layer: normalizedLayer.patch.layer ?? "player",
       hidden: Boolean(request.body.hidden),
       locked: Boolean(request.body.locked),
       visionEnabled: request.body.visionEnabled ?? true,
@@ -3809,7 +3862,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       dimVisionRadius: request.body.dimVisionRadius,
       disposition: request.body.disposition ?? "neutral",
       imageAssetId: request.body.imageAssetId,
-      ownerUserIds: [],
+      ownerUserIds: defaultOwnerUserIds,
       notes: "",
       conditions: [],
       auras: [],
@@ -3820,7 +3873,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if ("error" in normalizedVision) return badRequest(reply, normalizedVision.error);
     const normalizedTabletop = normalizeTokenTabletopPatch(request.body, campaignMemberUserIds(store, campaignId));
     if ("error" in normalizedTabletop) return badRequest(reply, normalizedTabletop.error);
-    Object.assign(token, normalizedVision.patch, normalizedTabletop.patch);
+    Object.assign(token, normalizedVision.patch, normalizedLayer.patch, normalizedTabletop.patch);
     store.state.tokens.push(token);
     store.save();
     broadcast(
@@ -3843,6 +3896,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!token) return notFound(reply, "Token not found");
     const userId = currentUserId(store, request.headers)!;
     if (!isTokenVisibleToUser(store, userId, campaignId, token)) return notFound(reply, "Token not found");
+    if (!canReadHiddenTokens(store, userId, campaignId) && tokenLayer(token) !== "player") return forbidden(reply, "Only player layer tokens can be targeted");
     if (typeof request.body.targeted !== "boolean") return badRequest(reply, "targeted must be a boolean");
     const targetedByUserIds = new Set(token.targetedByUserIds ?? []);
     if (request.body.targeted) targetedByUserIds.add(userId);
@@ -3868,7 +3922,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const campaignId = campaignIdForToken(store, request.params.tokenId);
     if (!campaignId) return notFound(reply, "Token not found");
     const moved = request.body.x !== undefined || request.body.y !== undefined;
-    const permission: PermissionName = moved ? "token.move" : "token.update";
+    const moveOnly = moved && tokenMoveOnlyPatch(request.body);
+    const permission: PermissionName = moveOnly ? "token.move" : "token.update";
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, permission);
     if (allowed !== true) return allowed;
     const token = store.state.tokens.find((item) => item.id === request.params.tokenId);
@@ -3881,7 +3936,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if ("error" in normalizedVision) return badRequest(reply, normalizedVision.error);
     const normalizedTabletop = normalizeTokenTabletopPatch(request.body, campaignMemberUserIds(store, campaignId));
     if ("error" in normalizedTabletop) return badRequest(reply, normalizedTabletop.error);
-    Object.assign(token, request.body, normalizedVision.patch, normalizedTabletop.patch, { updatedAt: nowIso() });
+    const normalizedLayer = normalizeTokenLayerPatch(request.body);
+    if ("error" in normalizedLayer) return badRequest(reply, normalizedLayer.error);
+    const normalizedMove = normalizeTokenMovePatch(request.body);
+    if ("error" in normalizedMove) return badRequest(reply, normalizedMove.error);
+    const patch = moveOnly ? normalizedMove.patch : { ...request.body, ...normalizedVision.patch, ...normalizedLayer.patch, ...normalizedTabletop.patch };
+    Object.assign(token, patch, { updatedAt: nowIso() });
     store.save();
     if (scene) {
       broadcast(
@@ -4117,7 +4177,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermission(store, reply, request.headers, request.body.campaignId, "dice.roll");
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers)!;
-    const rolled = rollFormula(request.body.formula);
+    let rolled: ReturnType<typeof rollFormula>;
+    try {
+      rolled = rollFormula(request.body.formula);
+    } catch (error) {
+      return badRequest(reply, error instanceof Error ? error.message : "Invalid dice formula");
+    }
     const roll = createTimestamped("roll", {
       campaignId: request.body.campaignId,
       userId,
@@ -4622,20 +4687,26 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<Proposal> }>("/api/v1/campaigns/:campaignId/proposals", async (request, reply) => {
-    const proposalPermission: PermissionName = request.body.createdByType === "ai" || request.body.createdByType === "plugin" ? "ai.proposeChanges" : "campaign.update";
+    const createdByType = request.body.createdByType ?? "user";
+    if (createdByType !== "user" && createdByType !== "ai" && createdByType !== "plugin") return badRequest(reply, "Proposal createdByType must be user, ai, or plugin");
+    const proposalPermission: PermissionName = createdByType === "ai" || createdByType === "plugin" ? "ai.proposeChanges" : "campaign.update";
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, proposalPermission);
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const preparedChanges = prepareProposalChanges(store, request.params.campaignId, userId, request.body.changesJson ?? []);
+    if ("error" in preparedChanges) return badRequest(reply, preparedChanges.message);
+    const missingPermission = missingProposalChangePermission(preparedChanges.changes, permissionsForUser(store, userId, request.params.campaignId));
+    if (missingPermission) return forbidden(reply, `Missing permission: ${missingPermission}`);
     const proposal: Proposal = createTimestamped("prop", {
       campaignId: request.params.campaignId,
       createdByUserId: userId,
-      createdByType: request.body.createdByType ?? "user",
+      createdByType,
       sourceId: request.body.sourceId,
       title: request.body.title ?? "Untitled Proposal",
       summary: request.body.summary ?? "",
       status: "pending" as const,
-      changesJson: request.body.changesJson ?? [],
+      changesJson: preparedChanges.changes,
       diffJson: request.body.diffJson ?? {},
       approvalRequired: true
     });
@@ -4687,9 +4758,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     const previousStatus = proposal.status;
+    let assetCleanup: Awaited<ReturnType<typeof cleanupRejectedProposalAssets>> | undefined;
     try {
       const rejected = rejectProposal(proposal, userId);
       Object.assign(proposal, rejected);
+      assetCleanup = await cleanupRejectedProposalAssets(store, assetStorage, uploadDir, [proposal], userId, "Rejected proposal");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Proposal could not be rejected";
       return reply.code(409).send({ error: "proposal_not_ready", message });
@@ -4710,7 +4783,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           createdByType: proposal.createdByType,
           sourceId: proposal.sourceId,
           changeCount: proposal.changesJson.length,
-          entities: [...new Set(proposal.changesJson.map((change) => change.entity))]
+          entities: [...new Set(proposal.changesJson.map((change) => change.entity))],
+          assetCleanup
         }
       })
     );
@@ -4734,6 +4808,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     try {
+      const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson);
+      if ("error" in preparedChanges) throw new Error(preparedChanges.message);
+      proposal.changesJson = preparedChanges.changes;
       store.replace(applyProposal(store.state, proposal, userId));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Proposal could not be applied";
@@ -4794,7 +4871,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!request.body.entities || request.body.entities.length === 0) return reply.code(400).send({ error: "content_import_entities_required" });
 
     const source = normalizeContentImportSource(request.body.source, userId);
-    const entities = request.body.entities.map((entity) => normalizeContentImportEntity(entity, source));
+    let entities: ContentImportEntity[];
+    try {
+      entities = request.body.entities.map((entity) => normalizeContentImportEntity(entity, source));
+    } catch (error) {
+      return badRequest(reply, errorMessage(error));
+    }
     const batch = createTimestamped("cimp", {
       campaignId: request.params.campaignId,
       status: "previewed" as const,
@@ -5064,7 +5146,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const providerTools = tools.filter((tool) => aiToolAvailableToCaller(tool, permissions));
     thread.advertisedToolNames = providerTools.map((tool) => tool.name);
     thread.advertisedTools = providerTools.map((tool) => ({ name: tool.name, requiredPermissions: [...tool.requiredPermissions], permissionSafe: aiToolPermissionSafe(tool) }));
-    const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions);
+    const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions, aiToolRuntime);
     let content = "";
     const events: AiProviderEvent[] = [];
     let providerEventsSeen = 0;
@@ -5212,7 +5294,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const toolCall = store.state.aiToolCalls.find((call) => call.id === request.params.toolCallId);
     const thread = toolCall ? threadById.get(toolCall.threadId) : undefined;
     if (!toolCall || thread?.campaignId !== request.params.campaignId) return notFound(reply, "AI tool call not found");
-    const result = await retryFailedAiToolCalls(store, {
+    const result = await retryFailedAiToolCalls(store, aiToolRuntime, {
       dryRun: request.body?.dryRun === true,
       campaignId: request.params.campaignId,
       toolCallId: request.params.toolCallId,
@@ -5269,35 +5351,64 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     const sourceText = request.body.sourceText?.trim() || defaultMemoryExtractionSource(store, request.params.campaignId);
-    const thread = createTimestamped("thr", {
-      campaignId: request.params.campaignId,
-      userId,
-      provider: aiProvider.id,
-      title: "Memory Extraction"
-    });
-    store.state.aiThreads.push(thread);
+    const startedAtMs = Date.now();
+    const startedAt = new Date(startedAtMs).toISOString();
     const permissions = permissionsForUser(store, userId, request.params.campaignId);
     const context = buildPermissionFilteredContext({
       state: store.state,
       campaignId: request.params.campaignId,
       permissions
     });
+    const prompt = `Extract durable campaign memory from this source text:\n${sourceText}`;
+    const thread: AiThread = createTimestamped("thr", {
+      campaignId: request.params.campaignId,
+      userId,
+      provider: aiProvider.id,
+      title: "Memory Extraction",
+      prompt,
+      status: "running" as const,
+      startedAt,
+      retryAttempts: 0,
+      eventCount: 0,
+      toolCallCount: 0,
+      usage: createInitialAiUsage(prompt, context)
+    });
+    store.state.aiThreads.push(thread);
     let providerOutput = "";
     const events: AiProviderEvent[] = [];
-    for await (const event of aiProvider.stream({
-      threadId: thread.id,
-      messages: [
-        {
-          role: "user",
-          content: `Extract durable campaign memory from this source text:\n${sourceText}`
+    try {
+      for await (const event of aiProvider.stream({
+        threadId: thread.id,
+        messages: [
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        tools: [],
+        context
+      })) {
+        events.push(event);
+        if (event.type === "usage.reported") {
+          mergeAiUsage(thread, event.usage);
         }
-      ],
-      tools: [],
-      context
-    })) {
-      events.push(event);
-      if (event.type === "message.delta") providerOutput += event.delta;
-      if (event.type === "message.completed" && !providerOutput) providerOutput = event.content;
+        if (event.type === "message.delta") providerOutput += event.delta;
+        if (event.type === "message.completed" && !providerOutput) providerOutput = event.content;
+      }
+      recordAiResponseUsage(thread, providerOutput);
+      thread.assistantMessage = providerOutput;
+      completeAiThread(thread, startedAtMs, 0, events.length, 0);
+    } catch (error) {
+      recordAiResponseUsage(thread, providerOutput);
+      thread.assistantMessage = providerOutput;
+      failAiThread(thread, startedAtMs, 0, events.length, 0, error);
+      store.save();
+      return reply.code(502).send({
+        error: "ai_provider_failed",
+        message: thread.providerError,
+        thread,
+        events
+      });
     }
     const memory = createTimestamped("mem", {
       campaignId: request.params.campaignId,
@@ -5413,10 +5524,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{
     Params: { campaignId: string };
-    Body: { prompt: string; difficulty?: string };
+    Body: { prompt: string; difficulty?: string; sceneName?: string; sceneWidth?: number; sceneHeight?: number; gridSize?: number };
   }>("/api/v1/campaigns/:campaignId/ai/encounter-design", async (request, reply) => {
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
-    if (allowed !== true) return allowed;
+    const encounterDesignPermissions: PermissionName[] = ["ai.proposeChanges", "campaign.update", "scene.create"];
+    for (const permission of encounterDesignPermissions) {
+      const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, permission);
+      if (allowed !== true) return allowed;
+    }
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     const tokenIds = store.state.tokens.filter((token) => store.state.scenes.some((scene) => scene.campaignId === request.params.campaignId && scene.id === token.sceneId)).map((token) => token.id);
@@ -5427,21 +5541,37 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       tokenIds,
       difficulty: request.body.difficulty ?? "standard"
     }) satisfies Encounter;
+    const scene = createAiEncounterScene({
+      state: store.state,
+      campaignId: request.params.campaignId,
+      encounterId: encounter.id,
+      encounterName: encounter.name,
+      summary: request.body.prompt,
+      name: request.body.sceneName,
+      width: request.body.sceneWidth,
+      height: request.body.sceneHeight,
+      gridSize: request.body.gridSize
+    });
     const proposal: Proposal = createTimestamped("prop", {
       campaignId: request.params.campaignId,
       createdByUserId: userId,
       createdByType: "ai" as const,
       title: "Encounter Designer Draft",
-      summary: `Drafted ${encounter.difficulty} encounter: ${request.body.prompt}`,
+      summary: `Drafted ${encounter.difficulty} encounter and new scene ${scene.name}: ${request.body.prompt}`,
       status: "pending" as const,
       changesJson: [
         {
           entity: "encounter" as const,
           action: "create" as const,
-          data: encounter
+          data: { ...encounter }
+        },
+        {
+          entity: "scene" as const,
+          action: "create" as const,
+          data: { ...scene }
         }
       ],
-      diffJson: { tokenIds },
+      diffJson: { tokenIds, sceneId: scene.id },
       approvalRequired: true
     });
     proposal.history = [proposalHistoryEntry({ action: "created", status: "pending", at: proposal.createdAt, actorUserId: userId, actorType: "ai", auditAction: "ai.proposal.created" })];
@@ -5455,8 +5585,43 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: proposal
       })
     );
-    return { proposal, encounter };
+    return { proposal, encounter, scene };
   });
+
+  async function executeAiAssetProposalRoute(
+    request: FastifyRequest<{ Params: { campaignId: string }; Body: unknown }>,
+    reply: FastifyReply,
+    toolName: "generate_map_asset" | "generate_token_asset"
+  ): Promise<FastifyReply | unknown> {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const permissions = permissionsForUser(store, userId, request.params.campaignId);
+    const result = await executeAiTool(createAiThreadTools(), toolName, request.body ?? {}, createAiToolContext(store, request.params.campaignId, userId, permissions, aiToolRuntime));
+    const output = result.output;
+    if (result.failed) return sendAiToolErrorReply(reply, output);
+    let proposal: Proposal | undefined;
+    if (isProposalToolOutput(output)) {
+      proposal = store.state.proposals.find((item) => item.id === output.proposalId);
+    }
+    store.save();
+    if (proposal) {
+      broadcast(
+        createEvent({
+          campaignId: proposal.campaignId,
+          type: "ai.proposal.created",
+          targetId: proposal.id,
+          payload: proposal
+        })
+      );
+    }
+    return output;
+  }
+
+  app.post<{ Params: { campaignId: string }; Body: unknown }>("/api/v1/campaigns/:campaignId/ai/generate-map-asset", async (request, reply) => executeAiAssetProposalRoute(request, reply, "generate_map_asset"));
+
+  app.post<{ Params: { campaignId: string }; Body: unknown }>("/api/v1/campaigns/:campaignId/ai/generate-token-asset", async (request, reply) => executeAiAssetProposalRoute(request, reply, "generate_token_asset"));
 
   app.get("/api/v1/plugins", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
@@ -6211,6 +6376,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       spellSlotLevel?: number;
       resourceAmount?: number;
       useFreeResource?: boolean;
+      targetActorIds?: string[];
+      effectChoice?: string;
+      saveOutcomes?: Record<string, RulesSaveOutcome>;
+      reactionUse?: boolean;
+      rechargeCheck?: number;
+      commit?: boolean;
+      preview?: boolean;
     };
   }>("/api/v1/campaigns/:campaignId/systems/:systemId/actors/:actorId/roll", async (request, reply) => {
     const canReadActor = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "actor.read");
@@ -6230,12 +6402,214 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       quickRolls[0];
     if (!rollDefinition) return notFound(reply, "No system roll is available for this actor");
     const actionOptions = systemActionOptions(request.body.spellSlotLevel, request.body.resourceAmount, request.body.useFreeResource);
-    const resolvedFormula = systemActionFormula(actor, items, rollDefinition.id, actionOptions) ?? rollDefinition.formula;
+    const baseResolvedFormula = systemActionFormula(actor, items, rollDefinition.id, actionOptions) ?? rollDefinition.formula;
+    const resolvedRollDefinition = { ...rollDefinition, formula: baseResolvedFormula };
+    const targetActorIdsForResolution = systemRollTargetActorIds(request.body.targetActorIds, request.body.targetActorId, request.body.applyEffect ? actor.id : undefined);
+    const targetActorsForResolution: Actor[] = [];
+    for (const targetActorId of targetActorIdsForResolution) {
+      const targetActor = store.state.actors.find((item) => item.id === targetActorId && item.campaignId === request.params.campaignId);
+      if (!targetActor) return notFound(reply, "Target actor not found");
+      targetActorsForResolution.push(targetActor);
+    }
+    if (request.body.consumeResources && !canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
+    const activeCombat = actor.systemId === DND_5E_SRD_SYSTEM_ID ? store.state.combats.find((combat) => combat.campaignId === request.params.campaignId && combat.active) : undefined;
+    if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
+      const resolutionOptions = {
+        ...actionOptions,
+        consumeResources: Boolean(request.body.consumeResources),
+        applyEffect: Boolean(request.body.applyEffect),
+        commit: request.body.commit ?? (request.body.preview === true ? false : true),
+        effectChoice: request.body.effectChoice,
+        saveOutcomes: request.body.saveOutcomes,
+        reactionUse: request.body.reactionUse,
+        rechargeCheck: request.body.rechargeCheck
+      };
+      let resolution = resolveDnd5eSrdAction({
+        actor,
+        items,
+        roll: resolvedRollDefinition,
+        targets: targetActorsForResolution.map((targetActor) => ({ actor: targetActor, saveOutcome: request.body.saveOutcomes?.[targetActor.id] })),
+        combat: activeCombat,
+        options: resolutionOptions,
+        now: nowIso()
+      });
+      if (resolution.commitMode === "preview") {
+        return {
+          quickRoll: { ...resolvedRollDefinition, formula: resolution.rolls[0]?.formula ?? resolvedRollDefinition.formula },
+          resolution,
+          actor,
+          sheet: systemSheet(actor, actorItems(store, actor))
+        };
+      }
+      if (resolution.blocked) return conflict(reply, resolution.blocked.reason);
+      const pendingMessage = dnd5eSrdCommitInputMessage(resolution, Boolean(request.body.applyEffect));
+      if (pendingMessage) return pendingResolution(reply, pendingMessage, resolution, actor, systemSheet(actor, actorItems(store, actor)));
+
+      const rolledResults = resolution.rolls.map((resolutionRoll) => ({ resolutionRoll, rolled: rollFormula(resolutionRoll.formula) }));
+      const defaultRollTotal = rolledResults[0]?.rolled.total;
+      const rollTotalByTarget = new Map<string, number>();
+      for (const result of rolledResults) {
+        if (result.resolutionRoll.targetActorId) rollTotalByTarget.set(result.resolutionRoll.targetActorId, result.rolled.total);
+      }
+      resolution = resolveDnd5eSrdAction({
+        actor,
+        items,
+        roll: resolvedRollDefinition,
+        targets: targetActorsForResolution.map((targetActor) => ({
+          actor: targetActor,
+          saveOutcome: request.body.saveOutcomes?.[targetActor.id],
+          rollTotal: rollTotalByTarget.get(targetActor.id) ?? defaultRollTotal
+        })),
+        combat: activeCombat,
+        options: resolutionOptions,
+        now: nowIso()
+      });
+      if (resolution.blocked) return conflict(reply, resolution.blocked.reason);
+      const finalPendingMessage = dnd5eSrdCommitInputMessage(resolution, Boolean(request.body.applyEffect));
+      if (finalPendingMessage) return pendingResolution(reply, finalPendingMessage, resolution, actor, systemSheet(actor, actorItems(store, actor)));
+      for (const actorUpdate of resolution.actorUpdates) {
+        const updateActor = store.state.actors.find((item) => item.id === actorUpdate.actorId && item.campaignId === request.params.campaignId);
+        if (!updateActor) return notFound(reply, "Actor update target not found");
+        if (!canUpdateActorForUser(store, userId, updateActor)) return forbidden(reply, "Missing permission: actor.update");
+      }
+
+      const actorDataUpdates = new Map<string, Record<string, unknown>>();
+      for (const actorUpdate of resolution.actorUpdates) actorDataUpdates.set(actorUpdate.actorId, actorUpdate.after);
+      const itemUpdates = resolution.itemUpdates;
+      const effects = resolution.effects as unknown as SystemRollEffectResult[];
+      const effect = effects[0];
+      let combatUpdated = false;
+      if (request.body.applyEffect && activeCombat) {
+        for (const condition of resolution.conditions) {
+          combatUpdated = syncDnd5eSrdResolvedConditionToCombat(activeCombat, condition) || combatUpdated;
+        }
+      }
+      const actorsToBroadcast = new Set<string>();
+      if (actorDataUpdates.size > 0 || itemUpdates.length > 0) {
+        const updatedAt = nowIso();
+        for (const [actorId, data] of actorDataUpdates) {
+          const storedActor = store.state.actors.find((item) => item.id === actorId && item.campaignId === request.params.campaignId);
+          if (storedActor) {
+            storedActor.data = data;
+            storedActor.updatedAt = updatedAt;
+            actorsToBroadcast.add(storedActor.id);
+          }
+        }
+        for (const updatedItem of itemUpdates) {
+          const storedItem = store.state.items.find((item) => item.id === updatedItem.id && item.campaignId === actor.campaignId);
+          if (storedItem) {
+            storedItem.data = updatedItem.data;
+            storedItem.updatedAt = updatedAt;
+          }
+        }
+      }
+      const rolls = rolledResults.map(({ resolutionRoll, rolled }) =>
+        createTimestamped("roll", {
+          campaignId: request.params.campaignId,
+          userId,
+          formula: resolutionRoll.formula,
+          label: resolutionRoll.targetActorId && rolledResults.length > 1 ? `${rollDefinition.label} (${targetActorsForResolution.find((targetActor) => targetActor.id === resolutionRoll.targetActorId)?.name ?? resolutionRoll.targetActorId})` : rollDefinition.label,
+          visibility: request.body.visibility ?? "public",
+          terms: rolled.terms,
+          total: rolled.total
+        }) satisfies DiceRoll
+      );
+      const chatMessages = rolls.map((roll) =>
+        createTimestamped("msg", {
+          campaignId: request.params.campaignId,
+          userId,
+          type: "roll" as const,
+          body: `${actor.name} ${roll.label}: ${roll.formula} = ${roll.total}`,
+          visibility: roll.visibility,
+          recipientUserIds: [],
+          rollId: roll.id
+        }) satisfies ChatMessage
+      );
+      store.state.rolls.push(...rolls);
+      store.state.chat.push(...chatMessages);
+      store.state.auditLogs.push(
+        createTimestamped("audit", {
+          campaignId: request.params.campaignId,
+          actorUserId: userId,
+          actorType: "user" as const,
+          action: "system.actor.roll",
+          targetType: "actor",
+          targetId: actor.id,
+          after: {
+            systemId: actor.systemId,
+            actorId: actor.id,
+            rollId: rollDefinition.id,
+            label: rollDefinition.label,
+            actorType: actor.type,
+            consumeResources: Boolean(request.body.consumeResources),
+            applyEffect: Boolean(request.body.applyEffect),
+            hasUsage: Boolean(resolution.usage),
+            hasEffect: Boolean(effect),
+            hasResolution: true,
+            commitMode: resolution.commitMode,
+            targetActorIds: targetActorIdsForResolution
+          }
+        })
+      );
+      if (combatUpdated && activeCombat) activeCombat.updatedAt = nowIso();
+      store.save();
+      const updatedActors = [...actorsToBroadcast]
+        .map((actorId) => store.state.actors.find((item) => item.id === actorId && item.campaignId === request.params.campaignId))
+        .filter((item): item is Actor => Boolean(item));
+      for (const updatedActor of updatedActors) broadcastActorUpdated(broadcast, updatedActor);
+      if (combatUpdated && activeCombat) {
+        broadcast(
+          createEvent({
+            campaignId: activeCombat.campaignId,
+            type: "combat.turnChanged",
+            targetId: activeCombat.id,
+            payload: activeCombat
+          })
+        );
+      }
+      for (const roll of rolls) {
+        broadcast(
+          createEvent({
+            campaignId: roll.campaignId,
+            type: "dice.roll.created",
+            actorUserId: userId,
+            targetId: roll.id,
+            payload: roll
+          })
+        );
+      }
+      for (const message of chatMessages) {
+        broadcast(
+          createEvent({
+            campaignId: message.campaignId,
+            type: "chat.message.created",
+            actorUserId: userId,
+            targetId: message.id,
+            payload: message
+          })
+        );
+      }
+      const responseActor = store.state.actors.find((item) => item.id === actor.id && item.campaignId === request.params.campaignId) ?? actor;
+      return {
+        roll: rolls[0],
+        rolls,
+        chat: chatMessages[0],
+        chatMessages,
+        quickRoll: { ...rollDefinition, formula: resolution.rolls[0]?.formula ?? resolvedRollDefinition.formula },
+        usage: resolution.usage,
+        effect,
+        effects,
+        resolution,
+        actor: responseActor,
+        updatedActors,
+        sheet: systemSheet(responseActor, actorItems(store, responseActor))
+      };
+    }
+    const resolvedFormula = baseResolvedFormula;
     let usage: SystemActionUseResult | undefined;
     const actorDataUpdates = new Map<string, Record<string, unknown>>();
     let itemUpdates: Item[] = [];
     if (request.body.consumeResources) {
-      if (!canUpdateActorForUser(store, userId, actor)) return forbidden(reply, "Missing permission: actor.update");
       try {
         usage = useSystemAction(actor, items, rollDefinition.id, actionOptions);
       } catch (error) {
@@ -6248,16 +6622,33 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
     const rolled = rollFormula(resolvedFormula);
     let effect: SystemRollEffectResult | undefined;
+    const effects: SystemRollEffectResult[] = [];
+    let combatUpdated = false;
     if (request.body.applyEffect) {
-      const targetActorId = request.body.targetActorId ?? actor.id;
-      const targetActor = store.state.actors.find((item) => item.id === targetActorId && item.campaignId === request.params.campaignId);
-      if (!targetActor) return notFound(reply, "Target actor not found");
-      if (!canUpdateActorForUser(store, userId, targetActor)) return forbidden(reply, "Missing permission: actor.update");
-      const targetForEffect = { ...targetActor, data: actorDataUpdates.get(targetActor.id) ?? targetActor.data };
-      const applied = applySystemRollEffect(targetForEffect, rollDefinition, rolled.total, { allowConditionEffects: true });
-      if ("error" in applied) return badRequest(reply, applied.message);
-      actorDataUpdates.set(targetActor.id, applied.data);
-      effect = applied.effect;
+      const effectTargetActorIds = systemRollTargetActorIds(request.body.targetActorIds, request.body.targetActorId, actor.id);
+      for (const targetActorId of effectTargetActorIds) {
+        const targetActor = store.state.actors.find((item) => item.id === targetActorId && item.campaignId === request.params.campaignId);
+        if (!targetActor) return notFound(reply, "Target actor not found");
+        if (!canUpdateActorForUser(store, userId, targetActor)) return forbidden(reply, "Missing permission: actor.update");
+        const saveOutcome = request.body.saveOutcomes?.[targetActor.id];
+        const adjustedTotal = systemRollEffectTotalForSave(resolvedRollDefinition, rolled.total, saveOutcome);
+        if (adjustedTotal === undefined) continue;
+        const targetForEffect = { ...targetActor, data: actorDataUpdates.get(targetActor.id) ?? targetActor.data };
+        const applied = applySystemRollEffect(targetForEffect, rollDefinition, adjustedTotal, { allowConditionEffects: true });
+        if ("error" in applied) return badRequest(reply, applied.message);
+        let appliedData = applied.data;
+        if (targetActor.systemId === DND_5E_SRD_SYSTEM_ID && applied.effect.type === "damage" && applied.effect.amount > 0) {
+          const concentrationOutcome = request.body.saveOutcomes?.[`${targetActor.id}:concentration`];
+          const concentration = resolveDnd5eSrdConcentrationDamage({ ...targetActor, data: appliedData }, applied.effect.amount, concentrationOutcome, nowIso(), rollDefinition.id);
+          appliedData = concentration.data;
+        }
+        if (targetActor.systemId === DND_5E_SRD_SYSTEM_ID && activeCombat && applied.effect.type === "condition") {
+          combatUpdated = syncDnd5eSrdRollConditionToCombat(activeCombat, targetActor.id, rollDefinition) || combatUpdated;
+        }
+        actorDataUpdates.set(targetActor.id, appliedData);
+        effects.push(...(applied.effects ?? [applied.effect]));
+      }
+      effect = effects[0];
     }
     const actorsToBroadcast = new Set<string>();
     if (actorDataUpdates.size > 0 || itemUpdates.length > 0) {
@@ -6315,14 +6706,27 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           consumeResources: Boolean(request.body.consumeResources),
           applyEffect: Boolean(request.body.applyEffect),
           hasUsage: Boolean(usage),
-          hasEffect: Boolean(effect)
+          hasEffect: Boolean(effect),
+          hasResolution: false,
+          targetActorIds: request.body.targetActorIds
         }
       })
     );
+    if (combatUpdated && activeCombat) activeCombat.updatedAt = nowIso();
     store.save();
     for (const actorId of actorsToBroadcast) {
       const updatedActor = store.state.actors.find((item) => item.id === actorId && item.campaignId === request.params.campaignId);
       if (updatedActor) broadcastActorUpdated(broadcast, updatedActor);
+    }
+    if (combatUpdated && activeCombat) {
+      broadcast(
+        createEvent({
+          campaignId: activeCombat.campaignId,
+          type: "combat.turnChanged",
+          targetId: activeCombat.id,
+          payload: activeCombat
+        })
+      );
     }
     broadcast(
       createEvent({
@@ -6342,7 +6746,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: message
       })
     );
-    return { roll, chat: message, quickRoll: { ...rollDefinition, formula: resolvedFormula }, usage, effect, actor, sheet: systemSheet(actor, actorItems(store, actor)) };
+    const responseActor = store.state.actors.find((item) => item.id === actor.id && item.campaignId === request.params.campaignId) ?? actor;
+    const updatedActors = [...actorsToBroadcast]
+      .map((actorId) => store.state.actors.find((item) => item.id === actorId && item.campaignId === request.params.campaignId))
+      .filter((item): item is Actor => Boolean(item));
+    return { roll, chat: message, quickRoll: { ...rollDefinition, formula: resolvedFormula }, usage, effect, effects, actor: responseActor, updatedActors, sheet: systemSheet(responseActor, actorItems(store, responseActor)) };
   });
 
   app.post<{
@@ -6454,23 +6862,162 @@ function createConfiguredAiProvider(): AiProvider {
       approvalMode: "proposal"
     });
   }
-  if (process.env.OTTE_AI_PROVIDER === "openai" || process.env.OTTE_AI_PROVIDER === "openai-responses") {
-    return new OpenAiResponsesProvider({
-      apiKey: process.env.OPENAI_API_KEY,
-      baseUrl: process.env.OPENAI_BASE_URL,
-      model: process.env.OPENAI_MODEL,
-      organization: process.env.OPENAI_ORGANIZATION ?? process.env.OPENAI_ORG_ID,
-      project: process.env.OPENAI_PROJECT ?? process.env.OPENAI_PROJECT_ID,
-      timeoutMs: aiProviderTimeoutMs()
+  if (process.env.OTTE_AI_PROVIDER === "codex-app-server") {
+    const providerTimeoutMs = aiProviderTimeoutMs();
+    return new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: process.env.OTTE_CODEX_APP_SERVER_URL,
+        cwd: process.env.OTTE_CODEX_APP_SERVER_CWD,
+        model: process.env.OTTE_CODEX_MODEL,
+        modelProvider: process.env.OTTE_CODEX_MODEL_PROVIDER,
+        requestTimeoutMs: providerTimeoutMs,
+        turnTimeoutMs: providerTimeoutMs === undefined ? undefined : Math.max(providerTimeoutMs, 180_000)
+      }),
+      approvalMode: "proposal"
     });
   }
+  if (process.env.OTTE_AI_PROVIDER === "openai" || process.env.OTTE_AI_PROVIDER === "openai-responses") {
+    return new UnavailableAiProvider("Direct OpenAI API-key providers are disabled. Start `codex app-server --listen ws://127.0.0.1:4500`, authenticate Codex, and set OTTE_AI_PROVIDER=codex-app-server.");
+  }
   return new EchoAiProvider();
+}
+
+function createConfiguredImageAssetGenerator(): ImageAssetGenerator {
+  const explicitProvider = normalizedEnvValue(process.env.OTTE_AI_IMAGE_PROVIDER);
+  const configuredProvider = explicitProvider ?? (isCodexAppServerProviderConfigured() ? "codex-app-server" : "disabled");
+  if (configuredProvider === "codex-app-server") {
+    const timeoutMs = aiImageProviderTimeoutMs();
+    return new CodexAppServerImageAssetGenerator({
+      url: process.env.OTTE_CODEX_APP_SERVER_URL,
+      cwd: process.env.OTTE_CODEX_APP_SERVER_CWD,
+      model: process.env.OTTE_CODEX_IMAGE_MODEL ?? process.env.OTTE_CODEX_MODEL,
+      modelProvider: process.env.OTTE_CODEX_MODEL_PROVIDER,
+      requestTimeoutMs: timeoutMs,
+      turnTimeoutMs: timeoutMs
+    });
+  }
+  if (configuredProvider === "disabled" || configuredProvider === "off" || configuredProvider === "none") {
+    return new UnavailableImageAssetGenerator("AI image generation is not configured. Start `codex app-server --listen ws://127.0.0.1:4500`, authenticate Codex, and set OTTE_AI_PROVIDER=codex-app-server.");
+  }
+  return new UnavailableImageAssetGenerator(`Unsupported OTTE_AI_IMAGE_PROVIDER "${configuredProvider}". OpenTabletop image generation uses Codex app-server only; use OTTE_AI_IMAGE_PROVIDER=codex-app-server or leave it unset with OTTE_AI_PROVIDER=codex-app-server.`);
+}
+
+function normalizedEnvValue(value: string | undefined): string | undefined {
+  const normalized = value?.trim().toLowerCase();
+  return normalized ? normalized : undefined;
+}
+
+function isCodexAppServerProviderConfigured(): boolean {
+  return process.env.OTTE_AI_PROVIDER === "codex-app-server";
+}
+
+class UnavailableAiProvider implements AiProvider {
+  readonly id = "unavailable-ai-provider";
+  readonly label = "Unavailable AI Provider";
+
+  constructor(private readonly message: string) {}
+
+  async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+    throw new Error(this.message);
+  }
+}
+
+interface CodexAppServerImageAssetGeneratorOptions {
+  url?: string;
+  cwd?: string;
+  model?: string;
+  modelProvider?: string;
+  requestTimeoutMs: number;
+  turnTimeoutMs: number;
+}
+
+class CodexAppServerImageAssetGenerator implements ImageAssetGenerator {
+  readonly id = "codex-app-server-image";
+  readonly label = "Codex App Server Image Generation";
+  private readonly transport: CodexAppServerWebSocketTransport;
+
+  constructor(private readonly options: CodexAppServerImageAssetGeneratorOptions) {
+    this.transport = new CodexAppServerWebSocketTransport({
+      url: options.url,
+      cwd: options.cwd,
+      model: options.model,
+      modelProvider: options.modelProvider,
+      requestTimeoutMs: options.requestTimeoutMs,
+      turnTimeoutMs: options.turnTimeoutMs
+    });
+  }
+
+  async generate(input: ImageAssetGenerationInput): Promise<GeneratedImageAsset> {
+    const image = await this.transport.generateImage({
+      prompt: imageGenerationPrompt(input),
+      outputFormat: input.outputFormat ?? "png",
+      baseInstructions: "You generate raster map and token artwork for OpenTabletop Engine virtual tabletop campaigns.",
+      developerInstructions: "Use Codex app-server image generation. Return an actual generated raster image result. Do not return SVG, HTML, markdown art, or a textual placeholder."
+    });
+    const body = Buffer.from(image.base64, "base64");
+    return {
+      body,
+      mimeType: mimeTypeForGeneratedImage(body, input.outputFormat ?? "png"),
+      provider: this.id,
+      model: this.options.model,
+      revisedPrompt: image.revisedPrompt,
+      sourcePrompt: input.prompt
+    };
+  }
+}
+
+class UnavailableImageAssetGenerator implements ImageAssetGenerator {
+  readonly id = "unavailable";
+  readonly label = "Unavailable Image Asset Generator";
+
+  constructor(private readonly message: string) {}
+
+  async generate(_input: ImageAssetGenerationInput): Promise<GeneratedImageAsset> {
+    throw new Error(this.message);
+  }
+}
+
+function imageGenerationPrompt(input: ImageAssetGenerationInput): string {
+  const subject = input.kind === "map" ? "top-down virtual tabletop battlemap" : "virtual tabletop token portrait";
+  const constraints =
+    input.kind === "map"
+      ? "Create a clear playable map with readable terrain, tactical cover, and no embedded labels or UI."
+      : "Create a centered token-ready character or creature image with a clean silhouette and no embedded text.";
+  const format = input.outputFormat ?? "png";
+  const size = input.size ? ` Requested size: ${input.size}.` : "";
+  const quality = input.quality ? ` Requested quality: ${input.quality}.` : "";
+  return `Generate one ${format.toUpperCase()} raster image for a ${subject}: ${input.prompt}\n${constraints}${size}${quality} Do not include text, captions, watermarks, UI chrome, SVG markup, or placeholder art.`;
+}
+
+function mimeTypeForImageFormat(format: "png" | "jpeg" | "webp"): string {
+  if (format === "jpeg") return "image/jpeg";
+  if (format === "webp") return "image/webp";
+  return "image/png";
+}
+
+function mimeTypeForGeneratedImage(body: Buffer, fallbackFormat: "png" | "jpeg" | "webp"): string {
+  const rasterMimeType = rasterMimeTypeForGeneratedImage(body);
+  if (rasterMimeType) return rasterMimeType;
+  return mimeTypeForImageFormat(fallbackFormat);
+}
+
+function rasterMimeTypeForGeneratedImage(body: Buffer): "image/png" | "image/jpeg" | "image/webp" | undefined {
+  if (body.length >= 8 && body[0] === 0x89 && body[1] === 0x50 && body[2] === 0x4e && body[3] === 0x47) return "image/png";
+  if (body.length >= 3 && body[0] === 0xff && body[1] === 0xd8 && body[2] === 0xff) return "image/jpeg";
+  if (body.length >= 12 && body.subarray(0, 4).toString("ascii") === "RIFF" && body.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  return undefined;
 }
 
 function aiProviderTimeoutMs(): number {
   const parsed = envNumber("OTTE_AI_PROVIDER_TIMEOUT_MS");
   if (parsed === undefined) return 30_000;
   return Math.max(0, Math.min(300_000, Math.floor(parsed)));
+}
+
+function aiImageProviderTimeoutMs(): number {
+  const parsed = envNumber("OTTE_AI_IMAGE_PROVIDER_TIMEOUT_MS");
+  if (parsed === undefined) return 240_000;
+  return Math.max(1, Math.min(300_000, Math.floor(parsed)));
 }
 
 function aiProviderRetryAttempts(): number {
@@ -6508,6 +7055,38 @@ function failAiThread(thread: AiThread, startedAtMs: number, retryAttempts: numb
   thread.providerError = aiProviderErrorMessage(error);
   finalizeAiUsage(thread);
   thread.updatedAt = failedAt;
+}
+
+function repairLegacyMemoryExtractionThreads(store: StateStore): number {
+  let repairedCount = 0;
+  const memoryByThreadId = new Map<string, AiMemoryFact>();
+  for (const fact of store.state.aiMemory) {
+    for (const sourceId of fact.sourceIds) {
+      if (sourceId.startsWith("thr_") && !memoryByThreadId.has(sourceId)) {
+        memoryByThreadId.set(sourceId, fact);
+      }
+    }
+  }
+
+  for (const thread of store.state.aiThreads) {
+    if (thread.status || thread.title !== "Memory Extraction") continue;
+    const memory = memoryByThreadId.get(thread.id);
+    if (!memory) continue;
+    const completedAt = thread.completedAt ?? memory.createdAt;
+    thread.status = "completed";
+    thread.completedAt = completedAt;
+    thread.failedAt = undefined;
+    thread.retryAttempts = thread.retryAttempts ?? 0;
+    thread.eventCount = thread.eventCount ?? 0;
+    thread.toolCallCount = thread.toolCallCount ?? 0;
+    thread.assistantMessage = thread.assistantMessage ?? memory.text;
+    thread.durationMs = thread.durationMs ?? Math.max(0, Date.parse(completedAt) - Date.parse(thread.startedAt ?? thread.createdAt));
+    thread.updatedAt = completedAt;
+    repairedCount += 1;
+  }
+
+  if (repairedCount > 0) store.save();
+  return repairedCount;
 }
 
 function aiProviderErrorMessage(error: unknown): string {
@@ -7077,7 +7656,7 @@ function aiOperationsRemediationQueue(input: {
   proposalReview: ReturnType<typeof summarizeAiProposalReview>;
   providerHealth: ReturnType<typeof summarizeAiProviderHealth>;
   replayOperations: ReturnType<typeof summarizeAiToolReplayOperations>;
-}) {
+  }) {
   const remediations: Array<{
     code: string;
     severity: "warning" | "error";
@@ -7086,7 +7665,7 @@ function aiOperationsRemediationQueue(input: {
     samples?: Array<Record<string, unknown>>;
   }> = [];
   if (input.runtimePosture.actionRequired) {
-    const runtimeConfigErrorReasons = ["openai_api_key_missing", "openai_timeout_disabled", "openai_base_url_invalid", "openai_base_url_insecure"];
+    const runtimeConfigErrorReasons = ["direct_openai_provider_disabled"];
     remediations.push({
       code: "review_ai_runtime_config",
       severity: input.runtimePosture.actionReasons.some((reason) => runtimeConfigErrorReasons.includes(reason)) ? "error" : "warning",
@@ -7098,14 +7677,7 @@ function aiOperationsRemediationQueue(input: {
           activeProvider: input.runtimePosture.activeProvider,
           providerMismatch: input.runtimePosture.providerMismatch,
           retryAttempts: input.runtimePosture.retryAttempts,
-          openaiApiKeyConfigured: input.runtimePosture.openai?.apiKeyConfigured,
-          openaiTimeoutMs: input.runtimePosture.openai?.timeoutMs,
-          openaiModel: input.runtimePosture.openai?.model,
-          openaiModelConfigured: input.runtimePosture.openai?.modelConfigured,
-          openaiBaseUrl: input.runtimePosture.openai?.baseUrl,
-          openaiBaseUrlValid: input.runtimePosture.openai?.baseUrlValid,
-          openaiBaseUrlIssue: input.runtimePosture.openai?.baseUrlIssue,
-          openaiBaseUrlInsecureInProduction: input.runtimePosture.openai?.baseUrlInsecureInProduction,
+          directOpenAi: input.runtimePosture.directOpenAi,
           costRatesConfigured: input.runtimePosture.costRatesConfigured,
           costRatesComplete: input.runtimePosture.costRatesComplete,
           invalidCostConfig: input.runtimePosture.invalidCostConfig,
@@ -7726,7 +8298,7 @@ function failStaleAiToolCalls(store: StateStore, options: { dryRun?: boolean; ca
   };
 }
 
-async function retryFailedAiToolCalls(store: StateStore, options: { dryRun?: boolean; campaignId?: string; threadId?: string; toolCallId?: string; limit?: number | string }) {
+async function retryFailedAiToolCalls(store: StateStore, runtime: AiToolRuntime, options: { dryRun?: boolean; campaignId?: string; threadId?: string; toolCallId?: string; limit?: number | string }) {
   const dryRun = options.dryRun === true;
   const campaignId = typeof options.campaignId === "string" && options.campaignId.trim() ? options.campaignId.trim() : undefined;
   const threadId = typeof options.threadId === "string" && options.threadId.trim() ? options.threadId.trim() : undefined;
@@ -7777,7 +8349,7 @@ async function retryFailedAiToolCalls(store: StateStore, options: { dryRun?: boo
       status: "started" as const
     });
     store.state.aiToolCalls.push(started);
-    const result = await executeAiTool(tools, call.toolName, originalInputCall.input, createAiToolContext(store, thread.campaignId, thread.userId, permissions));
+    const result = await executeAiTool(tools, call.toolName, originalInputCall.input, createAiToolContext(store, thread.campaignId, thread.userId, permissions, runtime));
     const completedCall = createTimestamped("tool", {
       threadId: thread.id,
       toolName: call.toolName,
@@ -8089,32 +8661,11 @@ function adminAiToolCallInfo(call: AiToolCall, threadById: Map<string, AiThread>
   };
 }
 
-function openAiBaseUrlRuntimeConfig(): { baseUrl: string; valid: boolean; issue?: string; insecureInProduction: boolean } {
-  const rawBaseUrl = process.env.OPENAI_BASE_URL?.trim();
-  const baseUrl = rawBaseUrl || "https://api.openai.com/v1";
-  try {
-    const parsed = new URL(baseUrl);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      return { baseUrl, valid: false, issue: "unsupported_protocol", insecureInProduction: false };
-    }
-    if (!parsed.hostname) {
-      return { baseUrl, valid: false, issue: "missing_hostname", insecureInProduction: false };
-    }
-    const hostname = parsed.hostname.toLowerCase();
-    const localHttpHostnames = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-    const insecureInProduction = process.env.NODE_ENV === "production" && parsed.protocol === "http:" && !localHttpHostnames.has(hostname);
-    return { baseUrl, valid: true, insecureInProduction };
-  } catch {
-    return { baseUrl, valid: false, issue: "invalid_url", insecureInProduction: false };
-  }
-}
-
 function aiProviderRuntimeConfig(aiProvider: AiProvider) {
   const selectedProvider = process.env.OTTE_AI_PROVIDER?.trim() || "local-echo";
-  const openAiSelected = aiProvider.id === "openai-responses" || selectedProvider === "openai" || selectedProvider === "openai-responses";
+  const directOpenAiSelected = aiProvider.id === "openai-responses" || selectedProvider === "openai" || selectedProvider === "openai-responses";
   const codexSelected = aiProvider.id === "codex-app-server" || selectedProvider === "codex-loopback";
   const costBudget = aiRuntimeNumberEnv("OTTE_AI_COST_BUDGET_USD");
-  const openAiBaseUrl = openAiBaseUrlRuntimeConfig();
   const inputCostRate = aiRuntimeNumberEnv("OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K");
   const outputCostRate = aiRuntimeNumberEnv("OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K");
   const providerThresholdConfig = [
@@ -8140,24 +8691,16 @@ function aiProviderRuntimeConfig(aiProvider: AiProvider) {
     invalidProviderThresholdConfig,
     invalidRuntimeControlConfig,
     costBudgetUsd: costBudget.value,
-    openai: openAiSelected
+    directOpenAi: directOpenAiSelected
       ? {
-          apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
-          model: process.env.OPENAI_MODEL?.trim() || "gpt-5-mini",
-          modelConfigured: Boolean(process.env.OPENAI_MODEL?.trim()),
-          baseUrl: openAiBaseUrl.baseUrl,
-          baseUrlValid: openAiBaseUrl.valid,
-          baseUrlIssue: openAiBaseUrl.issue,
-          baseUrlInsecureInProduction: openAiBaseUrl.insecureInProduction === true,
-          timeoutMs: aiProviderTimeoutMs(),
-          organizationConfigured: Boolean((process.env.OPENAI_ORGANIZATION ?? process.env.OPENAI_ORG_ID)?.trim()),
-          projectConfigured: Boolean((process.env.OPENAI_PROJECT ?? process.env.OPENAI_PROJECT_ID)?.trim())
+          disabled: true,
+          replacementProvider: "codex-app-server"
         }
       : undefined,
     codex: codexSelected
       ? {
           adapter: "codex-app-server",
-          transport: selectedProvider === "codex-loopback" ? "loopback" : "configured",
+          transport: selectedProvider === "codex-loopback" ? "loopback" : "app-server",
           approvalMode: "proposal"
         }
       : undefined
@@ -8168,11 +8711,7 @@ function summarizeAiRuntimePosture(runtime: ReturnType<typeof aiProviderRuntimeC
   const providerMismatch = runtime.selectedProvider !== runtime.activeProvider;
   const actionReasons = [
     providerMismatch ? "ai_provider_mismatch" : undefined,
-    runtime.openai && !runtime.openai.apiKeyConfigured ? "openai_api_key_missing" : undefined,
-    runtime.openai && runtime.openai.timeoutMs === 0 ? "openai_timeout_disabled" : undefined,
-    runtime.openai && process.env.NODE_ENV === "production" && !runtime.openai.modelConfigured ? "openai_model_default_in_production" : undefined,
-    runtime.openai && !runtime.openai.baseUrlValid ? "openai_base_url_invalid" : undefined,
-    runtime.openai && runtime.openai.baseUrlInsecureInProduction ? "openai_base_url_insecure" : undefined,
+    runtime.directOpenAi ? "direct_openai_provider_disabled" : undefined,
     !runtime.costRatesComplete ? "ai_cost_rates_partial" : undefined,
     runtime.invalidCostConfig.length > 0 ? "ai_cost_config_invalid" : undefined,
     runtime.invalidProviderThresholdConfig.length > 0 ? "ai_provider_threshold_config_invalid" : undefined,
@@ -8181,8 +8720,8 @@ function summarizeAiRuntimePosture(runtime: ReturnType<typeof aiProviderRuntimeC
   ].filter((reason): reason is string => Boolean(reason));
   const remediation =
     actionReasons.length === 0
-      ? "AI provider runtime configuration has the expected active provider, an API key when required, an explicit hosted model in production, a valid provider base URL, complete and numeric cost configuration when configured, numeric provider health thresholds, numeric timeout and retry controls, bounded provider timeouts, and at least one pre-event retry."
-      : "Configure the intended AI provider, missing provider credentials, an explicit OpenAI model for production, valid OpenAI provider base URLs with HTTPS in production, both AI token cost rates or neither, numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, enabled OpenAI provider timeouts outside local debugging, and a nonzero retry budget for transient provider failures.";
+      ? "AI provider runtime configuration has the expected active provider, Codex app-server access when live AI is selected, complete and numeric cost configuration when configured, numeric provider health thresholds, numeric timeout and retry controls, bounded provider timeouts, and at least one pre-event retry."
+      : "Configure the intended AI provider, use OTTE_AI_PROVIDER=codex-app-server for OpenAI-backed AI, start and authenticate Codex app-server, set both AI token cost rates or neither, keep numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, and keep a nonzero retry budget for transient provider failures.";
   return {
     selectedProvider: runtime.selectedProvider,
     activeProvider: runtime.activeProvider,
@@ -8193,18 +8732,7 @@ function summarizeAiRuntimePosture(runtime: ReturnType<typeof aiProviderRuntimeC
     invalidCostConfig: runtime.invalidCostConfig,
     invalidProviderThresholdConfig: runtime.invalidProviderThresholdConfig,
     invalidRuntimeControlConfig: runtime.invalidRuntimeControlConfig,
-    openai: runtime.openai
-      ? {
-          apiKeyConfigured: runtime.openai.apiKeyConfigured,
-          timeoutMs: runtime.openai.timeoutMs,
-          model: runtime.openai.model,
-          modelConfigured: runtime.openai.modelConfigured,
-          baseUrl: runtime.openai.baseUrl,
-          baseUrlValid: runtime.openai.baseUrlValid,
-          baseUrlIssue: runtime.openai.baseUrlIssue,
-          baseUrlInsecureInProduction: runtime.openai.baseUrlInsecureInProduction
-        }
-      : undefined,
+    directOpenAi: runtime.directOpenAi,
     codex: runtime.codex,
     actionRequired: actionReasons.length > 0,
     actionReasons,
@@ -8344,6 +8872,36 @@ function extractedMemoryText(providerOutput: string, sourceText: string): string
   return text.slice(0, 500);
 }
 
+function aiEncounterSceneName(encounterName: string): string {
+  const name = encounterName.trim() || "AI Draft Encounter";
+  return name.toLowerCase().endsWith("scene") ? name : `${name} Scene`;
+}
+
+function createAiEncounterScene(input: { state: EngineState; campaignId: string; encounterId: string; encounterName: string; summary: string; name?: string; width?: number; height?: number; gridSize?: number }): Scene {
+  return createTimestamped("scn", {
+    campaignId: input.campaignId,
+    name: input.name?.trim() || aiEncounterSceneName(input.encounterName),
+    width: input.width ?? 1200,
+    height: input.height ?? 800,
+    gridType: "square" as const,
+    gridSize: input.gridSize ?? 50,
+    folder: "ai/encounters",
+    active: false,
+    sortOrder: input.state.scenes.filter((item) => item.campaignId === input.campaignId).length + 1,
+    fog: [],
+    fogHistory: [],
+    walls: [],
+    lights: [],
+    annotations: [],
+    metadata: {
+      source: "ai_encounter_design",
+      encounterId: input.encounterId,
+      encounterName: input.encounterName,
+      prompt: input.summary.slice(0, 500)
+    }
+  }) satisfies Scene;
+}
+
 function createAiThreadTools(): AiToolDefinition[] {
   return [
     {
@@ -8377,14 +8935,18 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "draft_encounter",
-      description: "Draft a pending encounter proposal for GM approval.",
-      requiredPermissions: ["ai.proposeChanges", "campaign.update"],
+      description: "Draft a pending encounter proposal and a companion scene for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "campaign.update", "scene.create"],
       parameters: {
         type: "object",
         properties: {
           name: { type: "string", description: "Encounter name." },
           summary: { type: "string", description: "What happens in the encounter." },
-          difficulty: { type: "string", description: "Estimated encounter difficulty.", enum: ["easy", "medium", "hard", "deadly"] }
+          difficulty: { type: "string", description: "Estimated encounter difficulty.", enum: ["easy", "medium", "hard", "deadly"] },
+          sceneName: { type: "string", description: "Optional companion scene name." },
+          sceneWidth: { type: "number", description: "Optional companion scene width in tabletop units." },
+          sceneHeight: { type: "number", description: "Optional companion scene height in tabletop units." },
+          gridSize: { type: "number", description: "Optional companion scene grid size in tabletop units." }
         },
         required: ["name", "summary"],
         additionalProperties: false
@@ -8401,15 +8963,29 @@ function createAiThreadTools(): AiToolDefinition[] {
           tokenIds: [],
           difficulty
         }) satisfies Encounter;
+        const scene = createAiEncounterScene({
+          state: context.state,
+          campaignId: context.campaignId,
+          encounterId: encounter.id,
+          encounterName: name,
+          summary,
+          name: stringFromRecord(request, "sceneName"),
+          width: numberFromRecord(request, "sceneWidth", 100, 10000),
+          height: numberFromRecord(request, "sceneHeight", 100, 10000),
+          gridSize: numberFromRecord(request, "gridSize", 10, 200)
+        });
         const proposalId = await context.createProposal({
           title: `Encounter: ${name}`,
-          summary,
-          changes: [{ entity: "encounter", action: "create", data: encounter }]
+          summary: `${summary} Includes new scene: ${scene.name}.`,
+          changes: [
+            { entity: "encounter", action: "create", data: { ...encounter } },
+            { entity: "scene", action: "create", data: { ...scene } }
+          ]
         });
         return {
           proposalId,
           title: `Encounter: ${name}`,
-          changeCount: 1
+          changeCount: 2
         };
       }
     },
@@ -8517,6 +9093,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           name: { type: "string", description: "Optional new token name." },
           x: { type: "number", description: "Optional x position." },
           y: { type: "number", description: "Optional y position." },
+          layer: { type: "string", description: "Optional token layer.", enum: ["map", "player", "gm"] },
           hidden: { type: "boolean", description: "Optional hidden flag." },
           disposition: { type: "string", description: "Optional token disposition.", enum: ["friendly", "neutral", "hostile"] }
         },
@@ -8536,6 +9113,8 @@ function createAiThreadTools(): AiToolDefinition[] {
         const y = numberFromRecord(request, "y", 0, scene?.height ?? 10000);
         if (x !== undefined) data.x = x;
         if (y !== undefined) data.y = y;
+        const layer = enumStringFromRecord(request, "layer", ["map", "player", "gm"]);
+        if (layer) data.layer = layer;
         const hidden = booleanFromRecord(request, "hidden");
         if (hidden !== undefined) data.hidden = hidden;
         const disposition = enumStringFromRecord(request, "disposition", ["friendly", "neutral", "hostile"]);
@@ -8550,6 +9129,141 @@ function createAiThreadTools(): AiToolDefinition[] {
           proposalId,
           title: `Token: ${token.name}`,
           changeCount: 1
+        };
+      }
+    },
+    {
+      name: "generate_map_asset",
+      description: "Generate a map image asset and draft a pending proposal to add it to the asset library and optionally set it as a scene background.",
+      requiredPermissions: ["ai.proposeChanges", "scene.create", "scene.update"],
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "Visual prompt for the generated battlemap." },
+          name: { type: "string", description: "Asset and proposal display name." },
+          sceneId: { type: "string", description: "Optional scene id to receive this generated map as its background." },
+          size: { type: "string", description: "Requested output size.", enum: ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152"] },
+          quality: { type: "string", description: "Requested render quality.", enum: ["auto", "low", "medium", "high"] },
+          outputFormat: { type: "string", description: "Requested raster output format.", enum: ["png", "jpeg", "webp"] }
+        },
+        required: ["prompt"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const prompt = stringFromRecord(request, "prompt");
+        if (!prompt) return toolError("invalid_tool_input", { message: "Prompt is required." });
+        const sceneId = stringFromRecord(request, "sceneId");
+        const scene = sceneId ? context.state.scenes.find((item) => item.id === sceneId && item.campaignId === context.campaignId) : undefined;
+        if (sceneId && !scene) return toolError("not_found", { entity: "scene", id: sceneId });
+        const name = stringFromRecord(request, "name") ?? `${scene?.name ?? "AI"} Generated Map`;
+        const generated = await context.generateImageAsset({
+          kind: "map",
+          prompt: gridlessMapGenerationPrompt(prompt),
+          name,
+          folder: "maps/generated",
+          tags: ["ai", "generated", "map"],
+          size: enumStringFromRecord(request, "size", ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152"]),
+          quality: enumStringFromRecord(request, "quality", ["auto", "low", "medium", "high"]),
+          outputFormat: enumStringFromRecord(request, "outputFormat", ["png", "jpeg", "webp"])
+        });
+        if (isToolErrorOutput(generated)) return generated;
+        if (!isGeneratedImageAssetToolOutput(generated)) return toolError("image_generation_failed", { message: "Generated image asset output was invalid." });
+        const changes: ProposalChange[] = [{ entity: "asset", action: "create", data: { ...generated.asset } }];
+        if (scene) {
+          changes.push({
+            entity: "scene",
+            action: "update",
+            id: scene.id,
+            data: {
+              backgroundAssetId: generated.asset.id,
+              metadata: {
+                ...scene.metadata,
+                generatedBackgroundAssetId: generated.asset.id,
+                generatedBackgroundPrompt: generated.sourcePrompt
+              }
+            }
+          });
+        }
+        const title = `Generated map: ${name}`;
+        const proposalId = await context.createProposal({
+          title,
+          summary: generated.revisedPrompt ?? prompt,
+          changes
+        });
+        return {
+          proposalId,
+          title,
+          changeCount: changes.length,
+          assetId: generated.asset.id,
+          sceneId: scene?.id,
+          provider: generated.provider,
+          model: generated.model,
+          revisedPrompt: generated.revisedPrompt
+        };
+      }
+    },
+    {
+      name: "generate_token_asset",
+      description: "Generate token art and draft a pending proposal to add it to the asset library and optionally attach it to an existing token.",
+      requiredPermissions: ["ai.proposeChanges", "scene.create", "token.update"],
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "Visual prompt for the generated token art." },
+          name: { type: "string", description: "Asset and proposal display name." },
+          tokenId: { type: "string", description: "Optional token id to receive this generated art." },
+          size: { type: "string", description: "Requested output size.", enum: ["auto", "1024x1024", "2048x2048"] },
+          quality: { type: "string", description: "Requested render quality.", enum: ["auto", "low", "medium", "high"] },
+          outputFormat: { type: "string", description: "Requested raster output format.", enum: ["png", "jpeg", "webp"] }
+        },
+        required: ["prompt"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const prompt = stringFromRecord(request, "prompt");
+        if (!prompt) return toolError("invalid_tool_input", { message: "Prompt is required." });
+        const tokenId = stringFromRecord(request, "tokenId");
+        const token = tokenId ? tokenForCampaign(context, tokenId) : undefined;
+        if (tokenId && !token) return toolError("not_found", { entity: "token", id: tokenId });
+        const name = stringFromRecord(request, "name") ?? `${token?.name ?? "AI"} Generated Token`;
+        const generated = await context.generateImageAsset({
+          kind: "token",
+          prompt,
+          name,
+          folder: "tokens/generated",
+          tags: ["ai", "generated", "token"],
+          size: enumStringFromRecord(request, "size", ["auto", "1024x1024", "2048x2048"]),
+          quality: enumStringFromRecord(request, "quality", ["auto", "low", "medium", "high"]),
+          outputFormat: enumStringFromRecord(request, "outputFormat", ["png", "jpeg", "webp"])
+        });
+        if (isToolErrorOutput(generated)) return generated;
+        if (!isGeneratedImageAssetToolOutput(generated)) return toolError("image_generation_failed", { message: "Generated image asset output was invalid." });
+        const changes: ProposalChange[] = [{ entity: "asset", action: "create", data: { ...generated.asset } }];
+        if (token) {
+          changes.push({
+            entity: "token",
+            action: "update",
+            id: token.id,
+            data: { imageAssetId: generated.asset.id }
+          });
+        }
+        const title = `Generated token: ${name}`;
+        const proposalId = await context.createProposal({
+          title,
+          summary: generated.revisedPrompt ?? prompt,
+          changes
+        });
+        return {
+          proposalId,
+          title,
+          changeCount: changes.length,
+          assetId: generated.asset.id,
+          tokenId: token?.id,
+          provider: generated.provider,
+          model: generated.model,
+          revisedPrompt: generated.revisedPrompt
         };
       }
     },
@@ -8911,6 +9625,7 @@ function createAiThreadTools(): AiToolDefinition[] {
             width: token.width,
             height: token.height,
             rotation: token.rotation,
+            layer: tokenLayer(token),
             hidden: token.hidden,
             locked: token.locked,
             visionEnabled: token.visionEnabled,
@@ -9155,8 +9870,8 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "use_actor_action",
-      description: "Use a visible actor's system quick action, consume any required rules resources, and add the action roll to chat.",
-      requiredPermissions: ["ai.proposeChanges", "actor.read", "actor.update", "dice.roll"],
+      description: "Draft a visible actor's system quick action, resource consumption, optional target effect, and action roll for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "actor.read", "actor.update", "dice.roll", "chat.write"],
       parameters: {
         type: "object",
         properties: {
@@ -9165,6 +9880,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           actionName: { type: "string", description: "Optional action label to resolve when an exact roll id is not available." },
           targetActorId: { type: "string", description: "Optional target actor id for applying damage or healing." },
           applyEffect: { type: "boolean", description: "When true, apply damage or healing roll totals to the target actor's tracked pool." },
+          saveOutcomes: { type: "object", description: "Optional D&D save outcomes by target actor id. Use only when the GM/user already resolved the save.", additionalProperties: { type: "string", enum: ["success", "failure"] } },
           spellSlotLevel: { type: "number", description: "Optional spell slot level for upcasting a leveled spell action." },
           resourceAmount: { type: "number", description: "Optional rules-resource amount for variable-pool actions such as Lay On Hands." },
           useFreeResource: { type: "boolean", description: "When true, use a class feature or species free casting resource instead of a spell slot when supported." },
@@ -9180,11 +9896,12 @@ function createAiThreadTools(): AiToolDefinition[] {
         const actionName = stringFromRecord(request, "actionName");
         const targetActorId = stringFromRecord(request, "targetActorId");
         const applyEffect = booleanFromRecord(request, "applyEffect") ?? false;
+        const saveOutcomes = saveOutcomesFromRecord(request, "saveOutcomes");
         const spellSlotLevel = numberFromRecord(request, "spellSlotLevel", 1, 9);
         const resourceAmount = numberFromRecord(request, "resourceAmount", 1, 999);
         const useFreeResource = booleanFromRecord(request, "useFreeResource") ?? false;
         const visibility = rollVisibilityFromRecord(request, "visibility", "public");
-        return context.useActorAction({ actorId, actionRollId, actionName, targetActorId, applyEffect, spellSlotLevel, resourceAmount, useFreeResource, visibility });
+        return context.useActorAction({ actorId, actionRollId, actionName, targetActorId, applyEffect, saveOutcomes, spellSlotLevel, resourceAmount, useFreeResource, visibility });
       }
     },
     {
@@ -9212,12 +9929,21 @@ interface ProposalToolOutput {
   proposalId: string;
   title: string;
   changeCount: number;
+  [key: string]: unknown;
 }
 
 interface ToolErrorOutput {
   error: string;
   permission?: PermissionName;
   [key: string]: unknown;
+}
+
+interface GeneratedImageAssetToolOutput {
+  asset: MapAsset;
+  provider: string;
+  model?: string;
+  revisedPrompt?: string;
+  sourcePrompt: string;
 }
 
 interface AiToolExecutionResult {
@@ -9340,6 +10066,7 @@ interface TokenReadToolOutput {
     rotation: number;
     hidden: boolean;
     locked: boolean;
+    layer: TokenLayer;
     visionEnabled: boolean;
     visionRadius: number;
     brightVisionRadius?: number;
@@ -9444,6 +10171,22 @@ interface SystemRollPoolEffectResult {
   before: number;
   after: number;
   max: number;
+  damageType?: string;
+  damageTypes?: string[];
+  effectChoice?: string;
+  choiceKind?: string;
+}
+
+interface SystemRollUtilityEffectResult {
+  type: "utility";
+  targetActorId: string;
+  targetActorName: string;
+  effectChoice?: string;
+  choiceKind?: string;
+  resistance?: string[];
+  immunity?: string[];
+  vulnerability?: string[];
+  duration?: string;
 }
 
 interface SystemRollConditionEffectResult {
@@ -9457,37 +10200,39 @@ interface SystemRollConditionEffectResult {
   alreadyPresent: boolean;
 }
 
-type SystemRollEffectResult = SystemRollPoolEffectResult | SystemRollConditionEffectResult;
+type SystemRollEffectResult = SystemRollPoolEffectResult | SystemRollConditionEffectResult | SystemRollUtilityEffectResult;
 interface SystemRollEffectOptions {
   allowConditionEffects?: boolean;
 }
 
-type SystemRollEffectApplication = { data: Record<string, unknown>; effect: SystemRollEffectResult } | { error: string; message: string };
+type SystemRollEffectApplication = { data: Record<string, unknown>; effect: SystemRollEffectResult; effects?: SystemRollEffectResult[] } | { error: string; message: string };
 
-function createAiToolContext(store: StateStore, campaignId: string, userId: string, permissions: PermissionName[]): AiToolContext {
+function createAiToolContext(store: StateStore, campaignId: string, userId: string, permissions: PermissionName[], runtime: AiToolRuntime): AiToolContext {
+  const createAiProposal: AiToolContext["createProposal"] = async ({ title, summary, changes }) => {
+    const proposal: Proposal = createTimestamped("prop", {
+      campaignId,
+      createdByUserId: userId,
+      createdByType: "ai" as const,
+      title,
+      summary,
+      status: "pending" as const,
+      changesJson: normalizeProposalChanges(changes, campaignId, userId),
+      diffJson: {
+        source: "ai_tool"
+      },
+      approvalRequired: true
+    });
+    proposal.history = [proposalHistoryEntry({ action: "created", status: "pending", at: proposal.createdAt, actorUserId: userId, actorType: "ai", auditAction: "ai.proposal.created" })];
+    store.state.proposals.push(proposal);
+    return proposal.id;
+  };
+
   return {
     campaignId,
     userId,
     permissions,
     state: store.state,
-    createProposal: async ({ title, summary, changes }) => {
-      const proposal: Proposal = createTimestamped("prop", {
-        campaignId,
-        createdByUserId: userId,
-        createdByType: "ai" as const,
-        title,
-        summary,
-        status: "pending" as const,
-        changesJson: normalizeProposalChanges(changes, campaignId, userId),
-        diffJson: {
-          source: "ai_tool"
-        },
-        approvalRequired: true
-      });
-      proposal.history = [proposalHistoryEntry({ action: "created", status: "pending", at: proposal.createdAt, actorUserId: userId, actorType: "ai", auditAction: "ai.proposal.created" })];
-      store.state.proposals.push(proposal);
-      return proposal.id;
-    },
+    createProposal: createAiProposal,
     createMemory: async ({ text, visibility, sourceIds }) => {
       const memory = createTimestamped("mem", {
         campaignId,
@@ -9497,6 +10242,71 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       }) satisfies AiMemoryFact;
       store.state.aiMemory.push(memory);
       return memory.id;
+    },
+    generateImageAsset: async ({ kind, prompt, name, folder, tags, size, quality, outputFormat }) => {
+      const sourcePrompt = prompt.trim();
+      if (!sourcePrompt) return { error: "invalid_tool_input", message: "Prompt is required." };
+      const generated = await runtime.imageAssetGenerator.generate({
+        kind,
+        prompt: sourcePrompt,
+        name,
+        size,
+        quality,
+        outputFormat,
+        campaignId,
+        userId
+      });
+      if (generated.body.length === 0) return { error: "image_generation_failed", message: "Generated image body was empty." };
+      const rasterMimeType = rasterMimeTypeForGeneratedImage(generated.body);
+      if (!rasterMimeType) {
+        return {
+          error: "image_generation_failed",
+          message: "Generated image was not a raster PNG, JPEG, or WebP image. Codex app-server must return actual image-generation output, not SVG, HTML, text, or placeholder markup."
+        };
+      }
+      if (generated.body.length > runtime.maxAssetBytes) {
+        return { error: "asset_too_large", message: `Generated asset exceeds ${runtime.maxAssetBytes} bytes.`, sizeBytes: generated.body.length };
+      }
+      const quotaExceeded = assetQuotaExceeded(store, campaignId, generated.body.length);
+      if (quotaExceeded) return { error: quotaExceeded.error, message: quotaExceeded.message, quotaBytes: quotaExceeded.quotaBytes, usedBytes: quotaExceeded.usedBytes, incomingBytes: quotaExceeded.incomingBytes };
+      const asset: MapAsset = createTimestamped("asset", {
+        campaignId,
+        name: normalizeGeneratedAssetName(name, kind),
+        url: "",
+        mimeType: rasterMimeType,
+        sizeBytes: generated.body.length,
+        checksum: checksumForBuffer(generated.body),
+        folder: normalizeAssetFolder(folder),
+        tags: normalizeAssetTags(tags),
+        lifecycle: defaultAssetLifecycle(),
+        security: {
+          status: "clean" as const,
+          scanner: "ai-generated-asset",
+          scannedAt: nowIso(),
+          findings: []
+        }
+      });
+      asset.storage = await runtime.assetStorage.put(asset, generated.body);
+      asset.url = `/api/v1/assets/${asset.id}/blob`;
+      asset.security = {
+        status: "clean",
+        scanner: "ai-generated-asset",
+        scannedAt: nowIso(),
+        findings: [
+          {
+            code: "ai_generated_asset",
+            severity: "low",
+            message: `${kind === "map" ? "Map" : "Token"} image generated by ${generated.provider}; review before use.`
+          }
+        ]
+      };
+      return {
+        asset,
+        provider: generated.provider,
+        model: generated.model,
+        revisedPrompt: generated.revisedPrompt,
+        sourcePrompt: generated.sourcePrompt
+      };
     },
     rollDice: async ({ formula, label, visibility }) => {
       const rolled = rollFormula(formula);
@@ -9522,7 +10332,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       store.state.chat.push(message);
       return { rollId: roll.id, formula: roll.formula, label: roll.label, total: roll.total, visibility: roll.visibility };
     },
-    useActorAction: async ({ actorId, actionRollId, actionName, targetActorId, applyEffect, spellSlotLevel, resourceAmount, useFreeResource, visibility }) => {
+    useActorAction: async ({ actorId, actionRollId, actionName, targetActorId, applyEffect, saveOutcomes, spellSlotLevel, resourceAmount, useFreeResource, visibility }) => {
       const actor = store.state.actors.find((item) => item.id === actorId && item.campaignId === campaignId);
       if (!actor) return toolError("not_found", { entity: "actor", id: actorId });
       if (!canUpdateActorForUser(store, userId, actor)) return missingPermissionToolOutput("actor.update");
@@ -9538,6 +10348,109 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       }
       const actionOptions = systemActionOptions(spellSlotLevel, resourceAmount, useFreeResource);
       const resolvedFormula = systemActionFormula(actor, items, action.id, actionOptions) ?? action.formula;
+      if (actor.systemId === DND_5E_SRD_SYSTEM_ID) {
+        const targetActorIds = systemRollTargetActorIds(undefined, targetActorId, applyEffect ? actor.id : undefined);
+        const targetActors: Actor[] = [];
+        for (const id of targetActorIds) {
+          const target = store.state.actors.find((item) => item.id === id && item.campaignId === campaignId);
+          if (!target) return toolError("not_found", { entity: "target_actor", id });
+          targetActors.push(target);
+        }
+        const activeCombat = store.state.combats.find((combat) => combat.campaignId === campaignId && combat.active);
+        const resolutionOptions = { ...actionOptions, consumeResources: true, applyEffect: Boolean(applyEffect), commit: true, saveOutcomes };
+        let resolution = resolveDnd5eSrdAction({
+          actor,
+          items,
+          roll: { ...action, formula: resolvedFormula },
+          targets: targetActors.map((target) => ({ actor: target, saveOutcome: saveOutcomes?.[target.id] })),
+          combat: activeCombat,
+          options: resolutionOptions,
+          now: nowIso()
+        });
+        if (resolution.blocked) return toolError("conflict", { message: resolution.blocked.reason, resolution });
+        const pendingMessage = dnd5eSrdCommitInputMessage(resolution, Boolean(applyEffect));
+        if (pendingMessage) return toolError("pending_resolution", { message: pendingMessage, resolution });
+        const rolledResults = resolution.rolls.map((resolutionRoll) => ({ resolutionRoll, rolled: rollFormula(resolutionRoll.formula) }));
+        const defaultRollTotal = rolledResults[0]?.rolled.total;
+        const rollTotalByTarget = new Map<string, number>();
+        for (const result of rolledResults) {
+          if (result.resolutionRoll.targetActorId) rollTotalByTarget.set(result.resolutionRoll.targetActorId, result.rolled.total);
+        }
+        resolution = resolveDnd5eSrdAction({
+          actor,
+          items,
+          roll: { ...action, formula: resolvedFormula },
+          targets: targetActors.map((target) => ({ actor: target, saveOutcome: saveOutcomes?.[target.id], rollTotal: rollTotalByTarget.get(target.id) ?? defaultRollTotal })),
+          combat: activeCombat,
+          options: resolutionOptions,
+          now: nowIso()
+        });
+        if (resolution.blocked) return toolError("conflict", { message: resolution.blocked.reason, resolution });
+        const finalPendingMessage = dnd5eSrdCommitInputMessage(resolution, Boolean(applyEffect));
+        if (finalPendingMessage) return toolError("pending_resolution", { message: finalPendingMessage, resolution });
+        for (const actorUpdate of resolution.actorUpdates) {
+          const updatedActor = store.state.actors.find((item) => item.id === actorUpdate.actorId && item.campaignId === campaignId);
+          if (!updatedActor) return toolError("not_found", { entity: "actor", id: actorUpdate.actorId });
+          if (!canUpdateActorForUser(store, userId, updatedActor)) return missingPermissionToolOutput("actor.update");
+        }
+        const actorDataUpdates = new Map<string, Record<string, unknown>>();
+        for (const actorUpdate of resolution.actorUpdates) actorDataUpdates.set(actorUpdate.actorId, actorUpdate.after);
+        const roll = createTimestamped("roll", {
+          campaignId,
+          userId,
+          actorId: actor.id,
+          formula: resolution.rolls[0]?.formula ?? resolvedFormula,
+          label: `${actor.name} ${action.label}`,
+          visibility,
+          terms: rolledResults[0]?.rolled.terms ?? [],
+          total: rolledResults[0]?.rolled.total ?? 0
+        }) satisfies DiceRoll;
+        const message = createTimestamped("msg", {
+          campaignId,
+          userId,
+          type: "roll" as const,
+          body: `${actor.name} ${action.label}: ${roll.formula} = ${roll.total}`,
+          visibility,
+          recipientUserIds: [],
+          rollId: roll.id
+        }) satisfies ChatMessage;
+        const changes: ProposalChange[] = [
+          ...[...actorDataUpdates].map(([updatedActorId, data]) => ({ entity: "actor" as const, action: "update" as const, id: updatedActorId, data: { data } })),
+          ...resolution.itemUpdates.map((item) => ({ entity: "item" as const, action: "update" as const, id: item.id, data: { data: item.data } })),
+          { entity: "roll", action: "create", data: roll },
+          { entity: "chat", action: "create", data: message }
+        ];
+        const proposalId = await createAiProposal({
+          title: `Actor action: ${actor.name} ${action.label}`,
+          summary: `Draft ${actor.name} ${action.label}: ${roll.formula} = ${roll.total}.`,
+          changes
+        });
+        return {
+          proposalId,
+          changeCount: changes.length,
+          actorId: actor.id,
+          systemId: actor.systemId,
+          actionRollId: action.id,
+          rollId: roll.id,
+          formula: roll.formula,
+          label: action.label,
+          total: roll.total,
+          visibility: roll.visibility,
+          slotLevel: resolution.usage?.slotLevel,
+          consumed: resolution.resourceConsumption,
+          updatedItems: resolution.itemUpdates.map((item) => {
+            const data = isRecord(item.data) ? item.data : {};
+            return {
+              id: item.id,
+              name: item.name,
+              quantity: typeof data.quantity === "number" ? data.quantity : undefined
+            };
+          }),
+          effect: resolution.effects[0],
+          effects: resolution.effects,
+          resolution
+        };
+      }
       let usage: SystemActionUseResult;
       try {
         usage = useSystemAction(actor, items, action.id, actionOptions);
@@ -9562,23 +10475,6 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         actorDataUpdates.set(target.id, applied.data);
         effect = applied.effect as SystemRollPoolEffectResult;
       }
-      if (actorDataUpdates.size > 0 || itemUpdates.length > 0) {
-        const updatedAt = nowIso();
-        for (const [updatedActorId, data] of actorDataUpdates) {
-          const storedActor = store.state.actors.find((item) => item.id === updatedActorId && item.campaignId === campaignId);
-          if (storedActor) {
-            storedActor.data = data;
-            storedActor.updatedAt = updatedAt;
-          }
-        }
-        for (const updatedItem of itemUpdates) {
-          const storedItem = store.state.items.find((item) => item.id === updatedItem.id && item.campaignId === actor.campaignId);
-          if (storedItem) {
-            storedItem.data = updatedItem.data;
-            storedItem.updatedAt = updatedAt;
-          }
-        }
-      }
       const roll = createTimestamped("roll", {
         campaignId,
         userId,
@@ -9589,7 +10485,6 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         terms: rolled.terms,
         total: rolled.total
       }) satisfies DiceRoll;
-      store.state.rolls.push(roll);
       const message = createTimestamped("msg", {
         campaignId,
         userId,
@@ -9599,8 +10494,20 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         recipientUserIds: [],
         rollId: roll.id
       }) satisfies ChatMessage;
-      store.state.chat.push(message);
+      const changes: ProposalChange[] = [
+        ...[...actorDataUpdates].map(([updatedActorId, data]) => ({ entity: "actor" as const, action: "update" as const, id: updatedActorId, data: { data } })),
+        ...itemUpdates.map((item) => ({ entity: "item" as const, action: "update" as const, id: item.id, data: { data: item.data } })),
+        { entity: "roll", action: "create", data: roll },
+        { entity: "chat", action: "create", data: message }
+      ];
+      const proposalId = await createAiProposal({
+        title: `Actor action: ${actor.name} ${action.label}`,
+        summary: `Draft ${actor.name} ${action.label}: ${resolvedFormula} = ${roll.total}.`,
+        changes
+      });
       return {
+        proposalId,
+        changeCount: changes.length,
         actorId: actor.id,
         systemId: actor.systemId,
         actionRollId: action.id,
@@ -9710,11 +10617,76 @@ function normalizeActionLookup(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function systemRollTargetActorIds(targetActorIds: string[] | undefined, targetActorId?: string, fallbackTargetActorId?: string): string[] {
+  const explicitTargets = [...(Array.isArray(targetActorIds) ? targetActorIds : []), targetActorId].filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const targets = explicitTargets.length > 0 ? explicitTargets : fallbackTargetActorId ? [fallbackTargetActorId] : [];
+  return [...new Set(targets.map((value) => value.trim()))];
+}
+
+function dnd5eSrdCommitInputMessage(resolution: RulesActionResolutionResult, applyEffect: boolean): string | undefined {
+  if (resolution.pendingSaves.some((save) => save.requiredForCommit)) return "Save outcomes are required before this D&D action can be committed.";
+  if (applyEffect && resolution.pendingChoice) return resolution.pendingChoice.reason;
+  if (applyEffect && resolution.manualResolutionRequired) return resolution.manualResolutionRequired.reason;
+  return undefined;
+}
+
+function syncDnd5eSrdResolvedConditionToCombat(combat: Combat, condition: { actorId: string; operation: string; conditionId?: string; durationRounds?: number }): boolean {
+  if (condition.operation !== "apply" || !condition.conditionId) return false;
+  const combatant = combat.combatants.find((item) => item.actorId === condition.actorId);
+  if (!combatant) return false;
+  const addition = condition.durationRounds ? `${condition.conditionId}:${condition.durationRounds}` : condition.conditionId;
+  const before = normalizeCombatantConditionList(combatant.conditions);
+  const after = normalizeCombatantConditionList([...before, addition]);
+  if (after.length === before.length && after.every((item, index) => item === before[index])) return false;
+  combatant.conditions = after;
+  return true;
+}
+
+function systemRollEffectTotalForSave(rollDefinition: { id: string; label: string; metadata?: Record<string, unknown> }, total: number, saveOutcome?: RulesSaveOutcome): number | undefined {
+  if (saveOutcome !== "success") return total;
+  const metadata = isRecord(rollDefinition.metadata) ? rollDefinition.metadata : {};
+  const save = isRecord(metadata.save) ? metadata.save : {};
+  const success = typeof save.success === "string" ? save.success.toLowerCase() : "";
+  if (success.includes("half")) return Math.floor(total / 2);
+  if (systemRollEffectType(rollDefinition) === "damage") return 0;
+  return undefined;
+}
+
+function syncDnd5eSrdRollConditionToCombat(combat: Combat, targetActorId: string, rollDefinition: { id: string; metadata?: Record<string, unknown> }): boolean {
+  const combatant = combat.combatants.find((item) => item.actorId === targetActorId);
+  if (!combatant) return false;
+  const conditions = systemRollConditionEffects(rollDefinition);
+  if (conditions.length === 0) return false;
+  const durationRounds = systemRollConditionDurationRounds(rollDefinition);
+  const additions = conditions.map((condition) => (durationRounds ? `${condition.id}:${durationRounds}` : condition.id));
+  const before = normalizeCombatantConditionList(combatant.conditions);
+  const after = normalizeCombatantConditionList([...before, ...additions]);
+  if (after.length === before.length && after.every((condition, index) => condition === before[index])) return false;
+  combatant.conditions = after;
+  return true;
+}
+
+function systemRollConditionDurationRounds(rollDefinition: { metadata?: Record<string, unknown> }): number | undefined {
+  const metadata = isRecord(rollDefinition.metadata) ? rollDefinition.metadata : {};
+  const duration = stringValue(metadata.conditionDuration) ?? stringValue(metadata.duration);
+  if (!duration) return undefined;
+  const normalized = duration.toLowerCase().replace(/^up to\s+/, "").trim();
+  if (normalized.includes("current turn") || normalized.includes("next turn")) return 1;
+  const match = normalized.match(/(\d+)\s*(round|minute|hour|day)s?/);
+  if (!match) return undefined;
+  const amount = Math.max(1, Math.floor(Number(match[1])));
+  const unit = match[2];
+  if (unit === "round") return amount;
+  if (unit === "minute") return amount * 10;
+  if (unit === "hour") return amount * 600;
+  return amount * 14_400;
+}
+
 function applySystemRollEffect(actor: Actor, rollDefinition: { id: string; label: string; metadata?: Record<string, unknown> }, total: number, options: SystemRollEffectOptions = {}): SystemRollEffectApplication {
   const type = systemRollEffectType(rollDefinition);
   if (!type) {
-    const condition = options.allowConditionEffects ? systemRollConditionEffect(rollDefinition) : undefined;
-    if (condition) return applySystemConditionRollEffect(actor, condition);
+    const conditions = options.allowConditionEffects ? systemRollConditionEffects(rollDefinition) : [];
+    if (conditions.length > 0) return applySystemConditionRollEffects(actor, conditions);
     return { error: "unsupported_effect", message: "Roll is not a damage, healing, or supported condition action" };
   }
   const pool = systemEffectPool(actor);
@@ -9747,13 +10719,14 @@ function applySystemRollEffect(actor: Actor, rollDefinition: { id: string; label
   };
 }
 
-function applySystemConditionRollEffect(actor: Actor, condition: { id: string; name: string }): SystemRollEffectApplication {
-  const before = systemConditionIds(actor.data.conditions);
+function applySystemConditionRollEffects(actor: Actor, conditions: Array<{ id: string; name: string }>): SystemRollEffectApplication {
+  let data = actor.data;
+  const effects: SystemRollEffectResult[] = [];
   try {
-    const data = applySystemCondition(actor, condition.id, nowIso());
-    return {
-      data,
-      effect: {
+    for (const condition of conditions) {
+      const before = systemConditionIds(data.conditions);
+      data = applySystemCondition({ ...actor, data }, condition.id, nowIso());
+      effects.push({
         type: "condition",
         targetActorId: actor.id,
         targetActorName: actor.name,
@@ -9762,10 +10735,11 @@ function applySystemConditionRollEffect(actor: Actor, condition: { id: string; n
         before,
         after: systemConditionIds(data.conditions),
         alreadyPresent: before.includes(condition.id)
-      }
-    };
+      });
+    }
+    return { data, effect: effects[0]!, effects };
   } catch (error) {
-    return { error: "unsupported_effect", message: error instanceof Error ? error.message : `Unknown condition: ${condition.name}` };
+    return { error: "unsupported_effect", message: error instanceof Error ? error.message : "Unknown condition effect" };
   }
 }
 
@@ -9777,12 +10751,39 @@ function systemRollEffectType(rollDefinition: { id: string; label: string }): "d
   return undefined;
 }
 
-function systemRollConditionEffect(rollDefinition: { id: string; metadata?: Record<string, unknown> }): { id: string; name: string } | undefined {
+function systemRollConditionEffects(rollDefinition: { id: string; metadata?: Record<string, unknown> }): Array<{ id: string; name: string }> {
   const metadata = isRecord(rollDefinition.metadata) ? rollDefinition.metadata : {};
   const failure = isRecord(metadata.failure) ? metadata.failure : {};
-  const conditionName = typeof metadata.condition === "string" ? metadata.condition : typeof failure.condition === "string" ? failure.condition : "";
-  if (!conditionName) return undefined;
-  return { id: slugConditionId(conditionName), name: conditionName };
+  const conditionNames = uniqueStrings([
+    ...splitSystemConditionNames(typeof metadata.condition === "string" ? metadata.condition : undefined),
+    ...splitSystemConditionNames(typeof failure.condition === "string" ? failure.condition : undefined),
+    ...stringArrayValue(metadata.conditions).flatMap(splitSystemConditionNames),
+    ...stringArrayValue(metadata.additionalConditions).flatMap(splitSystemConditionNames)
+  ]);
+  return conditionNames.map((name) => ({ id: slugConditionId(name), name }));
+}
+
+function splitSystemConditionNames(value: string | undefined): string[] {
+  return value
+    ? value
+        .split(/[\/,]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+}
+
+function stringArrayValue(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  return [];
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 function slugConditionId(value: string): string {
@@ -9803,6 +10804,150 @@ function systemEffectPool(actor: Actor): "hp" | "strain" | "composure" | undefin
   if (isRecord(actor.data.strain)) return "strain";
   if (isRecord(actor.data.composure)) return "composure";
   return undefined;
+}
+
+const proposalChangeEntities = new Set<ProposalChange["entity"]>(["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "encounter", "combat", "asset"]);
+const proposalChangeActions = new Set<ProposalChange["action"]>(["create", "update", "delete"]);
+
+function prepareProposalChanges(store: StateStore, campaignId: string, userId: string, value: unknown): { changes: ProposalChange[] } | { error: string; message: string } {
+  if (!Array.isArray(value)) return { error: "invalid_proposal_changes", message: "Proposal changesJson must be an array" };
+  const changes: ProposalChange[] = [];
+  for (const [index, rawChange] of value.entries()) {
+    const change = proposalChangeFromInput(rawChange);
+    if (!change) return { error: "invalid_proposal_change", message: `Proposal change ${index + 1} is invalid` };
+    changes.push(change);
+  }
+  const normalizedChanges = normalizeProposalChanges(changes, campaignId, userId);
+  const createdSceneIds = new Set(
+    normalizedChanges
+      .filter((change) => change.entity === "scene" && change.action === "create")
+      .map((change) => stringFromRecord(change.data, "id"))
+      .filter((id): id is string => Boolean(id))
+  );
+  for (const [index, change] of normalizedChanges.entries()) {
+    const scopeError = proposalChangeScopeError(store, campaignId, change, createdSceneIds);
+    if (scopeError) return { error: "invalid_proposal_scope", message: `Proposal change ${index + 1} ${scopeError}` };
+  }
+  return { changes: normalizedChanges };
+}
+
+function proposalChangeFromInput(value: unknown): ProposalChange | undefined {
+  if (!isRecord(value)) return undefined;
+  if (!proposalChangeEntities.has(value.entity as ProposalChange["entity"])) return undefined;
+  if (!proposalChangeActions.has(value.action as ProposalChange["action"])) return undefined;
+  const entity = value.entity as ProposalChange["entity"];
+  const action = value.action as ProposalChange["action"];
+  const id = typeof value.id === "string" && value.id.trim() ? value.id.trim() : undefined;
+  if (action !== "create" && !id) return undefined;
+  const data = isRecord(value.data) ? { ...value.data } : {};
+  return id ? { entity, action, id, data } : { entity, action, data };
+}
+
+function proposalChangeScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>): string | undefined {
+  if (change.entity === "campaign") {
+    if (change.action === "create") return "cannot create campaigns from a campaign proposal";
+    const targetId = change.id ?? stringFromRecord(change.data, "id");
+    return targetId === campaignId ? undefined : "targets a different campaign";
+  }
+  if (change.action === "create") return proposalCreateScopeError(store, campaignId, change, createdSceneIds);
+  const existingCampaignId = campaignIdForProposalEntity(store, change.entity, change.id);
+  if (!existingCampaignId) return `targets a missing ${change.entity}`;
+  if (existingCampaignId !== campaignId) return `targets a ${change.entity} outside this campaign`;
+  const dataCampaignId = stringFromRecord(change.data, "campaignId");
+  if (dataCampaignId && dataCampaignId !== campaignId) return `moves a ${change.entity} outside this campaign`;
+  const sceneScopeError = proposalSceneReferenceScopeError(store, campaignId, change.data, createdSceneIds);
+  if (sceneScopeError) return sceneScopeError;
+  const actorScopeError = proposalActorReferenceScopeError(store, campaignId, change.data);
+  if (actorScopeError) return actorScopeError;
+  return undefined;
+}
+
+function proposalCreateScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>): string | undefined {
+  const createdId = stringFromRecord(change.data, "id");
+  if (createdId && proposalEntityExists(store, change.entity, createdId)) return `creates a ${change.entity} id that already exists`;
+  if (change.entity === "token") {
+    const sceneId = stringFromRecord(change.data, "sceneId");
+    if (!sceneId) return "must include a sceneId for token creation";
+    if (!createdSceneIds.has(sceneId) && !store.state.scenes.some((scene) => scene.id === sceneId && scene.campaignId === campaignId)) return "creates a token outside this campaign";
+    return proposalActorReferenceScopeError(store, campaignId, change.data);
+  }
+  const dataCampaignId = stringFromRecord(change.data, "campaignId");
+  if (dataCampaignId !== campaignId) return `creates a ${change.entity} outside this campaign`;
+  const sceneScopeError = proposalSceneReferenceScopeError(store, campaignId, change.data, createdSceneIds);
+  if (sceneScopeError) return sceneScopeError;
+  const actorScopeError = proposalActorReferenceScopeError(store, campaignId, change.data);
+  if (actorScopeError) return actorScopeError;
+  return undefined;
+}
+
+function proposalEntityExists(store: StateStore, entity: ProposalChange["entity"], id: string): boolean {
+  switch (entity) {
+    case "campaign":
+      return store.state.campaigns.some((item) => item.id === id);
+    case "scene":
+      return store.state.scenes.some((item) => item.id === id);
+    case "token":
+      return store.state.tokens.some((item) => item.id === id);
+    case "actor":
+      return store.state.actors.some((item) => item.id === id);
+    case "item":
+      return store.state.items.some((item) => item.id === id);
+    case "journal":
+      return store.state.journals.some((item) => item.id === id);
+    case "chat":
+      return store.state.chat.some((item) => item.id === id);
+    case "roll":
+      return store.state.rolls.some((item) => item.id === id);
+    case "encounter":
+      return store.state.encounters.some((item) => item.id === id);
+    case "combat":
+      return store.state.combats.some((item) => item.id === id);
+    case "asset":
+      return store.state.assets.some((item) => item.id === id) || Boolean(pendingProposalAssetForDelivery(store, id));
+  }
+}
+
+function proposalSceneReferenceScopeError(store: StateStore, campaignId: string, data: Record<string, unknown>, createdSceneIds: Set<string>): string | undefined {
+  const sceneId = stringFromRecord(data, "sceneId");
+  if (!sceneId) return undefined;
+  if (createdSceneIds.has(sceneId) || store.state.scenes.some((scene) => scene.id === sceneId && scene.campaignId === campaignId)) return undefined;
+  return "references a scene outside this campaign";
+}
+
+function proposalActorReferenceScopeError(store: StateStore, campaignId: string, data: Record<string, unknown>): string | undefined {
+  const actorId = stringFromRecord(data, "actorId");
+  if (!actorId) return undefined;
+  return store.state.actors.some((actor) => actor.id === actorId && actor.campaignId === campaignId) ? undefined : "references an actor outside this campaign";
+}
+
+function campaignIdForProposalEntity(store: StateStore, entity: ProposalChange["entity"], id: string | undefined): string | undefined {
+  if (!id) return undefined;
+  switch (entity) {
+    case "scene":
+      return store.state.scenes.find((item) => item.id === id)?.campaignId;
+    case "token": {
+      const token = store.state.tokens.find((item) => item.id === id);
+      return token ? campaignIdForScene(store, token.sceneId) : undefined;
+    }
+    case "actor":
+      return store.state.actors.find((item) => item.id === id)?.campaignId;
+    case "item":
+      return store.state.items.find((item) => item.id === id)?.campaignId;
+    case "journal":
+      return store.state.journals.find((item) => item.id === id)?.campaignId;
+    case "chat":
+      return store.state.chat.find((item) => item.id === id)?.campaignId;
+    case "roll":
+      return store.state.rolls.find((item) => item.id === id)?.campaignId;
+    case "encounter":
+      return store.state.encounters.find((item) => item.id === id)?.campaignId;
+    case "combat":
+      return store.state.combats.find((item) => item.id === id)?.campaignId;
+    case "asset":
+      return store.state.assets.find((item) => item.id === id)?.campaignId ?? pendingProposalAssetForDelivery(store, id)?.campaignId;
+    case "campaign":
+      return store.state.campaigns.find((item) => item.id === id)?.id;
+  }
 }
 
 function normalizeProposalChanges(changes: ProposalChange[], campaignId: string, userId: string): ProposalChange[] {
@@ -9848,10 +10993,14 @@ function prefixForProposalEntity(entity: ProposalChange["entity"]): string {
       return "jnl";
     case "chat":
       return "msg";
+    case "roll":
+      return "roll";
     case "encounter":
       return "enc";
     case "combat":
       return "cmb";
+    case "asset":
+      return "asset";
   }
 }
 
@@ -9886,9 +11035,14 @@ function permissionForProposalChange(change: ProposalChange): PermissionName | u
     return "journal.update";
   }
   if (change.entity === "chat") return change.action === "create" ? "chat.write" : "chat.moderate";
+  if (change.entity === "roll") return "dice.roll";
   if (change.entity === "combat") return "combat.manage";
   if (change.entity === "encounter") return "campaign.update";
   if (change.entity === "item") return "actor.update";
+  if (change.entity === "asset") {
+    if (change.action === "create") return "scene.create";
+    return "scene.update";
+  }
   return undefined;
 }
 
@@ -9977,6 +11131,26 @@ function isToolErrorOutput(value: unknown): value is ToolErrorOutput {
   return isRecord(value) && typeof value.error === "string";
 }
 
+function isGeneratedImageAssetToolOutput(value: unknown): value is GeneratedImageAssetToolOutput {
+  return isRecord(value) && isRecord(value.asset) && typeof value.asset.id === "string" && typeof value.provider === "string" && typeof value.sourcePrompt === "string";
+}
+
+function sendAiToolErrorReply(reply: FastifyReply, output: unknown): FastifyReply {
+  if (!isToolErrorOutput(output)) {
+    return reply.code(500).send({ error: "tool_failed", message: "AI tool execution failed." });
+  }
+  return reply.code(aiToolErrorHttpStatus(output)).send(output);
+}
+
+function aiToolErrorHttpStatus(output: ToolErrorOutput): number {
+  if (output.error === "missing_permission") return 403;
+  if (output.error === "not_found") return 404;
+  if (output.error === "conflict") return 409;
+  if (output.error === "asset_too_large" || output.error === "asset_quota_exceeded") return 413;
+  if (output.error === "image_generation_failed" || output.error === "tool_failed") return 502;
+  return 400;
+}
+
 function validateAiToolInput(tool: AiToolDefinition, input: unknown): string | undefined {
   const schema = tool.parameters;
   if (!schema) return undefined;
@@ -9990,6 +11164,7 @@ function validateAiToolInput(tool: AiToolDefinition, input: unknown): string | u
     const property = schema.properties[key];
     if (!property) {
       if (schema.additionalProperties === false) return `Unexpected field: ${key}`;
+      if (schema.additionalProperties && typeof schema.additionalProperties === "object" && !matchesAiToolJsonSchema(value, schema.additionalProperties)) return `Invalid field: ${key}`;
       continue;
     }
     if (!matchesAiToolJsonSchema(value, property)) return `Invalid field: ${key}`;
@@ -10022,6 +11197,7 @@ function matchesAiToolObjectSchema(value: unknown, schema: AiToolJsonSchema): bo
     const property = schema.properties?.[key];
     if (!property) {
       if (schema.additionalProperties === false) return false;
+      if (schema.additionalProperties && typeof schema.additionalProperties === "object" && !matchesAiToolJsonSchema(child, schema.additionalProperties)) return false;
       continue;
     }
     if (!matchesAiToolJsonSchema(child, property)) return false;
@@ -10035,7 +11211,7 @@ function isProposalChange(value: unknown): value is ProposalChange {
     typeof value.entity === "string" &&
     typeof value.action === "string" &&
     isRecord(value.data) &&
-    ["campaign", "scene", "token", "actor", "item", "journal", "chat", "encounter", "combat"].includes(value.entity) &&
+    ["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "encounter", "combat", "asset"].includes(value.entity) &&
     ["create", "update", "delete"].includes(value.action)
   );
 }
@@ -10058,6 +11234,17 @@ function booleanFromRecord(record: Record<string, unknown>, key: string): boolea
 function recordFromRecord(record: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
   const value = record[key];
   return isRecord(value) ? value : undefined;
+}
+
+function saveOutcomesFromRecord(record: Record<string, unknown>, key: string): Record<string, RulesSaveOutcome> | undefined {
+  const value = recordFromRecord(record, key);
+  if (!value) return undefined;
+  const outcomes: Record<string, RulesSaveOutcome> = {};
+  for (const [actorId, outcome] of Object.entries(value)) {
+    if (!actorId.trim()) continue;
+    if (outcome === "success" || outcome === "failure") outcomes[actorId] = outcome;
+  }
+  return Object.keys(outcomes).length > 0 ? outcomes : undefined;
 }
 
 function enumStringFromRecord<T extends string>(record: Record<string, unknown>, key: string, allowed: readonly T[]): T | undefined {
@@ -10613,25 +11800,68 @@ function normalizeLightSourcePatch(body: Partial<Pick<LightSource, "x" | "y" | "
   return { patch };
 }
 
-function normalizeTokenVisionPatch(body: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>, current?: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>): { patch: Partial<Token> } | { error: string } {
+const tokenLayerValues = ["map", "player", "gm"] as const satisfies readonly TokenLayer[];
+
+function isTokenLayer(value: unknown): value is TokenLayer {
+  return typeof value === "string" && tokenLayerValues.includes(value as TokenLayer);
+}
+
+function tokenLayer(token: Partial<Pick<Token, "layer">>): TokenLayer {
+  return isTokenLayer(token.layer) ? token.layer : "player";
+}
+
+function normalizeTokenLayerPatch(body: Partial<Pick<Token, "layer">>): { patch: Partial<Pick<Token, "layer">> } | { error: string } {
+  if (body.layer === undefined) return { patch: {} };
+  if (!isTokenLayer(body.layer)) return { error: "Token layer must be map, player, or gm" };
+  return { patch: { layer: body.layer } };
+}
+
+function normalizeTokenVisionPatch(body: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "dimVisionRadius">> & { brightVisionRadius?: number | null; dimVisionRadius?: number | null }, current?: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>): { patch: Partial<Token> } | { error: string } {
   const patch: Partial<Token> = {};
   if (body.visionRadius !== undefined) {
     if (!Number.isFinite(body.visionRadius) || body.visionRadius < 0) return { error: "Token visionRadius must be a nonnegative number" };
     patch.visionRadius = body.visionRadius;
   }
   if (body.brightVisionRadius !== undefined) {
-    if (!Number.isFinite(body.brightVisionRadius) || body.brightVisionRadius <= 0) return { error: "Token brightVisionRadius must be greater than zero" };
-    patch.brightVisionRadius = body.brightVisionRadius;
+    if (body.brightVisionRadius === null) {
+      patch.brightVisionRadius = undefined;
+    } else {
+      if (!Number.isFinite(body.brightVisionRadius) || body.brightVisionRadius <= 0) return { error: "Token brightVisionRadius must be greater than zero" };
+      patch.brightVisionRadius = body.brightVisionRadius;
+    }
   }
   if (body.dimVisionRadius !== undefined) {
-    if (!Number.isFinite(body.dimVisionRadius) || body.dimVisionRadius <= 0) return { error: "Token dimVisionRadius must be greater than zero" };
-    patch.dimVisionRadius = body.dimVisionRadius;
+    if (body.dimVisionRadius === null) {
+      patch.dimVisionRadius = undefined;
+    } else {
+      if (!Number.isFinite(body.dimVisionRadius) || body.dimVisionRadius <= 0) return { error: "Token dimVisionRadius must be greater than zero" };
+      patch.dimVisionRadius = body.dimVisionRadius;
+    }
   }
   const nextEnabled = body.visionEnabled ?? current?.visionEnabled ?? true;
   const nextRadius = patch.visionRadius ?? current?.visionRadius ?? 0;
-  const nextBrightRadius = patch.brightVisionRadius ?? current?.brightVisionRadius;
-  const nextDimRadius = patch.dimVisionRadius ?? current?.dimVisionRadius ?? nextRadius;
+  const hasBrightPatch = Object.prototype.hasOwnProperty.call(patch, "brightVisionRadius");
+  const hasDimPatch = Object.prototype.hasOwnProperty.call(patch, "dimVisionRadius");
+  const nextBrightRadius = hasBrightPatch ? patch.brightVisionRadius : current?.brightVisionRadius;
+  const nextDimRadius = hasDimPatch ? patch.dimVisionRadius ?? nextRadius : current?.dimVisionRadius ?? nextRadius;
   if (nextEnabled && nextBrightRadius !== undefined && nextBrightRadius >= nextDimRadius) return { error: "Token brightVisionRadius must be less than dimVisionRadius" };
+  return { patch };
+}
+
+function tokenMoveOnlyPatch(body: Partial<Token>): boolean {
+  return Object.keys(body).every((key) => key === "x" || key === "y");
+}
+
+function normalizeTokenMovePatch(body: Partial<Pick<Token, "x" | "y">>): { patch: Partial<Pick<Token, "x" | "y">> } | { error: string } {
+  const patch: Partial<Pick<Token, "x" | "y">> = {};
+  if (body.x !== undefined) {
+    if (!Number.isFinite(body.x)) return { error: "Token x must be a finite number" };
+    patch.x = body.x;
+  }
+  if (body.y !== undefined) {
+    if (!Number.isFinite(body.y)) return { error: "Token y must be a finite number" };
+    patch.y = body.y;
+  }
   return { patch };
 }
 
@@ -10853,11 +12083,13 @@ function canReadHiddenTokens(store: StateStore, userId: string, campaignId: stri
 
 function canMoveToken(store: StateStore, userId: string, campaignId: string, token: Token): boolean {
   if (canReadHiddenTokens(store, userId, campaignId)) return true;
+  if (tokenLayer(token) !== "player") return false;
   return canCampaign(store, userId, campaignId, "token.move") && isTokenOwnedByUser(store, userId, token);
 }
 
 function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: string, token: Token, sceneTokens?: Token[]): boolean {
   if (canReadHiddenTokens(store, userId, campaignId)) return true;
+  if (tokenLayer(token) === "gm") return false;
   if (token.hidden) return false;
   if (isTokenOwnedByUser(store, userId, token)) return true;
   const scene = store.state.scenes.find((item) => item.id === token.sceneId);
@@ -10904,7 +12136,7 @@ function visionSnapshotForUser(store: StateStore, userId: string, campaignId: st
 function ownedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[]): VisionPolygon[] {
   const tokens = sceneTokens ?? store.state.tokens.filter((item) => item.sceneId === scene.id);
   return tokens
-    .filter((item) => item.visionEnabled && tokenVisionOuterRadius(item) > 0 && isTokenOwnedByUser(store, userId, item))
+    .filter((item) => tokenLayer(item) === "player" && item.visionEnabled && tokenVisionOuterRadius(item) > 0 && isTokenOwnedByUser(store, userId, item))
     .flatMap((token) => computeTokenVisionPolygons(scene, token));
 }
 
@@ -12182,7 +13414,7 @@ function positiveInteger(value: unknown): number | undefined {
 }
 
 function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined): EngineEvent | undefined {
-  if (!userId) return event.type.startsWith("chat.message.") ? undefined : event;
+  if (!userId || !canCampaign(store, userId, event.campaignId, "campaign.read")) return undefined;
   if (event.type.startsWith("chat.message.")) {
     const message = event.payload as Partial<ChatMessage> | undefined;
     const campaignId = message?.campaignId ?? event.campaignId;
@@ -12194,6 +13426,7 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
   const token = event.payload as Partial<Token> | undefined;
   if (!token?.sceneId) return event;
   const campaignId = campaignIdForScene(store, token.sceneId) ?? event.campaignId;
+  if (!canCampaign(store, userId, campaignId, "campaign.read")) return undefined;
   if (isTokenVisibleToUser(store, userId, campaignId, token as Token)) return event;
   return {
     ...event,
@@ -12544,7 +13777,9 @@ function errorMessage(error: unknown): string {
 
 function findLoginUser(store: StateStore, input: { userId?: string; email?: string }): User | undefined {
   const email = normalizeEmail(input.email);
-  return store.state.users.find((user) => user.id === input.userId || (email !== undefined && normalizeEmail(user.email) === email));
+  if (email !== undefined) return store.state.users.find((user) => normalizeEmail(user.email) === email);
+  if (input.userId && legacyUserHeaderEnabled()) return store.state.users.find((user) => user.id === input.userId);
+  return undefined;
 }
 
 function resolveInviteUser(store: StateStore, headers: Record<string, string | string[] | undefined>, input: { userId?: string; email?: string; displayName?: string; password?: string }, reply: FastifyReply): User | FastifyReply {
@@ -15073,8 +16308,19 @@ function sessionTokenFromRequest(requestUrl: string | undefined, headers: Record
     .find((part) => part.startsWith("otte_session="))
     ?.slice("otte_session=".length);
   if (cookieToken) return decodeURIComponent(cookieToken);
+  const protocolToken = websocketProtocolSessionToken(headers);
+  if (protocolToken) return protocolToken;
   const url = new URL(requestUrl ?? "/api/v1/realtime", "http://localhost");
   return url.searchParams.get("sessionToken") ?? undefined;
+}
+
+function websocketProtocolSessionToken(headers: Record<string, string | string[] | undefined>): string | undefined {
+  const protocols = headerValue(headers["sec-websocket-protocol"]);
+  return protocols
+    ?.split(",")
+    .map((protocol) => protocol.trim())
+    .find((protocol) => protocol.startsWith("otte.auth."))
+    ?.slice("otte.auth.".length);
 }
 
 function hashPassword(password: string): string {
@@ -16283,6 +17529,25 @@ function pluginOperationsRemediationQueue(input: {
       ].slice(0, 3)
     });
   }
+  if (input.registryOperations.communityDistributionNeedsReviewPolicy) {
+    remediations.push({
+      code: "require_review_for_community_registries",
+      severity: "warning",
+      action: "Set OTTE_PLUGIN_REVIEW_POLICY=require_approved before enabling production community plugin registries so every distributed package version gets explicit admin review.",
+      affectedCount: input.registryOperations.configuredRegistryCount + input.registryOperations.syncedPackageCount,
+      samples: [
+        ...input.registryOperations.configured.slice(0, 2).map((registry) => ({
+          registryUrl: registry.registryUrl,
+          status: registry.status
+        })),
+        ...input.registryOperations.unconfiguredPackages.slice(0, 2).map((plugin) => ({
+          pluginId: plugin.pluginId,
+          packageId: plugin.packageId,
+          registryUrl: plugin.registryUrl
+        }))
+      ].slice(0, 3)
+    });
+  }
   const staleRegistries = input.registryOperations.configured.filter((registry) => registry.status === "synced" && registry.stale);
   if (staleRegistries.length > 0) {
     remediations.push({
@@ -16390,10 +17655,12 @@ function pluginRegistryOperationsSummary(store: StateStore, packages: LoadedPlug
   const unconfiguredRegistryPackages = registryPackages.filter((plugin) => !configuredRegistrySet.has(plugin.source.registryUrl ?? ""));
   const staleConfiguredRegistries = configured.filter((registry) => registry.stale);
   const syncAges = configured.map((registry) => registry.syncAgeSeconds).filter((age): age is number => typeof age === "number");
+  const communityDistributionNeedsReviewPolicy = process.env.NODE_ENV === "production" && pluginReviewPolicyMode() !== "require_approved" && (configuredRegistries.length > 0 || registryPackages.length > 0);
   const actionReasons = [
     runtimeConfig.invalidUrlConfig.length > 0 ? "plugin_registry_url_config_invalid" : undefined,
     runtimeConfig.insecureUrlConfig.length > 0 ? "plugin_registry_url_insecure" : undefined,
     runtimeConfig.invalidNumericConfig.length > 0 ? "plugin_registry_numeric_config_invalid" : undefined,
+    communityDistributionNeedsReviewPolicy ? "community_registry_review_policy_permissive" : undefined,
     configured.some((registry) => registry.status === "never_synced") ? "configured_registry_unsynced" : undefined,
     configured.some((registry) => registry.status === "failed") ? "registry_sync_errors" : undefined,
     staleConfiguredRegistries.length > 0 ? "stale_plugin_registry_sync" : undefined,
@@ -16403,6 +17670,7 @@ function pluginRegistryOperationsSummary(store: StateStore, packages: LoadedPlug
     actionRequired: actionReasons.length > 0,
     actionReasons,
     runtimeConfig,
+    communityDistributionNeedsReviewPolicy,
     configuredRegistryCount: configuredRegistries.length,
     syncedPackageCount: registryPackages.length,
     staleThresholdSeconds,
@@ -17300,10 +18568,14 @@ function pluginReviewInstallBlockForReview(plugin: LoadedPlugin, review: PluginR
   if (review.status === "rejected") {
     return `Plugin ${plugin.id}@${plugin.version} was rejected by marketplace review`;
   }
-  if (pluginReviewPolicyMode() === "require_approved" && review.status !== "approved") {
+  if (pluginRequiresReviewApproval(plugin) && review.status !== "approved") {
     return `Plugin ${plugin.id}@${plugin.version} requires marketplace approval before install or execution; current review status is ${review.status}`;
   }
   return undefined;
+}
+
+function pluginRequiresReviewApproval(plugin: LoadedPlugin): boolean {
+  return pluginReviewPolicyMode() === "require_approved" || (process.env.NODE_ENV === "production" && plugin.source.type === "registry");
 }
 
 function pluginReviewKey(plugin: LoadedPlugin): string {
@@ -17776,6 +19048,19 @@ function headerText(value: string | string[] | undefined): string | undefined {
 
 function normalizeAssetFolder(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 80) : undefined;
+}
+
+function normalizeGeneratedAssetName(value: unknown, kind: "map" | "token"): string {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, 120) : kind === "map" ? "AI Generated Map" : "AI Generated Token";
+}
+
+function gridlessMapGenerationPrompt(prompt: string): string {
+  return [
+    prompt.trim(),
+    "",
+    "Render this as a clean gridless virtual tabletop background.",
+    "Do not include square grids, hex grids, coordinates, labels, tokens, miniatures, UI chrome, or measurement markings; the VTT will overlay its own grid and tokens."
+  ].join("\n");
 }
 
 function normalizeAssetTags(value: unknown): string[] {
@@ -19167,6 +20452,120 @@ function isAssetDeliverable(asset: MapAsset): boolean {
   return !asset.lifecycle?.expiresAt || Date.parse(asset.lifecycle.expiresAt) > Date.now();
 }
 
+async function cleanupRejectedProposalAssets(
+  store: StateStore,
+  activeStorage: AssetStorage,
+  uploadDir: string,
+  proposals: Proposal[],
+  actorUserId: string,
+  reason: string
+): Promise<{ assetCount: number; deleted: number; missingMarked: number; skipped: number; failed: number; changed: boolean; results: Array<Record<string, unknown>> }> {
+  const results: Array<Record<string, unknown>> = [];
+  const seenAssetIds = new Set<string>();
+  let assetCount = 0;
+  let deleted = 0;
+  let missingMarked = 0;
+  let skipped = 0;
+  let failed = 0;
+  let changed = false;
+
+  for (const proposal of proposals) {
+    for (const asset of proposalCreatedAssets(proposal)) {
+      if (seenAssetIds.has(asset.id)) continue;
+      seenAssetIds.add(asset.id);
+      assetCount++;
+      const base = { proposalId: proposal.id, assetId: asset.id, name: asset.name, sizeBytes: asset.sizeBytes };
+      if (!asset.storage) {
+        skipped++;
+        results.push({ ...base, status: "skipped", reason: "no_storage_ref" });
+        continue;
+      }
+      if (asset.lifecycle?.storageDeletedAt) {
+        skipped++;
+        results.push({ ...base, status: "skipped", reason: "storage_already_deleted" });
+        continue;
+      }
+      try {
+        const sourceStorage = sourceStorageForAsset(asset, activeStorage, uploadDir);
+        const objectDeleted = await sourceStorage.delete(asset);
+        markRejectedProposalAssetDeleted(asset, reason, actorUserId);
+        changed = true;
+        if (objectDeleted) {
+          deleted++;
+          results.push({ ...base, status: "deleted", reason: "rejected_proposal" });
+        } else {
+          missingMarked++;
+          results.push({ ...base, status: "missing_marked", reason: "rejected_proposal" });
+        }
+      } catch (error) {
+        failed++;
+        results.push({ ...base, status: "failed", reason: errorMessage(error) });
+      }
+    }
+  }
+
+  if (changed) store.save();
+  return { assetCount, deleted, missingMarked, skipped, failed, changed, results };
+}
+
+function proposalCreatedAssets(proposal: Proposal): MapAsset[] {
+  if (proposal.status !== "rejected") return [];
+  return proposal.changesJson
+    .filter((change) => change.entity === "asset" && change.action === "create")
+    .map((change) => mapAssetFromRecord(change.data))
+    .filter((asset): asset is MapAsset => Boolean(asset));
+}
+
+function markRejectedProposalAssetDeleted(asset: MapAsset, reason: string, actorUserId: string): void {
+  const updatedAt = nowIso();
+  asset.lifecycle = {
+    ...asset.lifecycle,
+    status: "deleted",
+    updatedAt,
+    updatedByUserId: actorUserId,
+    reason,
+    storageDeletedAt: updatedAt,
+    cleanupReason: "rejected_proposal"
+  };
+  asset.updatedAt = updatedAt;
+}
+
+function findAssetForDelivery(store: StateStore, assetId: string): MapAsset | undefined {
+  return store.state.assets.find((asset) => asset.id === assetId) ?? pendingProposalAssetForDelivery(store, assetId);
+}
+
+function pendingProposalAssetForDelivery(store: StateStore, assetId: string): MapAsset | undefined {
+  for (const proposal of store.state.proposals) {
+    if (proposal.status !== "pending" && proposal.status !== "approved") continue;
+    for (const change of proposal.changesJson) {
+      if (change.entity !== "asset" || change.action !== "create") continue;
+      if (mapAssetIdFromRecord(change.data) !== assetId) continue;
+      return mapAssetFromRecord(change.data);
+    }
+  }
+  return undefined;
+}
+
+function mapAssetIdFromRecord(value: Record<string, unknown>): string | undefined {
+  return typeof value.id === "string" && value.id.trim() ? value.id : undefined;
+}
+
+function mapAssetFromRecord(value: Record<string, unknown>): MapAsset | undefined {
+  if (
+    typeof value.id !== "string" ||
+    typeof value.campaignId !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.url !== "string" ||
+    typeof value.mimeType !== "string" ||
+    typeof value.sizeBytes !== "number" ||
+    typeof value.createdAt !== "string" ||
+    typeof value.updatedAt !== "string"
+  ) {
+    return undefined;
+  }
+  return value as unknown as MapAsset;
+}
+
 function assetUnavailable(reply: FastifyReply, asset: MapAsset): FastifyReply {
   const deleted = asset.lifecycle?.status === "deleted";
   return reply.code(410).send({
@@ -19201,11 +20600,38 @@ function assetRetentionDays(): number | undefined {
 }
 
 function campaignAssetBytes(store: StateStore, campaignId: string): number {
-  return store.state.assets.filter((asset) => asset.campaignId === campaignId && asset.lifecycle?.status !== "deleted").reduce((total, asset) => total + asset.sizeBytes, 0);
+  const countedAssetIds = new Set<string>();
+  const storedBytes = store.state.assets
+    .filter((asset) => asset.campaignId === campaignId && asset.lifecycle?.status !== "deleted")
+    .reduce((total, asset) => {
+      countedAssetIds.add(asset.id);
+      return total + asset.sizeBytes;
+    }, 0);
+  const pendingBytes = pendingProposalAssetsForCampaign(store, campaignId)
+    .filter((asset) => !countedAssetIds.has(asset.id) && asset.lifecycle?.status !== "deleted")
+    .reduce((total, asset) => total + asset.sizeBytes, 0);
+  return storedBytes + pendingBytes;
+}
+
+function pendingProposalAssetsForCampaign(store: StateStore, campaignId: string): MapAsset[] {
+  const assets: MapAsset[] = [];
+  const seenAssetIds = new Set<string>();
+  for (const proposal of store.state.proposals) {
+    if (proposal.campaignId !== campaignId || (proposal.status !== "pending" && proposal.status !== "approved")) continue;
+    for (const change of proposal.changesJson) {
+      if (change.entity !== "asset" || change.action !== "create") continue;
+      const asset = mapAssetFromRecord(change.data);
+      if (!asset || asset.campaignId !== campaignId || seenAssetIds.has(asset.id)) continue;
+      seenAssetIds.add(asset.id);
+      assets.push(asset);
+    }
+  }
+  return assets;
 }
 
 function campaignAssetStorageInfo(store: StateStore, campaignId: string, activeStorage?: AssetStorage): Record<string, unknown> {
   const assets = store.state.assets.filter((asset) => asset.campaignId === campaignId);
+  const pendingProposalAssets = pendingProposalAssetsForCampaign(store, campaignId).filter((asset) => !assets.some((storedAsset) => storedAsset.id === asset.id));
   const quotaBytes = assetQuotaBytes();
   const usedBytes = campaignAssetBytes(store, campaignId);
   const lifecycleCounts = countBy(assets, (asset) => asset.lifecycle?.status ?? "active");
@@ -19214,6 +20640,8 @@ function campaignAssetStorageInfo(store: StateStore, campaignId: string, activeS
     campaignId,
     assetCount: assets.length,
     activeAssetCount: assets.filter((asset) => asset.lifecycle?.status !== "deleted").length,
+    pendingProposalAssetCount: pendingProposalAssets.length,
+    pendingProposalAssetBytes: pendingProposalAssets.reduce((total, asset) => total + asset.sizeBytes, 0),
     usedBytes,
     allBytes: assets.reduce((total, asset) => total + asset.sizeBytes, 0),
     quotaBytes,
@@ -19270,12 +20698,21 @@ function campaignAssetDeliveryInfo(assets: MapAsset[], activeStorage: AssetStora
 }
 
 function globalAssetStorageInfo(store: StateStore, activeStorage: AssetStorage, cleanupScheduler?: AssetCleanupSchedulerStatus): GlobalAssetStorageInfo {
-  const campaignIds = [...new Set(store.state.assets.map((asset) => asset.campaignId))].sort();
+  const campaignIds = [
+    ...new Set([
+      ...store.state.assets.map((asset) => asset.campaignId),
+      ...store.state.proposals
+        .filter((proposal) => proposal.status === "pending" || proposal.status === "approved")
+        .map((proposal) => proposal.campaignId)
+    ])
+  ].sort();
   const campaigns = campaignIds.map((campaignId) => campaignAssetStorageInfo(store, campaignId, activeStorage));
-  const usedBytes = store.state.assets.filter((asset) => asset.lifecycle?.status !== "deleted").reduce((total, asset) => total + asset.sizeBytes, 0);
+  const usedBytes = campaignIds.reduce((total, campaignId) => total + campaignAssetBytes(store, campaignId), 0);
+  const pendingProposalAssetCount = campaignIds.reduce((total, campaignId) => total + pendingProposalAssetsForCampaign(store, campaignId).length, 0);
   return {
     assetCount: store.state.assets.length,
     activeAssetCount: store.state.assets.filter((asset) => asset.lifecycle?.status !== "deleted").length,
+    pendingProposalAssetCount,
     usedBytes,
     allBytes: store.state.assets.reduce((total, asset) => total + asset.sizeBytes, 0),
     providerCounts: countBy(store.state.assets, (asset) => asset.storage?.provider ?? "external"),
@@ -19310,7 +20747,14 @@ function assetStorageOperationsSummary(store: StateStore, activeStorage: AssetSt
   const quotaAtRiskCampaigns =
     quotaBytes === undefined
       ? []
-      : [...new Set(store.state.assets.map((asset) => asset.campaignId))]
+      : [
+          ...new Set([
+            ...store.state.assets.map((asset) => asset.campaignId),
+            ...store.state.proposals
+              .filter((proposal) => proposal.status === "pending" || proposal.status === "approved")
+              .map((proposal) => proposal.campaignId)
+          ])
+        ]
           .map((campaignId) => {
             const usedBytes = campaignAssetBytes(store, campaignId);
             return {
@@ -20309,6 +21753,7 @@ function makeDogfoodReportBundle(state: EngineState, campaignId: string): Record
       actorId: token.actorId,
       name: token.name,
       disposition: token.disposition,
+      layer: tokenLayer(token),
       hidden: token.hidden,
       locked: token.locked,
       visionEnabled: token.visionEnabled,
@@ -20619,7 +22064,7 @@ function contentImportEntityWarnings(input: Pick<ContentImportEntity, "kind" | "
 }
 
 function applyContentImportEntity(state: EngineState, campaign: Campaign, entity: ContentImportEntity, userId: string): ContentImportAppliedRecord {
-  const recordId = contentImportRecordId(entity);
+  const recordId = contentImportRecordId(campaign.id, entity);
   if (state.actors.some((item) => item.id === recordId) || state.items.some((item) => item.id === recordId) || state.journals.some((item) => item.id === recordId) || state.handouts.some((item) => item.id === recordId)) {
     throw new Error(`Imported record already exists: ${recordId}`);
   }
@@ -20701,14 +22146,14 @@ function removeAppliedContentImportRecord(state: EngineState, record: ContentImp
   return record;
 }
 
-function contentImportRecordId(entity: ContentImportEntity): string {
+function contentImportRecordId(campaignId: string, entity: ContentImportEntity): string {
   const prefix: Record<ContentImportEntityKind, string> = {
     actor: "act_imp",
     item: "item_imp",
     journal: "jnl_imp",
     handout: "hnd_imp"
   };
-  return `${prefix[entity.kind]}_${entity.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+  return `${prefix[entity.kind]}_${campaignId.replace(/[^a-zA-Z0-9_]/g, "_")}_${entity.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 }
 
 function recordOfStringArrayFromRecord(record: Record<string, unknown>, key: string): Record<string, PermissionName[]> | undefined {
@@ -20925,4 +22370,8 @@ function forbidden(reply: FastifyReply, message: string): FastifyReply {
 
 function conflict(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(409).send({ error: "conflict", message });
+}
+
+function pendingResolution(reply: FastifyReply, message: string, resolution: RulesActionResolutionResult, actor: Actor, sheet: unknown): FastifyReply {
+  return reply.code(409).send({ error: "pending_resolution", message, resolution, actor, sheet });
 }

@@ -189,6 +189,7 @@ export function seedState(): EngineState {
     width: 50,
     height: 50,
     rotation: 0,
+    layer: "player",
     hidden: false,
     locked: false,
     visionEnabled: true,
@@ -243,6 +244,7 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
   const campaign = state.campaigns.find((item) => item.id === campaignId);
   if (!campaign) throw new Error(`Campaign not found: ${campaignId}`);
   const memberUserIds = new Set(state.members.filter((item) => item.campaignId === campaignId).map((item) => item.userId));
+  const aiThreadIds = new Set(state.aiThreads.filter((item) => item.campaignId === campaignId).map((item) => item.id));
   const campaignData: EngineState = {
     ...emptyState(),
     users: state.users.filter((item) => memberUserIds.has(item.id)).map(({ passwordHash: _passwordHash, mfa: _mfa, scim: _scim, ...user }) => user),
@@ -276,7 +278,7 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     aiThreads: state.aiThreads.filter((item) => item.campaignId === campaignId),
     aiEvaluations: state.aiEvaluations.filter((item) => item.campaignId === campaignId),
     aiMemory: state.aiMemory.filter((item) => item.campaignId === campaignId),
-    aiToolCalls: state.aiToolCalls,
+    aiToolCalls: state.aiToolCalls.filter((item) => aiThreadIds.has(item.threadId)),
     auditLogs: state.auditLogs.filter((item) => item.campaignId === campaignId),
     permissionGrants: state.permissionGrants.filter((item) => item.campaignId === campaignId),
     pluginStorage: state.pluginStorage.filter((item) => item.campaignId === campaignId),

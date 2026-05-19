@@ -28,7 +28,7 @@ const campaign = await client.createCampaign({
 
 ## Realtime
 
-Use `connectRealtime` when the runtime provides `WebSocket`, or pass a constructor for Node-based tools and tests. The helper converts `http` to `ws`, converts `https` to `wss`, attaches `campaignId`, and includes the client token unless a per-call token is provided.
+Use `connectRealtime` when the runtime provides `WebSocket`, or pass a constructor for Node-based tools and tests. The helper converts `http` to `ws`, converts `https` to `wss`, attaches `campaignId`, and sends the client token through an `otte.auth.<token>` WebSocket subprotocol unless a per-call token is provided.
 
 ```ts
 import type { EngineEvent } from "@open-tabletop/core";
@@ -43,10 +43,11 @@ socket.addEventListener("message", (message) => {
 });
 ```
 
-Use `realtimeUrl(campaignId)` if a framework owns socket construction:
+Use `realtimeUrl(campaignId)` if a framework owns socket construction. Pass the token as a WebSocket subprotocol, not as a URL query parameter:
 
 ```ts
-const realtimeUrl = client.realtimeUrl("camp_demo", { token });
+const realtimeUrl = client.realtimeUrl("camp_demo");
+const socket = new WebSocket(realtimeUrl, ["otte.v1", `otte.auth.${token}`]);
 ```
 
 ## Public Surface

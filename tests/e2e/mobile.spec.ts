@@ -145,10 +145,12 @@ for (const viewport of viewportCases) {
       await expect(page.getByRole("textbox", { name: "Chat history search" })).toBeVisible();
       await expect(page.locator(".chat-history-list")).toContainText(chatMessage);
 
+      await page.getByRole("button", { name: "Prep", exact: true }).click();
       await page.getByRole("button", { name: "Content" }).click();
       await expect(page.getByText("Asset Library")).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
 
+      await page.getByRole("button", { name: "Live Table", exact: true }).click();
       await page.getByRole("button", { name: "Actors" }).click();
       await expect(page.getByRole("combobox", { name: "Token actor" })).toBeVisible();
 

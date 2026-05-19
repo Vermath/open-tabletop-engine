@@ -433,6 +433,8 @@ export interface AssetSecurityFinding {
   message: string;
 }
 
+export type TokenLayer = "map" | "player" | "gm";
+
 export interface Token extends Timestamps {
   id: ID;
   sceneId: ID;
@@ -443,6 +445,7 @@ export interface Token extends Timestamps {
   width: number;
   height: number;
   rotation: number;
+  layer?: TokenLayer;
   hidden: boolean;
   locked: boolean;
   visionEnabled: boolean;
@@ -642,7 +645,7 @@ export interface ProposalHistoryEntry {
 }
 
 export interface ProposalChange {
-  entity: "campaign" | "scene" | "token" | "actor" | "item" | "journal" | "chat" | "encounter" | "combat";
+  entity: "campaign" | "scene" | "token" | "actor" | "item" | "journal" | "chat" | "roll" | "encounter" | "combat" | "asset";
   action: "create" | "update" | "delete";
   id?: ID;
   data: Record<string, unknown>;

@@ -142,8 +142,7 @@ interface PluginRegistryPackageMetadata {
 
 interface SandboxGlobals {
   registerCommand(command: string, handler: (input: PluginChatCommandInput) => unknown): void;
-  __otteCommand?: string;
-  __otteInput?: PluginChatCommandInput;
+  __ottePayloadJson?: string;
   __otteResult?: unknown;
   __otteHandlers: Record<string, (input: PluginChatCommandInput) => unknown>;
 }
@@ -413,15 +412,13 @@ class SandboxedPluginRuntime {
 
   execute(command: string, input: PluginChatCommandInput): PluginChatCommandResult {
     if (!this.sandbox.__otteHandlers[command]) throw new Error(`Plugin command handler is not registered: ${command}`);
-    this.sandbox.__otteCommand = command;
-    this.sandbox.__otteInput = input;
+    this.sandbox.__ottePayloadJson = JSON.stringify({ command, input });
     this.sandbox.__otteResult = undefined;
     try {
-      new Script("__otteResult = __otteHandlers[__otteCommand](__otteInput);").runInContext(this.context, { timeout: SandboxedPluginRuntime.executionTimeoutMs });
+      new Script("(() => { const __ottePayload = JSON.parse(__ottePayloadJson); __otteResult = __otteHandlers[__ottePayload.command](__ottePayload.input); })();").runInContext(this.context, { timeout: SandboxedPluginRuntime.executionTimeoutMs });
       return normalizeCommandResult(this.sandbox.__otteResult);
     } finally {
-      this.sandbox.__otteCommand = undefined;
-      this.sandbox.__otteInput = undefined;
+      this.sandbox.__ottePayloadJson = undefined;
       this.sandbox.__otteResult = undefined;
     }
   }

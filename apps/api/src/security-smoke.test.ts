@@ -228,6 +228,50 @@ describe("security smoke", () => {
       process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
 
       process.env.NODE_ENV = "production";
+      delete process.env.OTTE_PLUGIN_REVIEW_POLICY;
+      process.env.OTTE_PLUGIN_TRUST_POLICY = "allow_unsigned";
+      delete process.env.OTTE_PLUGIN_TRUST_KEYS;
+      app = await buildApp({
+        store: new MemoryStateStore(),
+        pluginRegistry: loadPluginRegistry({
+          pluginRoot,
+          trustPolicy: { policy: "allow_unsigned" }
+        })
+      });
+      const permissiveRegistryAdminHeaders = await loginTestUser(app, "usr_demo_gm");
+      const registryReviewBlockedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/install",
+        headers: permissiveRegistryAdminHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(registryReviewBlockedInstall.statusCode).toBe(403);
+      expect(registryReviewBlockedInstall.json().message).toContain("requires marketplace approval");
+      const permissiveRegistryPosture = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/plugins/operations",
+        headers: permissiveRegistryAdminHeaders
+      });
+      expect(permissiveRegistryPosture.statusCode).toBe(200);
+      expect(permissiveRegistryPosture.json()).toEqual(
+        expect.objectContaining({
+          policy: { review: "allow_unreviewed", trust: "allow_unsigned" },
+          actionReasons: expect.arrayContaining(["community_registry_review_policy_permissive"]),
+          registryOperations: expect.objectContaining({
+            communityDistributionNeedsReviewPolicy: true
+          }),
+          remediationQueue: expect.arrayContaining([
+            expect.objectContaining({
+              code: "require_review_for_community_registries",
+              action: expect.stringContaining("OTTE_PLUGIN_REVIEW_POLICY=require_approved")
+            })
+          ])
+        })
+      );
+      await app.close();
+      app = undefined;
+
+      process.env.NODE_ENV = "production";
       process.env.OTTE_PLUGIN_REVIEW_POLICY = "require_approved";
       process.env.OTTE_PLUGIN_TRUST_POLICY = "allow_unsigned";
       delete process.env.OTTE_PLUGIN_TRUST_KEYS;
@@ -422,10 +466,11 @@ function writePluginSignature(pluginRoot: string, packageId: string, keyId: stri
 }
 
 async function loginTestUser(app: Awaited<ReturnType<typeof buildApp>>, userId: string): Promise<{ authorization: string }> {
+  const email = userId === "usr_demo_gm" ? "gm@example.test" : userId === "usr_demo_player" ? "player@example.test" : undefined;
   const login = await app.inject({
     method: "POST",
     url: "/api/v1/auth/login",
-    payload: { userId }
+    payload: email ? { email } : { userId }
   });
   expect(login.statusCode).toBe(200);
   return { authorization: `Bearer ${login.json().token}` };
