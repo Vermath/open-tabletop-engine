@@ -99,10 +99,11 @@ describe("OpenTabletopClient", () => {
     expect(requests[3]!.headers["content-type"]).toBeUndefined();
     expect(requests[3]!.body).toBeUndefined();
     expect(requests[4]!.headers["content-type"]).toBe("image/svg+xml");
+    expect(requests[4]!.headers["x-asset-name"]).toBe("map.svg");
+    expect(requests[4]!.headers["x-asset-folder"]).toBe("Maps");
+    expect(requests[4]!.headers["x-asset-tags"]).toBe("alpha,beta");
     expect(requests[4]!.body).toBe("raw-svg-body");
-    expect(requests[4]!.url.searchParams.get("name")).toBe("map.svg");
-    expect(requests[4]!.url.searchParams.get("folder")).toBe("Maps");
-    expect(requests[4]!.url.searchParams.getAll("tag")).toEqual(["alpha", "beta"]);
+    expect(requests[4]!.url.search).toBe("");
   });
 
   it("throws server error response bodies", async () => {

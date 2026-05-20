@@ -4340,6 +4340,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         typeCounts: countBy(messages, (message) => message.type)
       }
     });
+    store.save();
     if (format === "ndjson") {
       reply.header("content-type", "application/x-ndjson; charset=utf-8");
       return messages.map((message) => JSON.stringify(message)).join("\n") + (messages.length > 0 ? "\n" : "");
@@ -11984,8 +11985,7 @@ function rateLimitKey(store: StateStore, request: FastifyRequest): string {
 }
 
 function rateLimitIp(request: FastifyRequest): string {
-  const forwardedFor = headerText(request.headers["x-forwarded-for"])?.split(",")[0]?.trim();
-  return forwardedFor || request.ip || "unknown";
+  return request.ip || "unknown";
 }
 
 function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): void {

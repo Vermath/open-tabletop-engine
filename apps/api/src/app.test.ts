@@ -1766,17 +1766,17 @@ describe("api", () => {
     });
 
     try {
-      const first = await app.inject({ method: "GET", url: "/api/v1/health" });
+      const first = await app.inject({ method: "GET", url: "/api/v1/health", headers: { "x-forwarded-for": "203.0.113.10" } });
       expect(first.statusCode).toBe(200);
       expect(first.headers["x-ratelimit-limit"]).toBe("2");
       expect(first.headers["x-ratelimit-remaining"]).toBe("1");
       expect(first.headers["x-ratelimit-reset"]).toBeDefined();
 
-      const second = await app.inject({ method: "GET", url: "/api/v1/health" });
+      const second = await app.inject({ method: "GET", url: "/api/v1/health", headers: { "x-forwarded-for": "203.0.113.11" } });
       expect(second.statusCode).toBe(200);
       expect(second.headers["x-ratelimit-remaining"]).toBe("0");
 
-      const blocked = await app.inject({ method: "GET", url: "/api/v1/health" });
+      const blocked = await app.inject({ method: "GET", url: "/api/v1/health", headers: { "x-forwarded-for": "203.0.113.12" } });
       expect(blocked.statusCode).toBe(429);
       expect(blocked.headers["retry-after"]).toBeDefined();
       expect(blocked.headers["x-ratelimit-limit"]).toBe("2");
@@ -2817,12 +2817,21 @@ describe("api", () => {
     });
     expect(missingReplyTarget.statusCode).toBe(400);
 
+    let saveCount = 0;
+    const originalSave = store.save.bind(store);
+    store.save = () => {
+      saveCount += 1;
+      originalSave();
+    };
+
+    const savesBeforeJsonExport = saveCount;
     const exportedWhisperView = await app.inject({
       method: "GET",
       url: "/api/v1/campaigns/camp_demo/chat/export",
       headers: playerHeaders
     });
     expect(exportedWhisperView.statusCode).toBe(200);
+    expect(saveCount).toBeGreaterThan(savesBeforeJsonExport);
     expect(exportedWhisperView.json()).toEqual(
       expect.objectContaining({
         campaignId: "camp_demo",
@@ -2859,6 +2868,7 @@ describe("api", () => {
     });
     expect(afterDelete.json().map((message: ChatMessage) => message.id)).not.toContain(whisper.json().id);
 
+    const savesBeforeNdjsonExport = saveCount;
     const ndjsonExport = await app.inject({
       method: "GET",
       url: "/api/v1/campaigns/camp_demo/chat/export?format=ndjson",
@@ -2866,6 +2876,7 @@ describe("api", () => {
     });
     expect(ndjsonExport.statusCode).toBe(200);
     expect(ndjsonExport.headers["content-type"]).toContain("application/x-ndjson");
+    expect(saveCount).toBeGreaterThan(savesBeforeNdjsonExport);
     expect(store.state.auditLogs.filter((log) => log.action === "chat.export" && log.campaignId === "camp_demo").length).toBeGreaterThanOrEqual(2);
 
     await app.close();

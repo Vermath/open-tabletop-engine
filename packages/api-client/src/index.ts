@@ -49,6 +49,11 @@ export interface CampaignArchiveImportOptions {
   collections?: string[];
 }
 
+export interface AssetUploadResponse {
+  asset: MapAsset;
+  scene?: Scene;
+}
+
 export interface PluginRuntimeInfo {
   id: string;
   name: string;
@@ -157,11 +162,11 @@ export class OpenTabletopClient {
     return this.post(routes.passwordResetRequest, input);
   }
 
-  async confirmPasswordReset(input: { token: string; password: string }): Promise<{ ok: true }> {
+  async confirmPasswordReset(input: { token: string; password: string }): Promise<SessionLoginInfo> {
     return this.post(routes.passwordResetConfirm, input);
   }
 
-  async changePassword(input: { currentPassword: string; newPassword: string }): Promise<{ ok: true }> {
+  async changePassword(input: { currentPassword: string; newPassword: string }): Promise<SessionLoginInfo> {
     return this.post(routes.passwordChange, input);
   }
 
@@ -437,13 +442,12 @@ export class OpenTabletopClient {
     return this.post(routes.assets(campaignId), input);
   }
 
-  async uploadAsset(campaignId: string, body: BodyInit, options: { contentType: string; fileName?: string; folder?: string; tags?: string[] }): Promise<MapAsset> {
-    const query = new URLSearchParams();
-    if (options.fileName) query.set("name", options.fileName);
-    if (options.folder) query.set("folder", options.folder);
-    for (const tag of options.tags ?? []) query.append("tag", tag);
-    const suffix = query.size > 0 ? `?${query.toString()}` : "";
-    return this.requestRaw("POST", `${routes.uploadAsset(campaignId)}${suffix}`, body, { "content-type": options.contentType });
+  async uploadAsset(campaignId: string, body: BodyInit, options: { contentType: string; fileName?: string; folder?: string; tags?: string[] }): Promise<AssetUploadResponse> {
+    const headers: Record<string, string> = { "content-type": options.contentType };
+    if (options.fileName) headers["x-asset-name"] = options.fileName;
+    if (options.folder) headers["x-asset-folder"] = options.folder;
+    if (options.tags?.length) headers["x-asset-tags"] = options.tags.join(",");
+    return this.requestRaw("POST", routes.uploadAsset(campaignId), body, headers);
   }
 
   async updateAsset(assetId: string, input: { name?: string; folder?: string | null; tags?: string[] | string }): Promise<MapAsset> {
