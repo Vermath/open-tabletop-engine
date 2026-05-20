@@ -295,6 +295,7 @@ describe("worker job runner", () => {
       leaseSeconds: 30,
       pollIntervalMs: 0,
       maxIdlePolls: 2,
+      maxRetainedResults: 10,
       fetch: async (url, init) => {
         calls.push({ url, init });
         const path = String(url).replace("http://api.test", "");
@@ -330,5 +331,31 @@ describe("worker job runner", () => {
     expect(observed).toEqual(["succeeded", "idle", "idle"]);
     expect(calls.filter((call) => String(call.url).endsWith("/api/v1/admin/jobs/lease"))).toHaveLength(3);
     expect(JSON.parse(calls[0]!.init!.body as string)).toEqual({ workerId: "worker-loop", leaseSeconds: 30 });
+  });
+
+  it("streams leased loop results without retaining an unbounded daemon history by default", async () => {
+    const observed: string[] = [];
+    const result = await runLeasedWorkerLoop({
+      apiBaseUrl: "http://api.test",
+      sessionToken: "ots_admin",
+      workerId: "worker-daemon",
+      leaseSeconds: 30,
+      pollIntervalMs: 0,
+      maxIdlePolls: 2,
+      fetch: async () => new Response(null, { status: 204 }),
+      onResult: (leaseResult) => {
+        observed.push(leaseResult.status);
+      }
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      workerId: "worker-daemon",
+      jobsRun: 0,
+      failures: 0,
+      idlePolls: 2,
+      results: []
+    });
+    expect(observed).toEqual(["idle", "idle"]);
   });
 });

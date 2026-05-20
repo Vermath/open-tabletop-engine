@@ -13183,7 +13183,7 @@ function createOrganizationMember(organizationId: string, userId: string, role: 
 function ensureOrganizationWorkspace(store: StateStore, ownerUserId: string): OrganizationWorkspace {
   const state = store.state as EngineState & { organizations?: OrganizationWorkspace[] };
   state.organizations ??= [];
-  const existing = state.organizations.find((workspace) => workspace.ownerUserId === ownerUserId) ?? state.organizations[0];
+  const existing = state.organizations.find((workspace) => workspace.ownerUserId === ownerUserId);
   if (existing) {
     ensureOrganizationOwnerMember(store, existing);
     return existing;
@@ -13235,6 +13235,12 @@ function organizationWorkspaceRecordForUser(store: StateStore, userId: string, a
   const membership = state.organizationMembers.find((member) => member.userId === userId);
   const memberWorkspace = membership ? state.organizations.find((workspace) => workspace.id === membership.organizationId) : undefined;
   if (memberWorkspace) return memberWorkspace;
+  const campaignMemberWorkspace = state.members
+    .filter((member) => member.userId === userId)
+    .map((member) => store.state.campaigns.find((campaign) => campaign.id === member.campaignId))
+    .map((campaign) => (campaign?.organizationId ? state.organizations.find((workspace) => workspace.id === campaign.organizationId) : undefined))
+    .find((workspace): workspace is OrganizationWorkspace => Boolean(workspace));
+  if (campaignMemberWorkspace) return campaignMemberWorkspace;
   return ensureOrganizationWorkspace(store, userId);
 }
 

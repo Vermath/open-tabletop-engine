@@ -186,6 +186,98 @@ describe("organization workspace defaults", () => {
     }
   });
 
+  it("creates a personal workspace for registered users without existing organization access", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const registered = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          email: "new-owner@example.test",
+          displayName: "New Owner",
+          password: "password-123"
+        }
+      });
+      expect(registered.statusCode).toBe(200);
+      const userId = registered.json().user.id;
+      const headers = { authorization: `Bearer ${registered.json().token}` };
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns",
+        headers,
+        payload: { name: "New Owner Campaign" }
+      });
+
+      expect(created.statusCode).toBe(200);
+      expect(created.json()).toMatchObject({
+        name: "New Owner Campaign",
+        ownerUserId: userId
+      });
+      expect(created.json().organizationId).not.toBe("org_demo");
+      expect(store.state.organizations.find((workspace) => workspace.id === created.json().organizationId)).toMatchObject({
+        name: "Default Workspace",
+        ownerUserId: userId
+      });
+      expect(store.state.organizationMembers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            organizationId: created.json().organizationId,
+            userId,
+            role: "owner"
+          })
+        ])
+      );
+
+      const organizations = await app.inject({
+        method: "GET",
+        url: "/api/v1/organizations",
+        headers
+      });
+      expect(organizations.statusCode).toBe(200);
+      expect(organizations.json()).toEqual([
+        expect.objectContaining({
+          id: created.json().organizationId,
+          role: "owner",
+          campaignCount: 1
+        })
+      ]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("derives workspace defaults from legacy campaign membership without using the first workspace fallback", async () => {
+    const store = new MemoryStateStore();
+    const now = new Date().toISOString();
+    store.state.users.push({
+      id: "usr_legacy_campaign_member",
+      displayName: "Legacy Campaign Member",
+      email: "legacy-campaign-member@example.test",
+      createdAt: now,
+      updatedAt: now
+    });
+    store.state.members.push(createTimestamped("mem", { campaignId: "camp_demo", userId: "usr_legacy_campaign_member", role: "player" }));
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: { "x-user-id": "usr_legacy_campaign_member" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ id: "org_demo", ownerUserId: "usr_demo_gm" });
+      expect(store.state.organizationMembers).not.toEqual(expect.arrayContaining([expect.objectContaining({ userId: "usr_legacy_campaign_member" })]));
+      expect(store.state.organizations).not.toEqual(expect.arrayContaining([expect.objectContaining({ ownerUserId: "usr_legacy_campaign_member" })]));
+    } finally {
+      await app.close();
+    }
+  });
+
   it("keeps workspace defaults isolated across multiple owner workspaces", async () => {
     const store = new MemoryStateStore();
     const now = new Date().toISOString();

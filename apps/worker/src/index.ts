@@ -27,6 +27,7 @@ export interface WorkerLoopOptions extends WorkerOptions {
   pollIntervalMs?: number;
   maxIdlePolls?: number;
   maxJobs?: number;
+  maxRetainedResults?: number;
   sleep?: (milliseconds: number) => Promise<void>;
   onResult?: (result: WorkerLeaseResult) => void | Promise<void>;
 }
@@ -122,6 +123,8 @@ export async function runLeasedWorkerLoop(options: WorkerLoopOptions): Promise<W
   const pollIntervalMs = Math.max(0, options.pollIntervalMs ?? 5000);
   const maxIdlePolls = options.maxIdlePolls ?? Number.POSITIVE_INFINITY;
   const maxJobs = options.maxJobs ?? Number.POSITIVE_INFINITY;
+  const requestedMaxRetainedResults = options.maxRetainedResults ?? (Number.isFinite(maxIdlePolls) && Number.isFinite(maxJobs) ? 100 : 0);
+  const maxRetainedResults = Number.isFinite(requestedMaxRetainedResults) ? Math.max(0, Math.floor(requestedMaxRetainedResults)) : 0;
   const sleep = options.sleep ?? defaultSleep;
   const results: WorkerLeaseResult[] = [];
   let jobsRun = 0;
@@ -130,7 +133,10 @@ export async function runLeasedWorkerLoop(options: WorkerLoopOptions): Promise<W
 
   while (jobsRun < maxJobs && idlePolls < maxIdlePolls) {
     const result = await runLeasedWorkerJob(options);
-    results.push(result);
+    if (maxRetainedResults > 0) {
+      results.push(result);
+      if (results.length > maxRetainedResults) results.splice(0, results.length - maxRetainedResults);
+    }
     await options.onResult?.(result);
     if (result.status === "idle") {
       idlePolls += 1;
