@@ -1884,6 +1884,24 @@ export function App() {
     selectSingleToken(tokenId);
   }
 
+  function selectCanvasTokens(tokenIds: string[], options: TokenSelectionOptions = {}) {
+    const uniqueTokenIds = [...new Set(tokenIds.filter(Boolean))];
+    if (options.additive) {
+      if (uniqueTokenIds.length === 0) return;
+      setSelectedTokenIds((current) => {
+        const next = [...current];
+        for (const tokenId of uniqueTokenIds) {
+          if (!next.includes(tokenId)) next.push(tokenId);
+        }
+        setSelectedTokenIdState(uniqueTokenIds.at(-1) ?? next.at(-1) ?? "");
+        return next;
+      });
+      return;
+    }
+    setSelectedTokenIds(uniqueTokenIds);
+    setSelectedTokenIdState(uniqueTokenIds.at(-1) ?? "");
+  }
+
   function clearTokenSelection() {
     setSelectedTokenIdState("");
     setSelectedTokenIds([]);
@@ -4371,7 +4389,7 @@ export function App() {
               </details>
             </section>
             )}
-            {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} onSelect={selectCanvasToken} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+            {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
           <aside className="inspector">
@@ -4533,9 +4551,27 @@ interface TokenDragDraft {
   pointerId: number;
   offsetX: number;
   offsetY: number;
+  startX: number;
+  startY: number;
   x: number;
   y: number;
+  origins: Record<string, TokenDragOrigin>;
   settling?: boolean;
+}
+
+interface TokenDragOrigin {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface SelectionBoxDraft {
+  pointerId: number;
+  start: VisionPoint;
+  current: VisionPoint;
+  additive: boolean;
+  moved: boolean;
 }
 
 interface MapPanDraft {
@@ -4683,6 +4719,18 @@ function tokenCoordinatesFromCenter(scene: Pick<Scene, "width" | "height" | "gri
   return snappedTokenCoordinates(scene, { width, height }, centerX - width / 2, centerY - height / 2);
 }
 
+function selectionBoxRect(draft: SelectionBoxDraft): { left: number; top: number; width: number; height: number; right: number; bottom: number } {
+  const left = Math.min(draft.start.x, draft.current.x);
+  const top = Math.min(draft.start.y, draft.current.y);
+  const right = Math.max(draft.start.x, draft.current.x);
+  const bottom = Math.max(draft.start.y, draft.current.y);
+  return { left, top, width: right - left, height: bottom - top, right, bottom };
+}
+
+function tokenIntersectsRect(token: Pick<Token, "x" | "y" | "width" | "height">, rect: ReturnType<typeof selectionBoxRect>): boolean {
+  return token.x < rect.right && token.x + token.width > rect.left && token.y < rect.bottom && token.y + token.height > rect.top;
+}
+
 function tokenVisualScaleFor(token: Pick<Token, "width" | "height">, gridSize: number): number {
   const largestSideInCells = Math.max(token.width, token.height) / Math.max(1, gridSize);
   return largestSideInCells > 1.1 ? largeTokenVisualScale : tokenVisualScale;
@@ -4751,17 +4799,19 @@ function hasItemDropData(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(itemDropMime);
 }
 
-function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
+function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
   const [tokenPositionOverrides, setTokenPositionOverrides] = useState<TokenPositionOverrides>({});
   const [dropActive, setDropActive] = useState(false);
   const [mapPanning, setMapPanning] = useState(false);
+  const [selectionBox, setSelectionBox] = useState<SelectionBoxDraft | null>(null);
   const [fogStroke, setFogStroke] = useState<FogStrokeDraft | null>(null);
   const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null);
   const [annotationMoveDraft, setAnnotationMoveDraft] = useState<AnnotationMoveDraft | null>(null);
   const tokenDragRef = useRef<TokenDragDraft | null>(null);
   const pointerSelectedTokenRef = useRef<string | null>(null);
   const mapPanRef = useRef<MapPanDraft | null>(null);
+  const selectionBoxRef = useRef<SelectionBoxDraft | null>(null);
   const fogStrokeRef = useRef<FogStrokeDraft | null>(null);
   const annotationDraftRef = useRef<AnnotationDraft | null>(null);
   const annotationMoveDraftRef = useRef<AnnotationMoveDraft | null>(null);
@@ -4826,7 +4876,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   }
 
   function startMapPan(event: ReactPointerEvent<HTMLDivElement>) {
-    if (props.fogBrushMode || props.annotationTool || event.button !== 0) return;
+    if (props.fogBrushMode || props.annotationTool || (event.button !== 0 && event.button !== 1)) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
     mapPanRef.current = {
@@ -4836,7 +4886,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       startScrollLeft: viewport.scrollLeft,
       startScrollTop: viewport.scrollTop,
       moved: false,
-      clearSelectionOnClick: !event.shiftKey && !event.ctrlKey && !event.metaKey
+      clearSelectionOnClick: !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey && event.button === 0
     };
     setMapPanning(true);
     tokenDragRef.current = null;
@@ -4874,6 +4924,58 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     setMapPanning(false);
   }
 
+  function startSelectionBox(event: ReactPointerEvent<HTMLDivElement>, point: VisionPoint) {
+    if (event.button !== 0) return;
+    const next = {
+      pointerId: event.pointerId,
+      start: point,
+      current: point,
+      additive: event.shiftKey || event.ctrlKey || event.metaKey,
+      moved: false
+    };
+    selectionBoxRef.current = next;
+    setSelectionBox(next);
+    tokenDragRef.current = null;
+    setTokenDrag(null);
+    mapPanRef.current = null;
+    setMapPanning(false);
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveSelectionBox(clientX: number, clientY: number, pointerId: number): boolean {
+    const current = selectionBoxRef.current;
+    if (!current || current.pointerId !== pointerId) return false;
+    const point = boardPoint(clientX, clientY);
+    if (!point) return true;
+    const moved = current.moved || Math.hypot(point.x - current.start.x, point.y - current.start.y) > Math.max(4, props.scene.gridSize / 8);
+    const next = { ...current, current: point, moved };
+    selectionBoxRef.current = next;
+    setSelectionBox(next);
+    return true;
+  }
+
+  function finishSelectionBox(pointerId: number): boolean {
+    const current = selectionBoxRef.current;
+    if (!current || current.pointerId !== pointerId) return false;
+    selectionBoxRef.current = null;
+    setSelectionBox(null);
+    if (!current.moved) {
+      if (!current.additive) props.onClearSelection();
+      return true;
+    }
+    const rect = selectionBoxRect(current);
+    const selectedIds = orderedTokens.filter((token) => tokenIntersectsRect(token, rect)).map((token) => token.id);
+    props.onSelectMany(selectedIds, { additive: current.additive });
+    return true;
+  }
+
+  function cancelSelectionBox(pointerId: number) {
+    if (selectionBoxRef.current?.pointerId !== pointerId) return;
+    selectionBoxRef.current = null;
+    setSelectionBox(null);
+  }
+
   function boundedTokenPosition(token: Token, x: number, y: number): Pick<TokenDragDraft, "x" | "y"> {
     return boundedTokenCoordinates(props.scene, token, x, y);
   }
@@ -4892,18 +4994,49 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     return boundedTokenPosition(token, point.x - offsetX, point.y - offsetY);
   }
 
+  function constrainedTokenDragPosition(draft: TokenDragDraft, x: number, y: number): Pick<TokenDragDraft, "x" | "y"> {
+    let minDeltaX = Number.NEGATIVE_INFINITY;
+    let maxDeltaX = Number.POSITIVE_INFINITY;
+    let minDeltaY = Number.NEGATIVE_INFINITY;
+    let maxDeltaY = Number.POSITIVE_INFINITY;
+    for (const origin of Object.values(draft.origins)) {
+      minDeltaX = Math.max(minDeltaX, -origin.x);
+      maxDeltaX = Math.min(maxDeltaX, props.scene.width - (origin.x + origin.width));
+      minDeltaY = Math.max(minDeltaY, -origin.y);
+      maxDeltaY = Math.min(maxDeltaY, props.scene.height - (origin.y + origin.height));
+    }
+    const deltaX = clampSceneCoordinate(x - draft.startX, minDeltaX, maxDeltaX);
+    const deltaY = clampSceneCoordinate(y - draft.startY, minDeltaY, maxDeltaY);
+    return { x: Math.round(draft.startX + deltaX), y: Math.round(draft.startY + deltaY) };
+  }
+
   function startTokenDrag(token: Token, event: ReactPointerEvent<HTMLButtonElement>) {
     const point = boardPoint(event.clientX, event.clientY);
     if (!point) return;
     const renderedPosition = renderedTokenPosition(token);
     const start = boundedTokenPosition(token, renderedPosition.x, renderedPosition.y);
+    const groupTokenIds =
+      selectedTokenIdSet.has(token.id) && props.selectedTokenIds.length > 1 && !event.shiftKey && !event.ctrlKey && !event.metaKey
+        ? props.selectedTokenIds
+        : [token.id];
+    const origins = Object.fromEntries(
+      tokens
+        .filter((item) => groupTokenIds.includes(item.id))
+        .map((item) => {
+          const position = renderedTokenPosition(item);
+          return [item.id, { x: position.x, y: position.y, width: item.width, height: item.height }];
+        })
+    ) as Record<string, TokenDragOrigin>;
     const next = {
       tokenId: token.id,
       pointerId: event.pointerId,
       offsetX: point.x - start.x,
       offsetY: point.y - start.y,
+      startX: start.x,
+      startY: start.y,
       x: start.x,
-      y: start.y
+      y: start.y,
+      origins
     };
     tokenDragRef.current = next;
     setTokenDrag(next);
@@ -4924,8 +5057,9 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     if (!token) return;
     const position = tokenPositionFromPointer(token, clientX, clientY, current.offsetX, current.offsetY);
     if (!position) return;
-    if (current.x === position.x && current.y === position.y) return;
-    const next = { ...current, ...position };
+    const constrained = constrainedTokenDragPosition(current, position.x, position.y);
+    if (current.x === constrained.x && current.y === constrained.y) return;
+    const next = { ...current, ...constrained };
     tokenDragRef.current = next;
     setTokenDrag(next);
   }
@@ -4946,19 +5080,32 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       return;
     }
     const snapped = snappedTokenPosition(token, current.x, current.y);
+    const deltaX = snapped.x - current.startX;
+    const deltaY = snapped.y - current.startY;
+    const movedTokens = Object.entries(current.origins)
+      .flatMap(([tokenId, origin]) => {
+        const movedToken = tokens.find((item) => item.id === tokenId);
+        if (!movedToken) return [];
+        const next = snappedTokenCoordinates(props.scene, movedToken, origin.x + deltaX, origin.y + deltaY);
+        return [{ token: movedToken, position: next }];
+      })
+      .filter(({ token: movedToken, position }) => movedToken.x !== position.x || movedToken.y !== position.y);
     tokenDragRef.current = null;
     setTokenDrag(null);
-    if (token.x === snapped.x && token.y === snapped.y) {
+    if (movedTokens.length === 0) {
       return;
     }
-    setTokenPositionOverrides((overrides) => ({ ...overrides, [token.id]: snapped }));
-    apiPatch<Token>(`/api/v1/tokens/${token.id}`, snapped)
+    setTokenPositionOverrides((overrides) => ({
+      ...overrides,
+      ...Object.fromEntries(movedTokens.map(({ token: movedToken, position }) => [movedToken.id, position]))
+    }));
+    Promise.all(movedTokens.map(({ token: movedToken, position }) => apiPatch<Token>(`/api/v1/tokens/${movedToken.id}`, position)))
       .then(() => props.onMoved())
       .catch((error) => {
         console.error(error);
         setTokenPositionOverrides((overrides) => {
           const next = { ...overrides };
-          delete next[token.id];
+          for (const { token: movedToken } of movedTokens) delete next[movedToken.id];
           return next;
         });
       });
@@ -5054,7 +5201,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     <div ref={viewportRef} className={`scene-viewport ${mapPanning ? "panning" : ""}`} role="region" aria-label={`${props.scene.name} battle map viewport`}>
       <div
         ref={boardRef}
-        className={`scene-board ${props.fogBrushMode || props.annotationTool ? "brush-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
+        className={`scene-board ${props.fogBrushMode || props.annotationTool ? "brush-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${selectionBox ? "token-selecting" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
         style={boardStyle}
       onDragEnter={(event) => {
         if (!props.canDropToken || props.fogBrushMode || props.annotationTool || !hasTokenDropData(event.dataTransfer)) return;
@@ -5083,6 +5230,10 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       onPointerDown={(event) => {
         const point = boardPoint(event.clientX, event.clientY);
         if (!point) return;
+        if (!props.fogBrushMode && !props.annotationTool && (event.altKey || event.button === 1)) {
+          startMapPan(event);
+          return;
+        }
         if (props.annotationTool) {
           event.currentTarget.setPointerCapture(event.pointerId);
           tokenDragRef.current = null;
@@ -5097,7 +5248,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
           return;
         }
         if (!props.fogBrushMode) {
-          startMapPan(event);
+          startSelectionBox(event, point);
           return;
         }
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -5108,6 +5259,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         setFogStroke(next);
       }}
       onPointerMove={(event) => {
+        if (moveSelectionBox(event.clientX, event.clientY, event.pointerId)) return;
         if (moveMapPan(event.clientX, event.clientY, event.pointerId)) return;
         if (annotationDraftRef.current?.pointerId === event.pointerId) {
           appendAnnotationDraftPoint(event.clientX, event.clientY, event.pointerId);
@@ -5136,6 +5288,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
           finishAnnotationMove(event.pointerId);
           return;
         }
+        if (finishSelectionBox(event.pointerId)) return;
         if (finishMapPan(event.pointerId)) return;
         finishTokenDrag(event.pointerId);
       }}
@@ -5152,10 +5305,12 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
           annotationMoveDraftRef.current = null;
           setAnnotationMoveDraft(null);
         }
+        cancelSelectionBox(event.pointerId);
         cancelMapPan(event.pointerId);
         cancelTokenDrag(event.pointerId);
       }}
       onLostPointerCapture={(event) => {
+        cancelSelectionBox(event.pointerId);
         cancelMapPan(event.pointerId);
       }}
     >
@@ -5272,8 +5427,24 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
           <SceneAnnotationShape annotation={draftAnnotation(annotationDraft, props.templateShape)} scene={props.scene} />
         </svg>
       )}
+      {selectionBox && (() => {
+        const rect = selectionBoxRect(selectionBox);
+        return (
+          <div
+            className="token-selection-box"
+            aria-hidden="true"
+            style={{
+              left: `${(rect.left / props.scene.width) * 100}%`,
+              top: `${(rect.top / props.scene.height) * 100}%`,
+              width: `${(rect.width / props.scene.width) * 100}%`,
+              height: `${(rect.height / props.scene.height) * 100}%`
+            }}
+          />
+        );
+      })()}
       {orderedTokens.map((token) => {
-        const dragPosition = tokenDrag?.tokenId === token.id ? tokenDrag : undefined;
+        const dragOrigin = tokenDrag?.origins[token.id];
+        const dragPosition = tokenDrag && dragOrigin ? { x: dragOrigin.x + tokenDrag.x - tokenDrag.startX, y: dragOrigin.y + tokenDrag.y - tokenDrag.startY } : undefined;
         const positionOverride = tokenPositionOverrides[token.id];
         const tokenX = dragPosition?.x ?? positionOverride?.x ?? token.x;
         const tokenY = dragPosition?.y ?? positionOverride?.y ?? token.y;
@@ -5288,7 +5459,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         return (
           <button
             key={token.id}
-            className={`token layer-${layer} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition && !dragPosition.settling ? "dragging" : ""}`}
+            className={`token layer-${layer} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""}`}
             style={{
               left: `${(visualX / props.scene.width) * 100}%`,
               top: `${(visualY / props.scene.height) * 100}%`,

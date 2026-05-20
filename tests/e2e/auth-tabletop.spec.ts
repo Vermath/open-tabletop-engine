@@ -243,6 +243,15 @@ async function dragTokenByName(page: Page, tokenName: string, deltaX: number, de
   await page.mouse.up();
 }
 
+async function scenePointToClient(page: Page, point: { x: number; y: number }, scene: { width: number; height: number } = { width: 1200, height: 800 }) {
+  const boardBox = await page.locator(".scene-board").boundingBox();
+  expect(boardBox).not.toBeNull();
+  return {
+    x: boardBox!.x + (point.x / scene.width) * boardBox!.width,
+    y: boardBox!.y + (point.y / scene.height) * boardBox!.height
+  };
+}
+
 async function deleteNewestTokenByName(page: Page, name: string) {
   await page.evaluate(
     async ({ apiBaseUrl, name }) => {
@@ -365,6 +374,44 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
     await expect(page.getByText("Token untargeted")).toBeVisible();
   }
   await deleteTokenById(page, placedToken.id);
+});
+
+test("GM can box-select and drag multiple scene tokens", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Demo GM" }).click();
+  await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  const suffix = Date.now().toString(36);
+  let firstToken: E2EToken | undefined;
+  let secondToken: E2EToken | undefined;
+  try {
+    firstToken = await createSceneToken(page, { name: `E2E Box Alpha ${suffix}`, x: 920, y: 620, ownerUserIds: [] });
+    secondToken = await createSceneToken(page, { name: `E2E Box Beta ${suffix}`, x: 1000, y: 620, ownerUserIds: [] });
+    await page.reload();
+    await expect(page.getByRole("button", { name: `Token ${firstToken.name}` })).toBeVisible();
+    await expect(page.getByRole("button", { name: `Token ${secondToken.name}` })).toBeVisible();
+    await expect(page.getByLabel("Map layer stack")).toContainText("Player");
+
+    const start = await scenePointToClient(page, { x: 880, y: 580 });
+    const end = await scenePointToClient(page, { x: 1080, y: 710 });
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move(end.x, end.y, { steps: 8 });
+    await page.mouse.up();
+    await expect(page.getByRole("status", { name: "Selected tokens" })).toContainText("2 selected");
+
+    const beforeFirst = await getSceneTokenById(page, firstToken.id);
+    const beforeSecond = await getSceneTokenById(page, secondToken.id);
+    await dragTokenByName(page, firstToken.name, 120, 0);
+    await expect.poll(async () => {
+      const movedFirst = await getSceneTokenById(page, firstToken!.id);
+      const movedSecond = await getSceneTokenById(page, secondToken!.id);
+      return movedFirst.x > beforeFirst.x && movedSecond.x > beforeSecond.x;
+    }).toBe(true);
+  } finally {
+    if (firstToken) await deleteTokenById(page, firstToken.id).catch(() => undefined);
+    if (secondToken) await deleteTokenById(page, secondToken.id).catch(() => undefined);
+  }
 });
 
 test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }) => {

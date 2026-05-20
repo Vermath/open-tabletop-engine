@@ -857,12 +857,17 @@ a[href]:focus-visible,
   user-select: none;
 }
 
+.scene-board.token-selecting {
+  cursor: crosshair;
+  user-select: none;
+}
+
 .scene-board.token-drag-active .token {
   cursor: grabbing;
 }
 
 .scene-board:not(.brush-mode) {
-  cursor: grab;
+  cursor: crosshair;
 }
 
 .scene-board.map-panning {
@@ -1119,6 +1124,16 @@ a[href]:focus-visible,
 
 .fog-brush-preview polyline.hide {
   stroke: rgba(248, 113, 113, 0.82);
+}
+
+.token-selection-box {
+  position: absolute;
+  z-index: 8;
+  border: 1px solid rgba(80, 208, 178, 0.95);
+  border-radius: 4px;
+  background: rgba(80, 208, 178, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(23, 21, 18, 0.42), 0 0 0 1px rgba(239, 228, 205, 0.3);
+  pointer-events: none;
 }
 
 .token {
