@@ -142,8 +142,7 @@ interface PluginRegistryPackageMetadata {
 
 interface SandboxGlobals {
   registerCommand(command: string, handler: (input: PluginChatCommandInput) => unknown): void;
-  __otteCommand?: string;
-  __otteInput?: PluginChatCommandInput;
+  __ottePayloadJson?: string;
   __otteResult?: unknown;
   __otteHandlers: Record<string, (input: PluginChatCommandInput) => unknown>;
 }
@@ -386,6 +385,7 @@ function loadPluginPackage(pluginRoot: string, packagePath: string, trustPolicy:
 }
 
 class SandboxedPluginRuntime {
+  private static readonly executionTimeoutMs = 1000;
   private readonly context: Context;
   private readonly sandbox: SandboxGlobals;
 
@@ -405,22 +405,20 @@ class SandboxedPluginRuntime {
       codeGeneration: { strings: false, wasm: false }
     });
     const source = readFileSync(plugin.resolvedServerEntrypoint!, "utf8");
-    new Script(source, { filename: plugin.resolvedServerEntrypoint }).runInContext(this.context, { timeout: 100 });
+    new Script(source, { filename: plugin.resolvedServerEntrypoint }).runInContext(this.context, { timeout: SandboxedPluginRuntime.executionTimeoutMs });
     const missingCommands = [...declaredCommands].filter((command) => !handlers[command]);
     if (missingCommands.length) throw new Error(`Plugin did not register command handlers: ${missingCommands.join(", ")}`);
   }
 
   execute(command: string, input: PluginChatCommandInput): PluginChatCommandResult {
     if (!this.sandbox.__otteHandlers[command]) throw new Error(`Plugin command handler is not registered: ${command}`);
-    this.sandbox.__otteCommand = command;
-    this.sandbox.__otteInput = input;
+    this.sandbox.__ottePayloadJson = JSON.stringify({ command, input });
     this.sandbox.__otteResult = undefined;
     try {
-      new Script("__otteResult = __otteHandlers[__otteCommand](__otteInput);").runInContext(this.context, { timeout: 100 });
+      new Script("(() => { const __ottePayload = JSON.parse(__ottePayloadJson); __otteResult = __otteHandlers[__ottePayload.command](__ottePayload.input); })();").runInContext(this.context, { timeout: SandboxedPluginRuntime.executionTimeoutMs });
       return normalizeCommandResult(this.sandbox.__otteResult);
     } finally {
-      this.sandbox.__otteCommand = undefined;
-      this.sandbox.__otteInput = undefined;
+      this.sandbox.__ottePayloadJson = undefined;
       this.sandbox.__otteResult = undefined;
     }
   }

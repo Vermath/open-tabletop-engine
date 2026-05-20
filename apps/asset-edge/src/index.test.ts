@@ -23,8 +23,7 @@ describe("asset edge worker", () => {
     const request = new Request(`https://assets.example.test/otte/api/v1/assets/asset_demo/blob?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}&disposition=attachment`, {
       headers: {
         authorization: "Bearer should-not-forward",
-        cookie: "sid=should-not-forward",
-        range: "bytes=0-4"
+        cookie: "sid=should-not-forward"
       }
     });
     const response = await handleAssetEdgeRequest(
@@ -52,12 +51,33 @@ describe("asset edge worker", () => {
     expect(originRequests[0]!.request.url).toBe(`https://api.example.test/api/v1/assets/asset_demo/blob?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}&disposition=attachment`);
     expect(originRequests[0]!.request.headers.get("authorization")).toBeNull();
     expect(originRequests[0]!.request.headers.get("cookie")).toBeNull();
-    expect(originRequests[0]!.request.headers.get("range")).toBe("bytes=0-4");
+    expect(originRequests[0]!.request.headers.get("range")).toBeNull();
     expect(originRequests[0]!.request.headers.get("x-otte-asset-edge")).toBe("cloudflare");
     expect((originRequests[0]!.init as { cf?: { cacheEverything?: boolean; cacheTtl?: number } }).cf).toMatchObject({
       cacheEverything: true,
       cacheTtl: 120
     });
+  });
+
+  it("forwards range requests without edge cache metadata or public cache headers", async () => {
+    const originRequests: { request: Request; init?: RequestInit }[] = [];
+    const signature = apiSignature("asset_demo");
+    const response = await handleAssetEdgeRequest(
+      new Request(`https://assets.example.test/api/v1/assets/asset_demo/blob?expiresAt=${encodeURIComponent(expiresAt)}&signature=${signature}`, {
+        headers: { range: "bytes=0-4" }
+      }),
+      { ...env, ASSET_EDGE_ROUTE_PREFIX: "" },
+      async (originRequest, init) => {
+        originRequests.push({ request: originRequest, init });
+        return new Response("asset", { status: 206 });
+      },
+      nowMs
+    );
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(originRequests[0]!.request.headers.get("range")).toBe("bytes=0-4");
+    expect(originRequests[0]!.init).toBeUndefined();
   });
 
   it("rejects tampered signatures without calling origin", async () => {

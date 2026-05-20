@@ -3,9 +3,11 @@ export type ID = string;
 export type Visibility = "gm_only" | "public" | "specific_players" | "specific_characters";
 export type UserRole = "owner" | "gm" | "assistant_gm" | "player" | "observer" | "plugin" | "ai_assistant";
 export type ScimAssignableRole = Extract<UserRole, "gm" | "assistant_gm" | "player" | "observer">;
+export type OrganizationMemberRole = "owner" | "admin" | "member";
 export type GridType = "square" | "gridless";
 export type ProposalStatus = "draft" | "pending" | "approved" | "rejected" | "applied" | "reverted";
 export type MessageType = "plain" | "emote" | "whisper" | "roll" | "system" | "gm" | "ooc" | "ai" | "plugin";
+export type ChatModerationStatus = "open" | "follow_up" | "reviewed";
 
 export interface Timestamps {
   createdAt: string;
@@ -17,6 +19,7 @@ export interface User extends Timestamps {
   displayName: string;
   email?: string;
   passwordHash?: string;
+  serverAdmin?: boolean;
   mfa?: UserMfaSettings;
   scim?: UserScimProfile;
   disabledAt?: string;
@@ -61,6 +64,7 @@ export interface UserSession extends Timestamps {
   id: ID;
   userId: ID;
   tokenHash: string;
+  activeOrganizationId?: ID;
   expiresAt: string;
   lastSeenAt: string;
 }
@@ -109,13 +113,42 @@ export interface EmailOutboxMessage extends Timestamps {
   metadata?: Record<string, string>;
 }
 
+export interface OrganizationWorkspace extends Timestamps {
+  id: ID;
+  name: string;
+  ownerUserId: ID;
+  defaultSystemId: ID;
+  defaultCampaignVisibility: "private" | "invite_only" | "public";
+  defaultPermissionTemplate: "standard" | "player_authoring" | "ai_assisted" | "assistant_ops";
+  defaultInviteRole: Exclude<UserRole, "owner" | "plugin" | "ai_assistant">;
+  defaultSceneName: string;
+  defaultSceneFolder: string;
+  defaultSceneWidth: number;
+  defaultSceneHeight: number;
+  defaultSceneGridSize: number;
+  onboardingTitle: string;
+  onboardingBody: string;
+}
+
+export interface OrganizationMember extends Timestamps {
+  id: ID;
+  organizationId: ID;
+  userId: ID;
+  role: OrganizationMemberRole;
+}
+
 export interface Campaign extends Timestamps {
   id: ID;
+  organizationId?: ID;
   ownerUserId: ID;
   name: string;
   description: string;
   defaultSystemId: ID;
   visibility: "private" | "invite_only" | "public";
+  archivedAt?: string;
+  archivedByUserId?: ID;
+  restoredAt?: string;
+  restoredByUserId?: ID;
 }
 
 export interface CampaignMember extends Timestamps {
@@ -163,13 +196,27 @@ export interface Scene extends Timestamps {
   gridType: GridType;
   gridSize: number;
   backgroundAssetId?: ID;
+  folder?: string;
   active: boolean;
   sortOrder: number;
   fog: FogRegion[];
   fogHistory?: FogHistoryEntry[];
+  activationHistory?: SceneActivationHistoryEntry[];
+  annotationHistory?: SceneAnnotationHistoryEntry[];
   walls: Wall[];
   lights: LightSource[];
+  annotations: SceneAnnotation[];
   metadata: Record<string, unknown>;
+}
+
+export interface SceneActivationHistoryEntry {
+  id: ID;
+  sceneId: ID;
+  activatedAt: string;
+  activatedByUserId?: ID;
+  previousActiveSceneId?: ID;
+  deactivatedSceneIds: ID[];
+  source: "create" | "activate";
 }
 
 export interface FogRegion {
@@ -232,6 +279,54 @@ export interface LightSource {
   dimRadius?: number;
   color: string;
   intensity?: number;
+}
+
+export type SceneAnnotationKind = "ping" | "ruler" | "template" | "drawing";
+export type SceneAnnotationLayer = "measurement" | "effects" | "drawings" | "notes";
+export type SceneTemplateShape = "circle" | "line" | "cone";
+
+export interface SceneAnnotation extends Timestamps {
+  id: ID;
+  sceneId: ID;
+  kind: SceneAnnotationKind;
+  createdByUserId: ID;
+  label?: string;
+  layer?: SceneAnnotationLayer;
+  groupId?: ID;
+  groupLabel?: string;
+  sortOrder?: number;
+  templateShape?: SceneTemplateShape;
+  templateSaveAbility?: string;
+  templateSaveDc?: number;
+  templateDamageFormula?: string;
+  templateDamageType?: string;
+  snapToGrid?: boolean;
+  affectedTokenIds?: ID[];
+  rulesSystemId?: ID;
+  effectHint?: string;
+  color: string;
+  points: VisionPoint[];
+  radius?: number;
+  expiresAt?: string;
+}
+
+export interface SceneAnnotationHistoryEntry extends Timestamps {
+  id: ID;
+  sceneId: ID;
+  annotationId: ID;
+  action: "create" | "update" | "delete";
+  kind: SceneAnnotationKind;
+  layer?: SceneAnnotationLayer;
+  groupId?: ID;
+  groupLabel?: string;
+  templateShape?: SceneTemplateShape;
+  templateSaveAbility?: string;
+  templateSaveDc?: number;
+  templateDamageFormula?: string;
+  templateDamageType?: string;
+  affectedTokenIds?: ID[];
+  rulesSystemId?: ID;
+  actorUserId: ID;
 }
 
 export interface VisionPoint {
@@ -302,6 +397,8 @@ export interface MapAsset extends Timestamps {
   mimeType: string;
   sizeBytes: number;
   checksum?: string;
+  folder?: string;
+  tags?: string[];
   storage?: AssetStorageRef;
   lifecycle?: AssetLifecycle;
   security?: AssetSecurityScan;
@@ -336,6 +433,8 @@ export interface AssetSecurityFinding {
   message: string;
 }
 
+export type TokenLayer = "map" | "player" | "gm";
+
 export interface Token extends Timestamps {
   id: ID;
   sceneId: ID;
@@ -346,6 +445,7 @@ export interface Token extends Timestamps {
   width: number;
   height: number;
   rotation: number;
+  layer?: TokenLayer;
   hidden: boolean;
   locked: boolean;
   visionEnabled: boolean;
@@ -354,7 +454,24 @@ export interface Token extends Timestamps {
   dimVisionRadius?: number;
   disposition: "friendly" | "neutral" | "hostile";
   imageAssetId?: ID;
+  ownerUserIds?: ID[];
+  notes?: string;
+  conditions?: TokenCondition[];
+  auras?: TokenAura[];
+  targetedByUserIds?: ID[];
   metadata: Record<string, unknown>;
+}
+
+export interface TokenCondition {
+  id: ID;
+  name: string;
+}
+
+export interface TokenAura {
+  id: ID;
+  name: string;
+  radius: number;
+  color?: string;
 }
 
 export interface Actor extends Timestamps {
@@ -412,6 +529,10 @@ export interface ChatMessage extends Timestamps {
   visibility: "public" | "gm_only" | "whisper";
   recipientUserIds: ID[];
   rollId?: ID;
+  replyToMessageId?: ID;
+  moderationStatus?: ChatModerationStatus;
+  moderatedByUserId?: ID;
+  moderatedAt?: string;
 }
 
 export interface DiceRoll extends Timestamps {
@@ -423,6 +544,15 @@ export interface DiceRoll extends Timestamps {
   visibility: "public" | "gm_only" | "whisper";
   terms: DiceRollTerm[];
   total: number;
+}
+
+export interface DiceMacro extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  createdBy: ID;
+  name: string;
+  formula: string;
+  visibility: "public" | "gm_only";
 }
 
 export interface DiceRollTerm {
@@ -462,6 +592,15 @@ export interface Combatant {
   name: string;
   initiative: number;
   defeated: boolean;
+  readiness?: "normal" | "ready" | "delayed";
+  conditions?: string[];
+  deathSaveSuccesses?: number;
+  deathSaveFailures?: number;
+  deathSaveOutcome?: "stable" | "dead";
+  resourceKey?: string;
+  resourceLabel?: string;
+  resourceUsed?: boolean;
+  resourceSpent?: boolean;
 }
 
 export interface CompendiumPack extends Timestamps {
@@ -491,10 +630,22 @@ export interface Proposal extends Timestamps {
   diffJson: Record<string, unknown>;
   approvalRequired: boolean;
   approvedByUserId?: ID;
+  history?: ProposalHistoryEntry[];
+}
+
+export interface ProposalHistoryEntry {
+  action: "created" | "approved" | "rejected" | "applied";
+  status: ProposalStatus;
+  previousStatus?: ProposalStatus;
+  at: string;
+  actorUserId?: ID;
+  actorType: "user" | "ai" | "plugin" | "server_admin" | "system";
+  auditAction?: string;
+  note?: string;
 }
 
 export interface ProposalChange {
-  entity: "campaign" | "scene" | "token" | "actor" | "item" | "journal" | "chat" | "encounter" | "combat";
+  entity: "campaign" | "scene" | "token" | "actor" | "item" | "journal" | "chat" | "roll" | "encounter" | "combat" | "asset";
   action: "create" | "update" | "delete";
   id?: ID;
   data: Record<string, unknown>;
@@ -506,6 +657,7 @@ export interface AiThread extends Timestamps {
   userId: ID;
   provider: string;
   title: string;
+  prompt?: string;
   status?: "running" | "completed" | "failed";
   startedAt?: string;
   completedAt?: string;
@@ -744,6 +896,9 @@ export interface CampaignArchive {
     campaignId: ID;
     name: string;
     schemaVersion: string;
+    exportScope?: "campaign";
+    redactionMode?: "portable";
+    compatibilityNotes?: string[];
     assetCount: number;
     assetFileCount?: number;
   };
@@ -770,6 +925,8 @@ export interface EngineState {
   emailOutbox: EmailOutboxMessage[];
   scimGroups: ScimGroup[];
   scimGroupRoleMappings: ScimGroupRoleMapping[];
+  organizations: OrganizationWorkspace[];
+  organizationMembers: OrganizationMember[];
   invites: CampaignInvite[];
   campaigns: Campaign[];
   members: CampaignMember[];
@@ -783,6 +940,7 @@ export interface EngineState {
   handouts: Handout[];
   chat: ChatMessage[];
   rolls: DiceRoll[];
+  diceMacros: DiceMacro[];
   encounters: Encounter[];
   combats: Combat[];
   compendia: CompendiumPack[];
@@ -797,4 +955,67 @@ export interface EngineState {
   pluginReviews: PluginReview[];
   contentImports: ContentImportBatch[];
   fogPresets: FogPreset[];
+  idempotencyRecords: IdempotencyRecord[];
+  jobs: WorkerJobRecord[];
+}
+
+export interface IdempotencyRecord extends Timestamps {
+  key: string;
+  method: string;
+  path: string;
+  userId?: ID;
+  requestHash: string;
+  statusCode: number;
+  contentType?: string;
+  responseBody: string;
+}
+
+export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export type JobType =
+  | "campaign.export"
+  | "campaign.import"
+  | "asset.storage.migrate"
+  | "asset.storage.cleanup"
+  | "storage.backup"
+  | "storage.restoreDrill"
+  | "ai.memory.extract"
+  | "ai.session.recap"
+  | "report.bundle";
+
+export interface JobProgress {
+  current?: number;
+  total?: number;
+  percent?: number;
+  message?: string;
+}
+
+export interface JobLogEntry {
+  at: string;
+  level: "info" | "warning" | "error";
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export interface WorkerJobRecord extends Timestamps {
+  id: ID;
+  type: JobType;
+  status: JobStatus;
+  payload: unknown;
+  output?: unknown;
+  error?: string;
+  progress?: JobProgress;
+  attempts: number;
+  maxAttempts: number;
+  queuedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  cancelledByUserId?: ID;
+  leasedBy?: string;
+  leaseExpiresAt?: string;
+  lastHeartbeatAt?: string;
+  createdByUserId?: ID;
+  updatedByUserId?: ID;
+  logs: JobLogEntry[];
 }

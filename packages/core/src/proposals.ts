@@ -1,34 +1,68 @@
 import { nowIso } from "./ids.js";
-import type { EngineState, Proposal } from "./types.js";
+import type { EngineState, Proposal, ProposalHistoryEntry } from "./types.js";
+
+export function proposalHistoryEntry(input: Omit<ProposalHistoryEntry, "at"> & { at?: string }): ProposalHistoryEntry {
+  return {
+    ...input,
+    at: input.at ?? nowIso()
+  };
+}
 
 export function approveProposal(proposal: Proposal, userId: string): Proposal {
   if (proposal.status !== "pending") {
     throw new Error("Proposal must be pending before approval");
   }
+  const at = nowIso();
   return {
     ...proposal,
     status: "approved",
     approvedByUserId: userId,
-    updatedAt: nowIso()
+    updatedAt: at,
+    history: [
+      ...(proposal.history ?? []),
+      proposalHistoryEntry({
+        action: "approved",
+        status: "approved",
+        previousStatus: proposal.status,
+        at,
+        actorUserId: userId,
+        actorType: "user",
+        auditAction: "proposal.approved"
+      })
+    ]
   };
 }
 
-export function rejectProposal(proposal: Proposal): Proposal {
+export function rejectProposal(proposal: Proposal, userId?: string, actorType: ProposalHistoryEntry["actorType"] = "user"): Proposal {
   if (proposal.status !== "pending" && proposal.status !== "approved") {
     throw new Error("Proposal must be pending or approved before rejection");
   }
+  const at = nowIso();
   return {
     ...proposal,
     status: "rejected",
-    updatedAt: nowIso()
+    updatedAt: at,
+    history: [
+      ...(proposal.history ?? []),
+      proposalHistoryEntry({
+        action: "rejected",
+        status: "rejected",
+        previousStatus: proposal.status,
+        at,
+        actorUserId: userId,
+        actorType,
+        auditAction: actorType === "server_admin" ? "admin.aiProposals.rejectStale" : "ai.proposal.rejected"
+      })
+    ]
   };
 }
 
-export function applyProposal(state: EngineState, proposal: Proposal): EngineState {
+export function applyProposal(state: EngineState, proposal: Proposal, userId?: string): EngineState {
   if (proposal.status !== "approved") {
     throw new Error("Proposal must be approved before applying");
   }
 
+  const appliedAt = nowIso();
   const next: EngineState = structuredClone(state) as EngineState;
   for (const change of proposal.changesJson) {
     const bucket = bucketForEntity(next, change.entity);
@@ -37,7 +71,7 @@ export function applyProposal(state: EngineState, proposal: Proposal): EngineSta
     } else if (change.action === "update") {
       const index = bucket.findIndex((item: { id?: string }) => item.id === change.id);
       if (index >= 0) {
-        bucket[index] = { ...bucket[index], ...change.data, updatedAt: nowIso() };
+        bucket[index] = { ...bucket[index], ...change.data, updatedAt: appliedAt };
       }
     } else if (change.action === "delete") {
       const index = bucket.findIndex((item: { id?: string }) => item.id === change.id);
@@ -47,7 +81,23 @@ export function applyProposal(state: EngineState, proposal: Proposal): EngineSta
 
   const proposalIndex = next.proposals.findIndex((item) => item.id === proposal.id);
   if (proposalIndex >= 0) {
-    next.proposals[proposalIndex] = { ...proposal, status: "applied", updatedAt: nowIso() };
+    next.proposals[proposalIndex] = {
+      ...proposal,
+      status: "applied",
+      updatedAt: appliedAt,
+      history: [
+        ...(proposal.history ?? []),
+        proposalHistoryEntry({
+          action: "applied",
+          status: "applied",
+          previousStatus: proposal.status,
+          at: appliedAt,
+          actorUserId: userId,
+          actorType: "user",
+          auditAction: "proposal.applied"
+        })
+      ]
+    };
   }
   return next;
 }
@@ -68,10 +118,14 @@ function bucketForEntity(state: EngineState, entity: string): any[] {
       return state.journals;
     case "chat":
       return state.chat;
+    case "roll":
+      return state.rolls;
     case "encounter":
       return state.encounters;
     case "combat":
       return state.combats;
+    case "asset":
+      return state.assets;
     default:
       throw new Error(`Unsupported proposal entity: ${entity}`);
   }

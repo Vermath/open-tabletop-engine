@@ -4,7 +4,12 @@ coverage/
 .turbo/
 .vite/
 .playwright-cli/
+playwright-report/
+test-results/
 output/
+.codex-artifacts/
+.graphify*
+graphify-out/
 .env
 .env.*
 !.env.example
@@ -14,3 +19,5 @@ Thumbs.db
 storage/
 uploads/
 *.tsbuildinfo
+
+.vercel

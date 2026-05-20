@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">Prep desktop mockup</title>
+  <desc id="desc">Prep workspace showing scene organization, assets, journals, and scene preview.</desc>
+  <rect width="1440" height="900" fill="#071018"/>
+  <rect x="0" y="0" width="244" height="900" fill="#0d1722"/>
+  <text x="24" y="38" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="24" font-weight="700">OpenTabletop</text>
+  <rect x="20" y="96" width="204" height="42" rx="8" fill="#101a25"/>
+  <text x="44" y="122" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="14">Live Table</text>
+  <rect x="20" y="146" width="204" height="42" rx="8" fill="#1b2734" stroke="#d6a854"/>
+  <text x="44" y="172" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="14" font-weight="700">Prep</text>
+  <rect x="20" y="196" width="204" height="42" rx="8" fill="#101a25"/>
+  <text x="44" y="222" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="14">AI Studio</text>
+  <rect x="20" y="246" width="204" height="42" rx="8" fill="#101a25"/>
+  <text x="44" y="272" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="14">Manage</text>
+
+  <rect x="244" y="0" width="1196" height="78" fill="#0b141d" stroke="#1e2d3c"/>
+  <text x="282" y="31" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="12">PREP</text>
+  <text x="282" y="58" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="28" font-weight="800">Build scenes, assets, journals, and imports</text>
+
+  <rect x="282" y="116" width="324" height="740" rx="10" fill="#101923" stroke="#243447"/>
+  <text x="306" y="150" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="12">SCENES</text>
+  <rect x="306" y="178" width="276" height="56" rx="8" fill="#1a2836" stroke="#d6a854"/>
+  <text x="328" y="212" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="15" font-weight="700">Opening Scene</text>
+  <rect x="306" y="248" width="276" height="56" rx="8" fill="#0c141d" stroke="#26394d"/>
+  <text x="328" y="282" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="15">Vault Crossing</text>
+  <rect x="306" y="318" width="276" height="56" rx="8" fill="#0c141d" stroke="#26394d"/>
+  <text x="328" y="352" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="15">Ash Shrine</text>
+  <rect x="306" y="412" width="276" height="210" rx="8" fill="#0b1118" stroke="#26394d"/>
+  <text x="328" y="444" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="12">BATCH ACTIONS</text>
+  <text x="328" y="482" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="14">Move selected to folder</text>
+  <text x="328" y="516" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="14">Duplicate selected scenes</text>
+  <text x="328" y="550" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="14">Activate selected scene</text>
+
+  <rect x="630" y="116" width="444" height="388" rx="10" fill="#101923" stroke="#243447"/>
+  <text x="654" y="150" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="12">SCENE PREVIEW</text>
+  <rect x="654" y="180" width="396" height="250" rx="8" fill="#1b2431" stroke="#40566d"/>
+  <path d="M702 292 C780 250 850 335 950 300" fill="none" stroke="#83b4ce" stroke-width="16" opacity=".7" stroke-linecap="round"/>
+  <text x="654" y="468" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="18" font-weight="700">Opening Scene</text>
+  <text x="654" y="490" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="13">Prep-only until activated for players</text>
+
+  <rect x="630" y="528" width="444" height="328" rx="10" fill="#101923" stroke="#243447"/>
+  <text x="654" y="562" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="12">JOURNAL AND IMPORTS</text>
+  <rect x="654" y="590" width="396" height="58" rx="8" fill="#0b1118" stroke="#26394d"/>
+  <text x="676" y="625" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="15">Session Zero Notes</text>
+  <rect x="654" y="664" width="396" height="58" rx="8" fill="#0b1118" stroke="#26394d"/>
+  <text x="676" y="699" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="15">Manual import preview</text>
+
+  <rect x="1098" y="116" width="304" height="740" rx="10" fill="#101923" stroke="#243447"/>
+  <text x="1122" y="150" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="12">ASSET LIBRARY</text>
+  <rect x="1122" y="180" width="116" height="116" rx="8" fill="#233245" stroke="#40566d"/>
+  <rect x="1262" y="180" width="116" height="116" rx="8" fill="#233245" stroke="#40566d"/>
+  <rect x="1122" y="324" width="116" height="116" rx="8" fill="#233245" stroke="#40566d"/>
+  <rect x="1262" y="324" width="116" height="116" rx="8" fill="#233245" stroke="#40566d"/>
+  <rect x="1122" y="494" width="256" height="44" rx="8" fill="#d6a854"/>
+  <text x="1176" y="522" fill="#081018" font-family="Segoe UI, Arial" font-size="15" font-weight="800">Upload Asset</text>
+</svg>

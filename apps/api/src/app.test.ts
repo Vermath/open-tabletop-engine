@@ -5,15 +5,17 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
-import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
+import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type CampaignArchive, type ChatMessage, type Combat, type DiceMacro, type DiceRoll, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
-import { buildApp } from "./app.js";
+import { buildApp, type ImageAssetGenerator } from "./app.js";
 import { loadPluginRegistry, pluginSignatureForPackage } from "./plugin-runtime.js";
+import { installedSystems } from "./registries.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 import { MemoryStateStore } from "./store.js";
 
 const authHeaders = { "x-user-id": "usr_demo_gm" };
+const tinyPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axpRz8AAAAASUVORK5CYII=", "base64");
 
 class MemoryAssetStorage implements AssetStorage {
   readonly provider = "s3" as const;
@@ -55,6 +57,853 @@ describe("asset storage keys", () => {
     expect(assetStorageKey(asset)).toBe("___camp_demo/___asset_with_slashes.png");
     expect(assetStorageKey(asset)).not.toContain("..");
     expect(assetStorageKey(asset)).not.toContain("\\");
+  });
+});
+
+describe("organization workspace defaults", () => {
+  it("creates workspace defaults during owner bootstrap", async () => {
+    const store = new MemoryStateStore(emptyState());
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/bootstrap",
+        payload: {
+          email: "owner@example.com",
+          displayName: "Owner",
+          password: "password-123",
+          campaignName: "Starter Campaign",
+          defaultSystemId: "generic-fantasy"
+        }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().organization).toMatchObject({
+        name: "Owner's Workspace",
+        ownerUserId: response.json().user.id,
+        defaultSystemId: "generic-fantasy",
+        defaultCampaignVisibility: "private",
+        defaultPermissionTemplate: "standard",
+        defaultInviteRole: "player",
+        defaultSceneName: "Opening Scene"
+      });
+      expect(store.state.organizations).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("lets server admins update workspace defaults and applies them to new campaigns", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const denied = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { defaultCampaignVisibility: "public" }
+      });
+      expect(denied.statusCode).toBe(403);
+
+      const updated = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: authHeaders,
+        payload: {
+          name: "Published Tables",
+          defaultSystemId: "generic-fantasy",
+          defaultCampaignVisibility: "invite_only",
+          defaultPermissionTemplate: "player_authoring",
+          defaultInviteRole: "assistant_gm",
+          defaultSceneName: "Session Zero",
+          defaultSceneFolder: "starts",
+          defaultSceneWidth: 1600,
+          defaultSceneHeight: 900,
+          defaultSceneGridSize: 80,
+          onboardingTitle: "Start Here",
+          onboardingBody: "Table agreements and first-session goals."
+        }
+      });
+      expect(updated.statusCode).toBe(200);
+      expect(updated.json()).toMatchObject({
+        name: "Published Tables",
+        defaultSystemId: "generic-fantasy",
+        defaultCampaignVisibility: "invite_only",
+        defaultPermissionTemplate: "player_authoring",
+        defaultInviteRole: "assistant_gm",
+        defaultSceneName: "Session Zero",
+        defaultSceneWidth: 1600
+      });
+
+      const fetched = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: authHeaders
+      });
+      expect(fetched.statusCode).toBe(200);
+      expect(fetched.json()).toMatchObject({ name: "Published Tables", onboardingTitle: "Start Here" });
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns",
+        headers: authHeaders,
+        payload: { name: "Defaults Campaign" }
+      });
+      expect(created.statusCode).toBe(200);
+      expect(created.json()).toMatchObject({
+        name: "Defaults Campaign",
+        defaultSystemId: "generic-fantasy",
+        visibility: "invite_only"
+      });
+
+      const campaignId = created.json().id as string;
+      expect(store.state.permissionGrants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            campaignId,
+            subjectType: "role",
+            subjectId: "player",
+            permissions: expect.arrayContaining(["actor.create", "journal.create", "token.create"]),
+            metadata: expect.objectContaining({ templateId: "player_authoring" })
+          })
+        ])
+      );
+      expect(store.state.auditLogs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            action: "organization.workspaceDefaults.update",
+            targetType: "organization_workspace"
+          })
+        ])
+      );
+    } finally {
+      restoreEnv(previousEnv);
+      await app.close();
+    }
+  });
+
+  it("creates a personal workspace for registered users without existing organization access", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const registered = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          email: "new-owner@example.test",
+          displayName: "New Owner",
+          password: "password-123"
+        }
+      });
+      expect(registered.statusCode).toBe(200);
+      const userId = registered.json().user.id;
+      const headers = { authorization: `Bearer ${registered.json().token}` };
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns",
+        headers,
+        payload: { name: "New Owner Campaign" }
+      });
+
+      expect(created.statusCode).toBe(200);
+      expect(created.json()).toMatchObject({
+        name: "New Owner Campaign",
+        ownerUserId: userId
+      });
+      expect(created.json().organizationId).not.toBe("org_demo");
+      expect(store.state.organizations.find((workspace) => workspace.id === created.json().organizationId)).toMatchObject({
+        name: "Default Workspace",
+        ownerUserId: userId
+      });
+      expect(store.state.organizationMembers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            organizationId: created.json().organizationId,
+            userId,
+            role: "owner"
+          })
+        ])
+      );
+
+      const organizations = await app.inject({
+        method: "GET",
+        url: "/api/v1/organizations",
+        headers
+      });
+      expect(organizations.statusCode).toBe(200);
+      expect(organizations.json()).toEqual([
+        expect.objectContaining({
+          id: created.json().organizationId,
+          role: "owner",
+          campaignCount: 1
+        })
+      ]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("derives workspace defaults from legacy campaign membership without using the first workspace fallback", async () => {
+    const store = new MemoryStateStore();
+    const now = new Date().toISOString();
+    store.state.users.push({
+      id: "usr_legacy_campaign_member",
+      displayName: "Legacy Campaign Member",
+      email: "legacy-campaign-member@example.test",
+      createdAt: now,
+      updatedAt: now
+    });
+    store.state.members.push(createTimestamped("mem", { campaignId: "camp_demo", userId: "usr_legacy_campaign_member", role: "player" }));
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: { "x-user-id": "usr_legacy_campaign_member" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({ id: "org_demo", ownerUserId: "usr_demo_gm" });
+      expect(store.state.organizationMembers).not.toEqual(expect.arrayContaining([expect.objectContaining({ userId: "usr_legacy_campaign_member" })]));
+      expect(store.state.organizations).not.toEqual(expect.arrayContaining([expect.objectContaining({ ownerUserId: "usr_legacy_campaign_member" })]));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps workspace defaults isolated across multiple owner workspaces", async () => {
+    const store = new MemoryStateStore();
+    const now = new Date().toISOString();
+    store.state.users.push({
+      id: "usr_second_owner",
+      displayName: "Second Owner",
+      email: "second-owner@example.test",
+      serverAdmin: true,
+      createdAt: now,
+      updatedAt: now
+    }, {
+      id: "usr_second_member",
+      displayName: "Second Member",
+      email: "second-member@example.test",
+      createdAt: now,
+      updatedAt: now
+    }, {
+      id: "usr_second_operator",
+      displayName: "Second Operator",
+      email: "second-operator@example.test",
+      createdAt: now,
+      updatedAt: now
+    });
+    store.state.organizations.push({
+      id: "org_second",
+      name: "Second Workspace",
+      ownerUserId: "usr_second_owner",
+      defaultSystemId: "generic-fantasy",
+      defaultCampaignVisibility: "invite_only",
+      defaultPermissionTemplate: "assistant_ops",
+      defaultInviteRole: "assistant_gm",
+      defaultSceneName: "Second Opening",
+      defaultSceneFolder: "second-start",
+      defaultSceneWidth: 1400,
+      defaultSceneHeight: 900,
+      defaultSceneGridSize: 70,
+      onboardingTitle: "Second Start",
+      onboardingBody: "Second workspace onboarding.",
+      createdAt: now,
+      updatedAt: now
+    });
+    const app = await buildApp({ store });
+
+    try {
+      const gmDefaults = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: authHeaders
+      });
+      expect(gmDefaults.statusCode).toBe(200);
+      expect(gmDefaults.json()).toMatchObject({ id: "org_demo", name: "Demo Workspace" });
+
+      const secondDefaults = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: { "x-user-id": "usr_second_owner" }
+      });
+      expect(secondDefaults.statusCode).toBe(200);
+      expect(secondDefaults.json()).toMatchObject({
+        id: "org_second",
+        name: "Second Workspace",
+        defaultSystemId: "generic-fantasy",
+        defaultCampaignVisibility: "invite_only",
+        defaultPermissionTemplate: "assistant_ops"
+      });
+
+      const updatedSecondDefaults = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/workspace-defaults",
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { name: "Second Tables", defaultCampaignVisibility: "public" }
+      });
+      expect(updatedSecondDefaults.statusCode).toBe(200);
+      expect(updatedSecondDefaults.json()).toMatchObject({ id: "org_second", name: "Second Tables", defaultCampaignVisibility: "public" });
+      expect(store.state.organizations.find((workspace) => workspace.id === "org_demo")).toMatchObject({ name: "Demo Workspace", defaultCampaignVisibility: "private" });
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns",
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { name: "Second Workspace Campaign" }
+      });
+      expect(created.statusCode).toBe(200);
+      expect(created.json()).toMatchObject({
+        organizationId: "org_second",
+        ownerUserId: "usr_second_owner",
+        defaultSystemId: "generic-fantasy",
+        visibility: "public"
+      });
+      expect(store.state.members).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            campaignId: created.json().id,
+            userId: "usr_second_owner",
+            role: "owner"
+          })
+        ])
+      );
+      expect(store.state.permissionGrants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            campaignId: created.json().id,
+            subjectId: "assistant_gm",
+            permissions: expect.arrayContaining(["chat.moderate", "plugin.install"])
+          })
+        ])
+      );
+
+      const deniedMemberUpsert = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/members",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { email: "second-member@example.test", role: "member" }
+      });
+      expect(deniedMemberUpsert.statusCode).toBe(403);
+
+      const addedMember = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/members",
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { email: "second-member@example.test", role: "admin" }
+      });
+      expect(addedMember.statusCode).toBe(201);
+      expect(addedMember.json()).toMatchObject({
+        organizationId: "org_second",
+        userId: "usr_second_member",
+        role: "admin",
+        user: {
+          email: "second-member@example.test"
+        }
+      });
+
+      const listedMembers = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/members",
+        headers: { "x-user-id": "usr_second_member" }
+      });
+      expect(listedMembers.statusCode).toBe(200);
+      expect(listedMembers.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ organizationId: "org_second", userId: "usr_second_owner", role: "owner" }),
+          expect.objectContaining({ organizationId: "org_second", userId: "usr_second_member", role: "admin" })
+        ])
+      );
+      const secondOwnerMemberId = listedMembers.json().find((member: { role: string }) => member.role === "owner").id;
+
+      const operatorMember = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/members",
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { email: "second-operator@example.test", role: "member" }
+      });
+      expect(operatorMember.statusCode).toBe(201);
+      store.state.members.push(createTimestamped("mem", { campaignId: created.json().id, userId: "usr_second_operator", role: "observer" }));
+
+      const promotedOperator = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/organization/members/${operatorMember.json().id}`,
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { role: "admin" }
+      });
+      expect(promotedOperator.statusCode).toBe(200);
+      expect(promotedOperator.json()).toMatchObject({ id: operatorMember.json().id, userId: "usr_second_operator", role: "admin" });
+
+      const ownerChangeDenied = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/organization/members/${secondOwnerMemberId}`,
+        headers: { "x-user-id": "usr_second_owner" },
+        payload: { role: "member" }
+      });
+      expect(ownerChangeDenied.statusCode).toBe(400);
+
+      const removedOperator = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/organization/members/${operatorMember.json().id}`,
+        headers: { "x-user-id": "usr_second_owner" }
+      });
+      expect(removedOperator.statusCode).toBe(200);
+      expect(removedOperator.json()).toMatchObject({ removed: true, userId: "usr_second_operator", removedCampaignMemberships: 1 });
+      expect(store.state.organizationMembers).not.toEqual(expect.arrayContaining([expect.objectContaining({ userId: "usr_second_operator" })]));
+      expect(store.state.members).not.toEqual(expect.arrayContaining([expect.objectContaining({ campaignId: created.json().id, userId: "usr_second_operator" })]));
+      expect(store.state.auditLogs).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ action: "organization.member.update", targetId: operatorMember.json().id }),
+          expect.objectContaining({ action: "organization.member.remove", targetId: operatorMember.json().id })
+        ])
+      );
+
+      const removedOperatorLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_second_operator" }
+      });
+      expect(removedOperatorLogin.statusCode).toBe(200);
+      const removedOperatorHeaders = { authorization: `Bearer ${removedOperatorLogin.json().token}` };
+      const removedOperatorOrganizations = await app.inject({
+        method: "GET",
+        url: "/api/v1/organizations",
+        headers: removedOperatorHeaders
+      });
+      expect(removedOperatorOrganizations.statusCode).toBe(200);
+      expect(removedOperatorOrganizations.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "org_second" })]));
+      const removedOperatorSwitch = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: removedOperatorHeaders,
+        payload: { organizationId: "org_second" }
+      });
+      expect(removedOperatorSwitch.statusCode).toBe(403);
+      const removedOperatorCampaigns = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: removedOperatorHeaders
+      });
+      expect(removedOperatorCampaigns.statusCode).toBe(200);
+      expect(removedOperatorCampaigns.json()).toEqual([]);
+
+      const addedDemoMember = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/members",
+        headers: authHeaders,
+        payload: { email: "second-member@example.test", role: "member" }
+      });
+      expect(addedDemoMember.statusCode).toBe(201);
+      store.state.members.push(
+        createTimestamped("mem", { campaignId: "camp_demo", userId: "usr_second_member", role: "observer" }),
+        createTimestamped("mem", { campaignId: created.json().id, userId: "usr_second_member", role: "gm" })
+      );
+      const demoInvite = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/invites",
+        headers: authHeaders,
+        payload: { email: "demo-invite@example.test", role: "player" }
+      });
+      expect(demoInvite.statusCode).toBe(200);
+
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_second_member" }
+      });
+      expect(login.statusCode).toBe(200);
+      const bearerHeaders = { authorization: `Bearer ${login.json().token}` };
+
+      const organizations = await app.inject({
+        method: "GET",
+        url: "/api/v1/organizations",
+        headers: bearerHeaders
+      });
+      expect(organizations.statusCode).toBe(200);
+      expect(organizations.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: "org_demo", role: "member", campaignCount: 1 }),
+          expect.objectContaining({ id: "org_second", role: "admin", campaignCount: 1 })
+        ])
+      );
+
+      const createdOwnedWorkspace = await app.inject({
+        method: "POST",
+        url: "/api/v1/organizations",
+        headers: bearerHeaders,
+        payload: {
+          name: "Second Member Tables",
+          defaultCampaignVisibility: "invite_only",
+          defaultSceneName: "Member Opening"
+        }
+      });
+      expect(createdOwnedWorkspace.statusCode).toBe(201);
+      expect(createdOwnedWorkspace.json()).toMatchObject({
+        organization: {
+          name: "Second Member Tables",
+          ownerUserId: "usr_second_member",
+          defaultCampaignVisibility: "invite_only",
+          defaultSceneName: "Member Opening"
+        },
+        session: { activeOrganizationId: createdOwnedWorkspace.json().organization.id },
+        organizations: expect.arrayContaining([
+          expect.objectContaining({ name: "Second Member Tables", role: "owner", campaignCount: 0 })
+        ])
+      });
+      const ownedWorkspaceCampaigns = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: bearerHeaders
+      });
+      expect(ownedWorkspaceCampaigns.statusCode).toBe(200);
+      expect(ownedWorkspaceCampaigns.json()).toEqual([]);
+
+      const switchedSecond = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: bearerHeaders,
+        payload: { organizationId: "org_second" }
+      });
+      expect(switchedSecond.statusCode).toBe(200);
+      expect(switchedSecond.json()).toMatchObject({
+        organization: { id: "org_second", name: "Second Tables" },
+        session: { activeOrganizationId: "org_second" }
+      });
+      const allowedSecondCampaign = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${created.json().id}`,
+        headers: bearerHeaders
+      });
+      expect(allowedSecondCampaign.statusCode).toBe(200);
+      expect(allowedSecondCampaign.json()).toMatchObject({ id: created.json().id, organizationId: "org_second" });
+      const secondScene = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/scenes`,
+        headers: bearerHeaders,
+        payload: { name: "Second Workspace Scene" }
+      });
+      expect(secondScene.statusCode).toBe(200);
+      const secondSceneId = secondScene.json().id;
+      const secondAsset = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/assets`,
+        headers: bearerHeaders,
+        payload: { name: "Second Map", url: "/maps/second.png", sizeBytes: 12 }
+      });
+      expect(secondAsset.statusCode).toBe(200);
+      const secondActor = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/actors`,
+        headers: bearerHeaders,
+        payload: { name: "Second Actor" }
+      });
+      expect(secondActor.statusCode).toBe(200);
+      const secondItem = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/items`,
+        headers: bearerHeaders,
+        payload: { name: "Second Item", actorId: secondActor.json().id }
+      });
+      expect(secondItem.statusCode).toBe(200);
+      const secondJournal = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/journal`,
+        headers: bearerHeaders,
+        payload: { title: "Second Journal", body: "Second workspace only", visibility: "public" }
+      });
+      expect(secondJournal.statusCode).toBe(200);
+      const secondChat = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: bearerHeaders,
+        payload: { campaignId: created.json().id, body: "second workspace chat", visibility: "public" }
+      });
+      expect(secondChat.statusCode).toBe(200);
+      const secondInvite = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/invites",
+        headers: bearerHeaders,
+        payload: { campaignId: created.json().id, email: "second-invite@example.test", role: "player" }
+      });
+      expect(secondInvite.statusCode).toBe(201);
+      const secondInvites = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/invites",
+        headers: bearerHeaders
+      });
+      expect(secondInvites.statusCode).toBe(200);
+      expect(secondInvites.json()).toEqual([
+        expect.objectContaining({
+          id: secondInvite.json().invite.id,
+          email: "second-invite@example.test",
+          campaign: { id: created.json().id, name: "Second Workspace Campaign" },
+          status: "pending"
+        })
+      ]);
+      const secondCombat = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/combats`,
+        headers: bearerHeaders,
+        payload: {
+          combatants: [{ id: "cmbt_second_cross_org", name: "Second Combatant", initiative: 11, defeated: false }]
+        }
+      });
+      expect(secondCombat.statusCode).toBe(200);
+      const secondProposal = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/proposals`,
+        headers: bearerHeaders,
+        payload: { title: "Second Workspace Proposal", changesJson: [] }
+      });
+      expect(secondProposal.statusCode).toBe(200);
+      const secondImport = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/content-imports/preview`,
+        headers: bearerHeaders,
+        payload: {
+          source: { sourceType: "user_upload", sourceName: "second-workspace.json" },
+          entities: [
+            {
+              id: "second_workspace_note",
+              kind: "journal",
+              name: "Second Workspace Note",
+              selectedByDefault: true,
+              data: { body: "Second workspace only", visibility: "public" }
+            }
+          ]
+        }
+      });
+      expect(secondImport.statusCode).toBe(200);
+      const secondCampaigns = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: bearerHeaders
+      });
+      expect(secondCampaigns.statusCode).toBe(200);
+      expect(secondCampaigns.json().map((campaign: { id: string }) => campaign.id)).toEqual([created.json().id]);
+
+      const switchedDemo = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: bearerHeaders,
+        payload: { organizationId: "org_demo" }
+      });
+      expect(switchedDemo.statusCode).toBe(200);
+      const demoInvites = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/invites",
+        headers: bearerHeaders
+      });
+      expect(demoInvites.statusCode).toBe(403);
+      const demoMembers = await app.inject({
+        method: "GET",
+        url: "/api/v1/organization/members",
+        headers: bearerHeaders
+      });
+      expect(demoMembers.statusCode).toBe(200);
+      expect(demoMembers.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ organizationId: "org_demo", userId: "usr_demo_gm", role: "owner" }),
+          expect.objectContaining({ organizationId: "org_demo", userId: "usr_second_member", role: "member" })
+        ])
+      );
+      expect(demoMembers.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ organizationId: "org_second" })]));
+      const crossWorkspaceInviteCreate = await app.inject({
+        method: "POST",
+        url: "/api/v1/organization/invites",
+        headers: authHeaders,
+        payload: { campaignId: created.json().id, email: "cross-workspace-invite@example.test", role: "player" }
+      });
+      expect(crossWorkspaceInviteCreate.statusCode).toBe(404);
+      expect(crossWorkspaceInviteCreate.json()).toMatchObject({ error: "not_found", message: "Organization campaign not found" });
+      const crossWorkspaceMemberPatch = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/organization/members/${secondOwnerMemberId}`,
+        headers: authHeaders,
+        payload: { role: "member" }
+      });
+      expect(crossWorkspaceMemberPatch.statusCode).toBe(404);
+      expect(crossWorkspaceMemberPatch.json()).toMatchObject({ error: "not_found", message: "Organization member not found" });
+      const crossWorkspaceMemberDelete = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/organization/members/${secondOwnerMemberId}`,
+        headers: authHeaders
+      });
+      expect(crossWorkspaceMemberDelete.statusCode).toBe(404);
+      expect(crossWorkspaceMemberDelete.json()).toMatchObject({ error: "not_found", message: "Organization member not found" });
+      const directSecondInviteCreate = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/invites`,
+        headers: bearerHeaders,
+        payload: { email: "direct-cross-workspace@example.test", role: "player" }
+      });
+      expect(directSecondInviteCreate.statusCode).toBe(403);
+      expect(directSecondInviteCreate.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondInviteRevoke = await app.inject({
+        method: "POST",
+        url: `/api/v1/invites/${secondInvite.json().invite.id}/revoke`,
+        headers: bearerHeaders
+      });
+      expect(directSecondInviteRevoke.statusCode).toBe(403);
+      expect(directSecondInviteRevoke.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      expect(store.state.invites.find((invite) => invite.id === secondInvite.json().invite.id)?.revokedAt).toBeUndefined();
+      const demoCampaigns = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns",
+        headers: bearerHeaders
+      });
+      expect(demoCampaigns.statusCode).toBe(200);
+      expect(demoCampaigns.json().map((campaign: { id: string }) => campaign.id)).toEqual(["camp_demo"]);
+      const directSecondCampaign = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${created.json().id}`,
+        headers: bearerHeaders
+      });
+      expect(directSecondCampaign.statusCode).toBe(403);
+      expect(directSecondCampaign.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondScenes = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${created.json().id}/scenes`,
+        headers: bearerHeaders
+      });
+      expect(directSecondScenes.statusCode).toBe(403);
+      expect(directSecondScenes.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondArchive = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${created.json().id}/archive`,
+        headers: bearerHeaders,
+        payload: { reason: "cross-org denial check" }
+      });
+      expect(directSecondArchive.statusCode).toBe(403);
+      expect(directSecondArchive.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondJournal = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${created.json().id}/journal`,
+        headers: bearerHeaders
+      });
+      expect(directSecondJournal.statusCode).toBe(403);
+      expect(directSecondJournal.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondAssetUpdate = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/assets/${secondAsset.json().id}`,
+        headers: bearerHeaders,
+        payload: { name: "Cross Org Rename" }
+      });
+      expect(directSecondAssetUpdate.statusCode).toBe(403);
+      expect(directSecondAssetUpdate.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondAssetBlob = await app.inject({
+        method: "GET",
+        url: `/api/v1/assets/${secondAsset.json().id}/blob`,
+        headers: bearerHeaders
+      });
+      expect(directSecondAssetBlob.statusCode).toBe(403);
+      expect(directSecondAssetBlob.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondActorUpdate = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/actors/${secondActor.json().id}`,
+        headers: bearerHeaders,
+        payload: { name: "Cross Org Actor" }
+      });
+      expect(directSecondActorUpdate.statusCode).toBe(403);
+      expect(directSecondActorUpdate.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondItemUpdate = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/items/${secondItem.json().id}`,
+        headers: bearerHeaders,
+        payload: { name: "Cross Org Item" }
+      });
+      expect(directSecondItemUpdate.statusCode).toBe(403);
+      expect(directSecondItemUpdate.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondAnnotation = await app.inject({
+        method: "POST",
+        url: `/api/v1/scenes/${secondSceneId}/annotations`,
+        headers: bearerHeaders,
+        payload: { kind: "ping", points: [{ x: 10, y: 10 }] }
+      });
+      expect(directSecondAnnotation.statusCode).toBe(403);
+      expect(directSecondAnnotation.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondAiMemory = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${created.json().id}/ai/memory`,
+        headers: bearerHeaders
+      });
+      expect(directSecondAiMemory.statusCode).toBe(403);
+      expect(directSecondAiMemory.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondCombatPatch = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/combats/${secondCombat.json().id}`,
+        headers: bearerHeaders,
+        payload: { round: 2 }
+      });
+      expect(directSecondCombatPatch.statusCode).toBe(403);
+      expect(directSecondCombatPatch.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondProposalApply = await app.inject({
+        method: "POST",
+        url: `/api/v1/proposals/${secondProposal.json().id}/apply`,
+        headers: bearerHeaders
+      });
+      expect(directSecondProposalApply.statusCode).toBe(403);
+      expect(directSecondProposalApply.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondContentImport = await app.inject({
+        method: "GET",
+        url: `/api/v1/content-imports/${secondImport.json().id}`,
+        headers: bearerHeaders
+      });
+      expect(directSecondContentImport.statusCode).toBe(403);
+      expect(directSecondContentImport.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const directSecondContentImportApply = await app.inject({
+        method: "POST",
+        url: `/api/v1/content-imports/${secondImport.json().id}/apply`,
+        headers: bearerHeaders,
+        payload: { selectedEntityIds: ["second_workspace_note"] }
+      });
+      expect(directSecondContentImportApply.statusCode).toBe(403);
+      expect(directSecondContentImportApply.json()).toMatchObject({ error: "forbidden", message: "Campaign belongs to a different active organization" });
+      const unscopedChat = await app.inject({
+        method: "GET",
+        url: "/api/v1/chat/messages",
+        headers: bearerHeaders
+      });
+      expect(unscopedChat.statusCode).toBe(200);
+      expect(unscopedChat.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: secondChat.json().id })]));
+      const deniedDemoRevoke = await app.inject({
+        method: "POST",
+        url: `/api/v1/invites/${demoInvite.json().invite.id}/revoke`,
+        headers: bearerHeaders
+      });
+      expect(deniedDemoRevoke.statusCode).toBe(403);
+      await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: bearerHeaders,
+        payload: { organizationId: "org_second" }
+      });
+      const revokedSecondInvite = await app.inject({
+        method: "POST",
+        url: `/api/v1/invites/${secondInvite.json().invite.id}/revoke`,
+        headers: bearerHeaders
+      });
+      expect(revokedSecondInvite.statusCode).toBe(200);
+      expect(revokedSecondInvite.json()).toMatchObject({ id: secondInvite.json().invite.id, status: "revoked" });
+
+      const deniedSwitch = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/organization/session",
+        headers: bearerHeaders,
+        payload: { organizationId: "org_missing" }
+      });
+      expect(deniedSwitch.statusCode).toBe(403);
+    } finally {
+      await app.close();
+    }
   });
 });
 
@@ -159,8 +1008,847 @@ function testBase32Decode(input: string): Buffer {
 }
 
 describe("api", () => {
+  it("serves the OpenAPI contract with v1 policy semantics", async () => {
+    type ServedOpenApiOperation = {
+      parameters?: Array<{ name: string; in: string }>;
+      requestBody?: { content?: Record<string, { schema?: Record<string, unknown> }> };
+      responses?: Record<string, unknown>;
+    };
+    type ServedOpenApiSpec = {
+      openapi: string;
+      info: { version: string };
+      paths: Record<string, Record<string, ServedOpenApiOperation>>;
+      components: {
+        securitySchemes: Record<string, unknown>;
+        schemas: Record<string, unknown>;
+      };
+      "x-otte-version-policy"?: { basePath?: string };
+      "x-otte-error-policy"?: { schema?: string };
+      "x-otte-idempotency-policy"?: { header?: string };
+      "x-otte-pagination-policy"?: { limitParameter?: string; cursorParameter?: string };
+      "x-otte-rate-limit-policy"?: { statusCode?: number };
+    };
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/openapi.json"
+      });
+      expect(response.statusCode).toBe(200);
+      const spec = response.json() as ServedOpenApiSpec;
+      const jsonRequestSchema = (operation: ServedOpenApiOperation | undefined) => operation?.requestBody?.content?.["application/json"]?.schema;
+      const jsonResponseSchema = (operation: ServedOpenApiOperation | undefined, status = "200") => {
+        const okResponse = operation?.responses?.[status] as { content?: Record<string, { schema?: Record<string, unknown> }> } | undefined;
+        return okResponse?.content?.["application/json"]?.schema;
+      };
+      const textResponseSchema = (operation: ServedOpenApiOperation | undefined, status = "200") => {
+        const okResponse = operation?.responses?.[status] as { content?: Record<string, { schema?: Record<string, unknown> }> } | undefined;
+        return okResponse?.content?.["text/plain"]?.schema;
+      };
+      expect(spec.openapi).toBe("3.1.0");
+      expect(spec.info.version).toBe("0.3.0");
+      expect(spec.components.securitySchemes.BearerAuth).toMatchObject({ type: "http", scheme: "bearer" });
+      expect(spec.components.schemas.ErrorResponse).toBeDefined();
+      expect(spec.components.schemas.PaginationMeta).toBeDefined();
+      for (const schemaName of [
+        "HealthStatus",
+        "LoginRequest",
+        "LoginResponse",
+        "RegisterRequest",
+        "PasswordResetRequest",
+        "PublicMfaInfo",
+        "OidcPublicConfig",
+        "SessionInfo",
+        "AdminUser",
+        "AdminUserPatchRequest",
+        "AdminUserPasswordResetRequest",
+        "AdminUserPasswordResetResponse",
+        "AdminPasswordResetPruneRequest",
+        "AdminPasswordResetPruneResult",
+        "AdminSession",
+        "AdminSessionRevokeResponse",
+        "AdminSessionRiskReport",
+        "AdminSessionRiskRevokeRequest",
+        "AdminSessionRiskRevokeResult",
+        "AdminAuthRuntimeConfig",
+        "AdminAuthOperations",
+        "AdminAuthTestConnectionRequest",
+        "AdminAuthConnectionTestResult",
+        "EmailOutboxMessage",
+        "AdminEmailOutboxRetryAllRequest",
+        "AdminEmailOutboxRetryAllResult",
+        "AdminAuditLogExport",
+        "AdminJob",
+        "AdminJobCreateRequest",
+        "AdminJobLeaseRequest",
+        "AdminJobPatchRequest",
+        "AdminJobHeartbeatRequest",
+        "AdminJobCancelRequest",
+        "AdminJobOperationSample",
+        "AdminJobOperations",
+        "AdminJobAlertRequest",
+        "AdminJobAlertResult",
+        "OpenApiDocument",
+        "AdminAiOperations",
+        "AdminAiStaleProposalRejectRequest",
+        "AdminAiStaleProposalRejectResult",
+        "AdminAiStaleThreadFailRequest",
+        "AdminAiStaleThreadFailResult",
+        "AdminAiStaleToolCallFailRequest",
+        "AdminAiStaleToolCallFailResult",
+        "AdminAiToolCallRetryRequest",
+        "AdminAiToolCallRetryResult",
+        "AdminAiEvaluationExport",
+        "AdminPluginReviewSnapshot",
+        "AdminPluginReviewInfo",
+        "AdminPluginReviewPatchRequest",
+        "AdminPluginRegistrySyncRequest",
+        "AdminPluginRegistrySyncResponse",
+        "AdminPluginOperations",
+        "AdminSystemOperations",
+        "AdminRenderingOperations",
+        "AdminAssetStorageInfo",
+        "AdminAssetOperationRequest",
+        "AdminAssetOperationResult",
+        "AdminAssetIntegrityReport",
+        "AdminAssetCdnPurgeRequest",
+        "AdminAssetCdnPurgeResult",
+        "Campaign",
+        "CampaignInvite",
+        "CampaignInviteCreateRequest",
+        "CampaignInviteCreateResponse",
+        "InviteAcceptRequest",
+        "InviteAcceptResponse",
+        "OrganizationInvite",
+        "OrganizationInviteCreateRequest",
+        "OrganizationCreateRequest",
+        "OrganizationWorkspaceInfo",
+        "OrganizationSwitchRequest",
+        "OrganizationSwitchResponse",
+        "ScimServiceProviderConfig",
+        "ScimUser",
+        "ScimUserInput",
+        "ScimUserListResponse",
+        "ScimGroup",
+        "ScimGroupInput",
+        "ScimGroupListResponse",
+        "ScimPatchRequest",
+        "AdminScimGroupRoleMapping",
+        "AdminScimGroupRoleMappingInput",
+        "AdminScimGroupRoleMappingCreateResponse",
+        "AdminStorageOperations",
+        "StorageBackupRequest",
+        "StorageBackupResult",
+        "StorageRestoreDrillRequest",
+        "StorageRestoreDrillResult",
+        "Scene",
+        "FogPreset",
+        "FogHistoryEntry",
+        "VisionSnapshot",
+        "VisionPointSample",
+        "SceneAnnotation",
+        "Token",
+        "ChatMessage",
+        "DiceRoll",
+        "MapAsset",
+        "Actor",
+        "Item",
+        "JournalEntry",
+        "Combat",
+        "Proposal",
+        "Encounter",
+        "AiThread",
+        "AiToolCallRetryRequest",
+        "AiMemoryFact",
+        "AiToolCall",
+        "PluginRuntimeInfo",
+        "PluginStorageEntry",
+        "SystemRuntimeInfo",
+        "ContentImportBatch",
+        "CampaignArchive"
+      ]) {
+        expect(spec.components.schemas[schemaName]).toBeDefined();
+      }
+      expect(spec["x-otte-version-policy"]?.basePath).toBe("/api/v1");
+      expect(spec["x-otte-error-policy"]?.schema).toBe("ErrorResponse");
+      expect(spec["x-otte-idempotency-policy"]?.header).toBe("Idempotency-Key");
+      expect(spec["x-otte-pagination-policy"]).toMatchObject({ limitParameter: "limit", cursorParameter: "cursor" });
+      expect(spec["x-otte-rate-limit-policy"]?.statusCode).toBe(429);
+      expect(spec.paths["/api/v1/openapi.json"]?.get).toBeDefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/openapi.json"]?.get)).toMatchObject({ $ref: "#/components/schemas/OpenApiDocument" });
+      expect(spec.paths["/api/v1/campaigns"]?.get?.parameters?.some((parameter) => parameter.name === "limit" && parameter.in === "query")).toBe(true);
+      expect(spec.paths["/api/v1/campaigns/{campaignId}/scenes"]?.post?.parameters?.some((parameter) => parameter.name === "Idempotency-Key" && parameter.in === "header")).toBe(true);
+      expect(spec.paths["/api/v1/admin/storage/backup"]?.post?.parameters?.some((parameter) => parameter.name === "Idempotency-Key" && parameter.in === "header")).toBe(true);
+      expect(spec.paths["/api/v1/content-imports/{importId}/apply"]?.post?.responses?.["409"]).toBeDefined();
+      expect(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium"]?.post).toBeDefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/health"]?.get)).toMatchObject({ $ref: "#/components/schemas/HealthStatus" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/login"]?.post)).toMatchObject({ $ref: "#/components/schemas/LoginRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/login"]?.post)).toMatchObject({ $ref: "#/components/schemas/LoginResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/register"]?.post)).toMatchObject({ $ref: "#/components/schemas/RegisterRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/register"]?.post)).toMatchObject({ $ref: "#/components/schemas/LoginResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/password-reset/request"]?.post)).toMatchObject({ $ref: "#/components/schemas/PasswordResetRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/password-reset/request"]?.post)).toMatchObject({ $ref: "#/components/schemas/OkResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/password/change"]?.post)).toMatchObject({ $ref: "#/components/schemas/PasswordChangeRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/mfa"]?.get)).toMatchObject({ $ref: "#/components/schemas/PublicMfaInfo" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/mfa/totp/enroll"]?.post)).toMatchObject({ $ref: "#/components/schemas/MfaTotpEnrollRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/mfa/totp/confirm"]?.post)).toMatchObject({ $ref: "#/components/schemas/MfaTotpConfirmResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/sessions"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/UserSession" } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/oidc/config"]?.get)).toMatchObject({ $ref: "#/components/schemas/OidcPublicConfig" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/auth/oidc/start"]?.post)).toMatchObject({ $ref: "#/components/schemas/OidcStartRequest" });
+      expect(spec.paths["/api/v1/auth/oidc/start"]?.get?.responses?.["302"]).toBeDefined();
+      expect(spec.paths["/api/v1/auth/oidc/start"]?.get?.responses?.["200"]).toBeUndefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/auth/oidc/callback"]?.get)).toMatchObject({ $ref: "#/components/schemas/OidcCallbackResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organizations"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/OrganizationWorkspaceInfo" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organizations"]?.post)).toMatchObject({ $ref: "#/components/schemas/OrganizationCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organizations"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/OrganizationSwitchResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organization/session"]?.patch)).toMatchObject({ $ref: "#/components/schemas/OrganizationSwitchRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/session"]?.patch)).toMatchObject({ $ref: "#/components/schemas/OrganizationSwitchResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/invites"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/OrganizationInvite" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organization/invites"]?.post)).toMatchObject({ $ref: "#/components/schemas/OrganizationInviteCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/invites"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/CampaignInviteCreateResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/users"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AdminUser" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/users/{userId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminUserPatchRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/users/{userId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminUser" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/users/{userId}/password-reset"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminUserPasswordResetRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/users/{userId}/password-reset"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminUserPasswordResetResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/password-resets/prune"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminPasswordResetPruneRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/password-resets/prune"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminPasswordResetPruneResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/users/{userId}/sessions"]?.delete)).toMatchObject({ $ref: "#/components/schemas/AdminSessionRevokeResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/sessions"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AdminSession" } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/sessions/risk"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminSessionRiskReport" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/sessions/risk/revoke"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminSessionRiskRevokeRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/sessions/risk/revoke"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminSessionRiskRevokeResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/sessions/{sessionId}"]?.delete)).toMatchObject({ $ref: "#/components/schemas/OkResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/auth/config"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAuthRuntimeConfig" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/auth/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAuthOperations" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/auth/test-connection"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAuthTestConnectionRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/auth/test-connection"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAuthConnectionTestResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/email-outbox"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/EmailOutboxMessage" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/email-outbox/retry-all"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminEmailOutboxRetryAllRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/email-outbox/retry-all"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminEmailOutboxRetryAllResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/email-outbox/{messageId}/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/EmailOutboxMessage" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/audit-logs"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAuditLogExport" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AdminJob" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs/lease"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobLeaseRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/lease"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(spec.paths["/api/v1/admin/jobs/lease"]?.post?.responses?.["204"]).toBeDefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminJobOperations" });
+      expect(textResponseSchema(spec.paths["/api/v1/admin/jobs/metrics"]?.get)).toMatchObject({ type: "string" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs/alerts"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobAlertRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/alerts"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobAlertResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/alerts"]?.post, "502")).toMatchObject({ $ref: "#/components/schemas/AdminJobAlertResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/{jobId}"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs/{jobId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminJobPatchRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/{jobId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs/{jobId}/heartbeat"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobHeartbeatRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/{jobId}/heartbeat"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/{jobId}/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/jobs/{jobId}/cancel"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJobCancelRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/jobs/{jobId}/cancel"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminJob" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAiOperations" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/ai/proposals/stale/reject"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleProposalRejectRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/proposals/stale/reject"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleProposalRejectResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/ai/threads/stale/fail"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleThreadFailRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/threads/stale/fail"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleThreadFailResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/ai/tool-calls/stale/fail"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleToolCallFailRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/tool-calls/stale/fail"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiStaleToolCallFailResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/ai/tool-calls/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiToolCallRetryRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/tool-calls/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiToolCallRetryResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/ai/evaluations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAiEvaluationExport" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/plugins/reviews"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminPluginReviewSnapshot" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/plugins/reviews/{reviewKey}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminPluginReviewPatchRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/plugins/reviews/{reviewKey}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/AdminPluginReviewInfo" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/plugins/registry/sync"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminPluginRegistrySyncRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/plugins/registry/sync"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminPluginRegistrySyncResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/plugins/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminPluginOperations" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/systems/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminSystemOperations" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/rendering/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminRenderingOperations" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/scim/group-role-mappings"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AdminScimGroupRoleMapping" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/scim/group-role-mappings"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminScimGroupRoleMappingInput" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/scim/group-role-mappings"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminScimGroupRoleMappingCreateResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/scim/group-role-mappings"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/AdminScimGroupRoleMappingCreateResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/scim/group-role-mappings/{mappingId}"]?.delete)).toMatchObject({ $ref: "#/components/schemas/AdminScimGroupRoleMappingDeleteResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/ServiceProviderConfig"]?.get)).toMatchObject({ $ref: "#/components/schemas/ScimServiceProviderConfig" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Users"]?.get)).toMatchObject({ $ref: "#/components/schemas/ScimUserListResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Users"]?.post)).toMatchObject({ $ref: "#/components/schemas/ScimUserInput" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Users"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/ScimUser" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Users/{userId}"]?.get)).toMatchObject({ $ref: "#/components/schemas/ScimUser" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Users/{userId}"]?.put)).toMatchObject({ $ref: "#/components/schemas/ScimUserInput" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Users/{userId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/ScimPatchRequest" });
+      expect(spec.paths["/api/v1/scim/v2/Users/{userId}"]?.delete?.responses?.["204"]).toBeDefined();
+      expect(spec.paths["/api/v1/scim/v2/Users/{userId}"]?.delete?.responses?.["200"]).toBeUndefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Groups"]?.get)).toMatchObject({ $ref: "#/components/schemas/ScimGroupListResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Groups"]?.post)).toMatchObject({ $ref: "#/components/schemas/ScimGroupInput" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Groups"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/ScimGroup" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scim/v2/Groups/{groupId}"]?.get)).toMatchObject({ $ref: "#/components/schemas/ScimGroup" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Groups/{groupId}"]?.put)).toMatchObject({ $ref: "#/components/schemas/ScimGroupInput" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scim/v2/Groups/{groupId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/ScimPatchRequest" });
+      expect(spec.paths["/api/v1/scim/v2/Groups/{groupId}"]?.delete?.responses?.["204"]).toBeDefined();
+      expect(spec.paths["/api/v1/scim/v2/Groups/{groupId}"]?.delete?.responses?.["200"]).toBeUndefined();
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/storage/operations"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminStorageOperations" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/storage/backup"]?.post)).toMatchObject({ $ref: "#/components/schemas/StorageBackupRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/storage/backup"]?.post)).toMatchObject({ $ref: "#/components/schemas/StorageBackupResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/storage/restore-drill"]?.post)).toMatchObject({ $ref: "#/components/schemas/StorageRestoreDrillRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/storage/restore-drill"]?.post)).toMatchObject({ $ref: "#/components/schemas/StorageRestoreDrillResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/storage/restore-drill"]?.post, "409")).toMatchObject({ $ref: "#/components/schemas/StorageRestoreDrillResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/storage"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAssetStorageInfo" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/integrity"]?.get)).toMatchObject({ $ref: "#/components/schemas/AdminAssetIntegrityReport" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/assets/integrity/quarantine"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/integrity/quarantine"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/assets/migrate"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/migrate"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/assets/cleanup"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/cleanup"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetOperationResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/admin/assets/{assetId}/purge-cache"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetCdnPurgeRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/admin/assets/{assetId}/purge-cache"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAssetCdnPurgeResult" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/workspace-defaults"]?.get)).toMatchObject({ $ref: "#/components/schemas/OrganizationWorkspace" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organization/workspace-defaults"]?.patch)).toMatchObject({ $ref: "#/components/schemas/OrganizationWorkspaceDefaultsPatchRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/members"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/OrganizationMember" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organization/members"]?.post)).toMatchObject({ $ref: "#/components/schemas/OrganizationMemberCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/members"]?.post, "201")).toMatchObject({ $ref: "#/components/schemas/OrganizationMember" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/organization/members/{memberId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/OrganizationMemberUpdateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/members/{memberId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/OrganizationMember" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/organization/members/{memberId}"]?.delete)).toMatchObject({ $ref: "#/components/schemas/OrganizationMemberDeleteResponse" });
+      expect(spec.components.schemas.Campaign).toMatchObject({ properties: { organizationId: { type: "string" } } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/Campaign" } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/archive"]?.post)).toMatchObject({ $ref: "#/components/schemas/Campaign" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/restore"]?.post)).toMatchObject({ $ref: "#/components/schemas/Campaign" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/invites"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/CampaignInvite" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/invites"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignInviteCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/invites"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignInviteCreateResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/invites/accept"]?.post)).toMatchObject({ $ref: "#/components/schemas/InviteAcceptRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/invites/accept"]?.post)).toMatchObject({ $ref: "#/components/schemas/InviteAcceptResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/invites/{inviteId}/revoke"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignInvite" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/scenes"]?.post)).toMatchObject({ $ref: "#/components/schemas/SceneCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/scenes"]?.post)).toMatchObject({ $ref: "#/components/schemas/Scene" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/fog-presets"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/FogPreset" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/fog-presets"]?.post)).toMatchObject({ $ref: "#/components/schemas/FogPresetCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/vision"]?.get)).toMatchObject({ $ref: "#/components/schemas/VisionSnapshot" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/vision/sample"]?.get)).toMatchObject({ $ref: "#/components/schemas/VisionPointSample" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/rendering/diagnostics"]?.get)).toMatchObject({ $ref: "#/components/schemas/SceneRenderingDiagnostics" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/fog"]?.post)).toMatchObject({ $ref: "#/components/schemas/FogRegionInput" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/fog/history"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/FogHistoryEntry" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/walls"]?.post)).toMatchObject({ $ref: "#/components/schemas/WallInput" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/lights"]?.post)).toMatchObject({ $ref: "#/components/schemas/LightSourceInput" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/annotations"]?.post)).toMatchObject({ $ref: "#/components/schemas/SceneAnnotationCreateRequest" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/annotations/{annotationId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/SceneAnnotationUpdateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/tokens"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/Token" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/tokens/{tokenId}/target"]?.post)).toMatchObject({ $ref: "#/components/schemas/TokenTargetRequest" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/chat/messages"]?.post)).toMatchObject({ $ref: "#/components/schemas/ChatMessageCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/chat/messages"]?.post)).toMatchObject({ $ref: "#/components/schemas/ChatMessage" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/chat/messages/{messageId}/moderation"]?.patch)).toMatchObject({ $ref: "#/components/schemas/ChatModerationRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/chat/messages/{messageId}/moderation"]?.patch)).toMatchObject({ $ref: "#/components/schemas/ChatMessage" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/dice/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/DiceRollRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/dice/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/DiceRoll" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/assets"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/MapAsset" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/assets"]?.post)).toMatchObject({ $ref: "#/components/schemas/MapAssetCreateRequest" });
+      expect(spec.paths["/api/v1/assets/{assetId}/blob"]?.get?.responses?.["200"]).toMatchObject({ content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/assets/{assetId}/delivery-url"]?.post)).toMatchObject({ $ref: "#/components/schemas/AssetDeliveryUrlResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/actors"]?.post)).toMatchObject({ $ref: "#/components/schemas/ActorCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/items"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/Item" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/journal"]?.post)).toMatchObject({ $ref: "#/components/schemas/JournalEntryCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/combats"]?.post)).toMatchObject({ $ref: "#/components/schemas/Combat" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/combats/{combatId}/audit"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AuditLog" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/proposals"]?.post)).toMatchObject({ $ref: "#/components/schemas/ProposalCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/proposals/{proposalId}/apply"]?.post)).toMatchObject({ $ref: "#/components/schemas/Proposal" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/chat/export"]?.get)).toMatchObject({ $ref: "#/components/schemas/ChatExport" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/ai/threads"]?.post)).toMatchObject({ $ref: "#/components/schemas/AiThreadCreateRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/ai/threads"]?.post)).toMatchObject({ $ref: "#/components/schemas/AiThreadResponse" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/ai/memory"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AiMemoryFact" } });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/ai/tool-calls/{toolCallId}/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/AiToolCallRetryRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/ai/tool-calls/{toolCallId}/retry"]?.post)).toMatchObject({ $ref: "#/components/schemas/AdminAiToolCallRetryResult" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/install"]?.post)).toMatchObject({ $ref: "#/components/schemas/PluginInstallRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/install"]?.post)).toMatchObject({ $ref: "#/components/schemas/PluginInstallResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}"]?.put)).toMatchObject({ $ref: "#/components/schemas/PluginStorageSetRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}"]?.put)).toMatchObject({ $ref: "#/components/schemas/PluginStorageEntry" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/install"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemInstallResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemActorActionRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemRollResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/content-imports/preview"]?.post)).toMatchObject({ $ref: "#/components/schemas/ContentImportPreviewRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/content-imports/preview"]?.post)).toMatchObject({ $ref: "#/components/schemas/ContentImportBatch" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/export"]?.get)).toMatchObject({ $ref: "#/components/schemas/CampaignArchive" });
+      expect(spec.paths["/api/v1/campaigns/{campaignId}/export"]?.get?.parameters?.some((parameter) => parameter.name === "redaction" && parameter.in === "query")).toBe(true);
+      expect(jsonRequestSchema(spec.paths["/api/v1/import/campaign"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignImportRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/import/campaign"]?.post)).toMatchObject({ $ref: "#/components/schemas/CampaignImportResponse" });
+
+      const appSource = readFileSync(new URL("./app.ts", import.meta.url), "utf8");
+      const documentedRoutes = new Set(Object.entries(spec.paths).flatMap(([path, methods]) => Object.keys(methods).map((method) => `${method.toUpperCase()} ${path}`)));
+      const liveRestRoutes = Array.from(appSource.matchAll(/app\.(get|post|patch|delete|put)(?:<[^]*?>)?\(\s*"([^"]+)"/g), (match) => {
+        const method = match[1]?.toUpperCase();
+        const path = match[2]?.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+        return method && path ? `${method} ${path}` : undefined;
+      }).filter((route): route is string => Boolean(route) && route !== "GET /api/v1/realtime");
+      const missingRoutes = Array.from(new Set(liveRestRoutes)).filter((route) => !documentedRoutes.has(route)).sort();
+      expect(missingRoutes).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("lets server admins manage a persisted redacted job ledger", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS", "OTTE_JOB_ALERT_WEBHOOK_URL", "OTTE_JOB_ALERT_WEBHOOK_TOKEN", "OTTE_JOB_ALERT_WEBHOOK_TIMEOUT_MS"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    delete process.env.OTTE_JOB_ALERT_WEBHOOK_URL;
+    delete process.env.OTTE_JOB_ALERT_WEBHOOK_TOKEN;
+    delete process.env.OTTE_JOB_ALERT_WEBHOOK_TIMEOUT_MS;
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const denied = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/jobs",
+        headers: { "x-user-id": "usr_demo_player" }
+      });
+      expect(denied.statusCode).toBe(403);
+
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/jobs",
+        headers: authHeaders,
+        payload: {
+          type: "ai.memory.extract",
+          maxAttempts: 2,
+          payload: {
+            campaignId: "camp_demo",
+            sourceText: "The lich keeps the vault key under a black obelisk.",
+            archive: { campaigns: [{ id: "camp_demo" }] }
+          }
+        }
+      });
+      expect(created.statusCode).toBe(201);
+      const createdJob = created.json();
+      expect(createdJob).toMatchObject({
+        type: "ai.memory.extract",
+        status: "queued",
+        attempts: 0,
+        maxAttempts: 2,
+        payload: {
+          campaignId: "camp_demo",
+          sourceText: { redacted: true, field: "sourceText" },
+          archive: { redacted: true, field: "archive" }
+        }
+      });
+      expect(store.state.jobs).toHaveLength(1);
+      expect(store.state.jobs[0]?.payload).toMatchObject({
+        sourceText: "The lich keeps the vault key under a black obelisk."
+      });
+
+      const leased = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/jobs/lease",
+        headers: authHeaders,
+        payload: { workerId: "worker-a", leaseSeconds: 30, types: ["ai.memory.extract"] }
+      });
+      expect(leased.statusCode).toBe(200);
+      expect(leased.json()).toMatchObject({
+        id: createdJob.id,
+        status: "running",
+        attempts: 1,
+        leasedBy: "worker-a",
+        payload: {
+          campaignId: "camp_demo",
+          sourceText: "The lich keeps the vault key under a black obelisk."
+        }
+      });
+      expect(leased.json().leaseExpiresAt).toBeDefined();
+
+      const running = await app.inject({
+        method: "POST",
+        url: `/api/v1/admin/jobs/${createdJob.id}/heartbeat`,
+        headers: authHeaders,
+        payload: {
+          workerId: "worker-a",
+          progress: { current: 1, total: 4, percent: 25, message: "Extracting memory candidates" },
+          log: { level: "info", message: "Worker leased job", details: { sourceText: "still sensitive" } }
+        }
+      });
+      expect(running.statusCode).toBe(200);
+      expect(running.json()).toMatchObject({
+        status: "running",
+        attempts: 1,
+        leasedBy: "worker-a",
+        progress: { current: 1, total: 4, percent: 25, message: "Extracting memory candidates" }
+      });
+      expect(running.json().lastHeartbeatAt).toBeDefined();
+      expect(running.json().logs.find((log: { message: string }) => log.message === "Worker leased job").details.sourceText).toMatchObject({ redacted: true, field: "sourceText" });
+
+      const failed = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/admin/jobs/${createdJob.id}`,
+        headers: authHeaders,
+        payload: {
+          status: "failed",
+          error: "provider timeout",
+          output: { transcript: "very long raw recap" }
+        }
+      });
+      expect(failed.statusCode).toBe(200);
+      expect(failed.json()).toMatchObject({
+        status: "failed",
+        error: "provider timeout",
+        output: { transcript: { redacted: true, field: "transcript" } }
+      });
+      expect(failed.json().leasedBy).toBeUndefined();
+
+      const retried = await app.inject({
+        method: "POST",
+        url: `/api/v1/admin/jobs/${createdJob.id}/retry`,
+        headers: authHeaders
+      });
+      expect(retried.statusCode).toBe(200);
+      expect(retried.json()).toMatchObject({ status: "queued", attempts: 1 });
+      expect(retried.json().error).toBeUndefined();
+
+      const cancelled = await app.inject({
+        method: "POST",
+        url: `/api/v1/admin/jobs/${createdJob.id}/cancel`,
+        headers: authHeaders,
+        payload: { reason: "operator paused batch" }
+      });
+      expect(cancelled.statusCode).toBe(200);
+      expect(cancelled.json()).toMatchObject({ status: "cancelled", cancelledByUserId: "usr_demo_gm" });
+
+      const listed = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/jobs?status=cancelled&type=ai.memory.extract",
+        headers: authHeaders
+      });
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()).toHaveLength(1);
+      expect(listed.json()[0]).toMatchObject({ id: createdJob.id, status: "cancelled" });
+
+      const fetched = await app.inject({
+        method: "GET",
+        url: `/api/v1/admin/jobs/${createdJob.id}`,
+        headers: authHeaders
+      });
+      expect(fetched.statusCode).toBe(200);
+      expect(fetched.json()).toMatchObject({ id: createdJob.id, status: "cancelled" });
+
+      const staleQueuedAt = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+      const staleHeartbeatAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const expiredLeaseAt = new Date(Date.now() - 60 * 1000).toISOString();
+      store.state.jobs.push(
+        {
+          id: "job_stale_queue",
+          type: "storage.backup",
+          status: "queued",
+          payload: { reason: "scheduled backup" },
+          attempts: 0,
+          maxAttempts: 3,
+          queuedAt: staleQueuedAt,
+          logs: [],
+          createdAt: staleQueuedAt,
+          updatedAt: staleQueuedAt
+        },
+        {
+          id: "job_expired_lease",
+          type: "campaign.export",
+          status: "running",
+          payload: { campaignId: "camp_demo", archive: { hidden: true } },
+          attempts: 2,
+          maxAttempts: 2,
+          queuedAt: staleQueuedAt,
+          startedAt: staleHeartbeatAt,
+          leasedBy: "worker-b",
+          leaseExpiresAt: expiredLeaseAt,
+          lastHeartbeatAt: staleHeartbeatAt,
+          logs: [],
+          createdAt: staleQueuedAt,
+          updatedAt: staleHeartbeatAt
+        },
+        {
+          id: "job_failed_sensitive",
+          type: "ai.session.recap",
+          status: "failed",
+          payload: { sourceText: "raw session notes must not appear" },
+          output: { transcript: "raw transcript must not appear" },
+          error: "model timeout",
+          attempts: 1,
+          maxAttempts: 3,
+          queuedAt: staleQueuedAt,
+          logs: [{ at: staleHeartbeatAt, level: "error", message: "failed", details: { sourceText: "raw log detail must not appear" } }],
+          createdAt: staleQueuedAt,
+          updatedAt: staleHeartbeatAt
+        }
+      );
+
+      const operations = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/jobs/operations",
+        headers: authHeaders
+      });
+      expect(operations.statusCode).toBe(200);
+      expect(operations.json()).toMatchObject({
+        actionRequired: true,
+        totals: {
+          byStatus: { queued: 1, running: 1, failed: 1, cancelled: 1 },
+          retryableCount: 2,
+          exhaustedCount: 1
+        },
+        queue: { staleQueuedCount: 1 },
+        leases: {
+          expiredCount: 1,
+          staleHeartbeatCount: 1,
+          workers: [expect.objectContaining({ workerId: "worker-b", expiredLeaseCount: 1, staleHeartbeatCount: 1 })]
+        },
+        failures: {
+          failedCount: 1,
+          retryableCount: 2,
+          exhaustedCount: 1,
+          recentFailed: [expect.objectContaining({ id: "job_failed_sensitive", error: "model timeout" })]
+        }
+      });
+      expect(operations.json().actionReasons).toEqual(expect.arrayContaining(["failed_jobs", "expired_job_leases", "stale_job_heartbeats", "retry_exhausted_jobs", "stale_queued_jobs"]));
+      expect(operations.json().remediationQueue.map((item: { code: string }) => item.code)).toEqual(expect.arrayContaining(["retry_or_inspect_failed_jobs", "reclaim_expired_job_leases", "investigate_stale_job_workers", "resolve_retry_exhausted_jobs", "increase_job_worker_capacity"]));
+      expect(JSON.stringify(operations.json())).not.toContain("raw session notes must not appear");
+      expect(JSON.stringify(operations.json())).not.toContain("raw transcript must not appear");
+      expect(JSON.stringify(operations.json())).not.toContain("raw log detail must not appear");
+
+      const metricsDenied = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/jobs/metrics",
+        headers: { "x-user-id": "usr_demo_player" }
+      });
+      expect(metricsDenied.statusCode).toBe(403);
+
+      const metrics = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/jobs/metrics",
+        headers: authHeaders
+      });
+      expect(metrics.statusCode).toBe(200);
+      expect(metrics.headers["content-type"]).toContain("text/plain");
+      expect(metrics.body).toContain("otte_admin_jobs_total 4");
+      expect(metrics.body).toContain('otte_admin_jobs_by_status{status="queued"} 1');
+      expect(metrics.body).toContain('otte_admin_jobs_by_status{status="running"} 1');
+      expect(metrics.body).toContain('otte_admin_jobs_by_status{status="failed"} 1');
+      expect(metrics.body).toContain('otte_admin_jobs_by_status{status="cancelled"} 1');
+      expect(metrics.body).toContain('otte_admin_jobs_by_type{type="ai.session.recap"} 1');
+      expect(metrics.body).toContain("otte_admin_jobs_retryable 2");
+      expect(metrics.body).toContain("otte_admin_jobs_retry_exhausted 1");
+      expect(metrics.body).toContain("otte_admin_jobs_queue_stale 1");
+      expect(metrics.body).toContain("otte_admin_jobs_leases_expired 1");
+      expect(metrics.body).toContain("otte_admin_jobs_heartbeats_stale 1");
+      expect(metrics.body).toContain("otte_admin_jobs_workers 1");
+      expect(metrics.body).toContain("otte_admin_jobs_action_required 1");
+      expect(metrics.body).not.toContain("raw session notes must not appear");
+      expect(metrics.body).not.toContain("raw transcript must not appear");
+      expect(metrics.body).not.toContain("raw log detail must not appear");
+
+      const dryRunAlert = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/jobs/alerts",
+        headers: authHeaders,
+        payload: { dryRun: true, force: true, reason: "operator smoke" }
+      });
+      expect(dryRunAlert.statusCode).toBe(200);
+      expect(dryRunAlert.json()).toMatchObject({
+        status: "dry_run",
+        configured: false,
+        actionRequired: true,
+        remediationCount: 5,
+        reason: "operator smoke"
+      });
+
+      const missingWebhookAlert = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/jobs/alerts",
+        headers: authHeaders,
+        payload: { reason: "send without webhook" }
+      });
+      expect(missingWebhookAlert.statusCode).toBe(502);
+      expect(missingWebhookAlert.json()).toMatchObject({
+        status: "failed",
+        configured: false,
+        actionRequired: true
+      });
+
+      let alertAuthorization: string | undefined;
+      let alertPayload: { kind?: string; reason?: string; operations?: { actionRequired?: boolean; remediationQueue?: unknown[] } } | undefined;
+      const webhook = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+        alertAuthorization = request.headers.authorization;
+        alertPayload = JSON.parse(await readRequestBody(request));
+        response.writeHead(202, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
+      });
+      await new Promise<void>((resolve) => webhook.listen(0, "127.0.0.1", resolve));
+      const address = webhook.address() as AddressInfo;
+      process.env.OTTE_JOB_ALERT_WEBHOOK_URL = `http://127.0.0.1:${address.port}/job-alert`;
+      process.env.OTTE_JOB_ALERT_WEBHOOK_TOKEN = "job-alert-secret";
+      process.env.OTTE_JOB_ALERT_WEBHOOK_TIMEOUT_MS = "2000";
+      try {
+        const deliveredAlert = await app.inject({
+          method: "POST",
+          url: "/api/v1/admin/jobs/alerts",
+          headers: authHeaders,
+          payload: { reason: "send posture alert" }
+        });
+        expect(deliveredAlert.statusCode).toBe(200);
+        expect(deliveredAlert.json()).toMatchObject({
+          status: "delivered",
+          configured: true,
+          webhookStatus: 202,
+          actionRequired: true,
+          reason: "send posture alert"
+        });
+        expect(alertAuthorization).toBe("Bearer job-alert-secret");
+        expect(alertPayload).toMatchObject({
+          kind: "open_tabletop.job_operations_alert",
+          reason: "send posture alert",
+          operations: {
+            actionRequired: true,
+            remediationQueue: expect.any(Array)
+          }
+        });
+        expect(JSON.stringify(alertPayload)).not.toContain("raw session notes must not appear");
+        expect(JSON.stringify(alertPayload)).not.toContain("raw transcript must not appear");
+        expect(JSON.stringify(alertPayload)).not.toContain("raw log detail must not appear");
+      } finally {
+        await new Promise<void>((resolve) => webhook.close(() => resolve()));
+      }
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
+  it("persists and replays successful idempotent mutations", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const payload = { name: "Idempotent Scene", width: 640, height: 480, gridSize: 40 };
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "scene-create-1" },
+        payload
+      });
+      expect(first.statusCode).toBe(200);
+      const firstSceneId = first.json().id;
+      expect(store.state.scenes.filter((scene) => scene.name === "Idempotent Scene")).toHaveLength(1);
+      expect(store.state.idempotencyRecords).toHaveLength(1);
+
+      const replay = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "scene-create-1" },
+        payload: { gridSize: 40, height: 480, name: "Idempotent Scene", width: 640 }
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.headers["idempotency-replayed"]).toBe("true");
+      expect(replay.json().id).toBe(firstSceneId);
+      expect(store.state.scenes.filter((scene) => scene.name === "Idempotent Scene")).toHaveLength(1);
+      expect(store.state.idempotencyRecords).toHaveLength(1);
+
+      const conflictResponse = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "scene-create-1" },
+        payload: { name: "Different Scene", width: 640, height: 480, gridSize: 40 }
+      });
+      expect(conflictResponse.statusCode).toBe(409);
+      expect(conflictResponse.json().message).toContain("Idempotency-Key");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("enforces configured API rate limits with standard headers", async () => {
+    const app = await buildApp({
+      store: new MemoryStateStore(),
+      rateLimit: { enabled: true, windowMs: 60_000, maxRequests: 2 }
+    });
+
+    try {
+      const first = await app.inject({ method: "GET", url: "/api/v1/health", headers: { "x-forwarded-for": "203.0.113.10" } });
+      expect(first.statusCode).toBe(200);
+      expect(first.headers["x-ratelimit-limit"]).toBe("2");
+      expect(first.headers["x-ratelimit-remaining"]).toBe("1");
+      expect(first.headers["x-ratelimit-reset"]).toBeDefined();
+
+      const second = await app.inject({ method: "GET", url: "/api/v1/health", headers: { "x-forwarded-for": "203.0.113.11" } });
+      expect(second.statusCode).toBe(200);
+      expect(second.headers["x-ratelimit-remaining"]).toBe("0");
+
+      const blocked = await app.inject({ method: "GET", url: "/api/v1/health", headers: { "x-forwarded-for": "203.0.113.12" } });
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.headers["retry-after"]).toBeDefined();
+      expect(blocked.headers["x-ratelimit-limit"]).toBe("2");
+      expect(blocked.headers["x-ratelimit-remaining"]).toBe("0");
+      expect(blocked.json()).toMatchObject({
+        error: "rate_limited",
+        details: { limit: 2, windowSeconds: 60 }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("creates campaign role permission templates for default setup profiles", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: {
+        name: "Collaborative Setup",
+        permissionTemplate: "player_authoring"
+      }
+    });
+    expect(created.statusCode).toBe(200);
+    const campaignId = created.json().id as string;
+    expect(store.state.permissionGrants).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          campaignId,
+          subjectType: "role",
+          subjectId: "player",
+          permissions: expect.arrayContaining(["actor.create", "journal.create", "token.create"]),
+          metadata: expect.objectContaining({ source: "campaign_permission_template", templateId: "player_authoring" })
+        })
+      ])
+    );
+
+    store.state.members.push(
+      createTimestamped("mem", {
+        campaignId,
+        userId: "usr_demo_player",
+        role: "player" as const
+      })
+    );
+    const members = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/${campaignId}/members`,
+      headers: authHeaders
+    });
+    expect(members.statusCode).toBe(200);
+    expect(members.json().find((member: { userId: string }) => member.userId === "usr_demo_player").permissions).toEqual(expect.arrayContaining(["actor.create", "journal.create", "token.create"]));
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: {
+        name: "Invalid Setup",
+        permissionTemplate: "unbounded"
+      }
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    await app.close();
+  });
+
   it("serves campaigns, rolls dice, and exports campaign data", async () => {
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
 
     const campaigns = await app.inject({
       method: "GET",
@@ -183,6 +1871,59 @@ describe("api", () => {
     expect(roll.statusCode).toBe(200);
     expect(roll.json().total).toBeGreaterThanOrEqual(6);
 
+    const invalidRoll = await app.inject({
+      method: "POST",
+      url: "/api/v1/dice/roll",
+      headers: authHeaders,
+      payload: {
+        campaignId: "camp_demo",
+        formula: "1d1",
+        visibility: "public"
+      }
+    });
+    expect(invalidRoll.statusCode).toBe(400);
+    expect(invalidRoll.json().message).toContain("Invalid die sides");
+
+    const rolls = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/rolls",
+      headers: authHeaders
+    });
+    expect(rolls.statusCode).toBe(200);
+    expect(rolls.json().map((item: DiceRoll) => item.id)).toContain(roll.json().id);
+
+    const macros = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/dice-macros",
+      headers: authHeaders
+    });
+    expect(macros.statusCode).toBe(200);
+    expect(macros.json().map((item: DiceMacro) => item.name)).toContain("Attack Check");
+
+    const createdMacro = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/dice-macros",
+      headers: authHeaders,
+      payload: {
+        name: "Blessed Save",
+        formula: "1d20+1d4+3",
+        visibility: "public"
+      }
+    });
+    expect(createdMacro.statusCode).toBe(200);
+    expect(createdMacro.json()).toMatchObject({ campaignId: "camp_demo", name: "Blessed Save", formula: "1d20+1d4+3" });
+
+    const playerMacroCreate = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/dice-macros",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: {
+        name: "Player Shared Macro",
+        formula: "1d20"
+      }
+    });
+    expect(playerMacroCreate.statusCode).toBe(403);
+
     const exported = await app.inject({
       method: "GET",
       url: "/api/v1/campaigns/camp_demo/export",
@@ -190,12 +1931,577 @@ describe("api", () => {
     });
     expect(exported.statusCode).toBe(200);
     expect(exported.json().format).toBe("ottx");
+    expect(exported.json().data.diceMacros.map((item: DiceMacro) => item.id)).toContain(createdMacro.json().id);
+    expect(exported.json().manifest).toMatchObject({
+      exportScope: "campaign",
+      redactionMode: "portable",
+      compatibilityNotes: expect.arrayContaining([expect.stringContaining("v0.3/v1-compatible importer")])
+    });
+
+    const dryRunImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: exported.json(), mode: "dry_run" }
+    });
+    expect(dryRunImport.statusCode).toBe(200);
+    expect(dryRunImport.json()).toMatchObject({
+      dryRun: true,
+      conflicts: expect.arrayContaining([expect.objectContaining({ collection: "campaigns", id: "camp_demo" })])
+    });
+    expect(store.state.campaigns).toHaveLength(1);
+
+    const scopedDryRunImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: exported.json(), mode: "dry_run", scope: "assets_only" }
+    });
+    expect(scopedDryRunImport.statusCode).toBe(200);
+    expect(scopedDryRunImport.json()).toMatchObject({
+      dryRun: true,
+      importScope: "assets_only",
+      importedCampaignIds: [],
+      counts: expect.objectContaining({ campaigns: 0 })
+    });
+
+    const selectedCollectionDryRunImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: exported.json(), mode: "dry_run", scope: "selected_collections", collections: ["diceMacros"] }
+    });
+    expect(selectedCollectionDryRunImport.statusCode).toBe(200);
+    expect(selectedCollectionDryRunImport.json()).toMatchObject({
+      dryRun: true,
+      importScope: "selected_collections",
+      importCollections: ["diceMacros"],
+      importedCampaignIds: [],
+      counts: expect.objectContaining({ campaigns: 0, diceMacros: expect.any(Number) })
+    });
+
+    const dependencyWarningImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: exported.json(), mode: "dry_run", scope: "selected_collections", collections: ["tokens"] }
+    });
+    expect(dependencyWarningImport.statusCode).toBe(200);
+    expect(dependencyWarningImport.json()).toMatchObject({
+      dryRun: true,
+      importWarnings: expect.arrayContaining([expect.stringContaining("tokens records may reference omitted scenes records")])
+    });
+
+    const selectiveArchive = exported.json() as CampaignArchive;
+    selectiveArchive.data.diceMacros.push({
+      ...(createdMacro.json() as DiceMacro),
+      id: "macro_selective_import",
+      name: "Selective Import Macro"
+    });
+    const selectiveImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: selectiveArchive, mode: "skip_conflicts" }
+    });
+    expect(selectiveImport.statusCode).toBe(200);
+    expect(selectiveImport.json()).toMatchObject({
+      importedCampaignIds: [],
+      counts: expect.objectContaining({ campaigns: 0, diceMacros: 1 }),
+      skippedConflicts: expect.arrayContaining([expect.objectContaining({ collection: "campaigns", id: "camp_demo" })])
+    });
+    expect(store.state.campaigns).toHaveLength(1);
+    expect(store.state.diceMacros.map((item) => item.id)).toContain("macro_selective_import");
+
+    const invalidImportMode = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: { archive: exported.json(), mode: "replace" }
+    });
+    expect(invalidImportMode.statusCode).toBe(400);
+
+    const invalidExport = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export?scope=organization",
+      headers: authHeaders
+    });
+    expect(invalidExport.statusCode).toBe(400);
 
     await app.close();
   });
 
+  it("archives and restores campaigns without deleting campaign records", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const archived = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/archive",
+      headers: authHeaders,
+      payload: { reason: "season break" }
+    });
+    expect(archived.statusCode).toBe(200);
+    expect(archived.json()).toEqual(expect.objectContaining({ id: "camp_demo", archivedAt: expect.any(String), archivedByUserId: "usr_demo_gm" }));
+    expect(store.state.scenes.some((scene) => scene.campaignId === "camp_demo")).toBe(true);
+    expect(store.state.tokens.some((token) => token.sceneId === "scn_vault_entry")).toBe(true);
+    expect(store.state.auditLogs.at(-1)).toMatchObject({
+      action: "campaign.archive",
+      targetType: "campaign",
+      targetId: "camp_demo",
+      after: expect.objectContaining({ archived: true, reason: "season break" })
+    });
+
+    const campaigns = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns",
+      headers: authHeaders
+    });
+    expect(campaigns.statusCode).toBe(200);
+    expect(campaigns.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: "camp_demo", archivedAt: expect.any(String) })]));
+
+    const restored = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/restore",
+      headers: authHeaders,
+      payload: { reason: "season resumed" }
+    });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json()).toEqual(expect.objectContaining({ id: "camp_demo", restoredAt: expect.any(String), restoredByUserId: "usr_demo_gm" }));
+    expect(restored.json().archivedAt).toBeUndefined();
+    expect(store.state.auditLogs.at(-1)).toMatchObject({
+      action: "campaign.restore",
+      targetType: "campaign",
+      targetId: "camp_demo",
+      before: expect.objectContaining({ archived: true }),
+      after: expect.objectContaining({ archived: false, reason: "season resumed" })
+    });
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/archive",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { reason: "player cannot archive" }
+    });
+    expect(blocked.statusCode).toBe(403);
+
+    await app.close();
+  });
+
+  it("keeps scene activation exclusive and supports combat lifecycle updates", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const createdScene = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders,
+      payload: {
+        name: "Upper Vault",
+        active: true,
+        width: 900,
+        height: 700,
+        gridSize: 60
+      }
+    });
+    expect(createdScene.statusCode).toBe(200);
+    expect(createdScene.json().activationHistory).toEqual([
+      expect.objectContaining({
+        sceneId: createdScene.json().id,
+        activatedByUserId: "usr_demo_gm",
+        previousActiveSceneId: "scn_vault_entry",
+        deactivatedSceneIds: ["scn_vault_entry"],
+        source: "create"
+      })
+    ]);
+
+    const scenes = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders
+    });
+    expect(scenes.statusCode).toBe(200);
+    expect(scenes.json().filter((scene: Scene) => scene.active).map((scene: Scene) => scene.id)).toEqual([createdScene.json().id]);
+
+    const reactivatedScene = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/scenes/scn_vault_entry",
+      headers: authHeaders,
+      payload: {
+        active: true,
+        activationHistory: []
+      }
+    });
+    expect(reactivatedScene.statusCode).toBe(200);
+    expect(reactivatedScene.json().activationHistory).toEqual([
+      expect.objectContaining({ sceneId: "scn_vault_entry", source: "create" }),
+      expect.objectContaining({
+        sceneId: "scn_vault_entry",
+        activatedByUserId: "usr_demo_gm",
+        previousActiveSceneId: createdScene.json().id,
+        deactivatedSceneIds: [createdScene.json().id],
+        source: "activate"
+      })
+    ]);
+    expect(store.state.scenes.filter((scene) => scene.active).map((scene) => scene.id)).toEqual(["scn_vault_entry"]);
+
+    store.state.actors.push(
+      createTimestamped("act", {
+        id: "act_sentinel",
+        campaignId: "camp_demo",
+        systemId: "generic-fantasy",
+        ownerUserId: "usr_demo_gm",
+        type: "npc",
+        name: "Vault Sentinel",
+        data: { hp: { current: 12, max: 12 }, conditions: [] },
+        permissions: {}
+      }) satisfies Actor
+    );
+
+    const started = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/combats",
+      headers: authHeaders,
+      payload: {
+        combatants: [
+          { id: "cmbt_alpha", tokenId: "tok_valen", actorId: "act_valen", name: "Valen", initiative: 18, defeated: false },
+          { id: "cmbt_beta", tokenId: "tok_sentinel", actorId: "act_sentinel", name: "Vault Sentinel", initiative: 12, defeated: false }
+        ]
+      }
+    });
+    expect(started.statusCode).toBe(200);
+
+    const syncedCombatant = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}/combatants/cmbt_alpha`,
+      headers: authHeaders,
+      payload: {
+        readiness: "ready",
+        conditions: ["prone", "concentrating", "stunned"],
+        deathSaveSuccesses: 2,
+        deathSaveFailures: 1,
+        resourceKey: "focus",
+        resourceLabel: "Focus 3",
+        resourceUsed: true,
+        syncActorSheet: true
+      }
+    });
+    expect(syncedCombatant.statusCode).toBe(200);
+    expect(syncedCombatant.json().combatants[0]).toEqual(expect.objectContaining({ readiness: "ready", conditions: ["prone", "stunned", "concentration lost"], deathSaveSuccesses: 2, deathSaveFailures: 1, resourceUsed: true, resourceSpent: true }));
+    expect(store.state.actors.find((actor) => actor.id === "act_valen")?.data).toEqual(
+      expect.objectContaining({
+        resources: { focus: 2 },
+        conditions: [
+          { id: "prone", appliedAt: expect.any(String) },
+          { id: "stunned", appliedAt: expect.any(String) },
+          { id: "concentration lost", appliedAt: expect.any(String) }
+        ],
+        deathSaves: { successes: 2, failures: 1 },
+        combatState: expect.objectContaining({ combatantId: "cmbt_alpha", tokenId: "tok_valen", readiness: "ready", resourceKey: "focus", resourceLabel: "Focus 3", resourceUsed: true, resourceSpent: true })
+      })
+    );
+
+    const stableCombatant = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}/combatants/cmbt_alpha`,
+      headers: authHeaders,
+      payload: {
+        deathSaveSuccesses: 3,
+        deathSaveFailures: 0,
+        syncActorSheet: true
+      }
+    });
+    expect(stableCombatant.statusCode).toBe(200);
+    expect(stableCombatant.json().combatants[0]).toEqual(expect.objectContaining({ deathSaveOutcome: "stable", defeated: false, conditions: ["prone", "stunned", "concentration lost", "stable"], resourceUsed: true, resourceSpent: true }));
+    expect(store.state.actors.find((actor) => actor.id === "act_valen")?.data).toEqual(
+      expect.objectContaining({
+        resources: { focus: 2 },
+        conditions: expect.arrayContaining([{ id: "stable", appliedAt: expect.any(String) }]),
+        deathSaves: { successes: 3, failures: 0 },
+        combatState: expect.objectContaining({ deathSaveOutcome: "stable", resourceSpent: true })
+      })
+    );
+
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["combat.manage"]
+      })
+    );
+    const blockedActorSync = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}/combatants/cmbt_beta`,
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { conditions: ["restrained"], syncActorSheet: true }
+    });
+    expect(blockedActorSync.statusCode).toBe(403);
+
+    const combatOnlyPatch = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}/combatants/cmbt_beta`,
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { conditions: ["restrained:2"], syncActorSheet: false }
+    });
+    expect(combatOnlyPatch.statusCode).toBe(200);
+    expect(combatOnlyPatch.json().combatants[1]).toEqual(expect.objectContaining({ conditions: ["restrained:2"] }));
+    expect(store.state.actors.find((actor) => actor.id === "act_sentinel")?.data.conditions).toEqual([]);
+
+    const deadCombatant = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}/combatants/cmbt_beta`,
+      headers: authHeaders,
+      payload: { deathSaveFailures: 3, syncActorSheet: false }
+    });
+    expect(deadCombatant.statusCode).toBe(200);
+    expect(deadCombatant.json().combatants[1]).toEqual(expect.objectContaining({ defeated: true, deathSaveOutcome: "dead", conditions: ["restrained:2", "dead"] }));
+
+    const updated = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}`,
+      headers: authHeaders,
+      payload: {
+        round: 2,
+        turnIndex: 1,
+        combatants: deadCombatant.json().combatants
+      }
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual(expect.objectContaining({ round: 2, turnIndex: 1, active: true }));
+    expect(updated.json().combatants[1]).toEqual(expect.objectContaining({ defeated: true }));
+    expect(updated.json().combatants[1].conditions).toEqual(["restrained:1", "dead"]);
+
+    const expiredTimedCondition = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${started.json().id}`,
+      headers: authHeaders,
+      payload: {
+        round: 4,
+        turnIndex: 1,
+        combatants: updated.json().combatants
+      }
+    });
+    expect(expiredTimedCondition.statusCode).toBe(200);
+    expect(expiredTimedCondition.json()).toEqual(expect.objectContaining({ round: 4, turnIndex: 1, active: true }));
+    expect(expiredTimedCondition.json().combatants[1]).toEqual(expect.objectContaining({ defeated: true }));
+    expect(expiredTimedCondition.json().combatants[1].conditions).toEqual(["dead"]);
+
+    const ended = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/combats/${started.json().id}`,
+      headers: authHeaders
+    });
+    expect(ended.statusCode).toBe(200);
+    expect(ended.json()).toEqual(expect.objectContaining({ active: false }));
+
+    const combatAudit = await app.inject({
+      method: "GET",
+      url: `/api/v1/combats/${started.json().id}/audit`,
+      headers: authHeaders
+    });
+    expect(combatAudit.statusCode).toBe(200);
+    expect(combatAudit.json().map((log: { action: string }) => log.action)).toEqual(expect.arrayContaining(["combat.ended", "combat.roundAdvanced", "combat.started"]));
+    const endedAudit = combatAudit.json().find((log: { action: string }) => log.action === "combat.ended");
+    expect(endedAudit).toMatchObject({
+      actorUserId: "usr_demo_gm",
+      campaignId: "camp_demo",
+      targetType: "combat",
+      targetId: started.json().id,
+      after: expect.objectContaining({ active: false, round: 4, combatantCount: 2, defeatedCount: 1 })
+    });
+
+    await app.close();
+  });
+
+  it("cleans up scene and campaign-owned records when tabletop containers are deleted", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const createdScene = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders,
+      payload: { name: "Scene Cleanup", active: false }
+    });
+    expect(createdScene.statusCode).toBe(200);
+
+    const createdToken = await app.inject({
+      method: "POST",
+      url: `/api/v1/scenes/${createdScene.json().id}/tokens`,
+      headers: authHeaders,
+      payload: { name: "Cleanup Token" }
+    });
+    expect(createdToken.statusCode).toBe(200);
+
+    const createdChat = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", sceneId: createdScene.json().id, body: "Scene cleanup checkpoint" }
+    });
+    expect(createdChat.statusCode).toBe(200);
+
+    const createdEncounter = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/encounters",
+      headers: authHeaders,
+      payload: { name: "Scene Cleanup Encounter", summary: "", tokenIds: [createdToken.json().id] }
+    });
+    expect(createdEncounter.statusCode).toBe(200);
+
+    const createdCombat = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/combats",
+      headers: authHeaders,
+      payload: {
+        combatants: [{ id: "cmbt_cleanup_token", tokenId: createdToken.json().id, name: "Cleanup Token", initiative: 10, defeated: false }]
+      }
+    });
+    expect(createdCombat.statusCode).toBe(200);
+
+    const deletedScene = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/scenes/${createdScene.json().id}`,
+      headers: authHeaders
+    });
+    expect(deletedScene.statusCode).toBe(200);
+    expect(store.state.scenes.some((scene) => scene.id === createdScene.json().id)).toBe(false);
+    expect(store.state.tokens.some((token) => token.sceneId === createdScene.json().id)).toBe(false);
+    expect(store.state.chat.some((message) => message.sceneId === createdScene.json().id)).toBe(false);
+    expect(store.state.encounters.find((encounter) => encounter.id === createdEncounter.json().id)?.tokenIds).toEqual([]);
+    expect(store.state.combats.some((combat) => combat.id === createdCombat.json().id)).toBe(false);
+    const sceneDeleteAudit = store.state.auditLogs.find((log) => log.action === "scene.delete" && log.targetId === createdScene.json().id);
+    expect(sceneDeleteAudit).toMatchObject({
+      actorType: "user",
+      actorUserId: "usr_demo_gm",
+      campaignId: "camp_demo",
+      targetType: "scene",
+      before: expect.objectContaining({
+        name: "Scene Cleanup",
+        tokens: 1,
+        sceneChatMessages: 1
+      }),
+      after: { deleted: true }
+    });
+    expect(JSON.stringify(sceneDeleteAudit)).not.toContain("Scene cleanup checkpoint");
+
+    const createdCampaign = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: { name: "Campaign Cleanup", description: "Container delete cleanup" }
+    });
+    expect(createdCampaign.statusCode).toBe(200);
+
+    const campaignScene = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/${createdCampaign.json().id}/scenes`,
+      headers: authHeaders,
+      payload: { name: "Campaign Cleanup Scene" }
+    });
+    expect(campaignScene.statusCode).toBe(200);
+
+    const campaignToken = await app.inject({
+      method: "POST",
+      url: `/api/v1/scenes/${campaignScene.json().id}/tokens`,
+      headers: authHeaders,
+      payload: { name: "Campaign Cleanup Token" }
+    });
+    expect(campaignToken.statusCode).toBe(200);
+
+    const deletedCampaign = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/campaigns/${createdCampaign.json().id}`,
+      headers: authHeaders
+    });
+    expect(deletedCampaign.statusCode).toBe(200);
+    expect(store.state.campaigns.some((campaign) => campaign.id === createdCampaign.json().id)).toBe(false);
+    expect(store.state.members.some((member) => member.campaignId === createdCampaign.json().id)).toBe(false);
+    expect(store.state.scenes.some((scene) => scene.campaignId === createdCampaign.json().id)).toBe(false);
+    expect(store.state.tokens.some((token) => token.id === campaignToken.json().id)).toBe(false);
+    const campaignDeleteAudit = store.state.auditLogs.find((log) => log.action === "campaign.delete" && log.targetId === createdCampaign.json().id);
+    expect(campaignDeleteAudit).toMatchObject({
+      actorType: "user",
+      actorUserId: "usr_demo_gm",
+      campaignId: createdCampaign.json().id,
+      targetType: "campaign",
+      before: expect.objectContaining({
+        name: "Campaign Cleanup",
+        scenes: 1,
+        members: 1,
+        tokens: 1
+      }),
+      after: { deleted: true }
+    });
+
+    await app.close();
+  });
+
+  it("bootstraps the first owner from an empty deployment", async () => {
+    const app = await buildApp({ store: new MemoryStateStore(emptyState()) });
+
+    const status = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/bootstrap"
+    });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toEqual(expect.objectContaining({ required: true, userCount: 0, campaignCount: 0 }));
+
+    const bootstrapped = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/bootstrap",
+      payload: {
+        email: "Owner@Example.Test",
+        displayName: "Owner GM",
+        password: "correct horse",
+        campaignName: "Owner Campaign"
+      }
+    });
+    expect(bootstrapped.statusCode).toBe(200);
+    expect(bootstrapped.json().token).toMatch(/^ots_/);
+    expect(bootstrapped.json().serverAdmin).toBe(true);
+    expect(bootstrapped.json().user).toEqual(expect.objectContaining({ email: "owner@example.test", serverAdmin: true }));
+    expect(bootstrapped.json().campaign).toEqual(expect.objectContaining({ name: "Owner Campaign", ownerUserId: bootstrapped.json().user.id }));
+    expect(bootstrapped.json().scene).toEqual(expect.objectContaining({ campaignId: bootstrapped.json().campaign.id, active: true }));
+
+    const adminUsers = await app.inject({
+      method: "GET",
+      url: "/api/v1/admin/users",
+      headers: { authorization: `Bearer ${bootstrapped.json().token}` }
+    });
+    expect(adminUsers.statusCode).toBe(200);
+
+    const secondBootstrap = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/bootstrap",
+      payload: {
+        email: "second@example.test",
+        displayName: "Second",
+        password: "correct horse",
+        campaignName: "Second Campaign"
+      }
+    });
+    expect(secondBootstrap.statusCode).toBe(409);
+
+    await app.close();
+  });
+
+  it("can disable demo seeding for durable stores", () => {
+    const directory = mkdtempSync(join(tmpdir(), "otte-empty-store-"));
+    const dbPath = join(directory, "state.sqlite");
+    const store = new SqliteStateStore(dbPath, { seedDemo: false });
+
+    expect(store.state.users).toEqual([]);
+    expect(store.state.campaigns).toEqual([]);
+
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
   it("supports a seeded player session without GM permissions", async () => {
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     const playerHeaders = { "x-user-id": "usr_demo_player" };
 
     const session = await app.inject({
@@ -226,6 +2532,72 @@ describe("api", () => {
     expect(playerMember.permissions).toContain("token.move");
     expect(playerMember.permissions).not.toContain("scene.update");
 
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["token.create"]
+      })
+    );
+    const playerCreatedToken = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: playerHeaders,
+      payload: { name: "Player Placed Lantern", x: 40, y: 40 }
+    });
+    expect(playerCreatedToken.statusCode).toBe(200);
+    expect(playerCreatedToken.json().ownerUserIds).toEqual(["usr_demo_player"]);
+    const movedPlayerCreatedToken = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tokens/${playerCreatedToken.json().id}`,
+      headers: playerHeaders,
+      payload: { x: 55, y: 50 }
+    });
+    expect(movedPlayerCreatedToken.statusCode).toBe(200);
+    expect(movedPlayerCreatedToken.json()).toEqual(expect.objectContaining({ x: 55, y: 50 }));
+
+    const unownedToken = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: authHeaders,
+      payload: { name: "Shared Console", x: 520, y: 420, ownerUserIds: [] }
+    });
+    expect(unownedToken.statusCode).toBe(200);
+    const blockedUnownedMove = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tokens/${unownedToken.json().id}`,
+      headers: playerHeaders,
+      payload: { x: 540, y: 430 }
+    });
+    expect(blockedUnownedMove.statusCode).toBe(403);
+
+    const invalidOwner = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tokens/${unownedToken.json().id}`,
+      headers: authHeaders,
+      payload: { ownerUserIds: ["usr_missing"] }
+    });
+    expect(invalidOwner.statusCode).toBe(400);
+
+    const assignedOwner = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tokens/${unownedToken.json().id}`,
+      headers: authHeaders,
+      payload: { ownerUserIds: ["usr_demo_player"] }
+    });
+    expect(assignedOwner.statusCode).toBe(200);
+    expect(assignedOwner.json().ownerUserIds).toEqual(["usr_demo_player"]);
+
+    const movedAssignedToken = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tokens/${unownedToken.json().id}`,
+      headers: playerHeaders,
+      payload: { x: 560, y: 440 }
+    });
+    expect(movedAssignedToken.statusCode).toBe(200);
+    expect(movedAssignedToken.json()).toEqual(expect.objectContaining({ x: 560, y: 440 }));
+
     const movedToken = await app.inject({
       method: "PATCH",
       url: "/api/v1/tokens/tok_valen",
@@ -234,6 +2606,55 @@ describe("api", () => {
     });
     expect(movedToken.statusCode).toBe(200);
     expect(movedToken.json()).toEqual(expect.objectContaining({ x: 460, y: 390 }));
+
+    const blockedMixedMoveUpdate = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_valen",
+      headers: playerHeaders,
+      payload: { x: 470, hidden: true }
+    });
+    expect(blockedMixedMoveUpdate.statusCode).toBe(403);
+    expect(store.state.tokens.find((token) => token.id === "tok_valen")).toEqual(expect.objectContaining({ x: 460, hidden: false }));
+
+    const gmTokenState = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_valen",
+      headers: authHeaders,
+      payload: {
+        notes: "Hold the vault doorway.",
+        conditions: [{ name: "Marked" }, { id: "blessed", name: "Blessed" }],
+        auras: [{ name: "Guardian Aura", radius: 15, color: "#38bdf8" }]
+      }
+    });
+    expect(gmTokenState.statusCode).toBe(200);
+    expect(gmTokenState.json()).toEqual(
+      expect.objectContaining({
+        notes: "Hold the vault doorway.",
+        conditions: [
+          { id: "marked", name: "Marked" },
+          { id: "blessed", name: "Blessed" }
+        ],
+        auras: [{ id: "guardian-aura", name: "Guardian Aura", radius: 15, color: "#38bdf8" }]
+      })
+    );
+
+    const targetedToken = await app.inject({
+      method: "POST",
+      url: "/api/v1/tokens/tok_valen/target",
+      headers: playerHeaders,
+      payload: { targeted: true }
+    });
+    expect(targetedToken.statusCode).toBe(200);
+    expect(targetedToken.json().targetedByUserIds).toEqual(["usr_demo_player"]);
+
+    const untargetedToken = await app.inject({
+      method: "POST",
+      url: "/api/v1/tokens/tok_valen/target",
+      headers: playerHeaders,
+      payload: { targeted: false }
+    });
+    expect(untargetedToken.statusCode).toBe(200);
+    expect(untargetedToken.json().targetedByUserIds).toEqual([]);
 
     const updatedActor = await app.inject({
       method: "PATCH",
@@ -252,6 +2673,59 @@ describe("api", () => {
     });
     expect(blockedWall.statusCode).toBe(403);
 
+    const playerPing = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/annotations",
+      headers: playerHeaders,
+      payload: { kind: "ping", points: [{ x: 325, y: 225 }], layer: "measurement", groupLabel: "Party marks", expiresInSeconds: 30 }
+    });
+    expect(playerPing.statusCode).toBe(200);
+    expect(playerPing.json().annotations.at(-1)).toEqual(expect.objectContaining({ kind: "ping", createdByUserId: "usr_demo_player", layer: "measurement", groupId: "party-marks", groupLabel: "Party marks" }));
+    expect(playerPing.json().annotationHistory.at(-1)).toEqual(expect.objectContaining({ action: "create", kind: "ping", layer: "measurement", groupLabel: "Party marks", actorUserId: "usr_demo_player" }));
+
+    const blockedDrawing = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/annotations",
+      headers: playerHeaders,
+      payload: { kind: "drawing", points: [{ x: 300, y: 300 }, { x: 350, y: 330 }] }
+    });
+    expect(blockedDrawing.statusCode).toBe(403);
+
+    const gmTemplate = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/annotations",
+      headers: authHeaders,
+      payload: { kind: "template", templateShape: "line", templateSaveAbility: "dexterity", templateSaveDc: 15, templateDamageFormula: "8d6", templateDamageType: "fire", points: [{ x: 476, y: 390 }, { x: 580, y: 390 }], color: "#fb7185", layer: "effects", groupLabel: "Hazards", snapToGrid: true }
+    });
+    expect(gmTemplate.statusCode).toBe(200);
+    const template = gmTemplate.json().annotations.at(-1);
+    expect(template).toEqual(expect.objectContaining({ kind: "template", templateShape: "line", templateSaveAbility: "dexterity", templateSaveDc: 15, templateDamageFormula: "8d6", templateDamageType: "fire", radius: 100, color: "#fb7185", layer: "effects", groupLabel: "Hazards", snapToGrid: true, affectedTokenIds: ["tok_valen"], rulesSystemId: "dnd-5e-srd" }));
+    expect(template.points).toEqual([{ x: 500, y: 400 }, { x: 600, y: 400 }]);
+    expect(template.effectHint).toContain("Line template: 1 affected token");
+    expect(template.effectHint).toContain("Dexterity save DC 15");
+    expect(template.effectHint).toContain("damage 8d6 fire");
+
+    const updatedTemplate = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/scenes/scn_vault_entry/annotations/${template.id}`,
+      headers: authHeaders,
+      payload: { color: "#f97316", groupLabel: "Moved Hazards", points: [{ x: 525, y: 390 }, { x: 630, y: 390 }] }
+    });
+    expect(updatedTemplate.statusCode).toBe(200);
+    const movedTemplate = updatedTemplate.json().annotations.find((annotation: { id: string }) => annotation.id === template.id);
+    expect(movedTemplate).toEqual(expect.objectContaining({ color: "#f97316", groupLabel: "Moved Hazards", groupId: "moved-hazards" }));
+    expect(movedTemplate.points).toEqual([{ x: 550, y: 400 }, { x: 650, y: 400 }]);
+    expect(updatedTemplate.json().annotationHistory.at(-1)).toEqual(expect.objectContaining({ action: "update", kind: "template", groupLabel: "Moved Hazards", actorUserId: "usr_demo_gm" }));
+
+    const deletedTemplate = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/scenes/scn_vault_entry/annotations/${template.id}`,
+      headers: authHeaders
+    });
+    expect(deletedTemplate.statusCode).toBe(200);
+    expect(deletedTemplate.json().annotations.some((annotation: { id: string }) => annotation.id === template.id)).toBe(false);
+    expect(deletedTemplate.json().annotationHistory.at(-1)).toEqual(expect.objectContaining({ action: "delete", kind: "template", templateShape: "line", templateSaveDc: 15, templateDamageFormula: "8d6", layer: "effects", groupLabel: "Moved Hazards", actorUserId: "usr_demo_gm" }));
+
     const secretJournal = await app.inject({
       method: "GET",
       url: "/api/v1/campaigns/camp_demo/journal",
@@ -259,6 +2733,151 @@ describe("api", () => {
     });
     expect(secretJournal.statusCode).toBe(200);
     expect(secretJournal.json()).toEqual([]);
+
+    await app.close();
+  });
+
+  it("validates chat whisper recipients and gates chat moderation", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    const missingRecipient = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "No recipient", visibility: "whisper" }
+    });
+    expect(missingRecipient.statusCode).toBe(400);
+
+    const invalidRecipient = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "Invalid recipient", visibility: "whisper", recipientUserIds: ["usr_not_a_member"] }
+    });
+    expect(invalidRecipient.statusCode).toBe(400);
+
+    const whisper = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "Whisper to player", type: "whisper", visibility: "public", recipientUserIds: ["usr_demo_player"] }
+    });
+    expect(whisper.statusCode).toBe(200);
+    expect(whisper.json()).toEqual(expect.objectContaining({ type: "whisper", visibility: "whisper", recipientUserIds: ["usr_demo_player"] }));
+
+    const playerMessages = await app.inject({
+      method: "GET",
+      url: "/api/v1/chat/messages?campaignId=camp_demo",
+      headers: playerHeaders
+    });
+    expect(playerMessages.statusCode).toBe(200);
+    expect(playerMessages.json().map((message: ChatMessage) => message.id)).toContain(whisper.json().id);
+
+    const threadRoot = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "Thread root" }
+    });
+    expect(threadRoot.statusCode).toBe(200);
+
+    const threadReply = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "Thread reply", replyToMessageId: threadRoot.json().id }
+    });
+    expect(threadReply.statusCode).toBe(200);
+    expect(threadReply.json()).toEqual(expect.objectContaining({ body: "Thread reply", replyToMessageId: threadRoot.json().id }));
+
+    const playerModeration = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/chat/messages/${threadReply.json().id}/moderation`,
+      headers: playerHeaders,
+      payload: { moderationStatus: "reviewed" }
+    });
+    expect(playerModeration.statusCode).toBe(403);
+
+    const moderatedReply = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/chat/messages/${threadReply.json().id}/moderation`,
+      headers: authHeaders,
+      payload: { moderationStatus: "follow_up" }
+    });
+    expect(moderatedReply.statusCode).toBe(200);
+    expect(moderatedReply.json()).toEqual(expect.objectContaining({ moderationStatus: "follow_up", moderatedByUserId: "usr_demo_gm", moderatedAt: expect.any(String) }));
+
+    const missingReplyTarget = await app.inject({
+      method: "POST",
+      url: "/api/v1/chat/messages",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", body: "Missing reply", replyToMessageId: "msg_missing" }
+    });
+    expect(missingReplyTarget.statusCode).toBe(400);
+
+    let saveCount = 0;
+    const originalSave = store.save.bind(store);
+    store.save = () => {
+      saveCount += 1;
+      originalSave();
+    };
+
+    const savesBeforeJsonExport = saveCount;
+    const exportedWhisperView = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/chat/export",
+      headers: playerHeaders
+    });
+    expect(exportedWhisperView.statusCode).toBe(200);
+    expect(saveCount).toBeGreaterThan(savesBeforeJsonExport);
+    expect(exportedWhisperView.json()).toEqual(
+      expect.objectContaining({
+        campaignId: "camp_demo",
+        count: expect.any(Number),
+        visibilityCounts: expect.objectContaining({ whisper: 1 })
+      })
+    );
+    expect(exportedWhisperView.json().messages.map((message: ChatMessage) => message.id)).toContain(whisper.json().id);
+
+    const playerDelete = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/chat/messages/${whisper.json().id}`,
+      headers: playerHeaders
+    });
+    expect(playerDelete.statusCode).toBe(403);
+
+    const moderatorDelete = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/chat/messages/${whisper.json().id}`,
+      headers: authHeaders
+    });
+    expect(moderatorDelete.statusCode).toBe(200);
+    expect(store.state.auditLogs.find((log) => log.action === "chat.message.delete" && log.targetId === whisper.json().id)).toMatchObject({
+      campaignId: "camp_demo",
+      actorUserId: "usr_demo_gm",
+      targetType: "chat",
+      before: expect.objectContaining({ visibility: "whisper", recipientCount: 1, bodyLength: "Whisper to player".length })
+    });
+
+    const afterDelete = await app.inject({
+      method: "GET",
+      url: "/api/v1/chat/messages?campaignId=camp_demo",
+      headers: playerHeaders
+    });
+    expect(afterDelete.json().map((message: ChatMessage) => message.id)).not.toContain(whisper.json().id);
+
+    const savesBeforeNdjsonExport = saveCount;
+    const ndjsonExport = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/chat/export?format=ndjson",
+      headers: authHeaders
+    });
+    expect(ndjsonExport.statusCode).toBe(200);
+    expect(ndjsonExport.headers["content-type"]).toContain("application/x-ndjson");
+    expect(saveCount).toBeGreaterThan(savesBeforeNdjsonExport);
+    expect(store.state.auditLogs.filter((log) => log.action === "chat.export" && log.campaignId === "camp_demo").length).toBeGreaterThanOrEqual(2);
 
     await app.close();
   });
@@ -272,7 +2891,7 @@ describe("api", () => {
     const login = await firstApp.inject({
       method: "POST",
       url: "/api/v1/auth/login",
-      payload: { userId: "usr_demo_player" }
+      payload: { email: "player@example.test" }
     });
     expect(login.statusCode).toBe(200);
     expect(login.json().token).toMatch(/^ots_/);
@@ -479,13 +3098,13 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
       const reset = await app.inject({
@@ -561,7 +3180,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const headers = { authorization: `Bearer ${adminLogin.json().token}` };
       for (let index = 0; index < 2; index += 1) {
@@ -638,7 +3257,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -702,12 +3321,13 @@ describe("api", () => {
     process.env.OTTE_OIDC_ISSUER = "https://sso.example.test";
     process.env.OTTE_OIDC_CLIENT_ID = "otte-client";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -789,7 +3409,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const invalidNumericConfig = ["OTTE_EMAIL_WEBHOOK_TIMEOUT_MS", "OTTE_PASSWORD_RESET_TTL_MINUTES"];
       const operations = await app.inject({
@@ -864,7 +3484,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -936,7 +3556,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -990,7 +3610,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const after = Date.now();
       expect(login.statusCode).toBe(200);
@@ -1013,7 +3633,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       expect(login.statusCode).toBe(200);
 
@@ -1054,7 +3674,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -1110,7 +3730,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -1209,7 +3829,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const reset = await app.inject({
         method: "POST",
@@ -1296,7 +3916,7 @@ describe("api", () => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -1337,6 +3957,109 @@ describe("api", () => {
     }
   });
 
+  it("tests OIDC and SCIM admin connections without exposing provider secrets", async () => {
+    let issuer = "";
+    const provider = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+      if (request.url === "/.well-known/openid-configuration") {
+        sendJson(response, {
+          issuer,
+          authorization_endpoint: `${issuer}/authorize`,
+          token_endpoint: `${issuer}/token`,
+          userinfo_endpoint: `${issuer}/userinfo`
+        });
+        return;
+      }
+      response.writeHead(404).end();
+    });
+    await new Promise<void>((resolve) => provider.listen(0, "127.0.0.1", resolve));
+    const address = provider.address() as AddressInfo;
+    issuer = `http://127.0.0.1:${address.port}`;
+
+    const previousEnv = snapshotEnv([
+      "OTTE_ADMIN_USER_IDS",
+      "OTTE_OIDC_ISSUER",
+      "OTTE_OIDC_CLIENT_ID",
+      "OTTE_OIDC_CLIENT_SECRET",
+      "OTTE_OIDC_REDIRECT_URI",
+      "OTTE_OIDC_ALLOW_INSECURE",
+      "OTTE_SCIM_BEARER_TOKEN"
+    ]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    process.env.OTTE_OIDC_ISSUER = issuer;
+    process.env.OTTE_OIDC_CLIENT_ID = "otte-client";
+    process.env.OTTE_OIDC_CLIENT_SECRET = "otte-secret";
+    process.env.OTTE_OIDC_REDIRECT_URI = "http://127.0.0.1:4000/api/v1/auth/oidc/callback";
+    process.env.OTTE_OIDC_ALLOW_INSECURE = "true";
+    process.env.OTTE_SCIM_BEARER_TOKEN = "scim-secret";
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    try {
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "gm@example.test" }
+      });
+      const headers = { authorization: `Bearer ${login.json().token}` };
+      const oidc = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/auth/test-connection",
+        headers,
+        payload: { provider: "oidc" }
+      });
+      expect(oidc.statusCode).toBe(200);
+      expect(oidc.json()).toMatchObject({
+        provider: "oidc",
+        ok: true,
+        status: "passed",
+        checks: expect.arrayContaining([
+          expect.objectContaining({ name: "discovery_document", ok: true }),
+          expect.objectContaining({ name: "authorization_endpoint", ok: true }),
+          expect.objectContaining({ name: "token_endpoint", ok: true }),
+          expect.objectContaining({ name: "userinfo_endpoint", ok: true })
+        ])
+      });
+
+      const scim = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/auth/test-connection",
+        headers,
+        payload: { provider: "scim" }
+      });
+      expect(scim.statusCode).toBe(200);
+      expect(scim.json()).toMatchObject({
+        provider: "scim",
+        ok: true,
+        status: "passed",
+        checks: expect.arrayContaining([
+          expect.objectContaining({ name: "bearer_token_configured", ok: true }),
+          expect.objectContaining({ name: "service_provider_config", ok: true }),
+          expect.objectContaining({ name: "users_endpoint", ok: true }),
+          expect.objectContaining({ name: "groups_endpoint", ok: true })
+        ])
+      });
+
+      const invalidProvider = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/auth/test-connection",
+        headers,
+        payload: { provider: "ldap" }
+      });
+      expect(invalidProvider.statusCode).toBe(400);
+
+      const body = JSON.stringify({ oidc: oidc.json(), scim: scim.json() });
+      expect(body).not.toContain(issuer);
+      expect(body).not.toContain("otte-client");
+      expect(body).not.toContain("otte-secret");
+      expect(body).not.toContain("scim-secret");
+      expect(store.state.auditLogs.filter((log) => log.action === "admin.authConnection.test")).toHaveLength(2);
+    } finally {
+      await app.close();
+      provider.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("flags invalid session TTL env values without exposing raw values", async () => {
     const previousEnv = snapshotEnv([
       "NODE_ENV",
@@ -1364,7 +4087,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const operations = await app.inject({
         method: "GET",
@@ -1609,7 +4332,8 @@ describe("api", () => {
   });
 
   it("provisions users and groups through token-protected SCIM", async () => {
-    const previousEnv = snapshotEnv(["OTTE_SCIM_BEARER_TOKEN"]);
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS", "OTTE_SCIM_BEARER_TOKEN"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
     process.env.OTTE_SCIM_BEARER_TOKEN = "scim-secret";
     const directory = mkdtempSync(join(tmpdir(), "otte-scim-"));
     const dbPath = join(directory, "state.sqlite");
@@ -1731,6 +4455,34 @@ describe("api", () => {
       });
       restoredStore.close();
 
+      const adminLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "gm@example.test" }
+      });
+      const authOperations = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/auth/operations",
+        headers: { authorization: `Bearer ${adminLogin.json().token}` }
+      });
+      expect(authOperations.statusCode).toBe(200);
+      expect(authOperations.json()).toMatchObject({
+        runtime: {
+          scim: {
+            configured: true,
+            bearerTokenConfigured: true,
+            serviceProviderConfigPath: "/api/v1/scim/v2/ServiceProviderConfig",
+            usersPath: "/api/v1/scim/v2/Users",
+            groupsPath: "/api/v1/scim/v2/Groups",
+            userCount: 1,
+            groupCount: 1,
+            mappingCount: 0,
+            matchedMappingCount: 0
+          }
+        }
+      });
+      expect(JSON.stringify(authOperations.json())).not.toContain("scim-secret");
+
       expect(store.state.auditLogs.map((log) => log.action)).toEqual(expect.arrayContaining(["scim.user.create", "scim.user.patch", "scim.group.create", "scim.group.patch"]));
       expect(store.state.auditLogs.filter((log) => log.action.startsWith("scim.")).every((log) => log.actorType === "system")).toBe(true);
     } finally {
@@ -1752,7 +4504,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       expect(adminLogin.statusCode).toBe(200);
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
@@ -1893,18 +4645,18 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const playerSecondLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
 
@@ -1972,7 +4724,7 @@ describe("api", () => {
       const staleLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const staleSession = store.state.sessions.find((session) => session.id === staleLogin.json().session.id)!;
       staleSession.lastSeenAt = "2026-04-01T00:00:00.000Z";
@@ -1988,7 +4740,7 @@ describe("api", () => {
       const disabledUserLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       expect(disabledUserLogin.statusCode).toBe(403);
 
@@ -2354,7 +5106,7 @@ describe("api", () => {
         latestRiskRevokeAt: expect.any(String),
         singleSessionRevocationCount: 0,
         userSessionRevocationRunCount: 0,
-        recentRiskRevokeRuns: [
+        recentRiskRevokeRuns: expect.arrayContaining([
           expect.objectContaining({
             actorUserId: "usr_demo_gm",
             staleDays: 1,
@@ -2369,7 +5121,7 @@ describe("api", () => {
             matched: 1,
             revoked: 0
           })
-        ]
+        ])
       });
 
       store.state.sessions = store.state.sessions.filter(
@@ -2426,7 +5178,7 @@ describe("api", () => {
       const disabledLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       expect(disabledLogin.statusCode).toBe(403);
 
@@ -2441,7 +5193,7 @@ describe("api", () => {
       const resetRequiredLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       expect(resetRequiredLogin.statusCode).toBe(403);
 
@@ -2467,12 +5219,12 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const playerLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
@@ -2614,11 +5366,18 @@ describe("api", () => {
         url: "/api/v1/auth/login",
         payload: { userId: "usr_demo_gm" }
       });
-      expect(login.statusCode).toBe(200);
+      expect(login.statusCode).toBe(401);
+      expect(login.json().message).toBe("Unknown login identity");
+      const emailLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "gm@example.test" }
+      });
+      expect(emailLogin.statusCode).toBe(200);
       const bearer = await app.inject({
         method: "GET",
         url: "/api/v1/campaigns",
-        headers: { authorization: `Bearer ${login.json().token}` }
+        headers: { authorization: `Bearer ${emailLogin.json().token}` }
       });
       expect(bearer.statusCode).toBe(200);
 
@@ -2639,7 +5398,7 @@ describe("api", () => {
       const authConfig = await app.inject({
         method: "GET",
         url: "/api/v1/admin/auth/config",
-        headers: { authorization: `Bearer ${login.json().token}` }
+        headers: { authorization: `Bearer ${emailLogin.json().token}` }
       });
       expect(authConfig.statusCode).toBe(200);
       expect(authConfig.json()).toMatchObject({
@@ -2654,12 +5413,12 @@ describe("api", () => {
       const authOperations = await app.inject({
         method: "GET",
         url: "/api/v1/admin/auth/operations",
-        headers: { authorization: `Bearer ${login.json().token}` }
+        headers: { authorization: `Bearer ${emailLogin.json().token}` }
       });
       expect(authOperations.statusCode).toBe(200);
       expect(authOperations.json()).toMatchObject({
         actionRequired: true,
-        actionReasons: ["legacy_user_header_blocked_attempts"],
+        actionReasons: ["legacy_user_header_blocked_attempts", "auth_login_failures"],
         legacyUserHeaderUsage: {
           usageCount: 0,
           blockedAttemptCount: 2,
@@ -2708,6 +5467,12 @@ describe("api", () => {
         headers: authHeaders
       });
       expect(enabled.statusCode).toBe(200);
+      const legacyLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { userId: "usr_demo_gm" }
+      });
+      expect(legacyLogin.statusCode).toBe(200);
     } finally {
       await app.close();
       restoreEnv(previousEnv);
@@ -2770,6 +5535,7 @@ describe("api", () => {
     expect(accepted.json().user).toMatchObject({ displayName: "Invited Player", email: "invited.player@example.test" });
     expect(accepted.json().user).not.toHaveProperty("passwordHash");
     expect(accepted.json().invite.status).toBe("accepted");
+    expect(accepted.json().session).toMatchObject({ activeOrganizationId: "org_demo" });
     expect(accepted.json().membership).toMatchObject({
       campaignId: "camp_demo",
       role: "player",
@@ -2777,6 +5543,11 @@ describe("api", () => {
     });
     expect(accepted.json().membership.permissions).toContain("token.move");
     expect(accepted.json().membership.permissions).not.toContain("scene.update");
+    expect(store.state.organizationMembers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ organizationId: "org_demo", userId: accepted.json().user.id, role: "member" })
+      ])
+    );
     expect(store.state.users.find((user) => user.email === "invited.player@example.test")?.passwordHash).toMatch(/^scrypt:/);
 
     const reused = await app.inject({
@@ -2987,26 +5758,67 @@ describe("api", () => {
     }
   });
 
-  it("filters hidden tokens from player reads and mutations", async () => {
+  it("filters hidden and GM-layer tokens from player reads and blocks player map-layer interactions", async () => {
     const store = new MemoryStateStore();
-    store.state.tokens.push({
-      id: "tok_hidden_sentinel",
-      sceneId: "scn_vault_entry",
-      name: "Hidden Sentinel",
-      x: 700,
-      y: 260,
-      width: 50,
-      height: 50,
-      rotation: 0,
-      hidden: true,
-      locked: false,
-      visionEnabled: false,
-      visionRadius: 0,
-      disposition: "hostile",
-      metadata: {},
-      createdAt: "2026-05-01T00:00:00.000Z",
-      updatedAt: "2026-05-01T00:00:00.000Z"
-    });
+    store.state.tokens.push(
+      {
+        id: "tok_hidden_sentinel",
+        sceneId: "scn_vault_entry",
+        name: "Hidden Sentinel",
+        x: 700,
+        y: 260,
+        width: 50,
+        height: 50,
+        rotation: 0,
+        layer: "player",
+        hidden: true,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition: "hostile",
+        metadata: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      },
+      {
+        id: "tok_map_statue",
+        sceneId: "scn_vault_entry",
+        name: "Map Statue",
+        x: 520,
+        y: 300,
+        width: 50,
+        height: 50,
+        rotation: 0,
+        layer: "map",
+        hidden: false,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition: "neutral",
+        metadata: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      },
+      {
+        id: "tok_gm_ambush",
+        sceneId: "scn_vault_entry",
+        name: "GM Ambush",
+        x: 760,
+        y: 260,
+        width: 50,
+        height: 50,
+        rotation: 0,
+        layer: "gm",
+        hidden: false,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition: "hostile",
+        metadata: {},
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      }
+    );
     const app = await buildApp({ store });
     const playerHeaders = { "x-user-id": "usr_demo_player" };
 
@@ -3016,7 +5828,7 @@ describe("api", () => {
       headers: playerHeaders
     });
     expect(playerTokens.statusCode).toBe(200);
-    expect(playerTokens.json().map((token: { id: string }) => token.id)).toEqual(["tok_valen"]);
+    expect(playerTokens.json().map((token: { id: string }) => token.id)).toEqual(["tok_valen", "tok_map_statue"]);
 
     const gmTokens = await app.inject({
       method: "GET",
@@ -3025,6 +5837,23 @@ describe("api", () => {
     });
     expect(gmTokens.statusCode).toBe(200);
     expect(gmTokens.json().map((token: { id: string }) => token.id)).toContain("tok_hidden_sentinel");
+    expect(gmTokens.json().map((token: { id: string }) => token.id)).toContain("tok_gm_ambush");
+
+    const blockedMapMove = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_map_statue",
+      headers: playerHeaders,
+      payload: { x: 560, y: 320 }
+    });
+    expect(blockedMapMove.statusCode).toBe(403);
+
+    const blockedMapTarget = await app.inject({
+      method: "POST",
+      url: "/api/v1/tokens/tok_map_statue/target",
+      headers: playerHeaders,
+      payload: { targeted: true }
+    });
+    expect(blockedMapTarget.statusCode).toBe(403);
 
     const blockedMove = await app.inject({
       method: "PATCH",
@@ -3042,6 +5871,15 @@ describe("api", () => {
     });
     expect(gmMove.statusCode).toBe(200);
     expect(gmMove.json()).toEqual(expect.objectContaining({ hidden: true, x: 760, y: 300 }));
+
+    const gmLayerPatch = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_hidden_sentinel",
+      headers: authHeaders,
+      payload: { layer: "gm", hidden: false }
+    });
+    expect(gmLayerPatch.statusCode).toBe(200);
+    expect(gmLayerPatch.json()).toEqual(expect.objectContaining({ layer: "gm", hidden: false }));
 
     await app.close();
   });
@@ -3233,7 +6071,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerHeaders = { "x-user-id": "usr_demo_player" };
@@ -3683,21 +6521,704 @@ describe("api", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     });
+    store.state.organizationMembers.push({
+      id: "orgmem_observer",
+      organizationId: "org_demo",
+      userId: "usr_observer",
+      role: "member",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    store.state.invites.push(
+      createTimestamped("inv", {
+        id: "inv_auth_matrix",
+        campaignId: "camp_demo",
+        tokenHash: "auth-matrix-token-hash",
+        role: "player" as const,
+        invitedByUserId: "usr_demo_gm",
+        expiresAt: "2026-06-01T00:00:00.000Z"
+      }) satisfies EngineState["invites"][number]
+    );
+    const authMatrixAsset = createTimestamped("asset", {
+      id: "asset_auth_matrix",
+      campaignId: "camp_demo",
+      name: "Auth Matrix Asset",
+      url: "/api/v1/assets/asset_auth_matrix/blob",
+      mimeType: "image/png",
+      sizeBytes: 8,
+      checksum: "sha256:auth-matrix",
+      lifecycle: { status: "active" as const, updatedAt: "2026-05-01T00:00:00.000Z" }
+    }) satisfies EngineState["assets"][number];
+    const authMatrixItem = createTimestamped("item", {
+      id: "item_auth_matrix",
+      campaignId: "camp_demo",
+      systemId: "generic-fantasy",
+      actorId: "act_valen",
+      type: "gear",
+      name: "Auth Matrix Item",
+      data: {}
+    }) satisfies EngineState["items"][number];
+    const authMatrixChat = createTimestamped("msg", {
+      id: "msg_auth_matrix",
+      campaignId: "camp_demo",
+      sceneId: "scn_vault_entry",
+      userId: "usr_demo_gm",
+      type: "plain" as const,
+      body: "auth matrix",
+      visibility: "public" as const,
+      recipientUserIds: []
+    }) satisfies EngineState["chat"][number];
+    const authMatrixCombat = createTimestamped("cmb", {
+      id: "cmb_auth_matrix",
+      campaignId: "camp_demo",
+      active: true,
+      round: 1,
+      turnIndex: 0,
+      combatants: [{ id: "cmbt_auth_matrix", tokenId: "tok_valen", actorId: "act_valen", name: "Valen Ash", initiative: 12, defeated: false }]
+    }) satisfies EngineState["combats"][number];
+    const authMatrixProposal = createTimestamped("prop", {
+      id: "prop_auth_matrix",
+      campaignId: "camp_demo",
+      createdByType: "user" as const,
+      createdByUserId: "usr_demo_gm",
+      title: "Auth Matrix Proposal",
+      summary: "Auth compatibility fixture",
+      status: "pending" as const,
+      changesJson: [{ entity: "journal" as const, action: "create" as const, data: { title: "Blocked" } }],
+      diffJson: {},
+      approvalRequired: true
+    }) satisfies EngineState["proposals"][number];
+    const authMatrixImport = createTimestamped("imp", {
+      id: "imp_auth_matrix",
+      campaignId: "camp_demo",
+      status: "previewed" as const,
+      source: {
+        sourceType: "manual" as const,
+        sourceName: "Auth Matrix Import",
+        submittedByUserId: "usr_demo_gm",
+        submittedAt: "2026-05-01T00:00:00.000Z",
+        license: { name: "Private table", usage: "private_home_game" as const }
+      },
+      entities: [],
+      selectedEntityIds: [],
+      appliedRecords: []
+    }) satisfies EngineState["contentImports"][number];
+    const authMatrixThread = createTimestamped("ait", {
+      id: "ait_auth_matrix",
+      campaignId: "camp_demo",
+      userId: "usr_demo_gm",
+      provider: "test",
+      title: "Auth Matrix Thread",
+      status: "failed" as const
+    }) satisfies EngineState["aiThreads"][number];
+    const authMatrixToolCall = createTimestamped("aitc", {
+      id: "aitc_auth_matrix",
+      threadId: "ait_auth_matrix",
+      toolName: "read_campaign",
+      input: {},
+      output: {},
+      status: "failed" as const
+    }) satisfies EngineState["aiToolCalls"][number];
+    const authMatrixMemory = createTimestamped("aimem", {
+      id: "aimem_auth_matrix",
+      campaignId: "camp_demo",
+      text: "The vault requires explicit auth.",
+      visibility: "gm_only" as const,
+      sourceIds: ["ait_auth_matrix"]
+    }) satisfies EngineState["aiMemory"][number];
+    const authMatrixPluginStorage = createTimestamped("plugstore", {
+      id: "plugstore_auth_matrix_count",
+      campaignId: "camp_demo",
+      pluginId: "example-macro-plugin",
+      key: "count",
+      value: 1,
+      updatedByType: "user" as const,
+      updatedById: "usr_demo_gm"
+    }) satisfies EngineState["pluginStorage"][number];
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.annotations.push({
+      id: "ann_auth_matrix",
+      sceneId: "scn_vault_entry",
+      kind: "drawing",
+      points: [{ x: 100, y: 100 }],
+      color: "#ffffff",
+      layer: "notes",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+      createdByUserId: "usr_demo_gm"
+    });
+    store.state.assets.push(authMatrixAsset);
+    store.state.items.push(authMatrixItem);
+    store.state.chat.push(authMatrixChat);
+    store.state.combats.push(authMatrixCombat);
+    store.state.proposals.push(authMatrixProposal);
+    store.state.contentImports.push(authMatrixImport);
+    store.state.aiThreads.push(authMatrixThread);
+    store.state.aiToolCalls.push(authMatrixToolCall);
+    store.state.aiMemory.push(authMatrixMemory);
+    store.state.pluginStorage.push(authMatrixPluginStorage);
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        id: "grant_auth_matrix_plugin_configure",
+        campaignId: "camp_demo",
+        subjectType: "plugin" as const,
+        subjectId: "example-macro-plugin",
+        permissions: ["plugin.configure"]
+      }) satisfies PermissionGrant
+    );
     const app = await buildApp({ store });
 
-    const missingSession = await app.inject({
-      method: "GET",
-      url: "/api/v1/campaigns"
-    });
-    expect(missingSession.statusCode).toBe(401);
+    const unauthenticatedRoutes: Array<{
+      method: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
+      url: string;
+      headers?: Record<string, string>;
+      payload?: string | Buffer | object;
+    }> = [
+      { method: "GET", url: "/api/v1/auth/session" },
+      { method: "POST", url: "/api/v1/auth/logout" },
+      { method: "POST", url: "/api/v1/auth/password/change", payload: { currentPassword: "old", newPassword: "new-password-123" } },
+      { method: "GET", url: "/api/v1/auth/mfa" },
+      { method: "POST", url: "/api/v1/auth/mfa/totp/enroll", payload: { currentPassword: "password-123" } },
+      { method: "POST", url: "/api/v1/auth/mfa/totp/confirm", payload: { code: "123456" } },
+      { method: "DELETE", url: "/api/v1/auth/mfa/totp", payload: { currentPassword: "password-123" } },
+      { method: "GET", url: "/api/v1/auth/sessions" },
+      { method: "DELETE", url: "/api/v1/auth/sessions/sess_auth_matrix" },
+      { method: "GET", url: "/api/v1/organizations" },
+      { method: "POST", url: "/api/v1/organizations", payload: { name: "No Auth Workspace" } },
+      { method: "PATCH", url: "/api/v1/organization/session", payload: { organizationId: "org_demo" } },
+      { method: "GET", url: "/api/v1/organization/workspace-defaults" },
+      { method: "PATCH", url: "/api/v1/organization/workspace-defaults", payload: { defaultSystemId: "generic-fantasy" } },
+      { method: "GET", url: "/api/v1/organization/members" },
+      { method: "POST", url: "/api/v1/organization/members", payload: { userId: "usr_demo_player", role: "member" } },
+      { method: "PATCH", url: "/api/v1/organization/members/orgmem_demo_player", payload: { role: "admin" } },
+      { method: "DELETE", url: "/api/v1/organization/members/orgmem_demo_player" },
+      { method: "GET", url: "/api/v1/organization/invites" },
+      { method: "POST", url: "/api/v1/organization/invites", payload: { campaignId: "camp_demo", email: "invite@example.test" } },
+      { method: "GET", url: "/api/v1/campaigns" },
+      { method: "POST", url: "/api/v1/campaigns", payload: { name: "No Auth Campaign" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/members" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/invites" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/invites", payload: { email: "invite@example.test" } },
+      { method: "POST", url: "/api/v1/invites/inv_auth_matrix/revoke" },
+      { method: "PATCH", url: "/api/v1/campaigns/camp_demo", payload: { name: "No Auth Rename" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/archive", payload: { reason: "missing auth" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/restore", payload: { reason: "missing auth" } },
+      { method: "DELETE", url: "/api/v1/campaigns/camp_demo" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/scenes" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/scenes", payload: { name: "No Auth Scene", width: 640, height: 480, gridSize: 40 } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/fog-presets" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/fog-presets", payload: { name: "No Auth Preset", sceneId: "scn_vault_entry" } },
+      { method: "DELETE", url: "/api/v1/campaigns/camp_demo/fog-presets/fogp_missing" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/assets" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/assets/storage" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/assets", payload: { name: "No Auth Asset", url: "/map.png", sizeBytes: 1 } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/assets/upload", headers: { "content-type": "image/png", "x-asset-name": "No Auth Upload.png" }, payload: Buffer.from("no-auth") },
+      { method: "PATCH", url: "/api/v1/assets/asset_auth_matrix", payload: { name: "No Auth Asset Rename" } },
+      { method: "POST", url: "/api/v1/assets/asset_auth_matrix/delivery-url", payload: { disposition: "inline" } },
+      { method: "PATCH", url: "/api/v1/assets/asset_auth_matrix/lifecycle", payload: { status: "archived", reason: "missing auth" } },
+      { method: "GET", url: "/api/v1/assets/asset_auth_matrix/blob" },
+      { method: "GET", url: "/api/v1/scenes/scn_vault_entry" },
+      { method: "GET", url: "/api/v1/scenes/scn_vault_entry/vision" },
+      { method: "GET", url: "/api/v1/scenes/scn_vault_entry/vision/sample?x=100&y=100" },
+      { method: "GET", url: "/api/v1/scenes/scn_vault_entry/rendering/diagnostics" },
+      { method: "PATCH", url: "/api/v1/scenes/scn_vault_entry", payload: { name: "No Auth Scene Rename" } },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/annotations", payload: { kind: "drawing", points: [{ x: 300, y: 300 }] } },
+      { method: "PATCH", url: "/api/v1/scenes/scn_vault_entry/annotations/ann_auth_matrix", payload: { label: "No Auth" } },
+      { method: "DELETE", url: "/api/v1/scenes/scn_vault_entry/annotations/ann_auth_matrix" },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/fog", payload: { x: 300, y: 300, radius: 40 } },
+      { method: "GET", url: "/api/v1/scenes/scn_vault_entry/fog/history" },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/fog/undo" },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/fog/apply-preset", payload: { presetId: "fogp_missing" } },
+      { method: "PATCH", url: "/api/v1/scenes/scn_vault_entry/fog/fog_center", payload: { hidden: true } },
+      { method: "DELETE", url: "/api/v1/scenes/scn_vault_entry/fog/fog_center" },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/walls", payload: { x1: 1, y1: 1, x2: 2, y2: 2 } },
+      { method: "PATCH", url: "/api/v1/scenes/scn_vault_entry/walls/wall_north", payload: { blocksMovement: false } },
+      { method: "DELETE", url: "/api/v1/scenes/scn_vault_entry/walls/wall_north" },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/lights", payload: { x: 100, y: 100, radius: 20 } },
+      { method: "PATCH", url: "/api/v1/scenes/scn_vault_entry/lights/light_brazier", payload: { radius: 200 } },
+      { method: "DELETE", url: "/api/v1/scenes/scn_vault_entry/lights/light_brazier" },
+      { method: "DELETE", url: "/api/v1/scenes/scn_vault_entry" },
+      { method: "GET", url: "/api/v1/scenes/scn_vault_entry/tokens" },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/tokens", payload: { name: "No Auth Token" } },
+      { method: "POST", url: "/api/v1/tokens/tok_valen/target", payload: { targeted: true } },
+      { method: "PATCH", url: "/api/v1/tokens/tok_valen", payload: { hidden: true } },
+      { method: "DELETE", url: "/api/v1/tokens/tok_valen" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/actors" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/actors", payload: { name: "No Auth Actor" } },
+      { method: "PATCH", url: "/api/v1/actors/act_valen", payload: { name: "No Auth Actor Rename" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/items" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/items", payload: { name: "No Auth Item", systemId: "generic-fantasy", type: "gear" } },
+      { method: "PATCH", url: "/api/v1/items/item_auth_matrix", payload: { name: "No Auth Item Rename" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/journal" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/journal", payload: { title: "No Auth Entry", body: "blocked" } },
+      { method: "PATCH", url: "/api/v1/journal/jnl_hook", payload: { title: "No Auth Journal Rename" } },
+      { method: "POST", url: "/api/v1/dice/roll", payload: { campaignId: "camp_demo", formula: "1d20" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/rolls" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/dice-macros" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/dice-macros", payload: { name: "No Auth Macro", formula: "1d4" } },
+      { method: "PATCH", url: "/api/v1/dice-macros/mac_demo_attack", payload: { name: "No Auth Macro Rename" } },
+      { method: "DELETE", url: "/api/v1/dice-macros/mac_demo_attack" },
+      { method: "GET", url: "/api/v1/chat/messages?campaignId=camp_demo" },
+      { method: "POST", url: "/api/v1/chat/messages", payload: { campaignId: "camp_demo", body: "blocked" } },
+      { method: "PATCH", url: "/api/v1/chat/messages/msg_auth_matrix/moderation", payload: { moderationStatus: "hidden" } },
+      { method: "DELETE", url: "/api/v1/chat/messages/msg_auth_matrix" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/chat/export" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/encounters" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/encounters", payload: { name: "No Auth Encounter" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/encounter-threats" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/encounter-plan", payload: { name: "No Auth Encounter Plan" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/combats" },
+      { method: "GET", url: "/api/v1/combats/cmb_auth_matrix/audit" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/combats", payload: { name: "No Auth Combat" } },
+      { method: "PATCH", url: "/api/v1/combats/cmb_auth_matrix", payload: { round: 2 } },
+      { method: "PATCH", url: "/api/v1/combats/cmb_auth_matrix/combatants/cmbt_auth_matrix", payload: { defeated: true } },
+      { method: "DELETE", url: "/api/v1/combats/cmb_auth_matrix" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/proposals" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/proposals", payload: { title: "No Auth Proposal", changesJson: [] } },
+      { method: "POST", url: "/api/v1/proposals/prop_auth_matrix/approve" },
+      { method: "POST", url: "/api/v1/proposals/prop_auth_matrix/reject" },
+      { method: "POST", url: "/api/v1/proposals/prop_auth_matrix/apply" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/content-imports" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/content-imports/preview", payload: { sourceType: "json", records: [] } },
+      { method: "GET", url: "/api/v1/content-imports/imp_auth_matrix" },
+      { method: "POST", url: "/api/v1/content-imports/imp_auth_matrix/apply", payload: { selectedEntityIds: [] } },
+      { method: "POST", url: "/api/v1/content-imports/imp_auth_matrix/rollback" },
+      { method: "DELETE", url: "/api/v1/content-imports/imp_auth_matrix" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/ai/threads" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/ai/usage" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/ai/evaluations" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/evaluations", payload: { name: "No Auth Eval", status: "passed", score: 1, summary: "blocked", checks: [] } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/threads", payload: { prompt: "blocked" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/ai/memory" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/memory", payload: { text: "blocked" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/memory/extract", payload: { text: "blocked" } },
+      { method: "POST", url: "/api/v1/ai/memory/aimem_auth_matrix/approve" },
+      { method: "DELETE", url: "/api/v1/ai/memory/aimem_auth_matrix" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/session-recap", payload: { transcript: "blocked" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/encounter-design", payload: { prompt: "blocked" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/generate-map-asset", payload: { prompt: "blocked" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/generate-token-asset", payload: { prompt: "blocked" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/ai/tool-calls" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/ai/tool-calls/aitc_auth_matrix/retry", payload: { reason: "missing auth" } },
+      { method: "GET", url: "/api/v1/plugins" },
+      { method: "POST", url: "/api/v1/plugins/install", payload: { campaignId: "camp_demo", packagePath: "missing-plugin-package" } },
+      { method: "POST", url: "/api/v1/plugins/registry/sync", payload: { campaignId: "camp_demo" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/plugins" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install", payload: { permissions: ["chat.write"] } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/storage" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/storage/count" },
+      { method: "PUT", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/storage/count", payload: { value: 1 } },
+      { method: "DELETE", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/storage/count" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/chat-command", payload: { command: "/spark" } },
+      { method: "GET", url: "/api/v1/systems" },
+      { method: "POST", url: "/api/v1/systems/install", payload: { campaignId: "camp_demo" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/install" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/character-templates" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/character-origins" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters", payload: { name: "No Auth Character" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/monsters", payload: { name: "No Auth Monster" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters/import", payload: { name: "No Auth Import" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/compendium" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/compendium", payload: { entryId: "spell:light" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/purchase", payload: { itemId: "torch" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/conditions", payload: { conditionId: "prone" } },
+      { method: "DELETE", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/conditions/prone" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/advancement" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/advance", payload: { level: 2 } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/rest", payload: { type: "short" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/sheet" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll", payload: { rollId: "ability-strength" } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/export" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/dogfood-report-bundle" },
+      { method: "POST", url: "/api/v1/import/campaign", payload: { format: "ottx", version: "0.2.0", exportedAt: "2026-05-01T00:00:00.000Z", manifest: { campaignId: "camp_demo", name: "Blocked", schemaVersion: "0.2.0", assetCount: 0 }, data: emptyState() } },
+      { method: "GET", url: "/api/v1/admin/users" },
+      { method: "PATCH", url: "/api/v1/admin/users/usr_demo_player", payload: { disabled: true } },
+      { method: "POST", url: "/api/v1/admin/users/usr_demo_player/password-reset", payload: { returnTo: "/login" } },
+      { method: "POST", url: "/api/v1/admin/password-resets/prune", payload: { dryRun: true } },
+      { method: "DELETE", url: "/api/v1/admin/users/usr_demo_player/sessions" },
+      { method: "GET", url: "/api/v1/admin/sessions" },
+      { method: "GET", url: "/api/v1/admin/sessions/risk" },
+      { method: "POST", url: "/api/v1/admin/sessions/risk/revoke", payload: { dryRun: true } },
+      { method: "DELETE", url: "/api/v1/admin/sessions/sess_auth_matrix" },
+      { method: "GET", url: "/api/v1/admin/auth/config" },
+      { method: "GET", url: "/api/v1/admin/auth/operations" },
+      { method: "POST", url: "/api/v1/admin/auth/test-connection", payload: { provider: "oidc" } },
+      { method: "GET", url: "/api/v1/admin/email-outbox" },
+      { method: "POST", url: "/api/v1/admin/email-outbox/retry-all", payload: { dryRun: true } },
+      { method: "POST", url: "/api/v1/admin/email-outbox/msg_auth_matrix/retry" },
+      { method: "GET", url: "/api/v1/admin/audit-logs" },
+      { method: "GET", url: "/api/v1/admin/storage/operations" },
+      { method: "POST", url: "/api/v1/admin/storage/backup", payload: { reason: "missing auth" } },
+      { method: "POST", url: "/api/v1/admin/storage/restore-drill", payload: { backupFileName: "backup.json" } },
+      { method: "POST", url: "/api/v1/admin/storage/restore", payload: { backupFileName: "backup.json", confirmFileName: "backup.json" } },
+      { method: "GET", url: "/api/v1/admin/jobs" },
+      { method: "POST", url: "/api/v1/admin/jobs", payload: { type: "asset_cleanup" } },
+      { method: "POST", url: "/api/v1/admin/jobs/lease", payload: { workerId: "no-auth" } },
+      { method: "GET", url: "/api/v1/admin/jobs/operations" },
+      { method: "GET", url: "/api/v1/admin/jobs/metrics" },
+      { method: "POST", url: "/api/v1/admin/jobs/alerts", payload: { dryRun: true } },
+      { method: "GET", url: "/api/v1/admin/jobs/job_auth_matrix" },
+      { method: "PATCH", url: "/api/v1/admin/jobs/job_auth_matrix", payload: { status: "queued" } },
+      { method: "POST", url: "/api/v1/admin/jobs/job_auth_matrix/heartbeat", payload: { workerId: "no-auth" } },
+      { method: "POST", url: "/api/v1/admin/jobs/job_auth_matrix/retry" },
+      { method: "POST", url: "/api/v1/admin/jobs/job_auth_matrix/cancel", payload: { reason: "missing auth" } },
+      { method: "GET", url: "/api/v1/admin/ai/operations" },
+      { method: "POST", url: "/api/v1/admin/ai/proposals/stale/reject", payload: { dryRun: true } },
+      { method: "POST", url: "/api/v1/admin/ai/threads/stale/fail", payload: { dryRun: true } },
+      { method: "POST", url: "/api/v1/admin/ai/tool-calls/stale/fail", payload: { dryRun: true } },
+      { method: "POST", url: "/api/v1/admin/ai/tool-calls/retry", payload: { dryRun: true } },
+      { method: "GET", url: "/api/v1/admin/ai/evaluations" },
+      { method: "GET", url: "/api/v1/admin/plugins/reviews" },
+      { method: "PATCH", url: "/api/v1/admin/plugins/reviews/example-macro-plugin", payload: { status: "approved" } },
+      { method: "POST", url: "/api/v1/admin/plugins/registry/sync", payload: {} },
+      { method: "GET", url: "/api/v1/admin/plugins/operations" },
+      { method: "GET", url: "/api/v1/admin/systems/operations" },
+      { method: "GET", url: "/api/v1/admin/rendering/operations" },
+      { method: "GET", url: "/api/v1/admin/scim/group-role-mappings" },
+      { method: "POST", url: "/api/v1/admin/scim/group-role-mappings", payload: { groupId: "grp_auth_matrix", role: "member" } },
+      { method: "DELETE", url: "/api/v1/admin/scim/group-role-mappings/map_auth_matrix" },
+      { method: "GET", url: "/api/v1/admin/assets/storage" },
+      { method: "GET", url: "/api/v1/admin/assets/integrity?campaignId=camp_demo" },
+      { method: "POST", url: "/api/v1/admin/assets/integrity/quarantine", payload: { campaignId: "camp_demo", dryRun: true } },
+      { method: "POST", url: "/api/v1/admin/assets/migrate", payload: { campaignId: "camp_demo", dryRun: true } },
+      { method: "POST", url: "/api/v1/admin/assets/cleanup", payload: { campaignId: "camp_demo", dryRun: true } },
+      { method: "POST", url: "/api/v1/admin/assets/asset_auth_matrix/purge-cache", payload: { reason: "missing auth" } }
+    ];
 
-    const blockedMutation = await app.inject({
-      method: "POST",
-      url: "/api/v1/scenes/scn_vault_entry/tokens",
-      headers: { "x-user-id": "usr_observer" },
-      payload: { name: "Unauthorized Token" }
+    type BehaviorOpenApiSpec = { paths: Record<string, Record<string, unknown>> };
+    const openApi = await app.inject({ method: "GET", url: "/api/v1/openapi.json" });
+    expect(openApi.statusCode).toBe(200);
+    const spec = openApi.json() as BehaviorOpenApiSpec;
+    const restMethods = new Set(["delete", "get", "patch", "post", "put"]);
+    const routeKey = (method: string, path: string): string => `${method.toUpperCase()} ${path}`;
+    const specRouteKeys = Object.entries(spec.paths).flatMap(([path, operations]) =>
+      Object.keys(operations)
+        .filter((method) => restMethods.has(method))
+        .map((method) => routeKey(method, path))
+    );
+    const publicOrNonSessionRouteKeys = new Map<string, string>([
+      ["GET /api/v1/health", "public health check"],
+      ["GET /api/v1/openapi.json", "public API contract"],
+      ["GET /api/v1/auth/bootstrap", "public first-run bootstrap status"],
+      ["POST /api/v1/auth/bootstrap", "public first-run owner creation"],
+      ["POST /api/v1/auth/register", "public account registration"],
+      ["POST /api/v1/auth/login", "public session creation"],
+      ["POST /api/v1/auth/password-reset/request", "public password reset request"],
+      ["POST /api/v1/auth/password-reset/confirm", "public password reset completion"],
+      ["GET /api/v1/auth/oidc/config", "public OIDC client configuration"],
+      ["GET /api/v1/auth/oidc/start", "browser redirect flow"],
+      ["POST /api/v1/auth/oidc/start", "browser redirect flow"],
+      ["GET /api/v1/auth/oidc/callback", "provider callback"],
+      ["POST /api/v1/invites/accept", "public invite acceptance"],
+      ["GET /api/v1/scim/v2/ServiceProviderConfig", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["GET /api/v1/scim/v2/Users", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["POST /api/v1/scim/v2/Users", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["GET /api/v1/scim/v2/Users/{userId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["PUT /api/v1/scim/v2/Users/{userId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["PATCH /api/v1/scim/v2/Users/{userId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["DELETE /api/v1/scim/v2/Users/{userId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["GET /api/v1/scim/v2/Groups", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["POST /api/v1/scim/v2/Groups", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["GET /api/v1/scim/v2/Groups/{groupId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["PUT /api/v1/scim/v2/Groups/{groupId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["PATCH /api/v1/scim/v2/Groups/{groupId}", "SCIM bearer provisioning route covered by identity/live-provider gates"],
+      ["DELETE /api/v1/scim/v2/Groups/{groupId}", "SCIM bearer provisioning route covered by identity/live-provider gates"]
+    ]);
+    const specPathForConcreteRoute = (url: string, method: string): string | undefined => {
+      const concretePath = url.split("?")[0]!;
+      return Object.entries(spec.paths).find(([path, operations]) => {
+        if (!Object.prototype.hasOwnProperty.call(operations, method.toLowerCase())) return false;
+        const expression = new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\\\{[^/]+\\\}/g, "[^/]+")}$`);
+        return expression.test(concretePath);
+      })?.[0];
+    };
+    const coveredRouteKeys = new Set(
+      unauthenticatedRoutes.map((route) => {
+        const specPath = specPathForConcreteRoute(route.url, route.method);
+        expect(specPath, `${route.method} ${route.url} must match a served OpenAPI path`).toBeDefined();
+        return routeKey(route.method, specPath!);
+      })
+    );
+    const missingSessionCoverage = specRouteKeys.filter((key) => !publicOrNonSessionRouteKeys.has(key) && !coveredRouteKeys.has(key));
+    expect(missingSessionCoverage).toEqual([]);
+
+    for (const route of unauthenticatedRoutes) {
+      const response = await app.inject(route);
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(401);
+      expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "unauthorized" });
+    }
+
+    const observerMutationOutcomeExceptions = new Map<string, string>([
+      ["POST /api/v1/auth/logout", "self-service session lifecycle"],
+      ["POST /api/v1/auth/password/change", "self-service credential change"],
+      ["POST /api/v1/auth/mfa/totp/enroll", "self-service MFA setup"],
+      ["POST /api/v1/auth/mfa/totp/confirm", "self-service MFA setup"],
+      ["DELETE /api/v1/auth/mfa/totp", "self-service MFA removal"],
+      ["DELETE /api/v1/auth/sessions/{sessionId}", "self-service session revocation"],
+      ["POST /api/v1/organizations", "authenticated workspace creation"],
+      ["PATCH /api/v1/organization/session", "authenticated active-workspace switch"],
+      ["POST /api/v1/campaigns", "authenticated campaign creation in active workspace"],
+      ["POST /api/v1/assets/{assetId}/delivery-url", "read-permitted signed asset delivery"],
+      ["POST /api/v1/tokens/{tokenId}/target", "read-permitted personal targeting state"],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/encounter-plan", "read-permitted encounter planning preview"],
+      ["POST /api/v1/import/campaign", "authenticated archive import creates or updates scoped campaigns"]
+    ]);
+    const observerMutationOutcomeRoutes = unauthenticatedRoutes.filter((route) => {
+      if (route.method === "GET") return false;
+      const specPath = specPathForConcreteRoute(route.url, route.method);
+      expect(specPath, `${route.method} ${route.url} must match a served OpenAPI path`).toBeDefined();
+      const key = routeKey(route.method, specPath!);
+      return !publicOrNonSessionRouteKeys.has(key) && !observerMutationOutcomeExceptions.has(key);
     });
-    expect(blockedMutation.statusCode).toBe(403);
+    for (const route of observerMutationOutcomeRoutes) {
+      const response = await app.inject({
+        ...route,
+        headers: { ...route.headers, "x-user-id": "usr_observer" }
+      });
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(403);
+      expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "forbidden" });
+    }
+
+    const observerReadOutcomeExceptions = new Map<string, string>([
+      ["GET /api/v1/auth/session", "self-service bearer-session inspection"],
+      ["GET /api/v1/auth/mfa", "self-service bearer-session MFA state"],
+      ["GET /api/v1/auth/sessions", "self-service bearer-session listing"],
+      ["GET /api/v1/assets/{assetId}/blob", "blob fixture lacks backing local object"]
+    ]);
+    const observerReadForbiddenRouteKeys = new Map<string, string>([
+      ["GET /api/v1/organization/invites", "organization admin invite roster"],
+      ["GET /api/v1/campaigns/{campaignId}/invites", "campaign invite roster requires campaign update"],
+      ["GET /api/v1/campaigns/{campaignId}/fog-presets", "fog presets require token reveal"],
+      ["GET /api/v1/scenes/{sceneId}/rendering/diagnostics", "rendering diagnostics require scene update"],
+      ["GET /api/v1/scenes/{sceneId}/fog/history", "fog history requires token reveal"],
+      ["GET /api/v1/campaigns/{campaignId}/dice-macros", "macro roster requires dice rolling"],
+      ["GET /api/v1/campaigns/{campaignId}/ai/threads", "AI thread roster requires AI proposal permission"],
+      ["GET /api/v1/campaigns/{campaignId}/ai/usage", "AI usage requires AI proposal permission"],
+      ["GET /api/v1/campaigns/{campaignId}/ai/evaluations", "AI evaluations require AI proposal permission"],
+      ["GET /api/v1/campaigns/{campaignId}/ai/memory", "AI memory requires AI memory permission"],
+      ["GET /api/v1/campaigns/{campaignId}/ai/tool-calls", "AI tool calls require AI proposal permission"],
+      ["GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage", "plugin storage requires plugin configure"],
+      ["GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}", "plugin storage requires plugin configure"]
+    ]);
+    const observerReadOutcomeRoutes = unauthenticatedRoutes.filter((route) => {
+      if (route.method !== "GET") return false;
+      const specPath = specPathForConcreteRoute(route.url, route.method);
+      expect(specPath, `${route.method} ${route.url} must match a served OpenAPI path`).toBeDefined();
+      const key = routeKey(route.method, specPath!);
+      return !publicOrNonSessionRouteKeys.has(key) && !observerReadOutcomeExceptions.has(key);
+    });
+    for (const route of observerReadOutcomeRoutes) {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      const key = routeKey(route.method, specPath);
+      const response = await app.inject({
+        ...route,
+        headers: { ...route.headers, "x-user-id": "usr_observer" }
+      });
+      const expectedStatus = key.startsWith("GET /api/v1/admin/") || observerReadForbiddenRouteKeys.has(key) ? 403 : 200;
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(expectedStatus);
+      if (expectedStatus === 403) {
+        expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "forbidden" });
+      }
+    }
+
+    const gmUser = store.state.users.find((user) => user.id === "usr_demo_gm");
+    if (gmUser) gmUser.serverAdmin = true;
+    const privilegedReadOutcomeRoutes = observerReadOutcomeRoutes.filter((route) => {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      const key = routeKey(route.method, specPath);
+      return key.startsWith("GET /api/v1/admin/") || observerReadForbiddenRouteKeys.has(key);
+    });
+    const privilegedReadCoveredRouteKeys = new Set(
+      privilegedReadOutcomeRoutes.map((route) => routeKey(route.method, specPathForConcreteRoute(route.url, route.method)!))
+    );
+    const missingPrivilegedReadCompanions = [...observerReadForbiddenRouteKeys.keys()].filter((key) => !privilegedReadCoveredRouteKeys.has(key));
+    expect(missingPrivilegedReadCompanions).toEqual([]);
+    const privilegedReadExpectedStatuses = new Map<string, number>([
+      ["GET /api/v1/admin/jobs/{jobId}", 404]
+    ]);
+    for (const route of privilegedReadOutcomeRoutes) {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      const key = routeKey(route.method, specPath);
+      const response = await app.inject({
+        ...route,
+        headers: { ...route.headers, "x-user-id": "usr_demo_gm" }
+      });
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(privilegedReadExpectedStatuses.get(key) ?? 200);
+    }
+
+    const observerBlockedRoutes: Array<{
+      method: "GET" | "PATCH" | "POST";
+      url: string;
+      payload?: Record<string, unknown>;
+      expectedMessage: string;
+    }> = [
+      {
+        method: "POST",
+        url: "/api/v1/scenes/scn_vault_entry/tokens",
+        payload: { name: "Unauthorized Token" },
+        expectedMessage: "Missing permission: token.create"
+      },
+      {
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_valen",
+        payload: { hidden: true },
+        expectedMessage: "Missing permission: token.update"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/scenes/scn_vault_entry/annotations",
+        payload: { kind: "drawing", points: [{ x: 300, y: 300 }] },
+        expectedMessage: "Missing permission: scene.update"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/journal",
+        payload: { title: "Unauthorized Journal", body: "blocked" },
+        expectedMessage: "Missing permission: journal.create"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        payload: { campaignId: "camp_demo", body: "blocked" },
+        expectedMessage: "Missing permission: chat.write"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/dice/roll",
+        payload: { campaignId: "camp_demo", formula: "1d20" },
+        expectedMessage: "Missing permission: dice.roll"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        payload: { name: "Unauthorized Combat" },
+        expectedMessage: "Missing permission: combat.manage"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/proposals",
+        payload: { title: "Unauthorized Proposal", changesJson: [] },
+        expectedMessage: "Missing permission: campaign.update"
+      },
+      {
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        expectedMessage: "Missing permission: ai.proposeChanges"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        payload: { prompt: "blocked" },
+        expectedMessage: "Missing permission: ai.use"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install",
+        payload: { permissions: ["chat.write"] },
+        expectedMessage: "Missing permission: plugin.install"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/install",
+        expectedMessage: "Missing permission: campaign.update"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll",
+        payload: { rollId: "ability-strength" },
+        expectedMessage: "Missing permission: dice.roll"
+      }
+    ];
+
+    for (const route of observerBlockedRoutes) {
+      const response = await app.inject({
+        ...route,
+        headers: { "x-user-id": "usr_observer" }
+      });
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(403);
+      expect(response.json(), `${route.method} ${route.url}`).toMatchObject({ error: "forbidden", message: route.expectedMessage });
+    }
+
+    const gmAllowedRouteOutcomes: Array<{
+      method: "GET" | "PATCH" | "POST";
+      url: string;
+      payload?: Record<string, unknown>;
+      expectedStatus?: number;
+    }> = [
+      {
+        method: "POST",
+        url: "/api/v1/scenes/scn_vault_entry/tokens",
+        payload: { name: "Authorized Matrix Token" }
+      },
+      {
+        method: "PATCH",
+        url: "/api/v1/tokens/tok_valen",
+        payload: { hidden: true }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/scenes/scn_vault_entry/annotations",
+        payload: { kind: "drawing", points: [{ x: 320, y: 320 }, { x: 360, y: 340 }] }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/journal",
+        payload: { title: "Authorized Matrix Journal", body: "allowed" }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        payload: { campaignId: "camp_demo", body: "authorized matrix chat" }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/dice/roll",
+        payload: { campaignId: "camp_demo", formula: "1d20" }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        payload: { combatants: [{ id: "cmbt_authorized_matrix", tokenId: "tok_valen", actorId: "act_valen", name: "Valen Ash", initiative: 15, defeated: false }] }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/proposals",
+        payload: { title: "Authorized Matrix Proposal", changesJson: [] }
+      },
+      {
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/ai/threads"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        payload: { prompt: "authorized matrix thread" }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/example-macro-plugin/install",
+        payload: { permissions: ["chat.write"] }
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/install"
+      },
+      {
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/roll",
+        payload: { rollId: "ability-strength" }
+      }
+    ];
+
+    for (const route of gmAllowedRouteOutcomes) {
+      const response = await app.inject({
+        ...route,
+        headers: { "x-user-id": "usr_demo_gm" }
+      });
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(route.expectedStatus ?? 200);
+    }
 
     const secretJournal = await app.inject({
       method: "GET",
@@ -3707,7 +7228,308 @@ describe("api", () => {
     expect(secretJournal.statusCode).toBe(200);
     expect(secretJournal.json()).toEqual([]);
 
+    const privilegedAdminMutationOutcomeRoutes = observerMutationOutcomeRoutes.filter((route) => {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      return routeKey(route.method, specPath).startsWith("POST /api/v1/admin/")
+        || routeKey(route.method, specPath).startsWith("PATCH /api/v1/admin/")
+        || routeKey(route.method, specPath).startsWith("DELETE /api/v1/admin/");
+    }).sort((left, right) => {
+      const priority = (route: typeof observerMutationOutcomeRoutes[number]): number => {
+        const key = routeKey(route.method, specPathForConcreteRoute(route.url, route.method)!);
+        if (key === "POST /api/v1/admin/users/{userId}/password-reset") return -1;
+        return 0;
+      };
+      return priority(left) - priority(right);
+    });
+    const adminMutationExpectedStatuses = new Map<string, number>([
+      ["POST /api/v1/admin/jobs", 400],
+      ["POST /api/v1/admin/jobs/lease", 204],
+      ["DELETE /api/v1/admin/sessions/{sessionId}", 404],
+      ["POST /api/v1/admin/email-outbox/retry-all", 400],
+      ["POST /api/v1/admin/email-outbox/{messageId}/retry", 404],
+      ["POST /api/v1/admin/storage/backup", 400],
+      ["POST /api/v1/admin/storage/restore-drill", 400],
+      ["POST /api/v1/admin/storage/restore", 400],
+      ["PATCH /api/v1/admin/jobs/{jobId}", 404],
+      ["POST /api/v1/admin/jobs/{jobId}/heartbeat", 404],
+      ["POST /api/v1/admin/jobs/{jobId}/retry", 404],
+      ["POST /api/v1/admin/jobs/{jobId}/cancel", 404],
+      ["PATCH /api/v1/admin/plugins/reviews/{reviewKey}", 404],
+      ["POST /api/v1/admin/plugins/registry/sync", 400],
+      ["POST /api/v1/admin/scim/group-role-mappings", 400],
+      ["DELETE /api/v1/admin/scim/group-role-mappings/{mappingId}", 404],
+      ["POST /api/v1/admin/assets/{assetId}/purge-cache", 400]
+    ]);
+    for (const route of privilegedAdminMutationOutcomeRoutes) {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      const key = routeKey(route.method, specPath);
+      const response = await app.inject({
+        ...route,
+        headers: { ...route.headers, "x-user-id": "usr_demo_gm" }
+      });
+      expect(response.statusCode, `${route.method} ${route.url}`).toBe(adminMutationExpectedStatuses.get(key) ?? 200);
+    }
+
+    const authMatrixPluginGrant = store.state.permissionGrants.find((grant) => grant.subjectType === "plugin" && grant.subjectId === "example-macro-plugin" && grant.campaignId === "camp_demo");
+    if (authMatrixPluginGrant) authMatrixPluginGrant.permissions = ["plugin.configure"];
+
+    const privilegedCampaignMutationOutcomeRoutes = observerMutationOutcomeRoutes.filter((route) => {
+      const specPath = specPathForConcreteRoute(route.url, route.method)!;
+      const key = routeKey(route.method, specPath);
+      return !key.startsWith("POST /api/v1/admin/")
+        && !key.startsWith("PATCH /api/v1/admin/")
+        && !key.startsWith("DELETE /api/v1/admin/");
+    }).sort((left, right) => {
+      const priority = (route: typeof observerMutationOutcomeRoutes[number]): number => {
+        const key = routeKey(route.method, specPathForConcreteRoute(route.url, route.method)!);
+        if (route.url.includes("/plugins/example-macro-plugin/storage/count")) return route.method === "PUT" ? -50 : -49;
+        if (key === "PUT /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}") return -50;
+        if (key === "DELETE /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}") return -49;
+        if (key === "POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/install") return 30;
+        if (key === "POST /api/v1/campaigns/{campaignId}/plugins/{pluginId}/chat-command") return 40;
+        if (key === "DELETE /api/v1/campaigns/{campaignId}") return 100;
+        if (key === "DELETE /api/v1/scenes/{sceneId}") return 90;
+        if (key === "DELETE /api/v1/tokens/{tokenId}") return 80;
+        if (key === "DELETE /api/v1/organization/members/{memberId}") return 10;
+        return 0;
+      };
+      return priority(left) - priority(right);
+    });
+    const privilegedCampaignMutationExpectedStatuses = new Map<string, number>([
+      ["DELETE /api/v1/auth/sessions/{sessionId}", 404],
+      ["POST /api/v1/organization/invites", 201],
+      ["DELETE /api/v1/campaigns/{campaignId}/fog-presets/{presetId}", 404],
+      ["POST /api/v1/scenes/{sceneId}/annotations", 400],
+      ["POST /api/v1/scenes/{sceneId}/fog/apply-preset", 404],
+      ["PATCH /api/v1/chat/messages/{messageId}/moderation", 400],
+      ["POST /api/v1/proposals/{proposalId}/apply", 409],
+      ["POST /api/v1/campaigns/{campaignId}/content-imports/preview", 400],
+      ["POST /api/v1/content-imports/{importId}/apply", 400],
+      ["POST /api/v1/content-imports/{importId}/rollback", 409],
+      ["POST /api/v1/campaigns/{campaignId}/ai/evaluations", 400],
+      ["POST /api/v1/campaigns/{campaignId}/ai/generate-map-asset", 502],
+      ["POST /api/v1/campaigns/{campaignId}/ai/generate-token-asset", 502],
+      ["POST /api/v1/plugins/install", 400],
+      ["POST /api/v1/plugins/registry/sync", 400],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/compendium", 404],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/purchase", 400],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions", 404],
+      ["DELETE /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/conditions/{conditionId}", 200],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/characters", 404],
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/monsters", 400]
+    ]);
+    const installedSystemCountBeforePrivilegedMatrix = installedSystems.length;
+    try {
+      for (const route of privilegedCampaignMutationOutcomeRoutes) {
+        const specPath = specPathForConcreteRoute(route.url, route.method)!;
+        const key = routeKey(route.method, specPath);
+        const response = await app.inject({
+          ...route,
+          headers: { ...route.headers, "x-user-id": "usr_demo_gm" }
+        });
+        expect(response.statusCode, `${route.method} ${route.url}`).toBe(privilegedCampaignMutationExpectedStatuses.get(key) ?? 200);
+      }
+    } finally {
+      installedSystems.splice(installedSystemCountBeforePrivilegedMatrix);
+    }
+
     await app.close();
+  }, 10000);
+
+  it("rejects authenticated malformed request bodies without state changes", async () => {
+    const store = new MemoryStateStore();
+    const gm = store.state.users.find((user) => user.id === "usr_demo_gm");
+    if (gm) gm.serverAdmin = true;
+    store.state.chat.push(
+      createTimestamped("msg", {
+        id: "msg_malformed_body",
+        campaignId: "camp_demo",
+        sceneId: "scn_vault_entry",
+        userId: "usr_demo_gm",
+        type: "plain" as const,
+        body: "Malformed body compatibility fixture",
+        visibility: "public" as const,
+        recipientUserIds: []
+      }) satisfies ChatMessage
+    );
+    const app = await buildApp({ store });
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const targetToken = store.state.tokens.find((item) => item.id === "tok_valen")!;
+    const snapshot = () => ({
+      campaigns: store.state.campaigns.length,
+      scenes: store.state.scenes.length,
+      annotations: scene.annotations.length,
+      assets: store.state.assets.length,
+      tokenTargets: targetToken.targetedByUserIds ?? [],
+      diceMacros: store.state.diceMacros.length,
+      contentImports: store.state.contentImports.length,
+      actors: store.state.actors.length,
+      items: store.state.items.length,
+      rolls: store.state.rolls.length,
+      chat: store.state.chat.length,
+      aiEvaluations: store.state.aiEvaluations.length,
+      jobs: store.state.jobs.length
+    });
+    const before = snapshot();
+    const malformedRoutes: Array<{
+      label: string;
+      method: "PATCH" | "POST";
+      url: string;
+      payload: Record<string, unknown>;
+      expected: Record<string, unknown>;
+    }> = [
+      {
+        label: "organization default enum",
+        method: "PATCH",
+        url: "/api/v1/organization/workspace-defaults",
+        payload: { defaultCampaignVisibility: "friends_only" },
+        expected: { error: "bad_request", message: "Default campaign visibility must be private, invite_only, or public" }
+      },
+      {
+        label: "campaign permission template",
+        method: "POST",
+        url: "/api/v1/campaigns",
+        payload: { name: "Invalid Campaign", permissionTemplate: "god_mode" },
+        expected: { error: "bad_request", message: "Campaign permission template must be standard, player_authoring, ai_assisted, or assistant_ops" }
+      },
+      {
+        label: "scene annotation geometry",
+        method: "POST",
+        url: "/api/v1/scenes/scn_vault_entry/annotations",
+        payload: { kind: "template", points: [{ x: 120, y: 120 }], radius: -1 },
+        expected: { error: "bad_request", message: "template annotation requires at least 2 valid points" }
+      },
+      {
+        label: "asset size",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/assets",
+        payload: { name: "Invalid Asset", sizeBytes: -1 },
+        expected: { error: "bad_request", message: "Asset sizeBytes must be a non-negative finite number" }
+      },
+      {
+        label: "token target flag",
+        method: "POST",
+        url: "/api/v1/tokens/tok_valen/target",
+        payload: { targeted: "yes" },
+        expected: { error: "bad_request", message: "targeted must be a boolean" }
+      },
+      {
+        label: "chat whisper recipients",
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        payload: { campaignId: "camp_demo", body: "Invalid whisper", type: "whisper" },
+        expected: { error: "bad_request", message: "Whisper messages require at least one recipient" }
+      },
+      {
+        label: "chat moderation status",
+        method: "PATCH",
+        url: "/api/v1/chat/messages/msg_malformed_body/moderation",
+        payload: { moderationStatus: "hidden" },
+        expected: { error: "bad_request", message: "moderationStatus must be open, follow_up, or reviewed" }
+      },
+      {
+        label: "dice macro formula",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/dice-macros",
+        payload: { name: "Broken Macro", formula: "" },
+        expected: { error: "bad_request", message: "Dice macro formula is required" }
+      },
+      {
+        label: "content import selection",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/content-imports/preview",
+        payload: { source: { sourceType: "manual" }, entities: [] },
+        expected: { error: "content_import_entities_required" }
+      },
+      {
+        label: "content import entity kind",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/content-imports/preview",
+        payload: { source: { sourceType: "manual" }, entities: [{ kind: "map", name: "Bad import" }] },
+        expected: { error: "bad_request", message: "Unsupported content import entity kind: map" }
+      },
+      {
+        label: "plugin install package path",
+        method: "POST",
+        url: "/api/v1/plugins/install",
+        payload: { campaignId: "camp_demo" },
+        expected: { error: "bad_request", message: "Plugin packagePath is required" }
+      },
+      {
+        label: "ai evaluation thread id",
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/evaluations",
+        payload: { threadId: "" },
+        expected: { error: "bad_request", message: "threadId is required" }
+      },
+      {
+        label: "admin job type",
+        method: "POST",
+        url: "/api/v1/admin/jobs",
+        payload: { type: "unknown" },
+        expected: { error: "bad_request", message: "Job type is required and must be supported" }
+      },
+      {
+        label: "admin job retry attempts",
+        method: "POST",
+        url: "/api/v1/admin/jobs",
+        payload: { type: "asset.storage.cleanup", maxAttempts: 0 },
+        expected: { error: "bad_request", message: "maxAttempts must be an integer from 1 to 10" }
+      }
+    ];
+
+    try {
+      for (const route of malformedRoutes) {
+        const response = await app.inject({
+          method: route.method,
+          url: route.url,
+          headers: authHeaders,
+          payload: route.payload
+        });
+        expect(response.statusCode, route.label).toBe(400);
+        expect(response.json(), route.label).toMatchObject(route.expected);
+      }
+      expect(snapshot()).toEqual(before);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects proposal create changes that would collide with existing records", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/proposals",
+        headers: authHeaders,
+        payload: {
+          title: "Duplicate journal proposal",
+          changesJson: [
+            {
+              entity: "journal",
+              action: "create",
+              data: {
+                id: "jnl_hook",
+                campaignId: "camp_demo",
+                title: "Duplicate Hook",
+                body: "This should not be staged over an existing journal."
+              }
+            }
+          ]
+        }
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        error: "bad_request",
+        message: "Proposal change 1 creates a journal id that already exists"
+      });
+      expect(store.state.proposals.some((proposal) => proposal.title === "Duplicate journal proposal")).toBe(false);
+    } finally {
+      await app.close();
+    }
   });
 
   it("authors fog, walls, and lights with scene update permission", async () => {
@@ -4160,6 +7982,7 @@ describe("api", () => {
       fogHistory: [],
       walls: [{ id: "wall_stale_zero", x1: 30, y1: 30, x2: 30, y2: 30, blocksVision: true }],
       lights: [],
+      annotations: [],
       metadata: {},
       createdAt: "2026-05-06T00:00:00.000Z",
       updatedAt: "2026-05-06T00:00:00.000Z"
@@ -4820,6 +8643,21 @@ describe("api", () => {
     expect(learnedSpell.statusCode).toBe(200);
     expect(learnedSpell.json().item).toEqual(expect.objectContaining({ type: "spell", name: "Healing Word", actorId: "act_valen" }));
     expect(learnedSpell.json().sheet.spells).toEqual(expect.arrayContaining([expect.objectContaining({ name: "Healing Word" })]));
+    const updatedSpellPrep = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/items/${learnedSpell.json().item.id}`,
+      headers: authHeaders,
+      payload: { data: { ...learnedSpell.json().item.data, prepared: false } }
+    });
+    expect(updatedSpellPrep.statusCode).toBe(200);
+    expect(updatedSpellPrep.json().data).toEqual(expect.objectContaining({ prepared: false }));
+    const observerSpellPrep = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/items/${learnedSpell.json().item.id}`,
+      headers: { "x-user-id": "usr_observer" },
+      payload: { data: { ...updatedSpellPrep.json().data, prepared: true } }
+    });
+    expect(observerSpellPrep.statusCode).toBe(403);
     const spellRollId = `spell-${learnedSpell.json().item.id}-healing`;
     expect(learnedSpell.json().sheet.quickRolls).toContainEqual({
       id: spellRollId,
@@ -14356,7 +18194,7 @@ describe("api", () => {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/roll`,
         headers: { "x-user-id": "usr_demo_player" },
-        payload: { rollId: "feature-deflect-attacks-damage", consumeResources: true, applyEffect: true, targetActorId: monkTarget.json().id }
+        payload: { rollId: "feature-deflect-attacks-damage", consumeResources: true, applyEffect: true, targetActorId: monkTarget.json().id, saveOutcomes: { [monkTarget.json().id]: "failure" } }
       });
       expect(deflectAttacks.statusCode).toBe(200);
       expect(deflectAttacks.json().roll.formula).toBe("2d8+5");
@@ -14384,6 +18222,18 @@ describe("api", () => {
         uncannyMetabolism: { current: 1, max: 1, recovery: "long" }
       });
       expect(monkShortRest.json().rest.recovered.resources).toEqual(expect.objectContaining({ focus: 5 }));
+
+      const stunningStrike = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${levelFiveMonk.json().actor.id}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-stunning-strike", consumeResources: true, applyEffect: true, targetActorId: monkTarget.json().id, saveOutcomes: { [monkTarget.json().id]: "failure" } }
+      });
+      expect(stunningStrike.statusCode).toBe(200);
+      expect(stunningStrike.json().quickRoll).toEqual(expect.objectContaining({ id: "feature-stunning-strike", metadata: expect.objectContaining({ failure: expect.objectContaining({ condition: "Stunned" }) }) }));
+      expect(stunningStrike.json().usage.consumed).toEqual([{ type: "resource", key: "focus", label: "Focus Point", amount: 1, remaining: 4 }]);
+      expect(stunningStrike.json().effect).toEqual(expect.objectContaining({ type: "condition", targetActorId: monkTarget.json().id, conditionId: "stunned", conditionName: "Stunned" }));
+      expect(store.state.actors.find((actor) => actor.id === monkTarget.json().id)?.data.conditions).toEqual([{ id: "stunned", appliedAt: expect.any(String) }]);
 
       const uncannyMetabolism = await app.inject({
         method: "POST",
@@ -14867,7 +18717,7 @@ describe("api", () => {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${giantSpiderMonster.json().actor.id}/roll`,
         headers: authHeaders,
-        payload: { rollId: "monster-web-effect", applyEffect: true, targetActorId: monsterTarget.json().id }
+        payload: { rollId: "monster-web-effect", applyEffect: true, targetActorId: monsterTarget.json().id, saveOutcomes: { [monsterTarget.json().id]: "failure" } }
       });
       expect(monsterWebEffect.statusCode).toBe(200);
       expect(monsterWebEffect.json().quickRoll).toEqual(expect.objectContaining({ id: "monster-web-effect", formula: "0", metadata: expect.objectContaining({ effectType: "condition", save: { ability: "dexterity", dc: 13 }, condition: "Restrained" }) }));
@@ -15137,7 +18987,7 @@ describe("api", () => {
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${criminalOrc.json().actor.id}/roll`,
         headers: authHeaders,
-        payload: { rollId: colorSprayEffectRollId, consumeResources: true, applyEffect: true, targetActorId: spellTarget.json().id }
+        payload: { rollId: colorSprayEffectRollId, consumeResources: true, applyEffect: true, targetActorId: spellTarget.json().id, saveOutcomes: { [spellTarget.json().id]: "failure" } }
       });
       expect(colorSprayEffect.statusCode).toBe(200);
       expect(colorSprayEffect.json().quickRoll).toEqual(expect.objectContaining({ id: colorSprayEffectRollId, formula: "0", metadata: expect.objectContaining({ effectType: "condition", condition: "Blinded" }) }));
@@ -15258,7 +19108,178 @@ describe("api", () => {
     } finally {
       await app.close();
     }
-  }, 15000);
+  }, 30000);
+
+  it("routes D&D actor rolls through resolver preview and committed mutation paths", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const fighter = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "Resolver Fighter", ownerUserId: "usr_demo_player" }
+      });
+      expect(fighter.statusCode).toBe(200);
+      const actorId = fighter.json().actor.id;
+      const initialRollCount = store.state.rolls.length;
+      const initialChatCount = store.state.chat.length;
+
+      const preview = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-second-wind-healing", consumeResources: true, commit: false }
+      });
+      expect(preview.statusCode).toBe(200);
+      expect(preview.json().roll).toBeUndefined();
+      expect(preview.json().chat).toBeUndefined();
+      expect(preview.json().resolution).toEqual(expect.objectContaining({ commitMode: "preview", resourceConsumption: [{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }] }));
+      expect(store.state.rolls).toHaveLength(initialRollCount);
+      expect(store.state.chat).toHaveLength(initialChatCount);
+      expect(store.state.actors.find((actor) => actor.id === actorId)?.data.resources).toEqual({ secondWind: { current: 2, max: 2, recovery: "short" } });
+
+      const committed = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-second-wind-healing", consumeResources: true }
+      });
+      expect(committed.statusCode).toBe(200);
+      expect(committed.json()).toEqual(expect.objectContaining({ roll: expect.any(Object), chat: expect.any(Object), actor: expect.any(Object), sheet: expect.any(Object) }));
+      expect(committed.json().usage.consumed).toEqual([{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }]);
+      expect(committed.json().resolution).toEqual(expect.objectContaining({ commitMode: "commit", resourceConsumption: [{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }] }));
+      expect(store.state.actors.find((actor) => actor.id === actorId)?.data.resources).toEqual({ secondWind: { current: 1, max: 2, recovery: "short" } });
+
+      const storedSelfHealingActor = store.state.actors.find((actor) => actor.id === actorId)!;
+      storedSelfHealingActor.data = { ...storedSelfHealingActor.data, hp: { current: 1, max: 12 } };
+      const selfHealing = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: "feature-second-wind-healing", consumeResources: true, applyEffect: true, targetActorId: actorId }
+      });
+      expect(selfHealing.statusCode).toBe(200);
+      expect(selfHealing.json().effect).toEqual(expect.objectContaining({ type: "healing", targetActorId: actorId, before: 1, max: 12 }));
+      expect(selfHealing.json().effect.after).toBeGreaterThan(1);
+      expect(selfHealing.json().updatedActors).toContainEqual(
+        expect.objectContaining({ id: actorId, data: expect.objectContaining({ hp: expect.objectContaining({ current: selfHealing.json().effect.after, max: 12 }), resources: { secondWind: { current: 0, max: 2, recovery: "short" } } }) })
+      );
+
+      const fighterLongsword = fighter.json().items.find((item: { name: string }) => item.name === "Longsword");
+      if (!fighterLongsword) throw new Error("Expected resolver fighter to start with a Longsword");
+      const target = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "Resolver Target", ownerUserId: "usr_demo_player" }
+      });
+      expect(target.statusCode).toBe(200);
+      const targetActorId = target.json().actor.id;
+      const exposedTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "Resolver Exposed Target", ownerUserId: "usr_demo_player" }
+      });
+      expect(exposedTarget.statusCode).toBe(200);
+      const exposedTargetActorId = exposedTarget.json().actor.id;
+      const storedActor = store.state.actors.find((actor) => actor.id === actorId)!;
+      const storedTarget = store.state.actors.find((actor) => actor.id === targetActorId)!;
+      storedActor.data = { ...storedActor.data, conditions: [{ id: "poisoned" }] };
+      storedTarget.data = { ...storedTarget.data, conditions: [{ id: "restrained" }] };
+      const multiTargetAttack = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: `item-${fighterLongsword.id}-attack`, targetActorIds: [targetActorId, exposedTargetActorId] }
+      });
+      expect(multiTargetAttack.statusCode).toBe(200);
+      expect(multiTargetAttack.json().resolution.rolls).toEqual([
+        expect.objectContaining({ targetActorId, formula: "1d20+5", d20Mode: "normal" }),
+        expect.objectContaining({ targetActorId: exposedTargetActorId, formula: "2d20kl1+5", d20Mode: "disadvantage" })
+      ]);
+      expect(multiTargetAttack.json().rolls).toHaveLength(2);
+      expect(multiTargetAttack.json().chatMessages.map((message: { body: string }) => message.body)).toEqual([
+        expect.stringContaining("Longsword Attack (Resolver Target)"),
+        expect.stringContaining("Longsword Attack (Resolver Exposed Target)")
+      ]);
+      storedActor.data = { ...storedActor.data, conditions: [] };
+      storedTarget.data = { ...storedTarget.data, conditions: [] };
+
+      const wand = createTimestamped("item", {
+        campaignId: "camp_demo",
+        systemId: "dnd-5e-srd",
+        actorId,
+        type: "item",
+        name: "Wand of Paralysis",
+        data: { action: "magic action", condition: "Paralyzed", conditionDuration: "1 minute", save: { ability: "constitution", dc: 15 }, repeatSave: "end of each turn" }
+      });
+      store.state.items.push(wand);
+      const combat = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        headers: authHeaders,
+        payload: {
+          combatants: [
+            { id: "cmbt_resolver_fighter", tokenId: "tok_resolver_fighter", actorId, name: "Resolver Fighter", initiative: 16, defeated: false },
+            { id: "cmbt_resolver_target", tokenId: "tok_resolver_target", actorId: targetActorId, name: "Resolver Target", initiative: 8, defeated: false }
+          ]
+        }
+      });
+      expect(combat.statusCode).toBe(200);
+
+      const rollCountBeforePendingParalysis = store.state.rolls.length;
+      const pendingParalysis = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: `item-${wand.id}-effect`, applyEffect: true, targetActorId }
+      });
+      expect(pendingParalysis.statusCode).toBe(409);
+      expect(pendingParalysis.json()).toEqual(
+        expect.objectContaining({
+          error: "pending_resolution",
+          resolution: expect.objectContaining({
+            pendingSaves: [expect.objectContaining({ actorId: targetActorId, ability: "constitution", dc: 15, requiredForCommit: true })],
+            effects: []
+          })
+        })
+      );
+      expect(store.state.actors.find((actor) => actor.id === targetActorId)?.data.conditions).toEqual([]);
+      expect(store.state.rolls).toHaveLength(rollCountBeforePendingParalysis);
+
+      const paralysis = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: authHeaders,
+        payload: { rollId: `item-${wand.id}-effect`, applyEffect: true, targetActorId, saveOutcomes: { [targetActorId]: "failure" } }
+      });
+      expect(paralysis.statusCode).toBe(200);
+      expect(paralysis.json().effects).toContainEqual(expect.objectContaining({ type: "condition", targetActorId, conditionId: "paralyzed" }));
+      expect(paralysis.json().updatedActors).toContainEqual(expect.objectContaining({ id: targetActorId, data: expect.objectContaining({ conditions: [expect.objectContaining({ id: "paralyzed" })] }) }));
+      expect(paralysis.json().resolution.conditions).toContainEqual(expect.objectContaining({ operation: "apply", actorId: targetActorId, conditionId: "paralyzed", durationRounds: 10, repeatSave: "end of each turn" }));
+      expect(paralysis.json().resolution.pendingSaves).toContainEqual(expect.objectContaining({ actorId: targetActorId, recurring: true, timing: "end of each turn", conditionIds: ["paralyzed"] }));
+      expect(store.state.actors.find((actor) => actor.id === targetActorId)?.data).toEqual(
+        expect.objectContaining({
+          conditions: [expect.objectContaining({ id: "paralyzed" })],
+          rulesEngine: expect.objectContaining({ activeEffects: expect.arrayContaining([expect.objectContaining({ conditionIds: ["paralyzed"], durationRounds: 10, repeatSave: "end of each turn" })]) })
+        })
+      );
+      expect(store.state.combats.find((item) => item.id === combat.json().id)?.combatants.find((combatant) => combatant.id === "cmbt_resolver_target")?.conditions).toEqual(["paralyzed:10"]);
+      const advancedCombat = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/combats/${combat.json().id}`,
+        headers: authHeaders,
+        payload: { round: 11, combatants: store.state.combats.find((item) => item.id === combat.json().id)?.combatants }
+      });
+      expect(advancedCombat.statusCode).toBe(200);
+      expect(advancedCombat.json().combatants.find((combatant: { id: string }) => combatant.id === "cmbt_resolver_target")?.conditions).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
 
   it("imports system characters from normalized character data", async () => {
     const store = new MemoryStateStore();
@@ -15364,7 +19385,7 @@ describe("api", () => {
     } finally {
       await app.close();
     }
-  });
+  }, 10000);
 
   it("plans system encounters with threat budgets and permission boundaries", async () => {
     const store = new MemoryStateStore();
@@ -15528,7 +19549,11 @@ describe("api", () => {
           id: "versioned-plugin",
           version: "2.0.0",
           installed: false,
-          distribution: { availableVersions: ["2.0.0", "1.0.0"], latestVersion: "2.0.0" }
+          distribution: { availableVersions: ["2.0.0", "1.0.0"], latestVersion: "2.0.0" },
+          versionCompatibility: [
+            expect.objectContaining({ version: "2.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } }),
+            expect.objectContaining({ version: "1.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } })
+          ]
         })
       ]);
 
@@ -15595,13 +19620,101 @@ describe("api", () => {
     }
   });
 
+  it("reports compatibility per plugin version and blocks only incompatible targets", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-version-compat-"));
+    try {
+      writeVersionedPluginPackage(pluginRoot, "versioned-plugin-1", "versioned-plugin", "1.0.0", "Version 1 macro");
+      writeVersionedPluginPackage(pluginRoot, "versioned-plugin-2", "versioned-plugin", "2.0.0", "Version 2 macro");
+      const futureManifestPath = join(pluginRoot, "versioned-plugin-2", "plugin.manifest.json");
+      const futureManifest = JSON.parse(readFileSync(futureManifestPath, "utf8")) as { compatibleCore: string };
+      futureManifest.compatibleCore = ">=9.0.0";
+      writeFileSync(futureManifestPath, JSON.stringify(futureManifest));
+      const store = new MemoryStateStore();
+      const app = await buildApp({ store, pluginRoot });
+
+      const catalog = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins",
+        headers: authHeaders
+      });
+      expect(catalog.statusCode).toBe(200);
+      expect(catalog.json()).toEqual([
+        expect.objectContaining({
+          id: "versioned-plugin",
+          version: "2.0.0",
+          compatibleCore: { range: ">=9.0.0", coreVersion: "0.3.0", satisfied: false },
+          compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0",
+          versionCompatibility: [
+            expect.objectContaining({ version: "2.0.0", compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0" }),
+            expect.objectContaining({ version: "1.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } })
+          ]
+        })
+      ]);
+
+      const deniedLatest = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/install",
+        headers: authHeaders,
+        payload: { version: "2.0.0", permissions: ["chat.write"] }
+      });
+      expect(deniedLatest.statusCode).toBe(403);
+      expect(deniedLatest.json().message).toBe("Plugin requires core >=9.0.0; server core is 0.3.0");
+
+      const installOld = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/install",
+        headers: authHeaders,
+        payload: { version: "1.0.0", permissions: ["chat.write"] }
+      });
+      expect(installOld.statusCode).toBe(200);
+      expect(installOld.json().plugin).toEqual(
+        expect.objectContaining({
+          version: "1.0.0",
+          installedVersion: "1.0.0",
+          compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true },
+          updateAvailable: true,
+          rollbackVersions: ["2.0.0"],
+          versionCompatibility: [
+            expect.objectContaining({ version: "2.0.0", compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0" }),
+            expect.objectContaining({ version: "1.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } })
+          ]
+        })
+      );
+
+      const deniedUpgrade = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/install",
+        headers: authHeaders,
+        payload: { version: "2.0.0", permissions: ["chat.write"] }
+      });
+      expect(deniedUpgrade.statusCode).toBe(403);
+      expect(deniedUpgrade.json().message).toBe("Plugin requires core >=9.0.0; server core is 0.3.0");
+
+      const oldCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/versioned-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(oldCommand.statusCode).toBe(200);
+      expect(oldCommand.json().chat.body).toBe("Version 1 macro");
+
+      await app.close();
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("enforces plugin trusted-only install and execution policy", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-api-"));
     let app: Awaited<ReturnType<typeof buildApp>> | undefined;
     try {
       writeVersionedPluginPackage(pluginRoot, "unsigned-plugin", "unsigned-plugin", "1.0.0", "Unsigned macro");
       writeVersionedPluginPackage(pluginRoot, "signed-plugin", "signed-plugin", "1.0.0", "Signed macro");
+      writeVersionedPluginPackage(pluginRoot, "tampered-plugin", "tampered-plugin", "1.0.0", "Tampered macro");
       writePluginSignature(pluginRoot, "signed-plugin", "trusted-local", "shared-secret");
+      writePluginSignature(pluginRoot, "tampered-plugin", "trusted-local", "shared-secret");
+      writeFileSync(join(pluginRoot, "tampered-plugin", "server.js"), `registerCommand("/version", () => ({ body: "Changed after signing", visibility: "public" }));`);
       const store = new MemoryStateStore();
       const pluginRegistry = loadPluginRegistry({
         pluginRoot,
@@ -15618,7 +19731,16 @@ describe("api", () => {
       expect(catalog.json()).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: "signed-plugin", trust: expect.objectContaining({ status: "trusted", installable: true }) }),
-          expect.objectContaining({ id: "unsigned-plugin", trust: expect.objectContaining({ status: "unsigned", installable: false }) })
+          expect.objectContaining({ id: "unsigned-plugin", trust: expect.objectContaining({ status: "unsigned", installable: false }) }),
+          expect.objectContaining({
+            id: "tampered-plugin",
+            trust: expect.objectContaining({
+              status: "untrusted",
+              installable: false,
+              errors: ["Plugin signature does not match package contents"],
+              signature: expect.objectContaining({ keyId: "trusted-local", verified: false })
+            })
+          })
         ])
       );
 
@@ -15630,6 +19752,16 @@ describe("api", () => {
       });
       expect(unsignedInstall.statusCode).toBe(403);
       expect(unsignedInstall.json().message).toContain("current trust policy");
+
+      const tamperedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/tampered-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(tamperedInstall.statusCode).toBe(403);
+      expect(tamperedInstall.json().message).toContain("signature does not match package contents");
+      expect(store.state.permissionGrants.find((grant) => grant.subjectId === "tampered-plugin")).toBeUndefined();
 
       const signedInstall = await app.inject({
         method: "POST",
@@ -15649,6 +19781,24 @@ describe("api", () => {
       });
       expect(signedCommand.statusCode).toBe(200);
       expect(signedCommand.json().chat.body).toBe("Signed macro");
+
+      store.state.permissionGrants.push(
+        createTimestamped("grant", {
+          subjectType: "plugin" as const,
+          subjectId: "tampered-plugin",
+          campaignId: "camp_demo",
+          permissions: ["chat.write"],
+          metadata: { version: "1.0.0" }
+        }) satisfies PermissionGrant
+      );
+      const tamperedCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/tampered-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(tamperedCommand.statusCode).toBe(403);
+      expect(tamperedCommand.json().message).toContain("signature does not match package contents");
     } finally {
       await app?.close();
       rmSync(pluginRoot, { recursive: true, force: true });
@@ -15756,6 +19906,68 @@ describe("api", () => {
     }
   });
 
+  it("blocks plugin install and execution when core compatibility drifts", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-core-drift-"));
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      writeVersionedPluginPackage(pluginRoot, "future-core-plugin-1", "future-core-plugin", "1.0.0", "Future core macro");
+      const futureManifestPath = join(pluginRoot, "future-core-plugin-1", "plugin.manifest.json");
+      const futureManifest = JSON.parse(readFileSync(futureManifestPath, "utf8")) as { compatibleCore: string };
+      futureManifest.compatibleCore = ">=9.0.0";
+      writeFileSync(futureManifestPath, JSON.stringify(futureManifest));
+      const store = new MemoryStateStore();
+      app = await buildApp({ store, pluginRoot });
+
+      const catalog = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/plugins",
+        headers: authHeaders
+      });
+      expect(catalog.statusCode).toBe(200);
+      expect(catalog.json()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "future-core-plugin",
+            compatibleCore: { range: ">=9.0.0", coreVersion: "0.3.0", satisfied: false },
+            compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0"
+          })
+        ])
+      );
+
+      const deniedInstall = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/future-core-plugin/install",
+        headers: authHeaders,
+        payload: { permissions: ["chat.write"] }
+      });
+      expect(deniedInstall.statusCode).toBe(403);
+      expect(deniedInstall.json().message).toBe("Plugin requires core >=9.0.0; server core is 0.3.0");
+      expect(store.state.permissionGrants.find((grant) => grant.subjectId === "future-core-plugin")).toBeUndefined();
+
+      store.state.permissionGrants.push(
+        createTimestamped("grant", {
+          subjectType: "plugin" as const,
+          subjectId: "future-core-plugin",
+          campaignId: "camp_demo",
+          permissions: ["chat.write"],
+          metadata: { version: "1.0.0" }
+        }) satisfies PermissionGrant
+      );
+      const deniedCommand = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/plugins/future-core-plugin/chat-command",
+        headers: authHeaders,
+        payload: { command: "/version" }
+      });
+      expect(deniedCommand.statusCode).toBe(403);
+      expect(deniedCommand.json().message).toBe("Plugin requires core >=9.0.0; server core is 0.3.0");
+      expect(store.state.chat).toEqual([]);
+    } finally {
+      await app?.close();
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("reports server-admin plugin operations across installed packages", async () => {
     const previousEnv = snapshotEnv(["NODE_ENV", "OTTE_PLUGIN_REVIEW_POLICY", "OTTE_PLUGIN_TRUST_POLICY", "OTTE_PLUGIN_TRUST_KEYS", "OTTE_ADMIN_USER_IDS", "OTTE_PLUGIN_REGISTRY_URLS", "OTTE_PLUGIN_REGISTRY_STALE_SECONDS", "OTTE_PLUGIN_REGISTRY_TIMEOUT_MS"]);
     process.env.NODE_ENV = "production";
@@ -15852,7 +20064,7 @@ describe("api", () => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       expect(adminLogin.statusCode).toBe(200);
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
@@ -16949,15 +21161,38 @@ registerCommand("/state", (input) => {
       }
     });
     const packageChecksum = `sha256:${createHash("sha256").update(Buffer.from(packageText, "utf8")).digest("hex")}`;
+    const tamperedPackageText = JSON.stringify({
+      files: {
+        "plugin.manifest.json": JSON.stringify({
+          id: "tampered-remote-plugin",
+          name: "Tampered Remote Plugin",
+          version: "1.0.0",
+          compatibleCore: ">=0.1.0",
+          entrypoints: { server: "./server.js" },
+          runtime: { apiVersion: "0.1", sandbox: "vm" },
+          permissions: ["chat.write"],
+          chatCommands: [{ command: "/tampered", description: "Should never install" }]
+        }),
+        "server.js": "registerCommand('/tampered', () => ({ body: 'Tampered registry macro', visibility: 'public' }));"
+      }
+    });
+    const expectedTamperedChecksum = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
     const registry = createServer((request, response) => {
       if (request.url === "/catalog.json") {
         sendJson(response, {
-          plugins: [{ packageId: "remote-plugin-1", packageUrl: "/remote-plugin-1.json", checksum: packageChecksum }]
+          plugins: [
+            { packageId: "remote-plugin-1", packageUrl: "/remote-plugin-1.json", checksum: packageChecksum },
+            { packageId: "tampered-remote-plugin-1", packageUrl: "/tampered-remote-plugin-1.json", checksum: expectedTamperedChecksum }
+          ]
         });
         return;
       }
       if (request.url === "/remote-plugin-1.json") {
         response.writeHead(200, { "content-type": "application/json" }).end(packageText);
+        return;
+      }
+      if (request.url === "/tampered-remote-plugin-1.json") {
+        response.writeHead(200, { "content-type": "application/json" }).end(tamperedPackageText);
         return;
       }
       response.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ error: "not_found" }));
@@ -16979,6 +21214,38 @@ registerCommand("/state", (input) => {
         payload: { registryUrl }
       });
       expect(nonAdminSync.statusCode).toBe(403);
+
+      const playerMarketplaceSync = await app.inject({
+        method: "POST",
+        url: "/api/v1/plugins/registry/sync",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { campaignId: "camp_demo", registryUrl }
+      });
+      expect(playerMarketplaceSync.statusCode).toBe(403);
+
+      const marketplaceSync = await app.inject({
+        method: "POST",
+        url: "/api/v1/plugins/registry/sync",
+        headers: authHeaders,
+        payload: { campaignId: "camp_demo", registryUrl }
+      });
+      expect(marketplaceSync.statusCode).toBe(200);
+      expect(marketplaceSync.json().plugins).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "remote-plugin",
+            version: "1.0.0",
+            source: expect.objectContaining({ type: "registry", packageId: "remote-plugin-1", registryUrl })
+          })
+        ])
+      );
+      expect(marketplaceSync.json().plugins).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "tampered-remote-plugin" })]));
+      expect(marketplaceSync.json().registries[0].errors).toEqual([
+        expect.objectContaining({
+          packagePath: "tampered-remote-plugin-1",
+          errors: [expect.stringContaining(`Expected ${expectedTamperedChecksum} but received sha256:`)]
+        })
+      ]);
 
       const sync = await app.inject({
         method: "POST",
@@ -17003,7 +21270,12 @@ registerCommand("/state", (input) => {
               })
             })
           ],
-          errors: []
+          errors: [
+            expect.objectContaining({
+              packagePath: "tampered-remote-plugin-1",
+              errors: [expect.stringContaining(`Expected ${expectedTamperedChecksum} but received sha256:`)]
+            })
+          ]
         })
       );
 
@@ -17022,6 +21294,7 @@ registerCommand("/state", (input) => {
           })
         ])
       );
+      expect(catalog.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "tampered-remote-plugin" })]));
 
       const install = await app.inject({
         method: "POST",
@@ -17043,6 +21316,15 @@ registerCommand("/state", (input) => {
       expect(store.state.auditLogs.find((log) => log.action === "admin.pluginRegistry.sync")).toEqual(
         expect.objectContaining({
           targetType: "plugin_registry",
+          after: expect.objectContaining({
+            registries: [expect.objectContaining({ imported: ["remote-plugin@1.0.0"] })]
+          })
+        })
+      );
+      expect(store.state.auditLogs.find((log) => log.action === "plugin.registrySync")).toEqual(
+        expect.objectContaining({
+          campaignId: "camp_demo",
+          targetType: "plugin",
           after: expect.objectContaining({
             registries: [expect.objectContaining({ imported: ["remote-plugin@1.0.0"] })]
           })
@@ -17131,7 +21413,7 @@ registerCommand("/state", (input) => {
     const gmContext = provider.requests[1]!.context;
     expect(gmContext.publicSummary).toContain("Session Hook");
     expect(gmContext.gmSecrets.some((secret) => secret.includes("founder's oath"))).toBe(true);
-    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 2")?.visibility).toBe("gm_only");
 
     const playerChat = await app.inject({
@@ -17153,7 +21435,28 @@ registerCommand("/state", (input) => {
 
     try {
       const store = new MemoryStateStore();
+      const legacyMemoryThread = createTimestamped("thr", {
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        provider: "codex-app-server",
+        title: "Memory Extraction"
+      });
+      const legacyMemory = createTimestamped("mem", {
+        campaignId: "camp_demo",
+        text: "Legacy memory extraction already completed.",
+        visibility: "gm_only" as const,
+        sourceIds: [legacyMemoryThread.id]
+      });
+      store.state.aiThreads.push(legacyMemoryThread);
+      store.state.aiMemory.push(legacyMemory);
       app = await buildApp({ store });
+      expect(store.state.aiThreads.find((thread) => thread.id === legacyMemoryThread.id)).toMatchObject({
+        status: "completed",
+        assistantMessage: legacyMemory.text,
+        retryAttempts: 0,
+        eventCount: 0,
+        toolCallCount: 0
+      });
       const thread = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/ai/threads",
@@ -17185,9 +21488,17 @@ registerCommand("/state", (input) => {
         }
       });
       expect(extracted.statusCode).toBe(200);
-      expect(extracted.json().thread.provider).toBe("codex-app-server");
+      expect(extracted.json().thread).toMatchObject({
+        provider: "codex-app-server",
+        status: "completed",
+        retryAttempts: 0,
+        toolCallCount: 0
+      });
+      expect(extracted.json().thread.durationMs).toEqual(expect.any(Number));
+      expect(extracted.json().thread.eventCount).toBeGreaterThan(0);
       expect(extracted.json().memory.text).toContain("silver door opens at moonrise");
       expect(extracted.json().memory.sourceIds).toContain(extracted.json().thread.id);
+      expect(store.state.aiThreads.find((thread) => thread.id === extracted.json().thread.id)).toMatchObject({ status: "completed" });
       expect(store.state.aiMemory.some((fact) => fact.text.includes("silver door opens at moonrise"))).toBe(true);
 
       const blockedExtraction = await app.inject({
@@ -17209,7 +21520,7 @@ registerCommand("/state", (input) => {
     }
   });
 
-  it("can select the OpenAI Responses ai provider from configuration", async () => {
+  it("rejects direct OpenAI API-key provider configuration", async () => {
     const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OPENAI_API_KEY", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_ADMIN_USER_IDS"]);
     process.env.OTTE_AI_PROVIDER = "openai-responses";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "1234";
@@ -17226,10 +21537,9 @@ registerCommand("/state", (input) => {
         payload: { prompt: "Summarize the party state" }
       });
 
-      expect(thread.statusCode).toBe(200);
-      expect(thread.json().thread.provider).toBe("openai-responses");
-      expect(thread.json().assistantMessage).toContain("Set OPENAI_API_KEY");
-      expect(thread.json().events).toContainEqual(expect.objectContaining({ type: "message.completed" }));
+      expect(thread.statusCode).toBe(502);
+      expect(thread.json().thread.provider).toBe("unavailable-ai-provider");
+      expect(thread.json().message).toContain("Direct OpenAI API-key providers are disabled");
 
       const operations = await app.inject({
         method: "GET",
@@ -17237,12 +21547,13 @@ registerCommand("/state", (input) => {
         headers: authHeaders
       });
       expect(operations.statusCode).toBe(200);
-      expect(operations.json().runtime.openai).toEqual(
+      expect(operations.json().runtime.directOpenAi).toEqual(
         expect.objectContaining({
-          apiKeyConfigured: false,
-          timeoutMs: 1234
+          disabled: true,
+          replacementProvider: "codex-app-server"
         })
       );
+      expect(operations.json().runtimePosture.actionReasons).toContain("direct_openai_provider_disabled");
     } finally {
       await app?.close();
       restoreEnv(previousEnv);
@@ -17673,7 +21984,8 @@ registerCommand("/state", (input) => {
         })
       );
       expect(operations.json().risk).toEqual(expect.objectContaining({ failedEvaluationCount: 1, actionRequired: false }));
-      expect(operations.json().recentEvaluations[0]).toEqual(expect.objectContaining({ name: "Missing tool regression", status: "failed" }));
+      const failedRecentEvaluation = operations.json().recentEvaluations.find((evaluation: { name?: string }) => evaluation.name === "Missing tool regression");
+      expect(failedRecentEvaluation).toEqual(expect.objectContaining({ name: "Missing tool regression", status: "failed" }));
 
       const adminEvaluationExport = await app.inject({
         method: "GET",
@@ -17729,6 +22041,88 @@ registerCommand("/state", (input) => {
       await app.close();
       restoreEnv(previousEnv);
     }
+  });
+
+  it("does not silently create SVG placeholders when Codex app-server image generation is disabled", async () => {
+    const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OTTE_AI_IMAGE_PROVIDER", "OPENAI_API_KEY", "OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_AI_PROVIDER = "codex-app-server";
+    process.env.OTTE_AI_IMAGE_PROVIDER = "disabled";
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+    delete process.env.OPENAI_API_KEY;
+    const store = new MemoryStateStore();
+    const noopProvider: AiProvider = {
+      id: "noop",
+      label: "Noop Provider",
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {}
+    };
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+
+    try {
+      app = await buildApp({ store, aiProvider: noopProvider });
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/generate-map-asset",
+        headers: authHeaders,
+        payload: {
+          prompt: "Generate a forest ambush battlemap.",
+          sceneId: "scn_vault_entry",
+          outputFormat: "png"
+        }
+      });
+
+      expect(response.statusCode).toBe(502);
+      expect(response.json()).toEqual(
+        expect.objectContaining({
+          error: "tool_failed",
+          message: expect.stringContaining("codex app-server")
+        })
+      );
+      expect(store.state.proposals.some((proposal) => proposal.title.includes("Generated map"))).toBe(false);
+      expect(store.state.assets.some((asset) => asset.mimeType === "image/svg+xml")).toBe(false);
+    } finally {
+      await app?.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
+  it("rejects generated image outputs that are not raster image bytes", async () => {
+    const store = new MemoryStateStore();
+    const assetStorage = new MemoryAssetStorage();
+    const imageAssetGenerator: ImageAssetGenerator = {
+      id: "svg-placeholder",
+      label: "SVG Placeholder Generator",
+      async generate(input) {
+        return {
+          body: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><text>${input.prompt}</text></svg>`),
+          mimeType: "image/svg+xml",
+          provider: "test-svg-placeholder",
+          sourcePrompt: input.prompt
+        };
+      }
+    };
+    const app = await buildApp({ store, assetStorage, imageAssetGenerator });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/generate-map-asset",
+      headers: authHeaders,
+      payload: {
+        prompt: "Generate a forest ambush battlemap.",
+        sceneId: "scn_vault_entry",
+        outputFormat: "png"
+      }
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual(
+      expect.objectContaining({
+        error: "image_generation_failed",
+        message: expect.stringContaining("not a raster PNG, JPEG, or WebP image")
+      })
+    );
+    expect(store.state.proposals.some((proposal) => proposal.title.includes("Generated map"))).toBe(false);
+    expect(assetStorage.objects.size).toBe(0);
+    await app.close();
   });
 
   it("lets server admins inspect redacted ai operations across campaigns", async () => {
@@ -17798,13 +22192,13 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_player" }
+        payload: { email: "player@example.test" }
       });
       const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
 
@@ -18013,10 +22407,7 @@ registerCommand("/state", (input) => {
         actionRequired: true,
         actionReasons: [
           "ai_provider_mismatch",
-          "openai_api_key_missing",
-          "openai_timeout_disabled",
-          "openai_model_default_in_production",
-          "openai_base_url_invalid",
+          "direct_openai_provider_disabled",
           "ai_provider_retries_disabled",
           "failed_threads",
           "provider_errors",
@@ -18041,26 +22432,20 @@ registerCommand("/state", (input) => {
           expect.objectContaining({
             code: "review_ai_runtime_config",
             severity: "error",
-            affectedCount: 6,
+            affectedCount: 3,
             samples: [
               expect.objectContaining({
                 selectedProvider: "openai-responses",
                 activeProvider: "codex-ops-test",
                 providerMismatch: true,
                 retryAttempts: 0,
-                openaiApiKeyConfigured: false,
-                openaiTimeoutMs: 0,
-                openaiModel: "gpt-5-mini",
-                openaiModelConfigured: false,
-                openaiBaseUrl: "not a url",
-                openaiBaseUrlValid: false,
-                openaiBaseUrlIssue: "invalid_url",
+                directOpenAi: { disabled: true, replacementProvider: "codex-app-server" },
                 costRatesConfigured: { inputTokens: true, outputTokens: true },
                 costRatesComplete: true,
                 invalidCostConfig: [],
                 invalidProviderThresholdConfig: [],
                 invalidRuntimeControlConfig: [],
-                actionReasons: ["ai_provider_mismatch", "openai_api_key_missing", "openai_timeout_disabled", "openai_model_default_in_production", "openai_base_url_invalid", "ai_provider_retries_disabled"]
+                actionReasons: ["ai_provider_mismatch", "direct_openai_provider_disabled", "ai_provider_retries_disabled"]
               })
             ]
           }),
@@ -18150,15 +22535,7 @@ registerCommand("/state", (input) => {
           selectedProvider: "openai-responses",
           activeProvider: "codex-ops-test",
           retryAttempts: 0,
-          openai: expect.objectContaining({
-            apiKeyConfigured: false,
-            timeoutMs: 0,
-            model: "gpt-5-mini",
-            modelConfigured: false,
-            baseUrl: "not a url",
-            baseUrlValid: false,
-            baseUrlIssue: "invalid_url"
-          }),
+          directOpenAi: { disabled: true, replacementProvider: "codex-app-server" },
           costRatesConfigured: {
             inputTokens: true,
             outputTokens: true
@@ -18181,18 +22558,10 @@ registerCommand("/state", (input) => {
           invalidCostConfig: [],
           invalidProviderThresholdConfig: [],
           invalidRuntimeControlConfig: [],
-          openai: expect.objectContaining({
-            apiKeyConfigured: false,
-            timeoutMs: 0,
-            model: "gpt-5-mini",
-            modelConfigured: false,
-            baseUrl: "not a url",
-            baseUrlValid: false,
-            baseUrlIssue: "invalid_url"
-          }),
+          directOpenAi: { disabled: true, replacementProvider: "codex-app-server" },
           actionRequired: true,
-          actionReasons: ["ai_provider_mismatch", "openai_api_key_missing", "openai_timeout_disabled", "openai_model_default_in_production", "openai_base_url_invalid", "ai_provider_retries_disabled"],
-          remediation: "Configure the intended AI provider, missing provider credentials, an explicit OpenAI model for production, valid OpenAI provider base URLs with HTTPS in production, both AI token cost rates or neither, numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, enabled OpenAI provider timeouts outside local debugging, and a nonzero retry budget for transient provider failures."
+          actionReasons: ["ai_provider_mismatch", "direct_openai_provider_disabled", "ai_provider_retries_disabled"],
+          remediation: "Configure the intended AI provider, use OTTE_AI_PROVIDER=codex-app-server for OpenAI-backed AI, start and authenticate Codex app-server, set both AI token cost rates or neither, keep numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, and keep a nonzero retry budget for transient provider failures."
         },
         totals: {
           threadCount: 4,
@@ -18250,9 +22619,9 @@ registerCommand("/state", (input) => {
           })
         ],
         toolCatalog: expect.objectContaining({
-          toolCount: 20,
+          toolCount: 22,
           permissionSafeToolCount: 12,
-          proposalGatedToolCount: 8,
+          proposalGatedToolCount: 10,
           failClosedToolCount: 0,
           actionRequired: false,
           actionReasons: [],
@@ -18611,10 +22980,7 @@ registerCommand("/state", (input) => {
           actionRequired: true,
           actionReasons: [
             "ai_provider_mismatch",
-            "openai_api_key_missing",
-            "openai_timeout_disabled",
-            "openai_model_default_in_production",
-            "openai_base_url_invalid",
+            "direct_openai_provider_disabled",
             "ai_provider_retries_disabled",
             "failed_threads",
             "provider_errors",
@@ -18898,6 +23264,57 @@ registerCommand("/state", (input) => {
       });
       expect(blockedToolRetry.statusCode).toBe(403);
 
+      const gmRetryStart = createTimestamped("tool", {
+        threadId: thread.json().thread.id,
+        toolName: "read_compendium",
+        input: { systemId: "dnd-5e-srd" },
+        output: undefined,
+        status: "started" as const
+      });
+      const gmRetryFailure = createTimestamped("tool", {
+        threadId: thread.json().thread.id,
+        toolName: "read_compendium",
+        input: undefined,
+        output: { error: "tool_failed", message: "GM retry smoke" },
+        status: "failed" as const,
+        durationMs: 21
+      });
+      store.state.aiToolCalls.push(gmRetryStart, gmRetryFailure);
+
+      const blockedCampaignToolRetry = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/ai/tool-calls/${gmRetryFailure.id}/retry`,
+        headers: playerHeaders,
+        payload: {}
+      });
+      expect(blockedCampaignToolRetry.statusCode).toBe(403);
+
+      const campaignToolRetry = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/ai/tool-calls/${gmRetryFailure.id}/retry`,
+        headers: adminHeaders,
+        payload: {}
+      });
+      expect(campaignToolRetry.statusCode).toBe(200);
+      expect(campaignToolRetry.json()).toMatchObject({
+        dryRun: false,
+        campaignId: "camp_demo",
+        toolCallId: gmRetryFailure.id,
+        matched: 1,
+        retried: 1,
+        skipped: 0,
+        completed: 1,
+        failed: 0,
+        toolCalls: [expect.objectContaining({ id: gmRetryFailure.id, toolName: "read_compendium", retryReason: "tool_failed", status: "completed", inputCallId: gmRetryStart.id, startedCallId: expect.any(String), resultCallId: expect.any(String) })]
+      });
+      expect(store.state.auditLogs.at(-1)).toMatchObject({
+        action: "ai.toolCalls.retry",
+        campaignId: "camp_demo",
+        targetType: "ai_tool_call",
+        targetId: gmRetryFailure.id,
+        after: { dryRun: false, campaignId: "camp_demo", toolCallId: gmRetryFailure.id, matched: 1, retried: 1, skipped: 0, completed: 1, failed: 0 }
+      });
+
       const dryRunToolRetry = await app.inject({
         method: "POST",
         url: "/api/v1/admin/ai/tool-calls/retry",
@@ -18961,12 +23378,12 @@ registerCommand("/state", (input) => {
       });
       expect(replayOperations.statusCode).toBe(200);
       expect(replayOperations.json().replayOperations).toMatchObject({
-        replayedToolCallCount: 1,
-        completedReplayCount: 1,
+        replayedToolCallCount: 2,
+        completedReplayCount: 2,
         failedReplayCount: 0,
         latestReplayAt: expect.any(String),
         actionRequired: false,
-        recentRetried: [
+        recentRetried: expect.arrayContaining([
           expect.objectContaining({
             id: retryableCompendiumFailure.id,
             threadId: thread.json().thread.id,
@@ -18978,8 +23395,8 @@ registerCommand("/state", (input) => {
             resultCallId: toolRetry.json().toolCalls[0].resultCallId,
             resultStatus: "completed"
           })
-        ],
-        recentRuns: [
+        ]),
+        recentRuns: expect.arrayContaining([
           expect.objectContaining({
             dryRun: false,
             actorUserId: "usr_demo_gm",
@@ -18997,7 +23414,7 @@ registerCommand("/state", (input) => {
             matched: 1,
             retried: 0
           })
-        ]
+        ])
       });
 
       const repeatedToolRetry = await app.inject({
@@ -19031,7 +23448,7 @@ registerCommand("/state", (input) => {
     }
   });
 
-  it("flags insecure OpenAI base URLs in production runtime posture", async () => {
+  it("flags direct OpenAI provider selections as disabled in production runtime posture", async () => {
     const previousEnv = snapshotEnv(["NODE_ENV", "OTTE_ADMIN_USER_IDS", "OTTE_AI_PROVIDER", "OPENAI_API_KEY", "OPENAI_MODEL", "OPENAI_BASE_URL", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
     process.env.NODE_ENV = "production";
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
@@ -19058,7 +23475,7 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
 
@@ -19071,28 +23488,14 @@ registerCommand("/state", (input) => {
       expect(operations.statusCode).toBe(200);
       expect(operations.json()).toMatchObject({
         actionRequired: true,
-        actionReasons: ["ai_provider_mismatch", "openai_base_url_insecure"],
+        actionReasons: ["ai_provider_mismatch", "direct_openai_provider_disabled"],
         runtime: {
-          openai: expect.objectContaining({
-            apiKeyConfigured: true,
-            modelConfigured: true,
-            baseUrl: "http://api.example.test/v1",
-            baseUrlValid: true,
-            baseUrlInsecureInProduction: true,
-            timeoutMs: 30000
-          })
+          directOpenAi: { disabled: true, replacementProvider: "codex-app-server" }
         },
         runtimePosture: {
           actionRequired: true,
-          actionReasons: ["ai_provider_mismatch", "openai_base_url_insecure"],
-          openai: expect.objectContaining({
-            apiKeyConfigured: true,
-            modelConfigured: true,
-            baseUrl: "http://api.example.test/v1",
-            baseUrlValid: true,
-            baseUrlInsecureInProduction: true,
-            timeoutMs: 30000
-          })
+          actionReasons: ["ai_provider_mismatch", "direct_openai_provider_disabled"],
+          directOpenAi: { disabled: true, replacementProvider: "codex-app-server" }
         },
         remediationQueue: [
           expect.objectContaining({
@@ -19104,12 +23507,8 @@ registerCommand("/state", (input) => {
                 selectedProvider: "openai-responses",
                 activeProvider: "codex-ops-test",
                 providerMismatch: true,
-                openaiBaseUrl: "http://api.example.test/v1",
-                openaiBaseUrlValid: true,
-                openaiBaseUrlInsecureInProduction: true,
-                openaiModel: "gpt-test",
-                openaiModelConfigured: true,
-                actionReasons: ["ai_provider_mismatch", "openai_base_url_insecure"]
+                directOpenAi: { disabled: true, replacementProvider: "codex-app-server" },
+                actionReasons: ["ai_provider_mismatch", "direct_openai_provider_disabled"]
               })
             ]
           })
@@ -19134,16 +23533,14 @@ registerCommand("/state", (input) => {
       "OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K"
     ]);
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
-    process.env.OTTE_AI_PROVIDER = "openai-responses";
-    process.env.OPENAI_API_KEY = "test-openai-key";
-    process.env.OPENAI_BASE_URL = "https://api.openai.com/v1";
+    process.env.OTTE_AI_PROVIDER = "codex-app-server";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "30000";
     process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "1";
     process.env.OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K = "0.01";
     delete process.env.OTTE_AI_OUTPUT_TOKEN_COST_USD_PER_1K;
 
     class PartialCostRateProvider implements AiProvider {
-      id = "openai-responses";
+      id = "codex-app-server";
       label = "Codex Ops Test";
 
       async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
@@ -19158,7 +23555,7 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
 
       const operations = await app.inject({
@@ -19187,7 +23584,7 @@ registerCommand("/state", (input) => {
           },
           costRatesComplete: false,
           invalidCostConfig: [],
-          remediation: "Configure the intended AI provider, missing provider credentials, an explicit OpenAI model for production, valid OpenAI provider base URLs with HTTPS in production, both AI token cost rates or neither, numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, enabled OpenAI provider timeouts outside local debugging, and a nonzero retry budget for transient provider failures."
+          remediation: "Configure the intended AI provider, use OTTE_AI_PROVIDER=codex-app-server for OpenAI-backed AI, start and authenticate Codex app-server, set both AI token cost rates or neither, keep numeric nonnegative AI cost settings, provider health thresholds, timeout and retry controls, and keep a nonzero retry budget for transient provider failures."
         },
         remediationQueue: [
           expect.objectContaining({
@@ -19226,9 +23623,7 @@ registerCommand("/state", (input) => {
       "OTTE_AI_COST_BUDGET_USD"
     ]);
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
-    process.env.OTTE_AI_PROVIDER = "openai-responses";
-    process.env.OPENAI_API_KEY = "test-openai-key";
-    process.env.OPENAI_BASE_URL = "https://api.openai.com/v1";
+    process.env.OTTE_AI_PROVIDER = "codex-app-server";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "30000";
     process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "1";
     process.env.OTTE_AI_INPUT_TOKEN_COST_USD_PER_1K = "not-a-number";
@@ -19236,7 +23631,7 @@ registerCommand("/state", (input) => {
     process.env.OTTE_AI_COST_BUDGET_USD = "-1";
 
     class InvalidCostConfigProvider implements AiProvider {
-      id = "openai-responses";
+      id = "codex-app-server";
       label = "Codex Ops Test";
 
       async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
@@ -19251,7 +23646,7 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
 
       const operations = await app.inject({
@@ -19322,9 +23717,7 @@ registerCommand("/state", (input) => {
       "OTTE_AI_PROVIDER_RUNNING_THREAD_THRESHOLD"
     ]);
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
-    process.env.OTTE_AI_PROVIDER = "openai-responses";
-    process.env.OPENAI_API_KEY = "test-openai-key";
-    process.env.OPENAI_BASE_URL = "https://api.openai.com/v1";
+    process.env.OTTE_AI_PROVIDER = "codex-app-server";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "30000";
     process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "1";
     process.env.OTTE_AI_PROVIDER_FAILURE_RATE_THRESHOLD = "not-a-threshold";
@@ -19332,7 +23725,7 @@ registerCommand("/state", (input) => {
     process.env.OTTE_AI_PROVIDER_RUNNING_THREAD_THRESHOLD = "3";
 
     class InvalidProviderThresholdProvider implements AiProvider {
-      id = "openai-responses";
+      id = "codex-app-server";
       label = "Codex Ops Test";
 
       async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
@@ -19347,7 +23740,7 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
 
       const operations = await app.inject({
@@ -19406,14 +23799,12 @@ registerCommand("/state", (input) => {
       "OTTE_AI_PROVIDER_RETRY_ATTEMPTS"
     ]);
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
-    process.env.OTTE_AI_PROVIDER = "openai-responses";
-    process.env.OPENAI_API_KEY = "test-openai-key";
-    process.env.OPENAI_BASE_URL = "https://api.openai.com/v1";
+    process.env.OTTE_AI_PROVIDER = "codex-app-server";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "not-a-timeout";
     process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "-2";
 
     class InvalidRuntimeControlProvider implements AiProvider {
-      id = "openai-responses";
+      id = "codex-app-server";
       label = "Codex Ops Test";
 
       async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
@@ -19428,7 +23819,7 @@ registerCommand("/state", (input) => {
       const adminLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
 
       const operations = await app.inject({
@@ -19583,6 +23974,8 @@ registerCommand("/state", (input) => {
         yield { type: "tool.started", toolName: "draft_journal_entry", input: { title: "Mirror Clue", body: "The western mirror answers to moonlight.", visibility: "gm_only", tags: ["ai", "clue"] } };
         yield { type: "tool.started", toolName: "draft_scene", input: { name: "Mirror Annex", width: 900, height: 700, gridSize: 50 } };
         yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: 220, y: 240, disposition: "friendly" } };
+        yield { type: "tool.started", toolName: "generate_map_asset", input: { prompt: "Mirror-lit vault battlemap with moon doors.", name: "Mirror Vault Map", sceneId: "scn_vault_entry", size: "1536x1024", quality: "low", outputFormat: "png" } };
+        yield { type: "tool.started", toolName: "generate_token_asset", input: { prompt: "Valen Ash heroic fighter token portrait.", name: "Valen Token Art", tokenId: "tok_valen", size: "1024x1024", quality: "low", outputFormat: "png" } };
         yield { type: "tool.started", toolName: "draft_actor_update", input: { actorId: "act_valen", data: { resources: { focus: 4 } } } };
         yield { type: "tool.started", toolName: "roll_dice", input: { formula: "1d20+5", label: "AI Perception" } };
         yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: "act_valen", actionName: "Healing Word Healing", applyEffect: true, targetActorId: "act_valen" } };
@@ -19786,7 +24179,21 @@ registerCommand("/state", (input) => {
         difficulty: "hard"
       })
     );
-    const gmApp = await buildApp({ store: gmStore, aiProvider: gmProvider });
+    const gmAssetStorage = new MemoryAssetStorage("ai-generated-assets");
+    const gmImageGenerator = {
+      id: "test-image-generator",
+      label: "Test Image Generator",
+      async generate(input) {
+        return {
+          body: tinyPng,
+          mimeType: `image/${input.outputFormat ?? "png"}`,
+          provider: "test",
+          model: "test-image-model",
+          sourcePrompt: input.prompt
+        };
+      }
+    } satisfies ImageAssetGenerator;
+    const gmApp = await buildApp({ store: gmStore, aiProvider: gmProvider, assetStorage: gmAssetStorage, imageAssetGenerator: gmImageGenerator });
     const gmThread = await gmApp.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/ai/threads",
@@ -19794,9 +24201,11 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Read the compendium, remember a key, draft an encounter, and roll dice." }
     });
     expect(gmThread.statusCode).toBe(200);
-    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_encounter")?.parameters?.required).toEqual(["name", "summary"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_token_update")?.requiredPermissions).toEqual(["ai.proposeChanges", "token.update"]);
+    expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "generate_map_asset")?.requiredPermissions).toEqual(["ai.proposeChanges", "scene.create", "scene.update"]);
+    expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "generate_token_asset")?.requiredPermissions).toEqual(["ai.proposeChanges", "scene.create", "token.update"]);
     expect(gmProvider.requests[0]!.context.actors?.map((actor) => actor.name)).toContain("Valen Ash");
     expect(gmProvider.requests[0]!.context.actors?.find((actor) => actor.id === "act_valen")?.actions).toEqual(
       expect.arrayContaining([expect.objectContaining({ rollId: "spell-item_ai_healing_word-healing", label: "Healing Word Healing" })])
@@ -20000,16 +24409,20 @@ registerCommand("/state", (input) => {
             ]
           })
         }),
-        expect.objectContaining({ type: "tool.completed", toolName: "draft_encounter", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "draft_encounter", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 2 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_journal_entry", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_scene", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_token_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "generate_map_asset", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 2, assetId: expect.any(String), sceneId: "scn_vault_entry" }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "generate_token_asset", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 2, assetId: expect.any(String), tokenId: "tok_valen" }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_actor_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "roll_dice", output: expect.objectContaining({ rollId: expect.any(String), formula: "1d20+5", label: "AI Perception" }) }),
         expect.objectContaining({
           type: "tool.completed",
           toolName: "use_actor_action",
           output: expect.objectContaining({
+            proposalId: expect.any(String),
+            changeCount: 3,
             actorId: "act_valen",
             actionRollId: "spell-item_ai_healing_word-healing",
             consumed: [{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }],
@@ -20021,17 +24434,50 @@ registerCommand("/state", (input) => {
     );
     expect(gmStore.state.aiMemory.some((fact) => fact.text === "The moon key opens the observatory.")).toBe(true);
     const encounterProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Encounter: Mirror Knight");
+    expect(encounterProposal?.changesJson.map((change) => change.entity)).toEqual(["encounter", "scene"]);
     expect(encounterProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "encounter", action: "create" }));
+    expect(encounterProposal?.changesJson[1]).toEqual(
+      expect.objectContaining({
+        entity: "scene",
+        action: "create",
+        data: expect.objectContaining({
+          name: "Mirror Knight Scene",
+          active: false,
+          folder: "ai/encounters",
+          metadata: expect.objectContaining({
+            source: "ai_encounter_design",
+            encounterName: "Mirror Knight"
+          })
+        })
+      })
+    );
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Journal: Mirror Clue")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "journal", action: "create" }));
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Scene: Mirror Annex")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "scene", action: "create" }));
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Token: Valen Ash")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "token", action: "update", id: "tok_valen", data: expect.objectContaining({ x: 220, y: 240 }) }));
+    const mapAssetProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Generated map: Mirror Vault Map");
+    expect(mapAssetProposal?.changesJson.map((change) => change.entity)).toEqual(["asset", "scene"]);
+    expect(mapAssetProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "asset", action: "create", data: expect.objectContaining({ name: "Mirror Vault Map", mimeType: "image/png", folder: "maps/generated" }) }));
+    expect(mapAssetProposal?.changesJson[1]).toEqual(expect.objectContaining({ entity: "scene", action: "update", id: "scn_vault_entry", data: expect.objectContaining({ backgroundAssetId: mapAssetProposal?.changesJson[0]?.data.id }) }));
+    const mapSceneUpdate = mapAssetProposal?.changesJson[1]?.data as { metadata?: { generatedBackgroundPrompt?: string } } | undefined;
+    expect(mapSceneUpdate?.metadata?.generatedBackgroundPrompt).toContain("gridless virtual tabletop background");
+    const tokenAssetProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Generated token: Valen Token Art");
+    expect(tokenAssetProposal?.changesJson.map((change) => change.entity)).toEqual(["asset", "token"]);
+    expect(tokenAssetProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "asset", action: "create", data: expect.objectContaining({ name: "Valen Token Art", mimeType: "image/png", folder: "tokens/generated" }) }));
+    expect(tokenAssetProposal?.changesJson[1]).toEqual(expect.objectContaining({ entity: "token", action: "update", id: "tok_valen", data: expect.objectContaining({ imageAssetId: tokenAssetProposal?.changesJson[0]?.data.id }) }));
+    const mapAssetRecord = mapAssetProposal?.changesJson[0]?.data as MapAsset | undefined;
+    const tokenAssetRecord = tokenAssetProposal?.changesJson[0]?.data as MapAsset | undefined;
+    expect(gmAssetStorage.objects.has(mapAssetRecord?.storage?.key ?? "")).toBe(true);
+    expect(gmAssetStorage.objects.has(tokenAssetRecord?.storage?.key ?? "")).toBe(true);
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Actor: Valen Ash")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "actor", action: "update", id: "act_valen" }));
-    expect(gmStore.state.rolls).toHaveLength(5);
+    const actorActionProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Actor action: Valen Ash Healing Word Healing");
+    expect(actorActionProposal?.changesJson.map((change) => change.entity)).toEqual(["actor", "roll", "chat"]);
+    expect(actorActionProposal?.changesJson.find((change) => change.entity === "roll")).toEqual(expect.objectContaining({ action: "create" }));
+    expect(actorActionProposal?.changesJson.find((change) => change.entity === "chat")).toEqual(expect.objectContaining({ action: "create" }));
+    expect(gmStore.state.rolls).toHaveLength(4);
     expect(gmStore.state.chat.some((message) => message.body.includes("AI Perception: 1d20+5"))).toBe(true);
-    expect(gmStore.state.chat.some((message) => message.body.includes("Valen Ash Healing Word Healing"))).toBe(true);
-    expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.spellSlots).toEqual({ level1: { current: 0, max: 1, recovery: "long" } });
-    const actorActionOutput = gmStore.state.aiToolCalls.find((call) => call.toolName === "use_actor_action" && call.status === "completed")?.output as { effect: { after: number } };
-    expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.hp).toEqual({ current: actorActionOutput.effect.after, max: 22 });
+    expect(gmStore.state.chat.some((message) => message.body.includes("Valen Ash Healing Word Healing"))).toBe(false);
+    expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.spellSlots).toEqual({ level1: { current: 1, max: 1, recovery: "long" } });
+    expect(gmStore.state.actors.find((actor) => actor.id === "act_valen")?.data.hp).toEqual({ current: 18, max: 22 });
 
     const observedToolCalls = await gmApp.inject({
       method: "GET",
@@ -20040,7 +24486,7 @@ registerCommand("/state", (input) => {
     });
     expect(observedToolCalls.statusCode).toBe(200);
     expect(observedToolCalls.json().map((call: { toolName: string }) => call.toolName)).toEqual(
-      expect.arrayContaining(["read_compendium", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "roll_dice", "use_actor_action", "unknown_tool"])
+      expect.arrayContaining(["read_compendium", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "roll_dice", "use_actor_action", "unknown_tool"])
     );
     expect(gmStore.state.aiToolCalls.find((call) => call.toolName === "unknown_tool" && call.status === "failed")?.output).toEqual({
       error: "unknown_tool",
@@ -20202,6 +24648,8 @@ registerCommand("/state", (input) => {
         expect.objectContaining({ toolName: "draft_journal_entry", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "draft_scene", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "draft_token_update", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "generate_map_asset", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
+        expect.objectContaining({ toolName: "generate_token_asset", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "draft_actor_update", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "use_actor_action", output: { error: "missing_permission", permission: "ai.proposeChanges" } }),
         expect.objectContaining({ toolName: "read_compendium", output: expect.objectContaining({ systemId: "generic-fantasy" }) }),
@@ -20212,6 +24660,98 @@ registerCommand("/state", (input) => {
     expect(playerStore.state.proposals.some((proposal) => proposal.title === "Encounter: Mirror Knight")).toBe(false);
     expect(playerStore.state.rolls).toHaveLength(4);
     await playerApp.close();
+  });
+
+  it("routes AI D&D actor actions through resolver proposals and pending-save guards", async () => {
+    class DndResolverToolProvider implements AiProvider {
+      id = "dnd-resolver-tool-ai";
+      label = "D&D Resolver Tool AI";
+      actorId = "";
+      targetActorId = "";
+      wandRollId = "";
+      requests: AiProviderRequest[] = [];
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.requests.push(input);
+        yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: this.actorId, actionRollId: "feature-second-wind-healing", applyEffect: true } };
+        yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: this.actorId, actionRollId: this.wandRollId, applyEffect: true, targetActorId: this.targetActorId } };
+        yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: this.actorId, actionRollId: this.wandRollId, applyEffect: true, targetActorId: this.targetActorId, saveOutcomes: { [this.targetActorId]: "failure" } } };
+        yield { type: "message.completed", content: "D&D actions requested" };
+      }
+    }
+
+    const provider = new DndResolverToolProvider();
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: provider });
+    const fighter = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+      headers: authHeaders,
+      payload: { templateId: "fighter", name: "AI Resolver Fighter", ownerUserId: "usr_demo_player" }
+    });
+    expect(fighter.statusCode).toBe(200);
+    const target = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+      headers: authHeaders,
+      payload: { templateId: "fighter", name: "AI Resolver Target", ownerUserId: "usr_demo_player" }
+    });
+    expect(target.statusCode).toBe(200);
+    provider.actorId = fighter.json().actor.id;
+    provider.targetActorId = target.json().actor.id;
+    const wand = createTimestamped("item", {
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: provider.actorId,
+      type: "item",
+      name: "Wand of Paralysis",
+      data: { action: "magic action", condition: "Paralyzed", conditionDuration: "1 minute", save: { ability: "constitution", dc: 15 }, repeatSave: "end of each turn" }
+    });
+    store.state.items.push(wand);
+    provider.wandRollId = `item-${wand.id}-effect`;
+
+    const thread = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Use two D&D actions." }
+    });
+    expect(thread.statusCode).toBe(200);
+    const actionEvents = thread.json().events.filter((event: { type: string; toolName?: string }) => event.type === "tool.completed" && event.toolName === "use_actor_action");
+    expect(actionEvents[0].output).toEqual(
+      expect.objectContaining({
+        proposalId: expect.any(String),
+        actorId: provider.actorId,
+        actionRollId: "feature-second-wind-healing",
+        consumed: [{ type: "resource", key: "secondWind", label: "Second Wind", amount: 1, remaining: 1 }],
+        effect: expect.objectContaining({ type: "healing", targetActorId: provider.actorId }),
+        resolution: expect.objectContaining({ commitMode: "commit", effects: [expect.objectContaining({ type: "healing", targetActorId: provider.actorId })] })
+      })
+    );
+    expect(actionEvents[1].output).toEqual(
+      expect.objectContaining({
+        error: "pending_resolution",
+        resolution: expect.objectContaining({
+          pendingSaves: [expect.objectContaining({ actorId: provider.targetActorId, ability: "constitution", dc: 15, requiredForCommit: true })],
+          effects: []
+        })
+      })
+    );
+    expect(actionEvents[2].output).toEqual(
+      expect.objectContaining({
+        proposalId: expect.any(String),
+        actorId: provider.actorId,
+        actionRollId: provider.wandRollId,
+        effect: expect.objectContaining({ type: "condition", targetActorId: provider.targetActorId, conditionId: "paralyzed" }),
+        resolution: expect.objectContaining({
+          commitMode: "commit",
+          effects: [expect.objectContaining({ type: "condition", targetActorId: provider.targetActorId, conditionId: "paralyzed" })],
+          pendingSaves: [expect.objectContaining({ actorId: provider.targetActorId, recurring: true, timing: "end of each turn", conditionIds: ["paralyzed"] })]
+        })
+      })
+    );
+    expect(store.state.actors.find((actor) => actor.id === provider.targetActorId)?.data.conditions).toEqual([]);
+    await app.close();
   });
 
   it("keeps ai provider tool advertisement covered by role permission invariants", async () => {
@@ -20292,7 +24832,7 @@ registerCommand("/state", (input) => {
       const gmTools = provider.requests[0]!.tools;
       const assistantTools = provider.requests[1]!.tools;
       const playerTools = provider.requests[2]!.tools;
-      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
 
       for (const tool of gmTools) {
         expect(tool.requiredPermissions.length, `${tool.name} should declare required permissions`).toBeGreaterThan(0);
@@ -20305,7 +24845,7 @@ registerCommand("/state", (input) => {
         if (!advertisedTool.permissionSafe) expect(advertisedTool.requiredPermissions).toContain("ai.proposeChanges");
       }
 
-      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
       expect(assistantTools.map((tool) => tool.name)).not.toContain("draft_encounter");
       for (const tool of assistantTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("assistant_gm").includes(permission))).toBe(true);
@@ -20350,6 +24890,8 @@ registerCommand("/state", (input) => {
         yield { type: "tool.started", toolName: "draft_journal_entry", input: { title: "Restricted Note", body: "Requires journal create." } };
         yield { type: "tool.started", toolName: "draft_scene", input: { name: "Restricted Scene" } };
         yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: 300 } };
+        yield { type: "tool.started", toolName: "generate_map_asset", input: { prompt: "Restricted map asset", sceneId: "scn_vault_entry" } };
+        yield { type: "tool.started", toolName: "generate_token_asset", input: { prompt: "Restricted token asset", tokenId: "tok_valen" } };
         yield { type: "tool.started", toolName: "draft_actor_update", input: { actorId: "act_valen", data: { hp: { current: 1 } } } };
         yield { type: "message.completed", content: "Restricted edits requested" };
       }
@@ -20382,10 +24924,35 @@ registerCommand("/state", (input) => {
         expect.objectContaining({ toolName: "draft_journal_entry", output: { error: "missing_permission", permission: "journal.create" } }),
         expect.objectContaining({ toolName: "draft_scene", output: { error: "missing_permission", permission: "scene.create" } }),
         expect.objectContaining({ toolName: "draft_token_update", output: { error: "missing_permission", permission: "token.update" } }),
+        expect.objectContaining({ toolName: "generate_map_asset", output: { error: "missing_permission", permission: "scene.create" } }),
+        expect.objectContaining({ toolName: "generate_token_asset", output: { error: "missing_permission", permission: "scene.create" } }),
         expect.objectContaining({ toolName: "draft_actor_update", output: { error: "missing_permission", permission: "actor.update" } })
       ])
     );
     expect(store.state.proposals.some((proposal) => proposal.title.startsWith("Restricted"))).toBe(false);
+
+    const directRestrictedProposal = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/proposals",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: {
+        title: "Restricted Direct AI Proposal",
+        createdByType: "ai",
+        changesJson: [
+          {
+            entity: "journal",
+            action: "create",
+            data: {
+              title: "Direct Restricted Note",
+              body: "Direct proposal creation should honor journal.create too."
+            }
+          }
+        ]
+      }
+    });
+    expect(directRestrictedProposal.statusCode).toBe(403);
+    expect(directRestrictedProposal.json()).toMatchObject({ error: "forbidden", message: "Missing permission: journal.create" });
+    expect(store.state.proposals.some((proposal) => proposal.title === "Restricted Direct AI Proposal")).toBe(false);
     await app.close();
   });
 
@@ -20467,6 +25034,21 @@ registerCommand("/state", (input) => {
     });
     expect(encounterDraft.statusCode).toBe(200);
     const proposalId = encounterDraft.json().proposal.id as string;
+    expect(encounterDraft.json().scene).toEqual(
+      expect.objectContaining({
+        name: "AI Draft Encounter Scene",
+        active: false,
+        folder: "ai/encounters",
+        metadata: expect.objectContaining({
+          source: "ai_encounter_design",
+          encounterName: "AI Draft Encounter"
+        })
+      })
+    );
+    expect(encounterDraft.json().proposal.changesJson.map((change: { entity: string }) => change.entity)).toEqual(["encounter", "scene"]);
+    expect(encounterDraft.json().proposal.history).toEqual([
+      expect.objectContaining({ action: "created", status: "pending", actorUserId: "usr_demo_gm", actorType: "ai", auditAction: "ai.proposal.created" })
+    ]);
 
     const blockedApply = await app.inject({
       method: "POST",
@@ -20490,6 +25072,7 @@ registerCommand("/state", (input) => {
     expect(approved.statusCode).toBe(200);
     expect(approved.json().status).toBe("approved");
     expect(approved.json().approvedByUserId).toBe("usr_demo_gm");
+    expect(approved.json().history).toEqual(expect.arrayContaining([expect.objectContaining({ action: "approved", status: "approved", previousStatus: "pending", actorUserId: "usr_demo_gm", auditAction: "proposal.approved" })]));
 
     const applied = await app.inject({
       method: "POST",
@@ -20498,7 +25081,9 @@ registerCommand("/state", (input) => {
     });
     expect(applied.statusCode).toBe(200);
     expect(applied.json().status).toBe("applied");
+    expect(applied.json().history).toEqual(expect.arrayContaining([expect.objectContaining({ action: "applied", status: "applied", previousStatus: "approved", actorUserId: "usr_demo_gm", auditAction: "proposal.applied" })]));
     expect(store.state.encounters.some((encounter) => encounter.name === "AI Draft Encounter" && encounter.difficulty === "hard")).toBe(true);
+    expect(store.state.scenes.some((scene) => scene.name === "AI Draft Encounter Scene" && scene.metadata.source === "ai_encounter_design")).toBe(true);
 
     const reapproved = await app.inject({
       method: "POST",
@@ -20514,6 +25099,26 @@ registerCommand("/state", (input) => {
     });
     expect(replayed.statusCode).toBe(409);
     expect(store.state.encounters.filter((encounter) => encounter.name === "AI Draft Encounter" && encounter.difficulty === "hard")).toHaveLength(1);
+    expect(store.state.scenes.filter((scene) => scene.name === "AI Draft Encounter Scene" && scene.metadata.source === "ai_encounter_design")).toHaveLength(1);
+
+    const crossScopedProposal = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/proposals",
+      headers: authHeaders,
+      payload: {
+        title: "Cross Scoped Scene Move",
+        changesJson: [
+          {
+            entity: "scene",
+            action: "update",
+            id: "scn_vault_entry",
+            data: { campaignId: "camp_other" }
+          }
+        ]
+      }
+    });
+    expect(crossScopedProposal.statusCode).toBe(400);
+    expect(crossScopedProposal.json().message).toContain("moves a scene outside this campaign");
 
     const forgedProposal = await app.inject({
       method: "POST",
@@ -20705,6 +25310,28 @@ registerCommand("/state", (input) => {
       headers: authHeaders
     });
     expect(memory.json().some((fact: { id: string; approvedByUserId?: string }) => fact.id === memoryId && fact.approvedByUserId === "usr_demo_gm")).toBe(true);
+
+    const blockedMemoryDelete = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/ai/memory/${memoryId}`,
+      headers: { "x-user-id": "usr_player" }
+    });
+    expect(blockedMemoryDelete.statusCode).toBe(403);
+
+    const deletedMemory = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/ai/memory/${memoryId}`,
+      headers: authHeaders
+    });
+    expect(deletedMemory.statusCode).toBe(200);
+    expect(deletedMemory.json()).toMatchObject({ id: memoryId, visibility: "gm_only", approvedByUserId: "usr_demo_gm" });
+    expect(store.state.aiMemory.some((fact) => fact.id === memoryId)).toBe(false);
+    expect(store.state.auditLogs.find((log) => log.action === "ai.memory.delete" && log.targetId === memoryId)).toMatchObject({
+      action: "ai.memory.delete",
+      targetType: "ai_memory",
+      before: { id: memoryId, visibility: "gm_only", sourceCount: 1, approved: true }
+    });
+    expect(JSON.stringify(store.state.auditLogs.find((log) => log.action === "ai.memory.delete" && log.targetId === memoryId))).not.toContain("The party mapped the lower vault.");
 
     await app.close();
   });
@@ -20998,16 +25625,24 @@ registerCommand("/state", (input) => {
 
   it("issues signed CDN asset URLs, enforces quotas, and tracks lifecycle storage stats", async () => {
     const previousEnv = snapshotEnv([
+      "NODE_ENV",
       "OTTE_ADMIN_USER_IDS",
       "OTTE_ASSET_CDN_BASE_URL",
+      "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL",
+      "OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN",
+      "OTTE_PUBLIC_URL",
       "OTTE_ASSET_QUOTA_BYTES",
       "OTTE_ASSET_RETENTION_DAYS",
       "OTTE_ASSET_URL_SIGNING_SECRET",
       "OTTE_ASSET_URL_TTL_SECONDS",
       "OTTE_ASSET_URL_MAX_TTL_SECONDS"
     ]);
+    process.env.NODE_ENV = "test";
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
     process.env.OTTE_ASSET_CDN_BASE_URL = "https://cdn.example.test/otte";
+    delete process.env.OTTE_ASSET_CDN_PURGE_WEBHOOK_URL;
+    delete process.env.OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN;
+    delete process.env.OTTE_PUBLIC_URL;
     process.env.OTTE_ASSET_QUOTA_BYTES = "20";
     process.env.OTTE_ASSET_RETENTION_DAYS = "7";
     process.env.OTTE_ASSET_URL_SIGNING_SECRET = "test-asset-signing-secret";
@@ -21073,8 +25708,36 @@ registerCommand("/state", (input) => {
         quotaBytes: 20,
         remainingBytes: 20 - bytes.length,
         lifecycleCounts: { active: 1 },
-        providerCounts: { local: 1 }
+        providerCounts: { local: 1 },
+        delivery: {
+          mode: "cdn",
+          cdnConfigured: true,
+          publicUrlConfigured: false,
+          signingSecretConfigured: true,
+          signingSecretRequired: false,
+          defaultTtlSeconds: 120,
+          maxTtlSeconds: 600,
+          purgeWebhookConfigured: false,
+          purgeWebhookTokenConfigured: false,
+          actionRequired: true,
+          actionReasons: ["asset_cdn_purge_unconfigured"],
+          posture: {
+            activeManagedAssetCount: 1,
+            deliverableActiveAssetCount: 1,
+            undeliverableActiveAssetCount: 0,
+            cdnEligibleAssetCount: 1,
+            signedUrlEligibleAssetCount: 1
+          },
+          warnings: [
+            expect.objectContaining({
+              code: "asset_cdn_purge_unconfigured",
+              severity: "warning",
+              env: ["OTTE_ASSET_CDN_PURGE_WEBHOOK_URL"]
+            })
+          ]
+        }
       });
+      expect(JSON.stringify(storage.json().delivery)).not.toContain("cdn.example.test");
 
       const delivery = await app.inject({
         method: "POST",
@@ -21130,7 +25793,7 @@ registerCommand("/state", (input) => {
       const productionLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const productionAuthHeaders = { authorization: `Bearer ${productionLogin.json().token}` };
       const signingSecret = process.env.OTTE_ASSET_URL_SIGNING_SECRET;
@@ -21627,7 +26290,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const invalidConfig = [
         "OTTE_ASSET_QUOTA_BYTES",
@@ -21707,7 +26370,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const invalidUrlConfig = ["OTTE_ASSET_CDN_BASE_URL", "OTTE_PUBLIC_URL", "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL"];
       const storage = await app.inject({
@@ -21786,7 +26449,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const insecureUrlConfig = ["OTTE_ASSET_CDN_BASE_URL", "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL"];
       const storage = await app.inject({
@@ -21861,7 +26524,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const missingTokenConfig = ["OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN", "OTTE_ASSET_TRUST_WEBHOOK_TOKEN"];
       const storage = await app.inject({
@@ -21950,7 +26613,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -22033,7 +26696,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -22123,7 +26786,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -22197,7 +26860,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -22286,7 +26949,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -22431,6 +27094,91 @@ registerCommand("/state", (input) => {
     }
   });
 
+  it("counts pending generated asset proposals against quota and cleans rejected bytes", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ASSET_QUOTA_BYTES"]);
+    process.env.OTTE_ASSET_QUOTA_BYTES = String(tinyPng.length + 1);
+
+    const store = new MemoryStateStore();
+    const assetStorage = new MemoryAssetStorage("ai-quota-assets");
+    const imageAssetGenerator = {
+      id: "quota-image-generator",
+      label: "Quota Image Generator",
+      async generate(input) {
+        return {
+          body: tinyPng,
+          mimeType: `image/${input.outputFormat ?? "png"}`,
+          provider: "test",
+          model: "quota-test-model",
+          sourcePrompt: input.prompt
+        };
+      }
+    } satisfies ImageAssetGenerator;
+    const app = await buildApp({ store, assetStorage, imageAssetGenerator });
+
+    try {
+      const generated = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/generate-token-asset",
+        headers: authHeaders,
+        payload: {
+          prompt: "Valen token art",
+          name: "Quota Token Art",
+          tokenId: "tok_valen",
+          size: "1024x1024",
+          quality: "low",
+          outputFormat: "png"
+        }
+      });
+      expect(generated.statusCode).toBe(200);
+      const proposal = store.state.proposals.find((item) => item.id === generated.json().proposalId)!;
+      const generatedAsset = proposal.changesJson.find((change) => change.entity === "asset")?.data as MapAsset | undefined;
+      expect(generatedAsset?.storage?.key).toEqual(expect.any(String));
+      expect(assetStorage.objects.has(generatedAsset?.storage?.key ?? "")).toBe(true);
+
+      const storageInfo = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/assets/storage",
+        headers: authHeaders
+      });
+      expect(storageInfo.statusCode).toBe(200);
+      expect(storageInfo.json()).toMatchObject({
+        pendingProposalAssetCount: 1,
+        pendingProposalAssetBytes: tinyPng.length,
+        usedBytes: tinyPng.length,
+        remainingBytes: 1
+      });
+
+      const overQuota = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/generate-token-asset",
+        headers: authHeaders,
+        payload: {
+          prompt: "Another Valen token art",
+          name: "Second Quota Token Art",
+          tokenId: "tok_valen",
+          size: "1024x1024",
+          quality: "low",
+          outputFormat: "png"
+        }
+      });
+      expect(overQuota.statusCode).toBe(413);
+      expect(overQuota.json()).toMatchObject({ error: "asset_quota_exceeded", usedBytes: tinyPng.length, incomingBytes: tinyPng.length });
+
+      const rejected = await app.inject({
+        method: "POST",
+        url: `/api/v1/proposals/${proposal.id}/reject`,
+        headers: authHeaders
+      });
+      expect(rejected.statusCode).toBe(200);
+      expect(assetStorage.objects.has(generatedAsset?.storage?.key ?? "")).toBe(false);
+      const rejectedAsset = proposal.changesJson.find((change) => change.entity === "asset")?.data as MapAsset | undefined;
+      expect(rejectedAsset?.lifecycle).toMatchObject({ status: "deleted", cleanupReason: "rejected_proposal", storageDeletedAt: expect.any(String) });
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("recommends configuring scheduled cleanup when production cleanup backlog exists", async () => {
     const previousEnv = snapshotEnv([
       "NODE_ENV",
@@ -22473,7 +27221,7 @@ registerCommand("/state", (input) => {
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId: "usr_demo_gm" }
+        payload: { email: "gm@example.test" }
       });
       const storage = await app.inject({
         method: "GET",
@@ -23338,6 +28086,75 @@ registerCommand("/state", (input) => {
     rmSync(targetUploadDir, { recursive: true, force: true });
   });
 
+  it("rejects corrupted archived asset files without merging campaign state or restored objects", async () => {
+    const sourceUploadDir = mkdtempSync(join(tmpdir(), "otte-corrupt-archive-source-"));
+    const targetUploadDir = mkdtempSync(join(tmpdir(), "otte-corrupt-archive-target-"));
+    const sourceApp = await buildApp({
+      store: new MemoryStateStore(),
+      uploadDir: sourceUploadDir
+    });
+    const assetBytes = Buffer.from("asset-restore-drill");
+
+    const uploaded = await sourceApp.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/assets/upload",
+      headers: {
+        ...authHeaders,
+        "content-type": "image/png",
+        "x-asset-name": encodeURIComponent("Corrupt Restore Drill.png")
+      },
+      payload: assetBytes
+    });
+    expect(uploaded.statusCode).toBe(200);
+
+    const exported = await sourceApp.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export",
+      headers: authHeaders
+    });
+    expect(exported.statusCode).toBe(200);
+    const archive = exported.json() as { files: Array<{ data: string }> };
+    expect(archive.files).toHaveLength(1);
+    const corruptedBytes = Buffer.from(assetBytes);
+    corruptedBytes[0] = corruptedBytes[0] === 0x61 ? 0x62 : 0x61;
+    archive.files[0]!.data = corruptedBytes.toString("base64");
+    await sourceApp.close();
+
+    const freshState: EngineState = emptyState();
+    freshState.users.push({
+      id: "usr_demo_gm",
+      displayName: "Import Admin",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    });
+    const targetStore = new MemoryStateStore(freshState);
+    const targetStorage = new MemoryAssetStorage("target-assets");
+    const targetApp = await buildApp({
+      store: targetStore,
+      uploadDir: targetUploadDir,
+      assetStorage: targetStorage
+    });
+
+    const imported = await targetApp.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    expect(imported.statusCode).toBe(400);
+    expect(imported.json()).toMatchObject({
+      error: "bad_request",
+      message: expect.stringContaining("Archive asset file restore failed: Archive file checksum mismatch")
+    });
+    expect(targetStore.state.campaigns).toHaveLength(0);
+    expect(targetStore.state.assets).toHaveLength(0);
+    expect(targetStorage.objects.size).toBe(0);
+
+    await targetApp.close();
+    rmSync(sourceUploadDir, { recursive: true, force: true });
+    rmSync(targetUploadDir, { recursive: true, force: true });
+  });
+
   it("persists campaign state across sqlite-backed store restarts", async () => {
     const directory = mkdtempSync(join(tmpdir(), "otte-api-"));
     const dbPath = join(directory, "state.sqlite");
@@ -23370,6 +28187,184 @@ registerCommand("/state", (input) => {
     await secondApp.close();
     secondStore.close();
     rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("reports sqlite storage operations and runs backup restore drills", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "otte-storage-ops-"));
+    const dbPath = join(directory, "state.sqlite");
+    const store = new SqliteStateStore(dbPath);
+    const gmUser = store.state.users.find((user) => user.id === "usr_demo_gm");
+    if (gmUser) gmUser.serverAdmin = true;
+    store.save();
+    const app = await buildApp({ store });
+
+    const beforeBackup = await app.inject({
+      method: "GET",
+      url: "/api/v1/admin/storage/operations",
+      headers: authHeaders
+    });
+    expect(beforeBackup.statusCode).toBe(200);
+    expect(beforeBackup.json()).toMatchObject({
+      provider: "sqlite-json-records",
+      supported: true,
+      actionRequired: true,
+      actionReasons: expect.arrayContaining(["sqlite_backup_missing"]),
+      integrity: expect.objectContaining({ ok: true, result: "ok" }),
+      migrations: expect.objectContaining({ latestAppliedVersion: 1, missingVersions: [] }),
+      indexes: expect.objectContaining({ missing: [] })
+    });
+
+    const playerBlocked = await app.inject({
+      method: "GET",
+      url: "/api/v1/admin/storage/operations",
+      headers: { "x-user-id": "usr_demo_player" }
+    });
+    expect(playerBlocked.statusCode).toBe(403);
+
+    const backup = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/storage/backup",
+      headers: authHeaders,
+      payload: { reason: "pre-upgrade smoke" }
+    });
+    expect(backup.statusCode).toBe(200);
+    expect(backup.json()).toMatchObject({ status: "created", reason: "pre-upgrade smoke" });
+    expect(backup.json().fileName).toMatch(/^opentabletop-.*\.sqlite$/);
+    expect(backup.json().sizeBytes).toBeGreaterThan(0);
+    expect(existsSync(join(directory, "backups", backup.json().fileName))).toBe(true);
+
+    const afterBackup = await app.inject({
+      method: "GET",
+      url: "/api/v1/admin/storage/operations",
+      headers: authHeaders
+    });
+    expect(afterBackup.statusCode).toBe(200);
+    expect(afterBackup.json()).toMatchObject({
+      actionRequired: false,
+      actionReasons: [],
+      backups: {
+        latest: expect.objectContaining({ fileName: backup.json().fileName, sizeBytes: backup.json().sizeBytes })
+      }
+    });
+    expect(afterBackup.json().records.collections).toEqual(expect.arrayContaining([expect.objectContaining({ collection: "campaigns", count: expect.any(Number) })]));
+
+    const drill = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/storage/restore-drill",
+      headers: authHeaders,
+      payload: { backupFileName: backup.json().fileName }
+    });
+    expect(drill.statusCode).toBe(200);
+    expect(drill.json()).toMatchObject({
+      status: "passed",
+      backup: expect.objectContaining({ fileName: backup.json().fileName }),
+      integrity: expect.objectContaining({ ok: true, result: "ok" }),
+      campaignCount: expect.any(Number),
+      recordCount: expect.any(Number)
+    });
+    expect(drill.json().campaignCount).toBeGreaterThan(0);
+    expect(drill.json().recordCount).toBeGreaterThan(0);
+
+    store.state.campaigns.push(
+      createTimestamped("camp", {
+        id: "camp_transient_after_backup",
+        ownerUserId: "usr_demo_gm",
+        name: "Transient After Backup",
+        description: "Should disappear after destructive restore",
+        defaultSystemId: "dnd-5e-srd",
+        visibility: "private" as const
+      })
+    );
+    store.save();
+    const restoreMismatch = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/storage/restore",
+      headers: authHeaders,
+      payload: { backupFileName: backup.json().fileName, confirmFileName: "wrong.sqlite" }
+    });
+    expect(restoreMismatch.statusCode).toBe(400);
+
+    const restored = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/storage/restore",
+      headers: authHeaders,
+      payload: { backupFileName: backup.json().fileName, confirmFileName: backup.json().fileName, reason: "rollback smoke" }
+    });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json()).toMatchObject({
+      status: "passed",
+      backup: expect.objectContaining({ fileName: backup.json().fileName }),
+      reason: "rollback smoke"
+    });
+    expect(store.state.campaigns.some((campaign) => campaign.id === "camp_transient_after_backup")).toBe(false);
+    expect(store.state.auditLogs.at(-1)).toMatchObject({ action: "admin.storage.restore", targetType: "storage_backup", targetId: backup.json().fileName });
+
+    const missingDrill = await app.inject({
+      method: "POST",
+      url: "/api/v1/admin/storage/restore-drill",
+      headers: authHeaders,
+      payload: { backupFileName: "missing.sqlite" }
+    });
+    expect(missingDrill.statusCode).toBe(409);
+    expect(missingDrill.json()).toMatchObject({ status: "failed", error: "No SQLite backup is available for restore drill" });
+
+    await app.close();
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("runs scheduled sqlite backups on startup when configured", async () => {
+    const previousRunOnStart = process.env.OTTE_SQLITE_BACKUP_RUN_ON_START;
+    const previousReason = process.env.OTTE_SQLITE_BACKUP_REASON;
+    process.env.OTTE_SQLITE_BACKUP_RUN_ON_START = "true";
+    process.env.OTTE_SQLITE_BACKUP_REASON = "startup-smoke";
+    const directory = mkdtempSync(join(tmpdir(), "otte-storage-schedule-"));
+    const dbPath = join(directory, "state.sqlite");
+    const store = new SqliteStateStore(dbPath);
+    const gmUser = store.state.users.find((user) => user.id === "usr_demo_gm");
+    if (gmUser) gmUser.serverAdmin = true;
+    store.save();
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      app = await buildApp({ store });
+      const operations = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/storage/operations",
+        headers: authHeaders
+      });
+      expect(operations.statusCode).toBe(200);
+      expect(operations.json()).toMatchObject({
+        backups: {
+          latest: expect.objectContaining({ fileName: expect.stringMatching(/^opentabletop-.*\.sqlite$/) })
+        },
+        scheduledBackups: {
+          enabled: true,
+          runOnStart: true,
+          reason: "startup-smoke",
+          lastRun: expect.objectContaining({
+            trigger: "startup",
+            status: "succeeded",
+            reason: "startup-smoke:startup",
+            fileName: expect.stringMatching(/^opentabletop-.*\.sqlite$/)
+          })
+        }
+      });
+      expect(existsSync(join(directory, "backups", operations.json().scheduledBackups.lastRun.fileName))).toBe(true);
+    } finally {
+      if (app) await app.close();
+      store.close();
+      rmSync(directory, { recursive: true, force: true });
+      if (previousRunOnStart === undefined) {
+        delete process.env.OTTE_SQLITE_BACKUP_RUN_ON_START;
+      } else {
+        process.env.OTTE_SQLITE_BACKUP_RUN_ON_START = previousRunOnStart;
+      }
+      if (previousReason === undefined) {
+        delete process.env.OTTE_SQLITE_BACKUP_REASON;
+      } else {
+        process.env.OTTE_SQLITE_BACKUP_REASON = previousReason;
+      }
+    }
   });
 
   it("round-trips a campaign archive into a fresh instance with all MVP collections", async () => {
@@ -23886,14 +28881,14 @@ registerCommand("/state", (input) => {
       expect.objectContaining({
         status: "applied",
         appliedRecords: [
-          { collection: "journals", id: "jnl_imp_rumor_ember_key", entityId: "rumor_ember_key" },
-          { collection: "items", id: "item_imp_asterite_token", entityId: "asterite_token" }
+          { collection: "journals", id: "jnl_imp_camp_demo_rumor_ember_key", entityId: "rumor_ember_key" },
+          { collection: "items", id: "item_imp_camp_demo_asterite_token", entityId: "asterite_token" }
         ]
       })
     );
-    expect(store.state.journals.map((journal) => journal.id)).toContain("jnl_imp_rumor_ember_key");
-    expect(store.state.items.map((item) => item.id)).toContain("item_imp_asterite_token");
-    expect(store.state.actors.map((actor) => actor.id)).not.toContain("act_imp_private_npc");
+    expect(store.state.journals.map((journal) => journal.id)).toContain("jnl_imp_camp_demo_rumor_ember_key");
+    expect(store.state.items.map((item) => item.id)).toContain("item_imp_camp_demo_asterite_token");
+    expect(store.state.actors.map((actor) => actor.id)).not.toContain("act_imp_camp_demo_private_npc");
 
     const blockedDelete = await app.inject({
       method: "DELETE",
@@ -23910,8 +28905,8 @@ registerCommand("/state", (input) => {
     });
     expect(rolledBack.statusCode).toBe(200);
     expect(rolledBack.json().status).toBe("rolled_back");
-    expect(store.state.journals.map((journal) => journal.id)).not.toContain("jnl_imp_rumor_ember_key");
-    expect(store.state.items.map((item) => item.id)).not.toContain("item_imp_asterite_token");
+    expect(store.state.journals.map((journal) => journal.id)).not.toContain("jnl_imp_camp_demo_rumor_ember_key");
+    expect(store.state.items.map((item) => item.id)).not.toContain("item_imp_camp_demo_asterite_token");
 
     const deleted = await app.inject({
       method: "DELETE",
@@ -23931,6 +28926,63 @@ registerCommand("/state", (input) => {
     expect(store.state.auditLogs.map((log) => log.action)).toEqual(
       expect.arrayContaining(["contentImport.previewed", "contentImport.applied", "contentImport.rolledBack", "contentImport.deleted"])
     );
+
+    await app.close();
+  });
+
+  it("namespaces imported content records by campaign so reusable source ids do not collide", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const createdCampaign = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: { name: "Second Import Campaign" }
+    });
+    expect(createdCampaign.statusCode).toBe(200);
+    const secondCampaignId = createdCampaign.json().id as string;
+
+    async function previewAndApply(campaignId: string) {
+      const previewed = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaignId}/content-imports/preview`,
+        headers: authHeaders,
+        payload: {
+          source: {
+            sourceType: "manual",
+            sourceName: "Reusable source ids",
+            license: { name: "Private table note", usage: "private_home_game" }
+          },
+          entities: [
+            {
+              id: "shared_note",
+              kind: "journal",
+              name: "Shared Source Note",
+              selectedByDefault: true,
+              data: { body: "Campaign-local note.", visibility: "gm_only" }
+            }
+          ]
+        }
+      });
+      expect(previewed.statusCode).toBe(200);
+      const applied = await app.inject({
+        method: "POST",
+        url: `/api/v1/content-imports/${previewed.json().id}/apply`,
+        headers: authHeaders,
+        payload: { selectedEntityIds: ["shared_note"] }
+      });
+      expect(applied.statusCode).toBe(200);
+      return applied.json().appliedRecords[0].id as string;
+    }
+
+    const firstRecordId = await previewAndApply("camp_demo");
+    const secondRecordId = await previewAndApply(secondCampaignId);
+
+    expect(firstRecordId).toBe("jnl_imp_camp_demo_shared_note");
+    expect(secondRecordId).toBe(`jnl_imp_${secondCampaignId}_shared_note`);
+    expect(firstRecordId).not.toBe(secondRecordId);
+    expect(store.state.journals.map((journal) => journal.id)).toEqual(expect.arrayContaining([firstRecordId, secondRecordId]));
 
     await app.close();
   });
@@ -24084,7 +29136,7 @@ registerCommand("/state", (input) => {
       await app.close();
       store.close();
     } finally {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     }
   });
 
@@ -24360,7 +29412,7 @@ registerCommand("/state", (input) => {
     await app.close();
   });
 
-  it("broadcasts beta dogfood realtime events to one GM and three players with reconnect", async () => {
+  it("broadcasts beta dogfood realtime events to one GM and three players with duplicate-client churn and reconnect", async () => {
     type RealtimeTestSocket = {
       onopen: (() => void) | null;
       onmessage: ((event: { data: unknown }) => void) | null;
@@ -24368,7 +29420,7 @@ registerCommand("/state", (input) => {
       close(): void;
     };
     type RealtimeEventMessage = { type?: string; targetId?: string; payload?: unknown; error?: string };
-    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string) => RealtimeTestSocket }).WebSocket;
+    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string, protocols?: string[]) => RealtimeTestSocket }).WebSocket;
     if (!maybeWebSocket) throw new Error("WebSocket is not available in this Node runtime");
     const TestWebSocket = maybeWebSocket;
 
@@ -24395,7 +29447,7 @@ registerCommand("/state", (input) => {
 
     async function openClient(userId: string) {
       const token = await loginToken(userId);
-      const socket = new TestWebSocket(`ws://127.0.0.1:${address.port}/api/v1/realtime?campaignId=camp_beta_ember_vault&sessionToken=${encodeURIComponent(token)}`);
+      const socket = new TestWebSocket(`ws://127.0.0.1:${address.port}/api/v1/realtime?campaignId=camp_beta_ember_vault`, ["otte.v1", `otte.auth.${token}`]);
       const messages: RealtimeEventMessage[] = [];
       const waiters: Array<{ predicate: (message: RealtimeEventMessage) => boolean; resolve: (message: RealtimeEventMessage) => void; timer: NodeJS.Timeout }> = [];
       socket.onmessage = (event) => {
@@ -24445,7 +29497,9 @@ registerCommand("/state", (input) => {
       };
     }
 
-    const clients = await Promise.all([openClient("usr_demo_gm"), openClient("usr_demo_player"), openClient("usr_beta_player_2"), openClient("usr_beta_player_3")]);
+    const primaryClients = await Promise.all([openClient("usr_demo_gm"), openClient("usr_demo_player"), openClient("usr_beta_player_2"), openClient("usr_beta_player_3")]);
+    const duplicatePlayer = await openClient("usr_beta_player_2");
+    const clients = [...primaryClients, duplicatePlayer];
     try {
       const moved = await app.inject({
         method: "PATCH",
@@ -24455,6 +29509,7 @@ registerCommand("/state", (input) => {
       });
       expect(moved.statusCode).toBe(200);
       await Promise.all(clients.map((client) => client.waitFor("token.moved", "tok_beta_valen")));
+      duplicatePlayer.close();
 
       const roll = await app.inject({
         method: "POST",
@@ -24463,7 +29518,9 @@ registerCommand("/state", (input) => {
         payload: { campaignId: "camp_beta_ember_vault", formula: "1d20+4", label: "GM+3 Realtime Dice" }
       });
       expect(roll.statusCode).toBe(200);
-      await Promise.all(clients.map((client) => client.waitFor("dice.roll.created", roll.json().id)));
+      await Promise.all(primaryClients.map((client) => client.waitFor("dice.roll.created", roll.json().id)));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(duplicatePlayer.messages.some((message) => message.type === "dice.roll.created" && message.targetId === roll.json().id)).toBe(false);
 
       const chat = await app.inject({
         method: "POST",
@@ -24472,7 +29529,19 @@ registerCommand("/state", (input) => {
         payload: { campaignId: "camp_beta_ember_vault", sceneId: "scn_beta_vault", body: "GM+3 realtime chat checkpoint", visibility: "public" }
       });
       expect(chat.statusCode).toBe(200);
-      await Promise.all(clients.map((client) => client.waitFor("chat.message.created", chat.json().id)));
+      await Promise.all(primaryClients.map((client) => client.waitFor("chat.message.created", chat.json().id)));
+
+      const whisper = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: authHeaders,
+        payload: { campaignId: "camp_beta_ember_vault", sceneId: "scn_beta_vault", body: "Private realtime checkpoint", type: "whisper", recipientUserIds: ["usr_beta_player_2"] }
+      });
+      expect(whisper.statusCode).toBe(200);
+      await Promise.all([primaryClients[0]!.waitFor("chat.message.created", whisper.json().id), primaryClients[2]!.waitFor("chat.message.created", whisper.json().id)]);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(primaryClients[3]!.messages.some((message) => message.type === "chat.message.created" && message.targetId === whisper.json().id)).toBe(false);
+      expect(duplicatePlayer.messages.some((message) => message.type === "chat.message.created" && message.targetId === whisper.json().id)).toBe(false);
 
       const journal = await app.inject({
         method: "POST",
@@ -24481,7 +29550,7 @@ registerCommand("/state", (input) => {
         payload: { title: "GM+3 Realtime Journal", body: "Public reconnect checkpoint.", visibility: "public", tags: ["realtime", "beta"] }
       });
       expect(journal.statusCode).toBe(200);
-      await Promise.all(clients.map((client) => client.waitFor("journal.created", journal.json().id)));
+      await Promise.all(primaryClients.map((client) => client.waitFor("journal.created", journal.json().id)));
 
       const combat = await app.inject({
         method: "POST",
@@ -24496,9 +29565,13 @@ registerCommand("/state", (input) => {
         }
       });
       expect(combat.statusCode).toBe(200);
-      await Promise.all(clients.map((client) => client.waitFor("combat.started", combat.json().id)));
+      await Promise.all(primaryClients.map((client) => client.waitFor("combat.started", combat.json().id)));
 
       clients[3]!.close();
+      for (let index = 0; index < 3; index += 1) {
+        const churnedPlayer = await openClient("usr_beta_player_3");
+        churnedPlayer.close();
+      }
       const reconnectedPlayer = await openClient("usr_beta_player_3");
       clients[3] = reconnectedPlayer;
       const reconnectChat = await app.inject({
@@ -24508,7 +29581,8 @@ registerCommand("/state", (input) => {
         payload: { campaignId: "camp_beta_ember_vault", sceneId: "scn_beta_vault", body: "Reconnect checkpoint", visibility: "public" }
       });
       expect(reconnectChat.statusCode).toBe(200);
-      await reconnectedPlayer.waitFor("chat.message.created", reconnectChat.json().id);
+      await Promise.all([clients[0]!, clients[1]!, clients[2]!, reconnectedPlayer].map((client) => client.waitFor("chat.message.created", reconnectChat.json().id)));
+      expect(duplicatePlayer.messages.some((message) => message.type === "chat.message.created" && message.targetId === reconnectChat.json().id)).toBe(false);
     } finally {
       clients.forEach((client) => client.close());
       await app.close();

@@ -2,7 +2,7 @@
 
 ## Auth
 
-- [ ] Disable legacy `x-user-id` auth outside tests unless explicitly needed for local compatibility.
+- [ ] Keep `OTTE_ALLOW_LEGACY_USER_HEADER=false` outside tests unless legacy `x-user-id` auth is explicitly needed for local compatibility.
 - [ ] Configure `OTTE_ADMIN_USER_IDS`.
 - [ ] Use OIDC or local password users with MFA for shared dogfood servers.
 - [ ] Store secrets in the host secret manager, not in repository files.
@@ -26,6 +26,7 @@
 ## Assets
 
 - [ ] Configure asset quota and retention.
+- [ ] Store asset signing secrets such as `OTTE_ASSET_URL_SIGNING_SECRET` in the host secret manager.
 - [ ] Keep asset trust scanning fail-closed in production.
 - [ ] Verify signed or CDN asset delivery does not expose storage credentials.
 - [ ] Run asset storage/integrity checks before and after dogfood.

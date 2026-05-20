@@ -75,7 +75,7 @@ Ship OpenTabletop Engine public alpha v0.1 as a launchable open-source VTT, not 
 | Roll20 UI/brand/assets/sheets/marketplace cloning | Blocked | Explicitly prohibited; public alpha must use original UX and assets. |
 | Proprietary D&D, Roll20, or D&D Beyond content | Blocked | Explicitly prohibited; only SRD/open/legal content can ship. |
 | Direct D&D Beyond import/scrape | Blocked | No safe public/legal path is established in this repo. Public alpha should document safe adapter/import options only. |
-| Marketplace payments and broad third-party distribution | Post-alpha | PRD places marketplace-scale distribution after core plugin/runtime safety. |
+| Community-scale plugin distribution | Post-alpha | PRD places broad plugin distribution after core plugin/runtime safety; the project is free OSS and does not require commercial marketplace rails. |
 | Every rules system and full D&D automation edge cases | Post-alpha | Public alpha should prove one SRD one-shot and document limits honestly. |
 
 ## Next Concrete Work

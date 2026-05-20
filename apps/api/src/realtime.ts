@@ -21,7 +21,7 @@ export class RealtimeHub {
 
   broadcast(event: EngineEvent, filter?: RealtimeEventFilter): void {
     for (const client of this.clients) {
-      if (!client.campaignId || client.campaignId === event.campaignId) {
+      if (client.campaignId === event.campaignId) {
         const filtered = filter ? filter(event, client) : event;
         if (filtered) client.send(JSON.stringify(filtered));
       }

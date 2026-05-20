@@ -2,6 +2,7 @@ import { createId, nowIso } from "./ids.js";
 import type { ID } from "./types.js";
 
 export type EngineEventType =
+  | "campaign.updated"
   | "campaign.member.joined"
   | "campaign.member.left"
   | "scene.created"
@@ -19,6 +20,7 @@ export type EngineEventType =
   | "journal.updated"
   | "journal.deleted"
   | "chat.message.created"
+  | "chat.message.deleted"
   | "dice.roll.created"
   | "combat.started"
   | "combat.roundAdvanced"

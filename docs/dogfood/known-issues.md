@@ -2,9 +2,9 @@
 
 ## Current
 
-- Full browser proof for the v0.3 Content tab is pending final acceptance.
-- v0.3 still uses archive schema `0.2.0`; the dogfood report bundle has its own `0.3.0` format.
-- Marketplace-scale plugin distribution, payments, and broad third-party content moderation remain out of scope.
+- v0.3 Content tab acceptance proof is recorded in `docs/verification/v0.3-dogfood-acceptance.md`; rerun it when the release-candidate commit changes.
+- v0.3 campaign archives intentionally use portable archive schema `0.2.0`; the dogfood report bundle has its own redacted `0.3.0` report format.
+- Community-scale plugin distribution and broad third-party content moderation remain out of scope; the project is free OSS and does not need commercial marketplace rails.
 - Rules-system depth beyond the documented `dnd-5e-srd` beta slice remains incomplete.
 - D&D Beyond is only an adapter boundary. Scraping, auth bypass, and proprietary imports remain blocked.
 

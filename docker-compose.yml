@@ -58,6 +58,10 @@ services:
       OTTE_ASSET_CLEANUP_CAMPAIGN_ID: ${OTTE_ASSET_CLEANUP_CAMPAIGN_ID:-}
       OTTE_ASSET_CLEANUP_USER_ID: ${OTTE_ASSET_CLEANUP_USER_ID:-system_asset_cleanup}
       OTTE_AI_PROVIDER: ${OTTE_AI_PROVIDER:-local-echo}
+      OTTE_CODEX_APP_SERVER_URL: ${OTTE_CODEX_APP_SERVER_URL:-}
+      OTTE_CODEX_APP_SERVER_CWD: ${OTTE_CODEX_APP_SERVER_CWD:-}
+      OTTE_CODEX_MODEL: ${OTTE_CODEX_MODEL:-}
+      OTTE_CODEX_MODEL_PROVIDER: ${OTTE_CODEX_MODEL_PROVIDER:-}
       OTTE_ADMIN_USER_IDS: ${OTTE_ADMIN_USER_IDS:-}
       OTTE_PASSWORD_RESET_URL: ${OTTE_PASSWORD_RESET_URL:-}
       OTTE_PASSWORD_RESET_TTL_MINUTES: ${OTTE_PASSWORD_RESET_TTL_MINUTES:-60}
@@ -72,10 +76,37 @@ services:
     volumes:
       - api-storage:/app/storage
       - api-uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/v1/health >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
     depends_on:
       - postgres
       - redis
       - minio
+
+  worker:
+    profiles:
+      - worker
+    build:
+      context: .
+      dockerfile: infra/docker/worker.Dockerfile
+    restart: unless-stopped
+    environment:
+      OTTE_API_URL: http://api:4000
+      OTTE_SESSION_TOKEN: ${OTTE_WORKER_SESSION_TOKEN:-}
+      OTTE_USER_ID: ${OTTE_WORKER_USER_ID:-}
+      OTTE_WORKER_LEASE_POLL: "true"
+      OTTE_WORKER_ID: ${OTTE_WORKER_ID:-}
+      OTTE_WORKER_LEASE_SECONDS: ${OTTE_WORKER_LEASE_SECONDS:-120}
+      OTTE_WORKER_POLL_INTERVAL_MS: ${OTTE_WORKER_POLL_INTERVAL_MS:-5000}
+      OTTE_WORKER_MAX_JOBS: ${OTTE_WORKER_MAX_JOBS:-}
+      OTTE_WORKER_MAX_IDLE_POLLS: ${OTTE_WORKER_MAX_IDLE_POLLS:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    stop_grace_period: 30s
 
   web:
     build:

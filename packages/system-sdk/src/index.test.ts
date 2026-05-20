@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplate, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
+import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdAttunementLimit, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplate, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -3153,7 +3153,7 @@ describe("dnd 5.5e srd rules", () => {
         { id: "skill-persuasion", label: "Persuasion Check", formula: "1d20+5" },
         { id: "tool-calligraphers-supplies", label: "Calligrapher's Supplies Check", formula: "1d20+4" },
         expect.objectContaining({ id: "feature-innate-sorcery", label: "Innate Sorcery", formula: "0", metadata: expect.objectContaining({ resource: "innateSorcery", spellSaveDc: 14, spellAttackAdvantage: true }) }),
-        { id: "spell-itm_sorcerous_burst-damage", label: "Sorcerous Burst Damage", formula: "1d8" },
+        expect.objectContaining({ id: "spell-itm_sorcerous_burst-damage", label: "Sorcerous Burst Damage", formula: "1d8", metadata: expect.objectContaining({ damageType: "choice", damageTypes: expect.arrayContaining(["fire"]) }) }),
         { id: "spell-itm_sorcerer_chromatic_orb-damage", label: "Chromatic Orb Damage", formula: "3d8" }
       ])
     );
@@ -9209,6 +9209,282 @@ describe("dnd 5.5e srd rules", () => {
       items: [{ entryId: "healing-word" }, { entryId: "longsword" }]
     });
     expect(imported.warnings).toEqual(["Unknown condition skipped: missing-condition", "Unknown compendium entry skipped: missing-item"]);
+  });
+
+  it("resolves D&D actions with target-aware rolls, engine state, and manual prompts", () => {
+    const attacker: Actor = {
+      ...srdActor,
+      id: "act_rules_attacker",
+      name: "Rules Attacker",
+      data: { ...srdActor.data, conditions: [{ id: "poisoned" }] }
+    };
+    const target: Actor = {
+      ...srdActor,
+      id: "act_rules_target",
+      name: "Restrained Target",
+      data: { ...srdActor.data, conditions: [{ id: "restrained" }] }
+    };
+    const shortbow: Item = {
+      id: "itm_rules_shortbow",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: attacker.id,
+      type: "item",
+      name: "Shortbow",
+      data: dnd5eSrdCompendiumEntry("shortbow")!.data,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const shortbowAttack = dnd5eSrdQuickRolls(attacker, [shortbow]).find((roll) => roll.id === "item-itm_rules_shortbow-attack")!;
+    const targetAwareAttack = resolveDnd5eSrdAction({ actor: attacker, items: [shortbow], roll: shortbowAttack, targets: [{ actor: target }] });
+    expect(targetAwareAttack.rolls[0]).toEqual(
+      expect.objectContaining({
+        formula: "1d20+3",
+        d20Mode: "normal",
+        advantageSources: ["Restrained Target: Restrained"],
+        disadvantageSources: ["Poisoned"]
+      })
+    );
+    const exposedTarget: Actor = { ...target, id: "act_rules_exposed_target", name: "Exposed Target", data: { ...target.data, conditions: [] } };
+    const multiTargetAttack = resolveDnd5eSrdAction({ actor: attacker, items: [shortbow], roll: shortbowAttack, targets: [{ actor: target }, { actor: exposedTarget }] });
+    expect(multiTargetAttack.rolls).toEqual([
+      expect.objectContaining({ targetActorId: target.id, formula: "1d20+3", d20Mode: "normal" }),
+      expect.objectContaining({ targetActorId: exposedTarget.id, formula: "2d20kl1+3", d20Mode: "disadvantage" })
+    ]);
+
+    const fighterActor: Actor = {
+      ...srdActor,
+      id: "act_rules_fighter",
+      name: "Rules Fighter",
+      data: { ...dnd5eSrdCharacterTemplate("fighter")!.data, hp: { current: 1, max: 12 }, resources: { secondWind: { current: 2, max: 2, recovery: "short" } } }
+    };
+    const secondWindRoll = dnd5eSrdQuickRolls(fighterActor, []).find((roll) => roll.id === "feature-second-wind-healing")!;
+    const selfHealing = resolveDnd5eSrdAction({
+      actor: fighterActor,
+      roll: secondWindRoll,
+      targets: [{ actor: fighterActor, rollTotal: 5 }],
+      options: { consumeResources: true, applyEffect: true }
+    });
+    expect(selfHealing.effects).toContainEqual(expect.objectContaining({ type: "healing", targetActorId: fighterActor.id, before: 1, after: 6, amount: 5 }));
+    expect(selfHealing.actorUpdates).toContainEqual(
+      expect.objectContaining({
+        actorId: fighterActor.id,
+        after: expect.objectContaining({ hp: { current: 6, max: 12 }, resources: { secondWind: { current: 1, max: 2, recovery: "short" } } })
+      })
+    );
+
+    const stunned = resolveDnd5eSrdAction({ actor: { ...attacker, data: { ...attacker.data, conditions: [{ id: "stunned" }] } }, items: [shortbow], roll: shortbowAttack });
+    expect(stunned.blocked).toEqual(expect.objectContaining({ code: "action_blocked", reason: expect.stringContaining("Stunned") }));
+
+    const bless: Item = {
+      id: "itm_rules_bless",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Bless",
+      data: dnd5eSrdCompendiumEntry("bless")!.data,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const blessRoll = dnd5eSrdQuickRolls(srdActor, [bless]).find((roll) => roll.id === "spell-itm_rules_bless-effect")!;
+    const concentration = resolveDnd5eSrdAction({
+      actor: srdActor,
+      items: [bless],
+      roll: blessRoll,
+      targets: [{ actor: target }],
+      options: { consumeResources: true },
+      now: "2026-05-02T00:00:00.000Z"
+    });
+    expect(concentration.resourceConsumption).toEqual([{ type: "spellSlot", key: "level1", label: "Level 1 Spell Slot", amount: 1, remaining: 0 }]);
+    expect(concentration.conditions).toContainEqual(expect.objectContaining({ operation: "startConcentration", actorId: srdActor.id }));
+    expect(concentration.actorUpdates[0]?.after.rulesEngine).toEqual(
+      expect.objectContaining({
+        concentration: expect.objectContaining({ rollId: "spell-itm_rules_bless-effect", targetActorIds: [target.id] })
+      })
+    );
+
+    const concentrationBreak = resolveDnd5eSrdConcentrationDamage(
+      { ...srdActor, data: concentration.actorUpdates[0]!.after },
+      24,
+      "failure",
+      "2026-05-02T00:00:01.000Z",
+      "monster-claw-damage"
+    );
+    expect(concentrationBreak.condition).toEqual(expect.objectContaining({ operation: "breakConcentration", reason: expect.stringContaining("DC 12") }));
+    expect((concentrationBreak.data.rulesEngine as Record<string, unknown>).concentration).toBeUndefined();
+
+    const wand: Item = {
+      id: "itm_rules_wand",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "item",
+      name: "Wand of Paralysis",
+      data: dnd5eSrdCompendiumEntry("wand-of-paralysis")!.data,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const paralysisRoll = dnd5eSrdQuickRolls(srdActor, [wand]).find((roll) => roll.id === "item-itm_rules_wand-effect")!;
+    const pendingParalysis = resolveDnd5eSrdAction({
+      actor: srdActor,
+      items: [wand],
+      roll: paralysisRoll,
+      targets: [{ actor: target }],
+      options: { applyEffect: true },
+      now: "2026-05-02T00:00:02.000Z"
+    });
+    expect(pendingParalysis.pendingSaves).toContainEqual(expect.objectContaining({ actorId: target.id, ability: "constitution", dc: 15, requiredForCommit: true }));
+    expect(pendingParalysis.effects).toEqual([]);
+    expect(pendingParalysis.actorUpdates.find((update) => update.actorId === target.id)).toBeUndefined();
+
+    const paralysis = resolveDnd5eSrdAction({
+      actor: srdActor,
+      items: [wand],
+      roll: paralysisRoll,
+      targets: [{ actor: target }],
+      combat: { id: "cmb_rules", campaignId: "camp_demo", active: true, round: 3, turnIndex: 0, combatants: [], createdAt: "2026-05-01T00:00:00.000Z", updatedAt: "2026-05-01T00:00:00.000Z" },
+      options: { applyEffect: true, saveOutcomes: { [target.id]: "failure" } },
+      now: "2026-05-02T00:00:02.000Z"
+    });
+    expect(paralysis.conditions).toContainEqual(expect.objectContaining({ operation: "apply", actorId: target.id, conditionId: "paralyzed", durationRounds: 10, expiresAtRound: 13, repeatSave: "end of each turn" }));
+    expect(paralysis.pendingSaves).toContainEqual(expect.objectContaining({ actorId: target.id, recurring: true, timing: "end of each turn", conditionIds: ["paralyzed"] }));
+    expect(paralysis.effects).toContainEqual(expect.objectContaining({ type: "condition", targetActorId: target.id, conditionId: "paralyzed" }));
+    expect(paralysis.actorUpdates.find((update) => update.actorId === target.id)?.after.rulesEngine).toEqual(
+      expect.objectContaining({
+        activeEffects: expect.arrayContaining([expect.objectContaining({ rollId: "item-itm_rules_wand-effect", conditionIds: ["paralyzed"], durationRounds: 10, repeatSave: "end of each turn" })])
+      })
+    );
+    expect(paralysis.actorUpdates.find((update) => update.actorId === target.id)?.after.conditions).toEqual(expect.arrayContaining([expect.objectContaining({ id: "paralyzed" })]));
+
+    const dragonsBreath: Item = {
+      id: "itm_rules_dragons_breath",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Dragon's Breath",
+      data: dnd5eSrdCompendiumEntry("dragons-breath")!.data,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const dragonsBreathRoll = dnd5eSrdQuickRolls(srdActor, [dragonsBreath]).find((roll) => roll.id === "spell-itm_rules_dragons_breath-damage")!;
+    const pendingDragonChoice = resolveDnd5eSrdAction({
+      actor: srdActor,
+      items: [dragonsBreath],
+      roll: dragonsBreathRoll,
+      targets: [{ actor: target, rollTotal: 10 }],
+      options: { applyEffect: true, saveOutcomes: { [target.id]: "failure" } }
+    });
+    expect(pendingDragonChoice.pendingChoice).toEqual(expect.objectContaining({ kind: "damageType", options: expect.arrayContaining(["fire"]) }));
+    const fireBreath = resolveDnd5eSrdAction({
+      actor: srdActor,
+      items: [dragonsBreath],
+      roll: dragonsBreathRoll,
+      targets: [{ actor: target, rollTotal: 10 }],
+      options: { applyEffect: true, effectChoice: "fire", saveOutcomes: { [target.id]: "failure" } }
+    });
+    expect(fireBreath.pendingChoice).toBeUndefined();
+    expect(fireBreath.effects).toContainEqual(expect.objectContaining({ type: "damage", targetActorId: target.id, damageType: "fire", effectChoice: "fire", choiceKind: "damageType" }));
+
+    const protectionFromEnergy: Item = {
+      id: "itm_rules_protection_from_energy",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Protection from Energy",
+      data: dnd5eSrdCompendiumEntry("protection-from-energy")!.data,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const protectionRoll = dnd5eSrdQuickRolls(srdActor, [protectionFromEnergy]).find((roll) => roll.id === "spell-itm_rules_protection_from_energy-effect")!;
+    const pendingProtectionChoice = resolveDnd5eSrdAction({
+      actor: srdActor,
+      items: [protectionFromEnergy],
+      roll: protectionRoll,
+      targets: [{ actor: target }],
+      options: { applyEffect: true }
+    });
+    expect(pendingProtectionChoice.pendingChoice).toEqual(expect.objectContaining({ kind: "resistance", options: expect.arrayContaining(["Fire"]) }));
+    const fireProtection = resolveDnd5eSrdAction({
+      actor: srdActor,
+      items: [protectionFromEnergy],
+      roll: protectionRoll,
+      targets: [{ actor: target }],
+      options: { applyEffect: true, effectChoice: "Fire" },
+      now: "2026-05-02T00:00:03.000Z"
+    });
+    expect(fireProtection.pendingChoice).toBeUndefined();
+    expect(fireProtection.manualResolutionRequired).toBeUndefined();
+    expect(fireProtection.effects).toContainEqual(expect.objectContaining({ type: "utility", targetActorId: target.id, resistance: ["fire"], effectChoice: "Fire", choiceKind: "resistance" }));
+    expect(fireProtection.actorUpdates.find((update) => update.actorId === target.id)?.after.rulesEngine).toEqual(
+      expect.objectContaining({
+        activeEffects: expect.arrayContaining([expect.objectContaining({ rollId: "spell-itm_rules_protection_from_energy-effect", resistance: ["fire"], effectChoice: "Fire" })])
+      })
+    );
+
+    const eyebite: Item = {
+      id: "itm_rules_eyebite",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Eyebite",
+      data: dnd5eSrdCompendiumEntry("eyebite")!.data,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const eyebiteRoll = dnd5eSrdQuickRolls(srdActor, [eyebite]).find((roll) => roll.id === "spell-itm_rules_eyebite-effect")!;
+    const panickedEyebite = resolveDnd5eSrdAction({
+      actor: srdActor,
+      items: [eyebite],
+      roll: eyebiteRoll,
+      targets: [{ actor: target }],
+      options: { applyEffect: true, effectChoice: "Panicked", saveOutcomes: { [target.id]: "failure" } }
+    });
+    expect(panickedEyebite.pendingChoice).toBeUndefined();
+    expect(panickedEyebite.effects).toContainEqual(expect.objectContaining({ type: "condition", targetActorId: target.id, conditionId: "frightened", effectChoice: "Panicked", choiceKind: "effect" }));
+
+    const dragon: Actor = {
+      ...srdActor,
+      id: "act_rules_dragon",
+      type: "monster",
+      name: "Young Red Dragon",
+      data: dnd5eSrdMonsterActorData("young-red-dragon")!
+    };
+    const breath = dnd5eSrdQuickRolls(dragon, []).find((roll) => roll.id === "monster-fire-breath-damage")!;
+    expect(resolveDnd5eSrdAction({ actor: dragon, roll: breath, options: { rechargeCheck: 3 } }).blocked).toEqual(expect.objectContaining({ code: "recharge_unavailable" }));
+    const spentBreath = resolveDnd5eSrdAction({ actor: dragon, roll: breath, options: { rechargeCheck: 5 } });
+    expect(spentBreath.warnings).toEqual(expect.arrayContaining([expect.stringContaining("need recharge 5-6")]));
+    expect(spentBreath.actorUpdates[0]?.after.rulesEngine).toEqual(expect.objectContaining({ recharge: expect.objectContaining({ "monster-fire-breath-damage": expect.objectContaining({ available: false }) }) }));
+
+    const thief: Actor = {
+      ...srdActor,
+      data: { ...srdActor.data, class: "Rogue", subclass: "Thief", level: 13, features: ["Use Magic Device"] }
+    };
+    expect(dnd5eSrdAttunementLimit(thief)).toBe(4);
+    const overAttuned = resolveDnd5eSrdAction({
+      actor: { ...srdActor, data: { ...srdActor.data, rulesEngine: { attunedItemIds: ["a", "b", "c", "d"] } } },
+      roll: { id: "feature-thief-use-magic-device", label: "Use Magic Device", formula: "1d6" }
+    });
+    expect(overAttuned.attunement).toEqual(expect.objectContaining({ limit: 3, overLimitBy: 1 }));
+
+    const command: Item = {
+      id: "itm_rules_command",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: srdActor.id,
+      type: "spell",
+      name: "Command",
+      data: dnd5eSrdCompendiumEntry("command")!.data,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+    const commandRoll = dnd5eSrdQuickRolls(srdActor, [command]).find((roll) => roll.id === "spell-itm_rules_command-effect")!;
+    expect(resolveDnd5eSrdAction({ actor: srdActor, items: [command], roll: commandRoll }).manualResolutionRequired).toEqual(
+      expect.objectContaining({ reason: expect.stringContaining("needs GM/manual resolution") })
+    );
   });
 });
 

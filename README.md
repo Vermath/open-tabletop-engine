@@ -33,6 +33,20 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, sce
 - `packages/ai-core`: provider interface, tools, redaction, proposal helpers.
 - `packages/database`: Drizzle-ready schema definitions and migration notes.
 
+## Documentation
+
+- Public documentation index: `docs/site/index.md`
+- Versioned changelog: `CHANGELOG.md`
+- v1.0 release notes: `docs/release/v1.0.md`
+- Self-hosting and deployment: `docs/deployment/self-hosting.md`
+- Hosted deployment recipes: `docs/deployment/hosted-deployment-recipes.md`
+
+Render the public documentation site locally:
+
+```bash
+pnpm docs:site:check
+```
+
 ## Development
 
 ```bash

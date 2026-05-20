@@ -14,6 +14,38 @@ describe("core permissions", () => {
       })
     ).toBe(true);
   });
+
+  it("applies campaign role grants without exposing plugin grants to users", () => {
+    const state = seedState();
+    const baseInput = {
+      userId: "usr_demo_player",
+      campaignId: "camp_demo",
+      members: state.members,
+      grants: state.permissionGrants
+    };
+    expect(hasPermission({ ...baseInput, permission: "journal.create" })).toBe(false);
+    state.permissionGrants.push({
+      id: "grant_role_player_journal",
+      subjectType: "role",
+      subjectId: "player",
+      campaignId: "camp_demo",
+      permissions: ["journal.create"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    state.permissionGrants.push({
+      id: "grant_plugin_journal",
+      subjectType: "plugin",
+      subjectId: "example-macro-plugin",
+      campaignId: "camp_demo",
+      permissions: ["journal.delete"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+
+    expect(hasPermission({ ...baseInput, permission: "journal.create" })).toBe(true);
+    expect(hasPermission({ ...baseInput, permission: "journal.delete" })).toBe(false);
+  });
 });
 
 describe("proposal application", () => {
@@ -54,12 +86,15 @@ describe("proposal application", () => {
 
     expect(() => applyProposal(state, proposal)).toThrow("approved");
     const approved = approveProposal(proposal, "usr_demo_gm");
+    expect(approved.history).toEqual([expect.objectContaining({ action: "approved", status: "approved", previousStatus: "pending", actorUserId: "usr_demo_gm", auditAction: "proposal.approved" })]);
     expect(() => approveProposal(approved, "usr_demo_gm")).toThrow("pending");
-    expect(applyProposal({ ...state, proposals: [approved] }, approved).journals).toHaveLength(2);
-    const applied = applyProposal({ ...state, proposals: [approved] }, approved).proposals[0]!;
+    expect(applyProposal({ ...state, proposals: [approved] }, approved, "usr_demo_gm").journals).toHaveLength(2);
+    const applied = applyProposal({ ...state, proposals: [approved] }, approved, "usr_demo_gm").proposals[0]!;
+    expect(applied.history).toEqual(expect.arrayContaining([expect.objectContaining({ action: "applied", status: "applied", previousStatus: "approved", actorUserId: "usr_demo_gm", auditAction: "proposal.applied" })]));
     expect(() => applyProposal({ ...state, proposals: [applied] }, applied)).toThrow("approved");
-    const rejected = rejectProposal(proposal);
+    const rejected = rejectProposal(proposal, "usr_demo_gm");
     expect(rejected.status).toBe("rejected");
+    expect(rejected.history).toEqual([expect.objectContaining({ action: "rejected", status: "rejected", previousStatus: "pending", actorUserId: "usr_demo_gm", auditAction: "ai.proposal.rejected" })]);
     expect(() => applyProposal({ ...state, proposals: [rejected] }, rejected)).toThrow("approved");
     expect(() => rejectProposal(applied)).toThrow("pending or approved");
   });

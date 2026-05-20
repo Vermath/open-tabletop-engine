@@ -1,0 +1,79 @@
+name: Identity Provider Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      smoke_target:
+        description: "Evidence target label: deployed-api or local-sandbox"
+        required: true
+        default: deployed-api
+        type: choice
+        options:
+          - deployed-api
+          - local-sandbox
+
+permissions:
+  contents: read
+
+jobs:
+  identity-smoke:
+    name: pnpm identity:smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      OTTE_IDENTITY_SMOKE_BASE_URL: ${{ secrets.OTTE_IDENTITY_SMOKE_BASE_URL }}
+      OTTE_IDENTITY_SMOKE_ADMIN_TOKEN: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_TOKEN }}
+      OTTE_IDENTITY_SMOKE_ADMIN_USER_ID: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_USER_ID }}
+      OTTE_OIDC_ISSUER: ${{ secrets.OTTE_OIDC_ISSUER }}
+      OTTE_OIDC_CLIENT_ID: ${{ secrets.OTTE_OIDC_CLIENT_ID }}
+      OTTE_OIDC_CLIENT_SECRET: ${{ secrets.OTTE_OIDC_CLIENT_SECRET }}
+      OTTE_OIDC_REDIRECT_URI: ${{ secrets.OTTE_OIDC_REDIRECT_URI }}
+      OTTE_OIDC_SCOPE: ${{ secrets.OTTE_OIDC_SCOPE }}
+      OTTE_OIDC_DISPLAY_NAME: ${{ secrets.OTTE_OIDC_DISPLAY_NAME }}
+      OTTE_OIDC_TOKEN_AUTH: ${{ secrets.OTTE_OIDC_TOKEN_AUTH }}
+      OTTE_OIDC_ALLOW_INSECURE: ${{ secrets.OTTE_OIDC_ALLOW_INSECURE }}
+      OTTE_OIDC_ALLOWED_RETURN_ORIGINS: ${{ secrets.OTTE_OIDC_ALLOWED_RETURN_ORIGINS }}
+      OTTE_WEB_ORIGIN: ${{ secrets.OTTE_WEB_ORIGIN }}
+      OTTE_SCIM_BEARER_TOKEN: ${{ secrets.OTTE_SCIM_BEARER_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 8.7.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate identity smoke secrets are configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.smoke_target }}" == "deployed-api" ]]; then
+            missing=()
+            [[ -n "${OTTE_IDENTITY_SMOKE_BASE_URL:-}" ]] || missing+=("OTTE_IDENTITY_SMOKE_BASE_URL")
+            [[ -n "${OTTE_IDENTITY_SMOKE_ADMIN_TOKEN:-}" ]] || missing+=("OTTE_IDENTITY_SMOKE_ADMIN_TOKEN")
+            [[ -n "${OTTE_SCIM_BEARER_TOKEN:-}" ]] || missing+=("OTTE_SCIM_BEARER_TOKEN")
+          else
+            missing=()
+            [[ -n "${OTTE_OIDC_ISSUER:-}" ]] || missing+=("OTTE_OIDC_ISSUER")
+            [[ -n "${OTTE_OIDC_CLIENT_ID:-}" ]] || missing+=("OTTE_OIDC_CLIENT_ID")
+            [[ -n "${OTTE_SCIM_BEARER_TOKEN:-}" ]] || missing+=("OTTE_SCIM_BEARER_TOKEN")
+          fi
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing required identity-smoke secrets: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Run identity smoke
+        run: pnpm identity:smoke

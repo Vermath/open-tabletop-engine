@@ -56,4 +56,4 @@ pnpm --dir %TEMP%\otte-alpha-clean-... check
 - Roll20 UI/brand/assets/sheets/marketplace/proprietary workflows: blocked by project rules.
 - Proprietary D&D, Roll20, or D&D Beyond content: blocked by project rules.
 - Direct D&D Beyond scraping/import bypass: blocked until a safe legal path exists.
-- Marketplace-scale distribution, payments, broad third-party content distribution, and exhaustive rules-system coverage: post-alpha.
+- Community-scale plugin distribution, broad third-party content distribution, and exhaustive rules-system coverage: post-alpha; no commercial marketplace rails are required for this free OSS project.

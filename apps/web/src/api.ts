@@ -1,4 +1,4 @@
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, EmailOutboxMessage, Encounter, FogPreset, Item, JournalEntry, MapAsset, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -25,6 +25,11 @@ export function storeSession(login: SessionLoginInfo): void {
   localStorage.setItem(sessionTokenUserKey, login.user.id);
 }
 
+export function clearSession(): void {
+  localStorage.removeItem(sessionTokenKey);
+  localStorage.removeItem(sessionTokenUserKey);
+}
+
 export function consumeSsoRedirect(): string | undefined {
   const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
   const params = new URLSearchParams(hash);
@@ -39,10 +44,29 @@ export function consumeSsoRedirect(): string | undefined {
 }
 
 export async function loginSession(userId = getSessionUserId()): Promise<SessionLoginInfo> {
+  const demoEmail = demoLoginEmail(userId);
   const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ userId })
+    body: JSON.stringify(demoEmail ? { email: demoEmail } : { userId })
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const login = (await response.json()) as SessionLoginInfo;
+  storeSession(login);
+  return login;
+}
+
+function demoLoginEmail(userId: string): string | undefined {
+  if (userId === "usr_demo_gm") return "gm@example.test";
+  if (userId === "usr_demo_player") return "player@example.test";
+  return undefined;
+}
+
+export async function loginPasswordSession(input: { email: string; password: string; mfaCode?: string; recoveryCode?: string }): Promise<SessionLoginInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
@@ -58,6 +82,84 @@ export async function registerSession(input: { email: string; displayName: strin
   });
   if (!response.ok) throw new Error(await response.text());
   const login = (await response.json()) as SessionLoginInfo;
+  storeSession(login);
+  return login;
+}
+
+export async function logoutSession(): Promise<{ ok: boolean }> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/logout`, {
+    method: "POST",
+    headers: await sessionHeaders()
+  });
+  clearSession();
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<{ ok: boolean }>;
+}
+
+export async function changePasswordSession(input: { currentPassword: string; newPassword: string }): Promise<SessionLoginInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/password/change`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const login = (await response.json()) as SessionLoginInfo;
+  storeSession(login);
+  return login;
+}
+
+export async function loadMfaStatus(): Promise<MfaInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/mfa`, {
+    headers: await sessionHeaders()
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<MfaInfo>;
+}
+
+export async function enrollTotpMfa(input: { currentPassword: string }): Promise<TotpEnrollInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp/enroll`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<TotpEnrollInfo>;
+}
+
+export async function confirmTotpMfa(input: { code: string }): Promise<TotpConfirmInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp/confirm`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<TotpConfirmInfo>;
+}
+
+export async function disableTotpMfa(input: { currentPassword: string; mfaCode?: string; recoveryCode?: string }): Promise<TotpConfirmInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/mfa/totp`, {
+    method: "DELETE",
+    headers: { "content-type": "application/json", ...(await sessionHeaders()) },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<TotpConfirmInfo>;
+}
+
+export async function loadBootstrapStatus(): Promise<BootstrapStatus> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/bootstrap`);
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<BootstrapStatus>;
+}
+
+export async function bootstrapOwnerSession(input: { email: string; displayName: string; password: string; campaignName: string; campaignDescription?: string; defaultSystemId?: string }): Promise<BootstrapOwnerInfo> {
+  const response = await fetch(`${baseUrl}/api/v1/auth/bootstrap`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input)
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const login = (await response.json()) as BootstrapOwnerInfo;
   storeSession(login);
   return login;
 }
@@ -162,21 +264,65 @@ export async function apiDelete<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function updateWorkspaceDefaults(input: Partial<OrganizationWorkspace>): Promise<OrganizationWorkspace> {
+  return apiPatch<OrganizationWorkspace>("/api/v1/organization/workspace-defaults", input);
+}
+
+export async function createOrganizationWorkspace(input: Partial<OrganizationWorkspace> & { name: string }): Promise<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }> {
+  return apiPost<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }>("/api/v1/organizations", input);
+}
+
+export async function loadOrganizationMembers(): Promise<OrganizationMemberInfo[]> {
+  return apiGet<OrganizationMemberInfo[]>("/api/v1/organization/members");
+}
+
+export async function upsertOrganizationMember(input: { email?: string; userId?: string; role: Exclude<OrganizationMemberRole, "owner"> }): Promise<OrganizationMemberInfo> {
+  return apiPost<OrganizationMemberInfo>("/api/v1/organization/members", input);
+}
+
+export async function updateOrganizationMemberRole(memberId: string, role: Exclude<OrganizationMemberRole, "owner">): Promise<OrganizationMemberInfo> {
+  return apiPatch<OrganizationMemberInfo>(`/api/v1/organization/members/${memberId}`, { role });
+}
+
+export async function removeOrganizationMember(memberId: string): Promise<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }> {
+  return apiDelete<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }>(`/api/v1/organization/members/${memberId}`);
+}
+
+export async function loadOrganizationInvites(): Promise<OrganizationInviteInfo[]> {
+  return apiGet<OrganizationInviteInfo[]>("/api/v1/organization/invites");
+}
+
+export async function revokeInvite(inviteId: string): Promise<CampaignInviteInfo> {
+  return apiPost<CampaignInviteInfo>(`/api/v1/invites/${inviteId}/revoke`, {});
+}
+
+export async function switchOrganization(organizationId: string): Promise<OrganizationSwitchInfo> {
+  return apiPatch<OrganizationSwitchInfo>("/api/v1/organization/session", { organizationId });
+}
+
 export interface Snapshot {
   session?: SessionInfo;
+  workspaceDefaults?: OrganizationWorkspace;
+  organizations: OrganizationWorkspaceInfo[];
+  organizationMembers: OrganizationMemberInfo[];
+  organizationInvites: OrganizationInviteInfo[];
   campaigns: Campaign[];
   members: CampaignMemberInfo[];
   scenes: Scene[];
   fogPresets: FogPreset[];
   assets: MapAsset[];
+  assetStorage?: CampaignAssetStorageInfo;
   tokens: Token[];
   actors: Actor[];
   items: Item[];
   vision?: VisionSnapshot;
   journals: JournalEntry[];
   chat: ChatMessage[];
+  rolls: DiceRoll[];
+  diceMacros: DiceMacro[];
   encounters: Encounter[];
   combats: Combat[];
+  combatAudit: AuditLog[];
   proposals: Proposal[];
   contentImports: ContentImportBatch[];
   memory: AiMemoryFact[];
@@ -188,11 +334,72 @@ export interface Snapshot {
   characterTemplates: CharacterTemplateInfo[];
 }
 
+export interface CampaignAssetStorageInfo {
+  campaignId: string;
+  assetCount: number;
+  activeAssetCount: number;
+  usedBytes: number;
+  allBytes: number;
+  quotaBytes?: number;
+  remainingBytes?: number;
+  lifecycleCounts: Record<string, number>;
+  providerCounts: Record<string, number>;
+  delivery?: {
+    mode: string;
+    cdnConfigured: boolean;
+    publicUrlConfigured: boolean;
+    signingSecretConfigured: boolean;
+    signingSecretRequired: boolean;
+    defaultTtlSeconds: number;
+    maxTtlSeconds: number;
+    purgeWebhookConfigured: boolean;
+    purgeWebhookTokenConfigured: boolean;
+    purgeTimeoutMs: number;
+    actionRequired: boolean;
+    actionReasons: string[];
+    warnings: Array<{
+      code: string;
+      severity: string;
+      message: string;
+      env: string[];
+    }>;
+    posture: {
+      activeManagedAssetCount: number;
+      deliverableActiveAssetCount: number;
+      undeliverableActiveAssetCount: number;
+      expiredActiveAssetCount: number;
+      deliverableCoverageRate: number;
+      cdnEligibleAssetCount: number;
+      signedUrlEligibleAssetCount: number;
+    };
+  };
+  largestAssets: Array<{
+    id: string;
+    campaignId: string;
+    name: string;
+    sizeBytes: number;
+    provider: string;
+    lifecycleStatus: string;
+    expiresAt?: string;
+  }>;
+}
+
+export type OrganizationMemberInfo = OrganizationMember & { user: Pick<User, "id" | "displayName" | "email"> };
+export type OrganizationWorkspaceInfo = OrganizationWorkspace & { role: OrganizationMemberRole; memberCount: number; campaignCount: number };
+
+export interface OrganizationSwitchInfo {
+  organization: OrganizationWorkspace;
+  session: PublicSession;
+  organizations: OrganizationWorkspaceInfo[];
+}
+
 export interface SessionInfo {
   user: User;
   session?: PublicSession;
   memberships: CampaignMember[];
   serverAdmin?: boolean;
+  organization?: OrganizationWorkspace;
+  organizations?: OrganizationWorkspaceInfo[];
   serverAdmins?: {
     configured: boolean;
     count: number;
@@ -200,7 +407,7 @@ export interface SessionInfo {
   };
 }
 
-export interface PublicSession extends Pick<UserSession, "id" | "userId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {}
+export interface PublicSession extends Pick<UserSession, "id" | "userId" | "activeOrganizationId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {}
 
 export interface AdminSessionRiskItem {
   session: PublicSession;
@@ -213,6 +420,39 @@ export interface AdminSessionRiskItem {
 export interface SessionLoginInfo extends SessionInfo {
   token: string;
   session: PublicSession;
+}
+
+export interface MfaInfo {
+  totpEnabled: boolean;
+  totpPending: boolean;
+  recoveryCodeCount: number;
+  enabledAt?: string;
+  lastVerifiedAt?: string;
+}
+
+export interface TotpEnrollInfo {
+  secret: string;
+  otpauthUrl: string;
+  mfa: MfaInfo;
+}
+
+export interface TotpConfirmInfo {
+  recoveryCodes?: string[];
+  mfa: MfaInfo;
+  user: User;
+}
+
+export interface BootstrapStatus {
+  required: boolean;
+  userCount: number;
+  campaignCount: number;
+  serverAdmins: NonNullable<SessionInfo["serverAdmins"]>;
+}
+
+export interface BootstrapOwnerInfo extends SessionLoginInfo {
+  organization: OrganizationWorkspace;
+  campaign: Campaign;
+  scene: Scene;
 }
 
 export interface CampaignInviteInfo {
@@ -234,6 +474,10 @@ export interface InviteCreateInfo {
   invite: CampaignInviteInfo;
   token: string;
   acceptUrl: string;
+}
+
+export interface OrganizationInviteInfo extends CampaignInviteInfo {
+  campaign: Pick<Campaign, "id" | "name">;
 }
 
 export interface InviteAcceptInfo extends SessionLoginInfo {
@@ -301,6 +545,21 @@ export interface PluginRuntimeInfo {
   installedVersion?: string;
   updateAvailable: boolean;
   rollbackVersions: string[];
+  compatibleCore?: {
+    range: string;
+    coreVersion: string;
+    satisfied: boolean;
+  };
+  compatibilityBlock?: string;
+  versionCompatibility?: Array<{
+    version: string;
+    compatibleCore: {
+      range: string;
+      coreVersion: string;
+      satisfied: boolean;
+    };
+    compatibilityBlock?: string;
+  }>;
   source?: {
     type: string;
     packageId: string;
@@ -335,12 +594,28 @@ export interface PluginRuntimeInfo {
   };
   marketplaceReview?: AdminPluginReviewInfo;
   chatCommands?: Array<{ command: string; description: string }>;
+  audit?: {
+    installCount: number;
+    lastInstallAt?: string;
+    lastActorUserId?: string;
+    versions: string[];
+  };
 }
 
 export interface SystemRuntimeInfo {
   id: string;
   name: string;
   version: string;
+  compatibleCore?: string;
+  entrypoints?: {
+    client?: string;
+    server?: string;
+  };
+  schemas?: {
+    actor?: string;
+    item?: string;
+  };
+  permissions?: PermissionName[];
   active: boolean;
 }
 
@@ -837,6 +1112,17 @@ export interface AdminAuthOperations {
       insecureConfig: string[];
       missingInProduction: boolean;
     };
+    scim: {
+      configured: boolean;
+      bearerTokenConfigured: boolean;
+      serviceProviderConfigPath: string;
+      usersPath: string;
+      groupsPath: string;
+      userCount: number;
+      groupCount: number;
+      mappingCount: number;
+      matchedMappingCount: number;
+    };
     serverAdmins: {
       configured: boolean;
       count: number;
@@ -940,6 +1226,18 @@ export interface AdminAuthOperations {
     identityCount: number;
     providerCounts: Record<string, number>;
   };
+}
+
+export interface AdminAuthConnectionTestResult {
+  provider: "oidc" | "scim";
+  testedAt: string;
+  ok: boolean;
+  status: "passed" | "blocked" | "failed";
+  checks: Array<{
+    name: string;
+    ok: boolean;
+    detail: string;
+  }>;
 }
 
 export interface AdminEmailOutboxRetryAllResult {
@@ -2071,12 +2369,189 @@ export interface AdminAuditLogExport {
   auditLogs: AuditLog[];
 }
 
+export interface AdminStorageOperations {
+  provider: string;
+  supported: boolean;
+  database?: {
+    fileName: string;
+    sizeBytes: number;
+    jsonRecordModel: boolean;
+  };
+  migrations?: {
+    expectedVersions: number[];
+    applied: Array<{ version: number; name: string; appliedAt: string }>;
+    latestAppliedVersion: number;
+    missingVersions: number[];
+  };
+  integrity?: {
+    checkedAt: string;
+    ok: boolean;
+    result: string;
+  };
+  records?: {
+    total: number;
+    collections: Array<{ collection: string; count: number }>;
+  };
+  indexes?: {
+    required: string[];
+    present: string[];
+    missing: string[];
+  };
+  backups?: {
+    directoryName: string;
+    latest?: { fileName: string; sizeBytes: number; createdAt: string };
+  };
+  scheduledBackups?: {
+    enabled: boolean;
+    running: boolean;
+    runOnStart: boolean;
+    reason: string;
+    intervalSeconds?: number;
+    lastRun?: {
+      trigger: "startup" | "interval";
+      status: "succeeded" | "failed" | "skipped";
+      startedAt: string;
+      completedAt: string;
+      fileName?: string;
+      sizeBytes?: number;
+      reason?: string;
+      error?: string;
+    };
+  };
+  actionRequired: boolean;
+  actionReasons: string[];
+  remediation?: string;
+}
+
+export interface AdminStorageBackupResult {
+  status: "created";
+  fileName: string;
+  sizeBytes: number;
+  createdAt: string;
+  reason?: string;
+}
+
+export interface AdminStorageRestoreDrillResult {
+  status: "passed" | "failed";
+  checkedAt: string;
+  backup?: { fileName: string; sizeBytes: number; createdAt: string };
+  integrity?: { checkedAt: string; ok: boolean; result: string };
+  campaignCount?: number;
+  recordCount?: number;
+  collections?: Array<{ collection: string; count: number }>;
+  error?: string;
+}
+
+export interface AdminStorageRestoreResult extends AdminStorageRestoreDrillResult {
+  restoredAt?: string;
+  reason?: string;
+}
+
+export interface AdminJob {
+  id: string;
+  type: JobType;
+  status: JobStatus;
+  payload: unknown;
+  output?: unknown;
+  error?: string;
+  progress?: {
+    current?: number;
+    total?: number;
+    percent?: number;
+    message?: string;
+  };
+  attempts: number;
+  maxAttempts: number;
+  queuedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
+  cancelledByUserId?: string;
+  createdByUserId?: string;
+  updatedByUserId?: string;
+  logs: Array<{ at: string; level: "info" | "warning" | "error"; message: string; details?: Record<string, unknown> }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminJobOperations {
+  generatedAt: string;
+  actionRequired: boolean;
+  actionReasons: string[];
+  thresholds: {
+    staleHeartbeatSeconds: number;
+    staleQueuedSeconds: number;
+  };
+  totals: {
+    totalCount: number;
+    byStatus: Record<JobStatus, number>;
+    byType: Record<JobType, number>;
+    retryableCount: number;
+    exhaustedCount: number;
+  };
+  queue: {
+    oldestQueuedAt?: string;
+    maxQueueAgeSeconds: number;
+    staleQueuedCount: number;
+    recentQueued: Array<Record<string, unknown>>;
+  };
+  leases: {
+    runningCount: number;
+    leasedWorkerCount: number;
+    expiredCount: number;
+    staleHeartbeatCount: number;
+    workers: Array<{
+      workerId: string;
+      runningCount: number;
+      lastHeartbeatAt?: string;
+      expiredLeaseCount: number;
+      staleHeartbeatCount: number;
+    }>;
+    expired: Array<Record<string, unknown>>;
+    staleHeartbeats: Array<Record<string, unknown>>;
+  };
+  failures: {
+    failedCount: number;
+    retryableCount: number;
+    exhaustedCount: number;
+    recentFailed: Array<Record<string, unknown>>;
+  };
+  throughput: {
+    succeededCount: number;
+    cancelledCount: number;
+    newestCompletedAt?: string;
+  };
+  remediationQueue: Array<{
+    code: string;
+    severity: "warning" | "error";
+    action: string;
+    affectedCount: number;
+    samples?: Array<Record<string, unknown>>;
+  }>;
+}
+
+export interface AdminJobAlertResult {
+  status: "dry_run" | "delivered" | "skipped" | "failed";
+  configured: boolean;
+  actionRequired: boolean;
+  actionReasons: string[];
+  remediationCount: number;
+  generatedAt: string;
+  deliveredAt?: string;
+  webhookStatus?: number;
+  reason?: string;
+  error?: string;
+}
+
 export interface AdminSnapshot {
   users: AdminUserInfo[];
   sessions: AdminSessionInfo[];
   emailOutbox: EmailOutboxMessage[];
   audit: AdminAuditLogExport;
+  jobs: AdminJob[];
+  jobOperations: AdminJobOperations;
   authOperations: AdminAuthOperations;
+  storageOperations: AdminStorageOperations;
   assetStorage: AdminAssetStorageInfo;
   assetIntegrity: AdminAssetIntegrityReport;
   renderingOperations: AdminRenderingOperations;
@@ -2088,12 +2563,15 @@ export interface AdminSnapshot {
 }
 
 export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
-  const [users, sessions, emailOutbox, audit, authOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings] = await Promise.all([
+  const [users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings] = await Promise.all([
     apiGet<AdminUserInfo[]>("/api/v1/admin/users"),
     apiGet<AdminSessionInfo[]>("/api/v1/admin/sessions"),
     apiGet<EmailOutboxMessage[]>("/api/v1/admin/email-outbox"),
     apiGet<AdminAuditLogExport>("/api/v1/admin/audit-logs?limit=12"),
+    apiGet<AdminJob[]>("/api/v1/admin/jobs?limit=12"),
+    apiGet<AdminJobOperations>("/api/v1/admin/jobs/operations"),
     apiGet<AdminAuthOperations>("/api/v1/admin/auth/operations"),
+    apiGet<AdminStorageOperations>("/api/v1/admin/storage/operations"),
     apiGet<AdminAssetStorageInfo>("/api/v1/admin/assets/storage"),
     apiGet<AdminAssetIntegrityReport>("/api/v1/admin/assets/integrity"),
     apiGet<AdminRenderingOperations>("/api/v1/admin/rendering/operations"),
@@ -2103,16 +2581,37 @@ export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
     apiGet<AdminPluginOperations>("/api/v1/admin/plugins/operations"),
     apiGet<AdminScimGroupRoleMapping[]>("/api/v1/admin/scim/group-role-mappings")
   ]);
-  return { users, sessions, emailOutbox, audit, authOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings };
+  return { users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings };
 }
+
+type DisplayMapAsset = MapAsset & { deliveryUrl?: string };
 
 export function assetBlobUrl(asset: MapAsset): string {
-  if (/^(https?:|data:|blob:)/.test(asset.url)) return asset.url;
-  const separator = asset.url.includes("?") ? "&" : "?";
-  return `${baseUrl}${asset.url}${separator}sessionToken=${encodeURIComponent(getSessionToken())}`;
+  const displayAsset = asset as DisplayMapAsset;
+  const url = displayAsset.deliveryUrl ?? asset.url;
+  if (/^(https?:|data:|blob:)/.test(url)) return url;
+  return `${baseUrl}${url}`;
 }
 
-export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean }): Promise<{ asset: MapAsset; scene?: Scene }> {
+async function assetDeliveryUrl(assetId: string): Promise<{ url: string; expiresAt: string }> {
+  return apiPost<{ url: string; expiresAt: string }>(`/api/v1/assets/${assetId}/delivery-url`, { expiresInSeconds: 300, disposition: "inline" });
+}
+
+async function withAssetDeliveryUrls(assets: MapAsset[]): Promise<MapAsset[]> {
+  return Promise.all(
+    assets.map(async (asset) => {
+      if (!asset.url.startsWith("/api/v1/assets/")) return asset;
+      try {
+        const delivery = await assetDeliveryUrl(asset.id);
+        return { ...asset, deliveryUrl: delivery.url } satisfies DisplayMapAsset;
+      } catch {
+        return asset;
+      }
+    })
+  );
+}
+
+export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean; folder?: string; tags?: string[] }): Promise<{ asset: MapAsset; scene?: Scene }> {
   const params = new URLSearchParams();
   if (input.sceneId) params.set("sceneId", input.sceneId);
   if (input.setAsBackground) params.set("setAsBackground", "true");
@@ -2121,6 +2620,8 @@ export async function apiUploadAsset(input: { campaignId: string; sceneId?: stri
     headers: {
       "content-type": input.file.type || "application/octet-stream",
       "x-asset-name": encodeURIComponent(input.file.name),
+      ...(input.folder ? { "x-asset-folder": encodeURIComponent(input.folder) } : {}),
+      ...(input.tags && input.tags.length > 0 ? { "x-asset-tags": encodeURIComponent(input.tags.join(",")) } : {}),
       ...(await sessionHeaders())
     },
     body: input.file
@@ -2138,23 +2639,37 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
   };
-  const [session, campaigns] = await Promise.all([snapshotGet<SessionInfo>("/api/v1/auth/session"), snapshotGet<Campaign[]>("/api/v1/campaigns")]);
+  const [session, campaigns, workspaceDefaults, organizationMembers, organizationInvites] = await Promise.all([
+    snapshotGet<SessionInfo>("/api/v1/auth/session"),
+    snapshotGet<Campaign[]>("/api/v1/campaigns"),
+    snapshotGet<OrganizationWorkspace>("/api/v1/organization/workspace-defaults"),
+    snapshotGet<OrganizationMemberInfo[]>("/api/v1/organization/members"),
+    snapshotGet<OrganizationInviteInfo[]>("/api/v1/organization/invites").catch(() => [])
+  ]);
   const selectedCampaignId = campaigns.find((campaign) => campaign.id === campaignId)?.id ?? campaigns[0]?.id;
   if (!selectedCampaignId) {
     return {
       session,
+      workspaceDefaults,
+      organizations: session.organizations ?? [],
+      organizationMembers,
+      organizationInvites,
       campaigns,
       members: [],
       scenes: [],
       fogPresets: [],
       assets: [],
+      assetStorage: undefined,
       tokens: [],
       actors: [],
       items: [],
       journals: [],
       chat: [],
+      rolls: [],
+      diceMacros: [],
       encounters: [],
       combats: [],
+      combatAudit: [],
       proposals: [],
       contentImports: [],
       memory: [],
@@ -2167,18 +2682,23 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   }
   const scenes = await snapshotGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
   const selectedSceneId = scenes.find((scene) => scene.id === sceneId)?.id ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
+  const activeSceneId = scenes.find((scene) => scene.active)?.id;
+  const tokenSceneIds = [...new Set([selectedSceneId, activeSceneId].filter((id): id is string => Boolean(id)))];
   const members = await snapshotGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`);
   const currentMember = members.find((member) => member.user.id === session.user.id);
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
-  const [assets, fogPresets, tokens, vision, actors, items, journals, chat, encounters, combats, proposals, contentImports, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
+  const [assets, assetStorage, fogPresets, tokens, vision, actors, items, journals, chat, rolls, diceMacros, encounters, combats, proposals, contentImports, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
     snapshotGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
+    snapshotGet<CampaignAssetStorageInfo>(`/api/v1/campaigns/${selectedCampaignId}/assets/storage`),
     currentMember?.permissions.includes("token.reveal") ? snapshotGet<FogPreset[]>(`/api/v1/campaigns/${selectedCampaignId}/fog-presets`) : Promise.resolve([]),
-    selectedSceneId ? snapshotGet<Token[]>(`/api/v1/scenes/${selectedSceneId}/tokens`) : Promise.resolve([]),
+    tokenSceneIds.length > 0 ? Promise.all(tokenSceneIds.map((id) => snapshotGet<Token[]>(`/api/v1/scenes/${id}/tokens`))).then((sceneTokens) => sceneTokens.flat()) : Promise.resolve([]),
     selectedSceneId ? snapshotGet<VisionSnapshot>(`/api/v1/scenes/${selectedSceneId}/vision`) : Promise.resolve(undefined),
     snapshotGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
     snapshotGet<Item[]>(`/api/v1/campaigns/${selectedCampaignId}/items`),
     snapshotGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`),
     snapshotGet<ChatMessage[]>(`/api/v1/chat/messages?campaignId=${selectedCampaignId}`),
+    snapshotGet<DiceRoll[]>(`/api/v1/campaigns/${selectedCampaignId}/rolls`),
+    snapshotGet<DiceMacro[]>(`/api/v1/campaigns/${selectedCampaignId}/dice-macros`),
     snapshotGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
     snapshotGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
     snapshotGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
@@ -2190,23 +2710,34 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     snapshotGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
     snapshotGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)
   ]);
+  const activeCombatId = combats.find((combat) => combat.active)?.id;
+  const combatAudit = activeCombatId ? await snapshotGet<AuditLog[]>(`/api/v1/combats/${activeCombatId}/audit`) : [];
   const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
   const characterTemplates = activeSystemId ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
+  const displayAssets = await withAssetDeliveryUrls(assets);
   return {
     session,
+    workspaceDefaults,
+    organizations: session.organizations ?? [],
+    organizationMembers,
+    organizationInvites,
     campaigns,
     members,
     scenes,
     fogPresets,
-    assets,
+    assets: displayAssets,
+    assetStorage,
     tokens,
     vision,
     actors,
     items,
     journals,
     chat,
+    rolls,
+    diceMacros,
     encounters,
     combats,
+    combatAudit,
     proposals,
     contentImports,
     memory,

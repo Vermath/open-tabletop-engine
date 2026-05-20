@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">Live Table desktop mockup</title>
+  <desc id="desc">Map-first live table workspace with compact controls, layer stack, actor inspector, combat, and console dock.</desc>
+  <rect width="1440" height="900" fill="#060b10"/>
+  <rect x="0" y="0" width="244" height="900" fill="#0d1722"/>
+  <text x="24" y="38" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="24" font-weight="700">OpenTabletop</text>
+  <text x="24" y="62" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="12">API-first VTT engine</text>
+  <rect x="20" y="96" width="204" height="42" rx="8" fill="#1b2734" stroke="#d6a854"/>
+  <text x="44" y="122" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="14" font-weight="700">Live Table</text>
+  <rect x="20" y="146" width="204" height="42" rx="8" fill="#101a25"/>
+  <text x="44" y="172" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="14">Prep</text>
+  <rect x="20" y="196" width="204" height="42" rx="8" fill="#101a25"/>
+  <text x="44" y="222" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="14">AI Studio</text>
+  <rect x="20" y="246" width="204" height="42" rx="8" fill="#101a25"/>
+  <text x="44" y="272" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="14">Manage</text>
+  <text x="24" y="350" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="12">PARTY</text>
+  <rect x="20" y="370" width="204" height="58" rx="8" fill="#101a25" stroke="#33465b"/>
+  <circle cx="50" cy="399" r="18" fill="#65d6b7"/>
+  <text x="80" y="397" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="15" font-weight="700">Fighter</text>
+  <text x="80" y="417" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="12">Selected</text>
+
+  <rect x="244" y="0" width="1196" height="72" fill="#0b141d" stroke="#1e2d3c"/>
+  <text x="282" y="31" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="12">LIVE TABLE</text>
+  <text x="282" y="56" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="24" font-weight="800">Opening Scene</text>
+  <rect x="1172" y="18" width="230" height="36" rx="8" fill="#111923" stroke="#33465b"/>
+  <text x="1194" y="41" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="13">Synced - 3 players</text>
+
+  <rect x="244" y="72" width="836" height="694" fill="#071018"/>
+  <rect x="326" y="144" width="672" height="500" rx="10" fill="#1b2431" stroke="#40566d"/>
+  <rect x="326" y="144" width="672" height="500" rx="10" fill="url(#grid)"/>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <rect width="32" height="32" fill="#1c2430"/>
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#536477" stroke-width="1" opacity=".45"/>
+    </pattern>
+  </defs>
+  <path d="M410 242 C550 210 635 330 778 310 C910 292 958 420 870 526" fill="none" stroke="#83b4ce" stroke-width="22" opacity=".7" stroke-linecap="round"/>
+  <circle cx="566" cy="400" r="34" fill="#101923" stroke="#f6ead5" stroke-width="3"/>
+  <circle cx="768" cy="454" r="20" fill="#65d6b7" stroke="#f6ead5" stroke-width="2"/>
+  <circle cx="842" cy="384" r="20" fill="#d16ba5" stroke="#f6ead5" stroke-width="2"/>
+  <rect x="278" y="118" width="48" height="342" rx="12" fill="#0d1722" stroke="#33465b"/>
+  <text x="296" y="150" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="18">+</text>
+  <text x="294" y="202" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="18">~</text>
+  <text x="294" y="254" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="18">o</text>
+  <rect x="864" y="594" width="110" height="36" rx="8" fill="#0d1722" stroke="#33465b"/>
+  <text x="894" y="617" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="13">100%</text>
+  <rect x="1018" y="144" width="42" height="212" rx="8" fill="#0d1722" stroke="#33465b"/>
+  <text x="1030" y="174" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="10">MAP</text>
+  <text x="1024" y="214" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="10">PLYR</text>
+  <text x="1030" y="254" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="10">GM</text>
+  <text x="1022" y="294" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="10">FOG</text>
+
+  <rect x="1080" y="72" width="360" height="694" fill="#101923" stroke="#1e2d3c"/>
+  <rect x="1104" y="104" width="92" height="34" rx="8" fill="#1b2734" stroke="#d6a854"/>
+  <text x="1128" y="126" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="13">Actors</text>
+  <rect x="1210" y="104" width="92" height="34" rx="8" fill="#0c141d" stroke="#26394d"/>
+  <text x="1236" y="126" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="13">Chat</text>
+  <rect x="1316" y="104" width="92" height="34" rx="8" fill="#0c141d" stroke="#26394d"/>
+  <text x="1334" y="126" fill="#aebdd0" font-family="Segoe UI, Arial" font-size="13">Combat</text>
+  <text x="1104" y="188" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="26" font-weight="800">Fighter</text>
+  <rect x="1104" y="224" width="96" height="76" rx="8" fill="#0b1118" stroke="#33465b"/>
+  <text x="1124" y="254" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="11">HP</text>
+  <text x="1124" y="280" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="18" font-weight="800">12/12</text>
+  <rect x="1216" y="224" width="96" height="76" rx="8" fill="#0b1118" stroke="#33465b"/>
+  <text x="1236" y="254" fill="#8ea2b8" font-family="Segoe UI, Arial" font-size="11">AC</text>
+  <text x="1236" y="280" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="18" font-weight="800">11</text>
+
+  <rect x="244" y="766" width="1196" height="134" fill="#0b141d" stroke="#1e2d3c"/>
+  <rect x="282" y="794" width="286" height="74" rx="8" fill="#101923" stroke="#33465b"/>
+  <text x="306" y="838" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="18">1d20+5</text>
+  <rect x="596" y="794" width="764" height="74" rx="8" fill="#101923" stroke="#33465b"/>
+  <text x="620" y="824" fill="#65d6b7" font-family="Segoe UI, Arial" font-size="12">AI</text>
+  <text x="652" y="824" fill="#f6ead5" font-family="Segoe UI, Arial" font-size="13">Generated map proposal ready for review in AI Studio.</text>
+</svg>
