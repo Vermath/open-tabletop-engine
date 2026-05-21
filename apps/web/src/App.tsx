@@ -1,4 +1,4 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -656,6 +656,7 @@ export function App() {
   const activeSystemId = snapshot.systems.find((system) => system.active)?.id ?? selectedCampaign?.defaultSystemId;
   const selectedActor = snapshot.actors.find((actor) => actor.id === selectedToken?.actorId) ?? snapshot.actors.find((actor) => actor.systemId === activeSystemId) ?? snapshot.actors[0];
   const activeCombat = snapshot.combats.find((combat) => combat.active);
+  const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
   const selectedPermissionTemplate = campaignPermissionTemplates.find((template) => template.id === setupPermissionTemplate) ?? campaignPermissionTemplates[0]!;
   const setupPreviewSceneName = setupSceneName.trim() || "Opening Scene";
   const setupPreviewFolder = setupSceneFolder.trim() || "no folder";
@@ -2404,12 +2405,10 @@ export function App() {
 
   async function advanceCombatTurn(combat: Combat, direction: 1 | -1) {
     if (combat.combatants.length === 0) return;
-    const nextIndex = combat.turnIndex + direction;
-    const wrappedForward = nextIndex >= combat.combatants.length;
-    const wrappedBackward = nextIndex < 0;
+    const next = nextCombatTurnPosition(combat, direction);
     await updateCombat(combat, {
-      turnIndex: wrappedForward ? 0 : wrappedBackward ? combat.combatants.length - 1 : nextIndex,
-      round: wrappedForward ? combat.round + 1 : wrappedBackward ? Math.max(1, combat.round - 1) : combat.round
+      turnIndex: next.turnIndex,
+      round: next.round
     });
   }
 
@@ -2428,6 +2427,18 @@ export function App() {
   async function endCombat(combat: Combat) {
     await apiDelete<Combat>(`/api/v1/combats/${combat.id}`);
     setStatus("Combat ended");
+    await refresh();
+  }
+
+  async function confirmCombatAction(combat: Combat, action: CombatAction) {
+    await apiPost(`/api/v1/combats/${combat.id}/actions/${action.id}/confirm`, {});
+    setStatus(`${action.actionLabel} confirmed`);
+    await refresh();
+  }
+
+  async function rejectCombatAction(combat: Combat, action: CombatAction) {
+    await apiPost(`/api/v1/combats/${combat.id}/actions/${action.id}/reject`, {});
+    setStatus(`${action.actionLabel} rejected`);
     await refresh();
   }
 
@@ -2636,7 +2647,7 @@ export function App() {
   async function useActorAction(rollId: string, options: ActorActionCommitOptions = {}) {
     if (!selectedActor) return;
     try {
-      const used = await apiPost<{ actor?: Actor; updatedActors?: Actor[]; usage?: { consumed?: Array<{ label: string; remaining: number }> }; effect?: { type: string; targetActorId: string; amount?: number }; resolution?: ActorActionResolutionPreview }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
+      const used = await apiPost<{ actor?: Actor; updatedActors?: Actor[]; usage?: { consumed?: Array<{ label: string; remaining: number }> }; effect?: { type: string; targetActorId: string; amount?: number }; resolution?: ActorActionResolutionPreview; combatAction?: CombatAction }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
         rollId,
         consumeResources: options.consumeResources ?? true,
         applyEffect: options.applyEffect,
@@ -2644,6 +2655,11 @@ export function App() {
         saveOutcomes: options.saveOutcomes,
         effectChoice: options.effectChoice
       });
+      if (used.combatAction?.status === "pending_gm") {
+        setStatus(`${selectedActor.name} action pending GM confirmation`);
+        await refresh();
+        return;
+      }
       const spent = used.usage?.consumed?.map((item) => `${item.label} ${item.remaining}`).join(", ");
       const applied = used.effect ? `; ${used.effect.type} applied` : "";
       const updatedActors = used.updatedActors && used.updatedActors.length > 0 ? used.updatedActors : used.actor ? [used.actor] : [];
@@ -4404,7 +4420,7 @@ export function App() {
             {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatPanel messages={snapshot.chat} rolls={snapshot.rolls} members={snapshot.members} search={chatSearch} setSearch={setChatSearch} typeFilter={chatTypeFilter} setTypeFilter={setChatTypeFilter} visibilityFilter={chatVisibilityFilter} setVisibilityFilter={setChatVisibilityFilter} canModerate={hasPermission("chat.moderate")} onReplyMessage={setChatReplyToMessageId} onModerateMessage={moderateChatMessage} onDeleteMessage={deleteChatMessage} onExport={exportChatHistory} />}
-            {tab === "combat" && <CombatPanel combat={activeCombat} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} canManage={hasPermission("combat.manage")} />}
+            {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
@@ -9093,11 +9109,12 @@ function ChatPanel(props: { messages: ChatMessage[]; rolls: DiceRoll[]; members:
   );
 }
 
-function CombatPanel(props: { combat?: Combat; auditLogs: AuditLog[]; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; canManage: boolean }) {
+function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; onConfirmAction(combat: Combat, action: CombatAction): void; onRejectAction(combat: Combat, action: CombatAction): void; canManage: boolean }) {
   const combatants = props.combat?.combatants ?? [];
   const activeCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
   const readyCount = combatants.filter((combatant) => combatant.readiness === "ready").length;
   const defeatedCount = combatants.filter((combatant) => combatant.defeated).length;
+  const pendingActions = props.combat?.actions?.filter((action) => action.status === "pending_gm") ?? [];
   return (
     <div className="panel-stack">
       <header className="panel-hero combat-hero">
@@ -9129,6 +9146,36 @@ function CombatPanel(props: { combat?: Combat; auditLogs: AuditLog[]; onStart():
               <X size={14} /> End
             </button>
           </div>
+          {pendingActions.length > 0 && (
+            <section className="admin-list" aria-label="Pending combat actions">
+              <div className="section-title">Pending GM Confirmation</div>
+              {pendingActions.map((action) => (
+                <article className="operator-item admin-item" key={action.id}>
+                  <div className="combatant-header">
+                    <div>
+                      <span>{action.actorName}</span>
+                      <strong>{action.actionLabel}</strong>
+                    </div>
+                    <span className="status-pill">pending</span>
+                  </div>
+                  <p>{action.resultSummary ?? combatActionRollSummary(action)}</p>
+                  <div className="admin-meta">
+                    <span>{action.targetActorIds.length} target{action.targetActorIds.length === 1 ? "" : "s"}</span>
+                    <span>{action.consumeResources ? "resources spent on confirm" : "no resource spend"}</span>
+                    <span>{action.applyEffect ? "effect previewed" : "roll only"}</span>
+                  </div>
+                  <div className="admin-actions">
+                    <button className="ghost-button" onClick={() => props.onRejectAction(props.combat!, action)} disabled={!props.canManage}>
+                      <X size={14} /> Reject
+                    </button>
+                    <button className="primary-button" onClick={() => props.onConfirmAction(props.combat!, action)} disabled={!props.canManage}>
+                      <Check size={14} /> Confirm
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </section>
+          )}
           {combatants.map((combatant, index) => (
             <div className={index === props.combat?.turnIndex ? "combatant active" : "combatant"} key={combatant.id}>
               <div className="combatant-header">
@@ -9203,12 +9250,51 @@ function CombatPanel(props: { combat?: Combat; auditLogs: AuditLog[]; onStart():
           )}
         </>
       ) : (
-        <button className="primary-button wide" onClick={props.onStart} disabled={!props.canManage}>
-          Start from scene tokens
-        </button>
+        <>
+          <button className="primary-button wide" onClick={props.onStart} disabled={!props.canManage}>
+            Start from scene tokens
+          </button>
+          {props.recentCombats.length > 0 && (
+            <section className="admin-list" aria-label="Ended combat recap">
+              <div className="section-title">Ended Combat Recap</div>
+              {props.recentCombats.map((combat) => (
+                <article className="operator-item admin-item" key={combat.id}>
+                  <strong>Round {combat.round}</strong>
+                  <span>{formatDateTime(combat.updatedAt)}</span>
+                  <p>{combat.combatants.length} combatants, {combat.combatants.filter((combatant) => combatant.defeated).length} defeated, {combat.actions?.filter((action) => action.status === "confirmed").length ?? 0} confirmed actions</p>
+                </article>
+              ))}
+            </section>
+          )}
+        </>
       )}
     </div>
   );
+}
+
+function nextCombatTurnPosition(combat: Combat, direction: 1 | -1): { turnIndex: number; round: number } {
+  const combatants = combat.combatants;
+  if (combatants.length === 0) return { turnIndex: 0, round: combat.round };
+  if (combatants.every((combatant) => combatant.defeated)) return { turnIndex: combat.turnIndex, round: combat.round };
+  let turnIndex = combat.turnIndex;
+  let round = combat.round;
+  for (let step = 0; step < combatants.length; step += 1) {
+    turnIndex += direction;
+    if (turnIndex >= combatants.length) {
+      turnIndex = 0;
+      round += 1;
+    } else if (turnIndex < 0) {
+      turnIndex = combatants.length - 1;
+      round = Math.max(1, round - 1);
+    }
+    if (!combatants[turnIndex]?.defeated) return { turnIndex, round };
+  }
+  return { turnIndex: combat.turnIndex, round: combat.round };
+}
+
+function combatActionRollSummary(action: CombatAction): string {
+  if (action.rolls.length === 0) return "No roll result";
+  return action.rolls.map((roll) => `${roll.label}: ${roll.total}`).join(", ");
 }
 
 function formatCombatantConditions(combatant: Combat["combatants"][number]): string {

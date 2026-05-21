@@ -583,6 +583,7 @@ export interface Combat extends Timestamps {
   round: number;
   turnIndex: number;
   combatants: Combatant[];
+  actions?: CombatAction[];
 }
 
 export interface Combatant {
@@ -601,6 +602,60 @@ export interface Combatant {
   resourceLabel?: string;
   resourceUsed?: boolean;
   resourceSpent?: boolean;
+}
+
+export interface CombatAction extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  combatId: ID;
+  actorId: ID;
+  actorName: string;
+  requestedByUserId: ID;
+  status: "pending_gm" | "confirmed" | "rejected" | "failed";
+  rollId: string;
+  actionLabel: string;
+  targetActorIds: ID[];
+  applyEffect: boolean;
+  consumeResources: boolean;
+  resolution?: unknown;
+  rolls: CombatActionRoll[];
+  actorUpdates: CombatActionActorUpdate[];
+  itemUpdates?: CombatActionItemUpdate[];
+  effects?: CombatActionEffect[];
+  resultSummary?: string;
+  confirmedByUserId?: ID;
+  confirmedAt?: string;
+  rejectedByUserId?: ID;
+  rejectedAt?: string;
+  rejectionReason?: string;
+  failureReason?: string;
+}
+
+export interface CombatActionRoll {
+  label: string;
+  formula: string;
+  terms: DiceRollTerm[];
+  total: number;
+  targetActorId?: ID;
+  visibility: "public" | "gm_only" | "whisper";
+}
+
+export interface CombatActionActorUpdate {
+  actorId: ID;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+}
+
+export interface CombatActionItemUpdate {
+  itemId: ID;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+}
+
+export interface CombatActionEffect {
+  type: string;
+  targetActorId: ID;
+  amount?: number;
 }
 
 export interface CompendiumPack extends Timestamps {

@@ -19185,10 +19185,20 @@ describe("api", () => {
       });
       expect(exposedTarget.statusCode).toBe(200);
       const exposedTargetActorId = exposedTarget.json().actor.id;
+      const gmOwnedTarget = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+        headers: authHeaders,
+        payload: { templateId: "fighter", name: "Resolver GM Target", ownerUserId: "usr_demo_gm" }
+      });
+      expect(gmOwnedTarget.statusCode).toBe(200);
+      const gmOwnedTargetActorId = gmOwnedTarget.json().actor.id;
       const storedActor = store.state.actors.find((actor) => actor.id === actorId)!;
       const storedTarget = store.state.actors.find((actor) => actor.id === targetActorId)!;
+      const storedGmOwnedTarget = store.state.actors.find((actor) => actor.id === gmOwnedTargetActorId)!;
       storedActor.data = { ...storedActor.data, conditions: [{ id: "poisoned" }] };
       storedTarget.data = { ...storedTarget.data, conditions: [{ id: "restrained" }] };
+      storedGmOwnedTarget.data = { ...storedGmOwnedTarget.data, hp: { current: 2, max: 12 } };
       const multiTargetAttack = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
@@ -19224,11 +19234,46 @@ describe("api", () => {
         payload: {
           combatants: [
             { id: "cmbt_resolver_fighter", tokenId: "tok_resolver_fighter", actorId, name: "Resolver Fighter", initiative: 16, defeated: false },
-            { id: "cmbt_resolver_target", tokenId: "tok_resolver_target", actorId: targetActorId, name: "Resolver Target", initiative: 8, defeated: false }
+            { id: "cmbt_resolver_target", tokenId: "tok_resolver_target", actorId: targetActorId, name: "Resolver Target", initiative: 8, defeated: false },
+            { id: "cmbt_resolver_gm_target", tokenId: "tok_resolver_gm_target", actorId: gmOwnedTargetActorId, name: "Resolver GM Target", initiative: 6, defeated: false }
           ]
         }
       });
       expect(combat.statusCode).toBe(200);
+
+      const rollCountBeforePendingDamage = store.state.rolls.length;
+      const pendingDamage = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${actorId}/roll`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { rollId: `item-${fighterLongsword.id}-damage`, applyEffect: true, targetActorId: gmOwnedTargetActorId }
+      });
+      expect(pendingDamage.statusCode).toBe(200);
+      expect(pendingDamage.json().combatAction).toEqual(expect.objectContaining({ status: "pending_gm", actorId, targetActorIds: [gmOwnedTargetActorId], actionLabel: "Longsword Damage" }));
+      expect(store.state.rolls).toHaveLength(rollCountBeforePendingDamage);
+      expect(store.state.actors.find((actor) => actor.id === gmOwnedTargetActorId)?.data.hp).toEqual({ current: 2, max: 12 });
+      expect(store.state.combats.find((item) => item.id === combat.json().id)?.actions).toContainEqual(expect.objectContaining({ id: pendingDamage.json().combatAction.id, status: "pending_gm" }));
+
+      const blockedPlayerConfirm = await app.inject({
+        method: "POST",
+        url: `/api/v1/combats/${combat.json().id}/actions/${pendingDamage.json().combatAction.id}/confirm`,
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: {}
+      });
+      expect(blockedPlayerConfirm.statusCode).toBe(403);
+
+      const confirmedDamage = await app.inject({
+        method: "POST",
+        url: `/api/v1/combats/${combat.json().id}/actions/${pendingDamage.json().combatAction.id}/confirm`,
+        headers: authHeaders,
+        payload: {}
+      });
+      expect(confirmedDamage.statusCode).toBe(200);
+      expect(confirmedDamage.json().combatAction).toEqual(expect.objectContaining({ status: "confirmed", confirmedByUserId: "usr_demo_gm" }));
+      expect(confirmedDamage.json().updatedActors).toContainEqual(expect.objectContaining({ id: gmOwnedTargetActorId, data: expect.objectContaining({ hp: { current: 0, max: 12 } }) }));
+      expect(confirmedDamage.json().rolls).toHaveLength(1);
+      expect(confirmedDamage.json().chatMessages[0].body).toContain("Resolver Fighter Longsword Damage");
+      expect(store.state.combats.find((item) => item.id === combat.json().id)?.combatants.find((combatant) => combatant.id === "cmbt_resolver_gm_target")).toEqual(expect.objectContaining({ defeated: true }));
 
       const rollCountBeforePendingParalysis = store.state.rolls.length;
       const pendingParalysis = await app.inject({

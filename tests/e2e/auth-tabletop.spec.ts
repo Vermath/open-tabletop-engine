@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
@@ -82,7 +82,7 @@ async function createSystemMonster(page: Page, input: { threatId: string; name: 
   );
 }
 
-async function createRulesTargetActor(page: Page, input: { name: string; hp: { current: number; max: number } }): Promise<E2EActor> {
+async function createRulesTargetActor(page: Page, input: { name: string; hp: { current: number; max: number }; ownerUserId?: string }): Promise<E2EActor> {
   return page.evaluate(
     async ({ apiBaseUrl, input }) => {
       const bearer = localStorage.getItem("otte:sessionToken");
@@ -92,7 +92,7 @@ async function createRulesTargetActor(page: Page, input: { name: string; hp: { c
         headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
         body: JSON.stringify({
           systemId: "dnd-5e-srd",
-          ownerUserId: "usr_demo_player",
+          ownerUserId: input.ownerUserId ?? "usr_demo_player",
           type: "character",
           name: input.name,
           data: {
@@ -1267,6 +1267,78 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await combatPanel.getByRole("button", { name: "End" }).click();
   await expect(combatPanel.getByRole("button", { name: "Start from scene tokens" })).toBeVisible();
   await deleteNewestTokenByName(page, "Goblin Minion");
+});
+
+test("player combat action requires GM confirmation and completes the browser flow", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const gmPage = await browser.newPage();
+  const playerPage = await browser.newPage();
+  const suffix = Date.now().toString(36);
+
+  await gmPage.goto("/");
+  await gmPage.getByRole("button", { name: "Demo GM" }).click();
+  await expect(gmPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+
+  const fighter = await createSystemCharacter(gmPage, { templateId: "fighter", name: `E2E Confirm Fighter ${suffix}`, ownerUserId: "usr_demo_player" });
+  const target = await createRulesTargetActor(gmPage, { name: `E2E Confirm Target ${suffix}`, hp: { current: 2, max: 12 }, ownerUserId: "usr_demo_gm" });
+  const fighterToken = await createSceneToken(gmPage, { name: `E2E Confirm Fighter Token ${suffix}`, actorId: fighter.id, x: 320, y: 330, ownerUserIds: ["usr_demo_player"] });
+  const targetToken = await createSceneToken(gmPage, { name: `E2E Confirm Target Token ${suffix}`, actorId: target.id, x: 460, y: 330, ownerUserIds: [] });
+
+  await gmPage.reload();
+  await expect(gmPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  await gmPage.getByRole("button", { name: "Live Table", exact: true }).click();
+  await gmPage.getByRole("button", { name: "Combat", exact: true }).click();
+  const combatPanel = gmPage.locator(".panel-stack", { hasText: "Combat Tracker" });
+  await combatPanel.getByRole("button", { name: "Start from scene tokens" }).click();
+  await expect(combatPanel.getByText(fighterToken.name).first()).toBeVisible();
+  await expect(combatPanel.getByText(targetToken.name).first()).toBeVisible();
+
+  await playerPage.goto("/");
+  const demoPlayerButton = playerPage.getByRole("button", { name: "Demo Player" });
+  if ((await demoPlayerButton.count()) > 0) {
+    await demoPlayerButton.click();
+  } else {
+    const demoGmButton = playerPage.getByRole("button", { name: "Demo GM" });
+    if ((await demoGmButton.count()) > 0) await demoGmButton.click();
+  }
+  await expect(playerPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
+  if ((await playerPage.locator("p", { hasText: "Demo Player" }).count()) === 0) {
+    await playerPage.locator('select[aria-label="Session user"]').selectOption("usr_demo_player");
+  }
+  await expect(playerPage.locator("p", { hasText: "Demo Player" })).toBeVisible();
+  await playerPage.getByRole("button", { name: `Token ${fighterToken.name}` }).click();
+  await playerPage.getByRole("button", { name: "Actors", exact: true }).click();
+  await playerPage.getByRole("tab", { name: "Actions" }).click();
+  await expect(playerPage.getByRole("heading", { name: fighter.name })).toBeVisible();
+  await playerPage.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  await playerPage.getByRole("checkbox", { name: "Apply action effect" }).check();
+  const actionSheet = playerPage.getByRole("region", { name: "Actor action sheet" });
+  const damageCard = actionSheet.locator("article", { hasText: "Longsword Damage" }).first();
+  await expect(damageCard).toContainText("effect supported");
+  await damageCard.getByRole("button", { name: "Use action" }).click();
+  await expect(playerPage.getByText(`${fighter.name} action pending GM confirmation`)).toBeVisible();
+  await expect.poll(async () => ((await getActorById(gmPage, target.id)).data.hp as { current: number }).current).toBe(2);
+
+  await gmPage.getByRole("button", { name: "Combat", exact: true }).click();
+  await expect(combatPanel.getByText("Pending GM Confirmation")).toBeVisible();
+  await expect(combatPanel.locator("article", { hasText: "Longsword Damage" })).toContainText(fighter.name);
+  await combatPanel.locator("article", { hasText: "Longsword Damage" }).getByRole("button", { name: "Confirm" }).click();
+  await expect(gmPage.getByText("Longsword Damage confirmed")).toBeVisible();
+  await expect.poll(async () => ((await getActorById(gmPage, target.id)).data.hp as { current: number }).current).toBe(0);
+  const targetCombatant = combatPanel.locator(".combatant", { hasText: targetToken.name }).first();
+  await expect(targetCombatant.getByRole("checkbox", { name: "Defeated" })).toBeChecked();
+
+  await combatPanel.getByRole("button", { name: "Next" }).click();
+  await expect(gmPage.getByText("Combat updated")).toBeVisible();
+  await combatPanel.getByRole("button", { name: "End" }).click();
+  await expect(gmPage.getByText("Combat ended")).toBeVisible();
+  await expect(combatPanel.getByText("Ended Combat Recap")).toBeVisible();
+  await expect(combatPanel.getByText(/confirmed actions/)).toBeVisible();
+
+  mkdirSync("output/playwright", { recursive: true });
+  await gmPage.screenshot({ path: `output/playwright/combat-confirmation-${suffix}.png`, fullPage: true });
+  await gmPage.close();
+  await playerPage.close();
 });
 
 test("GM can draft and apply an AI proposal from the browser", async ({ page }) => {

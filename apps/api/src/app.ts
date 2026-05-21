@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
+import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type RulesActionResolutionResult, type RulesSaveOutcome, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
@@ -4519,6 +4519,49 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return store.state.auditLogs.filter((log) => log.campaignId === combat.campaignId && log.targetType === "combat" && log.targetId === combat.id).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   });
 
+  app.post<{ Params: { combatId: string; actionId: string } }>("/api/v1/combats/:combatId/actions/:actionId/confirm", async (request, reply) => {
+    const combat = store.state.combats.find((item) => item.id === request.params.combatId);
+    if (!combat) return notFound(reply, "Combat not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, combat.campaignId, "combat.manage");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const action = combat.actions?.find((item) => item.id === request.params.actionId);
+    if (!action) return notFound(reply, "Combat action not found");
+    if (action.status !== "pending_gm") return conflict(reply, "Combat action is not pending GM confirmation");
+    const applied = applyPendingCombatAction(store, broadcast, userId, combat, action);
+    if ("error" in applied) return badRequest(reply, applied.error);
+    return applied;
+  });
+
+  app.post<{ Params: { combatId: string; actionId: string }; Body: { reason?: string } }>("/api/v1/combats/:combatId/actions/:actionId/reject", async (request, reply) => {
+    const combat = store.state.combats.find((item) => item.id === request.params.combatId);
+    if (!combat) return notFound(reply, "Combat not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, combat.campaignId, "combat.manage");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const action = combat.actions?.find((item) => item.id === request.params.actionId);
+    if (!action) return notFound(reply, "Combat action not found");
+    if (action.status !== "pending_gm") return conflict(reply, "Combat action is not pending GM confirmation");
+    action.status = "rejected";
+    action.rejectedByUserId = userId;
+    action.rejectedAt = nowIso();
+    action.rejectionReason = request.body.reason?.trim() || "Rejected by GM";
+    action.updatedAt = action.rejectedAt;
+    combat.updatedAt = action.rejectedAt;
+    appendServerAuditLog(store, userId, {
+      campaignId: combat.campaignId,
+      action: "combat.actionRejected",
+      targetType: "combat",
+      targetId: combat.id,
+      after: { actionId: action.id, rollId: action.rollId, actorId: action.actorId, reason: action.rejectionReason }
+    });
+    store.save();
+    broadcast(createEvent({ campaignId: combat.campaignId, type: "combat.turnChanged", targetId: combat.id, payload: combat }));
+    return { combat, combatAction: action };
+  });
+
   app.post<{ Params: { campaignId: string }; Body: Partial<Combat> }>("/api/v1/campaigns/:campaignId/combats", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "combat.manage");
     if (allowed !== true) return allowed;
@@ -6468,6 +6511,51 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (resolution.blocked) return conflict(reply, resolution.blocked.reason);
       const finalPendingMessage = dnd5eSrdCommitInputMessage(resolution, Boolean(request.body.applyEffect));
       if (finalPendingMessage) return pendingResolution(reply, finalPendingMessage, resolution, actor, systemSheet(actor, actorItems(store, actor)));
+      const unauthorizedActorUpdate = resolution.actorUpdates
+        .map((actorUpdate) => store.state.actors.find((item) => item.id === actorUpdate.actorId && item.campaignId === request.params.campaignId))
+        .filter((updateActor): updateActor is Actor => Boolean(updateActor))
+        .find((updateActor) => !canUpdateActorForUser(store, userId, updateActor));
+      if (unauthorizedActorUpdate && activeCombat && request.body.applyEffect) {
+        const action = createPendingCombatAction({
+          combat: activeCombat,
+          actor,
+          userId,
+          rollId: rollDefinition.id,
+          actionLabel: rollDefinition.label,
+          consumeResources: Boolean(request.body.consumeResources),
+          applyEffect: Boolean(request.body.applyEffect),
+          targetActorIds: targetActorIdsForResolution,
+          resolution,
+          rolledResults,
+          actorUpdates: resolution.actorUpdates,
+          itemUpdates: resolution.itemUpdates,
+          effects: resolution.effects as unknown as SystemRollEffectResult[],
+          visibility: request.body.visibility ?? "public"
+        });
+        activeCombat.actions = [...(activeCombat.actions ?? []), action];
+        activeCombat.updatedAt = nowIso();
+        appendServerAuditLog(store, userId, {
+          campaignId: activeCombat.campaignId,
+          action: "combat.actionPending",
+          targetType: "combat",
+          targetId: activeCombat.id,
+          after: {
+            actionId: action.id,
+            actorId: action.actorId,
+            rollId: action.rollId,
+            targetActorIds: action.targetActorIds,
+            blockedByPermission: unauthorizedActorUpdate.id
+          }
+        });
+        store.save();
+        broadcast(createEvent({ campaignId: activeCombat.campaignId, type: "combat.turnChanged", targetId: activeCombat.id, payload: activeCombat }));
+        return {
+          combatAction: action,
+          resolution,
+          actor,
+          sheet: systemSheet(actor, actorItems(store, actor))
+        };
+      }
       for (const actorUpdate of resolution.actorUpdates) {
         const updateActor = store.state.actors.find((item) => item.id === actorUpdate.actorId && item.campaignId === request.params.campaignId);
         if (!updateActor) return notFound(reply, "Actor update target not found");
@@ -6502,6 +6590,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
             storedItem.data = updatedItem.data;
             storedItem.updatedAt = updatedAt;
           }
+        }
+        if (activeCombat) {
+          combatUpdated = syncCombatDefeatedFromActorIds(activeCombat, store.state.actors, [...actorDataUpdates.keys()]) || combatUpdated;
         }
       }
       const rolls = rolledResults.map(({ resolutionRoll, rolled }) =>
@@ -16736,6 +16827,195 @@ function combatAuditSummary(combat: Combat) {
       resourceSpent: combatant.resourceSpent ?? false
     }))
   };
+}
+
+function createPendingCombatAction(input: {
+  combat: Combat;
+  actor: Actor;
+  userId: string;
+  rollId: string;
+  actionLabel: string;
+  targetActorIds: string[];
+  applyEffect: boolean;
+  consumeResources: boolean;
+  resolution: RulesActionResolutionResult;
+  rolledResults: Array<{ resolutionRoll: { label?: string; formula: string; targetActorId?: string }; rolled: ReturnType<typeof rollFormula> }>;
+  actorUpdates: RulesActionResolutionResult["actorUpdates"];
+  itemUpdates: Item[];
+  effects: SystemRollEffectResult[];
+  visibility: DiceRoll["visibility"];
+}): CombatAction {
+  const itemUpdates = input.itemUpdates.map((item) => ({
+    itemId: item.id,
+    before: {},
+    after: isRecord(item.data) ? cloneRecord(item.data) : { value: item.data }
+  }));
+  const action = createTimestamped("cact", {
+    campaignId: input.combat.campaignId,
+    combatId: input.combat.id,
+    actorId: input.actor.id,
+    actorName: input.actor.name,
+    requestedByUserId: input.userId,
+    status: "pending_gm" as const,
+    rollId: input.rollId,
+    actionLabel: input.actionLabel,
+    targetActorIds: input.targetActorIds,
+    applyEffect: input.applyEffect,
+    consumeResources: input.consumeResources,
+    resolution: input.resolution,
+    rolls: input.rolledResults.map(({ resolutionRoll, rolled }) => ({
+      label: resolutionRoll.label ?? input.actionLabel,
+      formula: resolutionRoll.formula,
+      terms: rolled.terms,
+      total: rolled.total,
+      targetActorId: resolutionRoll.targetActorId,
+      visibility: input.visibility
+    })),
+    actorUpdates: input.actorUpdates.map((update) => ({
+      actorId: update.actorId,
+      before: cloneRecord(update.before),
+      after: cloneRecord(update.after)
+    })),
+    itemUpdates,
+    effects: input.effects.map((effect) => combatActionEffectSummary(effect)),
+    resultSummary: combatActionResultSummary(input.effects, input.rolledResults.map((result) => result.rolled.total))
+  }) satisfies CombatAction;
+  return action;
+}
+
+function applyPendingCombatAction(
+  store: StateStore,
+  broadcast: (event: EngineEvent) => void,
+  userId: string,
+  combat: Combat,
+  action: CombatAction
+):
+  | { combat: Combat; combatAction: CombatAction; updatedActors: Actor[]; rolls: DiceRoll[]; chatMessages: ChatMessage[] }
+  | { error: string } {
+  const actorIds = new Set(action.actorUpdates.map((update) => update.actorId));
+  const missingActorId = [...actorIds].find((actorId) => !store.state.actors.some((actor) => actor.id === actorId && actor.campaignId === combat.campaignId));
+  if (missingActorId) return { error: `Actor update target not found: ${missingActorId}` };
+  const missingItemId = (action.itemUpdates ?? []).find((update) => !store.state.items.some((item) => item.id === update.itemId && item.campaignId === combat.campaignId))?.itemId;
+  if (missingItemId) return { error: `Item update target not found: ${missingItemId}` };
+
+  const updatedAt = nowIso();
+  for (const actorUpdate of action.actorUpdates) {
+    const actor = store.state.actors.find((item) => item.id === actorUpdate.actorId && item.campaignId === combat.campaignId);
+    if (actor) {
+      actor.data = cloneRecord(actorUpdate.after);
+      actor.updatedAt = updatedAt;
+    }
+  }
+  for (const itemUpdate of action.itemUpdates ?? []) {
+    const item = store.state.items.find((candidate) => candidate.id === itemUpdate.itemId && candidate.campaignId === combat.campaignId);
+    if (item) {
+      item.data = cloneRecord(itemUpdate.after);
+      item.updatedAt = updatedAt;
+    }
+  }
+  syncCombatDefeatedFromActorIds(combat, store.state.actors, [...actorIds]);
+  action.status = "confirmed";
+  action.confirmedByUserId = userId;
+  action.confirmedAt = updatedAt;
+  action.updatedAt = updatedAt;
+  combat.updatedAt = updatedAt;
+
+  const rolls = action.rolls.map((roll) =>
+    createTimestamped("roll", {
+      campaignId: combat.campaignId,
+      userId: action.requestedByUserId,
+      formula: roll.formula,
+      label: roll.targetActorId && action.rolls.length > 1 ? `${action.actionLabel} (${roll.targetActorId})` : action.actionLabel,
+      visibility: roll.visibility,
+      terms: roll.terms,
+      total: roll.total
+    }) satisfies DiceRoll
+  );
+  const chatMessages = rolls.map((roll) =>
+    createTimestamped("msg", {
+      campaignId: combat.campaignId,
+      userId: action.requestedByUserId,
+      type: "roll" as const,
+      body: `${action.actorName} ${roll.label}: ${roll.formula} = ${roll.total}`,
+      visibility: roll.visibility,
+      recipientUserIds: [],
+      rollId: roll.id
+    }) satisfies ChatMessage
+  );
+  store.state.rolls.push(...rolls);
+  store.state.chat.push(...chatMessages);
+  appendServerAuditLog(store, userId, {
+    campaignId: combat.campaignId,
+    action: "combat.actionConfirmed",
+    targetType: "combat",
+    targetId: combat.id,
+    after: {
+      actionId: action.id,
+      actorId: action.actorId,
+      rollId: action.rollId,
+      targetActorIds: action.targetActorIds,
+      actorUpdateCount: action.actorUpdates.length,
+      itemUpdateCount: action.itemUpdates?.length ?? 0,
+      resultSummary: action.resultSummary
+    }
+  });
+  store.save();
+
+  const updatedActors = [...actorIds]
+    .map((actorId) => store.state.actors.find((actor) => actor.id === actorId && actor.campaignId === combat.campaignId))
+    .filter((actor): actor is Actor => Boolean(actor));
+  for (const actor of updatedActors) broadcastActorUpdated(broadcast, actor);
+  broadcast(createEvent({ campaignId: combat.campaignId, type: "combat.turnChanged", targetId: combat.id, payload: combat }));
+  for (const roll of rolls) {
+    broadcast(createEvent({ campaignId: roll.campaignId, type: "dice.roll.created", actorUserId: action.requestedByUserId, targetId: roll.id, payload: roll }));
+  }
+  for (const message of chatMessages) {
+    broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: action.requestedByUserId, targetId: message.id, payload: message }));
+  }
+  return { combat, combatAction: action, updatedActors, rolls, chatMessages };
+}
+
+function syncCombatDefeatedFromActorIds(combat: Combat, actors: Actor[], actorIds: string[]): boolean {
+  const actorIdSet = new Set(actorIds);
+  let updated = false;
+  for (const combatant of combat.combatants) {
+    if (!combatant.actorId || !actorIdSet.has(combatant.actorId)) continue;
+    const actor = actors.find((candidate) => candidate.id === combatant.actorId && candidate.campaignId === combat.campaignId);
+    if (!actor || actorHpCurrent(actor) > 0 || combatant.defeated) continue;
+    combatant.defeated = true;
+    updated = true;
+  }
+  return updated;
+}
+
+function actorHpCurrent(actor: Actor): number {
+  if (!isRecord(actor.data)) return Number.POSITIVE_INFINITY;
+  const hp = actor.data.hp;
+  if (!isRecord(hp)) return Number.POSITIVE_INFINITY;
+  const current = Number(hp.current);
+  return Number.isFinite(current) ? current : Number.POSITIVE_INFINITY;
+}
+
+function combatActionEffectSummary(effect: SystemRollEffectResult): NonNullable<CombatAction["effects"]>[number] {
+  if (effect.type === "damage" || effect.type === "healing") {
+    return { type: effect.type, targetActorId: effect.targetActorId, amount: effect.amount };
+  }
+  if (effect.type === "condition") {
+    return { type: effect.type, targetActorId: effect.targetActorId, amount: effect.after.length - effect.before.length };
+  }
+  return { type: effect.type, targetActorId: effect.targetActorId };
+}
+
+function combatActionResultSummary(effects: SystemRollEffectResult[], totals: number[]): string {
+  const damage = effects.filter((effect): effect is SystemRollPoolEffectResult => effect.type === "damage");
+  const healing = effects.filter((effect): effect is SystemRollPoolEffectResult => effect.type === "healing");
+  const conditions = effects.filter((effect): effect is SystemRollConditionEffectResult => effect.type === "condition");
+  const parts: string[] = [];
+  if (totals.length > 0) parts.push(`roll ${totals.join(", ")}`);
+  if (damage.length > 0) parts.push(`${damage.reduce((sum, effect) => sum + effect.amount, 0)} damage`);
+  if (healing.length > 0) parts.push(`${healing.reduce((sum, effect) => sum + effect.amount, 0)} healing`);
+  if (conditions.length > 0) parts.push(`${conditions.map((effect) => effect.conditionName).join(", ")} condition`);
+  return parts.join("; ") || "No automatic effect";
 }
 
 function removeCampaignRecords(store: StateStore, campaignId: string): void {

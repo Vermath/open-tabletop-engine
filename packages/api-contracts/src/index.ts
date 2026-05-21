@@ -109,6 +109,8 @@ export const routes = {
   combat: (combatId: string) => `/api/v1/combats/${combatId}`,
   combatant: (combatId: string, combatantId: string) => `/api/v1/combats/${combatId}/combatants/${combatantId}`,
   combatAudit: (combatId: string) => `/api/v1/combats/${combatId}/audit`,
+  combatActionConfirm: (combatId: string, actionId: string) => `/api/v1/combats/${combatId}/actions/${actionId}/confirm`,
+  combatActionReject: (combatId: string, actionId: string) => `/api/v1/combats/${combatId}/actions/${actionId}/reject`,
   proposals: (campaignId: string) => `/api/v1/campaigns/${campaignId}/proposals`,
   proposal: (proposalId: string) => `/api/v1/proposals/${proposalId}`,
   proposalApprove: (proposalId: string) => `/api/v1/proposals/${proposalId}/approve`,
@@ -388,6 +390,8 @@ const endpointSpecs = [
   ["GET", "/api/v1/campaigns/{campaignId}/encounters"],
   ["POST", "/api/v1/campaigns/{campaignId}/encounters"],
   ["GET", "/api/v1/combats/{combatId}/audit"],
+  ["POST", "/api/v1/combats/{combatId}/actions/{actionId}/confirm"],
+  ["POST", "/api/v1/combats/{combatId}/actions/{actionId}/reject"],
   ["PATCH", "/api/v1/combats/{combatId}"],
   ["PATCH", "/api/v1/combats/{combatId}/combatants/{combatantId}"],
   ["DELETE", "/api/v1/combats/{combatId}"],
@@ -3490,7 +3494,8 @@ const componentSchemas = {
       active: { type: "boolean" },
       round: { type: "integer", minimum: 1 },
       turnIndex: { type: "integer", minimum: 0 },
-      combatants: arrayOf(schemaRef("Combatant"))
+      combatants: arrayOf(schemaRef("Combatant")),
+      actions: arrayOf(schemaRef("CombatAction"))
     }
   },
   Combatant: {
@@ -3513,6 +3518,99 @@ const componentSchemas = {
       resourceLabel: stringSchema,
       resourceUsed: { type: "boolean" },
       resourceSpent: { type: "boolean" }
+    }
+  },
+  CombatAction: {
+    type: "object",
+    additionalProperties: true,
+    required: ["id", "campaignId", "combatId", "actorId", "actorName", "requestedByUserId", "status", "rollId", "actionLabel", "targetActorIds", "applyEffect", "consumeResources", "rolls", "actorUpdates", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      combatId: idSchema,
+      actorId: idSchema,
+      actorName: stringSchema,
+      requestedByUserId: idSchema,
+      status: { type: "string", enum: ["pending_gm", "confirmed", "rejected", "failed"] },
+      rollId: stringSchema,
+      actionLabel: stringSchema,
+      targetActorIds: arrayOf(idSchema),
+      applyEffect: { type: "boolean" },
+      consumeResources: { type: "boolean" },
+      resolution: { type: "object", additionalProperties: true },
+      rolls: arrayOf(schemaRef("CombatActionRoll")),
+      actorUpdates: arrayOf(schemaRef("CombatActionActorUpdate")),
+      itemUpdates: arrayOf(schemaRef("CombatActionItemUpdate")),
+      effects: arrayOf(schemaRef("CombatActionEffect")),
+      resultSummary: stringSchema,
+      confirmedByUserId: idSchema,
+      confirmedAt: { type: "string", format: "date-time" },
+      rejectedByUserId: idSchema,
+      rejectedAt: { type: "string", format: "date-time" },
+      rejectionReason: stringSchema,
+      failureReason: stringSchema
+    }
+  },
+  CombatActionRoll: {
+    type: "object",
+    additionalProperties: true,
+    required: ["label", "formula", "terms", "total", "visibility"],
+    properties: {
+      label: stringSchema,
+      formula: stringSchema,
+      terms: arrayOf({ type: "object", additionalProperties: true }),
+      total: { type: "number" },
+      targetActorId: idSchema,
+      visibility: { type: "string", enum: ["public", "gm_only", "whisper"] }
+    }
+  },
+  CombatActionActorUpdate: {
+    type: "object",
+    additionalProperties: false,
+    required: ["actorId", "before", "after"],
+    properties: {
+      actorId: idSchema,
+      before: { type: "object", additionalProperties: true },
+      after: { type: "object", additionalProperties: true }
+    }
+  },
+  CombatActionItemUpdate: {
+    type: "object",
+    additionalProperties: false,
+    required: ["itemId", "before", "after"],
+    properties: {
+      itemId: idSchema,
+      before: { type: "object", additionalProperties: true },
+      after: { type: "object", additionalProperties: true }
+    }
+  },
+  CombatActionEffect: {
+    type: "object",
+    additionalProperties: true,
+    required: ["type", "targetActorId"],
+    properties: {
+      type: stringSchema,
+      targetActorId: idSchema,
+      amount: { type: "number" }
+    }
+  },
+  CombatActionMutationResponse: {
+    type: "object",
+    additionalProperties: true,
+    required: ["combat", "combatAction"],
+    properties: {
+      combat: schemaRef("Combat"),
+      combatAction: schemaRef("CombatAction"),
+      updatedActors: arrayOf(schemaRef("Actor")),
+      rolls: arrayOf(schemaRef("DiceRoll")),
+      chatMessages: arrayOf(schemaRef("ChatMessage"))
+    }
+  },
+  CombatActionRejectRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      reason: stringSchema
     }
   },
   CombatCreateRequest: {
@@ -5352,6 +5450,18 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "GET /api/v1/combats/{combatId}/audit": {
     responses: {
       "200": jsonResponse("Redacted combat audit entries", arrayOf(schemaRef("AuditLog")))
+    }
+  },
+  "POST /api/v1/combats/{combatId}/actions/{actionId}/confirm": {
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false }),
+    responses: {
+      "200": jsonResponse("Confirmed combat action", schemaRef("CombatActionMutationResponse"))
+    }
+  },
+  "POST /api/v1/combats/{combatId}/actions/{actionId}/reject": {
+    requestBody: jsonRequestBody(schemaRef("CombatActionRejectRequest")),
+    responses: {
+      "200": jsonResponse("Rejected combat action", schemaRef("CombatActionMutationResponse"))
     }
   },
   "POST /api/v1/campaigns/{campaignId}/combats": {
