@@ -4399,7 +4399,7 @@ export function App() {
                 <span>Snap templates to grid</span>
               </label>
               </div>
-              <details className="annotation-panel-section" open>
+              <details className="annotation-panel-section">
                 <summary>Layer visibility</summary>
               <div className="asset-pressure-list" role="group" aria-label="Annotation layer visibility">
                 {annotationLayers.map((layer) => (
@@ -4422,7 +4422,7 @@ export function App() {
                 )}
               </div>
               </details>
-              <details className="annotation-panel-section" open>
+              <details className="annotation-panel-section">
                 <summary>Groups</summary>
               <div className="asset-pressure-list" role="region" aria-label="Annotation group summary">
                 {Object.entries(annotationGroupCounts).slice(0, 4).map(([group, count]) => (
@@ -4442,7 +4442,7 @@ export function App() {
                 ))}
               </div>
               </details>
-              <details className="annotation-panel-section" open>
+              <details className="annotation-panel-section">
                 <summary>History</summary>
               <div className="asset-pressure-list" role="region" aria-label="Annotation history">
                 {sceneAnnotationHistory.length === 0 ? (
@@ -4457,7 +4457,7 @@ export function App() {
                 )}
               </div>
               </details>
-              <details className="annotation-panel-section" open={annotationTool === "template" || Boolean(latestAreaTemplate)}>
+              <details className="annotation-panel-section" open={Boolean(latestAreaTemplate)}>
                 <summary>Area template</summary>
               <div className="asset-pressure-list" role="region" aria-label="Area template automation">
                 {latestAreaTemplate ? (
