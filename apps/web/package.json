@@ -5,7 +5,7 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "node scripts/dev-or-start.mjs",
     "start": "node server.mjs",
     "build": "pnpm --filter @open-tabletop/web^... build && tsc -p tsconfig.json && vite build",
     "lint": "tsc -p tsconfig.json --noEmit",
