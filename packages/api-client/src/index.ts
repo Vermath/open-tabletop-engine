@@ -1,5 +1,5 @@
 import { routes } from "@open-tabletop/api-contracts";
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, EngineEvent, FogPreset, FogRegion, Item, JournalEntry, LightSource, MapAsset, OrganizationMember, OrganizationWorkspace, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, Token, User, UserSession, VisionPoint, VisionPointSample, VisionSnapshot, Wall } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, CombatAction, ContentImportBatch, DiceMacro, DiceRoll, EngineEvent, FogPreset, FogRegion, Item, JournalEntry, LightSource, MapAsset, OrganizationMember, OrganizationWorkspace, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, Token, User, UserSession, VisionPoint, VisionPointSample, VisionSnapshot, Wall } from "@open-tabletop/core";
 
 export interface OpenTabletopClientOptions {
   token?: string;
@@ -106,6 +106,11 @@ export interface BootstrapStatus {
 export interface BootstrapOwnerInfo extends SessionLoginInfo {
   campaign: Campaign;
   scene: Scene;
+}
+
+export interface CombatActionMutationResult {
+  combat: Combat;
+  combatAction: CombatAction;
 }
 
 export type OrganizationMemberInfo = OrganizationMember & { user: Pick<User, "id" | "displayName" | "email"> };
@@ -586,6 +591,14 @@ export class OpenTabletopClient {
 
   async updateCombatant(combatId: string, combatantId: string, input: Partial<Combat["combatants"][number]> & { syncActorSheet?: boolean }): Promise<Combat> {
     return this.patch(routes.combatant(combatId, combatantId), input);
+  }
+
+  async confirmCombatAction(combatId: string, actionId: string): Promise<CombatActionMutationResult> {
+    return this.post(routes.combatActionConfirm(combatId, actionId), {});
+  }
+
+  async rejectCombatAction(combatId: string, actionId: string, input: { reason?: string } = {}): Promise<CombatActionMutationResult> {
+    return this.post(routes.combatActionReject(combatId, actionId), input);
   }
 
   async endCombat(combatId: string): Promise<Combat> {

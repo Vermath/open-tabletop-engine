@@ -13,6 +13,7 @@ const messageId = "msg_client";
 const macroId = "mac_client";
 const combatId = "cmb_client";
 const combatantId = "cmbt_client";
+const combatActionId = "cact_client";
 const proposalId = "prop_client";
 const importId = "imp_client";
 const pluginId = "plugin_client";
@@ -271,6 +272,8 @@ describe("OpenTabletopClient", () => {
       client.startCombat(campaignId, { combatants: [] }),
       client.updateCombat(combatId, { round: 2 }),
       client.updateCombatant(combatId, combatantId, { defeated: true }),
+      client.confirmCombatAction(combatId, combatActionId),
+      client.rejectCombatAction(combatId, combatActionId, { reason: "Needs manual adjustment" }),
       client.endCombat(combatId),
       client.encounters(campaignId),
       client.createEncounter(campaignId, { name: "Encounter" }),
@@ -370,6 +373,7 @@ function normalizeCall(call: string): string {
     .replace(tokenId, "{tokenId}")
     .replace(factId, "{factId}")
     .replace(toolCallId, "{toolCallId}")
+    .replace(combatActionId, "{actionId}")
     .replace(actorId, "{actorId}")
     .replace(itemId, "{itemId}")
     .replace(entryId, "{entryId}")

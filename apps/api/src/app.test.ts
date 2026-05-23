@@ -6618,7 +6618,45 @@ describe("api", () => {
       active: true,
       round: 1,
       turnIndex: 0,
-      combatants: [{ id: "cmbt_auth_matrix", tokenId: "tok_valen", actorId: "act_valen", name: "Valen Ash", initiative: 12, defeated: false }]
+      combatants: [{ id: "cmbt_auth_matrix", tokenId: "tok_valen", actorId: "act_valen", name: "Valen Ash", initiative: 12, defeated: false }],
+      actions: [
+        {
+          id: "cact_auth_matrix_confirm",
+          campaignId: "camp_demo",
+          combatId: "cmb_auth_matrix",
+          actorId: "act_valen",
+          actorName: "Valen Ash",
+          requestedByUserId: "usr_demo_player",
+          status: "pending_gm",
+          rollId: "auth-matrix-confirm",
+          actionLabel: "Auth Matrix Confirm",
+          targetActorIds: [],
+          applyEffect: false,
+          consumeResources: false,
+          rolls: [],
+          actorUpdates: [],
+          createdAt: "2026-05-01T00:00:00.000Z",
+          updatedAt: "2026-05-01T00:00:00.000Z"
+        },
+        {
+          id: "cact_auth_matrix_reject",
+          campaignId: "camp_demo",
+          combatId: "cmb_auth_matrix",
+          actorId: "act_valen",
+          actorName: "Valen Ash",
+          requestedByUserId: "usr_demo_player",
+          status: "pending_gm",
+          rollId: "auth-matrix-reject",
+          actionLabel: "Auth Matrix Reject",
+          targetActorIds: [],
+          applyEffect: false,
+          consumeResources: false,
+          rolls: [],
+          actorUpdates: [],
+          createdAt: "2026-05-01T00:00:00.000Z",
+          updatedAt: "2026-05-01T00:00:00.000Z"
+        }
+      ]
     }) satisfies EngineState["combats"][number];
     const authMatrixProposal = createTimestamped("prop", {
       id: "prop_auth_matrix",
@@ -6817,6 +6855,8 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/campaigns/camp_demo/combats", payload: { name: "No Auth Combat" } },
       { method: "PATCH", url: "/api/v1/combats/cmb_auth_matrix", payload: { round: 2 } },
       { method: "PATCH", url: "/api/v1/combats/cmb_auth_matrix/combatants/cmbt_auth_matrix", payload: { defeated: true } },
+      { method: "POST", url: "/api/v1/combats/cmb_auth_matrix/actions/cact_auth_matrix_confirm/confirm" },
+      { method: "POST", url: "/api/v1/combats/cmb_auth_matrix/actions/cact_auth_matrix_reject/reject", payload: { reason: "missing auth" } },
       { method: "DELETE", url: "/api/v1/combats/cmb_auth_matrix" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/proposals" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/proposals", payload: { title: "No Auth Proposal", changesJson: [] } },
