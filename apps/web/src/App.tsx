@@ -7,6 +7,7 @@ import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAss
 import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenPositionChange } from "./board-history.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
+import { parseChatCommand } from "./chat-command.js";
 import { sceneTabWrapClass } from "./scene-tabs.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
@@ -639,9 +640,6 @@ export function App() {
   const [newJournalBody, setNewJournalBody] = useState("");
   const [newJournalVisibility, setNewJournalVisibility] = useState<Visibility>("gm_only");
   const [newJournalTags, setNewJournalTags] = useState("prep");
-  const [chatType, setChatType] = useState<MessageType>("plain");
-  const [chatVisibility, setChatVisibility] = useState<ChatMessage["visibility"]>("public");
-  const [chatRecipientUserId, setChatRecipientUserId] = useState("");
   const [chatReplyToMessageId, setChatReplyToMessageId] = useState("");
   const [chatSearch, setChatSearch] = useState("");
   const [chatTypeFilter, setChatTypeFilter] = useState<MessageType | "all">("all");
@@ -2610,18 +2608,44 @@ export function App() {
     setStatus(`Saved ${formula}`);
   }
 
-  async function sendChat() {
-    if (!chatBody.trim()) return;
-    if (chatVisibility === "whisper" && !chatRecipientUserId) {
-      setStatus("Choose a whisper recipient before sending");
+  function resolveChatRecipient(query?: string): string | undefined {
+    const normalized = query?.trim().toLocaleLowerCase();
+    if (!normalized) return undefined;
+    const match = chatRecipientOptions.find((member) => {
+      const names = [member.user.id, member.user.displayName, member.user.email ?? ""].map((value) => value.toLocaleLowerCase());
+      return names.some((value) => value === normalized || value.includes(normalized));
+    });
+    return match?.user.id;
+  }
+
+  async function submitChatCommand() {
+    const parsed = parseChatCommand(chatBody);
+    if (!parsed) return;
+    if (parsed.kind === "roll") {
+      const roll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
+        campaignId,
+        formula: parsed.formula,
+        visibility: parsed.visibility,
+        label: "Table roll"
+      });
+      setChatBody("");
+      setChatReplyToMessageId("");
+      setStatus(`Rolled ${roll.total}`);
+      await refresh();
+      return;
+    }
+
+    const recipientUserId = parsed.visibility === "whisper" ? resolveChatRecipient(parsed.recipientQuery) : undefined;
+    if (parsed.visibility === "whisper" && !recipientUserId) {
+      setStatus(parsed.recipientQuery ? `No whisper recipient matched "${parsed.recipientQuery}"` : "Use /w name message to whisper");
       return;
     }
     await apiPost<ChatMessage>("/api/v1/chat/messages", {
       campaignId,
-      body: chatBody,
-      type: chatType,
-      visibility: chatVisibility,
-      recipientUserIds: chatVisibility === "whisper" ? [chatRecipientUserId] : [],
+      body: parsed.body,
+      type: parsed.messageType,
+      visibility: parsed.visibility,
+      recipientUserIds: recipientUserId ? [recipientUserId] : [],
       replyToMessageId: chatReplyTarget?.id
     });
     setChatBody("");
@@ -4785,7 +4809,7 @@ export function App() {
             </div>
             {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
-            {tab === "chat" && <ChatPanel messages={snapshot.chat} rolls={snapshot.rolls} members={snapshot.members} search={chatSearch} setSearch={setChatSearch} typeFilter={chatTypeFilter} setTypeFilter={setChatTypeFilter} visibilityFilter={chatVisibilityFilter} setVisibilityFilter={setChatVisibilityFilter} canModerate={hasPermission("chat.moderate")} onReplyMessage={setChatReplyToMessageId} onModerateMessage={moderateChatMessage} onDeleteMessage={deleteChatMessage} onExport={exportChatHistory} />}
+            {tab === "chat" && <ChatPanel command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} members={snapshot.members} search={chatSearch} setSearch={setChatSearch} typeFilter={chatTypeFilter} setTypeFilter={setChatTypeFilter} visibilityFilter={chatVisibilityFilter} setVisibilityFilter={setChatVisibilityFilter} canModerate={hasPermission("chat.moderate")} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} onReplyMessage={setChatReplyToMessageId} onModerateMessage={moderateChatMessage} onDeleteMessage={deleteChatMessage} onExport={exportChatHistory} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
@@ -4816,39 +4840,6 @@ export function App() {
         )}
 
         {showConsoleDock && <footer className="console">
-          <div className="dice-box">
-            <WandSparkles size={17} />
-            <input value={diceFormula} onChange={(event) => setDiceFormula(event.target.value)} aria-label="Dice formula" />
-            <button className="icon-button" title="Roll dice" aria-label="Roll dice" onClick={rollDice}>
-              <ChevronRight size={18} />
-            </button>
-            <select aria-label="Dice roll visibility" value={diceVisibility} onChange={(event) => setDiceVisibility(event.target.value as DiceRoll["visibility"])}>
-              <option value="public">Public roll</option>
-              <option value="gm_only">Private to GM</option>
-            </select>
-            <select aria-label="Saved dice formula" value="" onChange={(event) => event.target.value && setDiceFormula(event.target.value)}>
-              <option value="">Saved formulas</option>
-              {snapshot.diceMacros.length > 0 && (
-                <optgroup label="Campaign macros">
-                  {snapshot.diceMacros.map((macro) => (
-                    <option key={macro.id} value={macro.formula}>
-                      {macro.name} - {macro.formula}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label="Local formulas">
-                {savedDiceFormulas.map((formula) => (
-                  <option key={formula} value={formula}>
-                    {formula}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-            <button className="icon-button" title="Save dice formula" aria-label="Save dice formula" onClick={() => saveCurrentDiceFormula().catch(console.error)}>
-              <Plus size={17} />
-            </button>
-          </div>
           <div className="chat-log">
             {snapshot.chat.slice(-5).map((message) => (
               <div key={message.id} className={`chat-line ${message.type}`}>
@@ -4863,42 +4854,13 @@ export function App() {
               <button className="ghost-button" type="button" onClick={() => setChatReplyToMessageId("")}>Clear reply</button>
             </div>
           )}
-          <div className="chat-box">
+          <form className="chat-command-bar" onSubmit={(event) => { event.preventDefault(); submitChatCommand().catch((error) => setStatus(errorMessage(error))); }}>
             <MessageSquare size={17} />
-            <select aria-label="Chat type" value={chatType} onChange={(event) => {
-              const nextType = event.target.value as MessageType;
-              setChatType(nextType);
-              if (nextType === "whisper") setChatVisibility("whisper");
-            }}>
-              <option value="plain">Plain</option>
-              <option value="ooc">OOC</option>
-              <option value="emote">Emote</option>
-              <option value="gm">GM</option>
-              <option value="whisper">Whisper</option>
-            </select>
-            <select aria-label="Chat visibility" value={chatVisibility} onChange={(event) => {
-              const nextVisibility = event.target.value as ChatMessage["visibility"];
-              setChatVisibility(nextVisibility);
-              if (nextVisibility === "whisper") setChatType("whisper");
-              if (nextVisibility !== "whisper" && chatType === "whisper") setChatType("plain");
-            }}>
-              <option value="public">Public</option>
-              <option value="gm_only">GM only</option>
-              <option value="whisper">Whisper</option>
-            </select>
-            <select aria-label="Whisper recipient" value={chatRecipientUserId} onChange={(event) => setChatRecipientUserId(event.target.value)} disabled={chatVisibility !== "whisper"}>
-              <option value="">Recipient</option>
-              {chatRecipientOptions.map((member) => (
-                <option key={member.user.id} value={member.user.id}>
-                  {member.user.displayName}
-                </option>
-              ))}
-            </select>
-            <input value={chatBody} onChange={(event) => setChatBody(event.target.value)} onKeyDown={(event) => event.key === "Enter" && sendChat()} aria-label="Chat message" />
-            <button className="icon-button" title="Send chat message" aria-label="Send chat message" onClick={sendChat}>
+            <input value={chatBody} onChange={(event) => setChatBody(event.target.value)} aria-label="Chat command" placeholder="Message, /1d20 + 2, /roll 2d6, /gm note, /w player message" />
+            <button className="icon-button" type="submit" title="Send chat command" aria-label="Send chat command">
               <Send size={17} />
             </button>
-          </div>
+          </form>
         </footer>}
       </section>
       {aiAgentOpen && (
@@ -9350,7 +9312,7 @@ function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle
   );
 }
 
-function ChatPanel(props: { messages: ChatMessage[]; rolls: DiceRoll[]; members: Snapshot["members"]; search: string; setSearch(value: string): void; typeFilter: MessageType | "all"; setTypeFilter(value: MessageType | "all"): void; visibilityFilter: ChatMessage["visibility"] | "all"; setVisibilityFilter(value: ChatMessage["visibility"] | "all"): void; canModerate: boolean; onReplyMessage(messageId: string): void; onModerateMessage(message: ChatMessage, moderationStatus: ChatModerationResolution): Promise<void>; onDeleteMessage(message: ChatMessage): Promise<void>; onExport(format: ChatExportFormat): Promise<void> }) {
+function ChatPanel(props: { command: string; setCommand(value: string): void; replyTarget?: ChatMessage; messages: ChatMessage[]; rolls: DiceRoll[]; members: Snapshot["members"]; search: string; setSearch(value: string): void; typeFilter: MessageType | "all"; setTypeFilter(value: MessageType | "all"): void; visibilityFilter: ChatMessage["visibility"] | "all"; setVisibilityFilter(value: ChatMessage["visibility"] | "all"): void; canModerate: boolean; onSubmitCommand(): Promise<void>; onClearReply(): void; onReplyMessage(messageId: string): void; onModerateMessage(message: ChatMessage, moderationStatus: ChatModerationResolution): Promise<void>; onDeleteMessage(message: ChatMessage): Promise<void>; onExport(format: ChatExportFormat): Promise<void> }) {
   const [exportFormat, setExportFormat] = useState<ChatExportFormat>("json");
   const types: Array<MessageType | "all"> = ["all", "plain", "ooc", "emote", "gm", "whisper", "roll", "plugin"];
   const visibilities: Array<ChatMessage["visibility"] | "all"> = ["all", "public", "gm_only", "whisper"];
@@ -9413,6 +9375,31 @@ function ChatPanel(props: { messages: ChatMessage[]; rolls: DiceRoll[]; members:
 
   return (
     <div className="panel-stack">
+      <form className="operator-section chat-command-panel" aria-label="Chat command line" onSubmit={(event) => { event.preventDefault(); props.onSubmitCommand().catch(console.error); }}>
+        <label>
+          <span>Command line</span>
+          <div className="chat-command-input-row">
+            <MessageSquare size={16} />
+            <input aria-label="Chat command line" value={props.command} placeholder="Message, /1d20 + 2, /roll 2d6, /gm note, /w player message" onChange={(event) => props.setCommand(event.target.value)} />
+            <button className="icon-button" type="submit" title="Send chat command" aria-label="Send chat command">
+              <Send size={16} />
+            </button>
+          </div>
+        </label>
+        <div className="chat-command-help">
+          <code>/1d20 + 2</code>
+          <code>/roll 2d6</code>
+          <code>/gm private note</code>
+          <code>/w player message</code>
+          <code>/me emote</code>
+        </div>
+        {props.replyTarget && (
+          <div className="operator-row tool-call-row" role="status" aria-label="Chat reply target">
+            <span>Replying to {props.replyTarget.body.slice(0, 64)}</span>
+            <button className="ghost-button small" type="button" onClick={props.onClearReply}>Clear reply</button>
+          </div>
+        )}
+      </form>
       <div className="panel-heading">
         <div>
           <div className="section-title">Chat History</div>

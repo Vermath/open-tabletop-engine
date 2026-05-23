@@ -2802,6 +2802,61 @@ input {
   overflow: auto;
 }
 
+.chat-command-bar {
+  grid-area: chat;
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(148, 160, 173, 0.22);
+  border-radius: 8px;
+  border-color: rgba(148, 160, 173, 0.22);
+  background: rgba(15, 21, 29, 0.78);
+}
+
+.chat-command-bar input,
+.dice-box input {
+  min-width: 0;
+}
+
+.chat-command-panel {
+  gap: 9px;
+}
+
+.chat-command-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+.chat-command-input-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-command-input-row input {
+  min-width: 0;
+}
+
+.chat-command-help {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chat-command-help code {
+  padding: 3px 6px;
+  border: 1px solid rgba(148, 160, 173, 0.24);
+  border-radius: 6px;
+  color: var(--muted);
+  background: rgba(15, 21, 29, 0.78);
+  font-size: 11px;
+}
+
 .chat-line {
   display: flex;
   gap: 10px;
