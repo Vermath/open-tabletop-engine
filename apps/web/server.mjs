@@ -1,13 +1,16 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import http from "node:http";
 import https from "node:https";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const appRoot = fileURLToPath(new URL("./", import.meta.url));
 const root = fileURLToPath(new URL("./dist/", import.meta.url));
 const assetRoot = join(root, "assets");
+const indexFile = join(root, "index.html");
 const host = process.env.HOST ?? "0.0.0.0";
 const port = Number(process.env.PORT ?? 4173);
 const apiBaseUrl = process.env.OTTE_API_URL ?? process.env.VITE_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api.railway.internal:4000" : undefined);
@@ -23,6 +26,8 @@ const contentTypes = new Map([
   [".svg", "image/svg+xml"],
   [".webp", "image/webp"]
 ]);
+
+await ensureStaticBuild();
 
 const server = createServer(async (request, response) => {
   if (apiBaseUrl && request.url?.startsWith("/api/")) {
@@ -47,7 +52,12 @@ const server = createServer(async (request, response) => {
     response.end();
     return;
   }
-  createReadStream(filePath).pipe(response);
+  createReadStream(filePath)
+    .on("error", (error) => {
+      console.error(`Failed to stream static file ${filePath}:`, error);
+      response.destroy(error);
+    })
+    .pipe(response);
 });
 
 server.listen(port, host, () => {
@@ -75,7 +85,21 @@ async function resolveStaticPath(pathname) {
       // Fall through to SPA fallback.
     }
   }
-  return join(root, "index.html");
+  return indexFile;
+}
+
+async function ensureStaticBuild() {
+  if (existsSync(indexFile)) return;
+  console.warn("Static web bundle is missing; running vite build before starting.");
+  const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const result = spawnSync(pnpm, ["exec", "vite", "build"], {
+    cwd: appRoot,
+    env: process.env,
+    stdio: "inherit"
+  });
+  if (result.status !== 0 || !existsSync(indexFile)) {
+    throw new Error(`Static web bundle missing and startup build failed with status ${result.status ?? "unknown"}.`);
+  }
 }
 
 function proxyApiRequest(request, response) {
