@@ -21622,6 +21622,57 @@ registerCommand("/state", (input) => {
     await app.close();
   });
 
+  it("returns Codex app-server OAuth login details when the agent needs ChatGPT auth", async () => {
+    class AuthRequiredProvider implements AiProvider {
+      id = "codex-app-server";
+      label = "Codex App Server";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        const error = new Error("Codex app-server ChatGPT sign-in is required.") as Error & {
+          code: "codex_auth_required";
+          login: { type: "chatgpt"; loginId: string; authUrl: string };
+        };
+        error.code = "codex_auth_required";
+        error.login = {
+          type: "chatgpt",
+          loginId: "login_test",
+          authUrl: "https://chatgpt.test/oauth"
+        };
+        throw error;
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new AuthRequiredProvider() });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: {
+        prompt: "Move Valen with the agent.",
+        surface: "agent_panel"
+      }
+    });
+
+    expect(response.statusCode).toBe(428);
+    expect(response.json()).toMatchObject({
+      error: "codex_auth_required",
+      message: "Codex app-server ChatGPT sign-in is required.",
+      codexAuth: {
+        type: "chatgpt",
+        loginId: "login_test",
+        authUrl: "https://chatgpt.test/oauth"
+      },
+      thread: {
+        provider: "codex-app-server",
+        status: "failed",
+        providerError: "Codex app-server ChatGPT sign-in is required."
+      }
+    });
+    expect(store.state.aiThreads.at(-1)).toMatchObject({ status: "failed", providerError: "Codex app-server ChatGPT sign-in is required." });
+    await app.close();
+  });
+
   it("serves MCP tool listing and permission-checked board tools", async () => {
     const app = await buildApp({ store: new MemoryStateStore() });
     const initialize = await app.inject({

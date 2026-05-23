@@ -5,6 +5,18 @@ export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 const sessionTokenKey = "otte:sessionToken";
 const sessionTokenUserKey = "otte:sessionTokenUser";
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body: unknown,
+    readonly responseText: string
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export function getSessionUserId(): string {
   return localStorage.getItem("otte:userId") ?? "usr_demo_gm";
 }
@@ -227,11 +239,35 @@ async function sessionHeaders(): Promise<Record<string, string>> {
   return { authorization: `Bearer ${await ensureSessionToken()}` };
 }
 
+async function apiErrorFromResponse(response: Response): Promise<ApiError> {
+  const text = await response.text();
+  let body: unknown;
+  if (text) {
+    try {
+      body = JSON.parse(text) as unknown;
+    } catch {
+      body = undefined;
+    }
+  }
+  const message = responseErrorMessage(body, text, response);
+  return new ApiError(message, response.status, body, text);
+}
+
+function responseErrorMessage(body: unknown, text: string, response: Response): string {
+  if (isPlainObject(body) && typeof body.message === "string" && body.message.trim()) return body.message;
+  if (text.trim()) return text;
+  return `${response.status} ${response.statusText || "Request failed"}`;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     headers: await sessionHeaders()
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
@@ -241,7 +277,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
     body: JSON.stringify(body)
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
@@ -251,7 +287,7 @@ export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
     body: JSON.stringify(body)
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
@@ -260,7 +296,7 @@ export async function apiDelete<T>(path: string): Promise<T> {
     method: "DELETE",
     headers: await sessionHeaders()
   });
-  if (!response.ok) throw new Error(await response.text());
+  if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 

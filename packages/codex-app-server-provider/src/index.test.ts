@@ -1,6 +1,6 @@
 import type { AiProviderRequest } from "@open-tabletop/ai-core";
 import { describe, expect, it } from "vitest";
-import { CodexAppServerProvider, CodexAppServerWebSocketTransport } from "./index";
+import { CodexAppServerAuthRequiredError, CodexAppServerProvider, CodexAppServerWebSocketTransport } from "./index";
 
 const baseRequest: AiProviderRequest = {
   threadId: "thr_test",
@@ -81,6 +81,37 @@ describe("CodexAppServerWebSocketTransport", () => {
     });
   });
 
+  it("starts the managed ChatGPT login flow when Codex has no account", async () => {
+    let socket: FakeCodexSocket | undefined;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 1000,
+        webSocketFactory: () => {
+          socket = new FakeCodexSocket({ account: { authMode: null } });
+          return socket;
+        }
+      })
+    });
+
+    await expect(async () => {
+      for await (const _event of provider.stream(baseRequest)) {
+        // The unauthenticated account should fail before any model events stream.
+      }
+    }).rejects.toMatchObject({
+      code: "codex_auth_required",
+      login: {
+        type: "chatgpt",
+        loginId: "login_test",
+        authUrl: "https://chatgpt.test/oauth"
+      }
+    } satisfies Partial<CodexAppServerAuthRequiredError>);
+    expect(socket?.sent.find((message) => message.method === "account/read")).toBeTruthy();
+    expect(socket?.sent.find((message) => message.method === "account/login/start")?.params).toEqual({ type: "chatgpt" });
+    expect(socket?.sent.some((message) => message.method === "thread/start")).toBe(false);
+  });
+
   it("returns generated image bytes from Codex app-server imageGeneration items", async () => {
     let socket: FakeCodexImageSocket | undefined;
     const transport = new CodexAppServerWebSocketTransport({
@@ -116,7 +147,7 @@ class FakeCodexSocket {
   toolResponse: unknown;
   private readonly listeners = new Map<string, Set<(event: { data?: unknown; reason?: string; message?: string }) => void>>();
 
-  constructor() {
+  constructor(private readonly options: { account?: unknown } = {}) {
     queueMicrotask(() => this.emit("open", {}));
   }
 
@@ -139,6 +170,14 @@ class FakeCodexSocket {
     }
     if (message.method === "initialize") {
       this.emitMessage({ id: message.id, result: { userAgent: "fake", codexHome: "C:\\tmp", platformFamily: "windows", platformOs: "windows" } });
+      return;
+    }
+    if (message.method === "account/read") {
+      this.emitMessage({ id: message.id, result: this.options.account ?? { authMode: "chatgpt" } });
+      return;
+    }
+    if (message.method === "account/login/start") {
+      this.emitMessage({ id: message.id, result: { type: "chatgpt", loginId: "login_test", authUrl: "https://chatgpt.test/oauth" } });
       return;
     }
     if (message.method === "thread/start") {
@@ -198,6 +237,10 @@ class FakeCodexImageSocket {
     this.sent.push(message);
     if (message.method === "initialize") {
       this.emitMessage({ id: message.id, result: { userAgent: "fake", codexHome: "C:\\tmp", platformFamily: "windows", platformOs: "windows" } });
+      return;
+    }
+    if (message.method === "account/read") {
+      this.emitMessage({ id: message.id, result: { authMode: "chatgpt" } });
       return;
     }
     if (message.method === "modelProvider/capabilities/read") {

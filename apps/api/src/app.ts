@@ -5442,7 +5442,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         completeAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount);
         break;
       } catch (error) {
-        if (providerEventsSeen === 0 && retryAttempts < maxRetryAttempts) {
+        const codexAuthRequired = codexAuthRequiredPayload(error);
+        if (!codexAuthRequired && providerEventsSeen === 0 && retryAttempts < maxRetryAttempts) {
           retryAttempts += 1;
           continue;
         }
@@ -5450,9 +5451,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         thread.assistantMessage = content;
         failAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount, error);
         store.save();
-        return reply.code(502).send({
-          error: "ai_provider_failed",
+        return reply.code(codexAuthRequired ? 428 : 502).send({
+          error: codexAuthRequired ? "codex_auth_required" : "ai_provider_failed",
           message: thread.providerError,
+          codexAuth: codexAuthRequired,
           thread,
           events
         });
@@ -7516,6 +7518,20 @@ function repairLegacyMemoryExtractionThreads(store: StateStore): number {
 function aiProviderErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "AI provider failed";
   return message.slice(0, 500) || "AI provider failed";
+}
+
+function codexAuthRequiredPayload(error: unknown): { type: "chatgpt" | "chatgptDeviceCode"; loginId?: string; authUrl?: string; verificationUrl?: string; userCode?: string } | undefined {
+  if (!isRecord(error) || error.code !== "codex_auth_required" || !isRecord(error.login)) return undefined;
+  const login = error.login;
+  const type = login.type === "chatgptDeviceCode" ? "chatgptDeviceCode" : login.type === "chatgpt" ? "chatgpt" : undefined;
+  if (!type) return undefined;
+  return {
+    type,
+    loginId: stringFromRecord(login, "loginId"),
+    authUrl: stringFromRecord(login, "authUrl"),
+    verificationUrl: stringFromRecord(login, "verificationUrl"),
+    userCode: stringFromRecord(login, "userCode")
+  };
 }
 
 function ensureAiEvaluations(store: StateStore): void {

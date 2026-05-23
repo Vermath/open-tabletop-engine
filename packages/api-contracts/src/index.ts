@@ -3923,6 +3923,18 @@ const componentSchemas = {
       type: stringSchema
     }
   },
+  CodexAuthStart: {
+    type: "object",
+    additionalProperties: false,
+    required: ["type"],
+    properties: {
+      type: { type: "string", enum: ["chatgpt", "chatgptDeviceCode"] },
+      loginId: stringSchema,
+      authUrl: stringSchema,
+      verificationUrl: stringSchema,
+      userCode: stringSchema
+    }
+  },
   AiThreadResponse: {
     type: "object",
     additionalProperties: true,
@@ -3930,6 +3942,18 @@ const componentSchemas = {
     properties: {
       thread: schemaRef("AiThread"),
       assistantMessage: stringSchema,
+      events: arrayOf(schemaRef("AiProviderEvent"))
+    }
+  },
+  AiThreadAuthRequiredResponse: {
+    type: "object",
+    additionalProperties: true,
+    required: ["error", "message", "codexAuth", "thread", "events"],
+    properties: {
+      error: { type: "string", enum: ["codex_auth_required"] },
+      message: stringSchema,
+      codexAuth: schemaRef("CodexAuthStart"),
+      thread: schemaRef("AiThread"),
       events: arrayOf(schemaRef("AiProviderEvent"))
     }
   },
@@ -5649,7 +5673,8 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "POST /api/v1/campaigns/{campaignId}/ai/threads": {
     requestBody: jsonRequestBody(schemaRef("AiThreadCreateRequest")),
     responses: {
-      "200": jsonResponse("Completed AI thread response", schemaRef("AiThreadResponse"))
+      "200": jsonResponse("Completed AI thread response", schemaRef("AiThreadResponse")),
+      "428": jsonResponse("Codex app-server ChatGPT sign-in required", schemaRef("AiThreadAuthRequiredResponse"))
     }
   },
   "GET /api/v1/campaigns/{campaignId}/ai/usage": {

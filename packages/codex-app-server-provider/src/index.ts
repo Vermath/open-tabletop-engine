@@ -40,6 +40,23 @@ export interface CodexAppServerGeneratedImage {
   status?: string;
 }
 
+export interface CodexAppServerLoginStart {
+  type: "chatgpt" | "chatgptDeviceCode";
+  loginId?: string;
+  authUrl?: string;
+  verificationUrl?: string;
+  userCode?: string;
+}
+
+export class CodexAppServerAuthRequiredError extends Error {
+  readonly code = "codex_auth_required";
+
+  constructor(readonly login: CodexAppServerLoginStart, message = "Codex app-server ChatGPT sign-in is required.") {
+    super(message);
+    this.name = "CodexAppServerAuthRequiredError";
+  }
+}
+
 interface CodexWebSocketLike {
   send(data: string): void;
   close(code?: number, reason?: string): void;
@@ -76,6 +93,10 @@ type PendingRpc = {
   reject(error: Error): void;
   timer: ReturnType<typeof setTimeout>;
 };
+
+interface CodexAccountRpc {
+  request<TResponse = unknown>(method: string, params: unknown): Promise<TResponse>;
+}
 
 export class CodexAppServerProvider implements AiProvider {
   id = "codex-app-server";
@@ -162,6 +183,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
         }
       });
       rpc.notify("initialized");
+      await ensureCodexAppServerAuthenticated(rpc);
       const capabilities = await rpc.request<{ imageGeneration?: boolean }>("modelProvider/capabilities/read", {});
       if (capabilities.imageGeneration !== true) {
         throw new Error("Codex app-server does not report imageGeneration capability for the current account/model provider.");
@@ -220,6 +242,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
         }
       });
       rpc.notify("initialized");
+      await ensureCodexAppServerAuthenticated(rpc);
       const thread = await rpc.request<{ thread: { id: string } }>("thread/start", {
         cwd: this.options.cwd ?? null,
         approvalPolicy: "never",
@@ -394,7 +417,7 @@ class CodexAppServerImageRpc {
       return;
     }
     if (method === "account/chatgptAuthTokens/refresh") {
-      this.respondError(id, -32001, "Refresh Codex authentication with `codex login --device-auth`.");
+      this.respondError(id, -32001, "Codex app-server ChatGPT sign-in is required.");
       return;
     }
     this.respondError(id, -32601, `Unsupported Codex app-server image request method: ${method}`);
@@ -597,7 +620,7 @@ class CodexAppServerRpc {
       return;
     }
     if (method === "account/chatgptAuthTokens/refresh") {
-      this.respondError(id, -32001, "Refresh Codex authentication with `codex login --device-auth`.");
+      this.respondError(id, -32001, "Codex app-server ChatGPT sign-in is required.");
       return;
     }
     this.respondError(id, -32601, `Unsupported Codex app-server request method: ${method}`);
@@ -649,6 +672,61 @@ function normalizedTimeout(value: number | undefined, fallback: number): number 
   if (value === undefined) return fallback;
   if (!Number.isFinite(value) || value <= 0) return fallback;
   return Math.floor(value);
+}
+
+async function ensureCodexAppServerAuthenticated(rpc: CodexAccountRpc): Promise<void> {
+  let account: unknown;
+  try {
+    account = await rpc.request("account/read", {});
+  } catch (error) {
+    if (isCodexMethodNotFoundError(error)) return;
+    if (!isCodexAuthError(error)) throw error;
+    const login = await requestCodexManagedLogin(rpc);
+    throw new CodexAppServerAuthRequiredError(login);
+  }
+  if (!codexAccountNeedsLogin(account)) return;
+  const login = await requestCodexManagedLogin(rpc);
+  throw new CodexAppServerAuthRequiredError(login);
+}
+
+async function requestCodexManagedLogin(rpc: CodexAccountRpc): Promise<CodexAppServerLoginStart> {
+  const login = await rpc.request("account/login/start", { type: "chatgpt" });
+  return codexLoginStartFromResponse(login);
+}
+
+function codexLoginStartFromResponse(response: unknown): CodexAppServerLoginStart {
+  const record = isRecord(response) ? response : {};
+  const source = isRecord(record.login) ? record.login : record;
+  return {
+    type: source.type === "chatgptDeviceCode" ? "chatgptDeviceCode" : "chatgpt",
+    loginId: stringFromRecord(source, "loginId"),
+    authUrl: stringFromRecord(source, "authUrl"),
+    verificationUrl: stringFromRecord(source, "verificationUrl"),
+    userCode: stringFromRecord(source, "userCode")
+  };
+}
+
+function codexAccountNeedsLogin(account: unknown): boolean {
+  if (!isRecord(account)) return false;
+  if (account.authenticated === false || account.requiresLogin === true) return true;
+  if ("account" in account) {
+    if (account.account === null) return true;
+    if (isRecord(account.account)) return codexAccountNeedsLogin(account.account);
+  }
+  const authMode = nullableStringFromRecord(account, "authMode");
+  if (authMode === undefined) return false;
+  if (authMode === null) return true;
+  return ["", "none", "unauthenticated"].includes(authMode.toLowerCase());
+}
+
+function isCodexMethodNotFoundError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("\"code\":-32601") || message.includes("Method not found");
+}
+
+function isCodexAuthError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /unauth|auth|chatgpt|login|sign-in|sign in/i.test(message);
 }
 
 function assertTurnStartParams(params: unknown): CodexProviderTurnStartParams {
@@ -1056,4 +1134,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function numberFromRecord(record: Record<string, unknown>, key: string): number | undefined {
   const value = record[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringFromRecord(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function nullableStringFromRecord(record: Record<string, unknown>, key: string): string | null | undefined {
+  if (!(key in record)) return undefined;
+  const value = record[key];
+  if (value === null) return null;
+  return typeof value === "string" ? value : undefined;
 }
