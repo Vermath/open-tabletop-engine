@@ -3,7 +3,7 @@ import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenPositionChange } from "./board-history.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
@@ -74,6 +74,19 @@ interface AiAgentThreadResponse {
   thread: AiThread;
   assistantMessage: string;
   events: Array<{ type: string; proposalId?: string }>;
+}
+
+interface CodexAuthStart {
+  type: "chatgpt" | "chatgptDeviceCode";
+  loginId?: string;
+  authUrl?: string;
+  verificationUrl?: string;
+  userCode?: string;
+}
+
+interface AiAgentCodexAuthPrompt extends CodexAuthStart {
+  message: string;
+  opened: boolean;
 }
 
 interface BoardCaptureRequestEvent {
@@ -517,6 +530,7 @@ export function App() {
   const [aiAgentMessages, setAiAgentMessages] = useState<AiAgentMessage[]>([]);
   const [aiAgentBusy, setAiAgentBusy] = useState(false);
   const [aiAgentStatus, setAiAgentStatus] = useState("Agent ready");
+  const [aiAgentCodexAuth, setAiAgentCodexAuth] = useState<AiAgentCodexAuthPrompt | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole>("player");
   const [inviteToken, setInviteToken] = useState("");
@@ -2765,6 +2779,7 @@ export function App() {
     setAiAgentPrompt("");
     setAiAgentBusy(true);
     setAiAgentStatus("Agent working");
+    setAiAgentCodexAuth(null);
     try {
       const result = await apiPost<AiAgentThreadResponse>(`/api/v1/campaigns/${campaignId}/ai/threads`, {
         prompt,
@@ -2784,12 +2799,29 @@ export function App() {
       setAiAgentStatus(proposalIds.length > 0 ? `Agent drafted ${proposalIds.length} proposal${proposalIds.length === 1 ? "" : "s"}` : "Agent ready");
       await refresh();
     } catch (error) {
+      const codexAuth = codexAuthPromptFromError(error);
+      if (codexAuth) {
+        const opened = openCodexAuthPrompt(codexAuth);
+        const promptMessage = opened
+          ? "Codex sign-in opened. Finish the ChatGPT OAuth flow, then send your agent request again."
+          : "Codex sign-in is required. Use the sign-in button below, then send your agent request again.";
+        setAiAgentCodexAuth({ ...codexAuth, opened, message: promptMessage });
+        setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: promptMessage, createdAt: new Date().toISOString() }]);
+        setAiAgentStatus(opened ? "Codex sign-in opened" : "Codex sign-in required");
+        return;
+      }
       const message = errorMessage(error);
       setAiAgentMessages((messages) => [...messages, { id: `agent-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
       setAiAgentStatus(`Agent failed: ${message}`);
     } finally {
       setAiAgentBusy(false);
     }
+  }
+
+  function startAiAgentCodexAuth(auth: CodexAuthStart) {
+    const opened = openCodexAuthPrompt(auth);
+    setAiAgentCodexAuth((current) => (current ? { ...current, opened } : current));
+    setAiAgentStatus(opened ? "Codex sign-in opened" : "Codex sign-in blocked");
   }
 
   async function trackAiGenerationJob(job: AiGenerationJob, task: () => Promise<void>) {
@@ -4907,10 +4939,12 @@ export function App() {
           prompt={aiAgentPrompt}
           status={aiAgentStatus}
           busy={aiAgentBusy}
+          codexAuth={aiAgentCodexAuth}
           proposals={snapshot.proposals}
           canApply={hasPermission("ai.applyChanges")}
           onPromptChange={setAiAgentPrompt}
           onSend={() => sendAiAgentMessage().catch((error) => setAiAgentStatus(errorMessage(error)))}
+          onStartCodexAuth={startAiAgentCodexAuth}
           onClose={() => setAiAgentOpen(false)}
           onApply={(proposal) => approveAndApply(proposal).catch((error) => setAiAgentStatus(errorMessage(error)))}
           onReject={(proposal) => rejectProposalReview(proposal).catch((error) => setAiAgentStatus(errorMessage(error)))}
@@ -4925,10 +4959,12 @@ function AiAgentPanel(props: {
   prompt: string;
   status: string;
   busy: boolean;
+  codexAuth: AiAgentCodexAuthPrompt | null;
   proposals: Proposal[];
   canApply: boolean;
   onPromptChange(value: string): void;
   onSend(): void;
+  onStartCodexAuth(auth: CodexAuthStart): void;
   onClose(): void;
   onApply(proposal: Proposal): void;
   onReject(proposal: Proposal): void;
@@ -4938,6 +4974,7 @@ function AiAgentPanel(props: {
     .filter((proposal) => proposalIds.has(proposal.id) || (proposal.createdByType === "ai" && (proposal.status === "pending" || proposal.status === "approved")))
     .sort((left, right) => proposalStatusSort(left.status) - proposalStatusSort(right.status) || right.updatedAt.localeCompare(left.updatedAt))
     .slice(0, 4);
+  const codexAuthUrl = props.codexAuth?.authUrl ?? props.codexAuth?.verificationUrl;
   return (
     <aside className="ai-agent-popout" aria-label="AI Agent">
       <header className="ai-agent-header">
@@ -4961,6 +4998,18 @@ function AiAgentPanel(props: {
           ))
         )}
       </section>
+      {props.codexAuth && (
+        <section className="ai-agent-auth-callout" aria-label="Codex app-server sign-in">
+          <div>
+            <strong>ChatGPT sign-in required</strong>
+            <p>{props.codexAuth.message}</p>
+            {props.codexAuth.userCode && <code>{props.codexAuth.userCode}</code>}
+          </div>
+          <button className="primary-button" type="button" disabled={!codexAuthUrl} onClick={() => props.onStartCodexAuth(props.codexAuth!)}>
+            <KeyRound size={16} /> Sign in
+          </button>
+        </section>
+      )}
       {agentProposals.length > 0 && (
         <section className="ai-agent-proposals" aria-label="AI Agent proposals">
           {agentProposals.map((proposal) => (
@@ -9265,6 +9314,28 @@ function formatRollTermDetail(term: DiceRoll["terms"][number]): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function codexAuthPromptFromError(error: unknown): CodexAuthStart | undefined {
+  if (!(error instanceof ApiError)) return undefined;
+  const body = recordValue(error.body);
+  if (body.error !== "codex_auth_required") return undefined;
+  const auth = recordValue(body.codexAuth);
+  const type = auth.type === "chatgptDeviceCode" ? "chatgptDeviceCode" : auth.type === "chatgpt" ? "chatgpt" : undefined;
+  if (!type) return undefined;
+  return {
+    type,
+    loginId: stringValue(auth.loginId),
+    authUrl: stringValue(auth.authUrl),
+    verificationUrl: stringValue(auth.verificationUrl),
+    userCode: stringValue(auth.userCode)
+  };
+}
+
+function openCodexAuthPrompt(auth: CodexAuthStart): boolean {
+  const url = auth.authUrl ?? auth.verificationUrl;
+  if (!url) return false;
+  return Boolean(window.open(url, "_blank", "noopener,noreferrer"));
 }
 
 function createdSceneIdFromProposal(proposal: Proposal): string | undefined {

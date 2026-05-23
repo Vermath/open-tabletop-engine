@@ -4644,7 +4644,7 @@ body {
   bottom: 20px;
   z-index: 80;
   display: grid;
-  grid-template-rows: auto minmax(180px, 1fr) auto auto;
+  grid-template-rows: auto minmax(180px, 1fr) auto auto auto;
   gap: 10px;
   width: min(420px, calc(100vw - 32px));
   max-height: min(680px, calc(100vh - 40px));
@@ -4714,6 +4714,38 @@ body {
 .ai-agent-message p {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.ai-agent-auth-callout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(80, 208, 178, 0.34);
+  border-radius: 8px;
+  background: rgba(12, 32, 29, 0.84);
+}
+
+.ai-agent-auth-callout strong {
+  display: block;
+  color: var(--paper);
+  font-size: 0.88rem;
+}
+
+.ai-agent-auth-callout p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.ai-agent-auth-callout code {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--paper);
 }
 
 .ai-agent-proposals {
@@ -5016,6 +5048,10 @@ body {
 
   .ai-agent-composer {
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .ai-agent-auth-callout {
     grid-template-columns: 1fr;
   }
 
