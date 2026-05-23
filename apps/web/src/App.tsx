@@ -4,6 +4,7 @@ import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circ
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
@@ -5300,13 +5301,14 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     });
   }, [tokens]);
 
-  function boardPoint(clientX: number, clientY: number): VisionPoint | undefined {
+  function boardPoint(clientX: number, clientY: number, options: { clamp?: boolean } = {}): VisionPoint | undefined {
     const rect = boardRef.current?.getBoundingClientRect();
     if (!rect) return undefined;
-    return {
-      x: Math.max(0, Math.min(props.scene.width, Math.round(((clientX - rect.left) / rect.width) * props.scene.width))),
-      y: Math.max(0, Math.min(props.scene.height, Math.round(((clientY - rect.top) / rect.height) * props.scene.height)))
-    };
+    return scenePointFromClient(rect, props.scene, clientX, clientY, options);
+  }
+
+  function annotationDraftPoint(kind: ActiveAnnotationTool, clientX: number, clientY: number): VisionPoint | undefined {
+    return boardPoint(clientX, clientY, { clamp: !isDistanceMeasurementTool(kind) && kind !== "template" });
   }
 
   function isClientPointInsideBoard(clientX: number, clientY: number): boolean {
@@ -5582,10 +5584,10 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   }
 
   function appendAnnotationDraftPoint(clientX: number, clientY: number, pointerId: number) {
-    const point = boardPoint(clientX, clientY);
-    if (!point) return;
     const current = annotationDraftRef.current;
     if (!current || current.pointerId !== pointerId) return;
+    const point = annotationDraftPoint(current.kind, clientX, clientY);
+    if (!point) return;
     const points = current.kind === "drawing" ? appendStrokePoint(current.points, point, props.scene.gridSize) : [current.points[0]!, point];
     const next = { ...current, points };
     annotationDraftRef.current = next;
@@ -5595,7 +5597,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   function finishAnnotationDraft(pointerId: number, clientX: number, clientY: number) {
     const current = annotationDraftRef.current;
     if (!current || current.pointerId !== pointerId) return;
-    const point = boardPoint(clientX, clientY);
+    const point = annotationDraftPoint(current.kind, clientX, clientY);
     const points = point ? (current.kind === "drawing" ? appendStrokePoint(current.points, point, props.scene.gridSize) : [current.points[0]!, point]) : current.points;
     annotationDraftRef.current = null;
     setAnnotationDraft(null);
@@ -6074,8 +6076,12 @@ function annotationEditHandles(annotation: SceneAnnotation): Array<{ id: string;
 
 const feetPerGridSquare = 5;
 
-function isTransientMeasurementTool(kind: ActiveAnnotationTool): kind is "ruler" | MeasurementTool {
+function isDistanceMeasurementTool(kind: ActiveAnnotationTool): kind is "ruler" | MeasurementTool {
   return kind === "ruler" || kind === "measure-circle" || kind === "measure-cone";
+}
+
+function isTransientMeasurementTool(kind: ActiveAnnotationTool): kind is "ruler" | MeasurementTool {
+  return isDistanceMeasurementTool(kind);
 }
 
 function draftAnnotationKind(kind: ActiveAnnotationTool): SceneAnnotationKind {
