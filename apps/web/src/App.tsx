@@ -6760,7 +6760,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
     .filter((entry) => !normalizedCompendiumSearch || [entry.name, entry.type, entry.summary, entry.id].some((value) => value.toLocaleLowerCase().includes(normalizedCompendiumSearch)))
     .slice(0, 8);
   return (
-    <div className="panel-stack">
+    <div className="panel-stack actor-sidebar-summary">
       <header className="panel-hero actor-hero">
         <div>
           <div className="section-title">Selected Actor</div>
@@ -7222,6 +7222,9 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           )}
         </section>
       )}
+      <details className="operator-section actor-detail-disclosure actor-token-editor">
+        <summary>Token settings</summary>
+        <div className="actor-detail-body">
       <div className="metric-row">
         <span>Token</span>
         <strong>{props.token?.name ?? "Unlinked"}</strong>
@@ -7517,6 +7520,11 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           )}
         </>
       )}
+        </div>
+      </details>
+      <details className="operator-section actor-detail-disclosure">
+        <summary>Actor details</summary>
+        <div className="actor-detail-body">
       <div className="metric-row">
         <span>HP</span>
         <strong>
@@ -7635,6 +7643,9 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           <input id={`actor-resource-${resource.key}`} aria-label={`${resource.label} resource current`} type="number" defaultValue={resource.current} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorData(props.actor!, { resources: actorResourceUpdate(props.actor!, resource.key, Number(event.currentTarget.value)) })} />
         </div>
       ))}
+        </div>
+      </details>
+      {sheetView === "compendium" && (
       <section className="operator-section compendium-browser" aria-label="Actor compendium browser">
         <div className="operator-heading">
           <div>
@@ -7697,6 +7708,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           )}
         </div>
       </section>
+      )}
       <details className="operator-section raw-data-details">
         <summary>Raw actor data</summary>
         <pre>{JSON.stringify(props.actor.data, null, 2)}</pre>

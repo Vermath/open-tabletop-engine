@@ -1289,7 +1289,8 @@ a[href]:focus-visible,
   min-width: 0;
   border-left: 1px solid var(--line);
   background: var(--panel);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .tabs {
@@ -1317,6 +1318,7 @@ a[href]:focus-visible,
   display: grid;
   gap: 12px;
   padding: 16px;
+  min-width: 0;
 }
 
 .panel-heading,
@@ -1338,6 +1340,8 @@ a[href]:focus-visible,
 .panel-stack h2 {
   font-family: Georgia, serif;
   font-size: 26px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .operator-section {
@@ -1380,6 +1384,76 @@ a[href]:focus-visible,
 .panel-hero .ghost-button,
 .panel-hero .icon-button {
   align-self: start;
+}
+
+.actor-sidebar-summary {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.actor-sidebar-summary .actor-hero {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.actor-sidebar-summary .actor-hero .ghost-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.actor-sidebar-summary .admin-meta {
+  min-width: 0;
+}
+
+.actor-sidebar-summary .admin-meta span,
+.actor-sidebar-summary .metric-row strong,
+.actor-sidebar-summary .sheet-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.actor-at-a-glance .metric-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.actor-sidebar-summary > .tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0;
+  border-bottom: 0;
+}
+
+.actor-sidebar-summary > .tabs .tab {
+  min-width: 0;
+}
+
+.actor-detail-disclosure {
+  padding: 0;
+  overflow: hidden;
+}
+
+.actor-detail-disclosure summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 0 12px;
+  cursor: pointer;
+  color: var(--paper);
+  font-weight: 700;
+  list-style-position: inside;
+}
+
+.actor-detail-body {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 12px 12px;
+}
+
+.actor-token-editor .inspector-grid {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .panel-summary-grid {
@@ -1812,6 +1886,7 @@ a[href]:focus-visible,
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+  min-width: 0;
 }
 
 .loose-item-tray {
@@ -1831,6 +1906,7 @@ a[href]:focus-visible,
   align-items: center;
   gap: 6px;
   max-width: 100%;
+  min-width: 0;
   min-height: 32px;
   padding: 6px 9px;
   border: 1px solid #594831;
@@ -4215,6 +4291,14 @@ body {
   right: auto;
   left: 88px;
   width: min(300px, calc(100% - 112px));
+}
+
+.placement-chip span,
+.loose-item-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table-tool-panel.annotation-panel {
