@@ -1,6 +1,6 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { toPng } from "html-to-image";
-import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
@@ -281,7 +281,9 @@ type AdvancementOptionInfo = {
 };
 
 type AssetLifecycleStatus = NonNullable<MapAsset["lifecycle"]>["status"];
-type AnnotationTool = SceneAnnotationKind | null;
+type MeasurementTool = "measure-circle" | "measure-cone";
+type AnnotationTool = SceneAnnotationKind | MeasurementTool | null;
+type ActiveAnnotationTool = NonNullable<AnnotationTool>;
 type ActorLoadoutFilter = "all" | "equipped" | "consumable" | "magic";
 
 function summarizeImport(result: CampaignImportResult): string {
@@ -2013,7 +2015,7 @@ export function App() {
     setStatus(`${titleCaseLabel(layer)} annotations ${visible ? "shown" : "hidden"}`);
   }
 
-  function toggleAnnotationTool(kind: SceneAnnotationKind) {
+  function toggleAnnotationTool(kind: ActiveAnnotationTool) {
     setFogBrushMode(null);
     setAnnotationTool((current) => {
       const next = current === kind ? null : kind;
@@ -2037,7 +2039,7 @@ export function App() {
       templateSaveDc: kind === "template" && templateSaveDc.trim() ? Number(templateSaveDc) : undefined,
       templateDamageFormula: kind === "template" ? templateDamageFormula.trim() || undefined : undefined,
       templateDamageType: kind === "template" ? templateDamageType.trim() || undefined : undefined,
-      snapToGrid: annotationSnapToGrid,
+      snapToGrid: kind === "ruler" ? false : annotationSnapToGrid,
       expiresInSeconds: kind === "ping" ? 45 : undefined
     });
     await refresh();
@@ -4780,7 +4782,7 @@ interface FogStrokeDraft {
 
 interface AnnotationDraft {
   pointerId: number;
-  kind: SceneAnnotationKind;
+  kind: ActiveAnnotationTool;
   points: VisionPoint[];
 }
 
@@ -5401,6 +5403,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     const points = point ? (current.kind === "drawing" ? appendStrokePoint(current.points, point, props.scene.gridSize) : [current.points[0]!, point]) : current.points;
     annotationDraftRef.current = null;
     setAnnotationDraft(null);
+    if (isTransientMeasurementTool(current.kind)) return;
     const radius = current.kind === "template" && points.length >= 2 ? Math.round(Math.hypot(points[1]!.x - points[0]!.x, points[1]!.y - points[0]!.y)) : undefined;
     props.onAnnotationCreate(current.kind, points, radius).catch(console.error);
   }
@@ -5788,7 +5791,7 @@ function SceneAnnotationShape(props: { annotation: SceneAnnotation; scene: Scene
   }
   if (annotation.kind === "template") {
     const shape = annotation.templateShape ?? "circle";
-    const label = annotationLabel(annotation);
+    const label = annotationLabel(annotation, props.scene);
     if (shape === "line" && second) {
       const width = Math.max(12, props.scene.gridSize);
       return (
@@ -5833,7 +5836,7 @@ function SceneAnnotationShape(props: { annotation: SceneAnnotation; scene: Scene
       <line x1={first.x} y1={first.y} x2={second.x} y2={second.y} />
       <circle cx={first.x} cy={first.y} r={6} />
       <circle cx={second.x} cy={second.y} r={6} />
-      <text x={(first.x + second.x) / 2 + 8} y={(first.y + second.y) / 2 - 8}>{annotationLabel(annotation)}</text>
+      <text x={(first.x + second.x) / 2 + 8} y={(first.y + second.y) / 2 - 8}>{annotationLabel(annotation, props.scene)}</text>
     </g>
   );
 }
@@ -5871,27 +5874,52 @@ function annotationEditHandles(annotation: SceneAnnotation): Array<{ id: string;
   return handles;
 }
 
+const feetPerGridSquare = 5;
+
+function isTransientMeasurementTool(kind: ActiveAnnotationTool): kind is "ruler" | MeasurementTool {
+  return kind === "ruler" || kind === "measure-circle" || kind === "measure-cone";
+}
+
+function draftAnnotationKind(kind: ActiveAnnotationTool): SceneAnnotationKind {
+  if (kind === "measure-circle" || kind === "measure-cone") return "template";
+  return kind;
+}
+
+function draftTemplateShape(kind: ActiveAnnotationTool, templateShape: SceneTemplateShape): SceneTemplateShape | undefined {
+  if (kind === "measure-circle") return "circle";
+  if (kind === "measure-cone") return "cone";
+  return kind === "template" ? templateShape : undefined;
+}
+
+function formatFeet(distancePx: number, scene: Scene): string {
+  const feet = (distancePx / Math.max(scene.gridSize, 1)) * feetPerGridSquare;
+  const rounded = Math.round(feet * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)} ft`;
+}
+
 function draftAnnotation(draft: AnnotationDraft, templateShape: SceneTemplateShape): SceneAnnotation {
+  const kind = draftAnnotationKind(draft.kind);
+  const resolvedTemplateShape = draftTemplateShape(draft.kind, templateShape);
   return {
     id: "draft",
     sceneId: "draft",
-    kind: draft.kind,
+    kind,
     createdByUserId: "draft",
-    color: annotationColor(draft.kind),
+    color: annotationColor(kind),
     label: annotationToolLabel(draft.kind),
-    templateShape: draft.kind === "template" ? templateShape : undefined,
+    templateShape: resolvedTemplateShape,
     points: draft.points,
-    radius: draft.kind === "template" && draft.points.length >= 2 ? Math.round(Math.hypot(draft.points[1]!.x - draft.points[0]!.x, draft.points[1]!.y - draft.points[0]!.y)) : undefined,
+    radius: kind === "template" && draft.points.length >= 2 ? Math.round(Math.hypot(draft.points[1]!.x - draft.points[0]!.x, draft.points[1]!.y - draft.points[0]!.y)) : undefined,
     createdAt: "",
     updatedAt: ""
   };
 }
 
-function annotationLabel(annotation: SceneAnnotation): string {
+function annotationLabel(annotation: SceneAnnotation, scene: Scene): string {
   if (annotation.kind === "ruler" && annotation.points.length >= 2) {
-    return `${Math.round(distanceBetween(annotation.points[0]!, annotation.points[1]!))} px`;
+    return formatFeet(distanceBetween(annotation.points[0]!, annotation.points[1]!), scene);
   }
-  if (annotation.kind === "template") return `${titleCaseLabel(annotation.templateShape ?? "circle")} ${Math.round(annotation.radius ?? 0)} px`;
+  if (annotation.kind === "template") return `${titleCaseLabel(annotation.templateShape ?? "circle")} ${formatFeet(annotation.radius ?? 0, scene)}`;
   return annotation.label ?? annotationToolLabel(annotation.kind);
 }
 
@@ -5911,9 +5939,11 @@ function templateConePoints(annotation: SceneAnnotation): string | undefined {
   return [origin, left, right].map((point) => `${Math.round(point.x)},${Math.round(point.y)}`).join(" ");
 }
 
-function annotationToolLabel(kind: SceneAnnotationKind): string {
+function annotationToolLabel(kind: ActiveAnnotationTool): string {
   if (kind === "ping") return "Ping";
   if (kind === "ruler") return "Ruler";
+  if (kind === "measure-circle") return "Circle measure";
+  if (kind === "measure-cone") return "Cone measure";
   if (kind === "template") return "Template";
   return "Drawing";
 }
@@ -5989,7 +6019,7 @@ function MapSelectionStatus(props: { selectedCount: number; onClear(): void }) {
   );
 }
 
-function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onHideFog(): void; onRevealFogPolygon(): void; onToggleFogBrush(mode: FogMode): void; onToggleAnnotationTool(kind: SceneAnnotationKind): void; onDeleteLatestAnnotation(): void; onUndoFog(): void; onShowFogHistory(): void; onSampleVisionPoint(): void; onSaveFogPreset(): void; onApplyFogPreset(): void; onDeleteFogPreset(): void; onAddWall(): void; onAddTerrainWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; activeFogBrushMode: FogMode | null; activeAnnotationTool: AnnotationTool; hasFogPresets: boolean; canUpdateScene: boolean; canAnnotate: boolean }) {
+function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onHideFog(): void; onRevealFogPolygon(): void; onToggleFogBrush(mode: FogMode): void; onToggleAnnotationTool(kind: ActiveAnnotationTool): void; onDeleteLatestAnnotation(): void; onUndoFog(): void; onShowFogHistory(): void; onSampleVisionPoint(): void; onSaveFogPreset(): void; onApplyFogPreset(): void; onDeleteFogPreset(): void; onAddWall(): void; onAddTerrainWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; activeFogBrushMode: FogMode | null; activeAnnotationTool: AnnotationTool; hasFogPresets: boolean; canUpdateScene: boolean; canAnnotate: boolean }) {
   return (
     <div className="toolbar">
       <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select" aria-label="Select" onClick={props.onSelectTool}>
@@ -6000,6 +6030,12 @@ function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCo
       </button>
       <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
         <Ruler size={17} />
+      </button>
+      <button className={`tool ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle" aria-label="Measure circle" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
+        <Circle size={17} />
+      </button>
+      <button className={`tool ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone" aria-label="Measure cone" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
+        <Triangle size={17} />
       </button>
       <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
         <MapPin size={17} />
@@ -6068,6 +6104,12 @@ function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCo
           </button>
           <button className={`ghost-button ${props.activeAnnotationTool === "ping" ? "active" : ""}`} type="button" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
             <MapPin size={15} /> Ping
+          </button>
+          <button className={`ghost-button ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} type="button" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
+            <Circle size={15} /> Measure circle
+          </button>
+          <button className={`ghost-button ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} type="button" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
+            <Triangle size={15} /> Measure cone
           </button>
           <button className={`ghost-button ${props.activeAnnotationTool === "template" ? "active" : ""}`} type="button" onClick={() => props.onToggleAnnotationTool("template")} disabled={!props.canUpdateScene}>
             <Circle size={15} /> Template
