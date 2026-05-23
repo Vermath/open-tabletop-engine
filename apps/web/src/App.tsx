@@ -3634,7 +3634,6 @@ export function App() {
   const canSelectPrepScenes = showSceneSelectionControls && hasPermission("scene.update");
   const showQuickCreate = workspaceMode === "live" || workspaceMode === "prep";
   const showTableWorkspace = workspaceMode === "live" || workspaceMode === "prep";
-  const showConsoleDock = workspaceMode !== "manage";
   const inspectorTabs: InspectorTab[] = workspaceMode === "live"
     ? ["actors", "chat", "combat"]
     : ["actors", "journal", "content", "plugins"];
@@ -4839,29 +4838,6 @@ export function App() {
           </section>
         )}
 
-        {showConsoleDock && <footer className="console">
-          <div className="chat-log">
-            {snapshot.chat.slice(-5).map((message) => (
-              <div key={message.id} className={`chat-line ${message.type}`}>
-                <span>{message.type}</span>
-                {message.body}
-              </div>
-            ))}
-          </div>
-          {chatReplyTarget && (
-            <div className="operator-row tool-call-row" role="status" aria-label="Chat reply target">
-              <span>Replying to {chatReplyTarget.body.slice(0, 64)}</span>
-              <button className="ghost-button" type="button" onClick={() => setChatReplyToMessageId("")}>Clear reply</button>
-            </div>
-          )}
-          <form className="chat-command-bar" onSubmit={(event) => { event.preventDefault(); submitChatCommand().catch((error) => setStatus(errorMessage(error))); }}>
-            <MessageSquare size={17} />
-            <input value={chatBody} onChange={(event) => setChatBody(event.target.value)} aria-label="Chat command" placeholder="Message, /1d20 + 2, /roll 2d6, /gm note, /w player message" />
-            <button className="icon-button" type="submit" title="Send chat command" aria-label="Send chat command">
-              <Send size={17} />
-            </button>
-          </form>
-        </footer>}
       </section>
       {aiAgentOpen && (
         <AiAgentPanel
@@ -9375,31 +9351,6 @@ function ChatPanel(props: { command: string; setCommand(value: string): void; re
 
   return (
     <div className="panel-stack">
-      <form className="operator-section chat-command-panel" aria-label="Chat command line" onSubmit={(event) => { event.preventDefault(); props.onSubmitCommand().catch(console.error); }}>
-        <label>
-          <span>Command line</span>
-          <div className="chat-command-input-row">
-            <MessageSquare size={16} />
-            <input aria-label="Chat command line" value={props.command} placeholder="Message, /1d20 + 2, /roll 2d6, /gm note, /w player message" onChange={(event) => props.setCommand(event.target.value)} />
-            <button className="icon-button" type="submit" title="Send chat command" aria-label="Send chat command">
-              <Send size={16} />
-            </button>
-          </div>
-        </label>
-        <div className="chat-command-help">
-          <code>/1d20 + 2</code>
-          <code>/roll 2d6</code>
-          <code>/gm private note</code>
-          <code>/w player message</code>
-          <code>/me emote</code>
-        </div>
-        {props.replyTarget && (
-          <div className="operator-row tool-call-row" role="status" aria-label="Chat reply target">
-            <span>Replying to {props.replyTarget.body.slice(0, 64)}</span>
-            <button className="ghost-button small" type="button" onClick={props.onClearReply}>Clear reply</button>
-          </div>
-        )}
-      </form>
       <div className="panel-heading">
         <div>
           <div className="section-title">Chat History</div>
@@ -9418,6 +9369,79 @@ function ChatPanel(props: { command: string; setCommand(value: string): void; re
           </button>
         </div>
       </div>
+      <section className="operator-section chat-room" aria-label="Chat messages">
+        <div className="operator-heading">
+          <div>
+            <div className="section-title">Messages</div>
+            <p className="panel-subtitle">Type normally or use slash commands.</p>
+          </div>
+          <MessageSquare size={15} />
+        </div>
+        <div className="chat-history-list chat-room-messages">
+          {filteredMessages.length === 0 ? (
+            <div className="empty-state compact">No chat messages match this view.</div>
+          ) : (
+            filteredMessages.map((message) => (
+              <article className="chat-history-entry" key={message.id}>
+                <div className="operator-heading">
+                  <div>
+                    <h3>{titleCaseLabel(message.type)}</h3>
+                    <p>{formatDateTime(message.createdAt)}</p>
+                  </div>
+                  <span className="status-pill">{message.visibility}</span>
+                </div>
+                {message.replyToMessageId && (
+                  <div className="operator-row tool-call-row" aria-label="Chat reply context">
+                    <span>Reply to</span>
+                    <strong>{messageById.get(message.replyToMessageId)?.body.slice(0, 80) ?? message.replyToMessageId}</strong>
+                  </div>
+                )}
+                <p>{message.body}</p>
+                <div className="admin-meta">
+                  <span>{memberNames.get(message.userId) ?? message.userId}</span>
+                  {message.sceneId && <span>{message.sceneId}</span>}
+                  {message.rollId && <span>roll {message.rollId}</span>}
+                  {message.visibility === "whisper" && <span>to {message.recipientUserIds.map((recipientId) => memberNames.get(recipientId) ?? recipientId).join(", ")}</span>}
+                </div>
+                <div className="button-row">
+                  <button className="ghost-button" type="button" onClick={() => props.onReplyMessage(message.id)}>
+                    <MessageSquare size={14} /> Reply
+                  </button>
+                </div>
+                {props.canModerate && (
+                  <div className="button-row">
+                    <button className="danger-button" title="Delete chat message" aria-label="Delete chat message" onClick={() => props.onDeleteMessage(message).catch(console.error)}>
+                      <X size={14} /> Delete
+                    </button>
+                  </div>
+                )}
+              </article>
+            ))
+          )}
+        </div>
+        <form className="chat-command-panel" aria-label="Chat command line" onSubmit={(event) => { event.preventDefault(); props.onSubmitCommand().catch(console.error); }}>
+          {props.replyTarget && (
+            <div className="operator-row tool-call-row" role="status" aria-label="Chat reply target">
+              <span>Replying to {props.replyTarget.body.slice(0, 64)}</span>
+              <button className="ghost-button small" type="button" onClick={props.onClearReply}>Clear reply</button>
+            </div>
+          )}
+          <div className="chat-command-input-row">
+            <MessageSquare size={16} />
+            <input aria-label="Chat command line" value={props.command} placeholder="Message, /1d20 + 2, /roll 2d6, /gm note, /w player message" onChange={(event) => props.setCommand(event.target.value)} />
+            <button className="icon-button" type="submit" title="Send chat command" aria-label="Send chat command">
+              <Send size={16} />
+            </button>
+          </div>
+          <div className="chat-command-help">
+            <code>/1d20 + 2</code>
+            <code>/roll 2d6</code>
+            <code>/gm private note</code>
+            <code>/w player message</code>
+            <code>/me emote</code>
+          </div>
+        </form>
+      </section>
       <section className="metric-grid panel-summary-grid" aria-label="Chat summary">
         <MetricTile label="Filtered" value={formatNumber(filteredMessages.length)} />
         <MetricTile label="Rolls" value={formatNumber(props.rolls.length)} />
@@ -9537,48 +9561,6 @@ function ChatPanel(props: { command: string; setCommand(value: string): void; re
           </div>
         </section>
       )}
-      <div className="chat-history-list">
-        {filteredMessages.length === 0 ? (
-          <div className="empty-state compact">No chat messages match this view.</div>
-        ) : (
-          filteredMessages.map((message) => (
-            <article className="chat-history-entry" key={message.id}>
-              <div className="operator-heading">
-                <div>
-                  <h3>{titleCaseLabel(message.type)}</h3>
-                  <p>{formatDateTime(message.createdAt)}</p>
-                </div>
-                <span className="status-pill">{message.visibility}</span>
-              </div>
-              {message.replyToMessageId && (
-                <div className="operator-row tool-call-row" aria-label="Chat reply context">
-                  <span>Reply to</span>
-                  <strong>{messageById.get(message.replyToMessageId)?.body.slice(0, 80) ?? message.replyToMessageId}</strong>
-                </div>
-              )}
-              <p>{message.body}</p>
-              <div className="admin-meta">
-                <span>{memberNames.get(message.userId) ?? message.userId}</span>
-                {message.sceneId && <span>{message.sceneId}</span>}
-                {message.rollId && <span>roll {message.rollId}</span>}
-                {message.visibility === "whisper" && <span>to {message.recipientUserIds.map((recipientId) => memberNames.get(recipientId) ?? recipientId).join(", ")}</span>}
-              </div>
-              <div className="button-row">
-                <button className="ghost-button" type="button" onClick={() => props.onReplyMessage(message.id)}>
-                  <MessageSquare size={14} /> Reply
-                </button>
-              </div>
-              {props.canModerate && (
-                <div className="button-row">
-                  <button className="danger-button" title="Delete chat message" aria-label="Delete chat message" onClick={() => props.onDeleteMessage(message).catch(console.error)}>
-                    <X size={14} /> Delete
-                  </button>
-                </div>
-              )}
-            </article>
-          ))
-        )}
-      </div>
       <div className="panel-heading">
         <div>
           <div className="section-title">Roll History</div>
