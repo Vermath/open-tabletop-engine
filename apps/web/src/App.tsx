@@ -450,6 +450,7 @@ export function App() {
   const [sceneId, setSceneId] = useState(() => initialStoredId("otte:selectedSceneId", "scn_vault_entry"));
   const [selectedTokenId, setSelectedTokenIdState] = useState("tok_valen");
   const [selectedTokenIds, setSelectedTokenIds] = useState<string[]>(["tok_valen"]);
+  const [activeTokenLayer, setActiveTokenLayer] = useState<TokenLayer>("player");
   const [battleMapZoom, setBattleMapZoom] = useState(1);
   const [fogBrushMode, setFogBrushMode] = useState<FogMode | null>(null);
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>(null);
@@ -702,6 +703,8 @@ export function App() {
   const activeScene = accessibleScenes.find((scene) => scene.active);
   const activeMapAsset = snapshot.assets.find((asset) => asset.id === activeScene?.backgroundAssetId);
   const selectedSceneTokens = selectedScene ? snapshot.tokens.filter((token) => token.sceneId === selectedScene.id) : [];
+  const selectedSceneActiveLayerTokens = selectedSceneTokens.filter((token) => tokenLayer(token) === activeTokenLayer);
+  const selectedSceneActiveLayerTokenKey = selectedSceneActiveLayerTokens.map((token) => token.id).join("|");
   const activeSceneTokens = activeScene ? snapshot.tokens.filter((token) => token.sceneId === activeScene.id) : [];
   const pendingTokenArtProposalTokenIds = useMemo(() => {
     const tokenIds = new Set<string>();
@@ -791,6 +794,16 @@ export function App() {
   const canUpdateSelectedActor = hasPermission("actor.update") || (selectedActor?.ownerUserId === currentUserId && hasPermission("actor.updateOwned"));
   const activeOrganization = snapshot.organizations.find((organization) => organization.id === activeOrganizationId);
   const canManageActiveOrganization = activeOrganization?.role === "owner" || activeOrganization?.role === "admin";
+
+  useEffect(() => {
+    const activeLayerTokenIds = new Set(selectedSceneActiveLayerTokenKey ? selectedSceneActiveLayerTokenKey.split("|") : []);
+    setSelectedTokenIds((current) => {
+      const next = current.filter((id) => activeLayerTokenIds.has(id));
+      if (next.length === current.length && next.every((id, index) => id === current[index])) return current;
+      return next;
+    });
+    setSelectedTokenIdState((current) => (current && activeLayerTokenIds.has(current) ? current : ""));
+  }, [activeTokenLayer, selectedScene?.id, selectedSceneActiveLayerTokenKey]);
 
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean } = {}) {
     const next = await loadSnapshot(nextCampaignId, nextSceneId);
@@ -1517,6 +1530,7 @@ export function App() {
     const centerX = options.x ?? selectedScene.width / 2;
     const centerY = options.y ?? selectedScene.height / 2;
     const position = tokenCoordinatesFromCenter(selectedScene, width, height, centerX, centerY);
+    const layer = options.layer ?? activeTokenLayer;
     const token = await apiPost<Token>(`/api/v1/scenes/${selectedScene.id}/tokens`, {
       actorId,
       imageAssetId,
@@ -1525,9 +1539,10 @@ export function App() {
       y: position.y,
       width,
       height,
-      layer: options.layer ?? "player",
+      layer,
       disposition: options.disposition ?? (actor ? "friendly" : newTokenDisposition)
     });
+    setActiveTokenLayer(layer);
     selectSingleToken(token.id);
     setNewTokenName("");
     setNewTokenActorId("");
@@ -1541,7 +1556,7 @@ export function App() {
       actorId: payload.actorId,
       imageAssetId: payload.imageAssetId,
       name: payload.name,
-      layer: payload.layer ?? (payload.type === "asset" ? "map" : "player"),
+      layer: payload.layer ?? (payload.type === "asset" ? "map" : activeTokenLayer),
       disposition: payload.disposition,
       x: point.x,
       y: point.y
@@ -1858,6 +1873,13 @@ export function App() {
     setFogBrushMode(null);
     setAnnotationTool(null);
     setStatus("Select tool active");
+  }
+
+  function selectTokenLayer(layer: TokenLayer) {
+    setActiveTokenLayer(layer);
+    setFogBrushMode(null);
+    setAnnotationTool(null);
+    setStatus(`${tokenLayerLabel(layer)} active`);
   }
 
   function zoomBattleMap(delta: number) {
@@ -4207,7 +4229,7 @@ export function App() {
             <Toolbar onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
             {selectedTokens.length > 1 && <MapSelectionStatus selectedCount={selectedTokens.length} onClear={clearTokenSelection} />}
-            <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onToggleAnnotationLayer={setAnnotationLayerVisible} />
+            <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />
             {hasPermission("token.reveal") && (fogBrushMode || toolReport) && (
               <section className="table-tool-panel" aria-label="Fog and vision tools">
                 <input aria-label="Fog preset name" value={fogPresetName} placeholder="Preset name" onChange={(event) => setFogPresetName(event.target.value)} />
@@ -4413,7 +4435,7 @@ export function App() {
               </details>
             </section>
             )}
-            {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+            {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
           <aside className="inspector">
@@ -4626,9 +4648,9 @@ interface TokenDropPayload {
 }
 
 const tokenLayers: Array<{ id: TokenLayer; label: string; description: string }> = [
-  { id: "player", label: "Player layer", description: "Normal player-visible, selectable combat tokens." },
-  { id: "map", label: "Map layer", description: "Scene props and map dressing below player tokens." },
-  { id: "gm", label: "GM layer", description: "GM-only tokens and notes hidden from players." }
+  { id: "map", label: "Map & Background", description: "Scene props and map dressing below playable tokens." },
+  { id: "player", label: "Objects & Tokens", description: "Player-visible, selectable combat and interaction tokens." },
+  { id: "gm", label: "GM Info Overlay", description: "GM-only tokens and notes hidden from players." }
 ];
 const tokenLayerRanks: Record<TokenLayer, number> = { map: 0, player: 1, gm: 2 };
 const tokenVisualScale = 0.78;
@@ -4656,10 +4678,10 @@ function tokenLayer(token?: Pick<Token, "layer">): TokenLayer {
 }
 
 function tokenLayerLabel(layer: TokenLayer): string {
-  return tokenLayers.find((item) => item.id === layer)?.label ?? "Player layer";
+  return tokenLayers.find((item) => item.id === layer)?.label ?? "Objects & Tokens";
 }
 
-function MapLayerStack(props: { scene?: Scene; tokens: Token[]; fogActive: boolean; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; onToggleAnnotationLayer(layer: SceneAnnotationLayer, visible: boolean): void }) {
+function MapLayerStack(props: { scene?: Scene; tokens: Token[]; activeTokenLayer: TokenLayer; fogActive: boolean; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; onSelectTokenLayer(layer: TokenLayer): void; onToggleAnnotationLayer(layer: SceneAnnotationLayer, visible: boolean): void }) {
   const sceneTokens = props.scene ? props.tokens.filter((token) => token.sceneId === props.scene!.id) : [];
   const layerCounts = tokenLayers.reduce<Record<TokenLayer, number>>((counts, layer) => {
     counts[layer.id] = sceneTokens.filter((token) => tokenLayer(token) === layer.id).length;
@@ -4678,10 +4700,10 @@ function MapLayerStack(props: { scene?: Scene; tokens: Token[]; fogActive: boole
         <strong>{props.scene?.backgroundAssetId ? "background" : "empty"}</strong>
       </div>
       {tokenLayers.map((layer) => (
-        <div className="map-layer-row" key={layer.id}>
-          <span>{layer.label.replace(" layer", "")}</span>
+        <button className={`map-layer-row map-layer-button ${props.activeTokenLayer === layer.id ? "active" : ""}`} type="button" aria-pressed={props.activeTokenLayer === layer.id} title={layer.description} key={layer.id} onClick={() => props.onSelectTokenLayer(layer.id)}>
+          <span>{layer.label}</span>
           <strong>{formatNumber(layerCounts[layer.id])}</strong>
-        </div>
+        </button>
       ))}
       <details className="map-layer-row map-layer-details">
         <summary>
@@ -4823,7 +4845,7 @@ function hasItemDropData(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(itemDropMime);
 }
 
-function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
+function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
   const [tokenPositionOverrides, setTokenPositionOverrides] = useState<TokenPositionOverrides>({});
   const [dropActive, setDropActive] = useState(false);
@@ -4842,6 +4864,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   const viewportRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const tokens = useMemo(() => props.tokens.filter((token) => token.sceneId === props.scene.id), [props.tokens, props.scene.id]);
+  const activeLayerTokenIds = useMemo(() => new Set(tokens.filter((token) => tokenLayer(token) === props.activeTokenLayer).map((token) => token.id)), [tokens, props.activeTokenLayer]);
   const orderedTokens = useMemo(
     () =>
       tokens
@@ -4850,6 +4873,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         .map(({ token }) => token),
     [tokens]
   );
+  const orderedActiveLayerTokens = useMemo(() => orderedTokens.filter((token) => activeLayerTokenIds.has(token.id)), [orderedTokens, activeLayerTokenIds]);
   const selectedTokenIdSet = useMemo(() => new Set(props.selectedTokenIds), [props.selectedTokenIds]);
   const tokenImageAssets = useMemo(() => new Map(props.assets.filter(isUsableImageAsset).map((asset) => [asset.id, asset])), [props.assets]);
   const visibleAnnotations = useMemo(() => (props.scene.annotations ?? []).filter((annotation) => props.visibleAnnotationLayers[annotation.layer ?? defaultAnnotationLayer(annotation.kind)] !== false), [props.scene.annotations, props.visibleAnnotationLayers]);
@@ -4989,7 +5013,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       return true;
     }
     const rect = selectionBoxRect(current);
-    const selectedIds = orderedTokens.filter((token) => tokenIntersectsRect(token, rect)).map((token) => token.id);
+    const selectedIds = orderedActiveLayerTokens.filter((token) => tokenIntersectsRect(token, rect)).map((token) => token.id);
     props.onSelectMany(selectedIds, { additive: current.additive });
     return true;
   }
@@ -5035,14 +5059,15 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   }
 
   function startTokenDrag(token: Token, event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!activeLayerTokenIds.has(token.id)) return;
     const point = boardPoint(event.clientX, event.clientY);
     if (!point) return;
     const renderedPosition = renderedTokenPosition(token);
     const start = boundedTokenPosition(token, renderedPosition.x, renderedPosition.y);
     const groupTokenIds =
       selectedTokenIdSet.has(token.id) && props.selectedTokenIds.length > 1 && !event.shiftKey && !event.ctrlKey && !event.metaKey
-        ? props.selectedTokenIds
-        : [token.id];
+          ? props.selectedTokenIds.filter((id) => activeLayerTokenIds.has(id))
+          : [token.id];
     const origins = Object.fromEntries(
       tokens
         .filter((item) => groupTokenIds.includes(item.id))
@@ -5480,10 +5505,11 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         const tokenImageAsset = token.imageAssetId ? tokenImageAssets.get(token.imageAssetId) : undefined;
         const selected = selectedTokenIdSet.has(token.id);
         const layer = tokenLayer(token);
+        const activeLayerToken = activeLayerTokenIds.has(token.id);
         return (
           <button
             key={token.id}
-            className={`token layer-${layer} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""}`}
+            className={`token layer-${layer} ${activeLayerToken ? "active-layer" : "inactive-layer"} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""}`}
             style={{
               left: `${(visualX / props.scene.width) * 100}%`,
               top: `${(visualY / props.scene.height) * 100}%`,
@@ -5493,6 +5519,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
             aria-label={`${tokenLayerLabel(layer)} token ${token.name}`}
             aria-pressed={selected}
             onClick={(event) => {
+              if (!activeLayerToken) return;
               if (pointerSelectedTokenRef.current === token.id) {
                 pointerSelectedTokenRef.current = null;
                 return;
@@ -5500,6 +5527,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
               props.onSelect(token.id, { additive: event.shiftKey || event.ctrlKey || event.metaKey, preserveExisting: selected && props.selectedTokenIds.length > 1 });
             }}
             onPointerDown={(event) => {
+              if (!activeLayerToken) return;
               if (props.fogBrushMode || props.annotationTool) return;
               startTokenDrag(token, event);
             }}

@@ -1150,6 +1150,15 @@ a[href]:focus-visible,
   touch-action: none;
 }
 
+.token.inactive-layer {
+  opacity: 0.58;
+  pointer-events: none;
+}
+
+.token.active-layer {
+  pointer-events: auto;
+}
+
 .token.layer-map {
   z-index: 2;
   border-radius: 8px;
@@ -4532,7 +4541,8 @@ body {
 
 .map-layer-details summary,
 .map-layer-toggles,
-.map-layer-toggles * {
+.map-layer-toggles *,
+.map-layer-button {
   pointer-events: auto;
 }
 
@@ -4543,6 +4553,27 @@ body {
   justify-content: space-between;
   gap: 10px;
   min-width: 0;
+}
+
+.map-layer-button {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.map-layer-button.active {
+  border-color: rgba(80, 208, 178, 0.56);
+  background: rgba(80, 208, 178, 0.14);
+}
+
+.map-layer-button:hover,
+.map-layer-button:focus-visible {
+  border-color: rgba(239, 228, 205, 0.42);
+  outline: none;
 }
 
 .map-layer-stack-heading {
