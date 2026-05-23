@@ -4841,7 +4841,7 @@ export function App() {
             </div>
             {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
-            {tab === "chat" && <ChatPanel command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} members={snapshot.members} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} />}
+            {tab === "chat" && <ChatRail command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} members={snapshot.members} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
@@ -9349,80 +9349,135 @@ function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle
   );
 }
 
-function ChatPanel(props: { command: string; setCommand(value: string): void; replyTarget?: ChatMessage; messages: ChatMessage[]; members: Snapshot["members"]; onSubmitCommand(): Promise<void>; onClearReply(): void }) {
+type ChatRailProps = {
+  command: string;
+  setCommand(value: string): void;
+  replyTarget?: ChatMessage;
+  messages: ChatMessage[];
+  rolls: DiceRoll[];
+  members: Snapshot["members"];
+  onSubmitCommand(): Promise<void>;
+  onClearReply(): void;
+};
+
+function ChatRail(props: ChatRailProps) {
+  const streamRef = useRef<HTMLDivElement>(null);
   const memberNames = new Map(props.members.map((member) => [member.user.id, member.user.displayName]));
   const messageById = new Map(props.messages.map((message) => [message.id, message]));
-  const messages = props.messages.slice().reverse();
+  const rollById = new Map(props.rolls.map((roll) => [roll.id, roll]));
+
+  useEffect(() => {
+    streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight });
+  }, [props.messages.length]);
 
   return (
-    <div className="panel-stack chat-panel-simple">
-      <form className="chat-command-panel chat-composer" aria-label="Chat composer" onSubmit={(event) => { event.preventDefault(); props.onSubmitCommand().catch(console.error); }}>
-        {props.replyTarget && (
-          <div className="operator-row tool-call-row" role="status" aria-label="Chat reply target">
-            <span>Replying to {props.replyTarget.body.slice(0, 64)}</span>
-            <button className="ghost-button small" type="button" onClick={props.onClearReply}>Clear reply</button>
-          </div>
+    <section className="chat-rail" aria-label="Chat">
+      <div className="chat-rail-stream" aria-label="Chat messages" ref={streamRef}>
+        {props.messages.length === 0 ? (
+          <div className="empty-state compact">No messages yet.</div>
+        ) : (
+          props.messages.map((message) => (
+            <ChatMessageItem key={message.id} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} memberNames={memberNames} messageById={messageById} />
+          ))
         )}
-        <div className="chat-command-input-row">
-          <MessageSquare size={16} />
-          <textarea
-            aria-label="Chat command line"
-            value={props.command}
-            placeholder="Message or slash command: /1d20 + 2, /roll 2d6, /gm note, /w player message, /me emote"
-            rows={3}
-            onChange={(event) => props.setCommand(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter" || event.shiftKey) return;
-              event.preventDefault();
-              props.onSubmitCommand().catch(console.error);
-            }}
-          />
-          <button className="icon-button" type="submit" title="Send chat command" aria-label="Send chat command" disabled={!props.command.trim()}>
-            <Send size={16} />
-          </button>
+      </div>
+      <ChatComposer command={props.command} setCommand={props.setCommand} replyTarget={props.replyTarget} onSubmitCommand={props.onSubmitCommand} onClearReply={props.onClearReply} />
+    </section>
+  );
+}
+
+function ChatMessageItem(props: { message: ChatMessage; roll?: DiceRoll; memberNames: Map<string, string>; messageById: Map<string, ChatMessage> }) {
+  const messageKind = props.roll || props.message.type === "roll" ? "roll" : props.message.type;
+  const author = props.memberNames.get(props.message.userId) ?? props.message.userId;
+  const replyMessage = props.message.replyToMessageId ? props.messageById.get(props.message.replyToMessageId) : undefined;
+  const recipientLabel = props.message.visibility === "whisper" ? props.message.recipientUserIds.map((recipientId) => props.memberNames.get(recipientId) ?? recipientId).join(", ") : "";
+
+  return (
+    <article className={`chat-message chat-message-${messageKind}`} aria-label={`${titleCaseLabel(messageKind)} message`}>
+      <header className="chat-message-header">
+        <span className="chat-author">{messageKind === "emote" ? `${author} ${props.message.body}` : author}</span>
+        <span className="chat-time">{formatDateTime(props.message.createdAt)}</span>
+        <span className={`chat-visibility chat-visibility-${props.message.visibility}`}>{chatVisibilityLabel(props.message.visibility)}</span>
+      </header>
+      {replyMessage && (
+        <div className="chat-reply-context" aria-label="Chat reply context">
+          <MessageSquare size={13} />
+          <span>{replyMessage.body.slice(0, 96)}</span>
         </div>
-      </form>
-      <section className="operator-section chat-room" aria-label="Chat messages">
-        <div className="operator-heading">
-          <div>
-            <div className="section-title">Messages</div>
-            <p className="panel-subtitle">{formatNumber(props.messages.length)} messages</p>
-          </div>
-          <MessageSquare size={15} />
-        </div>
-        <div className="chat-history-list chat-room-messages">
-          {messages.length === 0 ? (
-            <div className="empty-state compact">No messages yet.</div>
-          ) : (
-            messages.map((message) => (
-              <article className="chat-history-entry" key={message.id}>
-                <div className="operator-heading">
-                  <div>
-                    <h3>{titleCaseLabel(message.type)}</h3>
-                    <p>{formatDateTime(message.createdAt)}</p>
-                  </div>
-                  <span className="status-pill">{message.visibility}</span>
-                </div>
-                {message.replyToMessageId && (
-                  <div className="operator-row tool-call-row" aria-label="Chat reply context">
-                    <span>Reply to</span>
-                    <strong>{messageById.get(message.replyToMessageId)?.body.slice(0, 80) ?? message.replyToMessageId}</strong>
-                  </div>
-                )}
-                <p>{message.body}</p>
-                <div className="admin-meta">
-                  <span>{memberNames.get(message.userId) ?? message.userId}</span>
-                  {message.sceneId && <span>{message.sceneId}</span>}
-                  {message.rollId && <span>roll {message.rollId}</span>}
-                  {message.visibility === "whisper" && <span>to {message.recipientUserIds.map((recipientId) => memberNames.get(recipientId) ?? recipientId).join(", ")}</span>}
-                </div>
-              </article>
-            ))
-          )}
-        </div>
-      </section>
+      )}
+      {props.roll ? (
+        <RollMessageCard message={props.message} roll={props.roll} />
+      ) : messageKind === "emote" ? null : (
+        <p className="chat-body">{props.message.body}</p>
+      )}
+      {props.message.visibility === "whisper" && recipientLabel && <p className="chat-recipient-line">To {recipientLabel}</p>}
+      {props.message.rollId && !props.roll && <p className="chat-recipient-line">Roll result is not available in this snapshot.</p>}
+    </article>
+  );
+}
+
+function RollMessageCard(props: { message: ChatMessage; roll: DiceRoll }) {
+  const label = props.roll.label || props.message.body || "Roll";
+  return (
+    <div className="chat-roll-card">
+      <div className="chat-roll-main">
+        <span>{props.roll.visibility === "gm_only" ? "GM Roll" : "Roll"}</span>
+        <strong>{label}</strong>
+        <p>{props.roll.formula}</p>
+      </div>
+      <strong className="chat-roll-total" aria-label={`Roll total ${props.roll.total}`}>{formatNumber(props.roll.total)}</strong>
+      <div className="chat-roll-dice" aria-label="Dice term breakdown">
+        {props.roll.terms.map((term, index) => {
+          const termTotal = rollTermTotal(term);
+          return (
+            <span className="chat-roll-die" key={`${props.roll.id}-${index}`}>
+              <strong>{termTotal === undefined ? formatRollTermName(term, index) : formatNumber(termTotal)}</strong>
+              <span>{formatRollTermName(term, index)}</span>
+              <small>{formatRollTermDetail(term)}</small>
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
+}
+
+function ChatComposer(props: { command: string; setCommand(value: string): void; replyTarget?: ChatMessage; onSubmitCommand(): Promise<void>; onClearReply(): void }) {
+  return (
+    <form className="chat-composer-dock" aria-label="Chat composer" onSubmit={(event) => { event.preventDefault(); props.onSubmitCommand().catch(console.error); }}>
+      {props.replyTarget && (
+        <div className="chat-reply-draft" role="status" aria-label="Chat reply target">
+          <span>Replying to {props.replyTarget.body.slice(0, 80)}</span>
+          <button className="ghost-button small" type="button" onClick={props.onClearReply}>Clear</button>
+        </div>
+      )}
+      <div className="chat-composer-row">
+        <MessageSquare size={16} />
+        <textarea
+          aria-label="Chat command line"
+          value={props.command}
+          placeholder="Message, /1d20 + 2, /roll 2d6, /gm secret, /w player message"
+          rows={2}
+          onChange={(event) => props.setCommand(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey) return;
+            event.preventDefault();
+            props.onSubmitCommand().catch(console.error);
+          }}
+        />
+        <button className="icon-button chat-send-button" type="submit" title="Send chat command" aria-label="Send chat command" disabled={!props.command.trim()}>
+          <Send size={16} />
+        </button>
+      </div>
+      <p className="chat-command-reference">/roll /r /gmroll /gm /w /me /ooc</p>
+    </form>
+  );
+}
+
+function chatVisibilityLabel(visibility: ChatMessage["visibility"]): string {
+  if (visibility === "gm_only") return "GM";
+  if (visibility === "whisper") return "Whisper";
+  return "Public";
 }
 
 function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; onConfirmAction(combat: Combat, action: CombatAction): void; onRejectAction(combat: Combat, action: CombatAction): void; canManage: boolean }) {

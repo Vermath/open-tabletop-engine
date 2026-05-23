@@ -9,6 +9,8 @@ describe("parseChatCommand", () => {
   it("supports roll aliases", () => {
     expect(parseChatCommand("/roll 2d6+3")).toEqual({ kind: "roll", formula: "2d6+3", visibility: "public" });
     expect(parseChatCommand("/r 1d8")).toEqual({ kind: "roll", formula: "1d8", visibility: "public" });
+    expect(parseChatCommand("/gmroll 1d20+5")).toEqual({ kind: "roll", formula: "1d20+5", visibility: "gm_only" });
+    expect(parseChatCommand("/gr 2d10")).toEqual({ kind: "roll", formula: "2d10", visibility: "gm_only" });
   });
 
   it("parses Roll20-style chat commands", () => {
