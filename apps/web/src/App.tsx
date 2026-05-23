@@ -8,6 +8,7 @@ import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryActio
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { parseChatCommand } from "./chat-command.js";
+import { templateConePoints } from "./scene-annotations.js";
 import { sceneTabWrapClass } from "./scene-tabs.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
@@ -6105,17 +6106,6 @@ function annotationGroupKey(annotation: SceneAnnotation): string {
   return annotation.groupLabel ?? annotation.groupId ?? "Ungrouped";
 }
 
-function templateConePoints(annotation: SceneAnnotation): string | undefined {
-  const [origin, edge] = annotation.points;
-  if (!origin || !edge) return undefined;
-  const radius = annotation.radius ?? distanceBetween(origin, edge);
-  if (radius <= 0) return undefined;
-  const angle = Math.atan2(edge.y - origin.y, edge.x - origin.x);
-  const spread = Math.PI / 4;
-  const left = { x: origin.x + Math.cos(angle - spread) * radius, y: origin.y + Math.sin(angle - spread) * radius };
-  const right = { x: origin.x + Math.cos(angle + spread) * radius, y: origin.y + Math.sin(angle + spread) * radius };
-  return [origin, left, right].map((point) => `${Math.round(point.x)},${Math.round(point.y)}`).join(" ");
-}
 
 function annotationToolLabel(kind: ActiveAnnotationTool): string {
   if (kind === "ping") return "Ping";
