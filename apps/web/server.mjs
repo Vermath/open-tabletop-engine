@@ -13,7 +13,8 @@ const assetRoot = join(root, "assets");
 const indexFile = join(root, "index.html");
 const host = process.env.HOST ?? "0.0.0.0";
 const port = Number(process.env.PORT ?? 4173);
-const apiBaseUrl = process.env.OTTE_API_URL ?? process.env.VITE_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api.railway.internal:4000" : undefined);
+const defaultRailwayApiUrl = "http://open-tabletopapi.railway.internal:8080";
+const apiBaseUrl = process.env.OTTE_API_URL ?? process.env.VITE_API_URL ?? (process.env.NODE_ENV === "production" ? defaultRailwayApiUrl : undefined);
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
