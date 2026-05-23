@@ -184,7 +184,7 @@ export const apiClientExcludedRoutePatterns = [
   { path: routes.openApi, reason: "OpenAPI contract discovery is consumed at build/test time rather than wrapped as domain behavior" },
   { path: openTabletopRealtimePath, reason: "Realtime uses websocket helpers instead of REST fetch wrappers" },
   { path: "/api/v1/assets/{assetId}/blob", reason: "Binary asset delivery is intentionally fetched directly from signed URLs or browser media elements" },
-  { path: "/api/v1/agent/board-captures/{captureId}", reason: "Short-lived PNG board captures are fetched directly from signed URLs or browser image elements" }
+  { path: "/api/v1/agent/board-captures/{captureHandle}", reason: "Short-lived PNG board captures are fetched directly from signed URLs or browser image elements" }
 ] as const;
 
 export class OpenTabletopClient {

@@ -476,23 +476,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.get("/api/v1/openapi.json", async () => openApiSpec);
 
-  app.get<{ Params: { captureId: string }; Querystring: { token?: string } }>("/api/v1/agent/board-captures/:captureId", async (request, reply) => {
+  app.get<{ Params: { captureHandle: string }; Querystring: { token?: string } }>("/api/v1/agent/board-captures/:captureHandle", async (request, reply) => {
     pruneExpiredBoardCaptures();
-    const capture = storedBoardCaptures.get(request.params.captureId);
+    const captureId = request.params.captureHandle;
+    const capture = storedBoardCaptures.get(captureId);
     if (!capture || capture.token !== request.query.token || Date.parse(capture.expiresAt) <= Date.now()) return notFound(reply, "Board capture not found");
     return reply.header("cache-control", "private, no-store").type("image/png").send(capture.body);
   });
 
-  app.post<{ Params: { requestId: string }; Body: { dataUrl?: string; sceneId?: string; width?: number; height?: number; error?: string } }>(
-    "/api/v1/agent/board-captures/:requestId",
+  app.post<{ Params: { captureHandle: string }; Body: { dataUrl?: string; sceneId?: string; width?: number; height?: number; error?: string } }>(
+    "/api/v1/agent/board-captures/:captureHandle",
     { bodyLimit: Math.max(maxAssetBytes, 16 * 1024 * 1024) },
     async (request, reply) => {
       const userId = requireUser(store, reply, request.headers);
       if (typeof userId !== "string") return userId;
-      const pending = pendingBoardCaptures.get(request.params.requestId);
+      const requestId = request.params.captureHandle;
+      const pending = pendingBoardCaptures.get(requestId);
       if (!pending) return notFound(reply, "Board capture request not found");
       if (pending.userId !== userId) return forbidden(reply, "Board capture request belongs to a different user");
-      pendingBoardCaptures.delete(request.params.requestId);
+      pendingBoardCaptures.delete(requestId);
       clearTimeout(pending.timer);
       if (request.body?.error) {
         const result: AiBoardCaptureResult = { status: "failed", reason: request.body.error.slice(0, 300), sceneId: pending.sceneId };

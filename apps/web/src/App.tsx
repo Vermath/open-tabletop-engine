@@ -480,6 +480,7 @@ export function App() {
   const [battleMapZoom, setBattleMapZoom] = useState(1);
   const [fogBrushMode, setFogBrushMode] = useState<FogMode | null>(null);
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>(null);
+  const [annotationPanelOpen, setAnnotationPanelOpen] = useState(false);
   const [annotationLayer, setAnnotationLayer] = useState<SceneAnnotationLayer>("measurement");
   const [visibleAnnotationLayers, setVisibleAnnotationLayers] = useState<Record<SceneAnnotationLayer, boolean>>({ measurement: true, effects: true, drawings: true, notes: true });
   const [annotationGroupLabel, setAnnotationGroupLabel] = useState("Session prep");
@@ -973,7 +974,7 @@ export function App() {
     if (!campaignId || !sessionToken) return;
     const wsUrl = `${apiBase || window.location.origin}`.replace(/^http/, "ws") + `/api/v1/realtime?campaignId=${encodeURIComponent(campaignId)}`;
     const socket = new WebSocket(wsUrl, ["otte.v1", `otte.auth.${sessionToken}`]);
-    socket.onopen = () => setStatus("Realtime connected");
+    socket.onopen = () => setStatus((current) => (current === "Loading campaign" || current.toLowerCase().includes("realtime") || current.startsWith("API offline") ? "Realtime connected" : current));
     socket.onmessage = (event) => {
       if (handleBoardCaptureRealtimeEvent(event.data)) return;
       refresh(campaignId, sceneId, { syncStatus: false }).catch(() => setStatus("Realtime refresh failed"));
@@ -1936,6 +1937,7 @@ export function App() {
 
   function toggleFogBrush(mode: FogMode) {
     setAnnotationTool(null);
+    setAnnotationPanelOpen(false);
     setFogBrushMode((current) => {
       const next = current === mode ? null : mode;
       setStatus(next ? `${next === "hide" ? "Hide" : "Reveal"} smooth fog brush active` : "Fog brush inactive");
@@ -1946,6 +1948,7 @@ export function App() {
   function selectCanvasTool() {
     setFogBrushMode(null);
     setAnnotationTool(null);
+    setAnnotationPanelOpen(false);
     setStatus("Select tool active");
   }
 
@@ -1953,6 +1956,7 @@ export function App() {
     setActiveTokenLayer(layer);
     setFogBrushMode(null);
     setAnnotationTool(null);
+    setAnnotationPanelOpen(false);
     setStatus(`${tokenLayerLabel(layer)} active`);
   }
 
@@ -2017,11 +2021,10 @@ export function App() {
 
   function toggleAnnotationTool(kind: ActiveAnnotationTool) {
     setFogBrushMode(null);
-    setAnnotationTool((current) => {
-      const next = current === kind ? null : kind;
-      setStatus(next ? `${annotationToolLabel(next)} tool active` : "Annotation tool inactive");
-      return next;
-    });
+    const next = annotationTool === kind ? null : kind;
+    setAnnotationTool(next);
+    setAnnotationPanelOpen(Boolean(next && !isTransientMeasurementTool(next)));
+    setStatus(next ? `${annotationToolLabel(next)} tool active` : "Annotation tool inactive");
   }
 
   async function createSceneAnnotation(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number) {
@@ -4354,8 +4357,18 @@ export function App() {
                 {toolReport && <pre>{toolReport}</pre>}
               </section>
             )}
-            {(annotationTool || ((selectedScene?.annotations?.length ?? 0) > 0 && !fogBrushMode) || (workspaceMode === "prep" && !fogBrushMode)) && (
-            <section className="table-tool-panel" aria-label="Annotation layers and history">
+            {annotationPanelOpen && !fogBrushMode && annotationTool && !isTransientMeasurementTool(annotationTool) && (
+            <section className="table-tool-panel annotation-panel" aria-label="Annotation layers and history">
+              <header className="annotation-panel-header">
+                <div>
+                  <strong>Annotations</strong>
+                  <span>{annotationToolLabel(annotationTool)} settings</span>
+                </div>
+                <button className="icon-button" type="button" aria-label="Close annotation settings" onClick={() => setAnnotationPanelOpen(false)}>
+                  <X size={15} />
+                </button>
+              </header>
+              <div className="annotation-panel-grid">
               <select aria-label="Annotation layer" value={annotationLayer} onChange={(event) => setAnnotationLayer(event.target.value as SceneAnnotationLayer)}>
                 <option value="measurement">Measurement</option>
                 <option value="effects">Effects</option>
@@ -4385,6 +4398,9 @@ export function App() {
                 <input type="checkbox" checked={annotationSnapToGrid} onChange={(event) => setAnnotationSnapToGrid(event.target.checked)} />
                 <span>Snap templates to grid</span>
               </label>
+              </div>
+              <details className="annotation-panel-section" open>
+                <summary>Layer visibility</summary>
               <div className="asset-pressure-list" role="group" aria-label="Annotation layer visibility">
                 {annotationLayers.map((layer) => (
                   <label className="inline-check" key={layer}>
@@ -4395,7 +4411,7 @@ export function App() {
               </div>
               <div className="asset-pressure-list" role="region" aria-label="Annotation layer summary">
                 {Object.keys(annotationLayerCounts).length === 0 ? (
-                  <span>No annotations yet</span>
+                  <span className="panel-empty">No annotations yet</span>
                 ) : (
                   Object.entries(annotationLayerCounts).map(([layer, count]) => (
                     <div className="operator-row tool-call-row" key={layer}>
@@ -4405,6 +4421,9 @@ export function App() {
                   ))
                 )}
               </div>
+              </details>
+              <details className="annotation-panel-section" open>
+                <summary>Groups</summary>
               <div className="asset-pressure-list" role="region" aria-label="Annotation group summary">
                 {Object.entries(annotationGroupCounts).slice(0, 4).map(([group, count]) => (
                   <div className="operator-row tool-call-row" key={group}>
@@ -4422,9 +4441,12 @@ export function App() {
                   </div>
                 ))}
               </div>
+              </details>
+              <details className="annotation-panel-section" open>
+                <summary>History</summary>
               <div className="asset-pressure-list" role="region" aria-label="Annotation history">
                 {sceneAnnotationHistory.length === 0 ? (
-                  <span>No annotation history yet</span>
+                  <span className="panel-empty">No annotation history yet</span>
                 ) : (
                   sceneAnnotationHistory.slice(0, 3).map((entry) => (
                     <div className="operator-row tool-call-row" key={entry.id}>
@@ -4434,6 +4456,9 @@ export function App() {
                   ))
                 )}
               </div>
+              </details>
+              <details className="annotation-panel-section" open={annotationTool === "template" || Boolean(latestAreaTemplate)}>
+                <summary>Area template</summary>
               <div className="asset-pressure-list" role="region" aria-label="Area template automation">
                 {latestAreaTemplate ? (
                   <div className="operator-row tool-call-row">
@@ -4441,7 +4466,7 @@ export function App() {
                     <strong>{formatNumber(latestAreaTemplate.affectedTokenIds?.length ?? 0)} affected - {latestAreaTemplate.rulesSystemId ?? "generic"}</strong>
                   </div>
                 ) : (
-                  <span>No area template automation yet</span>
+                  <span className="panel-empty">No area template automation yet</span>
                 )}
                 {latestAreaTemplate?.effectHint && <p className="account-summary">{latestAreaTemplate.effectHint}</p>}
                 {latestAreaTemplate ? (
@@ -4461,6 +4486,7 @@ export function App() {
                   </div>
                 ) : null}
               </div>
+              </details>
             </section>
             )}
             {workspaceMode === "prep" && !fogBrushMode && tab === "content" && (
@@ -4854,7 +4880,7 @@ interface TokenDropPayload {
 
 const tokenLayers: Array<{ id: TokenLayer; label: string; description: string }> = [
   { id: "map", label: "Map & Background", description: "Scene props and map dressing below playable tokens." },
-  { id: "player", label: "Objects & Tokens", description: "Player-visible, selectable combat and interaction tokens." },
+  { id: "player", label: "Player Objects & Tokens", description: "Player-visible, selectable combat and interaction tokens." },
   { id: "gm", label: "GM Info Overlay", description: "GM-only tokens and notes hidden from players." }
 ];
 const tokenLayerRanks: Record<TokenLayer, number> = { map: 0, player: 1, gm: 2 };
@@ -4883,7 +4909,7 @@ function tokenLayer(token?: Pick<Token, "layer">): TokenLayer {
 }
 
 function tokenLayerLabel(layer: TokenLayer): string {
-  return tokenLayers.find((item) => item.id === layer)?.label ?? "Objects & Tokens";
+  return tokenLayers.find((item) => item.id === layer)?.label ?? "Player Objects & Tokens";
 }
 
 function MapLayerStack(props: { scene?: Scene; tokens: Token[]; activeTokenLayer: TokenLayer; fogActive: boolean; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; onSelectTokenLayer(layer: TokenLayer): void; onToggleAnnotationLayer(layer: SceneAnnotationLayer, visible: boolean): void }) {
@@ -5589,8 +5615,10 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
             top: `${(light.y / props.scene.height) * 100}%`,
             width: `${(light.radius / props.scene.width) * 200}%`,
             background: `radial-gradient(circle, ${light.color} 0%, ${light.color} 22%, transparent 72%)`,
-            opacity: light.intensity ?? 0.18
+            opacity: light.intensity ?? 0.18,
+            pointerEvents: "none"
           }}
+          aria-hidden="true"
         />
       ))}
       {lightPolygons.length > 0 && (

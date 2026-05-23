@@ -362,7 +362,7 @@ function isExcludedRoute(route: string): boolean {
     path === "/api/v1/openapi.json" ||
     path === "/api/v1/realtime" ||
     path === "/api/v1/assets/{assetId}/blob" ||
-    path === "/api/v1/agent/board-captures/{captureId}" ||
+    route === "GET /api/v1/agent/board-captures/{captureHandle}" ||
     path === "/api/v1/auth/oidc/callback" ||
     Boolean(path?.startsWith("/api/v1/admin/")) ||
     Boolean(path?.startsWith("/api/v1/scim/"))
@@ -393,7 +393,7 @@ function normalizeCall(call: string): string {
     .replace(conditionId, "{conditionId}")
     .replace(inviteId, "{inviteId}")
     .replace(sessionId, "{sessionId}")
-    .replace(requestId, "{requestId}")
+    .replace(requestId, "{captureHandle}")
     .replace(fogId, "{fogId}")
     .replace(wallId, "{wallId}")
     .replace(lightId, "{lightId}")

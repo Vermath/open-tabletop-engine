@@ -223,8 +223,8 @@ const endpointSpecs = [
   ["GET", routes.health],
   ["GET", routes.openApi],
   ["POST", routes.mcp],
-  ["GET", "/api/v1/agent/board-captures/{captureId}"],
-  ["POST", "/api/v1/agent/board-captures/{requestId}"],
+  ["GET", "/api/v1/agent/board-captures/{captureHandle}"],
+  ["POST", "/api/v1/agent/board-captures/{captureHandle}"],
   ["GET", routes.bootstrap],
   ["POST", routes.bootstrap],
   ["POST", routes.register],
@@ -4443,14 +4443,14 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "200": jsonResponse("MCP JSON-RPC response", schemaRef("McpJsonRpcResponse"))
     }
   },
-  "GET /api/v1/agent/board-captures/{captureId}": {
+  "GET /api/v1/agent/board-captures/{captureHandle}": {
     parameters: [{ name: "token", in: "query", required: true, schema: { type: "string" }, description: "Short-lived capture token" }],
     responses: {
       "200": { description: "Short-lived board screenshot PNG", content: { "image/png": { schema: { type: "string", format: "binary" } } } },
       "404": jsonResponse("Capture not found", schemaRef("ErrorResponse"))
     }
   },
-  "POST /api/v1/agent/board-captures/{requestId}": {
+  "POST /api/v1/agent/board-captures/{captureHandle}": {
     requestBody: jsonRequestBody(schemaRef("BoardCaptureSubmitRequest")),
     responses: {
       "200": jsonResponse("Board capture result", schemaRef("BoardCaptureResult")),
