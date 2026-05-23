@@ -2184,7 +2184,7 @@ a[href]:focus-visible,
 }
 
 .chat-room-messages {
-  max-height: min(260px, 28svh);
+  max-height: min(620px, 64svh);
   overflow: auto;
   padding-right: 2px;
 }
@@ -2856,8 +2856,26 @@ input {
   min-width: 0;
 }
 
-.chat-command-input-row input {
+.chat-command-input-row input,
+.chat-command-input-row textarea {
   min-width: 0;
+}
+
+.chat-panel-simple {
+  min-height: 0;
+}
+
+.chat-composer {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.chat-command-input-row textarea {
+  width: 100%;
+  min-height: 86px;
+  resize: vertical;
+  line-height: 1.4;
 }
 
 .chat-command-help {

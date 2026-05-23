@@ -4809,7 +4809,7 @@ export function App() {
             </div>
             {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
-            {tab === "chat" && <ChatPanel command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} members={snapshot.members} search={chatSearch} setSearch={setChatSearch} typeFilter={chatTypeFilter} setTypeFilter={setChatTypeFilter} visibilityFilter={chatVisibilityFilter} setVisibilityFilter={setChatVisibilityFilter} canModerate={hasPermission("chat.moderate")} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} onReplyMessage={setChatReplyToMessageId} onModerateMessage={moderateChatMessage} onDeleteMessage={deleteChatMessage} onExport={exportChatHistory} />}
+            {tab === "chat" && <ChatPanel command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} members={snapshot.members} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
@@ -9278,100 +9278,52 @@ function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle
   );
 }
 
-function ChatPanel(props: { command: string; setCommand(value: string): void; replyTarget?: ChatMessage; messages: ChatMessage[]; rolls: DiceRoll[]; members: Snapshot["members"]; search: string; setSearch(value: string): void; typeFilter: MessageType | "all"; setTypeFilter(value: MessageType | "all"): void; visibilityFilter: ChatMessage["visibility"] | "all"; setVisibilityFilter(value: ChatMessage["visibility"] | "all"): void; canModerate: boolean; onSubmitCommand(): Promise<void>; onClearReply(): void; onReplyMessage(messageId: string): void; onModerateMessage(message: ChatMessage, moderationStatus: ChatModerationResolution): Promise<void>; onDeleteMessage(message: ChatMessage): Promise<void>; onExport(format: ChatExportFormat): Promise<void> }) {
-  const [exportFormat, setExportFormat] = useState<ChatExportFormat>("json");
-  const types: Array<MessageType | "all"> = ["all", "plain", "ooc", "emote", "gm", "whisper", "roll", "plugin"];
-  const visibilities: Array<ChatMessage["visibility"] | "all"> = ["all", "public", "gm_only", "whisper"];
+function ChatPanel(props: { command: string; setCommand(value: string): void; replyTarget?: ChatMessage; messages: ChatMessage[]; members: Snapshot["members"]; onSubmitCommand(): Promise<void>; onClearReply(): void }) {
   const memberNames = new Map(props.members.map((member) => [member.user.id, member.user.displayName]));
   const messageById = new Map(props.messages.map((message) => [message.id, message]));
-  const normalizedSearch = props.search.trim().toLocaleLowerCase();
-  const replyMessages = props.messages.filter((message) => message.replyToMessageId);
-  const replyThreads = Array.from(
-    replyMessages.reduce((groups, message) => {
-      const parentId = message.replyToMessageId!;
-      const existing = groups.get(parentId);
-      if (existing) {
-        existing.replies.push(message);
-        existing.latestAt = message.createdAt > existing.latestAt ? message.createdAt : existing.latestAt;
-      } else {
-        groups.set(parentId, {
-          parentId,
-          parent: messageById.get(parentId),
-          replies: [message],
-          latestAt: message.createdAt
-        });
-      }
-      return groups;
-    }, new Map<string, { parentId: string; parent?: ChatMessage; replies: ChatMessage[]; latestAt: string }>())
-  ).map(([, thread]) => thread).sort((left, right) => right.latestAt.localeCompare(left.latestAt));
-  const moderationMessages = props.messages.filter((message) => message.visibility !== "public" || message.type === "gm" || message.type === "plugin" || message.type === "ai");
-  const moderationResolutionFor = (message: ChatMessage) => message.moderationStatus ?? "open";
-  const followUpCount = moderationMessages.filter((message) => moderationResolutionFor(message) === "follow_up").length;
-  const reviewedCount = moderationMessages.filter((message) => moderationResolutionFor(message) === "reviewed").length;
-  const openReviewCount = moderationMessages.length - followUpCount - reviewedCount;
-  const whisperCount = props.messages.filter((message) => message.visibility === "whisper").length;
-  const gmOnlyCount = props.messages.filter((message) => message.visibility === "gm_only" || message.type === "gm").length;
-  const automationCount = props.messages.filter((message) => message.type === "plugin" || message.type === "ai").length;
-  const moderationThreads = Array.from(
-    moderationMessages.reduce((groups, message) => {
-      const key = `${message.visibility}:${message.type}:${message.userId}`;
-      const existing = groups.get(key);
-      if (existing) {
-        existing.messages.push(message);
-        existing.latestAt = message.createdAt > existing.latestAt ? message.createdAt : existing.latestAt;
-      } else {
-        groups.set(key, {
-          key,
-          userId: message.userId,
-          type: message.type,
-          visibility: message.visibility,
-          messages: [message],
-          latestAt: message.createdAt
-        });
-      }
-      return groups;
-    }, new Map<string, { key: string; userId: string; type: MessageType; visibility: ChatMessage["visibility"]; messages: ChatMessage[]; latestAt: string }>())
-  ).map(([, group]) => group).sort((left, right) => right.latestAt.localeCompare(left.latestAt));
-  const filteredMessages = props.messages
-    .filter((message) => props.typeFilter === "all" || message.type === props.typeFilter)
-    .filter((message) => props.visibilityFilter === "all" || message.visibility === props.visibilityFilter)
-    .filter((message) => !normalizedSearch || [message.body, message.type, message.visibility].some((value) => value.toLocaleLowerCase().includes(normalizedSearch)))
-    .slice()
-    .reverse();
+  const messages = props.messages.slice().reverse();
 
   return (
-    <div className="panel-stack">
-      <div className="panel-heading">
-        <div>
-          <div className="section-title">Chat History</div>
-          <p className="panel-subtitle">{formatNumber(filteredMessages.length)} of {formatNumber(props.messages.length)} messages</p>
-        </div>
-        <div className="admin-actions">
-          <label>
-            <span>Export format</span>
-            <select aria-label="Chat export format" value={exportFormat} onChange={(event) => setExportFormat(event.target.value as ChatExportFormat)}>
-              <option value="json">JSON</option>
-              <option value="ndjson">NDJSON</option>
-            </select>
-          </label>
-          <button className="ghost-button" title="Export chat history" aria-label="Export chat history" onClick={() => props.onExport(exportFormat).catch(console.error)}>
-            <Download size={14} /> Export
+    <div className="panel-stack chat-panel-simple">
+      <form className="chat-command-panel chat-composer" aria-label="Chat composer" onSubmit={(event) => { event.preventDefault(); props.onSubmitCommand().catch(console.error); }}>
+        {props.replyTarget && (
+          <div className="operator-row tool-call-row" role="status" aria-label="Chat reply target">
+            <span>Replying to {props.replyTarget.body.slice(0, 64)}</span>
+            <button className="ghost-button small" type="button" onClick={props.onClearReply}>Clear reply</button>
+          </div>
+        )}
+        <div className="chat-command-input-row">
+          <MessageSquare size={16} />
+          <textarea
+            aria-label="Chat command line"
+            value={props.command}
+            placeholder="Message or slash command: /1d20 + 2, /roll 2d6, /gm note, /w player message, /me emote"
+            rows={3}
+            onChange={(event) => props.setCommand(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey) return;
+              event.preventDefault();
+              props.onSubmitCommand().catch(console.error);
+            }}
+          />
+          <button className="icon-button" type="submit" title="Send chat command" aria-label="Send chat command" disabled={!props.command.trim()}>
+            <Send size={16} />
           </button>
         </div>
-      </div>
+      </form>
       <section className="operator-section chat-room" aria-label="Chat messages">
         <div className="operator-heading">
           <div>
             <div className="section-title">Messages</div>
-            <p className="panel-subtitle">Type normally or use slash commands.</p>
+            <p className="panel-subtitle">{formatNumber(props.messages.length)} messages</p>
           </div>
           <MessageSquare size={15} />
         </div>
         <div className="chat-history-list chat-room-messages">
-          {filteredMessages.length === 0 ? (
-            <div className="empty-state compact">No chat messages match this view.</div>
+          {messages.length === 0 ? (
+            <div className="empty-state compact">No messages yet.</div>
           ) : (
-            filteredMessages.map((message) => (
+            messages.map((message) => (
               <article className="chat-history-entry" key={message.id}>
                 <div className="operator-heading">
                   <div>
@@ -9393,212 +9345,11 @@ function ChatPanel(props: { command: string; setCommand(value: string): void; re
                   {message.rollId && <span>roll {message.rollId}</span>}
                   {message.visibility === "whisper" && <span>to {message.recipientUserIds.map((recipientId) => memberNames.get(recipientId) ?? recipientId).join(", ")}</span>}
                 </div>
-                <div className="button-row">
-                  <button className="ghost-button" type="button" onClick={() => props.onReplyMessage(message.id)}>
-                    <MessageSquare size={14} /> Reply
-                  </button>
-                </div>
-                {props.canModerate && (
-                  <div className="button-row">
-                    <button className="danger-button" title="Delete chat message" aria-label="Delete chat message" onClick={() => props.onDeleteMessage(message).catch(console.error)}>
-                      <X size={14} /> Delete
-                    </button>
-                  </div>
-                )}
               </article>
             ))
           )}
         </div>
-        <form className="chat-command-panel" aria-label="Chat command line" onSubmit={(event) => { event.preventDefault(); props.onSubmitCommand().catch(console.error); }}>
-          {props.replyTarget && (
-            <div className="operator-row tool-call-row" role="status" aria-label="Chat reply target">
-              <span>Replying to {props.replyTarget.body.slice(0, 64)}</span>
-              <button className="ghost-button small" type="button" onClick={props.onClearReply}>Clear reply</button>
-            </div>
-          )}
-          <div className="chat-command-input-row">
-            <MessageSquare size={16} />
-            <input aria-label="Chat command line" value={props.command} placeholder="Message, /1d20 + 2, /roll 2d6, /gm note, /w player message" onChange={(event) => props.setCommand(event.target.value)} />
-            <button className="icon-button" type="submit" title="Send chat command" aria-label="Send chat command">
-              <Send size={16} />
-            </button>
-          </div>
-          <div className="chat-command-help">
-            <code>/1d20 + 2</code>
-            <code>/roll 2d6</code>
-            <code>/gm private note</code>
-            <code>/w player message</code>
-            <code>/me emote</code>
-          </div>
-        </form>
       </section>
-      <section className="metric-grid panel-summary-grid" aria-label="Chat summary">
-        <MetricTile label="Filtered" value={formatNumber(filteredMessages.length)} />
-        <MetricTile label="Rolls" value={formatNumber(props.rolls.length)} />
-        <MetricTile label="Replies" value={formatNumber(replyMessages.length)} />
-        <MetricTile label="Review" value={formatNumber(openReviewCount)} />
-      </section>
-      <div className="operator-section content-import-form">
-        <div className="admin-form-grid">
-          <label>
-            <span>Search</span>
-            <input aria-label="Chat history search" value={props.search} placeholder="Message text" onChange={(event) => props.setSearch(event.target.value)} />
-          </label>
-          <label>
-            <span>Type</span>
-            <select aria-label="Chat history type" value={props.typeFilter} onChange={(event) => props.setTypeFilter(event.target.value as MessageType | "all")}>
-              {types.map((type) => (
-                <option key={type} value={type}>
-                  {type === "all" ? "All types" : titleCaseLabel(type)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Visibility</span>
-            <select aria-label="Chat history visibility" value={props.visibilityFilter} onChange={(event) => props.setVisibilityFilter(event.target.value as ChatMessage["visibility"] | "all")}>
-              {visibilities.map((visibility) => (
-                <option key={visibility} value={visibility}>
-                  {visibility === "all" ? "All visibility" : titleCaseLabel(visibility)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </div>
-      <section className="operator-section" aria-label="Chat reply threads">
-        <div className="operator-heading">
-          <div className="section-title">Reply Threads</div>
-          <strong>{formatNumber(replyMessages.length)} replies</strong>
-        </div>
-        {replyThreads.length === 0 ? (
-          <div className="empty-state compact">No threaded replies in this view.</div>
-        ) : (
-          <div className="operator-list">
-            {replyThreads.slice(0, 4).map((thread) => (
-              <article className="operator-item admin-item" key={`reply-thread-${thread.parentId}`}>
-                <div className="operator-row">
-                  <span>{thread.parent ? memberNames.get(thread.parent.userId) ?? thread.parent.userId : "Missing parent"}</span>
-                  <strong>{formatNumber(thread.replies.length)} replies</strong>
-                </div>
-                <p>{thread.parent?.body ?? thread.parentId}</p>
-                <p>Latest reply {formatDateTime(thread.latestAt)}</p>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-      {props.canModerate && (
-        <section className="operator-section" aria-label="Chat moderation review">
-          <div className="operator-heading">
-            <div className="section-title">Moderation Review</div>
-            <Shield size={15} />
-          </div>
-          <div className="metric-grid">
-            <MetricTile label="Reviewable" value={formatNumber(moderationMessages.length)} />
-            <MetricTile label="Open" value={formatNumber(openReviewCount)} />
-            <MetricTile label="Follow Up" value={formatNumber(followUpCount)} />
-            <MetricTile label="Reviewed" value={formatNumber(reviewedCount)} />
-            <MetricTile label="Whispers" value={formatNumber(whisperCount)} />
-            <MetricTile label="GM Only" value={formatNumber(gmOnlyCount)} />
-            <MetricTile label="Automation" value={formatNumber(automationCount)} />
-          </div>
-          <div className="button-row">
-            <button className="ghost-button" type="button" onClick={() => props.setVisibilityFilter("whisper")}>Whispers</button>
-            <button className="ghost-button" type="button" onClick={() => props.setVisibilityFilter("gm_only")}>GM only</button>
-            <button className="ghost-button" type="button" onClick={() => props.setTypeFilter("ai")}>AI messages</button>
-            <button className="ghost-button" type="button" onClick={() => { props.setTypeFilter("all"); props.setVisibilityFilter("all"); props.setSearch(""); }}>All chat</button>
-          </div>
-          <div className="operator-list">
-            {moderationThreads.length > 0 && (
-              <section className="operator-section" aria-label="Chat moderation threads">
-                <div className="operator-heading">
-                  <div className="section-title">Threads</div>
-                  <strong>{formatNumber(moderationThreads.length)} groups</strong>
-                </div>
-                {moderationThreads.slice(0, 4).map((thread) => (
-                  <article className="operator-item admin-item" key={thread.key}>
-                    <div className="operator-row">
-                      <span className="status-pill">{thread.visibility}</span>
-                      <strong>{formatNumber(thread.messages.length)} messages</strong>
-                    </div>
-                    <h3>{memberNames.get(thread.userId) ?? thread.userId} - {titleCaseLabel(thread.type)}</h3>
-                    <p>Latest {formatDateTime(thread.latestAt)}</p>
-                    <button className="ghost-button" type="button" onClick={() => { props.setTypeFilter(thread.type); props.setVisibilityFilter(thread.visibility); }}>
-                      <Shield size={14} /> Review thread
-                    </button>
-                  </article>
-                ))}
-              </section>
-            )}
-            {moderationMessages.length === 0 ? (
-              <div className="empty-state compact">No messages need moderation review.</div>
-            ) : (
-              moderationMessages
-                .slice()
-                .reverse()
-                .slice(0, 4)
-                .map((message) => (
-                  <div className="operator-row moderation-resolution-row" key={`moderation-${message.id}`}>
-                    <span>{titleCaseLabel(message.visibility)} - {titleCaseLabel(message.type)}</span>
-                    <strong>{memberNames.get(message.userId) ?? message.userId}</strong>
-                    <span className="status-pill">{titleCaseLabel(moderationResolutionFor(message))}</span>
-                    <button className="ghost-button" type="button" onClick={() => props.onModerateMessage(message, "follow_up").catch(console.error)}>Mark follow up</button>
-                    <button className="ghost-button" type="button" onClick={() => props.onModerateMessage(message, "reviewed").catch(console.error)}>Mark reviewed</button>
-                  </div>
-                ))
-            )}
-          </div>
-        </section>
-      )}
-      <div className="panel-heading">
-        <div>
-          <div className="section-title">Roll History</div>
-          <p className="panel-subtitle">{formatNumber(props.rolls.length)} visible rolls</p>
-        </div>
-      </div>
-      <div className="roll-history-list">
-        {props.rolls.length === 0 ? (
-          <div className="empty-state compact">No dice rolls visible in this campaign.</div>
-        ) : (
-          props.rolls
-            .slice()
-            .reverse()
-            .map((roll) => (
-              <article className="roll-history-entry" key={roll.id}>
-                <div className="operator-heading">
-                  <div>
-                    <h3>{roll.label || roll.formula}</h3>
-                    <p>{formatDateTime(roll.createdAt)} - {roll.formula}</p>
-                  </div>
-                  <span className="status-pill completed">{formatNumber(roll.total)}</span>
-                </div>
-                <div className="admin-meta">
-                  <span>{roll.visibility}</span>
-                  <span>{roll.userId}</span>
-                  <span>{roll.terms.length} terms</span>
-                </div>
-                <div className="roll-term-breakdown" aria-label={`Roll term breakdown for ${roll.label || roll.formula}`}>
-                  <strong>Term breakdown</strong>
-                  <ul>
-                    {roll.terms.map((term, index) => {
-                      const termTotal = rollTermTotal(term);
-                      return (
-                        <li className="roll-term-row" key={`${roll.id}-term-${index}`}>
-                          <div>
-                            <span>{formatRollTermName(term, index)}</span>
-                            <p>{formatRollTermDetail(term)}</p>
-                          </div>
-                          {termTotal !== undefined && <span className="status-pill">{formatSignedActionNumber(termTotal)}</span>}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              </article>
-            ))
-        )}
-      </div>
     </div>
   );
 }
