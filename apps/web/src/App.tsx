@@ -4,8 +4,10 @@ import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circ
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { boardKeyboardAction } from "./board-keyboard.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
+const boardHistoryLimit = 50;
 
 interface FailedAssetUpload {
   file: File;
@@ -285,6 +287,8 @@ type MeasurementTool = "measure-circle" | "measure-cone";
 type AnnotationTool = SceneAnnotationKind | MeasurementTool | null;
 type ActiveAnnotationTool = NonNullable<AnnotationTool>;
 type ActorLoadoutFilter = "all" | "equipped" | "consumable" | "magic";
+type BoardTokenPositionChange = { tokenId: string; before: Pick<Token, "x" | "y">; after: Pick<Token, "x" | "y"> };
+type BoardHistoryAction = { kind: "tokens.create" | "tokens.delete"; tokens: Token[] } | { kind: "tokens.move"; changes: BoardTokenPositionChange[] };
 
 function summarizeImport(result: CampaignImportResult): string {
   const collections = ["campaigns", "members", "scenes", "tokens", "actors", "journals", "handouts", "chat", "rolls", "combats", "contentImports"];
@@ -477,6 +481,9 @@ export function App() {
   const [selectedTokenId, setSelectedTokenIdState] = useState("tok_valen");
   const [selectedTokenIds, setSelectedTokenIds] = useState<string[]>(["tok_valen"]);
   const [activeTokenLayer, setActiveTokenLayer] = useState<TokenLayer>("player");
+  const [boardUndoStack, setBoardUndoStack] = useState<BoardHistoryAction[]>([]);
+  const [boardRedoStack, setBoardRedoStack] = useState<BoardHistoryAction[]>([]);
+  const [boardHistoryBusy, setBoardHistoryBusy] = useState(false);
   const [battleMapZoom, setBattleMapZoom] = useState(1);
   const [fogBrushMode, setFogBrushMode] = useState<FogMode | null>(null);
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>(null);
@@ -682,6 +689,7 @@ export function App() {
   const selectedToken = snapshot.tokens.find((token) => token.id === selectedTokenId && (!selectedScene || token.sceneId === selectedScene.id));
   const selectedTokenIdSet = useMemo(() => new Set(selectedTokenIds), [selectedTokenIds]);
   const selectedTokens = snapshot.tokens.filter((token) => selectedTokenIdSet.has(token.id) && (!selectedScene || token.sceneId === selectedScene.id));
+  const canDeleteSelectedBoardTokens = hasPermission("token.delete");
   const sessionPulseStatus = status.toLowerCase().includes("realtime") || status.toLowerCase().includes("connected")
     ? "Connected"
     : status.toLowerCase().includes("loading")
@@ -836,6 +844,27 @@ export function App() {
     });
     setSelectedTokenIdState((current) => (current && activeLayerTokenIds.has(current) ? current : ""));
   }, [activeTokenLayer, selectedScene?.id, selectedSceneActiveLayerTokenKey]);
+
+  useEffect(() => {
+    const handleBoardKeyboard = (event: KeyboardEvent) => {
+      const action = boardKeyboardAction(event, {
+        selectedCount: selectedTokens.length,
+        canDelete: canDeleteSelectedBoardTokens,
+        undoCount: boardUndoStack.length,
+        redoCount: boardRedoStack.length
+      });
+      if (!action) return;
+      event.preventDefault();
+      if (boardHistoryBusy) {
+        setStatus("Board history action already running");
+        return;
+      }
+      const task = action === "delete-selected" ? deleteSelectedBoardTokens() : action === "undo" ? undoBoardAction() : redoBoardAction();
+      task.catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+    };
+    window.addEventListener("keydown", handleBoardKeyboard);
+    return () => window.removeEventListener("keydown", handleBoardKeyboard);
+  }, [boardHistoryBusy, boardRedoStack.length, boardUndoStack.length, canDeleteSelectedBoardTokens, selectedTokens]);
 
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean } = {}) {
     const next = await loadSnapshot(nextCampaignId, nextSceneId);
@@ -1575,6 +1604,7 @@ export function App() {
       layer,
       disposition: options.disposition ?? (actor ? "friendly" : newTokenDisposition)
     });
+    pushBoardHistoryAction({ kind: "tokens.create", tokens: [token] });
     setActiveTokenLayer(layer);
     selectSingleToken(token.id);
     setNewTokenName("");
@@ -1751,12 +1781,143 @@ export function App() {
     setStatus("Token updated");
   }
 
+  function pushBoardHistoryAction(action: BoardHistoryAction) {
+    const size = action.kind === "tokens.move" ? action.changes.length : action.tokens.length;
+    if (size === 0) return;
+    setBoardUndoStack((current) => [...current, action].slice(-boardHistoryLimit));
+    setBoardRedoStack([]);
+  }
+
+  function tokenRestorePayload(token: Token): Partial<Token> {
+    return {
+      actorId: token.actorId,
+      name: token.name,
+      x: token.x,
+      y: token.y,
+      width: token.width,
+      height: token.height,
+      rotation: token.rotation,
+      layer: token.layer,
+      hidden: token.hidden,
+      locked: token.locked,
+      visionEnabled: token.visionEnabled,
+      visionRadius: token.visionRadius,
+      brightVisionRadius: token.brightVisionRadius,
+      dimVisionRadius: token.dimVisionRadius,
+      disposition: token.disposition,
+      imageAssetId: token.imageAssetId,
+      ownerUserIds: token.ownerUserIds,
+      notes: token.notes,
+      conditions: token.conditions,
+      auras: token.auras,
+      metadata: token.metadata
+    };
+  }
+
+  async function recreateTokens(tokens: Token[]): Promise<Token[]> {
+    const recreated: Token[] = [];
+    for (const token of tokens) {
+      recreated.push(await apiPost<Token>(`/api/v1/scenes/${token.sceneId}/tokens`, tokenRestorePayload(token)));
+    }
+    return recreated;
+  }
+
+  async function deleteTokens(tokensToDelete: Token[], options: { recordHistory: boolean; statusLabel?: string }) {
+    if (tokensToDelete.length === 0) {
+      setStatus("No selected token to delete");
+      return;
+    }
+    const deleted: Token[] = [];
+    for (const token of tokensToDelete) {
+      deleted.push(await apiDelete<Token>(`/api/v1/tokens/${token.id}`));
+    }
+    if (options.recordHistory) pushBoardHistoryAction({ kind: "tokens.delete", tokens: deleted });
+    clearTokenSelection();
+    setStatus(options.statusLabel ?? `${formatNumber(deleted.length)} token${deleted.length === 1 ? "" : "s"} deleted`);
+    await refresh();
+  }
+
   async function deleteSelectedToken() {
     if (!selectedToken) return;
-    await apiDelete<Token>(`/api/v1/tokens/${selectedToken.id}`);
-    clearTokenSelection();
-    setStatus("Token deleted");
-    await refresh();
+    await deleteTokens([selectedToken], { recordHistory: true, statusLabel: "Token deleted" });
+  }
+
+  async function deleteSelectedBoardTokens() {
+    await deleteTokens(selectedTokens, { recordHistory: true });
+  }
+
+  function recordTokenMoveAction(changes: BoardTokenPositionChange[]) {
+    pushBoardHistoryAction({ kind: "tokens.move", changes });
+    setStatus(`${formatNumber(changes.length)} token${changes.length === 1 ? "" : "s"} moved`);
+  }
+
+  async function applyBoardHistoryAction(action: BoardHistoryAction, direction: "undo" | "redo"): Promise<BoardHistoryAction> {
+    if (action.kind === "tokens.move") {
+      const target = direction === "undo" ? "before" : "after";
+      for (const change of action.changes) {
+        await apiPatch<Token>(`/api/v1/tokens/${change.tokenId}`, change[target]);
+      }
+      await refresh();
+      setStatus(direction === "undo" ? "Token move undone" : "Token move redone");
+      return action;
+    }
+    if (action.kind === "tokens.create") {
+      if (direction === "undo") {
+        for (const token of action.tokens) await apiDelete<Token>(`/api/v1/tokens/${token.id}`);
+        clearTokenSelection();
+        await refresh();
+        setStatus(action.tokens.length === 1 ? "Token creation undone" : "Token creations undone");
+        return action;
+      }
+      const recreated = await recreateTokens(action.tokens);
+      selectCanvasTokens(recreated.map((token) => token.id));
+      await refresh();
+      setStatus(recreated.length === 1 ? "Token creation redone" : "Token creations redone");
+      return { kind: "tokens.create", tokens: recreated };
+    }
+    if (direction === "undo") {
+      const recreated = await recreateTokens(action.tokens);
+      selectCanvasTokens(recreated.map((token) => token.id));
+      await refresh();
+      setStatus(recreated.length === 1 ? "Token deletion undone" : "Token deletions undone");
+      return { kind: "tokens.delete", tokens: recreated };
+    }
+    await deleteTokens(action.tokens, { recordHistory: false, statusLabel: action.tokens.length === 1 ? "Token deletion redone" : "Token deletions redone" });
+    return action;
+  }
+
+  async function undoBoardAction() {
+    if (boardHistoryBusy) return;
+    const action = boardUndoStack.at(-1);
+    if (!action) {
+      setStatus("Nothing to undo");
+      return;
+    }
+    setBoardHistoryBusy(true);
+    try {
+      const redoAction = await applyBoardHistoryAction(action, "undo");
+      setBoardUndoStack((current) => current.slice(0, -1));
+      setBoardRedoStack((current) => [...current, redoAction].slice(-boardHistoryLimit));
+    } finally {
+      setBoardHistoryBusy(false);
+    }
+  }
+
+  async function redoBoardAction() {
+    if (boardHistoryBusy) return;
+    const action = boardRedoStack.at(-1);
+    if (!action) {
+      setStatus("Nothing to redo");
+      return;
+    }
+    setBoardHistoryBusy(true);
+    try {
+      const undoAction = await applyBoardHistoryAction(action, "redo");
+      setBoardRedoStack((current) => current.slice(0, -1));
+      setBoardUndoStack((current) => [...current, undoAction].slice(-boardHistoryLimit));
+    } finally {
+      setBoardHistoryBusy(false);
+    }
   }
 
   async function setTokenTarget(tokenId: string, targeted: boolean) {
@@ -4573,7 +4734,7 @@ export function App() {
               </details>
             </section>
             )}
-            {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+            {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenMoveCommit={recordTokenMoveAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
           <aside className="inspector">
@@ -5076,7 +5237,7 @@ function hasItemDropData(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(itemDropMime);
 }
 
-function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
+function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
   const [tokenPositionOverrides, setTokenPositionOverrides] = useState<TokenPositionOverrides>({});
   const [dropActive, setDropActive] = useState(false);
@@ -5380,7 +5541,16 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       ...Object.fromEntries(movedTokens.map(({ token: movedToken, position }) => [movedToken.id, position]))
     }));
     Promise.all(movedTokens.map(({ token: movedToken, position }) => apiPatch<Token>(`/api/v1/tokens/${movedToken.id}`, position)))
-      .then(() => props.onMoved())
+      .then(() => {
+        props.onTokenMoveCommit(
+          movedTokens.map(({ token: movedToken, position }) => ({
+            tokenId: movedToken.id,
+            before: { x: movedToken.x, y: movedToken.y },
+            after: position
+          }))
+        );
+        return props.onMoved();
+      })
       .catch((error) => {
         console.error(error);
         setTokenPositionOverrides((overrides) => {
