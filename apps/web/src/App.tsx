@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
+import { sceneTabWrapClass } from "./scene-tabs.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 const boardHistoryLimit = 50;
@@ -3572,6 +3573,7 @@ export function App() {
   const showSceneTabs = workspaceMode !== "manage" || activeManageCategory === "scenes";
   const showScenePrepControls = workspaceMode === "prep";
   const showSceneSelectionControls = workspaceMode === "prep" || (workspaceMode === "manage" && activeManageCategory === "scenes");
+  const canSelectPrepScenes = showSceneSelectionControls && hasPermission("scene.update");
   const showQuickCreate = workspaceMode === "live" || workspaceMode === "prep";
   const showTableWorkspace = workspaceMode === "live" || workspaceMode === "prep";
   const showConsoleDock = workspaceMode !== "manage";
@@ -4444,10 +4446,10 @@ export function App() {
           {showSceneTabs && <div className="scene-tabs">
             {visibleScenes.map((scene) => {
               const backgroundAsset = snapshot.assets.find((asset) => asset.id === scene.backgroundAssetId && isUsableImageAsset(asset));
-              const sceneSelected = showSceneSelectionControls && selectedPrepSceneIds.includes(scene.id);
+              const sceneSelected = canSelectPrepScenes && selectedPrepSceneIds.includes(scene.id);
               return (
-                <div key={scene.id} className={sceneSelected ? "scene-tab-wrap selected" : "scene-tab-wrap"}>
-                  {showSceneSelectionControls && hasPermission("scene.update") && (
+                <div key={scene.id} className={sceneTabWrapClass(canSelectPrepScenes, sceneSelected)}>
+                  {canSelectPrepScenes && (
                     <input
                       aria-label={`Select scene ${scene.name}`}
                       checked={sceneSelected}

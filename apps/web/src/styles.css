@@ -467,13 +467,17 @@ a[href]:focus-visible,
 
 .scene-tab-wrap {
   display: inline-grid;
-  grid-template-columns: 24px minmax(0, auto);
+  grid-template-columns: minmax(0, auto);
   align-items: center;
   flex: 0 0 auto;
   gap: 4px;
   padding: 2px;
   border: 1px solid transparent;
   border-radius: 8px;
+}
+
+.scene-tab-wrap.selectable {
+  grid-template-columns: 24px minmax(0, auto);
 }
 
 .scene-tab-wrap.selected {
