@@ -1,8 +1,8 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "DOCKERFILE",
-    "dockerfilePath": "infra/docker/api.Dockerfile",
+    "builder": "RAILPACK",
+    "buildCommand": "pnpm --filter @open-tabletop/api... build",
     "watchPatterns": [
       "apps/api/**",
       "packages/**",
@@ -12,11 +12,11 @@
       "pnpm-workspace.yaml",
       "turbo.json",
       "tsconfig.base.json",
-      "infra/docker/api.Dockerfile",
-      "railway.json"
+      "railway.api.json"
     ]
   },
   "deploy": {
+    "startCommand": "node apps/api/dist/server.js",
     "numReplicas": 1,
     "healthcheckPath": "/api/v1/health",
     "healthcheckTimeout": 300,
