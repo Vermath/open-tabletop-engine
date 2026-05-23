@@ -3128,6 +3128,7 @@ const componentSchemas = {
     type: "object",
     additionalProperties: false,
     properties: {
+      id: idSchema,
       actorId: idSchema,
       name: stringSchema,
       x: { type: "number" },

@@ -24,6 +24,11 @@ describe("boardKeyboardAction", () => {
     expect(boardKeyboardAction(event({ key: "z", ctrlKey: true, shiftKey: true }), { selectedCount: 0, canDelete: true, undoCount: 0, redoCount: 1 })).toBe("redo");
   });
 
+  it("maps copy and paste shortcuts for selected board tokens", () => {
+    expect(boardKeyboardAction(event({ key: "c", ctrlKey: true }), { selectedCount: 2, canDelete: true, canCopy: true, canPaste: false, undoCount: 0, redoCount: 0 })).toBe("copy");
+    expect(boardKeyboardAction(event({ key: "v", ctrlKey: true }), { selectedCount: 0, canDelete: true, canCopy: false, canPaste: true, undoCount: 0, redoCount: 0 })).toBe("paste");
+  });
+
   it("ignores shortcuts while the user is editing text", () => {
     expect(boardKeyboardAction(event({ key: "Delete", target: { tagName: "INPUT" } }), { selectedCount: 1, canDelete: true, undoCount: 0, redoCount: 0 })).toBeNull();
   });

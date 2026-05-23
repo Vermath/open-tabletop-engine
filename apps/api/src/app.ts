@@ -4007,7 +4007,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalizedLayer = normalizeTokenLayerPatch(request.body);
     if ("error" in normalizedLayer) return badRequest(reply, normalizedLayer.error);
     const defaultOwnerUserIds = request.body.ownerUserIds === undefined && !canReadHiddenTokens(store, userId, campaignId) ? [userId] : [];
+    const requestedTokenId = typeof request.body.id === "string" ? request.body.id.trim() : "";
+    if (requestedTokenId && !/^tok_[A-Za-z0-9_-]+$/.test(requestedTokenId)) return badRequest(reply, "token id must start with tok_ and contain only letters, numbers, underscore, or hyphen");
+    if (requestedTokenId && store.state.tokens.some((item) => item.id === requestedTokenId)) return conflict(reply, "Token id already exists");
     const token = createTimestamped("tok", {
+      ...(requestedTokenId ? { id: requestedTokenId } : {}),
       sceneId: scene.id,
       actorId: request.body.actorId,
       name: request.body.name ?? "New Token",

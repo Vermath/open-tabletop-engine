@@ -4,6 +4,7 @@ import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circ
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenPositionChange } from "./board-history.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { sceneTabWrapClass } from "./scene-tabs.js";
@@ -289,8 +290,6 @@ type MeasurementTool = "measure-circle" | "measure-cone";
 type AnnotationTool = SceneAnnotationKind | MeasurementTool | null;
 type ActiveAnnotationTool = NonNullable<AnnotationTool>;
 type ActorLoadoutFilter = "all" | "equipped" | "consumable" | "magic";
-type BoardTokenPositionChange = { tokenId: string; before: Pick<Token, "x" | "y">; after: Pick<Token, "x" | "y"> };
-type BoardHistoryAction = { kind: "tokens.create" | "tokens.delete"; tokens: Token[] } | { kind: "tokens.move"; changes: BoardTokenPositionChange[] };
 
 function summarizeImport(result: CampaignImportResult): string {
   const collections = ["campaigns", "members", "scenes", "tokens", "actors", "journals", "handouts", "chat", "rolls", "combats", "contentImports"];
@@ -485,7 +484,8 @@ export function App() {
   const [activeTokenLayer, setActiveTokenLayer] = useState<TokenLayer>("player");
   const [boardUndoStack, setBoardUndoStack] = useState<BoardHistoryAction[]>([]);
   const [boardRedoStack, setBoardRedoStack] = useState<BoardHistoryAction[]>([]);
-  const [boardHistoryBusy, setBoardHistoryBusy] = useState(false);
+  const [boardClipboardTokens, setBoardClipboardTokens] = useState<Token[]>([]);
+  const boardSyncQueueRef = useRef(Promise.resolve());
   const [battleMapZoom, setBattleMapZoom] = useState(1);
   const [fogBrushMode, setFogBrushMode] = useState<FogMode | null>(null);
   const [annotationTool, setAnnotationTool] = useState<AnnotationTool>(null);
@@ -852,21 +852,24 @@ export function App() {
       const action = boardKeyboardAction(event, {
         selectedCount: selectedTokens.length,
         canDelete: canDeleteSelectedBoardTokens,
+        canCopy: selectedTokens.length > 0,
+        canPaste: boardClipboardTokens.length > 0 && hasPermission("token.create"),
         undoCount: boardUndoStack.length,
         redoCount: boardRedoStack.length
       });
       if (!action) return;
       event.preventDefault();
-      if (boardHistoryBusy) {
-        setStatus("Board history action already running");
-        return;
-      }
-      const task = action === "delete-selected" ? deleteSelectedBoardTokens() : action === "undo" ? undoBoardAction() : redoBoardAction();
+      const task =
+        action === "delete-selected" ? deleteSelectedBoardTokens() :
+        action === "undo" ? undoBoardAction() :
+        action === "redo" ? redoBoardAction() :
+        action === "copy" ? copySelectedBoardTokens() :
+        pasteBoardClipboardTokens();
       task.catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
     };
     window.addEventListener("keydown", handleBoardKeyboard);
     return () => window.removeEventListener("keydown", handleBoardKeyboard);
-  }, [boardHistoryBusy, boardRedoStack.length, boardUndoStack.length, canDeleteSelectedBoardTokens, selectedTokens]);
+  }, [boardClipboardTokens, boardRedoStack.length, boardUndoStack.length, canDeleteSelectedBoardTokens, selectedScene?.id, selectedScene?.gridSize, selectedTokens]);
 
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean } = {}) {
     const next = await loadSnapshot(nextCampaignId, nextSceneId);
@@ -1792,6 +1795,7 @@ export function App() {
 
   function tokenRestorePayload(token: Token): Partial<Token> {
     return {
+      id: token.id,
       actorId: token.actorId,
       name: token.name,
       x: token.x,
@@ -1816,12 +1820,53 @@ export function App() {
     };
   }
 
-  async function recreateTokens(tokens: Token[]): Promise<Token[]> {
-    const recreated: Token[] = [];
+  async function createTokensOnServer(tokens: Token[]) {
     for (const token of tokens) {
-      recreated.push(await apiPost<Token>(`/api/v1/scenes/${token.sceneId}/tokens`, tokenRestorePayload(token)));
+      await apiPost<Token>(`/api/v1/scenes/${token.sceneId}/tokens`, tokenRestorePayload(token));
     }
-    return recreated;
+  }
+
+  async function deleteTokensOnServer(tokens: Token[]) {
+    for (const token of tokens) {
+      await apiDelete<Token>(`/api/v1/tokens/${token.id}`);
+    }
+  }
+
+  function enqueueBoardSync(task: () => Promise<void>) {
+    const run = boardSyncQueueRef.current.then(task, task);
+    boardSyncQueueRef.current = run.catch((error) => {
+      setStatus(`Board sync failed: ${error instanceof Error ? error.message : String(error)}`);
+      refresh(campaignId, sceneId, { syncStatus: false }).catch(() => undefined);
+    });
+  }
+
+  async function persistBoardHistoryAction(action: BoardHistoryAction, direction: BoardHistoryDirection) {
+    if (action.kind === "tokens.move") {
+      const target = direction === "undo" ? "before" : "after";
+      for (const change of action.changes) {
+        await apiPatch<Token>(`/api/v1/tokens/${change.tokenId}`, change[target]);
+      }
+      return;
+    }
+
+    const shouldDeleteTokens = action.kind === "tokens.create" ? direction === "undo" : direction === "redo";
+    if (shouldDeleteTokens) {
+      await deleteTokensOnServer(action.tokens);
+      return;
+    }
+
+    await createTokensOnServer(action.tokens);
+  }
+
+  function applyLocalBoardHistory(action: BoardHistoryAction, direction: BoardHistoryDirection) {
+    const result = applyLocalBoardHistoryAction(snapshot.tokens, action, direction);
+    setSnapshot((current) => ({
+      ...current,
+      tokens: applyLocalBoardHistoryAction(current.tokens, action, direction).tokens
+    }));
+    selectCanvasTokens(result.selectedTokenIds);
+    setStatus(boardHistoryStatus(action, direction));
+    enqueueBoardSync(() => persistBoardHistoryAction(action, direction));
   }
 
   async function deleteTokens(tokensToDelete: Token[], options: { recordHistory: boolean; statusLabel?: string }) {
@@ -1829,14 +1874,12 @@ export function App() {
       setStatus("No selected token to delete");
       return;
     }
-    const deleted: Token[] = [];
-    for (const token of tokensToDelete) {
-      deleted.push(await apiDelete<Token>(`/api/v1/tokens/${token.id}`));
-    }
-    if (options.recordHistory) pushBoardHistoryAction({ kind: "tokens.delete", tokens: deleted });
+    const ids = new Set(tokensToDelete.map((token) => token.id));
+    setSnapshot((current) => ({ ...current, tokens: current.tokens.filter((token) => !ids.has(token.id)) }));
+    if (options.recordHistory) pushBoardHistoryAction({ kind: "tokens.delete", tokens: tokensToDelete });
     clearTokenSelection();
-    setStatus(options.statusLabel ?? `${formatNumber(deleted.length)} token${deleted.length === 1 ? "" : "s"} deleted`);
-    await refresh();
+    setStatus(options.statusLabel ?? `${formatNumber(tokensToDelete.length)} token${tokensToDelete.length === 1 ? "" : "s"} deleted`);
+    enqueueBoardSync(() => deleteTokensOnServer(tokensToDelete));
   }
 
   async function deleteSelectedToken() {
@@ -1853,73 +1896,64 @@ export function App() {
     setStatus(`${formatNumber(changes.length)} token${changes.length === 1 ? "" : "s"} moved`);
   }
 
-  async function applyBoardHistoryAction(action: BoardHistoryAction, direction: "undo" | "redo"): Promise<BoardHistoryAction> {
-    if (action.kind === "tokens.move") {
-      const target = direction === "undo" ? "before" : "after";
-      for (const change of action.changes) {
-        await apiPatch<Token>(`/api/v1/tokens/${change.tokenId}`, change[target]);
-      }
-      await refresh();
-      setStatus(direction === "undo" ? "Token move undone" : "Token move redone");
-      return action;
-    }
+  function boardHistoryStatus(action: BoardHistoryAction, direction: BoardHistoryDirection): string {
+    if (action.kind === "tokens.move") return direction === "undo" ? "Token move undone" : "Token move redone";
     if (action.kind === "tokens.create") {
-      if (direction === "undo") {
-        for (const token of action.tokens) await apiDelete<Token>(`/api/v1/tokens/${token.id}`);
-        clearTokenSelection();
-        await refresh();
-        setStatus(action.tokens.length === 1 ? "Token creation undone" : "Token creations undone");
-        return action;
-      }
-      const recreated = await recreateTokens(action.tokens);
-      selectCanvasTokens(recreated.map((token) => token.id));
-      await refresh();
-      setStatus(recreated.length === 1 ? "Token creation redone" : "Token creations redone");
-      return { kind: "tokens.create", tokens: recreated };
+      if (direction === "undo") return action.tokens.length === 1 ? "Token creation undone" : "Token creations undone";
+      return action.tokens.length === 1 ? "Token creation redone" : "Token creations redone";
     }
-    if (direction === "undo") {
-      const recreated = await recreateTokens(action.tokens);
-      selectCanvasTokens(recreated.map((token) => token.id));
-      await refresh();
-      setStatus(recreated.length === 1 ? "Token deletion undone" : "Token deletions undone");
-      return { kind: "tokens.delete", tokens: recreated };
-    }
-    await deleteTokens(action.tokens, { recordHistory: false, statusLabel: action.tokens.length === 1 ? "Token deletion redone" : "Token deletions redone" });
-    return action;
+    if (direction === "undo") return action.tokens.length === 1 ? "Token deletion undone" : "Token deletions undone";
+    return action.tokens.length === 1 ? "Token deletion redone" : "Token deletions redone";
   }
 
   async function undoBoardAction() {
-    if (boardHistoryBusy) return;
     const action = boardUndoStack.at(-1);
     if (!action) {
       setStatus("Nothing to undo");
       return;
     }
-    setBoardHistoryBusy(true);
-    try {
-      const redoAction = await applyBoardHistoryAction(action, "undo");
-      setBoardUndoStack((current) => current.slice(0, -1));
-      setBoardRedoStack((current) => [...current, redoAction].slice(-boardHistoryLimit));
-    } finally {
-      setBoardHistoryBusy(false);
-    }
+    applyLocalBoardHistory(action, "undo");
+    setBoardUndoStack((current) => current.slice(0, -1));
+    setBoardRedoStack((current) => [...current, action].slice(-boardHistoryLimit));
   }
 
   async function redoBoardAction() {
-    if (boardHistoryBusy) return;
     const action = boardRedoStack.at(-1);
     if (!action) {
       setStatus("Nothing to redo");
       return;
     }
-    setBoardHistoryBusy(true);
-    try {
-      const undoAction = await applyBoardHistoryAction(action, "redo");
-      setBoardRedoStack((current) => current.slice(0, -1));
-      setBoardUndoStack((current) => [...current, undoAction].slice(-boardHistoryLimit));
-    } finally {
-      setBoardHistoryBusy(false);
+    applyLocalBoardHistory(action, "redo");
+    setBoardRedoStack((current) => current.slice(0, -1));
+    setBoardUndoStack((current) => [...current, action].slice(-boardHistoryLimit));
+  }
+
+  async function copySelectedBoardTokens() {
+    if (selectedTokens.length === 0) {
+      setStatus("No selected token to copy");
+      return;
     }
+    setBoardClipboardTokens(selectedTokens);
+    setStatus(`${formatNumber(selectedTokens.length)} token${selectedTokens.length === 1 ? "" : "s"} copied`);
+  }
+
+  async function pasteBoardClipboardTokens() {
+    if (!selectedScene) return;
+    if (boardClipboardTokens.length === 0) {
+      setStatus("No copied token to paste");
+      return;
+    }
+    if (!hasPermission("token.create")) {
+      setStatus("Missing token.create permission");
+      return;
+    }
+    const pasteSources = boardClipboardTokens.map((token) => ({ ...token, sceneId: selectedScene.id }));
+    const pastedTokens = createTokenCopies(pasteSources, { offset: Math.max(16, Math.round(selectedScene.gridSize / 2)) });
+    setSnapshot((current) => ({ ...current, tokens: [...current.tokens, ...pastedTokens] }));
+    selectCanvasTokens(pastedTokens.map((token) => token.id));
+    pushBoardHistoryAction({ kind: "tokens.create", tokens: pastedTokens });
+    setStatus(`${formatNumber(pastedTokens.length)} token${pastedTokens.length === 1 ? "" : "s"} pasted`);
+    enqueueBoardSync(() => createTokensOnServer(pastedTokens));
   }
 
   async function setTokenTarget(tokenId: string, targeted: boolean) {

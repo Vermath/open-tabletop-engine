@@ -2499,6 +2499,30 @@ describe("api", () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("preserves client-supplied token ids for optimistic board operations", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: authHeaders,
+      payload: { id: "tok_client_copy", name: "Client Copy", x: 80, y: 90 }
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.json()).toEqual(expect.objectContaining({ id: "tok_client_copy", x: 80, y: 90 }));
+
+    const duplicate = await app.inject({
+      method: "POST",
+      url: "/api/v1/scenes/scn_vault_entry/tokens",
+      headers: authHeaders,
+      payload: { id: "tok_client_copy", name: "Duplicate Client Copy" }
+    });
+    expect(duplicate.statusCode).toBe(409);
+
+    await app.close();
+  });
+
   it("supports a seeded player session without GM permissions", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });

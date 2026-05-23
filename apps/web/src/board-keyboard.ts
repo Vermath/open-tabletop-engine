@@ -1,8 +1,10 @@
-export type BoardKeyboardAction = "delete-selected" | "undo" | "redo";
+export type BoardKeyboardAction = "delete-selected" | "undo" | "redo" | "copy" | "paste";
 
 export interface BoardKeyboardState {
   selectedCount: number;
   canDelete: boolean;
+  canCopy?: boolean;
+  canPaste?: boolean;
   undoCount: number;
   redoCount: number;
 }
@@ -24,6 +26,8 @@ export function boardKeyboardAction(event: BoardKeyboardEventLike, state: BoardK
   if (modKey && key === "z" && event.shiftKey && state.redoCount > 0) return "redo";
   if (modKey && key === "z" && state.undoCount > 0) return "undo";
   if (modKey && (key === "y" || code === "keyy") && state.redoCount > 0) return "redo";
+  if (modKey && (key === "c" || code === "keyc") && state.canCopy && state.selectedCount > 0) return "copy";
+  if (modKey && (key === "v" || code === "keyv") && state.canPaste) return "paste";
   if (!modKey && event.key === "Delete" && state.canDelete && state.selectedCount > 0) return "delete-selected";
   return null;
 }
