@@ -54,6 +54,58 @@ export interface AssetUploadResponse {
   scene?: Scene;
 }
 
+export type AiReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+export interface AiThreadCreateInput {
+  prompt: string;
+  surface?: "agent_panel" | "ai_studio";
+  model?: string;
+  reasoningEffort?: AiReasoningEffort;
+  selectedSceneId?: string;
+  selectedTokenIds?: string[];
+}
+
+export interface McpJsonRpcRequest {
+  jsonrpc?: "2.0";
+  id?: string | number | null;
+  method?: string;
+  params?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface McpJsonRpcResponse {
+  jsonrpc: "2.0";
+  id: string | number | null;
+  result?: unknown;
+  error?: { code?: number; message?: string; data?: unknown; [key: string]: unknown };
+  [key: string]: unknown;
+}
+
+export interface BoardCaptureSubmitInput {
+  dataUrl?: string;
+  sceneId?: string;
+  width?: number;
+  height?: number;
+  error?: string;
+}
+
+export type BoardCaptureResult =
+  | {
+      status: "captured";
+      captureId: string;
+      imageUrl: string;
+      expiresAt: string;
+      sceneId?: string;
+      width?: number;
+      height?: number;
+      mimeType: "image/png";
+    }
+  | {
+      status: "board_capture_unavailable" | "failed";
+      reason: string;
+      sceneId?: string;
+    };
+
 export interface PluginRuntimeInfo {
   id: string;
   name: string;
@@ -131,7 +183,8 @@ export const apiClientExcludedRoutePatterns = [
   { prefix: "/api/v1/scim/", reason: "SCIM provisioning is an identity-provider integration surface, not reusable campaign client API" },
   { path: routes.openApi, reason: "OpenAPI contract discovery is consumed at build/test time rather than wrapped as domain behavior" },
   { path: openTabletopRealtimePath, reason: "Realtime uses websocket helpers instead of REST fetch wrappers" },
-  { path: "/api/v1/assets/{assetId}/blob", reason: "Binary asset delivery is intentionally fetched directly from signed URLs or browser media elements" }
+  { path: "/api/v1/assets/{assetId}/blob", reason: "Binary asset delivery is intentionally fetched directly from signed URLs or browser media elements" },
+  { path: "/api/v1/agent/board-captures/{captureId}", reason: "Short-lived PNG board captures are fetched directly from signed URLs or browser image elements" }
 ] as const;
 
 export class OpenTabletopClient {
@@ -637,8 +690,16 @@ export class OpenTabletopClient {
     return this.get(routes.aiThreads(campaignId));
   }
 
-  async createAiThread(campaignId: string, input: { prompt: string }): Promise<AiThread> {
+  async createAiThread(campaignId: string, input: AiThreadCreateInput): Promise<AiThread> {
     return this.post(routes.aiThreads(campaignId), input);
+  }
+
+  async mcp(input: McpJsonRpcRequest): Promise<McpJsonRpcResponse> {
+    return this.post(routes.mcp, input);
+  }
+
+  async submitBoardCapture(requestId: string, input: BoardCaptureSubmitInput): Promise<BoardCaptureResult> {
+    return this.post(routes.agentBoardCaptureSubmit(requestId), input);
   }
 
   async aiUsage(campaignId: string): Promise<unknown> {

@@ -40,7 +40,8 @@ export type EngineEventType =
   | "ai.message.completed"
   | "ai.tool.started"
   | "ai.tool.completed"
-  | "ai.proposal.created";
+  | "ai.proposal.created"
+  | "agent.boardCaptureRequested";
 
 export interface EngineEvent<TPayload = unknown> {
   id: ID;

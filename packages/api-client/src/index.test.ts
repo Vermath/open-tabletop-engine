@@ -24,6 +24,7 @@ const factId = "fact_client";
 const toolCallId = "tool_client";
 const inviteId = "inv_client";
 const sessionId = "sess_client";
+const requestId = "req_client";
 const fogId = "fog_client";
 const wallId = "wall_client";
 const lightId = "light_client";
@@ -298,6 +299,8 @@ describe("OpenTabletopClient", () => {
       client.aiEncounterDesign(campaignId, { prompt: "Encounter" }),
       client.aiGenerateMapAsset(campaignId, { prompt: "Map", sceneId }),
       client.aiGenerateTokenAsset(campaignId, { prompt: "Token", tokenId }),
+      client.mcp({ jsonrpc: "2.0", id: "mcp_client", method: "tools/list", params: { campaignId } }),
+      client.submitBoardCapture(requestId, { error: "not available" }),
       client.plugins(),
       client.registerPlugin({ packageId: pluginId }),
       client.syncPluginRegistry(),
@@ -359,6 +362,7 @@ function isExcludedRoute(route: string): boolean {
     path === "/api/v1/openapi.json" ||
     path === "/api/v1/realtime" ||
     path === "/api/v1/assets/{assetId}/blob" ||
+    path === "/api/v1/agent/board-captures/{captureId}" ||
     path === "/api/v1/auth/oidc/callback" ||
     Boolean(path?.startsWith("/api/v1/admin/")) ||
     Boolean(path?.startsWith("/api/v1/scim/"))
@@ -389,6 +393,7 @@ function normalizeCall(call: string): string {
     .replace(conditionId, "{conditionId}")
     .replace(inviteId, "{inviteId}")
     .replace(sessionId, "{sessionId}")
+    .replace(requestId, "{requestId}")
     .replace(fogId, "{fogId}")
     .replace(wallId, "{wallId}")
     .replace(lightId, "{lightId}")

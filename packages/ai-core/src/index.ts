@@ -3,7 +3,35 @@ import type { AiUsageMetrics, EngineState, MapAsset, PermissionName, ProposalCha
 export interface AiMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+  parts?: AiMessagePart[];
 }
+
+export type AiReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+export type AiMessagePart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; imageUrl: string; mimeType?: string; detail?: "low" | "high" | "auto" };
+
+export interface AiBoardCaptureRequest {
+  sceneId?: string;
+}
+
+export type AiBoardCaptureResult =
+  | {
+      status: "captured";
+      captureId: string;
+      imageUrl: string;
+      expiresAt: string;
+      sceneId?: string;
+      width?: number;
+      height?: number;
+      mimeType: "image/png";
+    }
+  | {
+      status: "board_capture_unavailable" | "failed";
+      reason: string;
+      sceneId?: string;
+    };
 
 export interface AiToolDefinition<TInput = unknown, TOutput = unknown> {
   name: string;
@@ -38,6 +66,10 @@ export interface AiToolContext {
   permissions: PermissionName[];
   state: EngineState;
   createProposal(input: { title: string; summary: string; changes: ProposalChange[] }): Promise<string>;
+  listProposals?(input: { status?: string; limit?: number }): Promise<unknown>;
+  getProposal?(input: { proposalId: string }): Promise<unknown>;
+  reviseProposal?(input: { proposalId: string; title?: string; summary?: string; changes?: ProposalChange[] }): Promise<unknown>;
+  applyApprovedProposal?(input: { proposalId: string }): Promise<unknown>;
   createMemory(input: { text: string; visibility: Visibility; sourceIds: string[] }): Promise<string>;
   generateImageAsset(input: {
     kind: "map" | "token";
@@ -68,11 +100,13 @@ export interface AiToolContext {
     effects?: Array<{ type: "damage" | "healing" | "condition" | "utility"; targetActorId: string; targetActorName: string; pool?: string; amount?: number; before?: number | string[]; after?: number | string[]; max?: number; damageType?: string; damageTypes?: string[]; effectChoice?: string; choiceKind?: string; resistance?: string[]; immunity?: string[]; vulnerability?: string[]; duration?: string; conditionId?: string; conditionName?: string; alreadyPresent?: boolean }>;
     resolution?: unknown;
   } | { error: string; permission?: PermissionName; [key: string]: unknown }>;
+  captureBoardView?(input: AiBoardCaptureRequest): Promise<AiBoardCaptureResult>;
 }
 
 export interface AiProvider {
   id: string;
   label: string;
+  executesToolsInTurn?: boolean;
   stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent>;
 }
 
@@ -81,6 +115,10 @@ export interface AiProviderRequest {
   messages: AiMessage[];
   tools: AiToolDefinition[];
   context: PermissionFilteredContext;
+  model?: string;
+  reasoningEffort?: AiReasoningEffort;
+  surface?: string;
+  executeTool?: (toolName: string, input: unknown) => Promise<unknown>;
 }
 
 export type AiProviderEvent =

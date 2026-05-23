@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { EchoAiProvider, buildPermissionFilteredContext, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
+import { EchoAiProvider, buildPermissionFilteredContext, type AiBoardCaptureResult, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
@@ -57,6 +57,51 @@ interface AiToolRuntime {
   imageAssetGenerator: ImageAssetGenerator;
   assetStorage: AssetStorage;
   maxAssetBytes: number;
+  requestBoardCapture?: (input: BoardCaptureRequest) => Promise<AiBoardCaptureResult>;
+  broadcast?: (event: EngineEvent) => void;
+}
+
+interface BoardCaptureRequest {
+  campaignId: string;
+  userId: string;
+  sceneId?: string;
+}
+
+interface PendingBoardCapture {
+  campaignId: string;
+  userId: string;
+  sceneId?: string;
+  resolve(result: AiBoardCaptureResult): void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+interface StoredBoardCapture {
+  id: string;
+  token: string;
+  campaignId: string;
+  userId: string;
+  sceneId?: string;
+  body: Buffer;
+  width?: number;
+  height?: number;
+  createdAt: string;
+  expiresAt: string;
+}
+
+interface AgentThreadBody {
+  prompt: string;
+  surface?: string;
+  model?: string;
+  reasoningEffort?: AiReasoningEffort;
+  selectedSceneId?: string;
+  selectedTokenIds?: string[];
+}
+
+interface McpJsonRpcRequest {
+  jsonrpc?: string;
+  id?: string | number | null;
+  method?: string;
+  params?: unknown;
 }
 
 interface AdminAuditLogQuery {
@@ -402,7 +447,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const broadcast = (event: EngineEvent) => hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId));
   const aiProvider = options.aiProvider ?? createConfiguredAiProvider();
   const imageAssetGenerator = options.imageAssetGenerator ?? createConfiguredImageAssetGenerator();
-  const aiToolRuntime: AiToolRuntime = { imageAssetGenerator, assetStorage, maxAssetBytes };
+  const pendingBoardCaptures = new Map<string, PendingBoardCapture>();
+  const storedBoardCaptures = new Map<string, StoredBoardCapture>();
+  const aiToolRuntime: AiToolRuntime = { imageAssetGenerator, assetStorage, maxAssetBytes, requestBoardCapture, broadcast };
   const pluginRegistry = options.pluginRegistry ?? loadPluginRegistry({ pluginRoot: options.pluginRoot });
   const app = Fastify({ logger: true });
 
@@ -428,6 +475,118 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }));
 
   app.get("/api/v1/openapi.json", async () => openApiSpec);
+
+  app.get<{ Params: { captureId: string }; Querystring: { token?: string } }>("/api/v1/agent/board-captures/:captureId", async (request, reply) => {
+    pruneExpiredBoardCaptures();
+    const capture = storedBoardCaptures.get(request.params.captureId);
+    if (!capture || capture.token !== request.query.token || Date.parse(capture.expiresAt) <= Date.now()) return notFound(reply, "Board capture not found");
+    return reply.header("cache-control", "private, no-store").type("image/png").send(capture.body);
+  });
+
+  app.post<{ Params: { requestId: string }; Body: { dataUrl?: string; sceneId?: string; width?: number; height?: number; error?: string } }>(
+    "/api/v1/agent/board-captures/:requestId",
+    { bodyLimit: Math.max(maxAssetBytes, 16 * 1024 * 1024) },
+    async (request, reply) => {
+      const userId = requireUser(store, reply, request.headers);
+      if (typeof userId !== "string") return userId;
+      const pending = pendingBoardCaptures.get(request.params.requestId);
+      if (!pending) return notFound(reply, "Board capture request not found");
+      if (pending.userId !== userId) return forbidden(reply, "Board capture request belongs to a different user");
+      pendingBoardCaptures.delete(request.params.requestId);
+      clearTimeout(pending.timer);
+      if (request.body?.error) {
+        const result: AiBoardCaptureResult = { status: "failed", reason: request.body.error.slice(0, 300), sceneId: pending.sceneId };
+        pending.resolve(result);
+        return result;
+      }
+      const decoded = pngDataUrlBuffer(request.body?.dataUrl);
+      if (!decoded) {
+        const result: AiBoardCaptureResult = { status: "failed", reason: "Client did not submit a PNG data URL.", sceneId: pending.sceneId };
+        pending.resolve(result);
+        return result;
+      }
+      if (decoded.length > maxAssetBytes) {
+        const result: AiBoardCaptureResult = { status: "failed", reason: `Board capture exceeds ${maxAssetBytes} bytes.`, sceneId: pending.sceneId };
+        pending.resolve(result);
+        return result;
+      }
+      pruneExpiredBoardCaptures();
+      const captureId = createId("cap");
+      const token = randomBytes(24).toString("base64url");
+      const createdAt = nowIso();
+      const expiresAt = new Date(Date.now() + boardCaptureTtlMs()).toISOString();
+      const capture: StoredBoardCapture = {
+        id: captureId,
+        token,
+        campaignId: pending.campaignId,
+        userId,
+        sceneId: request.body?.sceneId ?? pending.sceneId,
+        body: decoded,
+        width: integerFromUnknown(request.body?.width, 1, 20000),
+        height: integerFromUnknown(request.body?.height, 1, 20000),
+        createdAt,
+        expiresAt
+      };
+      storedBoardCaptures.set(captureId, capture);
+      const result: AiBoardCaptureResult = {
+        status: "captured",
+        captureId,
+        imageUrl: `${apiBaseUrlForInternalAgent()}/api/v1/agent/board-captures/${captureId}?token=${encodeURIComponent(token)}`,
+        expiresAt,
+        sceneId: capture.sceneId,
+        width: capture.width,
+        height: capture.height,
+        mimeType: "image/png"
+      };
+      pending.resolve(result);
+      return result;
+    }
+  );
+
+  app.post<{ Body: McpJsonRpcRequest }>("/api/v1/mcp", async (request, reply) => {
+    const id = request.body?.id ?? null;
+    const method = request.body?.method;
+    if (method === "initialize") {
+      return mcpResult(id, {
+        protocolVersion: "2025-11-25",
+        capabilities: { tools: {} },
+        serverInfo: { name: "open-tabletop-engine", version: "0.3.0" }
+      });
+    }
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    if (method === "tools/list") {
+      const campaignId = campaignIdFromMcpParams(request.body?.params);
+      if (!campaignId) return mcpError(id, -32602, "tools/list requires params.campaignId.");
+      const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.read");
+      if (allowed !== true) return allowed;
+      const permissions = permissionsForUser(store, userId, campaignId);
+      const tools = createAiThreadTools()
+        .filter((tool) => aiToolAvailableToCaller(tool, permissions))
+        .map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.parameters ?? { type: "object", properties: {}, additionalProperties: true }
+        }));
+      return mcpResult(id, { tools });
+    }
+    if (method === "tools/call") {
+      const call = mcpToolCallFromParams(request.body?.params);
+      if (!call.campaignId || !call.name) return mcpError(id, -32602, "tools/call requires params.campaignId and params.name.");
+      const allowed = requireCampaignPermission(store, reply, request.headers, call.campaignId, "campaign.read");
+      if (allowed !== true) return allowed;
+      const permissions = permissionsForUser(store, userId, call.campaignId);
+      const tools = createAiThreadTools();
+      const toolContext = createAiToolContext(store, call.campaignId, userId, permissions, aiToolRuntime);
+      const result = await executeAiTool(tools, call.name, call.arguments ?? {}, toolContext);
+      store.save();
+      return mcpResult(id, {
+        content: [{ type: "text", text: JSON.stringify(result.output) }],
+        isError: result.failed
+      });
+    }
+    return mcpError(id, -32601, `Unsupported MCP method: ${method ?? "missing"}`);
+  });
 
   app.get("/api/v1/auth/bootstrap", async () => ({
     required: store.state.users.length === 0,
@@ -5158,11 +5317,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return evaluation;
   });
 
-  app.post<{ Params: { campaignId: string }; Body: { prompt: string } }>("/api/v1/campaigns/:campaignId/ai/threads", async (request, reply) => {
+  app.post<{ Params: { campaignId: string }; Body: AgentThreadBody }>("/api/v1/campaigns/:campaignId/ai/threads", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.use");
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const prompt = typeof request.body?.prompt === "string" ? request.body.prompt : "";
+    if (!prompt.trim()) return badRequest(reply, "Prompt is required");
+    const surface = request.body?.surface === "agent_panel" ? "agent_panel" : "ai_studio";
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const permissions = permissionsForUser(store, userId, request.params.campaignId);
@@ -5178,14 +5340,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       campaignId: request.params.campaignId,
       userId,
       provider: aiProvider.id,
-      title: request.body.prompt.slice(0, 80) || "AI Thread",
-      prompt: request.body.prompt,
+      title: prompt.slice(0, 80) || "AI Thread",
+      prompt,
       status: "running" as const,
       startedAt,
       retryAttempts: 0,
       eventCount: 0,
       toolCallCount: 0,
-      usage: createInitialAiUsage(request.body.prompt, context)
+      usage: createInitialAiUsage(prompt, context)
     });
     store.state.aiThreads.push(thread);
     const tools = createAiThreadTools();
@@ -5201,9 +5363,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const maxRetryAttempts = aiProviderRetryAttempts();
     const providerInput: AiProviderRequest = {
       threadId: thread.id,
-      messages: [{ role: "user", content: request.body.prompt }],
+      messages: agentMessagesForRequest(prompt, request.body),
       tools: providerTools,
-      context
+      context,
+      surface,
+      model: request.body?.model?.trim() || (surface === "agent_panel" ? agentModel() : undefined),
+      reasoningEffort: request.body?.reasoningEffort ? agentReasoningEffort(request.body.reasoningEffort) : surface === "agent_panel" ? agentReasoningEffort() : undefined,
+      executeTool: async (toolName, input) => {
+        const result = await executeAiTool(tools, toolName, toolInputWithAgentDefaults(toolName, input, request.body), toolContext);
+        return result.output;
+      }
     };
     while (true) {
       try {
@@ -5227,6 +5396,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
                 status: "started" as const
               })
             );
+            if (aiProvider.executesToolsInTurn) {
+              continue;
+            }
             const result = await executeAiTool(tools, event.toolName, event.input, toolContext);
             const output = result.output;
             const completedEvent: AiProviderEvent = { type: "tool.completed", toolName: event.toolName, output };
@@ -5254,6 +5426,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
                 status: isToolErrorOutput(event.output) ? ("failed" as const) : ("completed" as const)
               })
             );
+            if (isProposalToolOutput(event.output)) {
+              events.push({ type: "proposal.created", proposalId: event.output.proposalId });
+            }
           }
         }
         recordAiResponseUsage(thread, content);
@@ -6937,6 +7112,51 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     };
   });
 
+  function requestBoardCapture(input: BoardCaptureRequest): Promise<AiBoardCaptureResult> {
+    pruneExpiredBoardCaptures();
+    if (hub.countMatching({ campaignId: input.campaignId, userId: input.userId }) === 0) {
+      return Promise.resolve({
+        status: "board_capture_unavailable",
+        reason: "No live web client is connected for this user and campaign.",
+        sceneId: input.sceneId
+      });
+    }
+    const requestId = createId("capreq");
+    const expiresAt = new Date(Date.now() + boardCaptureRequestTimeoutMs()).toISOString();
+    return new Promise<AiBoardCaptureResult>((resolve) => {
+      const timer = setTimeout(() => {
+        pendingBoardCaptures.delete(requestId);
+        resolve({
+          status: "board_capture_unavailable",
+          reason: "Timed out waiting for the live web client to capture the board.",
+          sceneId: input.sceneId
+        });
+      }, boardCaptureRequestTimeoutMs());
+      pendingBoardCaptures.set(requestId, { ...input, resolve, timer });
+      broadcast(
+        createEvent({
+          campaignId: input.campaignId,
+          type: "agent.boardCaptureRequested",
+          actorUserId: input.userId,
+          targetId: input.sceneId,
+          payload: {
+            requestId,
+            userId: input.userId,
+            sceneId: input.sceneId,
+            expiresAt
+          }
+        })
+      );
+    });
+  }
+
+  function pruneExpiredBoardCaptures(): void {
+    const now = Date.now();
+    for (const [id, capture] of storedBoardCaptures.entries()) {
+      if (Date.parse(capture.expiresAt) <= now) storedBoardCaptures.delete(id);
+    }
+  }
+
   assetCleanupScheduler.start();
   storageBackupScheduler.start();
   app.addHook("onClose", async () => {
@@ -6953,7 +7173,8 @@ function createConfiguredAiProvider(): AiProvider {
   if (process.env.OTTE_AI_PROVIDER === "codex-loopback") {
     return new CodexAppServerProvider({
       transport: new LoopbackCodexTransport(),
-      approvalMode: "proposal"
+      approvalMode: "proposal",
+      reasoningEffort: agentReasoningEffort()
     });
   }
   if (process.env.OTTE_AI_PROVIDER === "codex-app-server") {
@@ -6964,10 +7185,12 @@ function createConfiguredAiProvider(): AiProvider {
         cwd: process.env.OTTE_CODEX_APP_SERVER_CWD,
         model: process.env.OTTE_CODEX_MODEL,
         modelProvider: process.env.OTTE_CODEX_MODEL_PROVIDER,
+        reasoningEffort: agentReasoningEffort(),
         requestTimeoutMs: providerTimeoutMs,
         turnTimeoutMs: providerTimeoutMs === undefined ? undefined : Math.max(providerTimeoutMs, 180_000)
       }),
-      approvalMode: "proposal"
+      approvalMode: "proposal",
+      reasoningEffort: agentReasoningEffort()
     });
   }
   if (process.env.OTTE_AI_PROVIDER === "openai" || process.env.OTTE_AI_PROVIDER === "openai-responses") {
@@ -7102,10 +7325,111 @@ function rasterMimeTypeForGeneratedImage(body: Buffer): "image/png" | "image/jpe
   return undefined;
 }
 
+function pngDataUrlBuffer(dataUrl: string | undefined): Buffer | undefined {
+  if (!dataUrl?.startsWith("data:image/png;base64,")) return undefined;
+  const body = Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
+  if (body.length < 8 || body[0] !== 0x89 || body[1] !== 0x50 || body[2] !== 0x4e || body[3] !== 0x47) return undefined;
+  return body;
+}
+
+function integerFromUnknown(value: unknown, min: number, max: number): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const integer = Math.floor(value);
+  if (integer < min || integer > max) return undefined;
+  return integer;
+}
+
+function boardCaptureRequestTimeoutMs(): number {
+  const parsed = envNumber("OTTE_BOARD_CAPTURE_TIMEOUT_MS");
+  if (parsed === undefined) return 15_000;
+  return Math.max(1_000, Math.min(60_000, Math.floor(parsed)));
+}
+
+function boardCaptureTtlMs(): number {
+  const parsed = envNumber("OTTE_BOARD_CAPTURE_TTL_MS");
+  if (parsed === undefined) return 5 * 60_000;
+  return Math.max(30_000, Math.min(30 * 60_000, Math.floor(parsed)));
+}
+
+function apiBaseUrlForInternalAgent(): string {
+  const configured = process.env.OTTE_PUBLIC_URL?.replace(/\/+$/, "");
+  if (configured) return configured;
+  return `http://127.0.0.1:${process.env.PORT ?? "4000"}`;
+}
+
 function aiProviderTimeoutMs(): number {
   const parsed = envNumber("OTTE_AI_PROVIDER_TIMEOUT_MS");
   if (parsed === undefined) return 30_000;
   return Math.max(0, Math.min(300_000, Math.floor(parsed)));
+}
+
+function agentModel(): string {
+  return process.env.OTTE_AGENT_MODEL?.trim() || process.env.OTTE_CODEX_MODEL?.trim() || "gpt-5.5";
+}
+
+function agentReasoningEffort(value = process.env.OTTE_AGENT_REASONING_EFFORT): AiReasoningEffort {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "none" || normalized === "minimal" || normalized === "low" || normalized === "medium" || normalized === "high" || normalized === "xhigh") return normalized;
+  return "high";
+}
+
+function agentMessagesForRequest(prompt: string, body: AgentThreadBody | undefined): AiProviderRequest["messages"] {
+  const messages: AiProviderRequest["messages"] = [];
+  if (body?.surface === "agent_panel") {
+    messages.push({
+      role: "system",
+      content: [
+        "You are the in-app OpenTabletop AI Agent.",
+        "Use OpenTabletop tools for reads, dice rolls, proposals, and approved proposal application.",
+        "Never approve proposals yourself. Never start campaigns, ban or remove players, revoke sessions, administer invites, install plugins, change server settings, or start/end combat directly.",
+        "For board-changing work, final success requires both read_board_state and capture_board_view after the successful mutation. If capture_board_view reports board_capture_unavailable, state that visual verification was unavailable."
+      ].join("\n")
+    });
+  }
+  messages.push({ role: "user", content: prompt });
+  return messages;
+}
+
+function mcpResult(id: string | number | null, result: unknown): Record<string, unknown> {
+  return { jsonrpc: "2.0", id, result };
+}
+
+function mcpError(id: string | number | null, code: number, message: string): Record<string, unknown> {
+  return { jsonrpc: "2.0", id, error: { code, message } };
+}
+
+function campaignIdFromMcpParams(params: unknown): string | undefined {
+  if (!isRecord(params)) return undefined;
+  return typeof params.campaignId === "string" ? params.campaignId : undefined;
+}
+
+function mcpToolCallFromParams(params: unknown): { campaignId?: string; name?: string; arguments?: unknown } {
+  if (!isRecord(params)) return {};
+  const args = isRecord(params.arguments) ? params.arguments : {};
+  return {
+    campaignId: typeof params.campaignId === "string" ? params.campaignId : typeof args.campaignId === "string" ? args.campaignId : undefined,
+    name: typeof params.name === "string" ? params.name : undefined,
+    arguments: params.arguments
+  };
+}
+
+function toolInputWithAgentDefaults(toolName: string, input: unknown, body: AgentThreadBody | undefined): unknown {
+  if (!body) return input;
+  const base = isRecord(input) ? input : {};
+  if (toolName === "read_board_state") {
+    return {
+      ...base,
+      sceneId: base.sceneId ?? body.selectedSceneId,
+      selectedTokenIds: Array.isArray(base.selectedTokenIds) ? base.selectedTokenIds : body.selectedTokenIds
+    };
+  }
+  if (toolName === "capture_board_view") {
+    return {
+      ...base,
+      sceneId: base.sceneId ?? body.selectedSceneId
+    };
+  }
+  return input;
 }
 
 function aiImageProviderTimeoutMs(): number {
@@ -9017,6 +9341,8 @@ function createAiThreadTools(): AiToolDefinition[] {
         const title = stringFromRecord(request, "title") ?? "AI Tool Proposal";
         const summary = stringFromRecord(request, "summary") ?? title;
         const changes = Array.isArray(request.changes) ? request.changes.filter(isProposalChange) : [];
+        const blocked = blockedAgentProposalChange(changes);
+        if (blocked) return toolError("blocked_critical_action", blocked);
         const missingPermission = missingProposalChangePermission(changes, context.permissions);
         if (missingPermission) return missingPermissionToolOutput(missingPermission);
         const proposalId = await context.createProposal({ title, summary, changes });
@@ -9025,6 +9351,98 @@ function createAiThreadTools(): AiToolDefinition[] {
           title,
           changeCount: changes.length
         };
+      }
+    },
+    {
+      name: "list_proposals",
+      description: "List bounded campaign proposals visible to the caller without approving or applying them.",
+      requiredPermissions: ["campaign.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          status: { type: "string", description: "Optional proposal status filter.", enum: ["pending", "approved", "rejected", "applied"] },
+          limit: { type: "number", description: "Maximum proposals to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return context.listProposals?.({
+          status: enumStringFromRecord(request, "status", ["pending", "approved", "rejected", "applied"]),
+          limit: numberFromRecord(request, "limit", 1, 20)
+        }) ?? toolError("tool_unavailable", { toolName: "list_proposals" });
+      }
+    },
+    {
+      name: "get_proposal",
+      description: "Read a single campaign proposal and its changes without approving or applying it.",
+      requiredPermissions: ["campaign.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          proposalId: { type: "string", description: "Proposal id." }
+        },
+        required: ["proposalId"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        const proposalId = stringFromRecord(request, "proposalId");
+        if (!proposalId) return toolError("invalid_tool_input", { message: "proposalId is required." });
+        return context.getProposal?.({ proposalId }) ?? toolError("tool_unavailable", { toolName: "get_proposal" });
+      }
+    },
+    {
+      name: "revise_proposal",
+      description: "Revise an existing pending proposal's title, summary, or proposed changes without approving it.",
+      requiredPermissions: ["ai.proposeChanges"],
+      parameters: {
+        type: "object",
+        properties: {
+          proposalId: { type: "string", description: "Pending proposal id." },
+          title: { type: "string", description: "Optional replacement title." },
+          summary: { type: "string", description: "Optional replacement summary." },
+          changes: { type: "array", description: "Optional replacement proposal changes.", items: { type: "object", additionalProperties: true } }
+        },
+        required: ["proposalId"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        const proposalId = stringFromRecord(request, "proposalId");
+        if (!proposalId) return toolError("invalid_tool_input", { message: "proposalId is required." });
+        const changes = Array.isArray(request.changes) ? request.changes.filter(isProposalChange) : undefined;
+        const blocked = changes ? blockedAgentProposalChange(changes) : undefined;
+        if (blocked) return toolError("blocked_critical_action", blocked);
+        if (changes) {
+          const missingPermission = missingProposalChangePermission(changes, context.permissions);
+          if (missingPermission) return missingPermissionToolOutput(missingPermission);
+        }
+        return context.reviseProposal?.({
+          proposalId,
+          title: stringFromRecord(request, "title"),
+          summary: stringFromRecord(request, "summary"),
+          changes
+        }) ?? toolError("tool_unavailable", { toolName: "revise_proposal" });
+      }
+    },
+    {
+      name: "apply_approved_proposal",
+      description: "Apply an already approved proposal. This never approves proposals and must be followed by board verification if board state changed.",
+      requiredPermissions: ["ai.applyChanges"],
+      parameters: {
+        type: "object",
+        properties: {
+          proposalId: { type: "string", description: "Approved proposal id to apply." }
+        },
+        required: ["proposalId"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        const proposalId = stringFromRecord(request, "proposalId");
+        if (!proposalId) return toolError("invalid_tool_input", { message: "proposalId is required." });
+        return context.applyApprovedProposal?.({ proposalId }) ?? toolError("tool_unavailable", { toolName: "apply_approved_proposal" });
       }
     },
     {
@@ -9624,6 +10042,52 @@ function createAiThreadTools(): AiToolDefinition[] {
       }
     },
     {
+      name: "read_board_state",
+      description: "Read structured board state for the active or selected scene, including map metadata, grid, visible tokens, layers, fog, walls, lights, annotations, selected tokens, and active combat summary.",
+      requiredPermissions: ["scene.read", "token.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          sceneId: { type: "string", description: "Optional scene id to inspect. Defaults to the active campaign scene." },
+          selectedTokenIds: { type: "array", description: "Optional token ids currently selected by the user.", items: { type: "string" } }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<BoardStateToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const sceneId = stringFromRecord(request, "sceneId");
+        const selectedTokenIds = stringArrayFromRecord(request, "selectedTokenIds");
+        const scene = sceneId ? context.state.scenes.find((item) => item.id === sceneId && item.campaignId === context.campaignId) : context.state.scenes.find((item) => item.campaignId === context.campaignId && item.active) ?? context.state.scenes.find((item) => item.campaignId === context.campaignId);
+        if (!scene) return toolError("not_found", { entity: "scene", id: sceneId ?? "active" });
+        return readBoardStateToolOutput(context, scene, selectedTokenIds);
+      }
+    },
+    {
+      name: "capture_board_view",
+      description: "Request a live web client screenshot of the current board for visual verification. Returns board_capture_unavailable when no matching client is connected.",
+      requiredPermissions: ["scene.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          sceneId: { type: "string", description: "Optional scene id to capture. Defaults to the active or selected board shown in the connected web client." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<AiBoardCaptureResult | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const sceneId = stringFromRecord(request, "sceneId");
+        if (sceneId && !context.state.scenes.some((scene) => scene.id === sceneId && scene.campaignId === context.campaignId)) return toolError("not_found", { entity: "scene", id: sceneId });
+        if (!context.captureBoardView) {
+          return {
+            status: "board_capture_unavailable",
+            reason: "Board capture is not configured for this AI tool context.",
+            sceneId
+          };
+        }
+        return context.captureBoardView({ sceneId });
+      }
+    },
+    {
       name: "read_scene",
       description: "Read safe scene structure visible to the caller, including map dimensions, grid, fog/wall/light counts, and bounded geometry samples.",
       requiredPermissions: ["scene.read"],
@@ -10143,6 +10607,48 @@ interface SceneReadToolOutput {
   }>;
 }
 
+interface BoardStateToolOutput {
+  scene: {
+    id: string;
+    name: string;
+    active: boolean;
+    width: number;
+    height: number;
+    gridType: string;
+    gridSize: number;
+    backgroundAssetId?: string;
+  };
+  mapAsset?: {
+    id: string;
+    name: string;
+    mimeType: string;
+    sizeBytes: number;
+    width?: number;
+    height?: number;
+    lifecycleStatus: string;
+  };
+  tokens: Array<{
+    id: string;
+    name: string;
+    actorId?: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    layer: TokenLayer;
+    hidden: boolean;
+    disposition: string;
+    imageAssetId?: string;
+  }>;
+  tokenLayerCounts: Record<TokenLayer, number>;
+  selectedTokens: string[];
+  fog: { active: boolean; regionCount: number; historyCount: number; sample: Array<{ id: string; mode: FogMode; shape: FogShape; hidden: boolean; x: number; y: number; radius: number; pointCount: number }> };
+  walls: { count: number; terrainCount: number; sample: Array<{ id: string; kind: WallKind; x1: number; y1: number; x2: number; y2: number; blocksVision: boolean; blocksMovement: boolean }> };
+  lights: { count: number; sample: Array<{ id: string; x: number; y: number; radius: number; brightRadius?: number; dimRadius?: number; color: string; intensity?: number }> };
+  annotations: { count: number; layerCounts: Record<SceneAnnotationLayer, number>; sample: Array<{ id: string; kind: SceneAnnotationKind; layer: SceneAnnotationLayer; pointCount: number; color?: string; label?: string }> };
+  activeCombat?: { id: string; round: number; turnIndex: number; combatantCount: number; currentCombatantId?: string; combatants: Array<{ id: string; tokenId: string; actorId?: string; name: string; initiative: number; defeated: boolean }> };
+}
+
 interface TokenReadToolOutput {
   tokenId?: string;
   sceneId?: string;
@@ -10327,6 +10833,79 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
     permissions,
     state: store.state,
     createProposal: createAiProposal,
+    listProposals: async ({ status, limit }) => ({
+      status,
+      count: store.state.proposals.filter((proposal) => proposal.campaignId === campaignId && (!status || proposal.status === status)).length,
+      proposals: store.state.proposals
+        .filter((proposal) => proposal.campaignId === campaignId && (!status || proposal.status === status))
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id))
+        .slice(0, Math.max(1, Math.min(20, limit ?? 10)))
+        .map(proposalToolSummary)
+    }),
+    getProposal: async ({ proposalId }) => {
+      const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
+      if (!proposal) return toolError("not_found", { entity: "proposal", id: proposalId });
+      return { proposal: proposalToolSummary(proposal), changes: proposal.changesJson };
+    },
+    reviseProposal: async ({ proposalId, title, summary, changes }) => {
+      const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
+      if (!proposal) return toolError("not_found", { entity: "proposal", id: proposalId });
+      if (proposal.status !== "pending") return toolError("proposal_not_pending", { proposalId, status: proposal.status });
+      const nextChanges = changes ? normalizeProposalChanges(changes, campaignId, userId) : proposal.changesJson;
+      const preparedChanges = prepareProposalChanges(store, campaignId, userId, nextChanges);
+      if ("error" in preparedChanges) return toolError(preparedChanges.error, { message: preparedChanges.message });
+      const missingPermission = missingProposalChangePermission(preparedChanges.changes, permissions);
+      if (missingPermission) return missingPermissionToolOutput(missingPermission);
+      proposal.title = title ?? proposal.title;
+      proposal.summary = summary ?? proposal.summary;
+      proposal.changesJson = preparedChanges.changes;
+      proposal.updatedAt = nowIso();
+      proposal.history = [
+        ...(proposal.history ?? []),
+        proposalHistoryEntry({
+          action: "revised",
+          status: proposal.status,
+          at: proposal.updatedAt,
+          actorUserId: userId,
+          actorType: "ai",
+          auditAction: "ai.proposal.revised"
+        })
+      ];
+      store.save();
+      runtime.broadcast?.(
+        createEvent({
+          campaignId,
+          type: "proposal.updated",
+          actorUserId: userId,
+          targetId: proposal.id,
+          payload: proposal
+        })
+      );
+      return { proposal: proposalToolSummary(proposal), changes: proposal.changesJson };
+    },
+    applyApprovedProposal: async ({ proposalId }) => {
+      if (!permissions.includes("ai.applyChanges")) return missingPermissionToolOutput("ai.applyChanges");
+      const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
+      if (!proposal) return toolError("not_found", { entity: "proposal", id: proposalId });
+      if (proposal.status !== "approved") return toolError("proposal_not_approved", { proposalId, status: proposal.status });
+      const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson);
+      if ("error" in preparedChanges) return toolError(preparedChanges.error, { message: preparedChanges.message });
+      proposal.changesJson = preparedChanges.changes;
+      const boardStateChanged = proposalTouchesBoardState(proposal);
+      store.replace(applyProposal(store.state, proposal, userId));
+      store.save();
+      const applied = store.state.proposals.find((item) => item.id === proposalId);
+      runtime.broadcast?.(
+        createEvent({
+          campaignId,
+          type: "proposal.applied",
+          actorUserId: userId,
+          targetId: proposal.id,
+          payload: applied
+        })
+      );
+      return { proposal: applied ? proposalToolSummary(applied) : undefined, boardStateChanged };
+    },
     createMemory: async ({ text, visibility, sourceIds }) => {
       const memory = createTimestamped("mem", {
         campaignId,
@@ -10425,6 +11004,16 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       }) satisfies ChatMessage;
       store.state.chat.push(message);
       return { rollId: roll.id, formula: roll.formula, label: roll.label, total: roll.total, visibility: roll.visibility };
+    },
+    captureBoardView: async ({ sceneId }) => {
+      if (!runtime.requestBoardCapture) {
+        return {
+          status: "board_capture_unavailable",
+          reason: "Board capture is not configured for this server.",
+          sceneId
+        };
+      }
+      return runtime.requestBoardCapture({ campaignId, userId, sceneId });
     },
     useActorAction: async ({ actorId, actionRollId, actionName, targetActorId, applyEffect, saveOutcomes, spellSlotLevel, resourceAmount, useFreeResource, visibility }) => {
       const actor = store.state.actors.find((item) => item.id === actorId && item.campaignId === campaignId);
@@ -10644,6 +11233,100 @@ function enrichAiContextWithSystemActions(context: PermissionFilteredContext, st
       };
     })
   };
+}
+
+function readBoardStateToolOutput(context: AiToolContext, scene: Scene, selectedTokenIds: string[]): BoardStateToolOutput {
+  const store = { state: context.state, save: () => undefined, replace: () => undefined } satisfies StateStore;
+  const sceneTokens = context.state.tokens.filter((token) => token.sceneId === scene.id);
+  const visibleTokens = visibleTokensForUser(store, context.userId, context.campaignId, sceneTokens);
+  const visibleTokenIds = new Set(visibleTokens.map((token) => token.id));
+  const mapAsset = scene.backgroundAssetId ? context.state.assets.find((asset) => asset.id === scene.backgroundAssetId && asset.campaignId === context.campaignId) : undefined;
+  const activeCombat = context.state.combats.find((combat) => combat.campaignId === context.campaignId && combat.active);
+  const annotationLayerCounts = { measurement: 0, effects: 0, drawings: 0, notes: 0 } satisfies Record<SceneAnnotationLayer, number>;
+  for (const annotation of scene.annotations ?? []) {
+    annotationLayerCounts[annotation.layer ?? boardAnnotationDefaultLayer(annotation.kind)] += 1;
+  }
+  const tokenLayerCounts = { map: 0, player: 0, gm: 0 } satisfies Record<TokenLayer, number>;
+  for (const token of visibleTokens) tokenLayerCounts[tokenLayer(token)] += 1;
+  return {
+    scene: {
+      id: scene.id,
+      name: scene.name,
+      active: scene.active,
+      width: scene.width,
+      height: scene.height,
+      gridType: scene.gridType,
+      gridSize: scene.gridSize,
+      backgroundAssetId: scene.backgroundAssetId
+    },
+    mapAsset: mapAsset
+      ? {
+          id: mapAsset.id,
+          name: mapAsset.name,
+          mimeType: mapAsset.mimeType,
+          sizeBytes: mapAsset.sizeBytes,
+          lifecycleStatus: mapAsset.lifecycle?.status ?? "active"
+        }
+      : undefined,
+    tokens: visibleTokens
+      .sort((left, right) => tokenLayer(left).localeCompare(tokenLayer(right)) || left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
+      .slice(0, 100)
+      .map((token) => ({
+        id: token.id,
+        name: token.name,
+        actorId: token.actorId,
+        x: token.x,
+        y: token.y,
+        width: token.width,
+        height: token.height,
+        layer: tokenLayer(token),
+        hidden: token.hidden,
+        disposition: token.disposition,
+        imageAssetId: token.imageAssetId
+      })),
+    tokenLayerCounts,
+    selectedTokens: selectedTokenIds.filter((id) => visibleTokenIds.has(id)).slice(0, 50),
+    fog: {
+      active: scene.fog.some((fog) => !fog.hidden),
+      regionCount: scene.fog.length,
+      historyCount: scene.fogHistory?.length ?? 0,
+      sample: scene.fog.slice(0, 12).map((fog) => ({ id: fog.id, mode: fog.mode ?? "reveal", shape: fog.shape ?? "circle", hidden: fog.hidden, x: fog.x, y: fog.y, radius: fog.radius, pointCount: fog.points?.length ?? 0 }))
+    },
+    walls: {
+      count: scene.walls.length,
+      terrainCount: scene.walls.filter((wall) => wall.kind === "terrain").length,
+      sample: scene.walls.slice(0, 12).map((wall) => ({ id: wall.id, kind: wall.kind ?? "wall", x1: wall.x1, y1: wall.y1, x2: wall.x2, y2: wall.y2, blocksVision: wall.blocksVision, blocksMovement: wall.blocksMovement ?? wall.kind !== "terrain" }))
+    },
+    lights: {
+      count: scene.lights.length,
+      sample: scene.lights.slice(0, 12).map((light) => ({ id: light.id, x: light.x, y: light.y, radius: light.radius, brightRadius: light.brightRadius, dimRadius: light.dimRadius, color: light.color, intensity: light.intensity }))
+    },
+    annotations: {
+      count: scene.annotations?.length ?? 0,
+      layerCounts: annotationLayerCounts,
+      sample: (scene.annotations ?? []).slice(0, 12).map((annotation) => ({ id: annotation.id, kind: annotation.kind, layer: annotation.layer ?? boardAnnotationDefaultLayer(annotation.kind), pointCount: annotation.points.length, color: annotation.color, label: annotation.label }))
+    },
+    activeCombat: activeCombat
+      ? {
+          id: activeCombat.id,
+          round: activeCombat.round,
+          turnIndex: activeCombat.turnIndex,
+          combatantCount: activeCombat.combatants.length,
+          currentCombatantId: activeCombat.combatants[activeCombat.turnIndex]?.id,
+          combatants: activeCombat.combatants
+            .filter((combatant) => !combatant.tokenId || visibleTokenIds.has(combatant.tokenId))
+            .slice(0, 20)
+            .map((combatant) => ({ id: combatant.id, tokenId: combatant.tokenId, actorId: combatant.actorId, name: combatant.name, initiative: combatant.initiative, defeated: combatant.defeated }))
+        }
+      : undefined
+  };
+}
+
+function boardAnnotationDefaultLayer(kind: SceneAnnotationKind): SceneAnnotationLayer {
+  if (kind === "ruler") return "measurement";
+  if (kind === "template") return "effects";
+  if (kind === "drawing") return "drawings";
+  return "notes";
 }
 
 function actorReadToolSummary(context: AiToolContext, actor: Actor): ActorReadToolOutput["actors"][number] {
@@ -11071,6 +11754,41 @@ function normalizeProposalChanges(changes: ProposalChange[], campaignId: string,
   });
 }
 
+function proposalToolSummary(proposal: Proposal): Record<string, unknown> {
+  return {
+    id: proposal.id,
+    campaignId: proposal.campaignId,
+    createdByUserId: proposal.createdByUserId,
+    createdByType: proposal.createdByType,
+    sourceId: proposal.sourceId,
+    title: proposal.title,
+    summary: proposal.summary,
+    status: proposal.status,
+    changeCount: proposal.changesJson.length,
+    entities: [...new Set(proposal.changesJson.map((change) => change.entity))],
+    boardStateChanged: proposalTouchesBoardState(proposal),
+    approvalRequired: proposal.approvalRequired,
+    approvedByUserId: proposal.approvedByUserId,
+    createdAt: proposal.createdAt,
+    updatedAt: proposal.updatedAt
+  };
+}
+
+function proposalTouchesBoardState(proposal: Proposal): boolean {
+  return proposal.changesJson.some((change) => change.entity === "scene" || change.entity === "token" || change.entity === "asset" || change.entity === "combat");
+}
+
+function blockedAgentProposalChange(changes: ProposalChange[]): Record<string, unknown> | undefined {
+  for (const change of changes) {
+    if (change.entity === "campaign") return { entity: change.entity, action: change.action, reason: "Agents cannot propose campaign lifecycle or campaign-level changes." };
+    if (change.entity === "combat" && (change.action === "create" || change.action === "delete")) return { entity: change.entity, action: change.action, reason: "Agents cannot directly start or end combat." };
+    if (change.entity === "combat" && change.action === "update" && ("active" in change.data || "endedAt" in change.data)) {
+      return { entity: change.entity, action: change.action, reason: "Agents cannot directly start or end combat." };
+    }
+  }
+  return undefined;
+}
+
 function prefixForProposalEntity(entity: ProposalChange["entity"]): string {
   switch (entity) {
     case "campaign":
@@ -11163,7 +11881,7 @@ function aiToolAvailableToCaller(tool: AiToolDefinition, permissions: Permission
   return tool.requiredPermissions.every((permission) => permissions.includes(permission));
 }
 
-const AI_PERMISSION_SAFE_TOOL_NAMES = new Set(["search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+const AI_PERMISSION_SAFE_TOOL_NAMES = new Set(["list_proposals", "get_proposal", "apply_approved_proposal", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
 
 function aiToolPermissionSafe(tool: AiToolDefinition): boolean {
   return AI_PERMISSION_SAFE_TOOL_NAMES.has(tool.name);
@@ -13514,6 +14232,10 @@ function positiveInteger(value: unknown): number | undefined {
 
 function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined): EngineEvent | undefined {
   if (!userId || !canCampaign(store, userId, event.campaignId, "campaign.read")) return undefined;
+  if (event.type === "agent.boardCaptureRequested") {
+    const payload = isRecord(event.payload) ? event.payload : {};
+    return payload.userId === userId ? event : undefined;
+  }
   if (event.type.startsWith("chat.message.")) {
     const message = event.payload as Partial<ChatMessage> | undefined;
     const campaignId = message?.campaignId ?? event.campaignId;

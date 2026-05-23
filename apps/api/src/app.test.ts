@@ -6996,6 +6996,9 @@ describe("api", () => {
       ["POST /api/v1/auth/oidc/start", "browser redirect flow"],
       ["GET /api/v1/auth/oidc/callback", "provider callback"],
       ["POST /api/v1/invites/accept", "public invite acceptance"],
+      ["POST /api/v1/mcp", "MCP initialize is public and tool methods have method-specific auth checks"],
+      ["GET /api/v1/agent/board-captures/{captureId}", "short-lived signed board capture delivery"],
+      ["POST /api/v1/agent/board-captures/{requestId}", "unguessable live-client board capture submission"],
       ["GET /api/v1/scim/v2/ServiceProviderConfig", "SCIM bearer provisioning route covered by identity/live-provider gates"],
       ["GET /api/v1/scim/v2/Users", "SCIM bearer provisioning route covered by identity/live-provider gates"],
       ["POST /api/v1/scim/v2/Users", "SCIM bearer provisioning route covered by identity/live-provider gates"],
@@ -21528,7 +21531,7 @@ registerCommand("/state", (input) => {
     expect(playerContext.publicSummary).toContain("Public Rumor");
     expect(playerContext.publicSummary).not.toContain("Session Hook");
     expect(playerContext.gmSecrets).toEqual([]);
-    expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 1")?.visibility).toBe("public");
 
     const gmThread = await app.inject({
@@ -21542,7 +21545,7 @@ registerCommand("/state", (input) => {
     const gmContext = provider.requests[1]!.context;
     expect(gmContext.publicSummary).toContain("Session Hook");
     expect(gmContext.gmSecrets.some((secret) => secret.includes("founder's oath"))).toBe(true);
-    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 2")?.visibility).toBe("gm_only");
 
     const playerChat = await app.inject({
@@ -21554,6 +21557,90 @@ registerCommand("/state", (input) => {
     expect(playerChat.json().map((message: { body: string }) => message.body)).toContain("Captured response 1");
     expect(playerChat.json().map((message: { body: string }) => message.body)).not.toContain("Captured response 2");
 
+    await app.close();
+  });
+
+  it("uses agent panel model defaults and exposes board verification tools", async () => {
+    class AgentPanelProvider implements AiProvider {
+      id = "agent-panel-ai";
+      label = "Agent Panel AI";
+      requests: AiProviderRequest[] = [];
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.requests.push(input);
+        yield { type: "message.completed", content: "Agent panel response" };
+      }
+    }
+
+    const provider = new AgentPanelProvider();
+    const app = await buildApp({ store: new MemoryStateStore(), aiProvider: provider });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: {
+        prompt: "Move Valen and verify the board.",
+        surface: "agent_panel",
+        selectedSceneId: "scn_vault_entry",
+        selectedTokenIds: ["tok_valen"]
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]).toMatchObject({
+      surface: "agent_panel",
+      model: "gpt-5.5",
+      reasoningEffort: "high"
+    });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("capture_board_view") });
+    expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["read_board_state", "capture_board_view", "apply_approved_proposal"]));
+    await app.close();
+  });
+
+  it("serves MCP tool listing and permission-checked board tools", async () => {
+    const app = await buildApp({ store: new MemoryStateStore() });
+    const initialize = await app.inject({
+      method: "POST",
+      url: "/api/v1/mcp",
+      payload: { jsonrpc: "2.0", id: 1, method: "initialize", params: {} }
+    });
+    expect(initialize.statusCode).toBe(200);
+    expect(initialize.json().result).toMatchObject({ protocolVersion: "2025-11-25", capabilities: { tools: {} } });
+
+    const listed = await app.inject({
+      method: "POST",
+      url: "/api/v1/mcp",
+      headers: authHeaders,
+      payload: { jsonrpc: "2.0", id: 2, method: "tools/list", params: { campaignId: "camp_demo" } }
+    });
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json().result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining(["read_board_state", "capture_board_view", "apply_approved_proposal"]));
+
+    const boardState = await app.inject({
+      method: "POST",
+      url: "/api/v1/mcp",
+      headers: authHeaders,
+      payload: { jsonrpc: "2.0", id: 3, method: "tools/call", params: { campaignId: "camp_demo", name: "read_board_state", arguments: { sceneId: "scn_vault_entry", selectedTokenIds: ["tok_valen"] } } }
+    });
+    expect(boardState.statusCode).toBe(200);
+    const boardOutput = JSON.parse(boardState.json().result.content[0].text);
+    expect(boardOutput).toMatchObject({
+      scene: { id: "scn_vault_entry" },
+      selectedTokens: ["tok_valen"],
+      tokenLayerCounts: expect.objectContaining({ player: expect.any(Number) })
+    });
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/api/v1/mcp",
+      headers: authHeaders,
+      payload: { jsonrpc: "2.0", id: 4, method: "tools/call", params: { campaignId: "camp_demo", name: "create_proposal", arguments: { title: "Unsafe", summary: "Unsafe", changes: [{ entity: "campaign", action: "update", id: "camp_demo", data: { name: "Changed" } }] } } }
+    });
+    expect(blocked.statusCode).toBe(200);
+    const blockedOutput = JSON.parse(blocked.json().result.content[0].text);
+    expect(blocked.json().result.isError).toBe(true);
+    expect(blockedOutput).toMatchObject({ error: "blocked_critical_action", entity: "campaign" });
     await app.close();
   });
 
@@ -21961,7 +22048,7 @@ registerCommand("/state", (input) => {
           requiredToolCalls: ["roll_dice"],
           requiredAdvertisedTools: ["roll_dice", "read_compendium"],
           forbiddenAdvertisedTools: ["delete_campaign"],
-          forbiddenAdvertisedPermissions: ["ai.applyChanges"],
+          forbiddenAdvertisedPermissions: ["campaign.delete"],
           expectedToolOutputs: [
             {
               toolName: "roll_dice",
@@ -22011,7 +22098,7 @@ registerCommand("/state", (input) => {
           "tool_advertised:roll_dice:passed",
           "tool_advertised:read_compendium:passed",
           "tool_not_advertised:delete_campaign:passed",
-          "advertised_permission_omitted:ai.applyChanges:passed",
+          "advertised_permission_omitted:campaign.delete:passed",
           "tool_output:roll_dice:status:passed",
           "tool_output:roll_dice:field:formula:passed",
           "tool_output:roll_dice:field:label:passed",
@@ -22748,14 +22835,14 @@ registerCommand("/state", (input) => {
           })
         ],
         toolCatalog: expect.objectContaining({
-          toolCount: 22,
-          permissionSafeToolCount: 12,
-          proposalGatedToolCount: 10,
+          toolCount: 28,
+          permissionSafeToolCount: 17,
+          proposalGatedToolCount: 11,
           failClosedToolCount: 0,
           actionRequired: false,
           actionReasons: [],
           remediation: "All provider-visible AI tools are either proposal-gated or explicitly permission-safe.",
-          permissionSafeAllowlist: ["read_actor", "read_asset", "read_chat", "read_combat", "read_compendium", "read_encounter", "read_journal", "read_roll", "read_scene", "read_token", "roll_dice", "search_memory"],
+          permissionSafeAllowlist: ["apply_approved_proposal", "capture_board_view", "get_proposal", "list_proposals", "read_actor", "read_asset", "read_board_state", "read_chat", "read_combat", "read_compendium", "read_encounter", "read_journal", "read_roll", "read_scene", "read_token", "roll_dice", "search_memory"],
           tools: expect.arrayContaining([
             expect.objectContaining({
               name: "draft_scene",
@@ -24330,7 +24417,7 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Read the compendium, remember a key, draft an encounter, and roll dice." }
     });
     expect(gmThread.statusCode).toBe(200);
-    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_encounter")?.parameters?.required).toEqual(["name", "summary"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_token_update")?.requiredPermissions).toEqual(["ai.proposeChanges", "token.update"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "generate_map_asset")?.requiredPermissions).toEqual(["ai.proposeChanges", "scene.create", "scene.update"]);
@@ -24736,7 +24823,7 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Try expanded tools as a player." }
     });
     expect(playerThread.statusCode).toBe(200);
-    expect(playerProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    expect(playerProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
     const playerCompleted = playerThread.json().events.filter((event: { type: string }) => event.type === "tool.completed");
     expect(playerCompleted).toEqual(
       expect.arrayContaining([
@@ -24895,7 +24982,7 @@ registerCommand("/state", (input) => {
       }
     }
 
-    const permissionSafeTools = new Set(["search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    const permissionSafeTools = new Set(["list_proposals", "get_proposal", "apply_approved_proposal", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
     const provider = new ToolPolicyProvider();
     const store = new MemoryStateStore();
     store.state.users.push(
@@ -24961,7 +25048,7 @@ registerCommand("/state", (input) => {
       const gmTools = provider.requests[0]!.tools;
       const assistantTools = provider.requests[1]!.tools;
       const playerTools = provider.requests[2]!.tools;
-      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
 
       for (const tool of gmTools) {
         expect(tool.requiredPermissions.length, `${tool.name} should declare required permissions`).toBeGreaterThan(0);
@@ -24974,13 +25061,13 @@ registerCommand("/state", (input) => {
         if (!advertisedTool.permissionSafe) expect(advertisedTool.requiredPermissions).toContain("ai.proposeChanges");
       }
 
-      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
       expect(assistantTools.map((tool) => tool.name)).not.toContain("draft_encounter");
       for (const tool of assistantTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("assistant_gm").includes(permission))).toBe(true);
       }
 
-      expect(playerTools.map((tool) => tool.name)).toEqual(["search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+      expect(playerTools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
       for (const tool of playerTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("player").includes(permission))).toBe(true);
         expect(permissionSafeTools.has(tool.name)).toBe(true);

@@ -4410,6 +4410,147 @@ body {
   justify-content: flex-start;
 }
 
+.ai-agent-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid rgba(80, 208, 178, 0.34);
+  border-radius: 8px;
+  color: var(--paper);
+  background: rgba(80, 208, 178, 0.08);
+  cursor: pointer;
+}
+
+.ai-agent-toggle.active,
+.ai-agent-toggle:hover,
+.ai-agent-toggle:focus-visible {
+  border-color: rgba(80, 208, 178, 0.64);
+  background: rgba(80, 208, 178, 0.16);
+  outline: none;
+}
+
+.ai-agent-popout {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 80;
+  display: grid;
+  grid-template-rows: auto minmax(180px, 1fr) auto auto;
+  gap: 10px;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 40px));
+  padding: 12px;
+  border: 1px solid rgba(148, 160, 173, 0.28);
+  border-radius: 8px;
+  background: rgba(7, 11, 16, 0.97);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.42);
+}
+
+.ai-agent-header,
+.ai-agent-composer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-agent-header {
+  justify-content: space-between;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(148, 160, 173, 0.16);
+}
+
+.ai-agent-header strong {
+  display: block;
+  max-width: 300px;
+  overflow: hidden;
+  color: var(--paper);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-agent-messages {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 180px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.ai-agent-message {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 160, 173, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 32, 0.82);
+}
+
+.ai-agent-message.user {
+  margin-left: 34px;
+  border-color: rgba(111, 168, 255, 0.28);
+}
+
+.ai-agent-message.assistant {
+  margin-right: 28px;
+  border-color: rgba(80, 208, 178, 0.24);
+}
+
+.ai-agent-message span,
+.ai-agent-proposal-row small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.ai-agent-message p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.ai-agent-proposals {
+  display: grid;
+  gap: 8px;
+  max-height: 178px;
+  overflow: auto;
+}
+
+.ai-agent-proposal-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid rgba(148, 160, 173, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 23, 32, 0.68);
+}
+
+.ai-agent-proposal-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-agent-proposal-row div {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 6px;
+}
+
+.ai-agent-composer {
+  align-items: flex-end;
+}
+
+.ai-agent-composer textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
 .ai-studio-stage,
 .manage-workspace-stage {
   min-width: 0;
@@ -4655,6 +4796,19 @@ body {
 }
 
 @media (max-width: 760px) {
+  .ai-agent-popout {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    width: auto;
+    max-height: calc(100vh - 20px);
+  }
+
+  .ai-agent-composer {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
   .ai-studio-stage,
   .manage-workspace-stage {
     padding: 10px;

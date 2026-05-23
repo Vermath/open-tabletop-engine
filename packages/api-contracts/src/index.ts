@@ -129,6 +129,9 @@ export const routes = {
   aiEncounterDesign: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/encounter-design`,
   aiGenerateMapAsset: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/generate-map-asset`,
   aiGenerateTokenAsset: (campaignId: string) => `/api/v1/campaigns/${campaignId}/ai/generate-token-asset`,
+  mcp: "/api/v1/mcp",
+  agentBoardCapture: (captureId: string) => `/api/v1/agent/board-captures/${captureId}`,
+  agentBoardCaptureSubmit: (requestId: string) => `/api/v1/agent/board-captures/${requestId}`,
   systems: "/api/v1/systems",
   campaignSystems: (campaignId: string) => `/api/v1/campaigns/${campaignId}/systems`,
   campaignSystem: (campaignId: string, systemId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}`,
@@ -219,6 +222,9 @@ export const apiContractPolicy = {
 const endpointSpecs = [
   ["GET", routes.health],
   ["GET", routes.openApi],
+  ["POST", routes.mcp],
+  ["GET", "/api/v1/agent/board-captures/{captureId}"],
+  ["POST", "/api/v1/agent/board-captures/{requestId}"],
   ["GET", routes.bootstrap],
   ["POST", routes.bootstrap],
   ["POST", routes.register],
@@ -3845,7 +3851,60 @@ const componentSchemas = {
     additionalProperties: false,
     required: ["prompt"],
     properties: {
-      prompt: stringSchema
+      prompt: stringSchema,
+      surface: { type: "string", enum: ["agent_panel", "ai_studio"] },
+      model: stringSchema,
+      reasoningEffort: { type: "string", enum: ["none", "minimal", "low", "medium", "high", "xhigh"] },
+      selectedSceneId: idSchema,
+      selectedTokenIds: arrayOf(idSchema)
+    }
+  },
+  McpJsonRpcRequest: {
+    type: "object",
+    additionalProperties: true,
+    properties: {
+      jsonrpc: stringSchema,
+      id: { oneOf: [stringSchema, { type: "number" }, { type: "null" }] },
+      method: stringSchema,
+      params: looseObjectSchema
+    }
+  },
+  McpJsonRpcResponse: {
+    type: "object",
+    additionalProperties: true,
+    required: ["jsonrpc", "id"],
+    properties: {
+      jsonrpc: stringSchema,
+      id: { oneOf: [stringSchema, { type: "number" }, { type: "null" }] },
+      result: looseObjectSchema,
+      error: looseObjectSchema
+    }
+  },
+  BoardCaptureSubmitRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      dataUrl: stringSchema,
+      sceneId: idSchema,
+      width: { type: "number" },
+      height: { type: "number" },
+      error: stringSchema
+    }
+  },
+  BoardCaptureResult: {
+    type: "object",
+    additionalProperties: true,
+    required: ["status"],
+    properties: {
+      status: { type: "string", enum: ["captured", "board_capture_unavailable", "failed"] },
+      captureId: idSchema,
+      imageUrl: stringSchema,
+      expiresAt: { type: "string", format: "date-time" },
+      sceneId: idSchema,
+      width: { type: "number" },
+      height: { type: "number" },
+      mimeType: { type: "string", enum: ["image/png"] },
+      reason: stringSchema
     }
   },
   AiToolCallRetryRequest: {
@@ -4376,6 +4435,26 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "GET /api/v1/health": {
     responses: {
       "200": jsonResponse("API health status", schemaRef("HealthStatus"))
+    }
+  },
+  "POST /api/v1/mcp": {
+    requestBody: jsonRequestBody(schemaRef("McpJsonRpcRequest")),
+    responses: {
+      "200": jsonResponse("MCP JSON-RPC response", schemaRef("McpJsonRpcResponse"))
+    }
+  },
+  "GET /api/v1/agent/board-captures/{captureId}": {
+    parameters: [{ name: "token", in: "query", required: true, schema: { type: "string" }, description: "Short-lived capture token" }],
+    responses: {
+      "200": { description: "Short-lived board screenshot PNG", content: { "image/png": { schema: { type: "string", format: "binary" } } } },
+      "404": jsonResponse("Capture not found", schemaRef("ErrorResponse"))
+    }
+  },
+  "POST /api/v1/agent/board-captures/{requestId}": {
+    requestBody: jsonRequestBody(schemaRef("BoardCaptureSubmitRequest")),
+    responses: {
+      "200": jsonResponse("Board capture result", schemaRef("BoardCaptureResult")),
+      "404": jsonResponse("Capture request not found", schemaRef("ErrorResponse"))
     }
   },
   "GET /api/v1/auth/bootstrap": {

@@ -19,6 +19,16 @@ export class RealtimeHub {
     this.clients.delete(client);
   }
 
+  countMatching(input: { campaignId: string; userId?: string }): number {
+    let count = 0;
+    for (const client of this.clients) {
+      if (client.campaignId !== input.campaignId) continue;
+      if (input.userId && client.userId !== input.userId) continue;
+      count += 1;
+    }
+    return count;
+  }
+
   broadcast(event: EngineEvent, filter?: RealtimeEventFilter): void {
     for (const client of this.clients) {
       if (client.campaignId === event.campaignId) {

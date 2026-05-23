@@ -689,7 +689,7 @@ export interface Proposal extends Timestamps {
 }
 
 export interface ProposalHistoryEntry {
-  action: "created" | "approved" | "rejected" | "applied";
+  action: "created" | "approved" | "rejected" | "applied" | "revised";
   status: ProposalStatus;
   previousStatus?: ProposalStatus;
   at: string;

@@ -1,4 +1,4 @@
-import type { AiMessage, AiProvider, AiProviderEvent, AiProviderRequest, AiToolParameterSchema, PermissionFilteredContext } from "@open-tabletop/ai-core";
+import type { AiMessage, AiProvider, AiProviderEvent, AiProviderRequest, AiReasoningEffort, AiToolParameterSchema, PermissionFilteredContext } from "@open-tabletop/ai-core";
 
 export interface JsonRpcTransport {
   request<TResponse>(method: string, params: unknown): Promise<TResponse>;
@@ -7,6 +7,7 @@ export interface JsonRpcTransport {
 export interface CodexAppServerProviderOptions {
   transport: JsonRpcTransport;
   approvalMode?: "proposal" | "manual";
+  reasoningEffort?: AiReasoningEffort;
 }
 
 export interface CodexAppServerWebSocketTransportOptions {
@@ -14,6 +15,7 @@ export interface CodexAppServerWebSocketTransportOptions {
   cwd?: string;
   model?: string;
   modelProvider?: string;
+  reasoningEffort?: AiReasoningEffort;
   serviceName?: string;
   requestTimeoutMs?: number;
   turnTimeoutMs?: number;
@@ -63,6 +65,10 @@ interface CodexProviderTurnStartParams {
   messages: AiMessage[];
   tools: CodexTransportTool[];
   context: PermissionFilteredContext;
+  model?: string;
+  reasoningEffort?: AiReasoningEffort;
+  surface?: string;
+  executeTool?: (toolName: string, input: unknown) => Promise<unknown>;
 }
 
 type PendingRpc = {
@@ -74,6 +80,7 @@ type PendingRpc = {
 export class CodexAppServerProvider implements AiProvider {
   id = "codex-app-server";
   label = "Codex App Server";
+  executesToolsInTurn = true;
 
   constructor(private readonly options: CodexAppServerProviderOptions) {}
 
@@ -92,7 +99,11 @@ export class CodexAppServerProvider implements AiProvider {
         requiredPermissions: tool.requiredPermissions,
         parameters: tool.parameters
       })),
-      context: input.context
+      context: input.context,
+      model: input.model,
+      reasoningEffort: input.reasoningEffort ?? this.options.reasoningEffort,
+      surface: input.surface,
+      executeTool: input.executeTool
     });
 
     for (const event of turn.events) {
@@ -187,7 +198,8 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
     const rpc = new CodexAppServerRpc(socket, {
       requestTimeoutMs: this.requestTimeoutMs,
       turnTimeoutMs: this.turnTimeoutMs,
-      tools: input.tools
+      tools: input.tools,
+      executeTool: input.executeTool
     });
 
     try {
@@ -212,7 +224,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
         cwd: this.options.cwd ?? null,
         approvalPolicy: "never",
         approvalsReviewer: null,
-        model: this.options.model ?? null,
+        model: input.model ?? this.options.model ?? null,
         modelProvider: this.options.modelProvider ?? null,
         serviceName: this.options.serviceName ?? "open-tabletop-engine",
         ephemeral: true,
@@ -224,7 +236,9 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
       const turnCompleted = rpc.waitForTurnCompleted();
       await rpc.request("turn/start", {
         threadId: thread.thread.id,
-        input: [{ type: "text", text: turnText(input), text_elements: [] }],
+        input: codexTurnInput(input),
+        model: input.model ?? this.options.model ?? null,
+        effort: input.reasoningEffort ?? this.options.reasoningEffort ?? null,
         approvalPolicy: "never",
         sandboxPolicy: { type: "readOnly", networkAccess: false }
       });
@@ -433,7 +447,7 @@ class CodexAppServerRpc {
 
   constructor(
     private readonly socket: CodexWebSocketLike,
-    private readonly options: { requestTimeoutMs: number; turnTimeoutMs: number; tools: CodexTransportTool[] }
+    private readonly options: { requestTimeoutMs: number; turnTimeoutMs: number; tools: CodexTransportTool[]; executeTool?: (toolName: string, input: unknown) => Promise<unknown> }
   ) {
     this.socket.addEventListener("message", this.onMessage);
     this.socket.addEventListener("close", this.onClose);
@@ -496,7 +510,7 @@ class CodexAppServerRpc {
     }
 
     if ("id" in message && typeof message.method === "string") {
-      this.handleServerRequest(message.id, message.method, message.params);
+      void this.handleServerRequest(message.id, message.method, message.params);
       return;
     }
 
@@ -522,10 +536,39 @@ class CodexAppServerRpc {
     if (this.turnCompleted) this.turnCompleted.reject(new Error(`Codex app-server socket error: ${event.message ?? "websocket error"}`));
   };
 
-  private handleServerRequest(id: unknown, method: string, params: unknown): void {
+  private async handleServerRequest(id: unknown, method: string, params: unknown): Promise<void> {
     if (method === "item/tool/call") {
       const toolCall = dynamicToolCallFromParams(params);
       this.events.push({ type: "tool.started", toolName: toolCall.tool, input: toolCall.arguments });
+      if (this.options.executeTool) {
+        try {
+          const output = await this.options.executeTool(toolCall.tool, toolCall.arguments);
+          this.events.push({ type: "tool.completed", toolName: toolCall.tool, output });
+          this.respond(id, {
+            success: true,
+            contentItems: [
+              {
+                type: "inputText",
+                text: JSON.stringify(output)
+              }
+            ]
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Tool execution failed.";
+          const output = { error: "tool_execution_failed", message };
+          this.events.push({ type: "tool.completed", toolName: toolCall.tool, output });
+          this.respond(id, {
+            success: false,
+            contentItems: [
+              {
+                type: "inputText",
+                text: JSON.stringify(output)
+              }
+            ]
+          });
+        }
+        return;
+      }
       this.respond(id, {
         success: true,
         contentItems: [
@@ -638,10 +681,23 @@ function codexBaseInstructions(context: PermissionFilteredContext): string {
     "Do not fill missing rules, compendium, campaign, or character details from outside knowledge; use visible OpenTabletop tools or ask for clarification.",
     "When changing campaign state or generating map/token assets, call an available open_tabletop dynamic tool instead of claiming a change was already applied.",
     "OpenTabletop campaign edit and asset-generation tools create reviewable proposals. Do not say a scene, actor, journal, token, encounter, memory, map, or token image changed until host-side tool output confirms it.",
+    "After any successful board-state mutation or applying an approved proposal that touches scene, token, asset, fog, wall, light, annotation, or combat state, call capture_board_view and read_board_state before your final success response. Compare the screenshot signal and structured board state. If visual capture is unavailable, use read_board_state and explicitly say visual verification was unavailable.",
     "Do not use shell, filesystem, browser, plugin, or MCP tools for tabletop campaign state.",
     "",
     `Campaign id: ${context.campaignId}`
   ].join("\n");
+}
+
+function codexTurnInput(input: CodexProviderTurnStartParams): Array<Record<string, unknown>> {
+  const items: Array<Record<string, unknown>> = [{ type: "text", text: turnText(input), text_elements: [] }];
+  for (const message of input.messages) {
+    for (const part of message.parts ?? []) {
+      if (part.type === "image_url") {
+        items.push({ type: "image", url: part.imageUrl });
+      }
+    }
+  }
+  return items;
 }
 
 function turnText(input: CodexProviderTurnStartParams): string {
@@ -650,8 +706,13 @@ function turnText(input: CodexProviderTurnStartParams): string {
     JSON.stringify(input.context),
     "",
     "Conversation:",
-    ...input.messages.map((message) => `${message.role}: ${message.content}`)
+    ...input.messages.map((message) => `${message.role}: ${messageText(message)}`)
   ].join("\n");
+}
+
+function messageText(message: AiMessage): string {
+  const partText = (message.parts ?? []).filter((part) => part.type === "text").map((part) => part.text).join("\n");
+  return [message.content, partText].filter(Boolean).join("\n");
 }
 
 function dynamicToolCallFromParams(params: unknown): { tool: string; arguments: unknown } {
@@ -717,7 +778,7 @@ export class LoopbackCodexTransport implements JsonRpcTransport {
           type: "message.completed",
           content: "Codex loopback requested malformed tool inputs for integration hardening."
         });
-        return { events } as TResponse;
+        return { events: await executeLoopbackTools(events, params) } as TResponse;
       }
       if (shouldRequestProposalTool(params)) {
         events.push({
@@ -878,7 +939,7 @@ export class LoopbackCodexTransport implements JsonRpcTransport {
         type: "message.completed",
         content: memoryExtractionContent(params) ?? `Codex loopback handled ${method} with ${JSON.stringify(params).slice(0, 160)}`
       });
-      return { events } as TResponse;
+      return { events: await executeLoopbackTools(events, params) } as TResponse;
     }
     return {
       events: [
@@ -970,6 +1031,22 @@ function promptFromParams(params: unknown): string {
 function campaignIdFromParams(params: unknown): string {
   if (!isRecord(params) || !isRecord(params.context) || typeof params.context.campaignId !== "string") return "unknown_campaign";
   return params.context.campaignId;
+}
+
+async function executeLoopbackTools(events: AiProviderEvent[], params: unknown): Promise<AiProviderEvent[]> {
+  const executeTool = isRecord(params) && typeof params.executeTool === "function" ? (params.executeTool as (toolName: string, input: unknown) => Promise<unknown>) : undefined;
+  if (!executeTool) return events;
+  const next: AiProviderEvent[] = [];
+  for (const event of events) {
+    next.push(event);
+    if (event.type !== "tool.started") continue;
+    try {
+      next.push({ type: "tool.completed", toolName: event.toolName, output: await executeTool(event.toolName, event.input) });
+    } catch (error) {
+      next.push({ type: "tool.completed", toolName: event.toolName, output: { error: "tool_execution_failed", message: error instanceof Error ? error.message : "Tool execution failed." } });
+    }
+  }
+  return next;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

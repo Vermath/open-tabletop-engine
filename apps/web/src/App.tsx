@@ -1,4 +1,5 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -54,6 +55,29 @@ interface AiGenerationJob {
   kind: AiGenerationJobKind;
   label: string;
   detail?: string;
+}
+
+interface AiAgentMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: string;
+  proposalIds?: string[];
+}
+
+interface AiAgentThreadResponse {
+  thread: AiThread;
+  assistantMessage: string;
+  events: Array<{ type: string; proposalId?: string }>;
+}
+
+interface BoardCaptureRequestEvent {
+  type: "agent.boardCaptureRequested";
+  payload?: {
+    requestId?: string;
+    sceneId?: string;
+    expiresAt?: string;
+  };
 }
 
 const annotationLayers: SceneAnnotationLayer[] = ["measurement", "effects", "drawings", "notes"];
@@ -476,6 +500,11 @@ export function App() {
   const [aiMapPrompt, setAiMapPrompt] = useState("Generate a gridless top-down ember vault battlemap with broken pillars, lava-lit channels, and clear tactical lanes. Do not draw square grids, coordinates, tokens, labels, or UI overlays.");
   const [aiTokenPrompt, setAiTokenPrompt] = useState("Generate token art for this character with a clean silhouette, readable equipment, and no text.");
   const [aiGenerationJobs, setAiGenerationJobs] = useState<AiGenerationJob[]>([]);
+  const [aiAgentOpen, setAiAgentOpen] = useState(false);
+  const [aiAgentPrompt, setAiAgentPrompt] = useState("");
+  const [aiAgentMessages, setAiAgentMessages] = useState<AiAgentMessage[]>([]);
+  const [aiAgentBusy, setAiAgentBusy] = useState(false);
+  const [aiAgentStatus, setAiAgentStatus] = useState("Agent ready");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole>("player");
   const [inviteToken, setInviteToken] = useState("");
@@ -943,12 +972,13 @@ export function App() {
     const wsUrl = `${apiBase || window.location.origin}`.replace(/^http/, "ws") + `/api/v1/realtime?campaignId=${encodeURIComponent(campaignId)}`;
     const socket = new WebSocket(wsUrl, ["otte.v1", `otte.auth.${sessionToken}`]);
     socket.onopen = () => setStatus("Realtime connected");
-    socket.onmessage = () => {
+    socket.onmessage = (event) => {
+      if (handleBoardCaptureRealtimeEvent(event.data)) return;
       refresh(campaignId, sceneId, { syncStatus: false }).catch(() => setStatus("Realtime refresh failed"));
     };
     socket.onerror = () => setStatus("Realtime unavailable");
     return () => socket.close();
-  }, [campaignId, sceneId, sessionToken]);
+  }, [campaignId, sceneId, selectedScene?.id, sessionToken]);
 
   useEffect(() => {
     if (workspaceMode !== "manage" || manageCategory !== "serverAdmin" || !snapshot.session?.serverAdmin) return;
@@ -1580,6 +1610,48 @@ export function App() {
 
   async function createTokenFromAsset(asset: MapAsset) {
     await placeCanvasAssetTokens(asset, 1);
+  }
+
+  function handleBoardCaptureRealtimeEvent(data: unknown): boolean {
+    if (typeof data !== "string") return false;
+    let event: BoardCaptureRequestEvent | undefined;
+    try {
+      event = JSON.parse(data) as BoardCaptureRequestEvent;
+    } catch {
+      return false;
+    }
+    if (event?.type !== "agent.boardCaptureRequested" || !event.payload?.requestId) return false;
+    captureAgentBoard(event.payload).catch((error) => setAiAgentStatus(`Board capture failed: ${errorMessage(error)}`));
+    return true;
+  }
+
+  async function captureAgentBoard(payload: NonNullable<BoardCaptureRequestEvent["payload"]>) {
+    const requestId = payload.requestId;
+    if (!requestId) return;
+    const board = document.querySelector<HTMLElement>('[data-agent-board-root="true"]') ?? document.querySelector<HTMLElement>(".scene-board");
+    if (!board) {
+      await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: "No board element is mounted in the current web client.", sceneId: selectedScene?.id });
+      setAiAgentStatus("Board capture unavailable");
+      return;
+    }
+    try {
+      setAiAgentStatus("Capturing board view");
+      const dataUrl = await toPng(board, {
+        cacheBust: true,
+        pixelRatio: Math.min(2, window.devicePixelRatio || 1),
+        backgroundColor: "#060a0f"
+      });
+      await apiPost(`/api/v1/agent/board-captures/${requestId}`, {
+        dataUrl,
+        sceneId: selectedScene?.id,
+        width: Math.round(board.offsetWidth),
+        height: Math.round(board.offsetHeight)
+      });
+      setAiAgentStatus("Board capture sent");
+    } catch (error) {
+      await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: errorMessage(error), sceneId: selectedScene?.id });
+      setAiAgentStatus("Board capture failed");
+    }
   }
 
   async function placeCanvasAssetTokens(asset: MapAsset, requestedCount: number) {
@@ -2481,6 +2553,41 @@ export function App() {
     });
     setStatus("Encounter and scene proposal drafted");
     await refresh();
+  }
+
+  async function sendAiAgentMessage() {
+    const prompt = aiAgentPrompt.trim();
+    if (!prompt || aiAgentBusy) return;
+    const userMessage: AiAgentMessage = { id: `agent-user-${Date.now()}`, role: "user", content: prompt, createdAt: new Date().toISOString() };
+    setAiAgentMessages((messages) => [...messages, userMessage]);
+    setAiAgentPrompt("");
+    setAiAgentBusy(true);
+    setAiAgentStatus("Agent working");
+    try {
+      const result = await apiPost<AiAgentThreadResponse>(`/api/v1/campaigns/${campaignId}/ai/threads`, {
+        prompt,
+        surface: "agent_panel",
+        selectedSceneId: selectedScene?.id,
+        selectedTokenIds
+      });
+      const proposalIds = result.events.map((event) => event.proposalId).filter((proposalId): proposalId is string => Boolean(proposalId));
+      const assistantMessage: AiAgentMessage = {
+        id: result.thread.id,
+        role: "assistant",
+        content: result.assistantMessage || "Done.",
+        createdAt: result.thread.updatedAt,
+        proposalIds
+      };
+      setAiAgentMessages((messages) => [...messages, assistantMessage]);
+      setAiAgentStatus(proposalIds.length > 0 ? `Agent drafted ${proposalIds.length} proposal${proposalIds.length === 1 ? "" : "s"}` : "Agent ready");
+      await refresh();
+    } catch (error) {
+      const message = errorMessage(error);
+      setAiAgentMessages((messages) => [...messages, { id: `agent-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+      setAiAgentStatus(`Agent failed: ${message}`);
+    } finally {
+      setAiAgentBusy(false);
+    }
   }
 
   async function trackAiGenerationJob(job: AiGenerationJob, task: () => Promise<void>) {
@@ -3397,6 +3504,9 @@ export function App() {
             </button>
           ))}
         </div>
+        <button className={aiAgentOpen ? "ai-agent-toggle active" : "ai-agent-toggle"} type="button" onClick={() => setAiAgentOpen((open) => !open)} aria-expanded={aiAgentOpen}>
+          <Bot size={16} /> AI Agent
+        </button>
         <section className="party-rail" aria-label="Party">
           <div className="operator-heading">
             <div className="section-title">Party</div>
@@ -4565,7 +4675,100 @@ export function App() {
           </div>
         </footer>}
       </section>
+      {aiAgentOpen && (
+        <AiAgentPanel
+          messages={aiAgentMessages}
+          prompt={aiAgentPrompt}
+          status={aiAgentStatus}
+          busy={aiAgentBusy}
+          proposals={snapshot.proposals}
+          canApply={hasPermission("ai.applyChanges")}
+          onPromptChange={setAiAgentPrompt}
+          onSend={() => sendAiAgentMessage().catch((error) => setAiAgentStatus(errorMessage(error)))}
+          onClose={() => setAiAgentOpen(false)}
+          onApply={(proposal) => approveAndApply(proposal).catch((error) => setAiAgentStatus(errorMessage(error)))}
+          onReject={(proposal) => rejectProposalReview(proposal).catch((error) => setAiAgentStatus(errorMessage(error)))}
+        />
+      )}
     </main>
+  );
+}
+
+function AiAgentPanel(props: {
+  messages: AiAgentMessage[];
+  prompt: string;
+  status: string;
+  busy: boolean;
+  proposals: Proposal[];
+  canApply: boolean;
+  onPromptChange(value: string): void;
+  onSend(): void;
+  onClose(): void;
+  onApply(proposal: Proposal): void;
+  onReject(proposal: Proposal): void;
+}) {
+  const proposalIds = new Set(props.messages.flatMap((message) => message.proposalIds ?? []));
+  const agentProposals = props.proposals
+    .filter((proposal) => proposalIds.has(proposal.id) || (proposal.createdByType === "ai" && (proposal.status === "pending" || proposal.status === "approved")))
+    .sort((left, right) => proposalStatusSort(left.status) - proposalStatusSort(right.status) || right.updatedAt.localeCompare(left.updatedAt))
+    .slice(0, 4);
+  return (
+    <aside className="ai-agent-popout" aria-label="AI Agent">
+      <header className="ai-agent-header">
+        <div>
+          <span className="section-title">AI Agent</span>
+          <strong>{props.status}</strong>
+        </div>
+        <button className="icon-button" type="button" aria-label="Close AI Agent" title="Close" onClick={props.onClose}>
+          <X size={17} />
+        </button>
+      </header>
+      <section className="ai-agent-messages" aria-label="AI Agent messages">
+        {props.messages.length === 0 ? (
+          <div className="empty-state compact">Ask for table prep, board edits, proposal review, or rules-supported actions.</div>
+        ) : (
+          props.messages.map((message) => (
+            <article className={`ai-agent-message ${message.role}`} key={message.id}>
+              <span>{message.role === "assistant" ? "Agent" : message.role === "system" ? "System" : "You"}</span>
+              <p>{message.content}</p>
+            </article>
+          ))
+        )}
+      </section>
+      {agentProposals.length > 0 && (
+        <section className="ai-agent-proposals" aria-label="AI Agent proposals">
+          {agentProposals.map((proposal) => (
+            <div className="ai-agent-proposal-row" key={proposal.id}>
+              <span className={`status-pill ${proposal.status}`}>{proposal.status}</span>
+              <strong>{proposal.title}</strong>
+              <small>{formatNumber(proposal.changesJson.length)} changes</small>
+              {(proposal.status === "pending" || proposal.status === "approved") && (
+                <div>
+                  <button className="ghost-button" type="button" disabled={!props.canApply} onClick={() => props.onApply(proposal)}>
+                    <Check size={14} /> Apply
+                  </button>
+                  <button className="ghost-button" type="button" disabled={!props.canApply} onClick={() => props.onReject(proposal)}>
+                    <X size={14} /> Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
+      <form
+        className="ai-agent-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          props.onSend();
+        }}
+      >
+        <textarea aria-label="AI Agent prompt" value={props.prompt} placeholder="Ask the agent..." onChange={(event) => props.onPromptChange(event.target.value)} disabled={props.busy} />
+        <button className="primary-button" type="submit" disabled={props.busy || !props.prompt.trim()}>
+          <Send size={16} /> Send
+        </button>
+      </form>
+    </aside>
   );
 }
 
@@ -5250,6 +5453,8 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     <div ref={viewportRef} className={`scene-viewport ${mapPanning ? "panning" : ""}`} role="region" aria-label={`${props.scene.name} battle map viewport`}>
       <div
         ref={boardRef}
+        data-agent-board-root="true"
+        data-scene-id={props.scene.id}
         className={`scene-board ${props.fogBrushMode || props.annotationTool ? "brush-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${selectionBox ? "token-selecting" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
         style={boardStyle}
       onDragEnter={(event) => {
