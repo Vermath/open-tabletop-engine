@@ -3,7 +3,7 @@
   "name": "open-tabletop-asset-edge",
   "main": "src/index.ts",
   "compatibility_date": "2026-05-01",
-  "workers_dev": false,
+  "workers_dev": true,
   "vars": {
     "ASSET_ORIGIN_URL": "https://api.example.com",
     "ASSET_EDGE_ROUTE_PREFIX": "",
