@@ -1,5 +1,7 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
+import http from "node:http";
+import https from "node:https";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +10,7 @@ const root = fileURLToPath(new URL("./dist/", import.meta.url));
 const assetRoot = join(root, "assets");
 const host = process.env.HOST ?? "0.0.0.0";
 const port = Number(process.env.PORT ?? 4173);
+const apiBaseUrl = process.env.OTTE_API_URL ?? process.env.VITE_API_URL ?? (process.env.NODE_ENV === "production" ? "http://api.railway.internal:4000" : undefined);
 
 const contentTypes = new Map([
   [".css", "text/css; charset=utf-8"],
@@ -22,6 +25,11 @@ const contentTypes = new Map([
 ]);
 
 const server = createServer(async (request, response) => {
+  if (apiBaseUrl && request.url?.startsWith("/api/")) {
+    proxyApiRequest(request, response);
+    return;
+  }
+
   if (request.method !== "GET" && request.method !== "HEAD") {
     response.writeHead(405, { allow: "GET, HEAD" });
     response.end();
@@ -44,6 +52,15 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, host, () => {
   console.log(`open-tabletop-web listening on http://${host}:${port}`);
+  if (apiBaseUrl) console.log(`open-tabletop-web proxying /api to ${redactUrl(apiBaseUrl)}`);
+});
+
+server.on("upgrade", (request, socket, head) => {
+  if (!apiBaseUrl || !request.url?.startsWith("/api/")) {
+    socket.destroy();
+    return;
+  }
+  proxyApiUpgrade(request, socket, head);
 });
 
 async function resolveStaticPath(pathname) {
@@ -59,4 +76,63 @@ async function resolveStaticPath(pathname) {
     }
   }
   return join(root, "index.html");
+}
+
+function proxyApiRequest(request, response) {
+  const target = targetUrl(request.url ?? "/");
+  const headers = proxyHeaders(request, target);
+  const client = target.protocol === "https:" ? https : http;
+  const proxy = client.request(target, { method: request.method, headers }, (proxyResponse) => {
+    response.writeHead(proxyResponse.statusCode ?? 502, proxyResponse.headers);
+    proxyResponse.pipe(response);
+  });
+  proxy.on("error", (error) => {
+    if (!response.headersSent) response.writeHead(502, { "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({ error: "bad_gateway", message: `API proxy failed: ${error.message}` }));
+  });
+  request.pipe(proxy);
+}
+
+function proxyApiUpgrade(request, socket, head) {
+  const target = targetUrl(request.url ?? "/");
+  const headers = proxyHeaders(request, target);
+  const client = target.protocol === "https:" ? https : http;
+  const proxy = client.request(target, { method: request.method, headers });
+  proxy.on("upgrade", (proxyResponse, proxySocket, proxyHead) => {
+    socket.write(`HTTP/${proxyResponse.httpVersion} ${proxyResponse.statusCode} ${proxyResponse.statusMessage}\r\n`);
+    for (const [name, value] of Object.entries(proxyResponse.headers)) {
+      if (Array.isArray(value)) {
+        for (const item of value) socket.write(`${name}: ${item}\r\n`);
+      } else if (value !== undefined) {
+        socket.write(`${name}: ${value}\r\n`);
+      }
+    }
+    socket.write("\r\n");
+    if (proxyHead.length > 0) socket.write(proxyHead);
+    if (head.length > 0) proxySocket.write(head);
+    proxySocket.pipe(socket).pipe(proxySocket);
+  });
+  proxy.on("error", () => socket.destroy());
+  proxy.end();
+}
+
+function targetUrl(requestUrl) {
+  const base = new URL(apiBaseUrl);
+  return new URL(requestUrl, `${base.protocol}//${base.host}`);
+}
+
+function proxyHeaders(request, target) {
+  return {
+    ...request.headers,
+    host: target.host,
+    "x-forwarded-host": request.headers.host ?? "",
+    "x-forwarded-proto": request.headers["x-forwarded-proto"] ?? "https"
+  };
+}
+
+function redactUrl(value) {
+  const url = new URL(value);
+  url.username = "";
+  url.password = "";
+  return url.toString().replace(/\/$/, "");
 }

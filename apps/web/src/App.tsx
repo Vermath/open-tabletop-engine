@@ -910,11 +910,11 @@ export function App() {
             setAuthStatus(bootstrap.publicRegistration ? "Sign in or register to open a campaign" : "Sign in or use an invite link to join the beta");
             return;
           }
-          setStatus(`API offline at ${apiBase || "http://localhost:4000"}: ${message}. Start it with pnpm --filter @open-tabletop/api dev.`);
+          setStatus(`API offline at ${apiBase || "http://127.0.0.1:4000"}: ${message}. Start it with pnpm --filter @open-tabletop/api dev.`);
         });
       })
       .catch((error) => {
-        if (!cancelled) setStatus(`API offline at ${apiBase || "http://localhost:4000"}: ${error instanceof Error ? error.message : String(error)}. Start it with pnpm --filter @open-tabletop/api dev.`);
+        if (!cancelled) setStatus(`API offline at ${apiBase || "http://127.0.0.1:4000"}: ${error instanceof Error ? error.message : String(error)}. Start it with pnpm --filter @open-tabletop/api dev.`);
       });
     return () => {
       cancelled = true;
