@@ -446,6 +446,7 @@ export interface BootstrapStatus {
   required: boolean;
   userCount: number;
   campaignCount: number;
+  publicRegistration: boolean;
   serverAdmins: NonNullable<SessionInfo["serverAdmins"]>;
 }
 

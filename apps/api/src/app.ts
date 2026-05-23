@@ -433,6 +433,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     required: store.state.users.length === 0,
     userCount: store.state.users.length,
     campaignCount: store.state.campaigns.length,
+    publicRegistration: publicRegistrationEnabled(),
     serverAdmins: serverAdminRuntimePosture(store)
   }));
 
@@ -554,6 +555,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.post<{ Body: { email?: string; displayName?: string; password?: string } }>("/api/v1/auth/register", async (request, reply) => {
+    if (!publicRegistrationEnabled()) return forbidden(reply, "Public registration is disabled; use an invite link to join this beta");
     const body = request.body ?? {};
     const email = normalizeEmail(body.email);
     if (!email) return badRequest(reply, "A valid email is required");
@@ -16253,6 +16255,13 @@ function normalizeDisplayName(value: string | undefined): string | undefined {
 
 function isUsablePassword(value: string | undefined): value is string {
   return typeof value === "string" && value.length >= 8;
+}
+
+function publicRegistrationEnabled(): boolean {
+  const configured = process.env.OTTE_PUBLIC_REGISTRATION?.trim().toLowerCase();
+  if (configured === "true" || configured === "1" || configured === "yes" || configured === "on") return true;
+  if (configured === "false" || configured === "0" || configured === "no" || configured === "off") return false;
+  return process.env.NODE_ENV !== "production";
 }
 
 function normalizeChatRecipients(store: StateStore, campaignId: string, userId: string, visibility: ChatMessage["visibility"], recipientUserIds: string[] | undefined, reply: FastifyReply): string[] | FastifyReply {

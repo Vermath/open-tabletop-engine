@@ -485,6 +485,7 @@ export function App() {
   const [ssoEnabled, setSsoEnabled] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [publicRegistration, setPublicRegistration] = useState(true);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginMfaCode, setLoginMfaCode] = useState("");
@@ -880,6 +881,7 @@ export function App() {
       .then((bootstrap) => {
         if (cancelled) return;
         setBootstrapRequired(bootstrap.required);
+        setPublicRegistration(bootstrap.publicRegistration);
         if (bootstrap.required) {
           setStatus("Owner setup required");
           setBootstrapStatus("Create the first owner account");
@@ -896,7 +898,7 @@ export function App() {
         if (!ssoUserId && !getSessionToken()) {
           setAuthRequired(true);
           setStatus("Sign in required");
-          setAuthStatus("Sign in or register to open a campaign");
+          setAuthStatus(bootstrap.publicRegistration ? "Sign in or register to open a campaign" : "Sign in or use an invite link to join the beta");
           return;
         }
         refresh().catch((error) => {
@@ -905,7 +907,7 @@ export function App() {
             setSessionToken("");
             setAuthRequired(true);
             setStatus("Sign in required");
-            setAuthStatus("Sign in or register to open a campaign");
+            setAuthStatus(bootstrap.publicRegistration ? "Sign in or register to open a campaign" : "Sign in or use an invite link to join the beta");
             return;
           }
           setStatus(`API offline at ${apiBase || "http://localhost:4000"}: ${message}. Start it with pnpm --filter @open-tabletop/api dev.`);
@@ -918,6 +920,10 @@ export function App() {
       cancelled = true;
     };
   }, [resetMode]);
+
+  useEffect(() => {
+    if (!publicRegistration && authMode === "register") setAuthMode("login");
+  }, [authMode, publicRegistration]);
 
   useEffect(() => {
     if (!campaignId || !sessionToken) return;
@@ -3114,7 +3120,7 @@ export function App() {
           </div>
           <div>
             <div className="eyebrow">Account</div>
-            <h1 id="auth-title">{authMode === "login" ? "Sign In" : "Register"}</h1>
+            <h1 id="auth-title">{authMode === "login" || !publicRegistration ? "Sign In" : "Register"}</h1>
           </div>
           {joinToken.trim() && (
             <form
@@ -3150,11 +3156,13 @@ export function App() {
             <button className={authMode === "login" ? "tab active" : "tab"} type="button" onClick={() => setAuthMode("login")}>
               <KeyRound size={15} /> Login
             </button>
-            <button className={authMode === "register" ? "tab active" : "tab"} type="button" onClick={() => setAuthMode("register")}>
-              <UserPlus size={15} /> Register
-            </button>
+            {publicRegistration && (
+              <button className={authMode === "register" ? "tab active" : "tab"} type="button" onClick={() => setAuthMode("register")}>
+                <UserPlus size={15} /> Register
+              </button>
+            )}
           </div>
-          {authMode === "login" ? (
+          {authMode === "login" || !publicRegistration ? (
             <form
               className="reset-form"
               onSubmit={(event) => {

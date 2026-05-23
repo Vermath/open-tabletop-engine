@@ -701,11 +701,12 @@ const componentSchemas = {
   BootstrapStatus: {
     type: "object",
     additionalProperties: true,
-    required: ["required", "userCount", "campaignCount", "serverAdmins"],
+    required: ["required", "userCount", "campaignCount", "publicRegistration", "serverAdmins"],
     properties: {
       required: { type: "boolean" },
       userCount: { type: "integer", minimum: 0 },
       campaignCount: { type: "integer", minimum: 0 },
+      publicRegistration: { type: "boolean" },
       serverAdmins: schemaRef("ServerAdminPosture")
     }
   },

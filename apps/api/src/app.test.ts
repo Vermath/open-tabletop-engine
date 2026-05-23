@@ -2996,6 +2996,50 @@ describe("api", () => {
     await app.close();
   });
 
+  it("blocks public registration in production unless explicitly enabled", async () => {
+    const previousEnv = snapshotEnv(["NODE_ENV", "OTTE_PUBLIC_REGISTRATION"]);
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      process.env.NODE_ENV = "production";
+      delete process.env.OTTE_PUBLIC_REGISTRATION;
+
+      const bootstrap = await app.inject({
+        method: "GET",
+        url: "/api/v1/auth/bootstrap"
+      });
+      expect(bootstrap.statusCode).toBe(200);
+      expect(bootstrap.json().publicRegistration).toBe(false);
+
+      const blocked = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          email: "beta.walkup@example.test",
+          displayName: "Beta Walkup",
+          password: "correct horse"
+        }
+      });
+      expect(blocked.statusCode).toBe(403);
+
+      process.env.OTTE_PUBLIC_REGISTRATION = "true";
+      const allowed = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          email: "public.enabled@example.test",
+          displayName: "Public Enabled",
+          password: "correct horse"
+        }
+      });
+      expect(allowed.statusCode).toBe(200);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("requests and confirms password resets through the email delivery outbox", async () => {
     let deliveredEmail: { text?: string; metadata?: { resetId?: string } } | undefined;
     let webhookAuthorization: string | undefined;
