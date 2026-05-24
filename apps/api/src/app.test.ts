@@ -5651,6 +5651,45 @@ describe("api", () => {
     await app.close();
   });
 
+  it("rejects invite acceptance for password-reset-required existing users", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    store.state.users.push({
+      id: "usr_scim_victim",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      displayName: "SCIM Victim",
+      email: "scim.victim@example.test",
+      passwordResetRequired: true,
+      scim: {
+        userName: "scim.victim@example.test",
+        syncedAt: new Date().toISOString()
+      }
+    });
+
+    const invite = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/invites",
+      headers: authHeaders,
+      payload: { email: "scim.victim@example.test", role: "player" }
+    });
+    expect(invite.statusCode).toBe(200);
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/api/v1/invites/accept",
+      payload: {
+        token: invite.json().token,
+        email: "scim.victim@example.test"
+      }
+    });
+    expect(accepted.statusCode).toBe(403);
+    expect(accepted.json()).toMatchObject({ message: "Password reset required" });
+
+    await app.close();
+  });
+
   it("starts and completes OIDC SSO with PKCE and user linking", async () => {
     let tokenRequestBody: URLSearchParams | undefined;
     let tokenRequestAuthorization: string | undefined;
