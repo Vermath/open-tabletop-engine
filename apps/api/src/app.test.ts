@@ -2031,6 +2031,45 @@ describe("api", () => {
     await app.close();
   });
 
+  it("preserves existing password hashes when importing users from archive", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const victimLoginBefore = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { email: "gm@example.test", password: "wrong-password" }
+    });
+    expect(victimLoginBefore.statusCode).toBe(401);
+
+    const exported = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export",
+      headers: authHeaders
+    });
+    expect(exported.statusCode).toBe(200);
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: exported.json()
+    });
+    expect(imported.statusCode).toBe(200);
+
+    const victim = store.state.users.find((user) => user.id === "usr_demo_gm");
+    expect(victim?.passwordHash).toMatch(/^scrypt:/);
+
+    const victimLoginAfter = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { email: "gm@example.test", password: "wrong-password" }
+    });
+    expect(victimLoginAfter.statusCode).toBe(401);
+
+    await app.close();
+  });
+
   it("archives and restores campaigns without deleting campaign records", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });

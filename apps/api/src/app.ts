@@ -527,7 +527,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       store.save();
       return forbidden(reply, "Password reset required");
     }
-    if (user.passwordHash && !verifyPassword(body.password ?? "", user.passwordHash)) {
+    if (!user.passwordHash) {
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "password_auth_unavailable", statusCode: 401 });
+      store.save();
+      return unauthorized(reply, "Invalid login credentials");
+    }
+    if (!verifyPassword(body.password ?? "", user.passwordHash)) {
       appendAuthLoginFailureAudit(store, { userId: user.id, reason: "invalid_credentials", statusCode: 401 });
       store.save();
       return unauthorized(reply, "Invalid login credentials");
@@ -13890,7 +13895,7 @@ function resolveInviteUser(store: StateStore, headers: Record<string, string | s
 
   const existingUser = findLoginUser(store, input);
   if (existingUser) {
-    if (existingUser.passwordHash && !verifyPassword(input.password ?? "", existingUser.passwordHash)) return unauthorized(reply, "Invalid login credentials");
+    if (!existingUser.passwordHash || !verifyPassword(input.password ?? "", existingUser.passwordHash)) return unauthorized(reply, "Invalid login credentials");
     return existingUser;
   }
   if (input.userId) return unauthorized(reply, "Unknown login identity");
@@ -22556,7 +22561,7 @@ function archiveWithoutConflicts(archive: CampaignArchive, conflicts: Array<{ co
 
 function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyof EngineState, number> {
   return {
-    users: upsertRecords(state.users, archive.data.users),
+    users: upsertUsers(state.users, archive.data.users),
     sessions: 0,
     identities: 0,
     oauthStates: 0,
@@ -22609,6 +22614,20 @@ function findArchiveConflicts(state: EngineState, archive: CampaignArchive): Arr
     }
   }
   return conflicts;
+}
+
+function upsertUsers(target: User[], incoming: User[]): number {
+  for (const record of incoming) {
+    const index = target.findIndex((item) => item.id === record.id);
+    if (index >= 0) {
+      const existing = target[index];
+      const merged = record.passwordHash ? record : { ...record, passwordHash: existing.passwordHash };
+      target[index] = merged;
+    } else {
+      target.push(record);
+    }
+  }
+  return incoming.length;
 }
 
 function upsertRecords<T extends { id: string }>(target: T[], incoming: T[]): number {
