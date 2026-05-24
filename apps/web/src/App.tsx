@@ -582,6 +582,9 @@ export function App() {
   const [archiveImportMode, setArchiveImportMode] = useState<ArchiveImportMode>("upsert");
   const [archiveImportScope, setArchiveImportScope] = useState<ArchiveImportScope>("all");
   const [archiveImportCollections, setArchiveImportCollections] = useState<ArchiveImportCollection[]>(["assets"]);
+  const archiveImportModeRef = useRef<ArchiveImportMode>("upsert");
+  const archiveImportScopeRef = useRef<ArchiveImportScope>("all");
+  const archiveImportCollectionsRef = useRef<ArchiveImportCollection[]>(["assets"]);
   const [archiveImportReport, setArchiveImportReport] = useState<CampaignImportResult>();
   const [archiveImportReportFileName, setArchiveImportReportFileName] = useState("");
   const [archiveRollbackSnapshot, setArchiveRollbackSnapshot] = useState<CampaignArchive>();
@@ -1752,20 +1755,41 @@ export function App() {
     setStatus(count === 1 ? `${asset.name} placed on scene` : `Placed ${count} ${asset.name} tokens`);
   }
 
+  function updateArchiveImportMode(value: ArchiveImportMode) {
+    archiveImportModeRef.current = value;
+    setArchiveImportMode(value);
+  }
+
+  function updateArchiveImportScope(value: ArchiveImportScope) {
+    archiveImportScopeRef.current = value;
+    setArchiveImportScope(value);
+  }
+
+  function updateArchiveImportCollection(collection: ArchiveImportCollection, checked: boolean) {
+    const current = archiveImportCollectionsRef.current;
+    const next = checked ? [...new Set([...current, collection])] : current.filter((item) => item !== collection);
+    const safeNext = next.length > 0 ? next : current;
+    archiveImportCollectionsRef.current = safeNext;
+    setArchiveImportCollections(safeNext);
+  }
+
   async function importCampaignArchive(file: File, input?: HTMLInputElement) {
     setIsImportingArchive(true);
     setImportStatus(`Importing ${file.name}`);
     setStatus("Importing archive");
     try {
       const archive = JSON.parse(await file.text()) as unknown;
-      if (archiveImportMode !== "dry_run" && campaignId) {
+      const currentImportMode = archiveImportModeRef.current;
+      const currentImportScope = archiveImportScopeRef.current;
+      const currentImportCollections = archiveImportCollectionsRef.current;
+      if (currentImportMode !== "dry_run" && campaignId) {
         const rollback = await apiGet<CampaignArchive>(`/api/v1/campaigns/${campaignId}/export?scope=campaign&version=0.2.0&redaction=portable`);
         setArchiveRollbackSnapshot(rollback);
         setArchiveRollbackFileName(`rollback-before-${file.name}`);
       }
       const result = await apiPost<CampaignImportResult>(
         "/api/v1/import/campaign",
-        archiveImportMode === "upsert" && archiveImportScope === "all" ? archive : { archive, mode: archiveImportMode, scope: archiveImportScope, collections: archiveImportScope === "selected_collections" ? archiveImportCollections : undefined }
+        currentImportMode === "upsert" && currentImportScope === "all" ? archive : { archive, mode: currentImportMode, scope: currentImportScope, collections: currentImportScope === "selected_collections" ? currentImportCollections : undefined }
       );
       setArchiveImportReport(result);
       setArchiveImportReportFileName(file.name);
@@ -4389,13 +4413,13 @@ export function App() {
         </button>
         <section className="account-box" aria-label="Archive import wizard">
           <div className="section-title">Archive Import</div>
-          <select aria-label="Archive import mode" value={archiveImportMode} onChange={(event) => setArchiveImportMode(event.target.value as ArchiveImportMode)}>
+          <select aria-label="Archive import mode" value={archiveImportMode} onChange={(event) => updateArchiveImportMode(event.target.value as ArchiveImportMode)}>
             <option value="upsert">Apply archive</option>
             <option value="reject_conflicts">Reject conflicts</option>
             <option value="skip_conflicts">Skip conflicts</option>
             <option value="dry_run">Dry run validation</option>
           </select>
-          <select aria-label="Archive import scope" value={archiveImportScope} onChange={(event) => setArchiveImportScope(event.target.value as ArchiveImportScope)}>
+          <select aria-label="Archive import scope" value={archiveImportScope} onChange={(event) => updateArchiveImportScope(event.target.value as ArchiveImportScope)}>
             <option value="all">All records</option>
             <option value="assets_only">Assets only</option>
             <option value="selected_collections">Selected records</option>
@@ -4409,12 +4433,7 @@ export function App() {
                     type="checkbox"
                     aria-label={`Import ${option.label}`}
                     checked={archiveImportCollections.includes(option.id)}
-                    onChange={(event) => {
-                      setArchiveImportCollections((current) => {
-                        const next = event.target.checked ? [...new Set([...current, option.id])] : current.filter((collection) => collection !== option.id);
-                        return next.length > 0 ? next : current;
-                      });
-                    }}
+                    onChange={(event) => updateArchiveImportCollection(option.id, event.target.checked)}
                   />
                 </label>
               ))}
