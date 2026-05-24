@@ -19208,6 +19208,16 @@ describe("api", () => {
       expect(vitriolicRoll.json().usage).toEqual(expect.objectContaining({ systemId: "dnd-5e-srd", slotLevel: 5 }));
       expect(vitriolicRoll.json().usage.consumed).toEqual([{ type: "spellSlot", key: "level5", label: "Level 5 Spell Slot", amount: 1, remaining: 0 }]);
 
+      const clampedSpellSlotRoll = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/roll`,
+        headers: authHeaders,
+        payload: { rollId: healingRollId, spellSlotLevel: 99999999 }
+      });
+      expect(clampedSpellSlotRoll.statusCode).toBe(200);
+      expect(clampedSpellSlotRoll.json().roll.formula).toBe("1d4+3+16d4");
+      expect(clampedSpellSlotRoll.json().quickRoll).toEqual(expect.objectContaining({ formula: "1d4+3+16d4" }));
+
       const roll = await app.inject({
         method: "POST",
         url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${cleric.json().actor.id}/roll`,
