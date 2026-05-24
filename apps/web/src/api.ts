@@ -2625,9 +2625,18 @@ type DisplayMapAsset = MapAsset & { deliveryUrl?: string };
 
 export function assetBlobUrl(asset: MapAsset): string {
   const displayAsset = asset as DisplayMapAsset;
-  const url = displayAsset.deliveryUrl ?? asset.url;
+  const managedUrl = authenticatedManagedAssetUrl(asset.url);
+  const url = managedUrl !== asset.url ? managedUrl : displayAsset.deliveryUrl ?? asset.url;
   if (/^(https?:|data:|blob:)/.test(url)) return url;
   return `${baseUrl}${url}`;
+}
+
+function authenticatedManagedAssetUrl(url: string): string {
+  if (!url.startsWith("/api/v1/assets/")) return url;
+  const token = getSessionToken();
+  if (!token) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}sessionToken=${encodeURIComponent(token)}`;
 }
 
 async function assetDeliveryUrl(assetId: string): Promise<{ url: string; expiresAt: string }> {
