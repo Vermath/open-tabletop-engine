@@ -178,6 +178,7 @@ const IDEMPOTENCY_MAX_RESPONSE_BYTES = 512 * 1024;
 const IDEMPOTENCY_MAX_RECORDS = 1000;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 600;
+const DEFAULT_ASSET_QUOTA_BYTES = 1024 * 1024 * 1024;
 const ADMIN_JOB_TYPES = [
   "campaign.export",
   "campaign.import",
@@ -20885,7 +20886,8 @@ function assetQuotaExceeded(store: StateStore, campaignId: string, incomingBytes
 
 function assetQuotaBytes(): number | undefined {
   const value = Number(process.env.OTTE_ASSET_QUOTA_BYTES);
-  return Number.isFinite(value) && value > 0 ? value : undefined;
+  if (Number.isFinite(value) && value > 0) return value;
+  return DEFAULT_ASSET_QUOTA_BYTES;
 }
 
 function assetRetentionDays(): number | undefined {
