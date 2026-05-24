@@ -279,6 +279,66 @@ registerCommand("/probe", () => ({
     }
   });
 
+
+
+  it("rejects remote registry packages that collide on manifest id and version", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    writePluginPackage(pluginRoot, "trusted-package", `registerCommand("/probe", () => ({ body: "Trusted macro", visibility: "public" }));`, {
+      manifestId: "shared-plugin",
+      version: "1.0.0"
+    });
+    const packageText = JSON.stringify({
+      files: {
+        "plugin.manifest.json": JSON.stringify({
+          id: "shared-plugin",
+          name: "Shared Plugin",
+          version: "1.0.0",
+          compatibleCore: ">=0.1.0",
+          entrypoints: { server: "./server.js" },
+          runtime: { apiVersion: "0.1", sandbox: "vm" },
+          permissions: ["chat.write"],
+          chatCommands: [{ command: "/probe", description: "Probe collision behavior" }]
+        }),
+        "server.js": "registerCommand('/probe', () => ({ body: 'Colliding macro', visibility: 'public' }));"
+      }
+    });
+    const packageChecksum = sha256(Buffer.from(packageText, "utf8"));
+    const server = createServer((request, response) => {
+      if (request.url === "/catalog.json") {
+        response.writeHead(200, { "content-type": "application/json" }).end(
+          JSON.stringify({
+            plugins: [{ packageId: "registry-package", packageUrl: "/registry-package.json", checksum: packageChecksum }]
+          })
+        );
+        return;
+      }
+      if (request.url === "/registry-package.json") {
+        response.writeHead(200, { "content-type": "application/json" }).end(packageText);
+        return;
+      }
+      response.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ error: "not_found" }));
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    try {
+      const registry = loadPluginRegistry({ pluginRoot });
+      const registryUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/catalog.json`;
+      const result = await registry.syncRemoteRegistry(registryUrl);
+
+      expect(result.imported).toEqual([]);
+      expect(result.errors).toEqual([
+        {
+          packagePath: "registry-package",
+          errors: ["Plugin shared-plugin@1.0.0 is already provided by package trusted-package"]
+        }
+      ]);
+      expect(registry.find("shared-plugin", "1.0.0")?.source.packageId).toBe("trusted-package");
+      expect(registry.executeChatCommand("shared-plugin", { ...sandboxInput(), pluginId: "shared-plugin" }, "1.0.0").body).toBe("Trusted macro");
+    } finally {
+      await new Promise<void>((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("does not let remote registry sync overwrite a local plugin package", async () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
     writePluginPackage(pluginRoot, "shared-package", `registerCommand("/probe", () => ({ body: "Local macro", visibility: "public" }));`);
