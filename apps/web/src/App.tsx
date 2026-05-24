@@ -8,7 +8,7 @@ import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryActio
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { parseChatCommand } from "./chat-command.js";
-import { proposalReviewActionLabel, proposalReviewSteps } from "./proposal-review.js";
+import { applyProposalChangesToSnapshot, proposalReviewActionLabel, proposalReviewSteps, visibleAiAgentProposals } from "./proposal-review.js";
 import { templateConePoints } from "./scene-annotations.js";
 import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
 import { sceneTabWrapClass } from "./scene-tabs.js";
@@ -543,6 +543,7 @@ export function App() {
   const [aiAgentBusy, setAiAgentBusy] = useState(false);
   const [aiAgentStatus, setAiAgentStatus] = useState("Agent ready");
   const [aiAgentCodexAuth, setAiAgentCodexAuth] = useState<AiAgentCodexAuthPrompt | null>(null);
+  const [aiAgentHiddenProposalIds, setAiAgentHiddenProposalIds] = useState<Set<string>>(() => new Set());
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole>("player");
   const [inviteToken, setInviteToken] = useState("");
@@ -3010,6 +3011,7 @@ export function App() {
     if (!steps.includes("apply")) throw new Error(`Proposal is ${proposal.status} and cannot be applied.`);
     if (steps.includes("approve")) await apiPost(`/api/v1/proposals/${proposal.id}/approve`, {});
     const applied = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/apply`, {});
+    setSnapshot((current) => applyProposalChangesToSnapshot(current, applied));
     const appliedSceneId = createdSceneIdFromProposal(applied) ?? createdSceneId;
     if (appliedSceneId) {
       setSceneId(appliedSceneId);
@@ -3023,6 +3025,7 @@ export function App() {
   }
 
   async function applyAiAgentProposal(proposal: Proposal) {
+    hideAiAgentProposal(proposal.id);
     setAiAgentStatus(proposal.status === "pending" ? "Approving and applying proposal" : "Applying proposal");
     try {
       const result = await approveAndApply(proposal);
@@ -3030,10 +3033,39 @@ export function App() {
       setAiAgentStatus(message);
       setAiAgentMessages((messages) => [...messages, { id: `agent-apply-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
     } catch (error) {
+      showAiAgentProposal(proposal.id);
       const message = errorMessage(error);
       setAiAgentStatus(`Apply failed: ${message}`);
       setAiAgentMessages((messages) => [...messages, { id: `agent-apply-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
     }
+  }
+
+  async function rejectAiAgentProposal(proposal: Proposal) {
+    hideAiAgentProposal(proposal.id);
+    setAiAgentStatus("Rejecting proposal");
+    try {
+      await rejectProposalReview(proposal);
+      const message = "Proposal rejected";
+      setAiAgentStatus(message);
+      setAiAgentMessages((messages) => [...messages, { id: `agent-reject-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+    } catch (error) {
+      showAiAgentProposal(proposal.id);
+      const message = errorMessage(error);
+      setAiAgentStatus(`Reject failed: ${message}`);
+      setAiAgentMessages((messages) => [...messages, { id: `agent-reject-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+    }
+  }
+
+  function hideAiAgentProposal(proposalId: string) {
+    setAiAgentHiddenProposalIds((proposalIds) => new Set([...proposalIds, proposalId]));
+  }
+
+  function showAiAgentProposal(proposalId: string) {
+    setAiAgentHiddenProposalIds((proposalIds) => {
+      const next = new Set(proposalIds);
+      next.delete(proposalId);
+      return next;
+    });
   }
 
   async function rejectProposalReview(proposal: Proposal) {
@@ -4961,12 +4993,13 @@ export function App() {
           busy={aiAgentBusy}
           codexAuth={aiAgentCodexAuth}
           proposals={snapshot.proposals}
+          hiddenProposalIds={aiAgentHiddenProposalIds}
           canApply={hasPermission("ai.applyChanges")}
           onPromptChange={setAiAgentPrompt}
           onSend={() => sendAiAgentMessage().catch((error) => setAiAgentStatus(errorMessage(error)))}
           onClose={() => setAiAgentOpen(false)}
           onApply={applyAiAgentProposal}
-          onReject={(proposal) => rejectProposalReview(proposal).catch((error) => setAiAgentStatus(errorMessage(error)))}
+          onReject={rejectAiAgentProposal}
         />
       )}
     </main>
@@ -4980,6 +5013,7 @@ function AiAgentPanel(props: {
   busy: boolean;
   codexAuth: AiAgentCodexAuthPrompt | null;
   proposals: Proposal[];
+  hiddenProposalIds: ReadonlySet<string>;
   canApply: boolean;
   onPromptChange(value: string): void;
   onSend(): void;
@@ -4987,11 +5021,7 @@ function AiAgentPanel(props: {
   onApply(proposal: Proposal): void;
   onReject(proposal: Proposal): void;
 }) {
-  const proposalIds = new Set(props.messages.flatMap((message) => message.proposalIds ?? []));
-  const agentProposals = props.proposals
-    .filter((proposal) => proposalIds.has(proposal.id) || (proposal.createdByType === "ai" && (proposal.status === "pending" || proposal.status === "approved")))
-    .sort((left, right) => proposalStatusSort(left.status) - proposalStatusSort(right.status) || right.updatedAt.localeCompare(left.updatedAt))
-    .slice(0, 4);
+  const agentProposals = visibleAiAgentProposals(props.proposals, props.messages, props.hiddenProposalIds);
   const codexAuthUrl = props.codexAuth?.authUrl ?? props.codexAuth?.verificationUrl;
   return (
     <aside className="ai-agent-popout" aria-label="AI Agent">
