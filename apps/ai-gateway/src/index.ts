@@ -12,8 +12,8 @@ export const providers = createProviders();
 
 function aiProviderTimeoutMs(env: Record<string, string | undefined>): number {
   const parsed = Number(env.OTTE_AI_PROVIDER_TIMEOUT_MS);
-  if (!Number.isFinite(parsed) || parsed < 0) return 30_000;
-  return Math.max(0, Math.min(300_000, Math.floor(parsed)));
+  if (!Number.isFinite(parsed) || parsed < 0) return 15 * 60_000;
+  return Math.max(0, Math.min(30 * 60_000, Math.floor(parsed)));
 }
 
 function createCodexTransport(env: Record<string, string | undefined>) {

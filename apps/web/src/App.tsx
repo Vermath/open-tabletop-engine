@@ -585,6 +585,7 @@ export function App() {
   const [aiAgentStatus, setAiAgentStatus] = useState("Agent ready");
   const [aiAgentCodexAuth, setAiAgentCodexAuth] = useState<AiAgentCodexAuthPrompt | null>(null);
   const [aiAgentHiddenProposalIds, setAiAgentHiddenProposalIds] = useState<Set<string>>(() => new Set());
+  const aiAgentAbortRef = useRef<AbortController | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole>("player");
   const [inviteToken, setInviteToken] = useState("");
@@ -749,7 +750,6 @@ export function App() {
     .filter((scene) => !normalizedSceneSearch || [scene.name, scene.folder ?? "", scene.id].some((value) => value.toLocaleLowerCase().includes(normalizedSceneSearch)));
   const selectedPrepScenes = visibleScenes.filter((scene) => selectedPrepSceneIds.includes(scene.id));
   const selectedScene = accessibleScenes.find((scene) => scene.id === sceneId) ?? accessibleScenes.find((scene) => scene.active);
-  const selectedAiEditTargetScene = selectedScene ? aiEditTargetScene(accessibleScenes, selectedScene) : undefined;
   const selectedSceneIndex = orderedScenes.findIndex((scene) => scene.id === selectedScene?.id);
   const campaignImageAssets = snapshot.assets.filter(isUsableImageAsset).sort((left, right) => left.name.localeCompare(right.name));
   const canvasAssetFolderOptions = [...new Set(campaignImageAssets.map((asset) => normalizeAssetFolderPath(asset.folder)).filter(Boolean))].sort((left, right) => left.localeCompare(right));
@@ -770,6 +770,8 @@ export function App() {
       : "Ready";
   const activeSystemId = snapshot.systems.find((system) => system.active)?.id ?? selectedCampaign?.defaultSystemId;
   const selectedActor = snapshot.actors.find((actor) => actor.id === selectedToken?.actorId) ?? snapshot.actors.find((actor) => actor.systemId === activeSystemId) ?? snapshot.actors[0];
+  const adversaryActors = snapshot.actors.filter((actor) => isAdversaryActor(actor, snapshot.tokens));
+  const partyActors = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
   const activeCombat = snapshot.combats.find((combat) => combat.active);
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
   const selectedPermissionTemplate = campaignPermissionTemplates.find((template) => template.id === setupPermissionTemplate) ?? campaignPermissionTemplates[0]!;
@@ -2911,6 +2913,8 @@ export function App() {
     setAiAgentBusy(true);
     setAiAgentStatus("Agent working");
     setAiAgentCodexAuth(null);
+    const abortController = new AbortController();
+    aiAgentAbortRef.current = abortController;
     try {
       const result = await apiPost<AiAgentThreadResponse>(`/api/v1/campaigns/${campaignId}/ai/threads`, {
         prompt,
@@ -2918,7 +2922,7 @@ export function App() {
         selectedSceneId: selectedScene?.id,
         selectedTokenIds,
         messages: aiAgentProviderMessages(requestMessages)
-      });
+      }, { signal: abortController.signal });
       const proposalIds = result.events.map((event) => event.proposalId).filter((proposalId): proposalId is string => Boolean(proposalId));
       const assistantMessage: AiAgentMessage = {
         id: result.thread.id,
@@ -2932,6 +2936,12 @@ export function App() {
       setAiAgentStatus(proposalIds.length > 0 ? `Agent drafted ${proposalIds.length} proposal${proposalIds.length === 1 ? "" : "s"}` : "Agent ready");
       await refresh();
     } catch (error) {
+      if (isAbortError(error) || abortController.signal.aborted) {
+        const message = "Agent turn stopped.";
+        setAiAgentMessages((messages) => [...messages, { id: `agent-stop-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+        setAiAgentStatus("Agent stopped");
+        return;
+      }
       const codexAuth = codexAuthPromptFromError(error);
       if (codexAuth) {
         const message = errorMessage(error);
@@ -2944,8 +2954,15 @@ export function App() {
       setAiAgentMessages((messages) => [...messages, { id: `agent-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
       setAiAgentStatus(`Agent failed: ${message}`);
     } finally {
+      if (aiAgentAbortRef.current === abortController) aiAgentAbortRef.current = null;
       setAiAgentBusy(false);
     }
+  }
+
+  function stopAiAgentTurn() {
+    if (!aiAgentAbortRef.current) return;
+    setAiAgentStatus("Stopping agent turn");
+    aiAgentAbortRef.current.abort();
   }
 
   async function trackAiGenerationJob(job: AiGenerationJob, task: () => Promise<void>) {
@@ -3008,7 +3025,7 @@ export function App() {
     }
     await trackAiGenerationJob({ id: `token-batch:${selectedScene.id}`, kind: "tokenBatch", label: "Scene token art generation", detail: `${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}` }, async () => {
       setStatus(`Generating token art for ${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}...`);
-      for (const token of tokens) {
+      await Promise.all(tokens.map(async (token) => {
         const tokenPrompt = [
           prompt,
           "",
@@ -3025,7 +3042,7 @@ export function App() {
           quality: "low",
           outputFormat: "png"
         });
-      }
+      }));
       setStatus(`Token art proposals drafted for ${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}`);
       await refresh();
     });
@@ -3077,14 +3094,6 @@ export function App() {
     setStatus("Proposal applied");
     await refresh();
     return { applied };
-  }
-
-  async function applySelectedAiEditLayer() {
-    if (!selectedScene || !selectedAiEditTargetScene) return;
-    const result = await apiPost<{ targetSceneId: string; copiedTokenCount: number }>(`/api/v1/scenes/${selectedScene.id}/ai-edits/apply-to-target`, {});
-    setSceneId(result.targetSceneId);
-    setStatus(`AI edits applied to ${selectedAiEditTargetScene.name}`);
-    await refresh(campaignId, result.targetSceneId);
   }
 
   async function applyAiAgentProposal(proposal: Proposal) {
@@ -3914,10 +3923,10 @@ export function App() {
         <section className="party-rail" aria-label="Party">
           <div className="operator-heading">
             <div className="section-title">Party</div>
-            <span>{formatNumber(snapshot.actors.length)} actors</span>
+            <span>{formatNumber(partyActors.length)} actors</span>
           </div>
           <div className="party-list">
-            {snapshot.actors.slice(0, 4).map((actor) => (
+            {partyActors.map((actor) => (
               <button
                 className={actor.id === selectedActor?.id ? "party-row selected" : "party-row"}
                 key={actor.id}
@@ -3931,11 +3940,38 @@ export function App() {
                 <span className="party-avatar">{actor.name.slice(0, 2).toUpperCase()}</span>
                 <span>
                   <strong>{actor.name}</strong>
-                  <small>{stringValue(actor.data.class) || actor.systemId || "Character"}</small>
+                  <small>{actorRailSubtitle(actor)}</small>
                 </span>
               </button>
             ))}
-            {snapshot.actors.length === 0 && <p className="account-summary">No actors yet.</p>}
+            {partyActors.length === 0 && <p className="account-summary">No party actors yet.</p>}
+          </div>
+        </section>
+        <section className="party-rail adversary-rail" aria-label="Adversaries">
+          <div className="operator-heading">
+            <div className="section-title">Adversaries</div>
+            <span>{formatNumber(adversaryActors.length)} actors</span>
+          </div>
+          <div className="party-list">
+            {adversaryActors.map((actor) => (
+              <button
+                className={actor.id === selectedActor?.id ? "party-row selected adversary" : "party-row adversary"}
+                key={actor.id}
+                type="button"
+                onClick={() => {
+                  const token = snapshot.tokens.find((item) => item.actorId === actor.id && item.sceneId === sceneId);
+                  if (token) selectSingleToken(token.id);
+                  setTab("actors");
+                }}
+              >
+                <span className="party-avatar adversary-avatar">{actor.name.slice(0, 2).toUpperCase()}</span>
+                <span>
+                  <strong>{actor.name}</strong>
+                  <small>{actorRailSubtitle(actor)}</small>
+                </span>
+              </button>
+            ))}
+            {adversaryActors.length === 0 && <p className="account-summary">No adversaries yet.</p>}
           </div>
         </section>
         <section className="rail-admin" hidden={workspaceMode !== "manage"} aria-label="Manage workspace panel">
@@ -4765,20 +4801,6 @@ export function App() {
             <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
             {selectedTokens.length > 1 && <MapSelectionStatus selectedCount={selectedTokens.length} onClear={clearTokenSelection} />}
             <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />
-            {selectedScene && selectedAiEditTargetScene && (
-              <section className="table-tool-panel ai-edit-layer-panel" aria-label="AI edit layer controls">
-                <div>
-                  <strong>AI edits</strong>
-                  <span>{selectedAiEditTargetScene.name}</span>
-                </div>
-                <button className="primary-button" type="button" disabled={!hasPermission("scene.update")} onClick={() => applySelectedAiEditLayer().catch((error) => setStatus(errorMessage(error)))}>
-                  <Check size={16} /> Apply to main scene
-                </button>
-                <button className="ghost-button" type="button" onClick={() => setSceneId(selectedAiEditTargetScene.id)}>
-                  Open main scene
-                </button>
-              </section>
-            )}
             {hasPermission("token.reveal") && (fogBrushMode || toolReport) && (
               <section className="table-tool-panel" aria-label="Fog and vision tools">
                 <input aria-label="Fog preset name" value={fogPresetName} placeholder="Preset name" onChange={(event) => setFogPresetName(event.target.value)} />
@@ -5064,6 +5086,7 @@ export function App() {
           canApply={hasPermission("ai.applyChanges")}
           onPromptChange={setAiAgentPrompt}
           onSend={() => sendAiAgentMessage().catch((error) => setAiAgentStatus(errorMessage(error)))}
+          onStop={stopAiAgentTurn}
           onClose={() => setAiAgentOpen(false)}
           onApply={applyAiAgentProposal}
           onReject={rejectAiAgentProposal}
@@ -5084,6 +5107,7 @@ function AiAgentPanel(props: {
   canApply: boolean;
   onPromptChange(value: string): void;
   onSend(): void;
+  onStop(): void;
   onClose(): void;
   onApply(proposal: Proposal): void;
   onReject(proposal: Proposal): void;
@@ -5186,9 +5210,15 @@ function AiAgentPanel(props: {
         }}
       >
         <textarea aria-label="AI Agent prompt" value={props.prompt} placeholder="Ask the agent..." onChange={(event) => props.onPromptChange(event.target.value)} disabled={props.busy} />
-        <button className="primary-button" type="submit" disabled={props.busy || !props.prompt.trim()}>
-          <Send size={16} /> Send
-        </button>
+        {props.busy ? (
+          <button className="ghost-button ai-agent-stop-button" type="button" onClick={props.onStop}>
+            <X size={16} /> Stop
+          </button>
+        ) : (
+          <button className="primary-button" type="submit" disabled={!props.prompt.trim()}>
+            <Send size={16} /> Send
+          </button>
+        )}
       </form>
     </aside>
   );
@@ -9396,6 +9426,18 @@ function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
+function isAdversaryActor(actor: Actor, tokens: Token[]): boolean {
+  const type = actor.type.toLowerCase();
+  if (type === "monster" || type === "adversary" || type === "enemy") return true;
+  const role = stringValue(recordValue(actor.data).role)?.toLowerCase() ?? stringValue(recordValue(actor.data).category)?.toLowerCase();
+  if (role === "adversary" || role === "enemy" || role === "monster") return true;
+  return tokens.some((token) => token.actorId === actor.id && token.disposition === "hostile");
+}
+
+function actorRailSubtitle(actor: Actor): string {
+  return stringValue(actor.data.class) || titleCaseLabel(actor.type || actor.systemId || "Character");
+}
+
 function titleCaseLabel(value: string): string {
   return value.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
@@ -9458,6 +9500,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 function codexAuthPromptFromError(error: unknown): CodexAuthStart | undefined {
   if (!(error instanceof ApiError)) return undefined;
   const body = recordValue(error.body);
@@ -9498,27 +9544,14 @@ function reasoningTracesFromEvents(events: AiAgentProviderEvent[]): string[] {
 }
 
 function sceneIdToOpenAfterProposalApply(proposal: Proposal): string | undefined {
-  return aiEditSceneIdFromProposal(proposal) ?? createdSceneIdFromProposal(proposal);
+  return updatedSceneIdFromProposal(proposal) ?? createdSceneIdFromProposal(proposal);
 }
 
-function aiEditSceneIdFromProposal(proposal: Proposal): string | undefined {
+function updatedSceneIdFromProposal(proposal: Proposal): string | undefined {
   for (const change of proposal.changesJson) {
-    if (change.entity !== "scene") continue;
-    const data = recordValue(change.data);
-    const metadata = recordValue(data.metadata);
-    if (change.action === "create" && data.folder === "ai/edits" && typeof data.id === "string") return data.id;
-    if (change.action === "update" && change.id && metadata.source === "ai_edit_layer" && typeof metadata.targetSceneId === "string") return change.id;
+    if (change.entity === "scene" && change.action === "update" && typeof change.id === "string" && change.id.trim()) return change.id;
   }
   return undefined;
-}
-
-function aiEditTargetSceneId(scene: Scene): string | undefined {
-  return scene.folder === "ai/edits" ? stringValue(recordValue(scene.metadata).targetSceneId) : undefined;
-}
-
-function aiEditTargetScene(scenes: Scene[], scene: Scene): Scene | undefined {
-  const targetSceneId = aiEditTargetSceneId(scene);
-  return targetSceneId ? scenes.find((item) => item.id === targetSceneId) : undefined;
 }
 
 function createdSceneIdFromProposal(proposal: Proposal): string | undefined {

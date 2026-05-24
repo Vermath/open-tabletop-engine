@@ -271,11 +271,12 @@ export async function apiGet<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+export async function apiPost<T>(path: string, body: unknown, options: { signal?: AbortSignal } = {}): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;

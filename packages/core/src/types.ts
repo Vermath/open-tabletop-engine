@@ -713,7 +713,7 @@ export interface AiThread extends Timestamps {
   provider: string;
   title: string;
   prompt?: string;
-  status?: "running" | "completed" | "failed";
+  status?: "running" | "completed" | "failed" | "cancelled";
   startedAt?: string;
   completedAt?: string;
   failedAt?: string;

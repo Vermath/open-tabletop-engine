@@ -13,4 +13,19 @@ describe("actor panel layout", () => {
     expect(stylesSource).toContain(".actor-sheet-dialog");
     expect(stylesSource).toContain(".actor-sidebar-summary");
   });
+
+  it("keeps party and adversary rails separate and scrollable", () => {
+    expect(appSource).toContain('aria-label="Adversaries"');
+    expect(appSource).toContain("isAdversaryActor");
+    expect(stylesSource).toContain(".party-rail.adversary-rail");
+    expect(stylesSource).toContain("max-height: min(34svh, 320px);");
+    expect(stylesSource).toContain("overflow: auto;");
+  });
+
+  it("lets users stop a running AI agent turn and removes the old AI edit-layer control", () => {
+    expect(appSource).toContain("stopAiAgentTurn");
+    expect(appSource).toContain("ai-agent-stop-button");
+    expect(appSource).toContain("Agent turn stopped.");
+    expect(appSource).not.toContain('aria-label="AI edit layer controls"');
+  });
 });

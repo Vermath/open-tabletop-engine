@@ -56,6 +56,7 @@ export interface CodexAppServerImageGenerationInput {
   serviceName?: string;
   baseInstructions?: string;
   developerInstructions?: string;
+  signal?: AbortSignal;
 }
 
 export interface CodexAppServerGeneratedImage {
@@ -112,6 +113,7 @@ interface CodexProviderTurnStartParams {
   model?: string;
   reasoningEffort?: AiReasoningEffort;
   surface?: string;
+  signal?: AbortSignal;
   executeTool?: (toolName: string, input: unknown) => Promise<unknown>;
 }
 
@@ -151,6 +153,7 @@ export class CodexAppServerProvider implements AiProvider {
       model: input.model,
       reasoningEffort: input.reasoningEffort ?? this.options.reasoningEffort,
       surface: input.surface,
+      signal: input.signal,
       executeTool: input.executeTool
     });
 
@@ -172,7 +175,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
   constructor(private readonly options: CodexAppServerWebSocketTransportOptions = {}) {
     this.url = options.url ?? "ws://127.0.0.1:4500";
     this.requestTimeoutMs = normalizedTimeout(options.requestTimeoutMs, 60_000);
-    this.turnTimeoutMs = normalizedTimeout(options.turnTimeoutMs, 180_000);
+    this.turnTimeoutMs = normalizedTimeout(options.turnTimeoutMs, 15 * 60_000);
     this.webSocketFactory = options.webSocketFactory ?? defaultWebSocketFactory;
     this.autoStart = options.autoStart ?? false;
     this.appServerStarter = options.appServerStarter ?? startLocalCodexAppServer;
@@ -190,13 +193,17 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
   }
 
   async generateImage(input: CodexAppServerImageGenerationInput): Promise<CodexAppServerGeneratedImage> {
+    if (input.signal?.aborted) throw codexTurnAbortError();
     const socket = await this.connect();
     const rpc = new CodexAppServerImageRpc(socket, {
       requestTimeoutMs: this.requestTimeoutMs,
       turnTimeoutMs: this.turnTimeoutMs
     });
+    const abortTurn = () => socket.close(4000, "OpenTabletop image generation stopped by user");
+    input.signal?.addEventListener("abort", abortTurn, { once: true });
 
     try {
+      if (input.signal?.aborted) throw codexTurnAbortError();
       await rpc.request("initialize", {
         clientInfo: {
           name: "open-tabletop-engine",
@@ -214,11 +221,14 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
         }
       });
       rpc.notify("initialized");
+      if (input.signal?.aborted) throw codexTurnAbortError();
       await ensureCodexAppServerAuthenticated(rpc, this.options.loginType);
+      if (input.signal?.aborted) throw codexTurnAbortError();
       const capabilities = await rpc.request<{ imageGeneration?: boolean }>("modelProvider/capabilities/read", {});
       if (capabilities.imageGeneration !== true) {
         throw new Error("Codex app-server does not report imageGeneration capability for the current account/model provider.");
       }
+      if (input.signal?.aborted) throw codexTurnAbortError();
       const thread = await rpc.request<{ thread: { id: string } }>("thread/start", {
         cwd: input.cwd ?? this.options.cwd ?? null,
         approvalPolicy: "never",
@@ -232,6 +242,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
           input.developerInstructions ??
           "When asked for an image, use Codex app-server image generation and return an actual generated raster image. Do not return SVG, HTML, markdown art, or a textual placeholder."
       });
+      if (input.signal?.aborted) throw codexTurnAbortError();
       const generated = rpc.waitForImageTurnCompleted();
       await rpc.request("turn/start", {
         threadId: thread.thread.id,
@@ -240,13 +251,18 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
         sandboxPolicy: { type: "readOnly", networkAccess: false }
       });
       return await generated;
+    } catch (error) {
+      if (input.signal?.aborted) throw codexTurnAbortError();
+      throw error;
     } finally {
+      input.signal?.removeEventListener("abort", abortTurn);
       socket.close();
       rpc.dispose();
     }
   }
 
   private async runTurn(input: CodexProviderTurnStartParams): Promise<AiProviderEvent[]> {
+    if (input.signal?.aborted) throw codexTurnAbortError();
     const socket = await this.connect();
     const rpc = new CodexAppServerRpc(socket, {
       requestTimeoutMs: this.requestTimeoutMs,
@@ -254,8 +270,11 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
       tools: input.tools,
       executeTool: input.executeTool
     });
+    const abortTurn = () => socket.close(4000, "OpenTabletop agent turn stopped by user");
+    input.signal?.addEventListener("abort", abortTurn, { once: true });
 
     try {
+      if (input.signal?.aborted) throw codexTurnAbortError();
       await rpc.request("initialize", {
         clientInfo: {
           name: "open-tabletop-engine",
@@ -272,7 +291,9 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
         }
       });
       rpc.notify("initialized");
+      if (input.signal?.aborted) throw codexTurnAbortError();
       await ensureCodexAppServerAuthenticated(rpc, this.options.loginType);
+      if (input.signal?.aborted) throw codexTurnAbortError();
       const thread = await rpc.request<{ thread: { id: string } }>("thread/start", {
         cwd: this.options.cwd ?? null,
         approvalPolicy: "never",
@@ -286,6 +307,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
           "Use OpenTabletop dynamic tools for campaign reads, campaign proposals, dice rolls, and generated assets. Never use shell or file-editing tools for tabletop state.",
         dynamicTools: input.tools.map(toDynamicToolSpec)
       });
+      if (input.signal?.aborted) throw codexTurnAbortError();
       const turnCompleted = rpc.waitForTurnCompleted();
       await rpc.request("turn/start", {
         threadId: thread.thread.id,
@@ -296,7 +318,11 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
         sandboxPolicy: { type: "readOnly", networkAccess: false }
       });
       return await turnCompleted;
+    } catch (error) {
+      if (input.signal?.aborted) throw codexTurnAbortError();
+      throw error;
     } finally {
+      input.signal?.removeEventListener("abort", abortTurn);
       socket.close();
       rpc.dispose();
     }
@@ -561,6 +587,12 @@ function asError(error: unknown): Error {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function codexTurnAbortError(): Error {
+  const error = new Error("Codex app-server turn stopped by the user.");
+  error.name = "AbortError";
+  return error;
 }
 
 class CodexAppServerImageRpc {

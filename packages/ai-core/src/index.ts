@@ -65,6 +65,7 @@ export interface AiToolContext {
   userId: string;
   permissions: PermissionName[];
   state: EngineState;
+  signal?: AbortSignal;
   createProposal(input: { title: string; summary: string; changes: ProposalChange[] }): Promise<string>;
   listProposals?(input: { status?: string; limit?: number }): Promise<unknown>;
   getProposal?(input: { proposalId: string }): Promise<unknown>;
@@ -120,6 +121,7 @@ export interface AiProviderRequest {
   model?: string;
   reasoningEffort?: AiReasoningEffort;
   surface?: string;
+  signal?: AbortSignal;
   executeTool?: (toolName: string, input: unknown) => Promise<unknown>;
 }
 

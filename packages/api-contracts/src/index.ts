@@ -3796,7 +3796,7 @@ const componentSchemas = {
       provider: stringSchema,
       title: stringSchema,
       prompt: stringSchema,
-      status: { type: "string", enum: ["running", "completed", "failed"] },
+      status: { type: "string", enum: ["running", "completed", "failed", "cancelled"] },
       assistantMessage: stringSchema,
       providerError: stringSchema,
       usage: schemaRef("AiUsageMetrics"),

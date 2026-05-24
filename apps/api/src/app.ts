@@ -36,6 +36,7 @@ export interface ImageAssetGenerationInput {
   outputFormat?: "png" | "jpeg" | "webp";
   campaignId: string;
   userId: string;
+  signal?: AbortSignal;
 }
 
 export interface GeneratedImageAsset {
@@ -5455,6 +5456,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const prompt = typeof request.body?.prompt === "string" ? request.body.prompt : "";
     if (!prompt.trim()) return badRequest(reply, "Prompt is required");
     const surface = request.body?.surface === "agent_panel" ? "agent_panel" : "ai_studio";
+    const turnAbortController = new AbortController();
+    let responseFinished = false;
+    const abortTurn = () => {
+      if (!responseFinished && !turnAbortController.signal.aborted) turnAbortController.abort();
+    };
+    const detachAbortListeners = () => {
+      request.raw.off("aborted", abortTurn);
+      reply.raw.off("close", abortTurn);
+    };
+    request.raw.on("aborted", abortTurn);
+    reply.raw.on("close", abortTurn);
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const permissions = permissionsForUser(store, userId, request.params.campaignId);
@@ -5484,7 +5496,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const providerTools = tools.filter((tool) => aiToolAvailableToCaller(tool, permissions));
     thread.advertisedToolNames = providerTools.map((tool) => tool.name);
     thread.advertisedTools = providerTools.map((tool) => ({ name: tool.name, requiredPermissions: [...tool.requiredPermissions], permissionSafe: aiToolPermissionSafe(tool) }));
-    const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions, aiToolRuntime);
+    const toolContext = createAiToolContext(store, request.params.campaignId, userId, permissions, aiToolRuntime, turnAbortController.signal);
     let content = "";
     const events: AiProviderEvent[] = [];
     let providerEventsSeen = 0;
@@ -5499,8 +5511,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       surface,
       model: request.body?.model?.trim() || (surface === "agent_panel" ? agentModel() : undefined),
       reasoningEffort: request.body?.reasoningEffort ? agentReasoningEffort(request.body.reasoningEffort) : surface === "agent_panel" ? agentReasoningEffort() : undefined,
+      signal: turnAbortController.signal,
       executeTool: async (toolName, input) => {
-        const result = await executeAiTool(tools, toolName, toolInputWithAgentDefaults(toolName, input, request.body), toolContext);
+        const result = await executeAiTool(tools, toolName, toolInputWithAgentDefaults(toolName, input, { ...request.body, surface }), toolContext);
         return result.output;
       }
     };
@@ -5529,7 +5542,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
             if (aiProvider.executesToolsInTurn) {
               continue;
             }
-            const result = await executeAiTool(tools, event.toolName, event.input, toolContext);
+            const result = await executeAiTool(tools, event.toolName, toolInputWithAgentDefaults(event.toolName, event.input, { ...request.body, surface }), toolContext);
             const output = result.output;
             const completedEvent: AiProviderEvent = { type: "tool.completed", toolName: event.toolName, output };
             events.push(completedEvent);
@@ -5566,6 +5579,20 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         completeAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount);
         break;
       } catch (error) {
+        if (turnAbortController.signal.aborted) {
+          recordAiResponseUsage(thread, content);
+          thread.assistantMessage = content;
+          cancelAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount);
+          store.save();
+          responseFinished = true;
+          detachAbortListeners();
+          return reply.code(499).send({
+            error: "ai_turn_cancelled",
+            message: thread.providerError,
+            thread,
+            events
+          });
+        }
         const codexAuthRequired = codexAuthRequiredPayload(error);
         if (!codexAuthRequired && providerEventsSeen === 0 && retryAttempts < maxRetryAttempts) {
           retryAttempts += 1;
@@ -5575,6 +5602,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         thread.assistantMessage = content;
         failAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount, error);
         store.save();
+        responseFinished = true;
+        detachAbortListeners();
         return reply.code(codexAuthRequired ? 428 : 502).send({
           error: codexAuthRequired ? "codex_auth_required" : "ai_provider_failed",
           message: thread.providerError,
@@ -5614,6 +5643,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: thread
       })
     );
+    responseFinished = true;
+    detachAbortListeners();
     return { thread, assistantMessage: content, events };
   });
 
@@ -7446,6 +7477,7 @@ class CodexAppServerImageAssetGenerator implements ImageAssetGenerator {
     const image = await this.transport.generateImage({
       prompt: imageGenerationPrompt(input),
       outputFormat: input.outputFormat ?? "png",
+      signal: input.signal,
       baseInstructions: "You generate raster map and token artwork for OpenTabletop Engine virtual tabletop campaigns.",
       developerInstructions: "Use Codex app-server image generation. Return an actual generated raster image result. Do not return SVG, HTML, markdown art, or a textual placeholder."
     });
@@ -7537,8 +7569,8 @@ function apiBaseUrlForInternalAgent(): string {
 
 function aiProviderTimeoutMs(): number {
   const parsed = envNumber("OTTE_AI_PROVIDER_TIMEOUT_MS");
-  if (parsed === undefined) return 30_000;
-  return Math.max(0, Math.min(300_000, Math.floor(parsed)));
+  if (parsed === undefined) return 15 * 60_000;
+  return Math.max(0, Math.min(30 * 60_000, Math.floor(parsed)));
 }
 
 function agentModel(): string {
@@ -7560,6 +7592,12 @@ function agentMessagesForRequest(prompt: string, body: AgentThreadBody | undefin
         "You are the in-app OpenTabletop AI Agent.",
         "Use OpenTabletop tools for reads, dice rolls, proposals, and approved proposal application.",
         "Never approve proposals yourself. Never start campaigns, ban or remove players, revoke sessions, administer invites, install plugins, change server settings, or start/end combat directly.",
+        "Do not put adversaries in the party. Actors created from encounter threats, monster stat blocks, or hostile tokens are adversaries and should remain separate from player characters and friendly NPCs.",
+        "Apply visual scene edits to the active scene or explicitly requested target scene. Do not create lingering AI edit scenes or ai/edits folders for new work.",
+        "Place generated assets on the correct surface: maps are scene backgrounds or map-layer art, characters and creatures are token/portrait assets on player or GM token layers, and annotations stay in their matching annotation layer.",
+        "When generating token art, reuse existing generated token art for repeated enemies when the same creature or reuse key is appropriate.",
+        "When creating fresh player characters, NPCs, or adversaries, generate stored token/portrait art for them and reference the stored asset from the actor and token proposal.",
+        "For many high-quality art assets, prefer parallel independent image-generation tool calls with one clear prompt per asset, then assemble the proposal after the assets exist.",
         "For board-changing work, final success requires both read_board_state and capture_board_view after the successful mutation. If capture_board_view reports board_capture_unavailable, state that visual verification was unavailable."
       ].join("\n")
     });
@@ -7630,7 +7668,10 @@ function toolInputWithAgentDefaults(toolName: string, input: unknown, body: Agen
   if (toolName === "draft_actor_token_roster") {
     return {
       ...base,
-      sceneId: base.sceneId ?? body.selectedSceneId
+      sceneId: base.sceneId ?? body.selectedSceneId,
+      generateArt: base.generateArt ?? (body.surface === "agent_panel" ? true : undefined),
+      artQuality: base.artQuality ?? (body.surface === "agent_panel" ? "high" : undefined),
+      artOutputFormat: base.artOutputFormat ?? (body.surface === "agent_panel" ? "png" : undefined)
     };
   }
   return input;
@@ -7638,8 +7679,8 @@ function toolInputWithAgentDefaults(toolName: string, input: unknown, body: Agen
 
 function aiImageProviderTimeoutMs(): number {
   const parsed = envNumber("OTTE_AI_IMAGE_PROVIDER_TIMEOUT_MS");
-  if (parsed === undefined) return 240_000;
-  return Math.max(1, Math.min(300_000, Math.floor(parsed)));
+  if (parsed === undefined) return 15 * 60_000;
+  return Math.max(1, Math.min(30 * 60_000, Math.floor(parsed)));
 }
 
 function aiProviderRetryAttempts(): number {
@@ -7677,6 +7718,19 @@ function failAiThread(thread: AiThread, startedAtMs: number, retryAttempts: numb
   thread.providerError = aiProviderErrorMessage(error);
   finalizeAiUsage(thread);
   thread.updatedAt = failedAt;
+}
+
+function cancelAiThread(thread: AiThread, startedAtMs: number, retryAttempts: number, eventCount: number, toolCallCount: number): void {
+  const cancelledAt = nowIso();
+  thread.status = "cancelled";
+  thread.failedAt = cancelledAt;
+  thread.durationMs = elapsedMs(startedAtMs);
+  thread.retryAttempts = retryAttempts;
+  thread.eventCount = eventCount;
+  thread.toolCallCount = toolCallCount;
+  thread.providerError = "Agent turn stopped by the user.";
+  finalizeAiUsage(thread);
+  thread.updatedAt = cancelledAt;
 }
 
 function repairLegacyMemoryExtractionThreads(store: StateStore): number {
@@ -9604,7 +9658,7 @@ function findAiEditSceneForTarget(state: EngineState, campaignId: string, target
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0];
 }
 
-function draftActorTokenRosterChanges(context: AiToolContext, request: Record<string, unknown>): { title: string; summary: string; changes: ProposalChange[]; aiEditSceneId: string; actorCount: number; tokenCount: number; itemCount: number } | ToolErrorOutput {
+async function draftActorTokenRosterChanges(context: AiToolContext, request: Record<string, unknown>): Promise<{ title: string; summary: string; changes: ProposalChange[]; sceneId: string; actorCount: number; tokenCount: number; itemCount: number } | ToolErrorOutput> {
   const actorInputs = Array.isArray(request.actors) ? request.actors.filter(isRecord) : [];
   if (actorInputs.length === 0) return toolError("invalid_tool_input", { message: "actors must include at least one actor." });
   const sceneId = stringFromRecord(request, "sceneId");
@@ -9615,9 +9669,11 @@ function draftActorTokenRosterChanges(context: AiToolContext, request: Record<st
   const campaign = context.state.campaigns.find((item) => item.id === context.campaignId);
   const title = stringFromRecord(request, "title") ?? "AI actor and token roster";
   const summary = stringFromRecord(request, "summary") ?? `Create ${actorInputs.length} actors and requested tokens.`;
-  const existingAiEditScene = findAiEditSceneForTarget(context.state, context.campaignId, targetScene.id);
-  const aiEditScene = existingAiEditScene ?? createAiEditSceneForTarget({ state: context.state, campaignId: context.campaignId, targetScene, name: `${targetScene.name} roster edits`, sourcePrompt: summary });
-  const changes: ProposalChange[] = existingAiEditScene ? [] : [{ entity: "scene", action: "create", data: { ...aiEditScene } }];
+  const changes: ProposalChange[] = [];
+  const generatedArtByReuseKey = new Map<string, MapAsset>();
+  const generateArt = booleanFromRecord(request, "generateArt") ?? false;
+  const artQuality = enumStringFromRecord(request, "artQuality", ["auto", "low", "medium", "high"]);
+  const artOutputFormat = enumStringFromRecord(request, "artOutputFormat", ["png", "jpeg", "webp"]);
   let tokenCount = 0;
   let itemCount = 0;
 
@@ -9628,6 +9684,7 @@ function draftActorTokenRosterChanges(context: AiToolContext, request: Record<st
     const templateId = stringFromRecord(actorInput, "templateId");
     const threatId = stringFromRecord(actorInput, "threatId");
     const ownerUserId = stringFromRecord(actorInput, "ownerUserId") ?? context.userId;
+    let adversary = false;
     let actor: Actor;
     let items: Item[] = [];
 
@@ -9650,6 +9707,7 @@ function draftActorTokenRosterChanges(context: AiToolContext, request: Record<st
       if (!threat) return toolError("not_found", { entity: "encounter_threat", id: threatId });
       const data = dnd5eSrdMonsterActorData(threat.id);
       if (!data) return toolError("not_found", { entity: "monster_stat_block", id: threatId });
+      adversary = true;
       actor = createTimestamped("act", {
         campaignId: context.campaignId,
         systemId,
@@ -9661,6 +9719,7 @@ function draftActorTokenRosterChanges(context: AiToolContext, request: Record<st
       }) satisfies Actor;
     } else {
       const data = recordFromRecord(actorInput, "data") ? cloneRecord(recordFromRecord(actorInput, "data")!) : { level: 1, hp: { current: 8, max: 8 } };
+      adversary = stringFromRecord(actorInput, "type") === "monster" || stringFromRecord(actorInput, "type") === "adversary";
       actor = createTimestamped("act", {
         campaignId: context.campaignId,
         systemId,
@@ -9672,42 +9731,66 @@ function draftActorTokenRosterChanges(context: AiToolContext, request: Record<st
       }) satisfies Actor;
     }
 
-    changes.push({ entity: "actor", action: "create", data: { ...actor, metadata: { source: "ai_roster", ref } } });
+    const artPrompt = stringFromRecord(actorInput, "artPrompt") ?? (generateArt ? rosterActorArtPrompt(actor, adversary) : undefined);
+    const artReuseKey = normalizeTokenArtReuseKey(stringFromRecord(actorInput, "reuseKey") ?? threatId ?? (adversary ? name.replace(/\s+\d+$/, "") : ref));
+    const existingArt = artReuseKey ? reusableTokenArtAsset(context, artReuseKey) ?? generatedArtByReuseKey.get(artReuseKey) : undefined;
+    let actorArt = existingArt;
+    if (!actorArt && artPrompt) {
+      const generated = await context.generateImageAsset({
+        kind: "token",
+        prompt: artPrompt,
+        name: `${name} Token Art`,
+        folder: adversary ? "tokens/adversaries" : "tokens/generated",
+        tags: tokenArtAssetTags(actor, undefined, artReuseKey),
+        quality: artQuality,
+        outputFormat: artOutputFormat
+      });
+      if (isToolErrorOutput(generated)) return generated;
+      if (!isGeneratedImageAssetToolOutput(generated)) return toolError("image_generation_failed", { message: "Generated image asset output was invalid." });
+      actorArt = generated.asset;
+      if (artReuseKey) generatedArtByReuseKey.set(artReuseKey, actorArt);
+      changes.push({ entity: "asset", action: "create", data: { ...actorArt } });
+    }
+
+    const actorData = actorArt ? { ...actor, imageAssetId: actorArt.id, metadata: { source: "ai_roster", ref } } : { ...actor, metadata: { source: "ai_roster", ref } };
+    changes.push({ entity: "actor", action: "create", data: actorData });
     for (const item of items) {
       changes.push({ entity: "item", action: "create", data: { ...item } });
       itemCount += 1;
     }
 
-    const tokenInput = recordFromRecord(actorInput, "token");
+    const tokenInput = recordFromRecord(actorInput, "token") ?? (adversary ? {} : undefined);
     if (tokenInput) {
+      const disposition = (enumStringFromRecord(tokenInput, "disposition", ["friendly", "neutral", "hostile"]) ?? (adversary ? "hostile" : "friendly")) as Token["disposition"];
       const token = createTimestamped("tok", {
-        sceneId: aiEditScene.id,
+        sceneId: targetScene.id,
         actorId: actor.id,
         name: stringFromRecord(tokenInput, "name") ?? actor.name,
         x: numberFromRecord(tokenInput, "x", 0, targetScene.width) ?? Math.min(targetScene.width - targetScene.gridSize, targetScene.gridSize * (index + 1)),
-        y: numberFromRecord(tokenInput, "y", 0, targetScene.height) ?? targetScene.gridSize,
+        y: numberFromRecord(tokenInput, "y", 0, targetScene.height) ?? (adversary ? Math.min(targetScene.height - targetScene.gridSize, targetScene.gridSize * 3) : targetScene.gridSize),
         width: numberFromRecord(tokenInput, "width", 10, targetScene.width) ?? targetScene.gridSize,
         height: numberFromRecord(tokenInput, "height", 10, targetScene.height) ?? targetScene.gridSize,
         rotation: numberFromRecord(tokenInput, "rotation", 0, 360) ?? 0,
-        layer: enumStringFromRecord(tokenInput, "layer", ["map", "player", "gm"]) as TokenLayer | undefined,
+        layer: (enumStringFromRecord(tokenInput, "layer", ["map", "player", "gm"]) ?? "player") as TokenLayer,
         hidden: booleanFromRecord(tokenInput, "hidden") ?? false,
         locked: booleanFromRecord(tokenInput, "locked") ?? false,
         visionEnabled: booleanFromRecord(tokenInput, "visionEnabled") ?? true,
         visionRadius: numberFromRecord(tokenInput, "visionRadius", 0, 10000) ?? 160,
-        disposition: (enumStringFromRecord(tokenInput, "disposition", ["friendly", "neutral", "hostile"]) ?? "neutral") as Token["disposition"],
+        disposition,
+        imageAssetId: actorArt?.id,
         ownerUserIds: [ownerUserId],
         notes: stringFromRecord(tokenInput, "notes"),
         conditions: [],
         auras: [],
         targetedByUserIds: [],
-        metadata: { source: "ai_roster", actorRef: ref }
+        metadata: { source: "ai_roster", actorRef: ref, role: adversary ? "adversary" : "party" }
       }) satisfies Token;
       changes.push({ entity: "token", action: "create", data: { ...token } });
       tokenCount += 1;
     }
   }
 
-  return { title, summary, changes, aiEditSceneId: aiEditScene.id, actorCount: actorInputs.length, tokenCount, itemCount };
+  return { title, summary, changes, sceneId: targetScene.id, actorCount: actorInputs.length, tokenCount, itemCount };
 }
 
 function createAiThreadTools(): AiToolDefinition[] {
@@ -9863,7 +9946,7 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "read_campaign",
-      description: "Read campaign metadata, permissions, member summaries, active scene, counts, AI edit layers, and proposal status totals.",
+      description: "Read campaign metadata, permissions, member summaries, active scene, campaign counts, and proposal status totals.",
       requiredPermissions: ["campaign.read"],
       parameters: {
         type: "object",
@@ -10097,7 +10180,7 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "draft_ai_edit_layer_apply",
-      description: "Draft a pending proposal that applies an existing AI edit scene layer onto its target scene for GM approval.",
+      description: "Legacy migration tool: draft a pending proposal that applies an existing AI edit scene layer onto its target scene for GM approval. Do not create new AI edit layers.",
       requiredPermissions: ["ai.proposeChanges", "scene.update", "token.create"],
       parameters: {
         type: "object",
@@ -10315,14 +10398,17 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "draft_actor_token_roster",
-      description: "Draft a pending proposal that creates character sheets, monster actors, and linked tokens on the reusable AI edit scene for GM approval.",
-      requiredPermissions: ["ai.proposeChanges", "actor.create", "actor.update", "token.create", "scene.create"],
+      description: "Draft a pending proposal that creates character sheets, monster actors, and linked tokens directly on the target scene for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "actor.create", "actor.update", "token.create"],
       parameters: {
         type: "object",
         properties: {
           title: { type: "string", description: "Short roster title." },
           summary: { type: "string", description: "GM-facing summary of the roster draft." },
-          sceneId: { type: "string", description: "Target main scene id; tokens are drafted into that scene's AI edit scene." },
+          sceneId: { type: "string", description: "Target scene id; tokens are drafted directly into this scene." },
+          generateArt: { type: "boolean", description: "When true, generate stored token/portrait art for new roster actors unless reusable art is found." },
+          artQuality: { type: "string", description: "Requested roster art render quality.", enum: ["auto", "low", "medium", "high"] },
+          artOutputFormat: { type: "string", description: "Requested roster art raster output format.", enum: ["png", "jpeg", "webp"] },
           actors: { type: "array", description: "Actors to create. Each actor may include ref, name, systemId, templateId, threatId, data, type, ownerUserId, and optional token settings.", items: { type: "object", additionalProperties: true } }
         },
         required: ["actors"],
@@ -10330,7 +10416,7 @@ function createAiThreadTools(): AiToolDefinition[] {
       },
       async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
         const request = isRecord(input) ? input : {};
-        const draft = draftActorTokenRosterChanges(context, request);
+        const draft = await draftActorTokenRosterChanges(context, request);
         if (isToolErrorOutput(draft)) return draft;
         const proposalTitle = `Roster: ${draft.title}`;
         const proposalId = await context.createProposal({
@@ -10342,7 +10428,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           proposalId,
           title: proposalTitle,
           changeCount: draft.changes.length,
-          aiEditSceneId: draft.aiEditSceneId,
+          sceneId: draft.sceneId,
           actorCount: draft.actorCount,
           tokenCount: draft.tokenCount,
           itemCount: draft.itemCount
@@ -10352,7 +10438,7 @@ function createAiThreadTools(): AiToolDefinition[] {
     {
       name: "generate_map_asset",
       description: "Generate a map image asset and draft a pending proposal to add it to the asset library and optionally set it as a scene background.",
-      requiredPermissions: ["ai.proposeChanges", "scene.create", "scene.update"],
+      requiredPermissions: ["ai.proposeChanges", "scene.update"],
       parameters: {
         type: "object",
         properties: {
@@ -10387,39 +10473,21 @@ function createAiThreadTools(): AiToolDefinition[] {
         if (isToolErrorOutput(generated)) return generated;
         if (!isGeneratedImageAssetToolOutput(generated)) return toolError("image_generation_failed", { message: "Generated image asset output was invalid." });
         const changes: ProposalChange[] = [{ entity: "asset", action: "create", data: { ...generated.asset } }];
-        let aiEditSceneId: string | undefined;
         if (scene) {
-          const existingAiEditScene = findAiEditSceneForTarget(context.state, context.campaignId, scene.id);
-          if (existingAiEditScene) {
-            aiEditSceneId = existingAiEditScene.id;
-            changes.push({
-              entity: "scene",
-              action: "update",
-              id: existingAiEditScene.id,
-              data: {
-                name: existingAiEditScene.name || aiGeneratedMapEditSceneName(name),
-                backgroundAssetId: generated.asset.id,
-                metadata: {
-                  ...existingAiEditScene.metadata,
-                  source: "ai_edit_layer",
-                  targetSceneId: scene.id,
-                  generatedBackgroundAssetId: generated.asset.id,
-                  generatedBackgroundPrompt: generated.sourcePrompt
-                }
+          changes.push({
+            entity: "scene",
+            action: "update",
+            id: scene.id,
+            data: {
+              backgroundAssetId: generated.asset.id,
+              metadata: {
+                ...scene.metadata,
+                generatedBackgroundAssetId: generated.asset.id,
+                generatedBackgroundPrompt: generated.sourcePrompt,
+                generatedBackgroundAppliedToSceneId: scene.id
               }
-            });
-          } else {
-            const aiEditScene = createAiGeneratedMapEditScene({
-              state: context.state,
-              campaignId: context.campaignId,
-              targetScene: scene,
-              assetId: generated.asset.id,
-              assetName: name,
-              sourcePrompt: generated.sourcePrompt
-            });
-            aiEditSceneId = aiEditScene.id;
-            changes.push({ entity: "scene", action: "create", data: { ...aiEditScene } });
-          }
+            }
+          });
         }
         const title = `Generated map: ${name}`;
         const proposalId = await context.createProposal({
@@ -10432,7 +10500,6 @@ function createAiThreadTools(): AiToolDefinition[] {
           title,
           changeCount: changes.length,
           assetId: generated.asset.id,
-          aiEditSceneId,
           sceneId: scene?.id,
           provider: generated.provider,
           model: generated.model,
@@ -10443,13 +10510,15 @@ function createAiThreadTools(): AiToolDefinition[] {
     {
       name: "generate_token_asset",
       description: "Generate token art and draft a pending proposal to add it to the asset library and optionally attach it to an existing token.",
-      requiredPermissions: ["ai.proposeChanges", "scene.create", "token.update"],
+      requiredPermissions: ["ai.proposeChanges", "token.update"],
       parameters: {
         type: "object",
         properties: {
           prompt: { type: "string", description: "Visual prompt for the generated token art." },
           name: { type: "string", description: "Asset and proposal display name." },
           tokenId: { type: "string", description: "Optional token id to receive this generated art." },
+          reuseKey: { type: "string", description: "Optional stable creature or character art reuse key. Matching generated token art is reused before creating new art." },
+          reuseExisting: { type: "boolean", description: "When false, always generate new art even if reusable art exists." },
           size: { type: "string", description: "Requested output size.", enum: ["auto", "1024x1024", "2048x2048"] },
           quality: { type: "string", description: "Requested render quality.", enum: ["auto", "low", "medium", "high"] },
           outputFormat: { type: "string", description: "Requested raster output format.", enum: ["png", "jpeg", "webp"] }
@@ -10464,13 +10533,38 @@ function createAiThreadTools(): AiToolDefinition[] {
         const tokenId = stringFromRecord(request, "tokenId");
         const token = tokenId ? tokenForCampaign(context, tokenId) : undefined;
         if (tokenId && !token) return toolError("not_found", { entity: "token", id: tokenId });
+        const actor = token?.actorId ? context.state.actors.find((item) => item.id === token.actorId && item.campaignId === context.campaignId) : undefined;
         const name = stringFromRecord(request, "name") ?? `${token?.name ?? "AI"} Generated Token`;
+        const reuseKey = tokenArtReuseKeyForRequest(request, token, actor);
+        const reuseExisting = booleanFromRecord(request, "reuseExisting") ?? true;
+        const reusedAsset = reuseExisting && reuseKey ? reusableTokenArtAsset(context, reuseKey) : undefined;
+        if (reusedAsset) {
+          const changes: ProposalChange[] = [];
+          if (token) changes.push({ entity: "token", action: "update", id: token.id, data: { imageAssetId: reusedAsset.id } });
+          if (actor) changes.push({ entity: "actor", action: "update", id: actor.id, data: { imageAssetId: reusedAsset.id } });
+          if (changes.length === 0) return toolError("invalid_tool_input", { message: "tokenId is required when reusing token art." });
+          const title = `Reuse token art: ${name}`;
+          const proposalId = await context.createProposal({
+            title,
+            summary: `Reuse stored generated token art ${reusedAsset.name}.`,
+            changes
+          });
+          return {
+            proposalId,
+            title,
+            changeCount: changes.length,
+            assetId: reusedAsset.id,
+            reusedAssetId: reusedAsset.id,
+            tokenId: token?.id,
+            actorId: actor?.id
+          };
+        }
         const generated = await context.generateImageAsset({
           kind: "token",
           prompt,
           name,
-          folder: "tokens/generated",
-          tags: ["ai", "generated", "token"],
+          folder: actor && actorIsAdversary(actor, token) ? "tokens/adversaries" : "tokens/generated",
+          tags: tokenArtAssetTags(actor, token, reuseKey),
           size: enumStringFromRecord(request, "size", ["auto", "1024x1024", "2048x2048"]),
           quality: enumStringFromRecord(request, "quality", ["auto", "low", "medium", "high"]),
           outputFormat: enumStringFromRecord(request, "outputFormat", ["png", "jpeg", "webp"])
@@ -10486,6 +10580,14 @@ function createAiThreadTools(): AiToolDefinition[] {
             data: { imageAssetId: generated.asset.id }
           });
         }
+        if (actor) {
+          changes.push({
+            entity: "actor",
+            action: "update",
+            id: actor.id,
+            data: { imageAssetId: generated.asset.id }
+          });
+        }
         const title = `Generated token: ${name}`;
         const proposalId = await context.createProposal({
           title,
@@ -10498,6 +10600,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           changeCount: changes.length,
           assetId: generated.asset.id,
           tokenId: token?.id,
+          actorId: actor?.id,
           provider: generated.provider,
           model: generated.model,
           revisedPrompt: generated.revisedPrompt
@@ -12121,7 +12224,7 @@ interface SystemRollEffectOptions {
 
 type SystemRollEffectApplication = { data: Record<string, unknown>; effect: SystemRollEffectResult; effects?: SystemRollEffectResult[] } | { error: string; message: string };
 
-function createAiToolContext(store: StateStore, campaignId: string, userId: string, permissions: PermissionName[], runtime: AiToolRuntime): AiToolContext {
+function createAiToolContext(store: StateStore, campaignId: string, userId: string, permissions: PermissionName[], runtime: AiToolRuntime, signal?: AbortSignal): AiToolContext {
   const createAiProposal: AiToolContext["createProposal"] = async ({ title, summary, changes }) => {
     const proposal: Proposal = createTimestamped("prop", {
       campaignId,
@@ -12146,6 +12249,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
     userId,
     permissions,
     state: store.state,
+    signal,
     createProposal: createAiProposal,
     listProposals: async ({ status, limit }) => ({
       status,
@@ -12241,7 +12345,8 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         quality,
         outputFormat,
         campaignId,
-        userId
+        userId,
+        signal
       });
       if (generated.body.length === 0) return { error: "image_generation_failed", message: "Generated image body was empty." };
       const rasterMimeType = rasterMimeTypeForGeneratedImage(generated.body);
@@ -13322,6 +13427,12 @@ function aiToolPermissionSafe(tool: AiToolDefinition): boolean {
 }
 
 async function executeAiTool(tools: AiToolDefinition[], toolName: string, input: unknown, context: AiToolContext): Promise<AiToolExecutionResult> {
+  if (context.signal?.aborted) {
+    return failedToolOutput({
+      error: "tool_cancelled",
+      message: "Agent turn stopped by the user."
+    });
+  }
   const tool = tools.find((item) => item.name === toolName);
   if (!tool) return failedToolOutput({ error: "unknown_tool", toolName });
 
@@ -13350,6 +13461,12 @@ async function executeAiTool(tools: AiToolDefinition[], toolName: string, input:
 
   try {
     const output = await tool.execute(input, context);
+    if (context.signal?.aborted) {
+      return failedToolOutput({
+        error: "tool_cancelled",
+        message: "Agent turn stopped by the user."
+      });
+    }
     return {
       output,
       failed: isToolErrorOutput(output)
@@ -21533,6 +21650,54 @@ function gridlessMapGenerationPrompt(prompt: string): string {
 function normalizeAssetTags(value: unknown): string[] {
   const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
   return [...new Set(values.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean).map((item) => item.slice(0, 40)))].slice(0, 12);
+}
+
+function tokenArtReuseKeyForRequest(request: Record<string, unknown>, token: Token | undefined, actor: Actor | undefined): string | undefined {
+  const explicit = normalizeTokenArtReuseKey(stringFromRecord(request, "reuseKey"));
+  if (explicit) return explicit;
+  if (actor?.type === "monster") return normalizeTokenArtReuseKey(actor.name.replace(/\s+\d+$/, ""));
+  if (token?.disposition === "hostile") return normalizeTokenArtReuseKey(token.name.replace(/\s+\d+$/, ""));
+  return actor ? normalizeTokenArtReuseKey(actor.id) : undefined;
+}
+
+function normalizeTokenArtReuseKey(value: string | undefined): string | undefined {
+  const normalized = value
+    ?.trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 34);
+  return normalized || undefined;
+}
+
+function reusableTokenArtAsset(context: AiToolContext, reuseKey: string): MapAsset | undefined {
+  const tag = `reuse:${reuseKey}`;
+  return context.state.assets
+    .filter((asset) => asset.campaignId === context.campaignId)
+    .filter((asset) => asset.mimeType.startsWith("image/"))
+    .filter((asset) => asset.lifecycle?.status !== "deleted")
+    .filter((asset) => asset.tags?.includes(tag))
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0];
+}
+
+function tokenArtAssetTags(actor: Actor | undefined, token: Token | undefined, reuseKey: string | undefined): string[] {
+  const tags = ["ai", "generated", "token", actor && actorIsAdversary(actor, token) ? "adversary" : "character"];
+  if (reuseKey) tags.push(`reuse:${reuseKey}`);
+  return normalizeAssetTags(tags);
+}
+
+function rosterActorArtPrompt(actor: Actor, adversary: boolean): string {
+  return [
+    `${actor.name}, ${adversary ? "adversary creature" : actor.type || "tabletop character"} token portrait.`,
+    "Create a centered virtual tabletop token/portrait asset with a clean silhouette, no text, no UI, and no background grid."
+  ].join("\n");
+}
+
+function actorIsAdversary(actor: Actor, token: Token | undefined): boolean {
+  const type = actor.type.toLowerCase();
+  if (type === "monster" || type === "adversary" || type === "enemy") return true;
+  const role = stringFromRecord(actor.data, "role")?.toLowerCase() ?? stringFromRecord(actor.data, "category")?.toLowerCase();
+  return role === "adversary" || role === "enemy" || role === "monster" || token?.disposition === "hostile";
 }
 
 const assetSecurityScanner = "builtin-asset-scanner";
