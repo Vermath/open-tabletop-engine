@@ -21649,6 +21649,90 @@ registerCommand("/state", (input) => {
     }
   });
 
+  it("filters default ai memory extraction source text by caller permissions", async () => {
+    class PromptCaptureProvider implements AiProvider {
+      id = "prompt-capture-ai";
+      label = "Prompt Capture AI";
+      prompts: string[] = [];
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.prompts.push(input.messages.map((message) => message.content).join("\n"));
+        yield { type: "message.completed", content: "Extracted visible memory only." };
+      }
+    }
+
+    const now = "2026-05-01T00:00:00.000Z";
+    const store = new MemoryStateStore();
+    store.state.users.push({ id: "usr_player", displayName: "Player", createdAt: now, updatedAt: now });
+    store.state.members.push({ id: "mem_player", campaignId: "camp_demo", userId: "usr_player", role: "player", createdAt: now, updatedAt: now });
+    store.state.permissionGrants.push(
+      createTimestamped("grant", { subjectType: "user", subjectId: "usr_player", campaignId: "camp_demo", permissions: ["ai.proposeChanges"] })
+    );
+    store.state.journals.push(
+      createTimestamped("jrn", {
+        campaignId: "camp_demo",
+        title: "Private GM Journal",
+        body: "GM_JOURNAL_SECRET",
+        visibility: "gm_only",
+        visibleToUserIds: []
+      }),
+      createTimestamped("jrn", {
+        campaignId: "camp_demo",
+        title: "Public Journal",
+        body: "PLAYER_VISIBLE_JOURNAL",
+        visibility: "public",
+        visibleToUserIds: []
+      })
+    );
+    store.state.chat.push(
+      createTimestamped("msg", {
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        body: "GM_CHAT_SECRET",
+        type: "message",
+        visibility: "gm_only",
+        recipientUserIds: []
+      }),
+      createTimestamped("msg", {
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        body: "WHISPER_SECRET_TO_GM",
+        type: "whisper",
+        visibility: "whisper",
+        recipientUserIds: ["usr_demo_gm"]
+      }),
+      createTimestamped("msg", {
+        campaignId: "camp_demo",
+        userId: "usr_player",
+        body: "PLAYER_VISIBLE_CHAT",
+        type: "message",
+        visibility: "public",
+        recipientUserIds: []
+      })
+    );
+
+    const provider = new PromptCaptureProvider();
+    const app = await buildApp({ store, aiProvider: provider });
+    try {
+      const extracted = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/memory/extract",
+        headers: { "x-user-id": "usr_player" },
+        payload: {}
+      });
+      expect(extracted.statusCode).toBe(200);
+      expect(provider.prompts).toHaveLength(1);
+      const prompt = provider.prompts[0] ?? "";
+      expect(prompt).toContain("PLAYER_VISIBLE_JOURNAL");
+      expect(prompt).toContain("PLAYER_VISIBLE_CHAT");
+      expect(prompt).not.toContain("GM_JOURNAL_SECRET");
+      expect(prompt).not.toContain("GM_CHAT_SECRET");
+      expect(prompt).not.toContain("WHISPER_SECRET_TO_GM");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("rejects direct OpenAI API-key provider configuration", async () => {
     const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OPENAI_API_KEY", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_ADMIN_USER_IDS"]);
     process.env.OTTE_AI_PROVIDER = "openai-responses";

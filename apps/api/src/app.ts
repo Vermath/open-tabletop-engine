@@ -5396,7 +5396,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const sourceText = request.body.sourceText?.trim() || defaultMemoryExtractionSource(store, request.params.campaignId);
+    const sourceText = request.body.sourceText?.trim() || defaultMemoryExtractionSource(store, request.params.campaignId, userId);
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const permissions = permissionsForUser(store, userId, request.params.campaignId);
@@ -8948,13 +8948,15 @@ function roundCurrency(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
 
-function defaultMemoryExtractionSource(store: StateStore, campaignId: string): string {
+function defaultMemoryExtractionSource(store: StateStore, campaignId: string, userId: string): string {
+  const canReadSecretJournal = canCampaign(store, userId, campaignId, "journal.readSecret");
   const chat = store.state.chat
-    .filter((message) => message.campaignId === campaignId)
+    .filter((message) => message.campaignId === campaignId && canReadChatMessage(store, userId, message))
     .slice(-8)
     .map((message) => `${message.type}: ${message.body}`);
   const journals = store.state.journals
     .filter((journal) => journal.campaignId === campaignId)
+    .filter((journal) => journal.visibility === "public" || canReadSecretJournal || journal.visibleToUserIds.includes(userId))
     .slice(-4)
     .map((journal) => `${journal.title}: ${journal.body}`);
   const source = [...journals, ...chat].join("\n").trim();
