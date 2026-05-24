@@ -5308,8 +5308,8 @@ const tokenLayers: Array<{ id: TokenLayer; label: string; description: string }>
   { id: "gm", label: "GM Info Overlay", description: "GM-only tokens and notes hidden from players." }
 ];
 const tokenLayerRanks: Record<TokenLayer, number> = { map: 0, player: 1, gm: 2 };
-const tokenVisualScale = 0.78;
-const largeTokenVisualScale = 0.9;
+const tokenVisualScale = 0.92;
+const largeTokenVisualScale = 0.96;
 const battleMapZoomMin = 0.5;
 const battleMapZoomMax = 2;
 const battleMapZoomStep = 0.25;

@@ -28,4 +28,10 @@ describe("actor panel layout", () => {
     expect(appSource).toContain("Agent turn stopped.");
     expect(appSource).not.toContain('aria-label="AI edit layer controls"');
   });
+
+  it("keeps board tokens readable inside a full grid square", () => {
+    expect(appSource).toContain("const tokenVisualScale = 0.92;");
+    expect(appSource).toContain("const largeTokenVisualScale = 0.96;");
+    expect(appSource).toContain("tokenCoordinatesFromCenter");
+  });
 });

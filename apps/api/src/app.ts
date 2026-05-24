@@ -7595,6 +7595,7 @@ function agentMessagesForRequest(prompt: string, body: AgentThreadBody | undefin
         "Do not put adversaries in the party. Actors created from encounter threats, monster stat blocks, or hostile tokens are adversaries and should remain separate from player characters and friendly NPCs.",
         "Apply visual scene edits to the active scene or explicitly requested target scene. Do not create lingering AI edit scenes or ai/edits folders for new work.",
         "Place generated assets on the correct surface: maps are scene backgrounds or map-layer art, characters and creatures are token/portrait assets on player or GM token layers, and annotations stay in their matching annotation layer.",
+        "For creature and character tokens, use a 1x1 grid footprint unless a larger creature size is explicitly needed, and place tokens at grid-cell centers so they sit cleanly inside squares.",
         "When generating token art, reuse existing generated token art for repeated enemies when the same creature or reuse key is appropriate.",
         "When creating fresh player characters, NPCs, or adversaries, generate stored token/portrait art for them and reference the stored asset from the actor and token proposal.",
         "For many high-quality art assets, prefer parallel independent image-generation tool calls with one clear prompt per asset, then assemble the proposal after the assets exist.",
@@ -9658,6 +9659,71 @@ function findAiEditSceneForTarget(state: EngineState, campaignId: string, target
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0];
 }
 
+function gridSizeForScene(scene: Pick<Scene, "gridSize">): number {
+  return Math.max(1, Math.round(scene.gridSize) || 1);
+}
+
+function agentTokenDimensionFromRecord(input: Record<string, unknown>, key: "width" | "height", scene: Pick<Scene, "width" | "height" | "gridSize">): number {
+  const gridSize = gridSizeForScene(scene);
+  const max = key === "width" ? scene.width : scene.height;
+  const value = input[key];
+  if (typeof value !== "number" || !Number.isFinite(value)) return Math.min(max, gridSize);
+  if (value > 0 && value <= 8) return Math.min(max, Math.max(gridSize, Math.round(value * gridSize)));
+  if (value > 0 && value < gridSize / 2) return Math.min(max, gridSize);
+  return Math.min(max, Math.max(1, Math.round(value)));
+}
+
+function snapTokenTopLeftAxisToGrid(position: number, size: number, sceneSize: number, gridSize: number): number {
+  const safeSize = Math.max(1, Math.round(size) || 1);
+  const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
+  const maxPosition = Math.max(0, sceneSize - safeSize);
+  const gridCells = Math.max(1, Math.round(safeSize / safeGridSize));
+  const isGridSized = Math.abs(safeSize - gridCells * safeGridSize) <= 1;
+  if (isGridSized) return clampNumber(Math.round(position / safeGridSize) * safeGridSize, 0, maxPosition) ?? 0;
+  const center = position + safeSize / 2;
+  const firstCenter = safeSize / 2;
+  const lastCenter = Math.max(firstCenter, sceneSize - safeSize / 2);
+  const snappedCenter = snapTokenCenterAxisToGrid(center, safeSize, sceneSize, safeGridSize);
+  return Math.round((clampNumber(snappedCenter, firstCenter, lastCenter) ?? firstCenter) - safeSize / 2);
+}
+
+function snapTokenCenterAxisToGrid(center: number, size: number, sceneSize: number, gridSize: number): number {
+  const safeSize = Math.max(1, Math.round(size) || 1);
+  const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
+  const firstCenter = safeSize / 2;
+  const lastCenter = Math.max(firstCenter, sceneSize - safeSize / 2);
+  const snappedCenter = Math.round((center - safeGridSize / 2) / safeGridSize) * safeGridSize + safeGridSize / 2;
+  return clampNumber(snappedCenter, firstCenter, lastCenter) ?? firstCenter;
+}
+
+function tokenCoordinatesFromGridCenter(scene: Pick<Scene, "width" | "height" | "gridSize">, width: number, height: number, centerX: number, centerY: number): Pick<Token, "x" | "y"> {
+  const gridSize = gridSizeForScene(scene);
+  return {
+    x: Math.round(snapTokenCenterAxisToGrid(centerX, width, scene.width, gridSize) - width / 2),
+    y: Math.round(snapTokenCenterAxisToGrid(centerY, height, scene.height, gridSize) - height / 2)
+  };
+}
+
+function tokenCoordinatesFromGridTopLeft(scene: Pick<Scene, "width" | "height" | "gridSize">, width: number, height: number, x: number, y: number): Pick<Token, "x" | "y"> {
+  const gridSize = gridSizeForScene(scene);
+  return {
+    x: snapTokenTopLeftAxisToGrid(x, width, scene.width, gridSize),
+    y: snapTokenTopLeftAxisToGrid(y, height, scene.height, gridSize)
+  };
+}
+
+function rosterFallbackTokenCenter(scene: Pick<Scene, "width" | "height" | "gridSize">, index: number, adversary: boolean): VisionPoint {
+  const gridSize = gridSizeForScene(scene);
+  const columnCount = Math.max(1, Math.floor(scene.width / gridSize));
+  const rowCount = Math.max(1, Math.floor(scene.height / gridSize));
+  const column = Math.min(columnCount - 1, Math.max(0, index + 1));
+  const row = Math.min(rowCount - 1, adversary ? 3 : 1);
+  return {
+    x: column * gridSize + gridSize / 2,
+    y: row * gridSize + gridSize / 2
+  };
+}
+
 async function draftActorTokenRosterChanges(context: AiToolContext, request: Record<string, unknown>): Promise<{ title: string; summary: string; changes: ProposalChange[]; sceneId: string; actorCount: number; tokenCount: number; itemCount: number } | ToolErrorOutput> {
   const actorInputs = Array.isArray(request.actors) ? request.actors.filter(isRecord) : [];
   if (actorInputs.length === 0) return toolError("invalid_tool_input", { message: "actors must include at least one actor." });
@@ -9762,14 +9828,20 @@ async function draftActorTokenRosterChanges(context: AiToolContext, request: Rec
     const tokenInput = recordFromRecord(actorInput, "token") ?? (adversary ? {} : undefined);
     if (tokenInput) {
       const disposition = (enumStringFromRecord(tokenInput, "disposition", ["friendly", "neutral", "hostile"]) ?? (adversary ? "hostile" : "friendly")) as Token["disposition"];
+      const tokenWidth = agentTokenDimensionFromRecord(tokenInput, "width", targetScene);
+      const tokenHeight = agentTokenDimensionFromRecord(tokenInput, "height", targetScene);
+      const fallbackCenter = rosterFallbackTokenCenter(targetScene, index, adversary);
+      const tokenCenterX = numberFromRecord(tokenInput, "centerX", 0, targetScene.width) ?? numberFromRecord(tokenInput, "x", 0, targetScene.width) ?? fallbackCenter.x;
+      const tokenCenterY = numberFromRecord(tokenInput, "centerY", 0, targetScene.height) ?? numberFromRecord(tokenInput, "y", 0, targetScene.height) ?? fallbackCenter.y;
+      const tokenPosition = tokenCoordinatesFromGridCenter(targetScene, tokenWidth, tokenHeight, tokenCenterX, tokenCenterY);
       const token = createTimestamped("tok", {
         sceneId: targetScene.id,
         actorId: actor.id,
         name: stringFromRecord(tokenInput, "name") ?? actor.name,
-        x: numberFromRecord(tokenInput, "x", 0, targetScene.width) ?? Math.min(targetScene.width - targetScene.gridSize, targetScene.gridSize * (index + 1)),
-        y: numberFromRecord(tokenInput, "y", 0, targetScene.height) ?? (adversary ? Math.min(targetScene.height - targetScene.gridSize, targetScene.gridSize * 3) : targetScene.gridSize),
-        width: numberFromRecord(tokenInput, "width", 10, targetScene.width) ?? targetScene.gridSize,
-        height: numberFromRecord(tokenInput, "height", 10, targetScene.height) ?? targetScene.gridSize,
+        x: tokenPosition.x,
+        y: tokenPosition.y,
+        width: tokenWidth,
+        height: tokenHeight,
         rotation: numberFromRecord(tokenInput, "rotation", 0, 360) ?? 0,
         layer: (enumStringFromRecord(tokenInput, "layer", ["map", "player", "gm"]) ?? "player") as TokenLayer,
         hidden: booleanFromRecord(tokenInput, "hidden") ?? false,
@@ -10409,7 +10481,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           generateArt: { type: "boolean", description: "When true, generate stored token/portrait art for new roster actors unless reusable art is found." },
           artQuality: { type: "string", description: "Requested roster art render quality.", enum: ["auto", "low", "medium", "high"] },
           artOutputFormat: { type: "string", description: "Requested roster art raster output format.", enum: ["png", "jpeg", "webp"] },
-          actors: { type: "array", description: "Actors to create. Each actor may include ref, name, systemId, templateId, threatId, data, type, ownerUserId, and optional token settings.", items: { type: "object", additionalProperties: true } }
+          actors: { type: "array", description: "Actors to create. Each actor may include ref, name, systemId, templateId, threatId, data, type, ownerUserId, and optional token settings. Token x/y or centerX/centerY are interpreted as desired grid-cell centers; token width/height values 1-8 are interpreted as grid-cell footprints.", items: { type: "object", additionalProperties: true } }
         },
         required: ["actors"],
         additionalProperties: false
@@ -12233,7 +12305,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       title,
       summary,
       status: "pending" as const,
-      changesJson: normalizeProposalChanges(changes, campaignId, userId),
+      changesJson: normalizeProposalChanges(changes, campaignId, userId, store.state),
       diffJson: {
         source: "ai_tool"
       },
@@ -12269,7 +12341,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
       if (!proposal) return toolError("not_found", { entity: "proposal", id: proposalId });
       if (proposal.status !== "pending") return toolError("proposal_not_pending", { proposalId, status: proposal.status });
-      const nextChanges = changes ? normalizeProposalChanges(changes, campaignId, userId) : proposal.changesJson;
+      const nextChanges = changes ? normalizeProposalChanges(changes, campaignId, userId, store.state) : proposal.changesJson;
       const preparedChanges = prepareProposalChanges(store, campaignId, userId, nextChanges, { currentProposalId: proposal.id });
       if ("error" in preparedChanges) return toolError(preparedChanges.error, { message: preparedChanges.message });
       const missingPermission = missingProposalChangePermission(preparedChanges.changes, permissions);
@@ -13073,7 +13145,7 @@ function prepareProposalChanges(
     if (!change) return { error: "invalid_proposal_change", message: `Proposal change ${index + 1} is invalid` };
     changes.push(change);
   }
-  const normalizedChanges = normalizeProposalChanges(changes, campaignId, userId);
+  const normalizedChanges = normalizeProposalChanges(changes, campaignId, userId, store.state);
   const createdSceneIds = new Set(
     normalizedChanges
       .filter((change) => change.entity === "scene" && change.action === "create")
@@ -13221,12 +13293,13 @@ function campaignIdForProposalEntity(store: StateStore, entity: ProposalChange["
   }
 }
 
-function normalizeProposalChanges(changes: ProposalChange[], campaignId: string, userId: string): ProposalChange[] {
+function normalizeProposalChanges(changes: ProposalChange[], campaignId: string, userId: string, state?: EngineState): ProposalChange[] {
   return changes.map((change) => {
-    if (change.action !== "create") return change;
     const data = {
       ...change.data
     };
+    if (change.entity === "token" && change.action === "create") normalizeProposalTokenCreateData(data, state);
+    if (change.action !== "create") return { ...change, data };
     if (typeof data.id !== "string") data.id = createId(prefixForProposalEntity(change.entity));
     if (change.entity !== "token" && typeof data.campaignId !== "string") data.campaignId = campaignId;
     if (typeof data.createdAt !== "string") data.createdAt = nowIso();
@@ -13256,6 +13329,40 @@ function normalizeProposalChanges(changes: ProposalChange[], campaignId: string,
       data
     };
   });
+}
+
+function normalizeProposalTokenCreateData(data: Record<string, unknown>, state: EngineState | undefined): void {
+  const sceneId = stringFromRecord(data, "sceneId");
+  const scene = sceneId && state ? state.scenes.find((item) => item.id === sceneId) : undefined;
+  if (!scene) return;
+  const width = normalizeProposalTokenDimension(data.width, scene.width, scene.gridSize);
+  const height = normalizeProposalTokenDimension(data.height, scene.height, scene.gridSize);
+  const x = typeof data.x === "number" && Number.isFinite(data.x) ? data.x : scene.gridSize;
+  const y = typeof data.y === "number" && Number.isFinite(data.y) ? data.y : scene.gridSize;
+  const position = tokenCoordinatesFromGridTopLeft(scene, width, height, x, y);
+  data.x = position.x;
+  data.y = position.y;
+  data.width = width;
+  data.height = height;
+  if (typeof data.rotation !== "number" || !Number.isFinite(data.rotation)) data.rotation = 0;
+  if (data.layer !== "map" && data.layer !== "player" && data.layer !== "gm") data.layer = "player";
+  if (typeof data.hidden !== "boolean") data.hidden = false;
+  if (typeof data.locked !== "boolean") data.locked = false;
+  if (typeof data.visionEnabled !== "boolean") data.visionEnabled = true;
+  if (typeof data.visionRadius !== "number" || !Number.isFinite(data.visionRadius)) data.visionRadius = 160;
+  if (data.disposition !== "friendly" && data.disposition !== "neutral" && data.disposition !== "hostile") data.disposition = "neutral";
+  if (!Array.isArray(data.conditions)) data.conditions = [];
+  if (!Array.isArray(data.auras)) data.auras = [];
+  if (!Array.isArray(data.targetedByUserIds)) data.targetedByUserIds = [];
+  if (!isRecord(data.metadata)) data.metadata = { source: "ai_tool" };
+}
+
+function normalizeProposalTokenDimension(value: unknown, sceneAxisSize: number, gridSize: number): number {
+  const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
+  if (typeof value !== "number" || !Number.isFinite(value)) return Math.min(sceneAxisSize, safeGridSize);
+  if (value > 0 && value <= 8) return Math.min(sceneAxisSize, Math.max(safeGridSize, Math.round(value * safeGridSize)));
+  if (value > 0 && value < safeGridSize / 2) return Math.min(sceneAxisSize, safeGridSize);
+  return Math.min(sceneAxisSize, Math.max(1, Math.round(value)));
 }
 
 function proposalToolSummary(proposal: Proposal): Record<string, unknown> {

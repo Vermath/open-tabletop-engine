@@ -22201,10 +22201,10 @@ registerCommand("/state", (input) => {
             summary: "Four level 1 characters with linked tokens plus four goblin actors.",
             sceneId: "scn_vault_entry",
             actors: [
-              { ref: "pc_fighter", name: "Aria Vale", systemId: "dnd-5e-srd", templateId: "fighter", token: { x: 100, y: 100, disposition: "friendly" } },
-              { ref: "pc_cleric", name: "Bram Lightward", systemId: "dnd-5e-srd", templateId: "cleric", token: { x: 170, y: 100, disposition: "friendly" } },
-              { ref: "pc_wizard", name: "Cora Ashglass", systemId: "dnd-5e-srd", templateId: "wizard", token: { x: 240, y: 100, disposition: "friendly" } },
-              { ref: "pc_rogue", name: "Dane Quickstep", systemId: "dnd-5e-srd", templateId: "rogue", token: { x: 310, y: 100, disposition: "friendly" } },
+              { ref: "pc_fighter", name: "Aria Vale", systemId: "dnd-5e-srd", templateId: "fighter", token: { x: 100, y: 100, width: 1, height: 1, disposition: "friendly" } },
+              { ref: "pc_cleric", name: "Bram Lightward", systemId: "dnd-5e-srd", templateId: "cleric", token: { x: 170, y: 100, width: 1, height: 1, disposition: "friendly" } },
+              { ref: "pc_wizard", name: "Cora Ashglass", systemId: "dnd-5e-srd", templateId: "wizard", token: { x: 240, y: 100, width: 1, height: 1, disposition: "friendly" } },
+              { ref: "pc_rogue", name: "Dane Quickstep", systemId: "dnd-5e-srd", templateId: "rogue", token: { x: 310, y: 100, width: 1, height: 1, disposition: "friendly" } },
               { ref: "goblin_1", name: "Goblin Skirmisher 1", systemId: "dnd-5e-srd", threatId: "goblin-warrior" },
               { ref: "goblin_2", name: "Goblin Skirmisher 2", systemId: "dnd-5e-srd", threatId: "goblin-warrior" },
               { ref: "goblin_3", name: "Goblin Skirmisher 3", systemId: "dnd-5e-srd", threatId: "goblin-warrior" },
@@ -22260,6 +22260,11 @@ registerCommand("/state", (input) => {
     expect(tokenCreates).toHaveLength(8);
     expect(tokenCreates.map((change) => change.data.actorId)).toEqual(actorCreates.map((change) => change.data.id));
     expect(tokenCreates.every((change) => change.data.sceneId === "scn_vault_entry")).toBe(true);
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const tokenCreateData = tokenCreates.map((change) => change.data as Partial<Token>);
+    expect(tokenCreateData.every((token) => token.width === scene.gridSize && token.height === scene.gridSize)).toBe(true);
+    expect(tokenCreateData.every((token) => ((token.x ?? 0) + (token.width ?? 0) / 2 - scene.gridSize / 2) % scene.gridSize === 0)).toBe(true);
+    expect(tokenCreateData.every((token) => ((token.y ?? 0) + (token.height ?? 0) / 2 - scene.gridSize / 2) % scene.gridSize === 0)).toBe(true);
     expect(tokenCreates.slice(0, 4).every((change) => change.data.layer === "player" && change.data.disposition === "friendly")).toBe(true);
     expect(tokenCreates.slice(4).every((change) => change.data.layer === "player" && change.data.disposition === "hostile")).toBe(true);
     expect(assetCreates).toHaveLength(5);
@@ -22268,6 +22273,66 @@ registerCommand("/state", (input) => {
     expect(new Set(tokenCreates.slice(4).map((change) => change.data.imageAssetId)).size).toBe(1);
     expect(itemCreates.length).toBeGreaterThan(0);
     expect(response.json().events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "proposal.created", proposalId: rosterProposal.id })]));
+    await app.close();
+  });
+
+  it("normalizes generic ai token proposals to full grid-cell footprints", async () => {
+    class TinyTokenProposalProvider implements AiProvider {
+      id = "tiny-token-ai";
+      label = "Tiny Token AI";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield {
+          type: "tool.started",
+          toolName: "create_proposal",
+          input: {
+            title: "Tiny token regression",
+            summary: "Create a token from model cell-sized dimensions.",
+            changes: [
+              {
+                entity: "token",
+                action: "create",
+                data: {
+                  sceneId: "scn_vault_entry",
+                  name: "Cell Sized Goblin",
+                  x: 123,
+                  y: 126,
+                  width: 1,
+                  height: 1,
+                  disposition: "hostile"
+                }
+              }
+            ]
+          }
+        };
+        yield { type: "message.completed", content: "Drafted token proposal" };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new TinyTokenProposalProvider() });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Create a goblin token.", surface: "agent_panel", selectedSceneId: "scn_vault_entry" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const proposal = store.state.proposals.find((item) => item.title === "Tiny token regression")!;
+    const tokenCreate = proposal.changesJson.find((change) => change.entity === "token" && change.action === "create")!;
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    expect(tokenCreate.data).toEqual(
+      expect.objectContaining({
+        sceneId: scene.id,
+        width: scene.gridSize,
+        height: scene.gridSize,
+        x: 100,
+        y: 150,
+        layer: "player",
+        disposition: "hostile"
+      })
+    );
     await app.close();
   });
 
