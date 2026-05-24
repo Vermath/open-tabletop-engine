@@ -7195,6 +7195,7 @@ function createConfiguredAiProvider(): AiProvider {
         model: process.env.OTTE_CODEX_MODEL,
         modelProvider: process.env.OTTE_CODEX_MODEL_PROVIDER,
         reasoningEffort: agentReasoningEffort(),
+        loginType: codexAppServerLoginType(),
         requestTimeoutMs: providerTimeoutMs,
         turnTimeoutMs: providerTimeoutMs === undefined ? undefined : Math.max(providerTimeoutMs, 180_000),
         autoStart: codexAppServerAutoStartEnabled(),
@@ -7223,6 +7224,7 @@ function createConfiguredImageAssetGenerator(): ImageAssetGenerator {
       cwd: process.env.OTTE_CODEX_APP_SERVER_CWD,
       model: process.env.OTTE_CODEX_IMAGE_MODEL ?? process.env.OTTE_CODEX_MODEL,
       modelProvider: process.env.OTTE_CODEX_MODEL_PROVIDER,
+      loginType: codexAppServerLoginType(),
       requestTimeoutMs: timeoutMs,
       turnTimeoutMs: timeoutMs,
       autoStart: codexAppServerAutoStartEnabled(),
@@ -7259,6 +7261,17 @@ function codexAppServerAutoStartEnabled(): boolean {
   return process.env.NODE_ENV !== "test" && process.env.VITEST !== "true";
 }
 
+function codexAppServerLoginType(): "chatgpt" | "chatgptDeviceCode" {
+  const value = normalizedEnvValue(process.env.OTTE_CODEX_APP_SERVER_LOGIN_TYPE);
+  if (value === "chatgptdevicecode" || value === "chatgpt-device-code" || value === "devicecode" || value === "device-code") return "chatgptDeviceCode";
+  if (value === "chatgpt") return "chatgpt";
+  return isRailwayRuntime() ? "chatgptDeviceCode" : "chatgpt";
+}
+
+function isRailwayRuntime(): boolean {
+  return Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID || process.env.RAILWAY_SERVICE_ID);
+}
+
 class UnavailableAiProvider implements AiProvider {
   readonly id = "unavailable-ai-provider";
   readonly label = "Unavailable AI Provider";
@@ -7275,6 +7288,7 @@ interface CodexAppServerImageAssetGeneratorOptions {
   cwd?: string;
   model?: string;
   modelProvider?: string;
+  loginType?: "chatgpt" | "chatgptDeviceCode";
   requestTimeoutMs: number;
   turnTimeoutMs: number;
   autoStart?: boolean;
@@ -7292,6 +7306,7 @@ class CodexAppServerImageAssetGenerator implements ImageAssetGenerator {
       cwd: options.cwd,
       model: options.model,
       modelProvider: options.modelProvider,
+      loginType: options.loginType,
       requestTimeoutMs: options.requestTimeoutMs,
       turnTimeoutMs: options.turnTimeoutMs,
       autoStart: options.autoStart,

@@ -41,7 +41,11 @@ describe("CodexAppServerWebSocketTransport", () => {
       { command: "codex.cmd", shell: true },
       { command: "codex", shell: false }
     ]);
-    expect(codexAppServerCommandCandidates({ platform: "linux", env: {} })).toEqual([{ command: "codex", shell: false }]);
+    expect(codexAppServerCommandCandidates({ platform: "linux", cwd: "/app", env: {} })).toEqual([
+      { command: "/app/apps/api/node_modules/.bin/codex", shell: false },
+      { command: "/app/node_modules/.bin/codex", shell: false },
+      { command: "codex", shell: false }
+    ]);
     expect(codexAppServerCommandCandidates({ command: "C:\\Tools\\codex.cmd", platform: "win32", env: {} })).toEqual([{ command: "C:\\Tools\\codex.cmd", shell: true }]);
   });
 
@@ -91,7 +95,7 @@ describe("CodexAppServerWebSocketTransport", () => {
     });
   });
 
-  it("requires ChatGPT auth when Codex has no account", async () => {
+  it("starts the managed ChatGPT login flow when Codex has no account", async () => {
     let socket: FakeCodexSocket | undefined;
     const provider = new CodexAppServerProvider({
       transport: new CodexAppServerWebSocketTransport({
@@ -112,10 +116,45 @@ describe("CodexAppServerWebSocketTransport", () => {
     }).rejects.toMatchObject({
       code: "codex_auth_required",
       login: {
-        type: "chatgpt"
+        type: "chatgpt",
+        loginId: "login_test",
+        authUrl: "https://chatgpt.test/oauth"
       }
     } satisfies Partial<CodexAppServerAuthRequiredError>);
     expect(socket?.sent.find((message) => message.method === "account/read")).toBeTruthy();
+    expect(socket?.sent.find((message) => message.method === "account/login/start")?.params).toEqual({ type: "chatgpt" });
+    expect(socket?.sent.some((message) => message.method === "thread/start")).toBe(false);
+  });
+
+  it("can request Codex device-code login for hosted app-server auth", async () => {
+    let socket: FakeCodexSocket | undefined;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 1000,
+        loginType: "chatgptDeviceCode",
+        webSocketFactory: () => {
+          socket = new FakeCodexSocket({ account: { authMode: null } });
+          return socket;
+        }
+      })
+    });
+
+    await expect(async () => {
+      for await (const _event of provider.stream(baseRequest)) {
+        // The hosted app-server should fail with a frontend-owned device-code login.
+      }
+    }).rejects.toMatchObject({
+      code: "codex_auth_required",
+      login: {
+        type: "chatgptDeviceCode",
+        loginId: "login_test",
+        verificationUrl: "https://auth.openai.test/codex/device",
+        userCode: "ABCD-1234"
+      }
+    } satisfies Partial<CodexAppServerAuthRequiredError>);
+    expect(socket?.sent.find((message) => message.method === "account/login/start")?.params).toEqual({ type: "chatgptDeviceCode" });
     expect(socket?.sent.some((message) => message.method === "thread/start")).toBe(false);
   });
 
@@ -234,6 +273,11 @@ class FakeCodexSocket {
       return;
     }
     if (message.method === "account/login/start") {
+      const params = message.params as { type?: string } | undefined;
+      if (params?.type === "chatgptDeviceCode") {
+        this.emitMessage({ id: message.id, result: { type: "chatgptDeviceCode", loginId: "login_test", verificationUrl: "https://auth.openai.test/codex/device", userCode: "ABCD-1234" } });
+        return;
+      }
       this.emitMessage({ id: message.id, result: { type: "chatgpt", loginId: "login_test", authUrl: "https://chatgpt.test/oauth" } });
       return;
     }

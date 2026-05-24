@@ -24,6 +24,7 @@
     "@open-tabletop/dice-engine": "workspace:*",
     "@open-tabletop/plugin-sdk": "workspace:*",
     "@open-tabletop/system-sdk": "workspace:*",
+    "@openai/codex": "^0.133.0",
     "fastify": "^5.1.0"
   },
   "devDependencies": {

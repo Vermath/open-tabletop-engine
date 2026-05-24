@@ -17,6 +17,7 @@ export interface CodexAppServerWebSocketTransportOptions {
   model?: string;
   modelProvider?: string;
   reasoningEffort?: AiReasoningEffort;
+  loginType?: CodexAppServerLoginType;
   serviceName?: string;
   requestTimeoutMs?: number;
   turnTimeoutMs?: number;
@@ -43,6 +44,7 @@ export interface CodexAppServerCommandCandidateOptions {
   command?: string;
   platform?: NodeJS.Platform;
   env?: Record<string, string | undefined>;
+  cwd?: string;
 }
 
 export interface CodexAppServerImageGenerationInput {
@@ -63,8 +65,10 @@ export interface CodexAppServerGeneratedImage {
   status?: string;
 }
 
+export type CodexAppServerLoginType = "chatgpt" | "chatgptDeviceCode";
+
 export interface CodexAppServerLoginStart {
-  type: "chatgpt" | "chatgptDeviceCode";
+  type: CodexAppServerLoginType;
   loginId?: string;
   authUrl?: string;
   verificationUrl?: string;
@@ -210,7 +214,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
         }
       });
       rpc.notify("initialized");
-      await ensureCodexAppServerAuthenticated(rpc);
+      await ensureCodexAppServerAuthenticated(rpc, this.options.loginType);
       const capabilities = await rpc.request<{ imageGeneration?: boolean }>("modelProvider/capabilities/read", {});
       if (capabilities.imageGeneration !== true) {
         throw new Error("Codex app-server does not report imageGeneration capability for the current account/model provider.");
@@ -269,7 +273,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
         }
       });
       rpc.notify("initialized");
-      await ensureCodexAppServerAuthenticated(rpc);
+      await ensureCodexAppServerAuthenticated(rpc, this.options.loginType);
       const thread = await rpc.request<{ thread: { id: string } }>("thread/start", {
         cwd: this.options.cwd ?? null,
         approvalPolicy: "never",
@@ -481,7 +485,7 @@ function readyzUrlForCodexListenUrl(listenUrl: string): string {
 export function codexAppServerCommandCandidates(options: CodexAppServerCommandCandidateOptions = {}): CodexAppServerCommandCandidate[] {
   const platform = options.platform ?? process.platform;
   const command = options.command?.trim();
-  if (platform !== "win32") return [{ command: command || "codex", shell: false }];
+  if (platform !== "win32") return codexAppServerPosixCommandCandidates(command, options.cwd ?? process.cwd());
   if (command && !isBareCodexCommand(command)) return [{ command, shell: usesWindowsShell(command) }];
 
   const candidates: CodexAppServerCommandCandidate[] = [];
@@ -492,6 +496,15 @@ export function codexAppServerCommandCandidates(options: CodexAppServerCommandCa
   candidates.push({ command: "codex.cmd", shell: true });
   candidates.push({ command: "codex", shell: false });
   return dedupeCodexCommandCandidates(candidates);
+}
+
+function codexAppServerPosixCommandCandidates(command: string | undefined, cwd: string): CodexAppServerCommandCandidate[] {
+  if (command && !isBareCodexCommand(command)) return [{ command, shell: false }];
+  return dedupeCodexCommandCandidates([
+    { command: `${cwd}/apps/api/node_modules/.bin/codex`, shell: false },
+    { command: `${cwd}/node_modules/.bin/codex`, shell: false },
+    { command: command || "codex", shell: false }
+  ]);
 }
 
 function isBareCodexCommand(command: string): boolean {
@@ -920,17 +933,34 @@ function normalizedTimeout(value: number | undefined, fallback: number): number 
   return Math.floor(value);
 }
 
-async function ensureCodexAppServerAuthenticated(rpc: CodexAccountRpc): Promise<void> {
+async function ensureCodexAppServerAuthenticated(rpc: CodexAccountRpc, loginType: CodexAppServerLoginType = "chatgpt"): Promise<void> {
   let account: unknown;
   try {
     account = await rpc.request("account/read", {});
   } catch (error) {
     if (isCodexMethodNotFoundError(error)) return;
     if (!isCodexAuthError(error)) throw error;
-    throw new CodexAppServerAuthRequiredError({ type: "chatgpt" });
+    throw new CodexAppServerAuthRequiredError(await requestCodexManagedLogin(rpc, loginType));
   }
   if (!codexAccountNeedsLogin(account)) return;
-  throw new CodexAppServerAuthRequiredError({ type: "chatgpt" });
+  throw new CodexAppServerAuthRequiredError(await requestCodexManagedLogin(rpc, loginType));
+}
+
+async function requestCodexManagedLogin(rpc: CodexAccountRpc, loginType: CodexAppServerLoginType): Promise<CodexAppServerLoginStart> {
+  const login = await rpc.request("account/login/start", { type: loginType });
+  return codexLoginStartFromResponse(login);
+}
+
+function codexLoginStartFromResponse(response: unknown): CodexAppServerLoginStart {
+  const record = isRecord(response) ? response : {};
+  const source = isRecord(record.login) ? record.login : record;
+  return {
+    type: source.type === "chatgptDeviceCode" ? "chatgptDeviceCode" : "chatgpt",
+    loginId: stringFromRecord(source, "loginId"),
+    authUrl: stringFromRecord(source, "authUrl"),
+    verificationUrl: stringFromRecord(source, "verificationUrl"),
+    userCode: stringFromRecord(source, "userCode")
+  };
 }
 
 function codexAccountNeedsLogin(account: unknown): boolean {

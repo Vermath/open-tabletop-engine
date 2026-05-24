@@ -59,6 +59,13 @@ describe("deployment smoke", () => {
     expect(compose).toContain("api-storage:");
     expect(compose).toContain("api-uploads:");
 
+    const apiPackage = JSON.parse(readWorkspaceFile("apps/api/package.json")) as { dependencies: Record<string, string> };
+    expect(apiPackage.dependencies["@openai/codex"]).toBeTruthy();
+
+    const railwayApi = readWorkspaceFile("railway.api.json");
+    expect(railwayApi).toContain("OTTE_CODEX_APP_SERVER_COMMAND=apps/api/node_modules/.bin/codex");
+    expect(railwayApi).toContain("OTTE_CODEX_APP_SERVER_LOGIN_TYPE=chatgptDeviceCode");
+
     const selfHosting = readWorkspaceFile("docs/deployment/self-hosting.md");
     expect(selfHosting).toContain("docker compose up --build");
     expect(selfHosting).toContain("docker compose --profile worker up -d worker");
