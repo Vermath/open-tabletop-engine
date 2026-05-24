@@ -141,10 +141,8 @@ interface PluginRegistryPackageMetadata {
 }
 
 interface SandboxGlobals {
-  registerCommand(command: string, handler: (input: PluginChatCommandInput) => unknown): void;
   __ottePayloadJson?: string;
   __otteResult?: unknown;
-  __otteHandlers: Record<string, (input: PluginChatCommandInput) => unknown>;
 }
 
 export class PluginPackageError extends Error {
@@ -390,32 +388,39 @@ class SandboxedPluginRuntime {
   private readonly sandbox: SandboxGlobals;
 
   constructor(private readonly plugin: RuntimePlugin) {
-    const declaredCommands = new Set(plugin.chatCommands?.map((item) => item.command) ?? []);
-    const handlers: SandboxGlobals["__otteHandlers"] = Object.create(null);
-    this.sandbox = {
-      __otteHandlers: handlers,
-      registerCommand(command, handler) {
-        if (!declaredCommands.has(command)) throw new Error(`Command is not declared in plugin manifest: ${command}`);
-        if (typeof handler !== "function") throw new Error(`Plugin command handler must be a function: ${command}`);
-        handlers[command] = handler;
-      }
-    };
+    this.sandbox = {};
     this.context = createContext(this.sandbox, {
       name: `plugin:${plugin.id}`,
       codeGeneration: { strings: false, wasm: false }
     });
+    this.sandbox.__ottePayloadJson = JSON.stringify({ declaredCommands: plugin.chatCommands?.map((item) => item.command) ?? [] });
     const source = readFileSync(plugin.resolvedServerEntrypoint!, "utf8");
-    new Script(source, { filename: plugin.resolvedServerEntrypoint }).runInContext(this.context, { timeout: SandboxedPluginRuntime.executionTimeoutMs });
-    const missingCommands = [...declaredCommands].filter((command) => !handlers[command]);
-    if (missingCommands.length) throw new Error(`Plugin did not register command handlers: ${missingCommands.join(", ")}`);
+    const bootstrap = `(() => {
+      const __otteDeclaredCommands = new Set(JSON.parse(__ottePayloadJson).declaredCommands);
+      const __otteHandlers = Object.create(null);
+      globalThis.registerCommand = (command, handler) => {
+        if (!__otteDeclaredCommands.has(command)) throw new Error(\`Command is not declared in plugin manifest: ${command}\`);
+        if (typeof handler !== "function") throw new Error(\`Plugin command handler must be a function: ${command}\`);
+        __otteHandlers[command] = handler;
+      };
+      ${source}
+      const __otteMissingCommands = [...__otteDeclaredCommands].filter((command) => !__otteHandlers[command]);
+      if (__otteMissingCommands.length) throw new Error(\`Plugin did not register command handlers: ${__otteMissingCommands.join(", ")}\`);
+      globalThis.__otteRunCommand = (command, input) => __otteHandlers[command](input);
+      delete globalThis.registerCommand;
+    })();`;
+    try {
+      new Script(bootstrap, { filename: plugin.resolvedServerEntrypoint }).runInContext(this.context, { timeout: SandboxedPluginRuntime.executionTimeoutMs });
+    } finally {
+      this.sandbox.__ottePayloadJson = undefined;
+    }
   }
 
   execute(command: string, input: PluginChatCommandInput): PluginChatCommandResult {
-    if (!this.sandbox.__otteHandlers[command]) throw new Error(`Plugin command handler is not registered: ${command}`);
     this.sandbox.__ottePayloadJson = JSON.stringify({ command, input });
     this.sandbox.__otteResult = undefined;
     try {
-      new Script("(() => { const __ottePayload = JSON.parse(__ottePayloadJson); __otteResult = __otteHandlers[__ottePayload.command](__ottePayload.input); })();").runInContext(this.context, { timeout: SandboxedPluginRuntime.executionTimeoutMs });
+      new Script('(() => { const __ottePayload = JSON.parse(__ottePayloadJson); if (typeof __otteRunCommand !== "function") throw new Error("Plugin runtime is not initialized"); __otteResult = __otteRunCommand(__ottePayload.command, __ottePayload.input); })();').runInContext(this.context, { timeout: SandboxedPluginRuntime.executionTimeoutMs });
       return normalizeCommandResult(this.sandbox.__otteResult);
     } finally {
       this.sandbox.__ottePayloadJson = undefined;

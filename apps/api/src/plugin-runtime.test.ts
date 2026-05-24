@@ -72,6 +72,31 @@ registerCommand("/probe", () => {
     }
   });
 
+
+  it("does not expose host function constructors through registerCommand", () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(
+        pluginRoot,
+        "host-function-probe",
+        `
+let body = "host escape blocked";
+try {
+  registerCommand.constructor.constructor("return process.version")();
+  body = "host process leaked";
+} catch {}
+registerCommand("/probe", () => ({ body, visibility: "public" }));
+`
+      );
+      const registry = loadPluginRegistry({ pluginRoot });
+
+      expect(registry.errors).toEqual([]);
+      expect(registry.executeChatCommand("host-function-probe", sandboxInput()).body).toBe("host escape blocked");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("does not expose host object constructors to sandboxed command handlers", () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
     try {
