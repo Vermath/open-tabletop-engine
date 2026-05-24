@@ -4896,7 +4896,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/content-imports", async (request, reply) => {
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
     return store.state.contentImports.filter((item) => item.campaignId === request.params.campaignId && item.status !== "deleted");
   });
@@ -4964,7 +4964,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { importId: string } }>("/api/v1/content-imports/:importId", async (request, reply) => {
     const batch = store.state.contentImports.find((item) => item.id === request.params.importId);
     if (!batch || batch.status === "deleted") return notFound(reply, "Content import not found");
-    const allowed = requireCampaignPermission(store, reply, request.headers, batch.campaignId, "campaign.read");
+    const allowed = requireCampaignPermission(store, reply, request.headers, batch.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
     return batch;
   });
@@ -13514,6 +13514,7 @@ function positiveInteger(value: unknown): number | undefined {
 
 function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined): EngineEvent | undefined {
   if (!userId || !canCampaign(store, userId, event.campaignId, "campaign.read")) return undefined;
+  if (event.type.startsWith("contentImport.") && !canCampaign(store, userId, event.campaignId, "campaign.update")) return undefined;
   if (event.type.startsWith("chat.message.")) {
     const message = event.payload as Partial<ChatMessage> | undefined;
     const campaignId = message?.campaignId ?? event.campaignId;
