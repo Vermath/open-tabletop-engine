@@ -2998,7 +2998,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return asset;
   });
 
-  app.get<{ Params: { assetId: string }; Querystring: { userId?: string; expiresAt?: string; signature?: string; disposition?: "inline" | "attachment" } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
+  app.get<{ Params: { assetId: string }; Querystring: { userId?: string; sessionToken?: string; expiresAt?: string; signature?: string; disposition?: "inline" | "attachment" } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
     const asset = store.state.assets.find((item) => item.id === request.params.assetId);
     if (!asset) return notFound(reply, "Asset not found");
     const accessMode = request.query.signature ? "signed" : "session";
@@ -3018,7 +3018,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "missing_session" });
         return unauthorized(reply, "Missing asset session");
       }
-      const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, asset.campaignId, "scene.read");
+      const allowed = requireCampaignPermissionForUser(store, reply, headersWithRequestSessionToken(request.url, request.headers), userId, asset.campaignId, "scene.read");
       if (allowed !== true) {
         appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "missing_permission_or_active_organization" });
         return allowed;
@@ -17276,6 +17276,12 @@ function sessionTokenFromRequest(requestUrl: string | undefined, headers: Record
   if (protocolToken) return protocolToken;
   const url = new URL(requestUrl ?? "/api/v1/realtime", "http://localhost");
   return url.searchParams.get("sessionToken") ?? undefined;
+}
+
+function headersWithRequestSessionToken(requestUrl: string | undefined, headers: Record<string, string | string[] | undefined>): Record<string, string | string[] | undefined> {
+  const token = sessionTokenFromRequest(requestUrl, headers);
+  if (!token) return headers;
+  return { ...headers, "x-session-token": token };
 }
 
 function websocketProtocolSessionToken(headers: Record<string, string | string[] | undefined>): string | undefined {

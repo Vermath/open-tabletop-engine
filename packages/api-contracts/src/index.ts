@@ -5466,6 +5466,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "GET /api/v1/assets/{assetId}/blob": {
     parameters: [
       { name: "userId", in: "query", required: false, description: "Compatibility user id for legacy local clients.", schema: stringSchema },
+      { name: "sessionToken", in: "query", required: false, description: "Session token for browser media elements that cannot send authorization headers.", schema: stringSchema },
       { name: "expiresAt", in: "query", required: false, description: "Signed delivery expiration timestamp.", schema: { type: "string", format: "date-time" } },
       { name: "signature", in: "query", required: false, description: "Signed delivery HMAC.", schema: stringSchema },
       { name: "disposition", in: "query", required: false, description: "Requested content disposition.", schema: { type: "string", enum: ["inline", "attachment"] } }

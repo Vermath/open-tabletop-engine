@@ -1889,6 +1889,7 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   await page.getByRole("button", { name: `Token E2E Paladin Token ${suffix}` }).click();
   await openInspectorPanel(page, "Actors");
+  await expect(page.locator(".panel-stack", { hasText: "Selected Actor" })).toContainText(`E2E Paladin ${suffix}`);
   await page.getByRole("tab", { name: "Actions" }).click();
   await expect(page.getByRole("heading", { name: `E2E Paladin ${suffix}` })).toBeVisible();
   await selectActionTargetActor(page, target.name);

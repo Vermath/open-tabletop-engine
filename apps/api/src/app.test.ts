@@ -26152,8 +26152,9 @@ registerCommand("/state", (input) => {
 
   it("uploads a map asset, assigns it to a scene, and serves the stored bytes", async () => {
     const directory = mkdtempSync(join(tmpdir(), "otte-assets-"));
+    const store = new MemoryStateStore();
     const app = await buildApp({
-      store: new MemoryStateStore(),
+      store,
       uploadDir: directory
     });
     const bytes = Buffer.from("fake-image-bytes");
@@ -26199,6 +26200,31 @@ registerCommand("/state", (input) => {
     expect(blob.statusCode).toBe(200);
     expect(blob.headers["content-type"]).toContain("image/png");
     expect(blob.body).toBe("fake-image-bytes");
+
+    const playerLogin = await loginDemoUser(app, store, "usr_demo_player");
+    const playerToken = playerLogin.json().token as string;
+    const playerWorkspace = await app.inject({
+      method: "POST",
+      url: "/api/v1/organizations",
+      headers: { authorization: `Bearer ${playerToken}` },
+      payload: { name: "Player Workspace" }
+    });
+    expect(playerWorkspace.statusCode).toBe(201);
+    const switched = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/organization/session",
+      headers: { authorization: `Bearer ${playerToken}` },
+      payload: { organizationId: "org_demo" }
+    });
+    expect(switched.statusCode).toBe(200);
+
+    const sessionBlob = await app.inject({
+      method: "GET",
+      url: `/api/v1/assets/${assetId}/blob?sessionToken=${encodeURIComponent(playerToken)}`
+    });
+    expect(sessionBlob.statusCode).toBe(200);
+    expect(sessionBlob.headers["content-type"]).toContain("image/png");
+    expect(sessionBlob.body).toBe("fake-image-bytes");
 
     await app.close();
     rmSync(directory, { recursive: true, force: true });

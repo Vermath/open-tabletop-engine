@@ -2628,7 +2628,7 @@ export function assetBlobUrl(asset: MapAsset): string {
   const managedUrl = authenticatedManagedAssetUrl(asset.url);
   const url = managedUrl !== asset.url ? managedUrl : displayAsset.deliveryUrl ?? asset.url;
   if (/^(https?:|data:|blob:)/.test(url)) return url;
-  return `${baseUrl}${url}`;
+  return absoluteApiUrl(url);
 }
 
 function authenticatedManagedAssetUrl(url: string): string {
@@ -2637,6 +2637,12 @@ function authenticatedManagedAssetUrl(url: string): string {
   if (!token) return url;
   const separator = url.includes("?") ? "&" : "?";
   return `${url}${separator}sessionToken=${encodeURIComponent(token)}`;
+}
+
+function absoluteApiUrl(url: string): string {
+  if (!baseUrl) return url;
+  const normalizedUrl = url.startsWith("/") ? url : `/${url}`;
+  return `${baseUrl.replace(/\/+$/, "")}${normalizedUrl}`;
 }
 
 async function assetDeliveryUrl(assetId: string): Promise<{ url: string; expiresAt: string }> {

@@ -16,6 +16,8 @@ describe("assetBlobUrl", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   it("adds the active session token to managed asset blob URLs when no signed delivery URL is present", () => {
@@ -35,6 +37,18 @@ describe("assetBlobUrl", () => {
     });
 
     expect(assetBlobUrl(asset)).toBe("/api/v1/assets/asset_signed_map/blob?sessionToken=ots_test%2Ftoken");
+  });
+
+  it("normalizes trailing API base URLs for authenticated managed asset blob URLs", async () => {
+    vi.stubEnv("VITE_API_URL", "https://api.example.test/");
+    vi.resetModules();
+    const { assetBlobUrl: assetBlobUrlWithBase } = await import("./api.js");
+    const asset = assetFixture({
+      id: "asset_railway_map",
+      url: "/api/v1/assets/asset_railway_map/blob"
+    });
+
+    expect(assetBlobUrlWithBase(asset)).toBe("https://api.example.test/api/v1/assets/asset_railway_map/blob?sessionToken=ots_test%2Ftoken");
   });
 });
 
