@@ -28284,6 +28284,26 @@ registerCommand("/state", (input) => {
     rmSync(targetUploadDir, { recursive: true, force: true });
   });
 
+  it("rejects campaign import when caller lacks campaign.update for imported campaign records", async () => {
+    const app = await buildApp();
+    const exportResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/export",
+      headers: authHeaders
+    });
+    expect(exportResponse.statusCode).toBe(200);
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: { authorization: "Bearer usr_demo_player" },
+      payload: exportResponse.json()
+    });
+    expect(imported.statusCode).toBe(403);
+    expect(imported.json()).toMatchObject({ error: "forbidden" });
+    await app.close();
+  });
+
   it("persists campaign state across sqlite-backed store restarts", async () => {
     const directory = mkdtempSync(join(tmpdir(), "otte-api-"));
     const dbPath = join(directory, "state.sqlite");

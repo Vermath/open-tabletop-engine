@@ -6896,6 +6896,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
     const importWarnings = archiveImportDependencyWarnings(scope, selectedCollections.value, archive);
     const scopedArchive = archiveForImportScope(archive, scope, selectedCollections.value);
+    for (const campaignId of archiveCampaignIds(scopedArchive)) {
+      const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
+      if (allowed !== true) return allowed;
+    }
     const conflicts = findArchiveConflicts(store.state, scopedArchive);
     if (mode === "reject_conflicts" && conflicts.length > 0) {
       return reply.code(409).send({ error: "import_conflict", conflicts });
@@ -22609,6 +22613,17 @@ function findArchiveConflicts(state: EngineState, archive: CampaignArchive): Arr
     }
   }
   return conflicts;
+}
+
+function archiveCampaignIds(archive: CampaignArchive): string[] {
+  const campaignIds = new Set<string>();
+  for (const collection of Object.keys(archive.data) as Array<keyof EngineState>) {
+    const incoming = archive.data[collection] as Array<{ campaignId?: string }>;
+    for (const record of incoming) {
+      if (typeof record.campaignId === "string" && record.campaignId.length > 0) campaignIds.add(record.campaignId);
+    }
+  }
+  return [...campaignIds];
 }
 
 function upsertRecords<T extends { id: string }>(target: T[], incoming: T[]): number {
