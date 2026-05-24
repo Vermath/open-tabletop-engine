@@ -27,6 +27,42 @@ async function createSceneToken(page: Page, input: { name: string; x: number; y:
   );
 }
 
+async function deleteTokenById(page: Page, tokenId: string) {
+  await page.evaluate(
+    async ({ apiBaseUrl, tokenId }) => {
+      const bearer = localStorage.getItem("otte:sessionToken");
+      if (!bearer) throw new Error("No browser session token available for token cleanup");
+      const response = await fetch(`${apiBaseUrl}/api/v1/tokens/${tokenId}`, {
+        method: "DELETE",
+        headers: { authorization: `Bearer ${bearer}` }
+      });
+      if (!response.ok && response.status !== 404) throw new Error(await response.text());
+    },
+    { apiBaseUrl, tokenId }
+  );
+}
+
+async function openInspectorPanel(page: Page, panelName: string) {
+  await page.locator(".inspector-tabs").getByRole("button", { name: panelName, exact: true }).click();
+}
+
+async function openActorDisclosure(root: Locator, summaryText: string) {
+  const details = root.locator("details.actor-detail-disclosure").filter({ hasText: summaryText }).first();
+  await expect(details.locator("summary")).toBeVisible();
+  const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+  if (!isOpen) {
+    await details.evaluate((element) => {
+      (element as HTMLDetailsElement).open = true;
+      element.scrollIntoView({ block: "nearest" });
+    });
+  }
+}
+
+async function clickElement(locator: Locator) {
+  await expect(locator).toBeVisible();
+  await locator.evaluate((element) => (element as HTMLElement).click());
+}
+
 async function shiftTabUntilFocused(page: Page, target: Locator, attempts = 140): Promise<void> {
   for (let index = 0; index < attempts; index += 1) {
     if (await target.evaluate((element) => element === document.activeElement).catch(() => false)) return;
@@ -46,7 +82,8 @@ test("main tabletop controls expose accessible names and keyboard reachability",
   await expect(page.getByRole("main", { name: "OpenTabletop workspace" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Campaigns" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add token" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Roll dice" })).toBeVisible();
+  await openInspectorPanel(page, "Chat");
+  await expect(page.getByRole("textbox", { name: "Chat command line" })).toBeVisible();
 
   const unnamedControls = await page.evaluate(() => {
     function isVisible(element: Element): boolean {
@@ -184,17 +221,18 @@ test("main tabletop controls expose accessible names and keyboard reachability",
   );
   expect(longestReducedMotionMs).toBeLessThanOrEqual(0.01);
 
-  const rollDice = page.getByRole("button", { name: "Roll dice" });
-  await rollDice.focus();
-  await expect(rollDice).toBeFocused();
-  await rollDice.press("Enter");
+  const chatCommandLine = page.getByRole("textbox", { name: "Chat command line" });
+  await chatCommandLine.focus();
+  await expect(chatCommandLine).toBeFocused();
+  await chatCommandLine.fill("/roll 1d20");
+  await page.getByRole("button", { name: "Send chat command" }).click();
   await expect(page.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
 
   const chatTab = page.getByRole("button", { name: "Chat", exact: true });
   await chatTab.focus();
   await expect(chatTab).toBeFocused();
   await chatTab.press("Enter");
-  await expect(page.getByText("Chat History")).toBeVisible();
+  await expect(page.locator('[aria-label="Chat messages"]')).toBeVisible();
 });
 
 test("advanced panels expose labelled controls and keyboard focus states", async ({ page }) => {
@@ -204,13 +242,13 @@ test("advanced panels expose labelled controls and keyboard focus states", async
 
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Chat", exact: true }).click();
-  const chatExportFormat = page.getByRole("combobox", { name: "Chat export format" });
-  await expect(chatExportFormat).toBeVisible();
-  await chatExportFormat.focus();
-  await expect(chatExportFormat).toBeFocused();
-  await chatExportFormat.selectOption("ndjson");
-  await expect(chatExportFormat).toHaveValue("ndjson");
+  await openInspectorPanel(page, "Chat");
+  const chatCommandLine = page.getByRole("textbox", { name: "Chat command line" });
+  await expect(chatCommandLine).toBeVisible();
+  await chatCommandLine.focus();
+  await expect(chatCommandLine).toBeFocused();
+  await chatCommandLine.fill("/gm accessibility review prompt");
+  await expect(chatCommandLine).toHaveValue("/gm accessibility review prompt");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Content" }).click();
@@ -250,12 +288,12 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
   const chatNav = page.getByRole("button", { name: "Chat", exact: true });
   await tabUntilFocused(page, chatNav);
   await chatNav.press("Enter");
-  await expect(page.getByText("Chat History")).toBeVisible();
+  await expect(page.locator('[aria-label="Chat messages"]')).toBeVisible();
 
-  const chatSearch = page.getByRole("textbox", { name: "Chat history search" });
-  await tabUntilFocused(page, chatSearch);
-  await chatSearch.fill("Valen");
-  await expect(chatSearch).toHaveValue("Valen");
+  const chatCommandLine = page.getByRole("textbox", { name: "Chat command line" });
+  await tabUntilFocused(page, chatCommandLine);
+  await chatCommandLine.fill("Valen");
+  await expect(chatCommandLine).toHaveValue("Valen");
 
   const prepWorkspace = page.getByRole("button", { name: "Prep", exact: true });
   await tabUntilFocused(page, prepWorkspace);
@@ -303,6 +341,8 @@ test("actor sheet targeting controls expose screen-reader structure", async ({ p
   await fullSheet.getByRole("button", { name: "Close" }).press("Enter");
   await expect(fullSheet).toHaveCount(0);
 
+  const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
+  await openActorDisclosure(actorPanel, "Token settings");
   const targetManager = page.getByRole("region", { name: "Canvas target manager" });
   await expect(targetManager).toBeVisible();
   await expect(targetManager.getByRole("group", { name: "Canvas target area" })).toBeVisible();
@@ -328,24 +368,30 @@ test("destructive token dialog supports screen-reader and keyboard flow", async 
 
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   const token = await createSceneToken(page, { name: "E2E Delete Target", actorId: "act_valen", x: 420, y: 360, ownerUserIds: ["usr_demo_player"] });
-  await page.reload();
-  await page.getByRole("button", { name: "Token E2E Delete Target" }).click();
-  await page.getByRole("button", { name: "Delete Token" }).click();
+  try {
+    await page.reload();
+    await page.getByRole("button", { name: "Token E2E Delete Target" }).click();
+    const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
+    await openActorDisclosure(actorPanel, "Token settings");
+    await clickElement(page.getByRole("button", { name: "Delete Token" }));
 
-  const dialog = page.getByRole("dialog", { name: "Confirm token deletion" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText(`Delete ${token.name} from Vault Entry`);
-  await expect(page.getByRole("button", { name: "Confirm Delete Token" })).toBeFocused();
+    const dialog = page.getByRole("dialog", { name: "Confirm token deletion" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(`Delete ${token.name} from Vault Entry`);
+    await expect(page.getByRole("button", { name: "Confirm Delete Token" })).toBeFocused();
 
-  await page.keyboard.press("Tab");
-  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
-  await page.keyboard.press("Tab");
-  await expect(dialog.getByRole("button", { name: "Confirm Delete Token" })).toBeFocused();
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
+    await page.keyboard.press("Tab");
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(dialog.getByRole("button", { name: "Confirm Delete Token" })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Delete Token" }).click();
-  await expect(page.getByRole("dialog", { name: "Confirm token deletion" })).toBeVisible();
-  await page.keyboard.press("Enter");
-  await expect(page.getByText("Token deleted")).toBeVisible();
+    await clickElement(page.getByRole("button", { name: "Delete Token" }));
+    await expect(page.getByRole("dialog", { name: "Confirm token deletion" })).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("Token deleted")).toBeVisible();
+  } finally {
+    await deleteTokenById(page, token.id).catch(() => undefined);
+  }
 });

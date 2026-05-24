@@ -70,6 +70,18 @@ async function expectSceneTokenByName(page: Page, name: string) {
   );
 }
 
+async function openInspectorPanel(page: Page, panelName: string) {
+  await page.locator(".inspector-tabs").getByRole("button", { name: panelName, exact: true }).click();
+}
+
+async function submitChatCommand(page: Page, command: string) {
+  await openInspectorPanel(page, "Chat");
+  const commandLine = page.getByRole("textbox", { name: "Chat command line" });
+  await expect(commandLine).toBeVisible();
+  await commandLine.fill(command);
+  await page.getByRole("button", { name: "Send chat command" }).click();
+}
+
 async function dragTokenWithTouch(page: Page, tokenName: string) {
   const token = page.getByRole("button", { name: `Token ${tokenName}` });
   await expect(token).toBeVisible();
@@ -114,7 +126,8 @@ for (const viewport of viewportCases) {
       expect(addTokenBox?.height ?? 0).toBeGreaterThanOrEqual(44);
       expect(addTokenBox?.width ?? 0).toBeGreaterThanOrEqual(44);
       expect(addTokenBox?.y ?? 0).toBeGreaterThan((tableAreaBox?.y ?? 0) + (tableAreaBox?.height ?? 0) * 0.45);
-      await expect(page.getByRole("button", { name: "Roll dice" })).toBeVisible();
+      await openInspectorPanel(page, "Chat");
+      await expect(page.getByRole("textbox", { name: "Chat command line" })).toBeVisible();
       const controlsFitViewport = await page.locator(".topbar").evaluate(() => {
         const viewportWidth = window.innerWidth;
         const controls = Array.from(document.querySelectorAll(".scene-filter-panel input, .scene-filter-panel select, .scene-filter-panel button, .quick-create-form input, .quick-create-form select, .quick-create-form button"));
@@ -133,17 +146,14 @@ for (const viewport of viewportCases) {
       const createdToken = await expectSceneTokenByName(page, tokenName);
 
       const chatMessage = `Mobile ${viewport.label} live-play check`;
-      await page.getByRole("textbox", { name: "Dice formula" }).fill("1d4");
-      await page.getByRole("button", { name: "Roll dice" }).tap();
+      await submitChatCommand(page, "/roll 1d4");
       await expect(page.getByText(/Rolled \d+/)).toBeVisible();
-      await page.getByRole("textbox", { name: "Chat message" }).fill(chatMessage);
-      await page.getByRole("button", { name: "Send chat message" }).tap();
-      await expect(page.locator(".chat-line", { hasText: chatMessage })).toBeVisible();
+      await submitChatCommand(page, chatMessage);
+      await expect(page.locator(".chat-message", { hasText: chatMessage })).toBeVisible();
 
-      await page.getByRole("button", { name: "Chat", exact: true }).click();
-      await expect(page.getByText("Chat History")).toBeVisible();
-      await expect(page.getByRole("textbox", { name: "Chat history search" })).toBeVisible();
-      await expect(page.locator(".chat-history-list")).toContainText(chatMessage);
+      await openInspectorPanel(page, "Chat");
+      await expect(page.locator('[aria-label="Chat messages"]')).toContainText(chatMessage);
+      await expect(page.getByRole("textbox", { name: "Chat command line" })).toBeVisible();
 
       await page.getByRole("button", { name: "Prep", exact: true }).click();
       await page.getByRole("button", { name: "Content" }).click();
@@ -151,7 +161,7 @@ for (const viewport of viewportCases) {
       await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
 
       await page.getByRole("button", { name: "Live Table", exact: true }).click();
-      await page.getByRole("button", { name: "Actors" }).click();
+      await openInspectorPanel(page, "Actors");
       await expect(page.getByRole("combobox", { name: "Token actor" })).toBeVisible();
 
       await dragTokenWithTouch(page, tokenName);

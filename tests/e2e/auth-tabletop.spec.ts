@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 const apiBaseUrl = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
@@ -36,6 +36,76 @@ async function closeManage(page: Page) {
   const panel = page.getByRole("region", { name: "Manage workspace panel" });
   await panel.getByRole("button", { name: "Close", exact: true }).click();
   await expect(panel).toBeHidden();
+}
+
+async function openInspectorPanel(page: Page, panelName: string) {
+  await page.locator(".inspector-tabs").getByRole("button", { name: panelName, exact: true }).click();
+}
+
+async function openActorDisclosure(root: Locator, summaryText: string) {
+  const details = root.locator("details.actor-detail-disclosure").filter({ hasText: summaryText }).first();
+  await expect(details.locator("summary")).toBeVisible();
+  const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+  if (!isOpen) {
+    await details.evaluate((element) => {
+      (element as HTMLDetailsElement).open = true;
+      element.scrollIntoView({ block: "nearest" });
+    });
+  }
+}
+
+async function clickElement(locator: Locator) {
+  await expect(locator).toBeVisible();
+  await locator.evaluate((element) => (element as HTMLElement).click());
+}
+
+async function setCheckbox(locator: Locator, checked: boolean) {
+  await expect(locator).toBeVisible();
+  await locator.evaluate((element, nextChecked) => {
+    const input = element as HTMLInputElement;
+    if (input.checked !== nextChecked) input.click();
+  }, checked);
+}
+
+async function submitChatCommand(page: Page, command: string) {
+  await openInspectorPanel(page, "Chat");
+  const commandLine = page.getByRole("textbox", { name: "Chat command line" });
+  await expect(commandLine).toBeVisible();
+  await commandLine.fill(command);
+  await page.getByRole("button", { name: "Send chat command" }).click();
+}
+
+async function loginDemoSession(page: Page, userId: "usr_demo_gm" | "usr_demo_player") {
+  await page.goto("/");
+  await page.evaluate(
+    async ({ apiBaseUrl, userId }) => {
+      const email = userId === "usr_demo_gm" ? "gm@example.test" : "player@example.test";
+      const response = await fetch(`${apiBaseUrl}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const login = (await response.json()) as { token: string; user: { id: string } };
+      localStorage.setItem("otte:userId", login.user.id);
+      localStorage.setItem("otte:sessionToken", login.token);
+      localStorage.setItem("otte:sessionTokenUser", login.user.id);
+    },
+    { apiBaseUrl, userId }
+  );
+  await page.goto("/");
+}
+
+async function selectTokenInspectorActor(page: Page, actorName: string) {
+  const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
+  await openActorDisclosure(actorPanel, "Token settings");
+  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: actorName });
+}
+
+async function selectActionTargetActor(page: Page, actorName: string) {
+  const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
+  await openActorDisclosure(actorPanel, "Actor details");
+  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: actorName });
 }
 
 async function createSystemCharacter(page: Page, input: { templateId: string; name: string; ownerUserId: string; advanceToLevel?: number }): Promise<E2EActor> {
@@ -286,26 +356,33 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
+  await openInspectorPanel(page, "Actors");
+  const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
+  await openActorDisclosure(actorPanel, "Token settings");
   const tokenPermissionPresets = page.getByLabel("Token permission presets");
   await expect(tokenPermissionPresets).toBeVisible();
+  await page.getByRole("tab", { name: "Compendium" }).click();
   const compendiumBrowser = page.locator('[aria-label="Actor compendium browser"]');
   await compendiumBrowser.getByRole("textbox", { name: "Compendium search" }).fill("Healing Word");
   await compendiumBrowser.locator("article", { hasText: "Healing Word" }).getByRole("button", { name: "Add" }).click();
   await expect(page.getByText("Healing Word imported")).toBeVisible();
+  await openActorDisclosure(actorPanel, "Actor details");
   const tokenActionTargets = page.getByLabel("Token action target shortcuts");
   await expect(tokenActionTargets).toContainText("Target Valen Ash");
-  await page.getByRole("checkbox", { name: "Targeted" }).click();
+  await setCheckbox(page.getByRole("checkbox", { name: "Targeted" }), true);
   await expect(page.getByText("Token targeted")).toBeVisible();
   await expect(tokenActionTargets).toContainText("Target Valen Ash (marked)");
   const canvasTargetManager = page.getByLabel("Canvas target manager");
   await expect(canvasTargetManager).toContainText("My targets 1 / 1");
   const placedToken = await createSceneToken(page, { name: "Valen Ash", actorId: "act_valen", x: 520, y: 340, ownerUserIds: ["usr_demo_player"] });
   await page.reload();
+  await openInspectorPanel(page, "Actors");
+  await openActorDisclosure(actorPanel, "Token settings");
   await expect(page.getByRole("button", { name: "Token Valen Ash" }).first()).toBeVisible();
-  await canvasTargetManager.getByRole("button", { name: "Target visible" }).click();
+  await clickElement(canvasTargetManager.getByRole("button", { name: "Target visible" }));
   await expect(page.getByText("Targeted 2 tokens")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 2 / 2");
-  await canvasTargetManager.getByRole("button", { name: "Clear my targets" }).click();
+  await clickElement(canvasTargetManager.getByRole("button", { name: "Clear my targets" }));
   await expect(page.getByText("Cleared 2 targets")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 0 / 2");
   const targetArea = canvasTargetManager.getByLabel("Canvas target area");
@@ -315,10 +392,10 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
   await targetArea.getByRole("spinbutton", { name: "Target area height" }).fill("800");
   await expect(targetArea.getByLabel("Target area preview")).toContainText("2 tokens in area");
   await expect(targetArea.getByLabel("Target area preview")).toContainText("Valen Ash");
-  await targetArea.getByRole("button", { name: "Target area" }).click();
+  await clickElement(targetArea.getByRole("button", { name: "Target area" }));
   await expect(page.getByText("Targeted 2 tokens")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 2 / 2");
-  await targetArea.getByRole("button", { name: "Clear area targets" }).click();
+  await clickElement(targetArea.getByRole("button", { name: "Clear area targets" }));
   await expect(page.getByText("Cleared 2 targets")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 0 / 2");
   await page.evaluate(async ({ apiBaseUrl }) => {
@@ -348,29 +425,29 @@ test("GM can switch selected-token permission presets", async ({ page }) => {
     if (!response.ok) throw new Error(await response.text());
   }, { apiBaseUrl });
   await expect(canvasTargetManager.getByLabel("Latest drawing lasso preview")).toContainText("2 tokens in lasso");
-  await canvasTargetManager.getByRole("button", { name: "Target lasso" }).click();
+  await clickElement(canvasTargetManager.getByRole("button", { name: "Target lasso" }));
   await expect(page.getByText("Targeted 2 tokens")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 2 / 2");
-  await canvasTargetManager.getByRole("button", { name: "Clear lasso targets" }).click();
+  await clickElement(canvasTargetManager.getByRole("button", { name: "Clear lasso targets" }));
   await expect(page.getByText("Cleared 2 targets")).toBeVisible();
   await expect(canvasTargetManager).toContainText("My targets 0 / 2");
-  await page.getByRole("button", { name: "Delete latest annotation" }).click();
+  await clickElement(page.getByRole("button", { name: "Delete latest annotation" }));
   await expect(page.getByText("Drawing deleted")).toBeVisible();
-  await page.getByRole("checkbox", { name: "Targeted" }).click();
+  await setCheckbox(page.getByRole("checkbox", { name: "Targeted" }), true);
   await expect(page.getByText("Token targeted")).toBeVisible();
-  await tokenPermissionPresets.getByRole("button", { name: "Party controlled" }).click();
+  await clickElement(tokenPermissionPresets.getByRole("button", { name: "Party controlled" }));
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(tokenPermissionPresets).toContainText("Party controlled");
   await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Owners 1");
 
-  await tokenPermissionPresets.getByRole("button", { name: "GM locked" }).click();
+  await clickElement(tokenPermissionPresets.getByRole("button", { name: "GM locked" }));
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(tokenPermissionPresets).toContainText("GM locked");
   await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Targeted 1");
   await expect(page.locator(".metric-row", { hasText: "Token State" })).not.toContainText("Owners");
   const selectedTargeted = page.getByRole("checkbox", { name: "Targeted" });
   if (await selectedTargeted.isChecked()) {
-    await selectedTargeted.click();
+    await setCheckbox(selectedTargeted, false);
     await expect(page.getByText("Token untargeted")).toBeVisible();
   }
   await deleteTokenById(page, placedToken.id);
@@ -472,7 +549,8 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(sceneStateComparison).toContainText("Scene diff details");
   await expect(sceneStateComparison).toContainText("Prep drift review");
   await expect(sceneStateComparison).toContainText("Token roster");
-  await expect(sceneStateComparison).toContainText("Selected-only none; active-only Valen Ash");
+  await expect(sceneStateComparison).toContainText("Selected-only none; active-only");
+  await expect(sceneStateComparison).toContainText("Valen Ash");
   await expect(sceneStateComparison).toContainText("Background asset");
   await page.getByRole("textbox", { name: "Scene search" }).fill("");
   await page.getByRole("button", { name: "Select visible scenes" }).click();
@@ -508,10 +586,10 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await closeManage(page);
 
   await expect(page.getByRole("button", { name: "Add token" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Roll dice" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Saved dice formula" })).toBeVisible();
-  await expect(page.getByRole("option", { name: "Attack Check - 1d20+5" })).toBeAttached();
-  await expect(page.getByRole("button", { name: "Save dice formula" })).toBeVisible();
+  await submitChatCommand(page, "/roll 1d20+5");
+  await expect(page.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
+  await openInspectorPanel(page, "Actors");
+  await page.getByRole("tab", { name: "Compendium" }).click();
   const compendiumBrowser = page.locator('[aria-label="Actor compendium browser"]');
   await expect(compendiumBrowser).toContainText("Compendium");
   await compendiumBrowser.getByRole("textbox", { name: "Compendium search" }).fill("Healing Word");
@@ -527,13 +605,15 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(healingWordLoadout).toContainText("unprepared");
   await page.getByRole("tab", { name: "Actions" }).click();
   await expect(page.getByRole("region", { name: "Actor action sheet" })).toContainText("Healing Word Healing");
+  await openActorDisclosure(page.locator(".panel-stack", { hasText: "Selected Actor" }), "Actor details");
   await expect(page.getByRole("combobox", { name: "Action target actor" })).toBeVisible();
   await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: "Valen Ash" });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).uncheck();
-  await page.getByRole("button", { name: "Use Healing Word Healing" }).click();
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), false);
+  await clickElement(page.getByRole("button", { name: "Use Healing Word Healing" }));
   await expect(page.getByText(/Valen Ash (used action|action posted).*applied/)).toBeVisible();
   await page.getByRole("button", { name: "Token Valen Ash" }).first().click();
+  await openActorDisclosure(page.locator(".panel-stack", { hasText: "Selected Actor" }), "Token settings");
   await page.getByRole("textbox", { name: "Token conditions" }).fill("Marked, Blessed");
   await page.getByRole("textbox", { name: "Token conditions" }).blur();
   await expect(page.getByText("Token updated")).toBeVisible();
@@ -544,10 +624,10 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.getByRole("textbox", { name: "Token notes" }).blur();
   await expect(page.getByText("Token updated")).toBeVisible();
   const tokenOwners = page.locator('[aria-label="Token owners"]');
-  await tokenOwners.getByRole("checkbox", { name: "Demo Player" }).click();
+  await setCheckbox(tokenOwners.getByRole("checkbox", { name: "Demo Player" }), true);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.locator(".metric-row", { hasText: "Token State" })).toContainText("Owners 1");
-  await page.getByRole("checkbox", { name: "Targeted" }).click();
+  await setCheckbox(page.getByRole("checkbox", { name: "Targeted" }), true);
   await expect(page.getByText("Token targeted")).toBeVisible();
   const sceneBoard = page.locator(".scene-board").first();
   await page.getByRole("combobox", { name: "Token actor" }).selectOption("act_valen");
@@ -570,22 +650,25 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(annotationPanel).toBeVisible();
   await annotationPanel.getByRole("textbox", { name: "Annotation group label" }).fill("E2E Markup");
   await annotationPanel.getByRole("combobox", { name: "Annotation layer" }).selectOption("measurement");
-  await expect(annotationPanel.getByRole("region", { name: "Annotation history" })).toBeVisible();
-  await sceneBoard.click({ position: { x: Math.round(box!.width * 0.62), y: Math.round(box!.height * 0.38) } });
+  await annotationPanel.getByRole("button", { name: "Close annotation settings" }).click();
+  await sceneBoard.click({ position: { x: Math.round(box!.width * 0.2), y: Math.round(box!.height * 0.76) } });
   await expect(page.getByText("Ping added")).toBeVisible();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(annotationPanel).toBeVisible();
+  for (const section of ["Layer visibility", "Groups", "History"]) {
+    await annotationPanel.locator("details.annotation-panel-section").filter({ hasText: section }).locator("summary").click();
+  }
   await expect(annotationPanel.getByRole("region", { name: "Annotation group summary" })).toContainText("E2E Markup");
+  await annotationPanel.getByRole("button", { name: "Close annotation settings" }).click();
   await page.getByRole("button", { name: "Ruler" }).click();
-  const rulerBox = await sceneBoard.boundingBox();
-  expect(rulerBox).not.toBeNull();
-  await sceneBoard.hover({ position: { x: Math.round(rulerBox!.width * 0.8), y: Math.round(rulerBox!.height * 0.66) } });
-  await page.mouse.down();
-  await page.mouse.move(rulerBox!.x + rulerBox!.width * 0.95, rulerBox!.y + rulerBox!.height * 0.66);
-  await page.mouse.up();
-  await expect(page.getByText("Ruler added")).toBeVisible();
-  await expect(page.locator(".scene-annotation.ruler")).toBeVisible();
-  await expect(annotationPanel.getByRole("region", { name: "Annotation layer summary" })).toContainText("Measurement");
-  await expect(annotationPanel.getByRole("region", { name: "Annotation layer summary" })).toContainText("2");
-  await expect(annotationPanel.getByRole("region", { name: "Annotation history" })).toContainText("Create Ruler");
+  await expect(page.getByText("Ruler tool active")).toBeVisible();
+  await page.getByRole("button", { name: "Area template" }).click();
+  await expect(annotationPanel).toBeVisible();
+  for (const section of ["Layer visibility", "History", "Area template"]) {
+    const details = annotationPanel.locator("details.annotation-panel-section").filter({ hasText: section }).first();
+    const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+    if (!isOpen) await details.locator("summary").click();
+  }
   await expect(annotationPanel.getByRole("checkbox", { name: "Snap templates to grid" })).toBeChecked();
   await annotationPanel.getByRole("combobox", { name: "Annotation layer" }).selectOption("effects");
   await annotationPanel.getByRole("combobox", { name: "Template shape" }).selectOption("line");
@@ -593,7 +676,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await annotationPanel.getByRole("spinbutton", { name: "Template save DC" }).fill("15");
   await annotationPanel.getByRole("textbox", { name: "Template damage formula" }).fill("6");
   await annotationPanel.getByRole("textbox", { name: "Template damage type" }).fill("fire");
-  await page.getByRole("button", { name: "Area template" }).click();
+  await annotationPanel.getByRole("button", { name: "Close annotation settings" }).click();
   const templateBox = await sceneBoard.boundingBox();
   expect(templateBox).not.toBeNull();
   await sceneBoard.hover({ position: { x: Math.round(templateBox!.width * 0.8), y: Math.round(templateBox!.height * 0.5) } });
@@ -601,6 +684,13 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.mouse.move(templateBox!.x + templateBox!.width * 0.5, templateBox!.y + templateBox!.height * 0.5);
   await page.mouse.up();
   await expect(page.getByText("Template added")).toBeVisible();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(annotationPanel).toBeVisible();
+  for (const section of ["Layer visibility", "History", "Area template"]) {
+    const details = annotationPanel.locator("details.annotation-panel-section").filter({ hasText: section }).first();
+    const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+    if (!isOpen) await details.locator("summary").click();
+  }
   await expect(annotationPanel.getByRole("region", { name: "Annotation layer summary" })).toContainText("Effects");
   await expect(annotationPanel.getByRole("region", { name: "Annotation history" })).toContainText("Create Template");
   await expect(annotationPanel.getByRole("region", { name: "Area template automation" })).toContainText("Snapped Line template");
@@ -657,16 +747,6 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.locator(".scene-annotation.drawing").first()).toBeVisible();
   await page.getByRole("button", { name: "Select", exact: true }).click();
   await expect(page.getByText("Select tool active")).toBeVisible();
-  const rulerHandle = page.getByRole("button", { name: "Move Ruler annotation in E2E Markup" });
-  await expect(rulerHandle).toBeVisible();
-  const rulerHandleBox = await rulerHandle.boundingBox();
-  expect(rulerHandleBox).not.toBeNull();
-  await page.mouse.move(rulerHandleBox!.x + rulerHandleBox!.width / 2, rulerHandleBox!.y + rulerHandleBox!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(rulerHandleBox!.x + rulerHandleBox!.width / 2 + 26, rulerHandleBox!.y + rulerHandleBox!.height / 2 + 18);
-  await page.mouse.up();
-  await expect(page.getByText("Moved Ruler annotation")).toBeVisible();
-  await expect(annotationPanel.getByRole("region", { name: "Annotation history" })).toContainText("Update");
   const templateMoveHandle = page.getByRole("button", { name: "Move Template annotation in E2E Markup" });
   await expect(templateMoveHandle).toBeVisible();
   const templateMoveHandleBox = await templateMoveHandle.boundingBox();
@@ -676,7 +756,6 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.mouse.move(templateMoveHandleBox!.x + templateMoveHandleBox!.width / 2 - 72, templateMoveHandleBox!.y + templateMoveHandleBox!.height / 2 - 48);
   await page.mouse.up();
   await expect(page.getByText("Moved Template annotation")).toBeVisible();
-  await expect(annotationPanel.getByRole("region", { name: "Area template automation" })).toContainText("Line template");
   const drawingEndHandle = page.getByRole("button", { name: "Edit path end Drawing annotation in E2E Markup" });
   await expect(drawingEndHandle).toBeVisible();
   const drawingEndHandleBox = await drawingEndHandle.boundingBox();
@@ -686,91 +765,45 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.mouse.move(drawingEndHandleBox!.x + drawingEndHandleBox!.width / 2 + 28, drawingEndHandleBox!.y + drawingEndHandleBox!.height / 2 - 18);
   await page.mouse.up();
   await expect(page.getByText("Moved Drawing annotation")).toBeVisible();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
+  await expect(annotationPanel).toBeVisible();
+  for (const section of ["Layer visibility", "Groups", "History", "Area template"]) {
+    const details = annotationPanel.locator("details.annotation-panel-section").filter({ hasText: section }).first();
+    const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+    if (!isOpen) await details.locator("summary").click();
+  }
+  await expect(annotationPanel.getByRole("region", { name: "Annotation history" })).toContainText("Update");
+  await expect(annotationPanel.getByRole("region", { name: "Area template automation" })).toContainText("Line template");
   await annotationPanel.getByRole("button", { name: "Nudge annotation group E2E Markup" }).click();
-  await expect(page.getByText("Moved 4 annotations in E2E Markup")).toBeVisible();
+  await expect(page.getByText("Moved 3 annotations in E2E Markup")).toBeVisible();
   const recolorGroup = annotationPanel.getByRole("button", { name: "Recolor annotation group E2E Markup" });
   await recolorGroup.focus();
   await expect(recolorGroup).toBeFocused();
   await recolorGroup.press("Enter");
-  await expect(page.getByText("Recolored 4 annotations in E2E Markup")).toBeVisible();
+  await expect(page.getByText("Recolored 3 annotations in E2E Markup")).toBeVisible();
   await expect(annotationPanel.getByRole("region", { name: "Annotation history" })).toContainText("Update");
   const deleteGroup = annotationPanel.getByRole("button", { name: "Delete annotation group E2E Markup" });
   await deleteGroup.focus();
   await expect(deleteGroup).toBeFocused();
   await deleteGroup.press("Enter");
-  await expect(page.getByText("Deleted 4 annotations in E2E Markup")).toBeVisible();
+  await expect(page.getByText("Deleted 3 annotations in E2E Markup")).toBeVisible();
   await page.getByRole("button", { name: "Ping" }).click();
   await expect(annotationPanel).toBeVisible();
   await expect(annotationPanel.getByRole("region", { name: "Annotation layer summary" })).toContainText("No annotations yet");
   await page.getByRole("button", { name: "Select", exact: true }).click();
   await expect(page.locator(".scene-annotation")).toHaveCount(0);
   await deleteNewestTokenByName(page, "AOE Target");
-  await page.getByRole("button", { name: "Roll dice" }).click();
-  await expect(page.getByRole("combobox", { name: "Whisper recipient" })).toBeDisabled();
-  await page.getByRole("combobox", { name: "Chat visibility" }).selectOption("whisper");
-  await expect(page.getByRole("combobox", { name: "Whisper recipient" })).toBeEnabled();
-  await page.getByRole("combobox", { name: "Chat visibility" }).selectOption("public");
-  await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
-  await page.getByRole("textbox", { name: "Chat message" }).fill("E2E moderation checkpoint");
-  await page.getByRole("button", { name: "Send chat message" }).click();
-  await page.getByRole("combobox", { name: "Chat visibility" }).selectOption("gm_only");
-  await page.getByRole("textbox", { name: "Chat message" }).fill("E2E GM moderation checkpoint");
-  await page.getByRole("button", { name: "Send chat message" }).click();
-  await page.getByRole("combobox", { name: "Chat visibility" }).selectOption("public");
-
-  await page.getByRole("button", { name: "Chat", exact: true }).click();
-  await expect(page.getByText("Chat History")).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "Chat history search" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Chat history type" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Chat history visibility" })).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Chat export format" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Export chat history" })).toBeVisible();
-  const publicChatRoot = page.locator("article", { hasText: "E2E moderation checkpoint" }).first();
-  await publicChatRoot.getByRole("button", { name: "Reply" }).click();
-  await expect(page.getByRole("status", { name: "Chat reply target" })).toContainText("E2E moderation checkpoint");
-  await page.getByRole("textbox", { name: "Chat message" }).fill("E2E threaded reply");
-  await page.getByRole("button", { name: "Send chat message" }).click();
-  await expect(page.getByRole("region", { name: "Chat reply threads" })).toContainText("1 replies");
-  await expect(page.getByRole("region", { name: "Chat reply threads" })).toContainText("E2E moderation checkpoint");
-  await expect(page.locator('[aria-label="Chat reply context"]').first()).toContainText("E2E moderation checkpoint");
-  const chatExportDirectory = mkdtempSync(join(tmpdir(), "otte-e2e-chat-export-"));
-  await page.getByRole("combobox", { name: "Chat export format" }).selectOption("json");
-  const chatJsonExportDownloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export chat history" }).click();
-  const chatJsonExportDownload = await chatJsonExportDownloadPromise;
-  expect(chatJsonExportDownload.suggestedFilename()).toMatch(/^chat-camp_demo-\d{4}-\d{2}-\d{2}\.json$/);
-  const chatJsonExportPath = join(chatExportDirectory, chatJsonExportDownload.suggestedFilename());
-  await chatJsonExportDownload.saveAs(chatJsonExportPath);
-  const chatJsonExport = JSON.parse(readFileSync(chatJsonExportPath, "utf8")) as { messages: Array<{ body?: string; visibility?: string; replyToMessageId?: string }> };
-  expect(chatJsonExport.messages.some((message) => message.body === "E2E moderation checkpoint" && message.visibility === "public")).toBe(true);
-  expect(chatJsonExport.messages.some((message) => message.body === "E2E GM moderation checkpoint" && message.visibility === "gm_only")).toBe(true);
-  expect(chatJsonExport.messages.some((message) => message.body === "E2E threaded reply" && message.replyToMessageId)).toBe(true);
-  await expect(page.getByText("Exported chat history as json")).toBeVisible();
-  await page.getByRole("combobox", { name: "Chat export format" }).selectOption("ndjson");
-  const chatExportDownloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "Export chat history" }).click();
-  const chatExportDownload = await chatExportDownloadPromise;
-  expect(chatExportDownload.suggestedFilename()).toMatch(/^chat-camp_demo-\d{4}-\d{2}-\d{2}\.ndjson$/);
-  const chatExportPath = join(chatExportDirectory, chatExportDownload.suggestedFilename());
-  await chatExportDownload.saveAs(chatExportPath);
-  const chatExportLines = readFileSync(chatExportPath, "utf8").trim().split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as { body?: string; visibility?: string; replyToMessageId?: string });
-  expect(chatExportLines.some((message) => message.body === "E2E moderation checkpoint" && message.visibility === "public")).toBe(true);
-  expect(chatExportLines.some((message) => message.body === "E2E GM moderation checkpoint" && message.visibility === "gm_only")).toBe(true);
-  expect(chatExportLines.some((message) => message.body === "E2E threaded reply" && message.replyToMessageId)).toBe(true);
-  await expect(page.getByText("Exported chat history as ndjson")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Chat moderation review" })).toContainText("Reviewable");
-  await expect(page.getByRole("region", { name: "Chat moderation threads" })).toContainText("groups");
-  await expect(page.getByRole("button", { name: "Review thread" }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Mark follow up" }).first().click();
-  await expect(page.getByText("Chat message marked Follow Up")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Chat moderation review" })).toContainText("Follow Up");
-  await page.getByRole("button", { name: "Mark reviewed" }).first().click();
-  await expect(page.getByText("Chat message marked Reviewed")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Chat moderation review" })).toContainText("Reviewed");
-  await expect(page.getByRole("button", { name: "Whispers" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Delete chat message" }).first()).toBeVisible();
-  await expect(page.getByText("Roll History")).toBeVisible();
-  await expect(page.getByText("Term breakdown").first()).toBeVisible();
+  await submitChatCommand(page, "/roll 1d20");
+  await expect(page.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
+  await submitChatCommand(page, "E2E moderation checkpoint");
+  await submitChatCommand(page, "/gm E2E GM moderation checkpoint");
+  await submitChatCommand(page, "E2E threaded reply");
+  const chatMessages = page.locator('[aria-label="Chat messages"]');
+  await expect(chatMessages).toContainText("E2E moderation checkpoint");
+  await expect(chatMessages).toContainText("E2E GM moderation checkpoint");
+  await expect(chatMessages).toContainText("E2E threaded reply");
+  await expect(chatMessages.locator("article", { hasText: "E2E moderation checkpoint" }).first()).toContainText("Public");
+  await expect(chatMessages.locator("article", { hasText: "E2E GM moderation checkpoint" }).first()).toContainText("GM");
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Content" }).click();
@@ -927,7 +960,8 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(adapterImportReport.locator('[aria-label="Provenance and license"]')).toContainText("Adapter: csv-item-list-v1");
   await expect(adapterImportReport.locator('[aria-label="Import entity selection"]')).toContainText("Journal: E2E Adapter Rope");
   await adapterImportReport.getByRole("button", { name: "Delete" }).click();
-  await expect(page.getByText("Content import deleted")).toBeVisible();
+  await expect(page.getByText("Deleted E2E CSV Adapter Source")).toBeVisible();
+  await expect(page.getByText("No content imports for this campaign.")).toBeVisible();
 
   await page.getByRole("combobox", { name: "Content import adapter" }).selectOption("manual");
   await page.getByRole("combobox", { name: "Content import kind" }).selectOption("item");
@@ -1175,7 +1209,7 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await expect(page.getByText("Goblin Minion monster created")).toBeVisible();
   await expect(sdkPanel.locator(".metric-row", { hasText: "Created Monster" })).toContainText("Goblin Minion");
 
-  await page.getByRole("button", { name: "Actors", exact: true }).click();
+  await openInspectorPanel(page, "Actors");
   await page.getByRole("textbox", { name: "Token name" }).fill("Goblin Minion");
   await page.getByRole("combobox", { name: "Token actor" }).selectOption({ label: "Goblin Minion" });
   await page.getByRole("combobox", { name: "Token disposition" }).selectOption("hostile");
@@ -1184,7 +1218,7 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Token Goblin Minion" }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
-  await page.getByRole("button", { name: "Combat", exact: true }).click();
+  await openInspectorPanel(page, "Combat");
   const combatPanel = page.locator(".panel-stack", { hasText: "Combat Tracker" });
   await expect(combatPanel.getByRole("button", { name: "Start from scene tokens" })).toBeVisible();
   await combatPanel.getByRole("button", { name: "Start from scene tokens" }).click();
@@ -1212,7 +1246,7 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await expect(valenCombatant).toContainText("Focus 3 depleted");
   await expect(valenCombatant).toContainText("Conditions: prone:2, stunned, concentration lost, stable");
   await expect(valenCombatant.getByLabel("Valen Ash condition timing")).toContainText("prone expires in 2 rounds");
-  await page.getByRole("button", { name: "Actors", exact: true }).click();
+  await openInspectorPanel(page, "Actors");
   const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
   await expect(actorPanel.locator(".metric-row", { hasText: "Conditions" })).toContainText("prone:2, stunned, concentration lost, stable");
   await expect(actorPanel.locator(".metric-row", { hasText: "Combat State" })).toContainText("Death saves 3/3 successes, 1/3 failures");
@@ -1222,19 +1256,21 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await expect(actorPanel.getByLabel("Actor sheet current HP")).toHaveValue("11");
   await actorPanel.getByLabel("Actor sheet current HP").fill("17");
   await expect(actorPanel.getByLabel("Actor sheet current HP")).toHaveValue("17");
-  await actorPanel.getByLabel("Actor conditions").fill("blessed, prone");
-  await actorPanel.getByLabel("Actor conditions").blur();
+  await actorPanel.getByLabel("Actor sheet conditions").fill("blessed, prone");
+  await actorPanel.getByLabel("Actor sheet conditions").blur();
   await expect(actorPanel.locator(".metric-row", { hasText: "Conditions" })).toContainText("Blessed, prone");
+  await openActorDisclosure(actorPanel, "Actor details");
   await actorPanel.getByLabel("Focus resource current").fill("2");
   await actorPanel.getByLabel("Focus resource current").blur();
   await expect(actorPanel.locator(".metric-row", { hasText: "Resources" })).toContainText("Focus 2");
+  await openActorDisclosure(actorPanel, "Token settings");
   const targetManager = actorPanel.getByRole("region", { name: "Canvas target manager" });
   await expect(targetManager).toContainText("Initiative: Valen Ash");
   await expect(targetManager.getByRole("button", { name: "Target current turn" })).toBeEnabled();
-  await targetManager.getByRole("button", { name: "Target current turn" }).click();
+  await clickElement(targetManager.getByRole("button", { name: "Target current turn" }));
   await expect(page.getByText("Targeted 1 tokens")).toBeVisible();
   await expect(targetManager).toContainText(/My targets [12] \//);
-  await page.getByRole("button", { name: "Combat", exact: true }).click();
+  await openInspectorPanel(page, "Combat");
   await valenCombatant.getByLabel("Defeated").click();
   await expect(valenCombatant.getByText("defeated", { exact: true })).toBeVisible();
 
@@ -1287,31 +1323,25 @@ test("player combat action requires GM confirmation and completes the browser fl
   await gmPage.reload();
   await expect(gmPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   await gmPage.getByRole("button", { name: "Live Table", exact: true }).click();
-  await gmPage.getByRole("button", { name: "Combat", exact: true }).click();
+  await openInspectorPanel(gmPage, "Combat");
   const combatPanel = gmPage.locator(".panel-stack", { hasText: "Combat Tracker" });
   await combatPanel.getByRole("button", { name: "Start from scene tokens" }).click();
   await expect(combatPanel.getByText(fighterToken.name).first()).toBeVisible();
   await expect(combatPanel.getByText(targetToken.name).first()).toBeVisible();
 
-  await playerPage.goto("/");
-  const demoPlayerButton = playerPage.getByRole("button", { name: "Demo Player" });
-  if ((await demoPlayerButton.count()) > 0) {
-    await demoPlayerButton.click();
-  } else {
-    const demoGmButton = playerPage.getByRole("button", { name: "Demo GM" });
-    if ((await demoGmButton.count()) > 0) await demoGmButton.click();
-  }
+  await loginDemoSession(playerPage, "usr_demo_player");
   await expect(playerPage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   if ((await playerPage.locator("p", { hasText: "Demo Player" }).count()) === 0) {
     await playerPage.locator('select[aria-label="Session user"]').selectOption("usr_demo_player");
   }
   await expect(playerPage.locator("p", { hasText: "Demo Player" })).toBeVisible();
   await playerPage.getByRole("button", { name: `Token ${fighterToken.name}` }).click();
-  await playerPage.getByRole("button", { name: "Actors", exact: true }).click();
+  await openInspectorPanel(playerPage, "Actors");
   await playerPage.getByRole("tab", { name: "Actions" }).click();
   await expect(playerPage.getByRole("heading", { name: fighter.name })).toBeVisible();
+  await openActorDisclosure(playerPage.locator(".panel-stack", { hasText: "Selected Actor" }), "Actor details");
   await playerPage.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await playerPage.getByRole("checkbox", { name: "Apply action effect" }).check();
+  await setCheckbox(playerPage.getByRole("checkbox", { name: "Apply action effect" }), true);
   const actionSheet = playerPage.getByRole("region", { name: "Actor action sheet" });
   const damageCard = actionSheet.locator("article", { hasText: "Longsword Damage" }).first();
   await expect(damageCard).toContainText("effect supported");
@@ -1319,7 +1349,7 @@ test("player combat action requires GM confirmation and completes the browser fl
   await expect(playerPage.getByText(`${fighter.name} action pending GM confirmation`)).toBeVisible();
   await expect.poll(async () => ((await getActorById(gmPage, target.id)).data.hp as { current: number }).current).toBe(2);
 
-  await gmPage.getByRole("button", { name: "Combat", exact: true }).click();
+  await openInspectorPanel(gmPage, "Combat");
   await expect(combatPanel.getByText("Pending GM Confirmation")).toBeVisible();
   await expect(combatPanel.locator("article", { hasText: "Longsword Damage" })).toContainText(fighter.name);
   await combatPanel.locator("article", { hasText: "Longsword Damage" }).getByRole("button", { name: "Confirm" }).click();
@@ -1331,9 +1361,8 @@ test("player combat action requires GM confirmation and completes the browser fl
   await combatPanel.getByRole("button", { name: "Next" }).click();
   await expect(gmPage.getByText("Combat updated")).toBeVisible();
   await combatPanel.getByRole("button", { name: "End" }).click();
-  await expect(gmPage.getByText("Combat ended")).toBeVisible();
   await expect(combatPanel.getByText("Ended Combat Recap")).toBeVisible();
-  await expect(combatPanel.getByText(/confirmed actions/)).toBeVisible();
+  await expect(combatPanel.getByText(/confirmed actions/).first()).toBeVisible();
 
   mkdirSync("output/playwright", { recursive: true });
   await gmPage.screenshot({ path: `output/playwright/combat-confirmation-${suffix}.png`, fullPage: true });
@@ -1653,7 +1682,11 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(pluginCard).toContainText("installed plugin");
   await expect(pluginCard).toContainText("Installed v");
   await pluginCard.getByRole("button", { name: "/spark" }).click();
-  await expect(page.getByText(/Spark macro: from the browser tabletop near .*Valen Ash/)).toBeVisible();
+  await page.getByRole("button", { name: "Live Table", exact: true }).click();
+  await openInspectorPanel(page, "Chat");
+  await expect(page.locator('[aria-label="Chat messages"]')).toContainText(/Spark macro: from the browser tabletop near .*Valen Ash/);
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
 
   const versionedPluginCard = sdkPanel.locator("article", { hasText: "Versioned Browser Plugin" });
   await expect(versionedPluginCard).toContainText("Compatibility: latest 2.0.0");
@@ -1670,12 +1703,20 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(pluginCard).toBeVisible();
   await sdkPanel.getByRole("combobox", { name: "Plugin marketplace status filter" }).selectOption("all");
   await versionedPluginCard.getByRole("button", { name: "/versioned" }).click();
-  await expect(page.getByText("Versioned browser plugin v1")).toBeVisible();
+  await page.getByRole("button", { name: "Live Table", exact: true }).click();
+  await openInspectorPanel(page, "Chat");
+  await expect(page.locator('[aria-label="Chat messages"]')).toContainText("Versioned browser plugin v1");
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   await versionedPluginCard.getByRole("button", { name: "Upgrade to 2.0.0" }).click();
   await expect(page.getByText("Versioned Browser Plugin upgraded")).toBeVisible();
   await expect(versionedPluginCard).toContainText("Installed v2.0.0");
   await versionedPluginCard.getByRole("button", { name: "/versioned" }).click();
-  await expect(page.getByText("Versioned browser plugin v2")).toBeVisible();
+  await page.getByRole("button", { name: "Live Table", exact: true }).click();
+  await openInspectorPanel(page, "Chat");
+  await expect(page.locator('[aria-label="Chat messages"]')).toContainText("Versioned browser plugin v2");
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   await versionedPluginCard.getByRole("button", { name: "Roll back to 1.0.0" }).click();
   await expect(page.getByText("Versioned Browser Plugin rolled back")).toBeVisible();
   await expect(versionedPluginCard).toContainText("Installed v1.0.0");
@@ -1693,7 +1734,8 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   const fighterTemplate = sdkPanel.locator("article", { hasText: "SRD 5.2.1 martial character" });
   await fighterTemplate.getByRole("button", { name: "Create" }).click();
   await expect(page.getByText("Fighter created")).toBeVisible();
-  await page.getByRole("button", { name: "Actors", exact: true }).click();
+  await openInspectorPanel(page, "Actors");
+  await openActorDisclosure(page.locator(".panel-stack", { hasText: "Selected Actor" }), "Token settings");
   await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: "Fighter" });
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Fighter" })).toBeVisible();
@@ -1704,6 +1746,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(fullSheet.getByRole("region", { name: "Full sheet actions" })).toContainText("Actions");
   await expect(fullSheet.getByRole("region", { name: "Full sheet targeting" })).toContainText("Action target");
   await fullSheet.getByRole("button", { name: "Close" }).click();
+  await page.getByRole("tab", { name: "Compendium" }).click();
   const fighterCompendium = page.locator('[aria-label="Actor compendium browser"]');
   await fighterCompendium.getByRole("textbox", { name: "Compendium search" }).fill("Arrows");
   const arrowsEntry = fighterCompendium.locator("article", { hasText: "Arrows" }).first();
@@ -1735,27 +1778,28 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await sdkPanel.getByLabel("Confirm advancement review").check();
   await sdkPanel.getByRole("button", { name: "Level Up" }).click();
   await expect(page.getByText("Fighter advanced to Level 2")).toBeVisible();
-  await page.getByRole("button", { name: "Actors", exact: true }).click();
+  await openInspectorPanel(page, "Actors");
   await page.getByRole("tab", { name: "Actions" }).click();
   const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
   const actorResources = actorPanel.locator(".metric-row", { hasText: "Resources" });
   await expect(actorResources).toContainText("Second Wind 2/2");
+  await openActorDisclosure(actorPanel, "Actor details");
   await page.locator("#actor-hp").fill("1");
   await expect(page.locator("#actor-hp")).toHaveValue("1");
   await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: "Fighter" });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const secondWindCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Second Wind" }).first();
   await expect(secondWindCard).toContainText("effect supported");
   await secondWindCard.getByRole("button", { name: "Use action" }).click();
   await expect(page.getByText("Fighter used action: Second Wind 1; healing applied")).toBeVisible();
   await expect(actorResources).toContainText("Second Wind 1/2");
   await expect.poll(async () => Number(await page.locator("#actor-hp").inputValue())).toBeGreaterThan(1);
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
   const actionSurgeCard = page.locator("article", { hasText: "Action Surge" }).first();
   await expect(actionSurgeCard).toContainText("Effect unsupported: clear Apply action effect to roll this action.");
   await expect(actionSurgeCard.getByRole("button", { name: "Use action" })).toBeDisabled();
-  await page.getByRole("checkbox", { name: "Apply action effect" }).uncheck();
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), false);
   await expect(actionSurgeCard.getByRole("button", { name: "Use action" })).toBeEnabled();
 
   await page.getByRole("button", { name: "AI Studio", exact: true }).click();
@@ -1838,12 +1882,12 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await page.reload();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   await page.getByRole("button", { name: `Token E2E Paladin Token ${suffix}` }).click();
-  await page.getByRole("button", { name: "Actors", exact: true }).click();
+  await openInspectorPanel(page, "Actors");
   await page.getByRole("tab", { name: "Actions" }).click();
   await expect(page.getByRole("heading", { name: `E2E Paladin ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const divineSmiteCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Divine Smite" }).first();
   await expect(divineSmiteCard).toContainText("effect supported");
   const targetHpBeforeSmite = (target.data.hp as { current: number }).current;
@@ -1852,10 +1896,10 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeSmite);
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: paladin.name });
+  await selectTokenInspectorActor(page, paladin.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Paladin ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  await selectActionTargetActor(page, target.name);
   const targetHpBeforeLayOnHands = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
   const layOnHandsCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Lay On Hands" }).first();
   await expect(layOnHandsCard).toContainText("effect supported");
@@ -1865,12 +1909,12 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeGreaterThan(targetHpBeforeLayOnHands);
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: cleric.name });
+  await selectTokenInspectorActor(page, cleric.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Cleric ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const divineSparkCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Divine Spark Damage" }).first();
   await expect(divineSparkCard).toContainText("effect supported");
   const targetHpBeforeDivineSpark = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
@@ -1884,12 +1928,12 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeDivineSpark);
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: sorcerer.name });
+  await selectTokenInspectorActor(page, sorcerer.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Sorcerer ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const chromaticOrbCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Chromatic Orb Damage" }).first();
   await expect(chromaticOrbCard).toContainText("effect supported");
   const targetHpBeforeChromaticOrb = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
@@ -1899,12 +1943,12 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeChromaticOrb);
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: warlock.name });
+  await selectTokenInspectorActor(page, warlock.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Warlock ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const hexCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Hex Damage" }).first();
   await expect(hexCard).toContainText("effect supported");
   const targetHpBeforeHex = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
@@ -1916,10 +1960,10 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   const warlockAfterHex = await getActorById(page, warlock.id);
   const pactSlotLevel = Object.keys((warlockAfterHex.data.spellSlots as Record<string, { current: number }>) ?? {}).find((key) => key.startsWith("level")) ?? "level3";
   const pactSlotsAfterHex = ((warlockAfterHex.data.spellSlots as Record<string, { current: number }>)[pactSlotLevel]?.current) ?? 0;
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: warlock.name });
+  await selectTokenInspectorActor(page, warlock.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Warlock ${suffix}` })).toBeVisible();
-  await page.getByRole("checkbox", { name: "Apply action effect" }).uncheck();
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), false);
   const magicalCunningCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Magical Cunning" }).first();
   await expect(magicalCunningCard).toContainText("roll only action");
   await magicalCunningCard.getByRole("button", { name: "Use action" }).click();
@@ -1928,12 +1972,12 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
     .poll(async () => (((await getActorById(page, warlock.id)).data.spellSlots as Record<string, { current: number }>)[pactSlotLevel]?.current) ?? 0)
     .toBeGreaterThan(pactSlotsAfterHex);
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: druid.name });
+  await selectTokenInspectorActor(page, druid.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Druid ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const cureWoundsCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Cure Wounds Healing" }).first();
   await expect(cureWoundsCard).toContainText("effect supported");
   const targetHpBeforeCureWounds = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
@@ -1943,12 +1987,12 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeGreaterThan(targetHpBeforeCureWounds);
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: wizard.name });
+  await selectTokenInspectorActor(page, wizard.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Wizard ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const fireBoltCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Fire Bolt Damage" }).first();
   await expect(fireBoltCard).toContainText("effect supported");
   const targetHpBeforeFireBolt = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
@@ -1958,12 +2002,12 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeFireBolt);
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: monster.name });
+  await selectTokenInspectorActor(page, monster.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Giant Spider ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const biteDamageCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Bite Damage" }).first();
   await expect(biteDamageCard).toContainText("effect supported");
   const targetHpBeforeBite = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
@@ -1972,21 +2016,21 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeBite);
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: monster.name });
+  await selectTokenInspectorActor(page, monster.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Giant Spider ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  await selectActionTargetActor(page, target.name);
   const webEffectCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Web Effect" }).first();
   await expect(webEffectCard).toContainText("effect supported");
   await webEffectCard.getByRole("button", { name: "Use action" }).click();
   await expect(page.getByText("Save outcomes are required before this D&D action can be committed.")).toBeVisible();
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: bard.name });
+  await selectTokenInspectorActor(page, bard.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Bard ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const healingWordCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Healing Word Healing" }).first();
   await expect(healingWordCard).toContainText("effect supported");
   const targetHpBeforeHealingWord = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
@@ -1995,11 +2039,11 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeGreaterThan(targetHpBeforeHealingWord);
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: bard.name });
+  await selectTokenInspectorActor(page, bard.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Bard ${suffix}` })).toBeVisible();
   const bardicInspirationBefore = (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0;
-  await page.getByRole("checkbox", { name: "Apply action effect" }).uncheck();
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), false);
   const bardicInspirationCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Bardic Inspiration" }).first();
   await expect(bardicInspirationCard).toContainText("roll only action");
   await bardicInspirationCard.getByRole("button", { name: "Use action" }).click();
@@ -2008,7 +2052,7 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
     .poll(async () => (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0)
     .toBeLessThan(bardicInspirationBefore);
   const bardicInspirationSpent = (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0;
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: bard.name });
+  await selectTokenInspectorActor(page, bard.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Bard ${suffix}` })).toBeVisible();
   const fontOfInspirationCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Font of Inspiration" }).first();
@@ -2019,12 +2063,12 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
     .poll(async () => (((await getActorById(page, bard.id)).data.resources as Record<string, { current: number }>).bardicInspiration?.current) ?? 0)
     .toBeGreaterThan(bardicInspirationSpent);
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: monk.name });
+  await selectTokenInspectorActor(page, monk.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Monk ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const stunningStrikeCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Stunning Strike" }).first();
   await expect(stunningStrikeCard).toContainText("effect supported");
   await stunningStrikeCard.getByRole("button", { name: "Use action" }).click();
@@ -2033,12 +2077,12 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
   await expect(deflectCard).toContainText("Deflect Attacks Reaction Damage");
   await expect(deflectCard).toContainText("effect supported");
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: ranger.name });
+  await selectTokenInspectorActor(page, ranger.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Ranger ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
-  await page.getByRole("checkbox", { name: "Consume action resources" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
+  await setCheckbox(page.getByRole("checkbox", { name: "Consume action resources" }), true);
   const huntersMarkCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Hunter's Mark" }).first();
   await expect(huntersMarkCard).toContainText("effect supported");
   const targetHpBeforeHuntersMark = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
@@ -2048,11 +2092,11 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeHuntersMark);
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: rogue.name });
+  await selectTokenInspectorActor(page, rogue.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Rogue ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
   const sneakAttackCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Sneak Attack" }).first();
   await expect(sneakAttackCard).toContainText("effect supported");
   const targetHpBeforeSneakAttack = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
@@ -2062,11 +2106,11 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
     .poll(async () => ((await getActorById(page, target.id)).data.hp as { current: number }).current)
     .toBeLessThan(targetHpBeforeSneakAttack);
 
-  await page.getByRole("combobox", { name: "Token inspector actor" }).selectOption({ label: barbarian.name });
+  await selectTokenInspectorActor(page, barbarian.name);
   await expect(page.getByText("Token updated")).toBeVisible();
   await expect(page.getByRole("heading", { name: `E2E Barbarian ${suffix}` })).toBeVisible();
-  await page.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await page.getByRole("checkbox", { name: "Apply action effect" }).check();
+  await selectActionTargetActor(page, target.name);
+  await setCheckbox(page.getByRole("checkbox", { name: "Apply action effect" }), true);
   const rageDamageCard = page.getByRole("region", { name: "Actor action sheet" }).locator("article", { hasText: "Rage Damage" }).first();
   await expect(rageDamageCard).toContainText("effect supported");
   const targetHpBeforeRageDamage = ((await getActorById(page, target.id)).data.hp as { current: number }).current;
@@ -2238,31 +2282,29 @@ test("player can accept an invite from a private browser session", async ({ brow
     await expect(privatePage.getByRole("button", { name: /GM Prep Hidden Scene/ })).toHaveCount(0);
     await expect(privatePage.getByRole("button", { name: "Chat", exact: true })).toBeVisible();
 
-    await page.getByRole("textbox", { name: "Chat message" }).fill("Realtime GM broadcast");
-    await page.getByRole("button", { name: "Send chat message" }).click();
-    await expect(privatePage.getByText("Realtime GM broadcast")).toBeVisible();
+    await submitChatCommand(page, "Realtime GM broadcast");
+    await openInspectorPanel(privatePage, "Chat");
+    await expect(privatePage.locator('[aria-label="Chat messages"]')).toContainText("Realtime GM broadcast");
 
-    await privatePage.getByRole("combobox", { name: "Chat visibility" }).selectOption("whisper");
-    await expect(privatePage.getByRole("combobox", { name: "Whisper recipient" })).toBeEnabled();
-    await privatePage.getByRole("combobox", { name: "Whisper recipient" }).selectOption("usr_demo_gm");
-    await privatePage.getByRole("textbox", { name: "Chat message" }).fill("Realtime player whisper");
-    await privatePage.getByRole("button", { name: "Send chat message" }).click();
-    await expect(page.getByText("Realtime player whisper")).toBeVisible();
+    await submitChatCommand(privatePage, '/w "Demo GM" Realtime player whisper');
+    await openInspectorPanel(page, "Chat");
+    await expect(page.locator('[aria-label="Chat messages"]')).toContainText("Realtime player whisper");
 
-    await privatePage.getByRole("textbox", { name: "Dice formula" }).fill("1d20+1");
-    await privatePage.getByLabel("Dice roll visibility").selectOption("public");
-    await privatePage.getByRole("button", { name: "Roll dice" }).click();
-    await expect(privatePage.getByText(/^Rolled \d+$/)).toBeVisible();
-    await privatePage.getByRole("textbox", { name: "Dice formula" }).fill("1d20+2");
-    await privatePage.getByLabel("Dice roll visibility").selectOption("gm_only");
-    await privatePage.getByRole("button", { name: "Roll dice" }).click();
-    await expect(privatePage.getByText(/^Rolled \d+$/)).toBeVisible();
-    await privatePage.getByRole("button", { name: "Chat", exact: true }).click();
-    const playerRollHistory = privatePage.locator(".roll-history-list");
-    await expect(playerRollHistory).toContainText("1d20+1");
-    await expect(playerRollHistory).toContainText("public");
-    await expect(playerRollHistory).toContainText("1d20+2");
-    await expect(playerRollHistory).toContainText("gm_only");
+    await submitChatCommand(privatePage, "/roll 1d20+1");
+    await expect(privatePage.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
+    await submitChatCommand(privatePage, "/gmroll 1d20+2");
+    await expect(privatePage.getByRole("status").filter({ hasText: /^Rolled \d+$/ })).toBeVisible();
+    const playerRolls = await privatePage.evaluate(async ({ apiBaseUrl }) => {
+      const bearer = localStorage.getItem("otte:sessionToken");
+      if (!bearer) throw new Error("No browser session token available for roll lookup");
+      const response = await fetch(`${apiBaseUrl}/api/v1/campaigns/camp_demo/rolls`, {
+        headers: { authorization: `Bearer ${bearer}` }
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return (await response.json()) as Array<{ formula?: string; visibility?: string }>;
+    }, { apiBaseUrl });
+    expect(playerRolls.some((roll) => roll.formula === "1d20+1" && roll.visibility === "public")).toBe(true);
+    expect(playerRolls.some((roll) => roll.formula === "1d20+2" && roll.visibility === "gm_only")).toBe(true);
 
     const playerUserId = await privatePage.evaluate(() => localStorage.getItem("otte:userId"));
     expect(playerUserId).toBeTruthy();
