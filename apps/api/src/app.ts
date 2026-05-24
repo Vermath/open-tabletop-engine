@@ -7196,7 +7196,9 @@ function createConfiguredAiProvider(): AiProvider {
         modelProvider: process.env.OTTE_CODEX_MODEL_PROVIDER,
         reasoningEffort: agentReasoningEffort(),
         requestTimeoutMs: providerTimeoutMs,
-        turnTimeoutMs: providerTimeoutMs === undefined ? undefined : Math.max(providerTimeoutMs, 180_000)
+        turnTimeoutMs: providerTimeoutMs === undefined ? undefined : Math.max(providerTimeoutMs, 180_000),
+        autoStart: codexAppServerAutoStartEnabled(),
+        codexCommand: trimmedEnvValue(process.env.OTTE_CODEX_APP_SERVER_COMMAND)
       }),
       approvalMode: "proposal",
       reasoningEffort: agentReasoningEffort()
@@ -7222,7 +7224,9 @@ function createConfiguredImageAssetGenerator(): ImageAssetGenerator {
       model: process.env.OTTE_CODEX_IMAGE_MODEL ?? process.env.OTTE_CODEX_MODEL,
       modelProvider: process.env.OTTE_CODEX_MODEL_PROVIDER,
       requestTimeoutMs: timeoutMs,
-      turnTimeoutMs: timeoutMs
+      turnTimeoutMs: timeoutMs,
+      autoStart: codexAppServerAutoStartEnabled(),
+      codexCommand: trimmedEnvValue(process.env.OTTE_CODEX_APP_SERVER_COMMAND)
     });
   }
   if (configuredProvider === "disabled" || configuredProvider === "off" || configuredProvider === "none") {
@@ -7236,12 +7240,22 @@ function normalizedEnvValue(value: string | undefined): string | undefined {
   return normalized ? normalized : undefined;
 }
 
+function trimmedEnvValue(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function configuredAiProviderName(): string {
   return normalizedEnvValue(process.env.OTTE_AI_PROVIDER) ?? "codex-app-server";
 }
 
 function isCodexAppServerProviderConfigured(): boolean {
   return configuredAiProviderName() === "codex-app-server";
+}
+
+function codexAppServerAutoStartEnabled(): boolean {
+  const value = normalizedEnvValue(process.env.OTTE_CODEX_APP_SERVER_AUTOSTART);
+  return value !== "false" && value !== "0" && value !== "off" && value !== "no";
 }
 
 class UnavailableAiProvider implements AiProvider {
@@ -7262,6 +7276,8 @@ interface CodexAppServerImageAssetGeneratorOptions {
   modelProvider?: string;
   requestTimeoutMs: number;
   turnTimeoutMs: number;
+  autoStart?: boolean;
+  codexCommand?: string;
 }
 
 class CodexAppServerImageAssetGenerator implements ImageAssetGenerator {
@@ -7276,7 +7292,9 @@ class CodexAppServerImageAssetGenerator implements ImageAssetGenerator {
       model: options.model,
       modelProvider: options.modelProvider,
       requestTimeoutMs: options.requestTimeoutMs,
-      turnTimeoutMs: options.turnTimeoutMs
+      turnTimeoutMs: options.turnTimeoutMs,
+      autoStart: options.autoStart,
+      codexCommand: options.codexCommand
     });
   }
 

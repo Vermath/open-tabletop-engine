@@ -21683,9 +21683,10 @@ registerCommand("/state", (input) => {
   });
 
   it("defaults agent threads to Codex app-server instead of local echo", async () => {
-    const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OTTE_CODEX_APP_SERVER_URL", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
+    const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OTTE_CODEX_APP_SERVER_URL", "OTTE_CODEX_APP_SERVER_AUTOSTART", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
     delete process.env.OTTE_AI_PROVIDER;
     process.env.OTTE_CODEX_APP_SERVER_URL = "ws://127.0.0.1:1";
+    process.env.OTTE_CODEX_APP_SERVER_AUTOSTART = "false";
     process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "25";
     process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "0";
     const app = await buildApp({ store: new MemoryStateStore() });

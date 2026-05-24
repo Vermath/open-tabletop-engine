@@ -1,3 +1,4 @@
+import type { ChildProcess } from "node:child_process";
 import type { AiMessage, AiProvider, AiProviderEvent, AiProviderRequest, AiReasoningEffort, AiToolParameterSchema, PermissionFilteredContext } from "@open-tabletop/ai-core";
 
 export interface JsonRpcTransport {
@@ -20,7 +21,18 @@ export interface CodexAppServerWebSocketTransportOptions {
   requestTimeoutMs?: number;
   turnTimeoutMs?: number;
   webSocketFactory?: (url: string) => CodexWebSocketLike;
+  autoStart?: boolean;
+  codexCommand?: string;
+  appServerStarter?: CodexAppServerStarter;
 }
+
+export interface CodexAppServerStartOptions {
+  url: string;
+  command?: string;
+  timeoutMs: number;
+}
+
+export type CodexAppServerStarter = (options: CodexAppServerStartOptions) => Promise<void>;
 
 export interface CodexAppServerImageGenerationInput {
   prompt: string;
@@ -138,6 +150,8 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
   private readonly requestTimeoutMs: number;
   private readonly turnTimeoutMs: number;
   private readonly webSocketFactory: (url: string) => CodexWebSocketLike;
+  private readonly autoStart: boolean;
+  private readonly appServerStarter: CodexAppServerStarter;
   private clientSessionId = "codex_app_server";
 
   constructor(private readonly options: CodexAppServerWebSocketTransportOptions = {}) {
@@ -145,6 +159,8 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
     this.requestTimeoutMs = normalizedTimeout(options.requestTimeoutMs, 60_000);
     this.turnTimeoutMs = normalizedTimeout(options.turnTimeoutMs, 180_000);
     this.webSocketFactory = options.webSocketFactory ?? defaultWebSocketFactory;
+    this.autoStart = options.autoStart ?? false;
+    this.appServerStarter = options.appServerStarter ?? startLocalCodexAppServer;
   }
 
   async request<TResponse>(method: string, params: unknown): Promise<TResponse> {
@@ -272,7 +288,25 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
     }
   }
 
-  private connect(): Promise<CodexWebSocketLike> {
+  private async connect(): Promise<CodexWebSocketLike> {
+    try {
+      return await this.openSocket();
+    } catch (error) {
+      if (!this.autoStart || !isAutoStartableCodexUrl(this.url)) throw asError(error);
+      try {
+        await this.appServerStarter({ url: this.url, command: this.options.codexCommand, timeoutMs: this.requestTimeoutMs });
+      } catch (startError) {
+        throw new Error(`Failed to start Codex app-server for ${this.url}: ${errorMessage(startError)}. Original connection error: ${errorMessage(error)}`);
+      }
+      try {
+        return await this.openSocket();
+      } catch (reconnectError) {
+        throw new Error(`Started Codex app-server for ${this.url}, but the WebSocket connection still failed: ${errorMessage(reconnectError)}. Original connection error: ${errorMessage(error)}`);
+      }
+    }
+  }
+
+  private openSocket(): Promise<CodexWebSocketLike> {
     const socket = this.webSocketFactory(this.url);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -303,6 +337,139 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
       socket.addEventListener("close", onClose);
     });
   }
+}
+
+const codexAppServerStartups = new Map<string, Promise<void>>();
+const codexAppServerChildren = new Map<string, ChildProcess>();
+
+async function startLocalCodexAppServer(options: CodexAppServerStartOptions): Promise<void> {
+  const listenUrl = codexListenUrl(options.url);
+  if (!listenUrl) throw new Error(`Codex app-server auto-start only supports loopback ws://IP:PORT URLs without a path; received ${options.url}`);
+  if (await isCodexAppServerReady(listenUrl)) return;
+
+  const existing = codexAppServerStartups.get(listenUrl);
+  if (existing) return existing;
+
+  const startup = spawnAndWaitForCodexAppServer(listenUrl, options);
+  codexAppServerStartups.set(listenUrl, startup);
+  try {
+    await startup;
+  } finally {
+    codexAppServerStartups.delete(listenUrl);
+  }
+}
+
+async function spawnAndWaitForCodexAppServer(listenUrl: string, options: CodexAppServerStartOptions): Promise<void> {
+  const existingChild = codexAppServerChildren.get(listenUrl);
+  if (existingChild && existingChild.exitCode === null && !existingChild.killed) {
+    await waitForCodexAppServerReady(listenUrl, options.timeoutMs, [], existingChild);
+    return;
+  }
+
+  const output: string[] = [];
+  const command = options.command?.trim() || defaultCodexCommand();
+  const { spawn } = await import("node:child_process");
+  const child = spawn(command, ["app-server", "--listen", listenUrl], {
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true
+  });
+  codexAppServerChildren.set(listenUrl, child);
+  child.stdout?.on("data", (chunk) => appendStartupOutput(output, chunk));
+  child.stderr?.on("data", (chunk) => appendStartupOutput(output, chunk));
+  child.once("exit", () => {
+    if (codexAppServerChildren.get(listenUrl) === child) codexAppServerChildren.delete(listenUrl);
+  });
+
+  try {
+    await waitForCodexAppServerReady(listenUrl, options.timeoutMs, output, child);
+  } catch (error) {
+    child.kill();
+    throw error;
+  }
+}
+
+async function waitForCodexAppServerReady(listenUrl: string, timeoutMs: number, output: string[], child?: ChildProcess): Promise<void> {
+  const deadline = Date.now() + Math.max(1_000, timeoutMs);
+  let lastProbeError = "";
+  while (Date.now() < deadline) {
+    if (child && child.exitCode !== null) {
+      throw new Error(`Codex app-server process exited with code ${child.exitCode}.${formatStartupOutput(output)}`);
+    }
+    try {
+      if (await isCodexAppServerReady(listenUrl)) return;
+    } catch (error) {
+      lastProbeError = errorMessage(error);
+    }
+    await delay(100);
+  }
+  throw new Error(`Timed out waiting for Codex app-server readiness at ${readyzUrlForCodexListenUrl(listenUrl)}.${lastProbeError ? ` Last probe error: ${lastProbeError}.` : ""}${formatStartupOutput(output)}`);
+}
+
+async function isCodexAppServerReady(listenUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(readyzUrlForCodexListenUrl(listenUrl));
+    return response.status === 200;
+  } catch {
+    return false;
+  }
+}
+
+function codexListenUrl(url: string): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return undefined;
+  }
+  if (parsed.protocol !== "ws:") return undefined;
+  if (!isLoopbackHost(parsed.hostname)) return undefined;
+  if (!parsed.port) return undefined;
+  if (parsed.pathname !== "/" || parsed.search || parsed.hash || parsed.username || parsed.password) return undefined;
+  return `ws://${parsed.hostname}:${parsed.port}`;
+}
+
+function isAutoStartableCodexUrl(url: string): boolean {
+  return codexListenUrl(url) !== undefined;
+}
+
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.toLowerCase();
+  return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1" || normalized === "[::1]";
+}
+
+function readyzUrlForCodexListenUrl(listenUrl: string): string {
+  const parsed = new URL(listenUrl);
+  return `http://${parsed.host}/readyz`;
+}
+
+function defaultCodexCommand(): string {
+  return process.platform === "win32" ? "codex.cmd" : "codex";
+}
+
+function appendStartupOutput(output: string[], chunk: unknown): void {
+  const text = String(chunk);
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed) output.push(trimmed);
+  }
+  while (output.length > 20) output.shift();
+}
+
+function formatStartupOutput(output: string[]): string {
+  if (output.length === 0) return "";
+  return ` Last app-server output: ${output.join("\n").slice(-2_000)}`;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 class CodexAppServerImageRpc {

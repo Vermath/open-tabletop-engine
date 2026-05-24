@@ -1,6 +1,6 @@
 import type { AiProviderRequest } from "@open-tabletop/ai-core";
 import { describe, expect, it } from "vitest";
-import { CodexAppServerAuthRequiredError, CodexAppServerProvider, CodexAppServerWebSocketTransport } from "./index";
+import { CodexAppServerAuthRequiredError, CodexAppServerProvider, CodexAppServerWebSocketTransport, type CodexAppServerStartOptions } from "./index";
 
 const baseRequest: AiProviderRequest = {
   threadId: "thr_test",
@@ -112,6 +112,37 @@ describe("CodexAppServerWebSocketTransport", () => {
     expect(socket?.sent.some((message) => message.method === "thread/start")).toBe(false);
   });
 
+  it("auto-starts a local Codex app-server before retrying an agent turn", async () => {
+    const starts: CodexAppServerStartOptions[] = [];
+    let attempts = 0;
+    let socket: FakeCodexSocket | undefined;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://127.0.0.1:4500",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 1000,
+        autoStart: true,
+        appServerStarter: async (options) => {
+          starts.push(options);
+        },
+        webSocketFactory: () => {
+          attempts += 1;
+          if (attempts === 1) return new FailingCodexSocket("Received network error or non-101 status code");
+          socket = new FakeCodexSocket();
+          return socket;
+        }
+      })
+    });
+
+    const events = [];
+    for await (const event of provider.stream(baseRequest)) events.push(event);
+
+    expect(starts).toEqual([{ url: "ws://127.0.0.1:4500", command: undefined, timeoutMs: 1000 }]);
+    expect(attempts).toBe(2);
+    expect(socket?.sent.find((message) => message.method === "account/read")).toBeTruthy();
+    expect(events).toEqual(expect.arrayContaining([{ type: "message.completed", content: "The map request was handed to OpenTabletop." }]));
+  });
+
   it("returns generated image bytes from Codex app-server imageGeneration items", async () => {
     let socket: FakeCodexImageSocket | undefined;
     const transport = new CodexAppServerWebSocketTransport({
@@ -217,6 +248,34 @@ class FakeCodexSocket {
 
   private emitMessage(message: unknown): void {
     this.emit("message", { data: JSON.stringify(message) });
+  }
+
+  private emit(type: string, event: { data?: unknown; reason?: string; message?: string }): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
+class FailingCodexSocket {
+  private readonly listeners = new Map<string, Set<(event: { data?: unknown; reason?: string; message?: string }) => void>>();
+
+  constructor(message: string) {
+    queueMicrotask(() => this.emit("error", { message }));
+  }
+
+  send(_data: string): void {}
+
+  close(): void {
+    this.emit("close", {});
+  }
+
+  addEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    this.listeners.get(type)?.delete(listener);
   }
 
   private emit(type: string, event: { data?: unknown; reason?: string; message?: string }): void {
