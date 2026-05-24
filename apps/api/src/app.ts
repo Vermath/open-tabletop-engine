@@ -5380,8 +5380,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       campaignId: request.params.campaignId,
       text: request.body.text,
       visibility: request.body.visibility ?? "gm_only",
-      sourceIds: request.body.sourceIds ?? [],
-      approvedByUserId: request.body.approvedByUserId
+      sourceIds: request.body.sourceIds ?? []
     }) satisfies AiMemoryFact;
     store.state.aiMemory.push(fact);
     store.save();
