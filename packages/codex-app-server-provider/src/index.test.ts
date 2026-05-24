@@ -81,7 +81,7 @@ describe("CodexAppServerWebSocketTransport", () => {
     });
   });
 
-  it("starts the managed ChatGPT login flow when Codex has no account", async () => {
+  it("requires ChatGPT auth when Codex has no account", async () => {
     let socket: FakeCodexSocket | undefined;
     const provider = new CodexAppServerProvider({
       transport: new CodexAppServerWebSocketTransport({
@@ -102,13 +102,10 @@ describe("CodexAppServerWebSocketTransport", () => {
     }).rejects.toMatchObject({
       code: "codex_auth_required",
       login: {
-        type: "chatgpt",
-        loginId: "login_test",
-        authUrl: "https://chatgpt.test/oauth"
+        type: "chatgpt"
       }
     } satisfies Partial<CodexAppServerAuthRequiredError>);
     expect(socket?.sent.find((message) => message.method === "account/read")).toBeTruthy();
-    expect(socket?.sent.find((message) => message.method === "account/login/start")?.params).toEqual({ type: "chatgpt" });
     expect(socket?.sent.some((message) => message.method === "thread/start")).toBe(false);
   });
 
