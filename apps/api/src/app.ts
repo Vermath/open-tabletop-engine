@@ -21844,7 +21844,7 @@ function topCountEntries(counts: Record<string, number>, limit: number): Array<{
 function signedAssetDelivery(asset: MapAsset, headers: Record<string, string | string[] | undefined>, requestedTtlSeconds: number | undefined, disposition: "inline" | "attachment" | undefined): Record<string, string | number | undefined> {
   const ttlSeconds = assetUrlTtlSeconds(requestedTtlSeconds);
   const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
-  const safeDisposition = disposition ?? "inline";
+  const safeDisposition = normalizeAssetDisposition(disposition) ?? "inline";
   const signature = signAssetUrl(asset.id, expiresAt, safeDisposition);
   const url = new URL(`${assetDeliveryBase(headers)}/api/v1/assets/${asset.id}/blob`);
   url.searchParams.set("expiresAt", expiresAt);
@@ -21890,9 +21890,15 @@ function signAssetUrl(assetId: string, expiresAt: string, disposition: string): 
 }
 
 function isValidAssetSignature(assetId: string, expiresAt: string | undefined, signature: string | undefined, disposition: string | undefined): boolean {
-  if (!expiresAt || !signature || Date.parse(expiresAt) <= Date.now()) return false;
+  if (!expiresAt || !signature) return false;
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) return false;
+  const maxExpiresAtMs = Date.now() + assetUrlMaxTtlSeconds() * 1000;
+  if (expiresAtMs > maxExpiresAtMs) return false;
+  const safeDisposition = normalizeAssetDisposition(disposition);
+  if (!safeDisposition) return false;
   try {
-    const expected = signAssetUrl(assetId, expiresAt, disposition ?? "inline");
+    const expected = signAssetUrl(assetId, expiresAt, safeDisposition);
     const expectedBytes = Buffer.from(expected);
     const actualBytes = Buffer.from(signature);
     return expectedBytes.length === actualBytes.length && timingSafeEqual(expectedBytes, actualBytes);
@@ -21902,7 +21908,12 @@ function isValidAssetSignature(assetId: string, expiresAt: string | undefined, s
 }
 
 function assetSignaturePayload(assetId: string, expiresAt: string, disposition: string): string {
-  return `${assetId}:${expiresAt}:${disposition}`;
+  return JSON.stringify({ assetId, expiresAt, disposition });
+}
+
+function normalizeAssetDisposition(disposition: string | undefined): "inline" | "attachment" | undefined {
+  if (!disposition) return "inline";
+  return disposition === "inline" || disposition === "attachment" ? disposition : undefined;
 }
 
 function assetSigningSecret(): string {

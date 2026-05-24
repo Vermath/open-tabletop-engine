@@ -25903,6 +25903,16 @@ registerCommand("/state", (input) => {
       });
       expect(unauthenticatedBlob.statusCode).toBe(401);
 
+      const farFutureExpiresAt = new Date(Date.now() + 1200 * 1000).toISOString();
+      const farFutureSignature = createHmac("sha256", "test-asset-signing-secret")
+        .update(JSON.stringify({ assetId: asset.id, expiresAt: farFutureExpiresAt, disposition: "inline" }))
+        .digest("base64url");
+      const beyondMaxTtl = await app.inject({
+        method: "GET",
+        url: `/api/v1/assets/${asset.id}/blob?expiresAt=${encodeURIComponent(farFutureExpiresAt)}&signature=${encodeURIComponent(farFutureSignature)}`
+      });
+      expect(beyondMaxTtl.statusCode).toBe(401);
+
       const deleted = await app.inject({
         method: "PATCH",
         url: `/api/v1/assets/${asset.id}/lifecycle`,
