@@ -47,7 +47,12 @@ server.listen(port, host, () => {
 });
 
 async function resolveStaticPath(pathname) {
-  const decoded = decodeURIComponent(pathname);
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return join(root, "index.html");
+  }
   const normalized = normalize(decoded).replace(/^[/\\]+/, "").replace(/^(\.\.[/\\])+/, "");
   const requested = join(root, normalized);
   if (requested.startsWith(root)) {
