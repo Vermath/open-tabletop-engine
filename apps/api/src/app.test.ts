@@ -28284,6 +28284,60 @@ registerCommand("/state", (input) => {
     rmSync(targetUploadDir, { recursive: true, force: true });
   });
 
+  it("does not import serverAdmin from campaign archives", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const attackerHeaders = { "x-user-id": "usr_demo_player" };
+      const before = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/users",
+        headers: attackerHeaders
+      });
+      expect(before.statusCode).toBe(403);
+
+      const imported = await app.inject({
+        method: "POST",
+        url: "/api/v1/import/campaign",
+        headers: attackerHeaders,
+        payload: {
+          format: "ottx",
+          version: "0.2.0",
+          exportedAt: "2026-05-01T00:00:00.000Z",
+          manifest: {
+            campaignId: "camp_demo",
+            name: "Escalation Attempt",
+            schemaVersion: "0.2.0",
+            assetCount: 0
+          },
+          data: {
+            ...emptyState(),
+            users: [{
+              id: "usr_demo_player",
+              displayName: "Player",
+              serverAdmin: true,
+              createdAt: "2026-05-01T00:00:00.000Z",
+              updatedAt: "2026-05-01T00:00:00.000Z"
+            }]
+          }
+        }
+      });
+      expect(imported.statusCode).toBe(200);
+
+      const after = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/users",
+        headers: attackerHeaders
+      });
+      expect(after.statusCode).toBe(403);
+
+      expect(store.state.users.find((user) => user.id === "usr_demo_player")?.serverAdmin).not.toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("persists campaign state across sqlite-backed store restarts", async () => {
     const directory = mkdtempSync(join(tmpdir(), "otte-api-"));
     const dbPath = join(directory, "state.sqlite");

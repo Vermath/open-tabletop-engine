@@ -22293,12 +22293,14 @@ function normalizeArchiveForImport(archive: CampaignArchive, organizationId: str
     ...campaign,
     organizationId
   }));
+  const users = (data.users ?? []).map(({ serverAdmin: _serverAdmin, ...user }) => user);
   return {
     ...archive,
     files: archive.files ?? [],
     data: {
       ...emptyState(),
       ...data,
+      users,
       campaigns,
       sessions: [],
       identities: [],

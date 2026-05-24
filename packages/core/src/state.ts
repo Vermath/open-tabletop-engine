@@ -247,7 +247,7 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
   const aiThreadIds = new Set(state.aiThreads.filter((item) => item.campaignId === campaignId).map((item) => item.id));
   const campaignData: EngineState = {
     ...emptyState(),
-    users: state.users.filter((item) => memberUserIds.has(item.id)).map(({ passwordHash: _passwordHash, mfa: _mfa, scim: _scim, ...user }) => user),
+    users: state.users.filter((item) => memberUserIds.has(item.id)).map(({ passwordHash: _passwordHash, mfa: _mfa, scim: _scim, serverAdmin: _serverAdmin, ...user }) => user),
     sessions: [],
     identities: [],
     oauthStates: [],
