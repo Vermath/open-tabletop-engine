@@ -2845,12 +2845,10 @@ export function App() {
       const codexAuth = codexAuthPromptFromError(error);
       if (codexAuth) {
         const opened = openCodexAuthPrompt(codexAuth);
-        const promptMessage = opened
-          ? "Codex sign-in opened. Finish the ChatGPT OAuth flow, then send your agent request again."
-          : "Codex sign-in is required. Use the sign-in button below, then send your agent request again.";
-        setAiAgentCodexAuth({ ...codexAuth, opened, message: promptMessage });
-        setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: promptMessage, createdAt: new Date().toISOString() }]);
-        setAiAgentStatus(opened ? "Codex sign-in opened" : "Codex sign-in required");
+        const message = errorMessage(error);
+        setAiAgentCodexAuth({ ...codexAuth, opened, message });
+        setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+        setAiAgentStatus(`Agent failed: ${message}`);
         return;
       }
       const message = errorMessage(error);

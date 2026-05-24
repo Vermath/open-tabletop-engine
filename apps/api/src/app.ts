@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { EchoAiProvider, buildPermissionFilteredContext, type AiBoardCaptureResult, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
+import { buildPermissionFilteredContext, type AiBoardCaptureResult, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
@@ -7178,14 +7178,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 const ALL_PERMISSIONS: PermissionName[] = ["campaign.read", "campaign.update", "campaign.delete", "scene.read", "scene.create", "scene.update", "scene.delete", "scene.activate", "token.read", "token.create", "token.update", "token.move", "token.delete", "token.reveal", "actor.read", "actor.create", "actor.update", "actor.delete", "actor.readPrivate", "actor.updateOwned", "journal.read", "journal.readSecret", "journal.create", "journal.update", "journal.delete", "chat.read", "chat.write", "chat.moderate", "combat.manage", "plugin.install", "plugin.configure", "dice.roll", "ai.use", "ai.readPublicMemory", "ai.readGmMemory", "ai.proposeChanges", "ai.applyChanges"];
 
 function createConfiguredAiProvider(): AiProvider {
-  if (process.env.OTTE_AI_PROVIDER === "codex-loopback") {
+  const configuredProvider = configuredAiProviderName();
+  if (configuredProvider === "codex-loopback") {
     return new CodexAppServerProvider({
       transport: new LoopbackCodexTransport(),
       approvalMode: "proposal",
       reasoningEffort: agentReasoningEffort()
     });
   }
-  if (process.env.OTTE_AI_PROVIDER === "codex-app-server") {
+  if (configuredProvider === "codex-app-server") {
     const providerTimeoutMs = aiProviderTimeoutMs();
     return new CodexAppServerProvider({
       transport: new CodexAppServerWebSocketTransport({
@@ -7201,10 +7202,13 @@ function createConfiguredAiProvider(): AiProvider {
       reasoningEffort: agentReasoningEffort()
     });
   }
-  if (process.env.OTTE_AI_PROVIDER === "openai" || process.env.OTTE_AI_PROVIDER === "openai-responses") {
+  if (configuredProvider === "openai" || configuredProvider === "openai-responses") {
     return new UnavailableAiProvider("Direct OpenAI API-key providers are disabled. Start `codex app-server --listen ws://127.0.0.1:4500`, authenticate Codex, and set OTTE_AI_PROVIDER=codex-app-server.");
   }
-  return new EchoAiProvider();
+  if (configuredProvider === "disabled" || configuredProvider === "off" || configuredProvider === "none") {
+    return new UnavailableAiProvider("AI provider is disabled. Start `codex app-server --listen ws://127.0.0.1:4500`, authenticate Codex, and use OTTE_AI_PROVIDER=codex-app-server or leave it unset.");
+  }
+  return new UnavailableAiProvider(`Unsupported OTTE_AI_PROVIDER "${configuredProvider}". OpenTabletop AI uses Codex app-server only; use OTTE_AI_PROVIDER=codex-app-server or leave it unset.`);
 }
 
 function createConfiguredImageAssetGenerator(): ImageAssetGenerator {
@@ -7232,8 +7236,12 @@ function normalizedEnvValue(value: string | undefined): string | undefined {
   return normalized ? normalized : undefined;
 }
 
+function configuredAiProviderName(): string {
+  return normalizedEnvValue(process.env.OTTE_AI_PROVIDER) ?? "codex-app-server";
+}
+
 function isCodexAppServerProviderConfigured(): boolean {
-  return process.env.OTTE_AI_PROVIDER === "codex-app-server";
+  return configuredAiProviderName() === "codex-app-server";
 }
 
 class UnavailableAiProvider implements AiProvider {
@@ -9102,7 +9110,7 @@ function adminAiToolCallInfo(call: AiToolCall, threadById: Map<string, AiThread>
 }
 
 function aiProviderRuntimeConfig(aiProvider: AiProvider) {
-  const selectedProvider = process.env.OTTE_AI_PROVIDER?.trim() || "local-echo";
+  const selectedProvider = configuredAiProviderName();
   const directOpenAiSelected = aiProvider.id === "openai-responses" || selectedProvider === "openai" || selectedProvider === "openai-responses";
   const codexSelected = aiProvider.id === "codex-app-server" || selectedProvider === "codex-loopback";
   const costBudget = aiRuntimeNumberEnv("OTTE_AI_COST_BUDGET_USD");

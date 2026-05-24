@@ -41,6 +41,15 @@ class MemoryAssetStorage implements AssetStorage {
   }
 }
 
+class StaticAiProvider implements AiProvider {
+  id = "test-ai";
+  label = "Test AI";
+
+  async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+    yield { type: "message.completed", content: "Test AI response" };
+  }
+}
+
 describe("asset storage keys", () => {
   it("normalizes campaign and asset ids before deriving object keys", () => {
     const asset = createTimestamped("asset", {
@@ -6512,7 +6521,7 @@ describe("api", () => {
   });
 
   it("covers auth, assets, fog, encounter design, and session memory", async () => {
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const app = await buildApp({ store: new MemoryStateStore(), aiProvider: new StaticAiProvider() });
 
     const session = await app.inject({
       method: "GET",
@@ -6772,7 +6781,7 @@ describe("api", () => {
         permissions: ["plugin.configure"]
       }) satisfies PermissionGrant
     );
-    const app = await buildApp({ store });
+    const app = await buildApp({ store, aiProvider: new StaticAiProvider() });
 
     const unauthenticatedRoutes: Array<{
       method: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
@@ -21671,6 +21680,43 @@ registerCommand("/state", (input) => {
     });
     expect(store.state.aiThreads.at(-1)).toMatchObject({ status: "failed", providerError: "Codex app-server ChatGPT sign-in is required." });
     await app.close();
+  });
+
+  it("defaults agent threads to Codex app-server instead of local echo", async () => {
+    const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OTTE_CODEX_APP_SERVER_URL", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
+    delete process.env.OTTE_AI_PROVIDER;
+    process.env.OTTE_CODEX_APP_SERVER_URL = "ws://127.0.0.1:1";
+    process.env.OTTE_AI_PROVIDER_TIMEOUT_MS = "25";
+    process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "0";
+    const app = await buildApp({ store: new MemoryStateStore() });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: {
+          prompt: "Use the real agent provider.",
+          surface: "agent_panel"
+        }
+      });
+      const bodyText = response.body;
+
+      expect(response.statusCode).toBe(502);
+      expect(response.json()).toMatchObject({
+        error: "ai_provider_failed",
+        thread: {
+          provider: "codex-app-server",
+          status: "failed"
+        }
+      });
+      expect(bodyText).toContain("Codex app-server");
+      expect(bodyText).not.toContain("Draft response");
+      expect(bodyText).not.toContain("local-echo");
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
   });
 
   it("serves MCP tool listing and permission-checked board tools", async () => {

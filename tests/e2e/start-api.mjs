@@ -18,7 +18,8 @@ const child = spawn("pnpm", ["--filter", "@open-tabletop/api", "exec", "tsx", "s
     HOST: "127.0.0.1",
     PORT: apiPort,
     OTTE_SQLITE_PATH: dbPath,
-    OTTE_DEMO_SEED: process.env.OTTE_DEMO_SEED ?? "true"
+    OTTE_DEMO_SEED: process.env.OTTE_DEMO_SEED ?? "true",
+    OTTE_AI_PROVIDER: process.env.OTTE_AI_PROVIDER ?? "codex-loopback"
   }
 });
 
