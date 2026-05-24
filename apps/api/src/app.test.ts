@@ -22850,6 +22850,76 @@ registerCommand("/state", (input) => {
     await app.close();
   });
 
+  it("applies approved generated map proposals and keeps an AI edits scene for visual review", async () => {
+    const store = new MemoryStateStore();
+    const assetStorage = new MemoryAssetStorage();
+    const imageAssetGenerator: ImageAssetGenerator = {
+      id: "test-raster-generator",
+      label: "Test Raster Generator",
+      async generate(input) {
+        return {
+          body: tinyPng,
+          mimeType: `image/${input.outputFormat ?? "png"}`,
+          provider: "test-raster-generator",
+          model: "test-image-model",
+          revisedPrompt: `Revised: ${input.prompt}`,
+          sourcePrompt: input.prompt
+        };
+      }
+    };
+    const app = await buildApp({ store, assetStorage, imageAssetGenerator });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/generate-map-asset",
+      headers: authHeaders,
+      payload: {
+        prompt: "Create a forest clearing battle map.",
+        name: "Forest Clearing Battle Map",
+        sceneId: "scn_vault_entry",
+        outputFormat: "png"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const output = response.json() as { proposalId: string; assetId: string; changeCount: number; sceneId: string };
+    expect(output).toEqual(expect.objectContaining({ changeCount: 3, sceneId: "scn_vault_entry" }));
+    const proposal = store.state.proposals.find((item) => item.id === output.proposalId);
+    expect(proposal?.changesJson.map((change) => `${change.entity}:${change.action}`)).toEqual(["asset:create", "scene:create", "scene:update"]);
+    const aiEditSceneChange = proposal?.changesJson.find((change) => change.entity === "scene" && change.action === "create");
+    expect(aiEditSceneChange?.data).toEqual(
+      expect.objectContaining({
+        name: "AI edits: Forest Clearing Battle Map",
+        folder: "ai/edits",
+        active: false,
+        backgroundAssetId: output.assetId,
+        metadata: expect.objectContaining({
+          source: "ai_map_generation",
+          targetSceneId: "scn_vault_entry",
+          generatedBackgroundAssetId: output.assetId
+        })
+      })
+    );
+
+    const approval = await app.inject({
+      method: "POST",
+      url: `/api/v1/proposals/${output.proposalId}/approve`,
+      headers: authHeaders
+    });
+    expect(approval.statusCode).toBe(200);
+    const apply = await app.inject({
+      method: "POST",
+      url: `/api/v1/proposals/${output.proposalId}/apply`,
+      headers: authHeaders
+    });
+    expect(apply.statusCode).toBe(200);
+    expect(apply.json()).toEqual(expect.objectContaining({ id: output.proposalId, status: "applied" }));
+    expect(store.state.assets.some((asset) => asset.id === output.assetId)).toBe(true);
+    expect(store.state.scenes.find((scene) => scene.id === "scn_vault_entry")?.backgroundAssetId).toBe(output.assetId);
+    expect(store.state.scenes.some((scene) => scene.id === aiEditSceneChange?.data.id && scene.backgroundAssetId === output.assetId)).toBe(true);
+    await app.close();
+  });
+
   it("lets server admins inspect redacted ai operations across campaigns", async () => {
     const previousEnv = snapshotEnv([
       "NODE_ENV",
@@ -25126,7 +25196,7 @@ registerCommand("/state", (input) => {
         expect.objectContaining({ type: "tool.completed", toolName: "draft_journal_entry", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_scene", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_token_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
-        expect.objectContaining({ type: "tool.completed", toolName: "generate_map_asset", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 2, assetId: expect.any(String), sceneId: "scn_vault_entry" }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "generate_map_asset", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 3, assetId: expect.any(String), aiEditSceneId: expect.any(String), sceneId: "scn_vault_entry" }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "generate_token_asset", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 2, assetId: expect.any(String), tokenId: "tok_valen" }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_actor_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "roll_dice", output: expect.objectContaining({ rollId: expect.any(String), formula: "1d20+5", label: "AI Perception" }) }),
@@ -25168,10 +25238,27 @@ registerCommand("/state", (input) => {
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Scene: Mirror Annex")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "scene", action: "create" }));
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Token: Valen Ash")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "token", action: "update", id: "tok_valen", data: expect.objectContaining({ x: 220, y: 240 }) }));
     const mapAssetProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Generated map: Mirror Vault Map");
-    expect(mapAssetProposal?.changesJson.map((change) => change.entity)).toEqual(["asset", "scene"]);
+    expect(mapAssetProposal?.changesJson.map((change) => change.entity)).toEqual(["asset", "scene", "scene"]);
     expect(mapAssetProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "asset", action: "create", data: expect.objectContaining({ name: "Mirror Vault Map", mimeType: "image/png", folder: "maps/generated" }) }));
-    expect(mapAssetProposal?.changesJson[1]).toEqual(expect.objectContaining({ entity: "scene", action: "update", id: "scn_vault_entry", data: expect.objectContaining({ backgroundAssetId: mapAssetProposal?.changesJson[0]?.data.id }) }));
-    const mapSceneUpdate = mapAssetProposal?.changesJson[1]?.data as { metadata?: { generatedBackgroundPrompt?: string } } | undefined;
+    expect(mapAssetProposal?.changesJson[1]).toEqual(
+      expect.objectContaining({
+        entity: "scene",
+        action: "create",
+        data: expect.objectContaining({
+          name: "AI edits: Mirror Vault Map",
+          folder: "ai/edits",
+          active: false,
+          backgroundAssetId: mapAssetProposal?.changesJson[0]?.data.id,
+          metadata: expect.objectContaining({
+            source: "ai_map_generation",
+            targetSceneId: "scn_vault_entry",
+            generatedBackgroundAssetId: mapAssetProposal?.changesJson[0]?.data.id
+          })
+        })
+      })
+    );
+    expect(mapAssetProposal?.changesJson[2]).toEqual(expect.objectContaining({ entity: "scene", action: "update", id: "scn_vault_entry", data: expect.objectContaining({ backgroundAssetId: mapAssetProposal?.changesJson[0]?.data.id }) }));
+    const mapSceneUpdate = mapAssetProposal?.changesJson[2]?.data as { metadata?: { generatedBackgroundPrompt?: string } } | undefined;
     expect(mapSceneUpdate?.metadata?.generatedBackgroundPrompt).toContain("gridless virtual tabletop background");
     const tokenAssetProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Generated token: Valen Token Art");
     expect(tokenAssetProposal?.changesJson.map((change) => change.entity)).toEqual(["asset", "token"]);

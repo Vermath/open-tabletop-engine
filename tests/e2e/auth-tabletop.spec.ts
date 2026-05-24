@@ -1527,6 +1527,7 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
     await expect(mapAssetProposal).toContainText("pending");
     await mapAssetProposal.getByText("Review details").click();
     await expect(mapAssetProposal.getByRole("region", { name: /Generated map: .* review diff/ })).toContainText("asset create");
+    await expect(mapAssetProposal.getByRole("region", { name: /Generated map: .* review diff/ })).toContainText("scene create");
     await expect(mapAssetProposal.getByRole("region", { name: /Generated map: .* review diff/ })).toContainText("scene update");
     await mapAssetProposal.getByRole("button", { name: "Apply" }).click();
     await expect(mapAssetProposal).toContainText("applied");

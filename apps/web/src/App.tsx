@@ -3006,16 +3006,16 @@ export function App() {
   }
 
   async function approveAndApply(proposal: Proposal) {
-    const createdSceneId = createdSceneIdFromProposal(proposal);
+    const sceneIdToOpen = sceneIdToOpenAfterProposalApply(proposal);
     const steps = proposalReviewSteps(proposal);
     if (!steps.includes("apply")) throw new Error(`Proposal is ${proposal.status} and cannot be applied.`);
     if (steps.includes("approve")) await apiPost(`/api/v1/proposals/${proposal.id}/approve`, {});
     const applied = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/apply`, {});
     setSnapshot((current) => applyProposalChangesToSnapshot(current, applied));
-    const appliedSceneId = createdSceneIdFromProposal(applied) ?? createdSceneId;
+    const appliedSceneId = sceneIdToOpenAfterProposalApply(applied) ?? sceneIdToOpen;
     if (appliedSceneId) {
       setSceneId(appliedSceneId);
-      setStatus("Proposal applied; opened new scene");
+      setStatus("Proposal applied; opened scene");
       await refresh(campaignId, appliedSceneId);
       return { applied, openedSceneId: appliedSceneId };
     }
@@ -3029,11 +3029,10 @@ export function App() {
     setAiAgentStatus(proposal.status === "pending" ? "Approving and applying proposal" : "Applying proposal");
     try {
       const result = await approveAndApply(proposal);
-      const message = result.openedSceneId ? "Proposal applied; opened new scene" : "Proposal applied";
+      const message = result.openedSceneId ? "Proposal applied; opened scene" : "Proposal applied";
       setAiAgentStatus(message);
       setAiAgentMessages((messages) => [...messages, { id: `agent-apply-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
     } catch (error) {
-      showAiAgentProposal(proposal.id);
       const message = errorMessage(error);
       setAiAgentStatus(`Apply failed: ${message}`);
       setAiAgentMessages((messages) => [...messages, { id: `agent-apply-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
@@ -3049,7 +3048,6 @@ export function App() {
       setAiAgentStatus(message);
       setAiAgentMessages((messages) => [...messages, { id: `agent-reject-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
     } catch (error) {
-      showAiAgentProposal(proposal.id);
       const message = errorMessage(error);
       setAiAgentStatus(`Reject failed: ${message}`);
       setAiAgentMessages((messages) => [...messages, { id: `agent-reject-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
@@ -3058,14 +3056,6 @@ export function App() {
 
   function hideAiAgentProposal(proposalId: string) {
     setAiAgentHiddenProposalIds((proposalIds) => new Set([...proposalIds, proposalId]));
-  }
-
-  function showAiAgentProposal(proposalId: string) {
-    setAiAgentHiddenProposalIds((proposalIds) => {
-      const next = new Set(proposalIds);
-      next.delete(proposalId);
-      return next;
-    });
   }
 
   async function rejectProposalReview(proposal: Proposal) {
@@ -9422,6 +9412,22 @@ function reasoningTracesFromEvents(events: AiAgentProviderEvent[]): string[] {
     if (!completedTraces.includes(trace)) completedTraces.push(trace);
   }
   return (completedTraces.length > 0 ? completedTraces : traces).slice(0, 4);
+}
+
+function sceneIdToOpenAfterProposalApply(proposal: Proposal): string | undefined {
+  const generatedMapTargetSceneId = generatedMapTargetSceneIdFromProposal(proposal);
+  if (generatedMapTargetSceneId) return generatedMapTargetSceneId;
+  return createdSceneIdFromProposal(proposal);
+}
+
+function generatedMapTargetSceneIdFromProposal(proposal: Proposal): string | undefined {
+  for (const change of proposal.changesJson) {
+    if (change.entity !== "scene" || change.action !== "update" || !change.id) continue;
+    const data = recordValue(change.data);
+    const metadata = recordValue(data.metadata);
+    if (typeof data.backgroundAssetId === "string" && typeof metadata.generatedBackgroundAssetId === "string") return change.id;
+  }
+  return undefined;
 }
 
 function createdSceneIdFromProposal(proposal: Proposal): string | undefined {

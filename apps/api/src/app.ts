@@ -5025,7 +5025,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     try {
-      const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson);
+      const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson, { currentProposalId: proposal.id });
       if ("error" in preparedChanges) throw new Error(preparedChanges.message);
       proposal.changesJson = preparedChanges.changes;
       store.replace(applyProposal(store.state, proposal, userId));
@@ -9396,6 +9396,37 @@ function createAiEncounterScene(input: { state: EngineState; campaignId: string;
   }) satisfies Scene;
 }
 
+function aiGeneratedMapEditSceneName(assetName: string): string {
+  const name = assetName.trim() || "Generated Map";
+  return name.toLowerCase().startsWith("ai edits:") ? name : `AI edits: ${name}`;
+}
+
+function createAiGeneratedMapEditScene(input: { state: EngineState; campaignId: string; targetScene: Scene; assetId: string; assetName: string; sourcePrompt: string }): Scene {
+  return createTimestamped("scn", {
+    campaignId: input.campaignId,
+    name: aiGeneratedMapEditSceneName(input.assetName),
+    width: input.targetScene.width,
+    height: input.targetScene.height,
+    gridType: input.targetScene.gridType,
+    gridSize: input.targetScene.gridSize,
+    backgroundAssetId: input.assetId,
+    folder: "ai/edits",
+    active: false,
+    sortOrder: input.state.scenes.filter((item) => item.campaignId === input.campaignId).length + 1,
+    fog: [],
+    fogHistory: [],
+    walls: [],
+    lights: [],
+    annotations: [],
+    metadata: {
+      source: "ai_map_generation",
+      targetSceneId: input.targetScene.id,
+      generatedBackgroundAssetId: input.assetId,
+      generatedBackgroundPrompt: input.sourcePrompt
+    }
+  }) satisfies Scene;
+}
+
 function createAiThreadTools(): AiToolDefinition[] {
   return [
     {
@@ -9758,7 +9789,18 @@ function createAiThreadTools(): AiToolDefinition[] {
         if (isToolErrorOutput(generated)) return generated;
         if (!isGeneratedImageAssetToolOutput(generated)) return toolError("image_generation_failed", { message: "Generated image asset output was invalid." });
         const changes: ProposalChange[] = [{ entity: "asset", action: "create", data: { ...generated.asset } }];
+        let aiEditSceneId: string | undefined;
         if (scene) {
+          const aiEditScene = createAiGeneratedMapEditScene({
+            state: context.state,
+            campaignId: context.campaignId,
+            targetScene: scene,
+            assetId: generated.asset.id,
+            assetName: name,
+            sourcePrompt: generated.sourcePrompt
+          });
+          aiEditSceneId = aiEditScene.id;
+          changes.push({ entity: "scene", action: "create", data: { ...aiEditScene } });
           changes.push({
             entity: "scene",
             action: "update",
@@ -9767,6 +9809,7 @@ function createAiThreadTools(): AiToolDefinition[] {
               backgroundAssetId: generated.asset.id,
               metadata: {
                 ...scene.metadata,
+                aiEditSceneId,
                 generatedBackgroundAssetId: generated.asset.id,
                 generatedBackgroundPrompt: generated.sourcePrompt
               }
@@ -9784,6 +9827,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           title,
           changeCount: changes.length,
           assetId: generated.asset.id,
+          aiEditSceneId,
           sceneId: scene?.id,
           provider: generated.provider,
           model: generated.model,
@@ -10928,7 +10972,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       if (!proposal) return toolError("not_found", { entity: "proposal", id: proposalId });
       if (proposal.status !== "pending") return toolError("proposal_not_pending", { proposalId, status: proposal.status });
       const nextChanges = changes ? normalizeProposalChanges(changes, campaignId, userId) : proposal.changesJson;
-      const preparedChanges = prepareProposalChanges(store, campaignId, userId, nextChanges);
+      const preparedChanges = prepareProposalChanges(store, campaignId, userId, nextChanges, { currentProposalId: proposal.id });
       if ("error" in preparedChanges) return toolError(preparedChanges.error, { message: preparedChanges.message });
       const missingPermission = missingProposalChangePermission(preparedChanges.changes, permissions);
       if (missingPermission) return missingPermissionToolOutput(missingPermission);
@@ -10964,7 +11008,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
       if (!proposal) return toolError("not_found", { entity: "proposal", id: proposalId });
       if (proposal.status !== "approved") return toolError("proposal_not_approved", { proposalId, status: proposal.status });
-      const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson);
+      const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson, { currentProposalId: proposal.id });
       if ("error" in preparedChanges) return toolError(preparedChanges.error, { message: preparedChanges.message });
       proposal.changesJson = preparedChanges.changes;
       const boardStateChanged = proposalTouchesBoardState(proposal);
@@ -11662,7 +11706,13 @@ function systemEffectPool(actor: Actor): "hp" | "strain" | "composure" | undefin
 const proposalChangeEntities = new Set<ProposalChange["entity"]>(["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "encounter", "combat", "asset"]);
 const proposalChangeActions = new Set<ProposalChange["action"]>(["create", "update", "delete"]);
 
-function prepareProposalChanges(store: StateStore, campaignId: string, userId: string, value: unknown): { changes: ProposalChange[] } | { error: string; message: string } {
+function prepareProposalChanges(
+  store: StateStore,
+  campaignId: string,
+  userId: string,
+  value: unknown,
+  options: { currentProposalId?: string } = {}
+): { changes: ProposalChange[] } | { error: string; message: string } {
   if (!Array.isArray(value)) return { error: "invalid_proposal_changes", message: "Proposal changesJson must be an array" };
   const changes: ProposalChange[] = [];
   for (const [index, rawChange] of value.entries()) {
@@ -11678,7 +11728,7 @@ function prepareProposalChanges(store: StateStore, campaignId: string, userId: s
       .filter((id): id is string => Boolean(id))
   );
   for (const [index, change] of normalizedChanges.entries()) {
-    const scopeError = proposalChangeScopeError(store, campaignId, change, createdSceneIds);
+    const scopeError = proposalChangeScopeError(store, campaignId, change, createdSceneIds, options);
     if (scopeError) return { error: "invalid_proposal_scope", message: `Proposal change ${index + 1} ${scopeError}` };
   }
   return { changes: normalizedChanges };
@@ -11696,13 +11746,13 @@ function proposalChangeFromInput(value: unknown): ProposalChange | undefined {
   return id ? { entity, action, id, data } : { entity, action, data };
 }
 
-function proposalChangeScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>): string | undefined {
+function proposalChangeScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>, options: { currentProposalId?: string }): string | undefined {
   if (change.entity === "campaign") {
     if (change.action === "create") return "cannot create campaigns from a campaign proposal";
     const targetId = change.id ?? stringFromRecord(change.data, "id");
     return targetId === campaignId ? undefined : "targets a different campaign";
   }
-  if (change.action === "create") return proposalCreateScopeError(store, campaignId, change, createdSceneIds);
+  if (change.action === "create") return proposalCreateScopeError(store, campaignId, change, createdSceneIds, options);
   const existingCampaignId = campaignIdForProposalEntity(store, change.entity, change.id);
   if (!existingCampaignId) return `targets a missing ${change.entity}`;
   if (existingCampaignId !== campaignId) return `targets a ${change.entity} outside this campaign`;
@@ -11715,9 +11765,9 @@ function proposalChangeScopeError(store: StateStore, campaignId: string, change:
   return undefined;
 }
 
-function proposalCreateScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>): string | undefined {
+function proposalCreateScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>, options: { currentProposalId?: string }): string | undefined {
   const createdId = stringFromRecord(change.data, "id");
-  if (createdId && proposalEntityExists(store, change.entity, createdId)) return `creates a ${change.entity} id that already exists`;
+  if (createdId && proposalEntityExists(store, change.entity, createdId, options)) return `creates a ${change.entity} id that already exists`;
   if (change.entity === "token") {
     const sceneId = stringFromRecord(change.data, "sceneId");
     if (!sceneId) return "must include a sceneId for token creation";
@@ -11733,7 +11783,7 @@ function proposalCreateScopeError(store: StateStore, campaignId: string, change:
   return undefined;
 }
 
-function proposalEntityExists(store: StateStore, entity: ProposalChange["entity"], id: string): boolean {
+function proposalEntityExists(store: StateStore, entity: ProposalChange["entity"], id: string, options: { currentProposalId?: string } = {}): boolean {
   switch (entity) {
     case "campaign":
       return store.state.campaigns.some((item) => item.id === id);
@@ -11756,7 +11806,7 @@ function proposalEntityExists(store: StateStore, entity: ProposalChange["entity"
     case "combat":
       return store.state.combats.some((item) => item.id === id);
     case "asset":
-      return store.state.assets.some((item) => item.id === id) || Boolean(pendingProposalAssetForDelivery(store, id));
+      return store.state.assets.some((item) => item.id === id) || Boolean(pendingProposalAssetForDelivery(store, id, options.currentProposalId));
   }
 }
 
@@ -21637,8 +21687,9 @@ function findAssetForDelivery(store: StateStore, assetId: string): MapAsset | un
   return store.state.assets.find((asset) => asset.id === assetId) ?? pendingProposalAssetForDelivery(store, assetId);
 }
 
-function pendingProposalAssetForDelivery(store: StateStore, assetId: string): MapAsset | undefined {
+function pendingProposalAssetForDelivery(store: StateStore, assetId: string, excludedProposalId?: string): MapAsset | undefined {
   for (const proposal of store.state.proposals) {
+    if (proposal.id === excludedProposalId) continue;
     if (proposal.status !== "pending" && proposal.status !== "approved") continue;
     for (const change of proposal.changesJson) {
       if (change.entity !== "asset" || change.action !== "create") continue;
