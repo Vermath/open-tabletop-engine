@@ -1,4 +1,4 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, scryptSync } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -15,7 +15,40 @@ import { SqliteStateStore } from "./sqlite-store.js";
 import { MemoryStateStore } from "./store.js";
 
 const authHeaders = { "x-user-id": "usr_demo_gm" };
+const demoPassword = "demo-password-123";
 const tinyPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axpRz8AAAAASUVORK5CYII=", "base64");
+
+function testPasswordHash(password = demoPassword): string {
+  const salt = "test-password-salt";
+  return `scrypt:${salt}:${scryptSync(password, salt, 32).toString("base64url")}`;
+}
+
+function seedDemoPassword(store: MemoryStateStore, userId = "usr_demo_gm", password = demoPassword) {
+  const user = store.state.users.find((item) => item.id === userId);
+  if (!user?.email) throw new Error(`Demo user is missing an email: ${userId}`);
+  user.passwordHash = testPasswordHash(password);
+  user.passwordResetRequired = false;
+  user.mfa = undefined;
+  return { email: user.email, password };
+}
+
+async function loginDemoUser(app: Awaited<ReturnType<typeof buildApp>>, store: MemoryStateStore, userId = "usr_demo_gm") {
+  const credentials = seedDemoPassword(store, userId);
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/login",
+    payload: credentials
+  });
+  const user = store.state.users.find((item) => item.id === userId);
+  if (response.statusCode < 400 && user) {
+    user.mfa = {
+      totpSecret: "test-secret",
+      totpEnabledAt: "2026-05-01T00:00:00.000Z",
+      recoveryCodeHashes: []
+    };
+  }
+  return response;
+}
 
 class MemoryAssetStorage implements AssetStorage {
   readonly provider = "s3" as const;
@@ -1947,6 +1980,14 @@ describe("api", () => {
       compatibilityNotes: expect.arrayContaining([expect.stringContaining("v0.3/v1-compatible importer")])
     });
 
+    const unauthorizedExistingCampaignImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: exported.json()
+    });
+    expect(unauthorizedExistingCampaignImport.statusCode).toBe(403);
+
     const dryRunImport = await app.inject({
       method: "POST",
       url: "/api/v1/import/campaign",
@@ -2036,6 +2077,95 @@ describe("api", () => {
       headers: authHeaders
     });
     expect(invalidExport.statusCode).toBe(400);
+
+    await app.close();
+  });
+
+  it("preserves existing password hashes when importing users from archive", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const registered = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/register",
+      payload: { email: "archive.victim@example.test", displayName: "Archive Victim", password: "correct horse" }
+    });
+    expect(registered.statusCode).toBe(200);
+    const victimId = registered.json().user.id as string;
+    const victim = store.state.users.find((user) => user.id === victimId)!;
+    const passwordHash = victim.passwordHash;
+    expect(passwordHash).toMatch(/^scrypt:/);
+    const archive: CampaignArchive = {
+      format: "ottx",
+      version: "0.2.0",
+      exportedAt: "2026-05-11T00:00:00.000Z",
+      manifest: { campaignId: "camp_imported_users", name: "Imported Users", schemaVersion: "0.3.0", assetCount: 0 },
+      data: {
+        ...emptyState(),
+        users: [{ id: victimId, displayName: "Imported Victim", email: "archive.victim@example.test", passwordHash: "scrypt:archive:AAAA", createdAt: "2026-05-11T00:00:00.000Z", updatedAt: "2026-05-11T00:00:00.000Z" }]
+      },
+      files: []
+    };
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    expect(imported.statusCode).toBe(200);
+
+    expect(store.state.users.find((user) => user.id === victimId)?.passwordHash).toBe(passwordHash);
+
+    const victimLoginAfter = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { email: "archive.victim@example.test", password: "wrong-password" }
+    });
+    expect(victimLoginAfter.statusCode).toBe(401);
+
+    await app.close();
+  });
+
+  it("requires password reset for imported users without password hashes", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const archive: CampaignArchive = {
+      format: "ottx",
+      version: "0.2.0",
+      exportedAt: "2026-05-11T00:00:00.000Z",
+      manifest: { campaignId: "camp_imported_demo", name: "Imported Demo", schemaVersion: "0.3.0", assetCount: 0 },
+      data: {
+        ...emptyState(),
+        users: [
+          {
+            id: "usr_imported_passwordless",
+            displayName: "Imported Passwordless",
+            email: "imported.passwordless@example.test",
+            createdAt: "2026-05-11T00:00:00.000Z",
+            updatedAt: "2026-05-11T00:00:00.000Z"
+          }
+        ]
+      },
+      files: []
+    };
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    expect(imported.statusCode).toBe(200);
+    expect(store.state.users.find((user) => user.id === "usr_imported_passwordless")?.passwordResetRequired).toBe(true);
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { email: "imported.passwordless@example.test" }
+    });
+    expect(login.statusCode).toBe(403);
+    expect(login.json().message).toBe("Password reset required");
 
     await app.close();
   });
@@ -3172,11 +3302,7 @@ describe("api", () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });
     try {
-      const adminLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const adminLogin = await loginDemoUser(app, store);
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
       const playerLogin = await app.inject({
         method: "POST",
@@ -3254,11 +3380,7 @@ describe("api", () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });
     try {
-      const adminLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const adminLogin = await loginDemoUser(app, store);
       const headers = { authorization: `Bearer ${adminLogin.json().token}` };
       for (let index = 0; index < 2; index += 1) {
         const reset = await app.inject({
@@ -3401,11 +3523,7 @@ describe("api", () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });
     try {
-      const adminLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const adminLogin = await loginDemoUser(app, store);
       const operations = await app.inject({
         method: "GET",
         url: "/api/v1/admin/auth/operations",
@@ -3481,13 +3599,10 @@ describe("api", () => {
     process.env.OTTE_EMAIL_WEBHOOK_TIMEOUT_MS = "slow";
     process.env.OTTE_PASSWORD_RESET_TTL_MINUTES = "-30";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const adminLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const adminLogin = await loginDemoUser(app, store);
       const invalidNumericConfig = ["OTTE_EMAIL_WEBHOOK_TIMEOUT_MS", "OTTE_PASSWORD_RESET_TTL_MINUTES"];
       const operations = await app.inject({
         method: "GET",
@@ -3556,13 +3671,10 @@ describe("api", () => {
     process.env.OTTE_OIDC_ISSUER = "https://sso.example.test";
     process.env.OTTE_OIDC_CLIENT_ID = "otte-client";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const adminLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const adminLogin = await loginDemoUser(app, store);
       const operations = await app.inject({
         method: "GET",
         url: "/api/v1/admin/auth/operations",
@@ -3628,13 +3740,10 @@ describe("api", () => {
     process.env.OTTE_OIDC_ISSUER = "https://sso.example.test";
     process.env.OTTE_OIDC_CLIENT_ID = "otte-client";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const adminLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const adminLogin = await loginDemoUser(app, store);
       const operations = await app.inject({
         method: "GET",
         url: "/api/v1/admin/auth/operations",
@@ -3705,13 +3814,10 @@ describe("api", () => {
     process.env.NODE_ENV = "production";
     delete process.env.OTTE_ADMIN_USER_IDS;
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       expect(login.statusCode).toBe(200);
 
       const session = await app.inject({
@@ -3746,13 +3852,10 @@ describe("api", () => {
     process.env.NODE_ENV = "production";
     process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm,usr_demo_player";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const operations = await app.inject({
         method: "GET",
         url: "/api/v1/admin/auth/operations",
@@ -3802,13 +3905,10 @@ describe("api", () => {
     delete process.env.OTTE_OIDC_REDIRECT_URI;
     delete process.env.OTTE_OIDC_TOKEN_AUTH;
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const operations = await app.inject({
         method: "GET",
         url: "/api/v1/admin/auth/operations",
@@ -3903,11 +4003,7 @@ describe("api", () => {
 
     const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const reset = await app.inject({
         method: "POST",
         url: "/api/v1/admin/users/usr_password_no_mfa/password-reset",
@@ -3988,13 +4084,10 @@ describe("api", () => {
     process.env.OTTE_OIDC_TOKEN_AUTH = "client_secret_post";
     delete process.env.OTTE_OIDC_ALLOW_INSECURE;
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const operations = await app.inject({
         method: "GET",
         url: "/api/v1/admin/auth/operations",
@@ -5445,11 +5538,7 @@ describe("api", () => {
       });
       expect(login.statusCode).toBe(401);
       expect(login.json().message).toBe("Unknown login identity");
-      const emailLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const emailLogin = await loginDemoUser(app, store);
       expect(emailLogin.statusCode).toBe(200);
       const bearer = await app.inject({
         method: "GET",
@@ -5721,6 +5810,115 @@ describe("api", () => {
     expect(accepted.json()).toMatchObject({ message: "Password reset required" });
 
     await app.close();
+  });
+
+  it("requires MFA when accepting invites as an existing MFA-enabled user", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const attacker = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          email: "attacker@example.test",
+          displayName: "Attacker",
+          password: "attacker password"
+        }
+      });
+      expect(attacker.statusCode).toBe(200);
+
+      const victim = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          email: "victim.mfa@example.test",
+          displayName: "Victim",
+          password: "victim password"
+        }
+      });
+      expect(victim.statusCode).toBe(200);
+
+      const enrolled = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/mfa/totp/enroll",
+        headers: { authorization: `Bearer ${victim.json().token}` },
+        payload: { currentPassword: "victim password" }
+      });
+      expect(enrolled.statusCode).toBe(200);
+      const secret = enrolled.json().secret as string;
+
+      const confirmed = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/mfa/totp/confirm",
+        headers: { authorization: `Bearer ${victim.json().token}` },
+        payload: { code: testTotpCode(secret) }
+      });
+      expect(confirmed.statusCode).toBe(200);
+
+      const campaign = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns",
+        headers: { authorization: `Bearer ${attacker.json().token}` },
+        payload: { name: "Attacker Campaign" }
+      });
+      expect(campaign.statusCode).toBe(200);
+
+      const invite = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaign.json().id}/invites`,
+        headers: { authorization: `Bearer ${attacker.json().token}` },
+        payload: { email: "victim.mfa@example.test", role: "player" }
+      });
+      expect(invite.statusCode).toBe(200);
+
+      const missingMfa = await app.inject({
+        method: "POST",
+        url: "/api/v1/invites/accept",
+        payload: {
+          token: invite.json().token,
+          email: "victim.mfa@example.test",
+          password: "victim password"
+        }
+      });
+      expect(missingMfa.statusCode).toBe(401);
+      expect(missingMfa.json()).toMatchObject({ error: "mfa_required", mfaRequired: true });
+
+      const acceptedWithTotp = await app.inject({
+        method: "POST",
+        url: "/api/v1/invites/accept",
+        payload: {
+          token: invite.json().token,
+          email: "victim.mfa@example.test",
+          password: "victim password",
+          mfaCode: testTotpCode(secret)
+        }
+      });
+      expect(acceptedWithTotp.statusCode).toBe(200);
+
+      const recoveryCode = confirmed.json().recoveryCodes[0] as string;
+      const secondInvite = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaign.json().id}/invites`,
+        headers: { authorization: `Bearer ${attacker.json().token}` },
+        payload: { email: "victim.mfa@example.test", role: "observer" }
+      });
+      expect(secondInvite.statusCode).toBe(200);
+
+      const acceptedWithRecovery = await app.inject({
+        method: "POST",
+        url: "/api/v1/invites/accept",
+        payload: {
+          token: secondInvite.json().token,
+          email: "victim.mfa@example.test",
+          password: "victim password",
+          recoveryCode
+        }
+      });
+      expect(acceptedWithRecovery.statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
   });
 
   it("starts and completes OIDC SSO with PKCE and user linking", async () => {
@@ -7158,6 +7356,8 @@ describe("api", () => {
       ["GET /api/v1/campaigns/{campaignId}/ai/evaluations", "AI evaluations require AI proposal permission"],
       ["GET /api/v1/campaigns/{campaignId}/ai/memory", "AI memory requires AI memory permission"],
       ["GET /api/v1/campaigns/{campaignId}/ai/tool-calls", "AI tool calls require AI proposal permission"],
+      ["GET /api/v1/campaigns/{campaignId}/content-imports", "content import roster requires campaign update"],
+      ["GET /api/v1/content-imports/{importId}", "content import details require campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage", "plugin storage requires plugin configure"],
       ["GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}", "plugin storage requires plugin configure"]
     ]);
@@ -20275,11 +20475,7 @@ describe("api", () => {
         })
       );
       app = await buildApp({ store, pluginRoot });
-      const adminLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const adminLogin = await loginDemoUser(app, store);
       expect(adminLogin.statusCode).toBe(200);
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
 
@@ -21907,6 +22103,98 @@ registerCommand("/state", (input) => {
     }
   });
 
+  it("filters default ai memory extraction source text by caller permissions", async () => {
+    class PromptCaptureProvider implements AiProvider {
+      id = "prompt-capture-ai";
+      label = "Prompt Capture AI";
+      prompts: string[] = [];
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.prompts.push(input.messages.map((message) => message.content).join("\n"));
+        yield { type: "message.completed", content: "Extracted visible memory only." };
+      }
+    }
+
+    const now = "2026-05-01T00:00:00.000Z";
+    const store = new MemoryStateStore();
+    store.state.users.push({ id: "usr_player", displayName: "Player", createdAt: now, updatedAt: now });
+    store.state.members.push({ id: "mem_player", campaignId: "camp_demo", userId: "usr_player", role: "player", createdAt: now, updatedAt: now });
+    store.state.permissionGrants.push(
+      createTimestamped("grant", { subjectType: "user", subjectId: "usr_player", campaignId: "camp_demo", permissions: ["ai.proposeChanges"] })
+    );
+    store.state.journals.push(
+      createTimestamped("jrn", {
+        campaignId: "camp_demo",
+        title: "Private GM Journal",
+        body: "GM_JOURNAL_SECRET",
+        visibility: "gm_only",
+        visibleToUserIds: [],
+        visibleToActorIds: [],
+        tags: [],
+        createdBy: "usr_demo_gm",
+        updatedBy: "usr_demo_gm"
+      }),
+      createTimestamped("jrn", {
+        campaignId: "camp_demo",
+        title: "Public Journal",
+        body: "PLAYER_VISIBLE_JOURNAL",
+        visibility: "public",
+        visibleToUserIds: [],
+        visibleToActorIds: [],
+        tags: [],
+        createdBy: "usr_player",
+        updatedBy: "usr_player"
+      })
+    );
+    store.state.chat.push(
+      createTimestamped("msg", {
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        body: "GM_CHAT_SECRET",
+        type: "plain",
+        visibility: "gm_only",
+        recipientUserIds: []
+      }),
+      createTimestamped("msg", {
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        body: "WHISPER_SECRET_TO_GM",
+        type: "whisper",
+        visibility: "whisper",
+        recipientUserIds: ["usr_demo_gm"]
+      }),
+      createTimestamped("msg", {
+        campaignId: "camp_demo",
+        userId: "usr_player",
+        body: "PLAYER_VISIBLE_CHAT",
+        type: "plain",
+        visibility: "public",
+        recipientUserIds: []
+      })
+    );
+
+    const provider = new PromptCaptureProvider();
+    const app = await buildApp({ store, aiProvider: provider });
+    try {
+      const extracted = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/memory/extract",
+        headers: { "x-user-id": "usr_player" },
+        payload: {}
+      });
+      expect(extracted.statusCode).toBe(200);
+      expect(provider.prompts).toHaveLength(1);
+      const prompt = provider.prompts[0] ?? "";
+      expect(prompt).toContain("PLAYER_VISIBLE_JOURNAL");
+      expect(prompt).toContain("PLAYER_VISIBLE_CHAT");
+      expect(prompt).not.toContain("GM_JOURNAL_SECRET");
+      expect(prompt).not.toContain("GM_CHAT_SECRET");
+      expect(prompt).not.toContain("WHISPER_SECRET_TO_GM");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("rejects direct OpenAI API-key provider configuration", async () => {
     const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER", "OPENAI_API_KEY", "OTTE_AI_PROVIDER_TIMEOUT_MS", "OTTE_ADMIN_USER_IDS"]);
     process.env.OTTE_AI_PROVIDER = "openai-responses";
@@ -22576,17 +22864,9 @@ registerCommand("/state", (input) => {
     const app = await buildApp({ store, aiProvider: new OperationsProvider() });
 
     try {
-      const adminLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const adminLogin = await loginDemoUser(app, store);
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
-      const playerLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "player@example.test" }
-      });
+      const playerLogin = await loginDemoUser(app, store, "usr_demo_player");
       const playerHeaders = { authorization: `Bearer ${playerLogin.json().token}` };
 
       const thread = await app.inject({
@@ -23859,11 +24139,7 @@ registerCommand("/state", (input) => {
     const app = await buildApp({ store, aiProvider: new InsecureBaseUrlProvider() });
 
     try {
-      const adminLogin = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const adminLogin = await loginDemoUser(app, store);
       const adminHeaders = { authorization: `Bearer ${adminLogin.json().token}` };
 
       const operations = await app.inject({
@@ -26175,6 +26451,16 @@ registerCommand("/state", (input) => {
       });
       expect(unauthenticatedBlob.statusCode).toBe(401);
 
+      const farFutureExpiresAt = new Date(Date.now() + 1200 * 1000).toISOString();
+      const farFutureSignature = createHmac("sha256", "test-asset-signing-secret")
+        .update(JSON.stringify({ assetId: asset.id, expiresAt: farFutureExpiresAt, disposition: "inline" }))
+        .digest("base64url");
+      const beyondMaxTtl = await app.inject({
+        method: "GET",
+        url: `/api/v1/assets/${asset.id}/blob?expiresAt=${encodeURIComponent(farFutureExpiresAt)}&signature=${encodeURIComponent(farFutureSignature)}`
+      });
+      expect(beyondMaxTtl.statusCode).toBe(401);
+
       const deleted = await app.inject({
         method: "PATCH",
         url: `/api/v1/assets/${asset.id}/lifecycle`,
@@ -26336,7 +26622,7 @@ registerCommand("/state", (input) => {
               code: "investigate_asset_delivery_failures",
               severity: "error",
               action: expect.stringContaining("Investigate recent denied"),
-              affectedCount: 4,
+              affectedCount: 5,
               bytes: 0,
               samples: expect.arrayContaining([
                 expect.objectContaining({
@@ -26412,17 +26698,17 @@ registerCommand("/state", (input) => {
               undeliverableSamples: []
             }),
             runtime: expect.objectContaining({
-              totalCount: 5,
+              totalCount: 6,
               servedCount: 1,
-              deniedCount: 2,
+              deniedCount: 3,
               unavailableCount: 1,
               missingBytesCount: 0,
               signingFailedCount: 1,
-              failureCount: 4,
+              failureCount: 5,
               servedBytes: bytes.length,
               failedBytes: 0,
-              statusCounts: { denied: 2, served: 1, signing_failed: 1, unavailable: 1 },
-              accessModeCounts: { signed: 4, session: 1 },
+              statusCounts: { denied: 3, served: 1, signing_failed: 1, unavailable: 1 },
+              accessModeCounts: { signed: 5, session: 1 },
               recentFailures: expect.arrayContaining([
                 expect.objectContaining({ assetId: asset.id, status: "signing_failed", accessMode: "signed", reason: "OTTE_ASSET_URL_SIGNING_SECRET is required for signed asset URLs in production" }),
                 expect.objectContaining({ assetId: asset.id, status: "unavailable", accessMode: "signed", reason: "deleted" }),
@@ -26686,13 +26972,10 @@ registerCommand("/state", (input) => {
     process.env.OTTE_ASSET_CLEANUP_GRACE_DAYS = "bad-grace";
     process.env.OTTE_ASSET_CLEANUP_INTERVAL_SECONDS = "-1";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const invalidConfig = [
         "OTTE_ASSET_QUOTA_BYTES",
         "OTTE_ASSET_RETENTION_DAYS",
@@ -26766,13 +27049,10 @@ registerCommand("/state", (input) => {
     process.env.OTTE_ASSET_CDN_PURGE_WEBHOOK_URL = "mailto:purge@example.test";
     process.env.OTTE_ASSET_TRUST_WEBHOOK_URL = "http://127.0.0.1:5000/scan";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const invalidUrlConfig = ["OTTE_ASSET_CDN_BASE_URL", "OTTE_PUBLIC_URL", "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL"];
       const storage = await app.inject({
         method: "GET",
@@ -26845,13 +27125,10 @@ registerCommand("/state", (input) => {
     process.env.OTTE_ASSET_QUOTA_BYTES = "1048576";
     process.env.OTTE_ASSET_RETENTION_DAYS = "30";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const insecureUrlConfig = ["OTTE_ASSET_CDN_BASE_URL", "OTTE_ASSET_CDN_PURGE_WEBHOOK_URL"];
       const storage = await app.inject({
         method: "GET",
@@ -26920,13 +27197,10 @@ registerCommand("/state", (input) => {
     delete process.env.OTTE_ASSET_TRUST_WEBHOOK_TOKEN;
     process.env.OTTE_ASSET_URL_SIGNING_SECRET = "asset-signing-secret";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const missingTokenConfig = ["OTTE_ASSET_CDN_PURGE_WEBHOOK_TOKEN", "OTTE_ASSET_TRUST_WEBHOOK_TOKEN"];
       const storage = await app.inject({
         method: "GET",
@@ -27009,13 +27283,10 @@ registerCommand("/state", (input) => {
     process.env.OTTE_ASSET_TRUST_FAIL_CLOSED = "false";
     process.env.OTTE_ASSET_URL_SIGNING_SECRET = "asset-signing-secret";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const storage = await app.inject({
         method: "GET",
         url: "/api/v1/admin/assets/storage",
@@ -27092,13 +27363,10 @@ registerCommand("/state", (input) => {
     process.env.OTTE_ASSET_CLEANUP_INCLUDE_DELETED = "false";
     process.env.OTTE_ASSET_CLEANUP_INCLUDE_EXPIRED = "false";
 
-    const app = await buildApp({ store: new MemoryStateStore(), assetStorage: new MemoryAssetStorage("production-assets") });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, assetStorage: new MemoryAssetStorage("production-assets") });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const storage = await app.inject({
         method: "GET",
         url: "/api/v1/admin/assets/storage",
@@ -27182,13 +27450,10 @@ registerCommand("/state", (input) => {
     delete process.env.OTTE_ASSET_RETENTION_DAYS;
     process.env.OTTE_ASSET_QUOTA_BYTES = "1048576";
 
-    const app = await buildApp({ store: new MemoryStateStore(), assetStorage: new MemoryAssetStorage("production-assets") });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, assetStorage: new MemoryAssetStorage("production-assets") });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const storage = await app.inject({
         method: "GET",
         url: "/api/v1/admin/assets/storage",
@@ -27256,13 +27521,10 @@ registerCommand("/state", (input) => {
     delete process.env.OTTE_ASSET_QUOTA_BYTES;
     process.env.OTTE_ASSET_RETENTION_DAYS = "30";
 
-    const app = await buildApp({ store: new MemoryStateStore(), assetStorage: new MemoryAssetStorage("production-assets") });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, assetStorage: new MemoryAssetStorage("production-assets") });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const storage = await app.inject({
         method: "GET",
         url: "/api/v1/admin/assets/storage",
@@ -27273,7 +27535,7 @@ registerCommand("/state", (input) => {
         runtime: {
           provider: "s3",
           quota: {
-            enabled: false,
+            enabled: true,
             quotaPolicyMissingInProduction: true
           },
           lifecycle: {
@@ -27345,13 +27607,10 @@ registerCommand("/state", (input) => {
     delete process.env.OTTE_S3_SECRET_ACCESS_KEY;
     process.env.OTTE_S3_FORCE_PATH_STYLE = "true";
 
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const storage = await app.inject({
         method: "GET",
         url: "/api/v1/admin/assets/storage",
@@ -27536,6 +27795,13 @@ registerCommand("/state", (input) => {
       expect(generatedAsset?.storage?.key).toEqual(expect.any(String));
       expect(assetStorage.objects.has(generatedAsset?.storage?.key ?? "")).toBe(true);
 
+      const pendingAssetBlob = await app.inject({
+        method: "GET",
+        url: `/api/v1/assets/${generatedAsset?.id}/blob?userId=usr_demo_gm`
+      });
+      expect(pendingAssetBlob.statusCode).toBe(404);
+      expect(assetStorage.objects.has(generatedAsset?.storage?.key ?? "")).toBe(true);
+
       const storageInfo = await app.inject({
         method: "GET",
         url: "/api/v1/campaigns/camp_demo/assets/storage",
@@ -27619,11 +27885,7 @@ registerCommand("/state", (input) => {
 
     const app = await buildApp({ store, assetStorage });
     try {
-      const login = await app.inject({
-        method: "POST",
-        url: "/api/v1/auth/login",
-        payload: { email: "gm@example.test" }
-      });
+      const login = await loginDemoUser(app, store);
       const storage = await app.inject({
         method: "GET",
         url: "/api/v1/admin/assets/storage",
@@ -29880,7 +30142,8 @@ registerCommand("/state", (input) => {
     const TestWebSocket = maybeWebSocket;
 
     const archive = JSON.parse(readFileSync(join(process.cwd(), "..", "..", "docs", "demo", "ember-vault-beta-dogfood.ottx.json"), "utf8"));
-    const app = await buildApp({ store: new MemoryStateStore() });
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
     await app.inject({
       method: "POST",
       url: "/api/v1/import/campaign",
@@ -29891,10 +30154,11 @@ registerCommand("/state", (input) => {
     const address = app.server.address() as AddressInfo;
 
     async function loginToken(userId: string): Promise<string> {
+      const credentials = seedDemoPassword(store, userId);
       const login = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
-        payload: { userId }
+        payload: credentials
       });
       expect(login.statusCode).toBe(200);
       return login.json().token as string;

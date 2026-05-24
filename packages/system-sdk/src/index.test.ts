@@ -2516,6 +2516,8 @@ describe("dnd 5.5e srd rules", () => {
       levelFiveClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelFiveClericData }, "level-up");
     }
     const levelFiveClericActor: Actor = { ...clericActor, data: levelFiveClericData };
+    const levelFiveClericAttributes = typeof levelFiveClericActor.data.attributes === "object" && levelFiveClericActor.data.attributes !== null ? levelFiveClericActor.data.attributes : {};
+    const levelFiveClericOvercapWisdomActor: Actor = { ...levelFiveClericActor, data: { ...levelFiveClericActor.data, attributes: { ...levelFiveClericAttributes, wisdom: 1000 } } };
     expect(levelFiveClericData.features).toEqual(expect.arrayContaining(["Channel Divinity", "Divine Spark", "Turn Undead", "Sear Undead"]));
     expect(levelFiveClericData.resources).toEqual({ channelDivinity: { current: 2, max: 2, recovery: "short" } });
     expect(dnd5eSrdQuickRolls(levelFiveClericActor, [])).toEqual(
@@ -2526,6 +2528,7 @@ describe("dnd 5.5e srd rules", () => {
       ])
     );
     expect(dnd5eSrdActionFormula(levelFiveClericActor, [], "feature-sear-undead-damage")).toBe("5d8");
+    expect(dnd5eSrdActionFormula(levelFiveClericOvercapWisdomActor, [], "feature-sear-undead-damage")).toBe("10d8");
     expect(dnd5eSrdActionFormula(levelFiveClericActor, [clericCureWounds], "spell-itm_life_cure_wounds-healing", { spellSlotLevel: 3 })).toBe("1d8+5+2d8+5");
     let levelSixClericData = levelFiveClericData;
     levelSixClericData = applyDnd5eSrdAdvancement({ ...clericActor, data: levelSixClericData }, "level-up");
