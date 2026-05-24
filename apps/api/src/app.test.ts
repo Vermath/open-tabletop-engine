@@ -25539,6 +25539,20 @@ registerCommand("/state", (input) => {
     expect(forgedProposal.json()).toMatchObject({ status: "pending", approvalRequired: true });
     expect(forgedProposal.json()).not.toHaveProperty("approvedByUserId");
 
+    const forgedMemory = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/memory",
+      headers: authHeaders,
+      payload: {
+        text: "Forged approval should be ignored.",
+        visibility: "public",
+        approvedByUserId: "usr_player"
+      }
+    });
+    expect(forgedMemory.statusCode).toBe(200);
+    expect(forgedMemory.json()).toMatchObject({ visibility: "public", text: "Forged approval should be ignored." });
+    expect(forgedMemory.json()).not.toHaveProperty("approvedByUserId");
+
     const forgedApply = await app.inject({
       method: "POST",
       url: `/api/v1/proposals/${forgedProposal.json().id}/apply`,
