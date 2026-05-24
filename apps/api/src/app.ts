@@ -34,6 +34,8 @@ export interface ImageAssetGenerationInput {
   size?: string;
   quality?: string;
   outputFormat?: "png" | "jpeg" | "webp";
+  sourceImageUrl?: string;
+  sourceImageMimeType?: string;
   campaignId: string;
   userId: string;
   signal?: AbortSignal;
@@ -95,6 +97,7 @@ interface AgentThreadBody {
   model?: string;
   reasoningEffort?: AiReasoningEffort;
   selectedSceneId?: string;
+  selectedAssetId?: string;
   selectedTokenIds?: string[];
   messages?: Array<{ role?: string; content?: string }>;
 }
@@ -7477,9 +7480,10 @@ class CodexAppServerImageAssetGenerator implements ImageAssetGenerator {
     const image = await this.transport.generateImage({
       prompt: imageGenerationPrompt(input),
       outputFormat: input.outputFormat ?? "png",
+      sourceImages: input.sourceImageUrl ? [{ url: input.sourceImageUrl, mimeType: input.sourceImageMimeType }] : undefined,
       signal: input.signal,
       baseInstructions: "You generate raster map and token artwork for OpenTabletop Engine virtual tabletop campaigns.",
-      developerInstructions: "Use Codex app-server image generation. Return an actual generated raster image result. Do not return SVG, HTML, markdown art, or a textual placeholder."
+      developerInstructions: "Use Codex app-server image generation. If a source image is attached, use it as the visual reference for the requested edit or variant. Return an actual generated raster image result. Do not return SVG, HTML, markdown art, or a textual placeholder."
     });
     const body = Buffer.from(image.base64, "base64");
     return {
@@ -7513,7 +7517,8 @@ function imageGenerationPrompt(input: ImageAssetGenerationInput): string {
   const format = input.outputFormat ?? "png";
   const size = input.size ? ` Requested size: ${input.size}.` : "";
   const quality = input.quality ? ` Requested quality: ${input.quality}.` : "";
-  return `Generate one ${format.toUpperCase()} raster image for a ${subject}: ${input.prompt}\n${constraints}${size}${quality} Do not include text, captions, watermarks, UI chrome, SVG markup, or placeholder art.`;
+  const source = input.sourceImageUrl ? " Use the attached source image as the visual reference and preserve useful composition, style, and identity unless the prompt asks to change them." : "";
+  return `Generate one ${format.toUpperCase()} raster image for a ${subject}: ${input.prompt}\n${constraints}${size}${quality}${source} Do not include text, captions, watermarks, UI chrome, SVG markup, or placeholder art.`;
 }
 
 function mimeTypeForImageFormat(format: "png" | "jpeg" | "webp"): string {
@@ -7598,6 +7603,7 @@ function agentMessagesForRequest(prompt: string, body: AgentThreadBody | undefin
         "For creature and character tokens, use a 1x1 grid footprint unless a larger creature size is explicitly needed, and place tokens at grid-cell centers so they sit cleanly inside squares.",
         "When generating token art, reuse existing generated token art for repeated enemies when the same creature or reuse key is appropriate.",
         "When creating fresh player characters, NPCs, or adversaries, generate stored token/portrait art for them and reference the stored asset from the actor and token proposal.",
+        "When the user asks to edit, repaint, restyle, clean up, or otherwise modify a selected or pointed image asset, use modify_asset_image so the source asset image is attached as the visual reference and the result is proposed as a new stored asset.",
         "For many high-quality art assets, prefer parallel independent image-generation tool calls with one clear prompt per asset, then assemble the proposal after the assets exist.",
         "For board-changing work, final success requires both read_board_state and capture_board_view after the successful mutation. If capture_board_view reports board_capture_unavailable, state that visual verification was unavailable."
       ].join("\n")
@@ -7673,6 +7679,28 @@ function toolInputWithAgentDefaults(toolName: string, input: unknown, body: Agen
       generateArt: base.generateArt ?? (body.surface === "agent_panel" ? true : undefined),
       artQuality: base.artQuality ?? (body.surface === "agent_panel" ? "high" : undefined),
       artOutputFormat: base.artOutputFormat ?? (body.surface === "agent_panel" ? "png" : undefined)
+    };
+  }
+  if (toolName === "generate_map_asset") {
+    return {
+      ...base,
+      sceneId: base.sceneId ?? body.selectedSceneId
+    };
+  }
+  if (toolName === "generate_token_asset") {
+    const selectedTokenId = body.selectedTokenIds?.[0];
+    return {
+      ...base,
+      ...(base.tokenId === undefined && selectedTokenId ? { tokenId: selectedTokenId } : {})
+    };
+  }
+  if (toolName === "modify_asset_image") {
+    const selectedTokenId = body.selectedTokenIds?.[0];
+    return {
+      ...base,
+      ...(base.assetId === undefined && body.selectedAssetId ? { assetId: body.selectedAssetId } : {}),
+      ...(base.sceneId === undefined && body.selectedSceneId ? { sceneId: body.selectedSceneId } : {}),
+      ...(base.tokenId === undefined && selectedTokenId && base.applyTo !== "asset_only" ? { tokenId: selectedTokenId } : {})
     };
   }
   return input;
@@ -10680,6 +10708,102 @@ function createAiThreadTools(): AiToolDefinition[] {
       }
     },
     {
+      name: "modify_asset_image",
+      description: "Generate a new image asset using an existing campaign image asset as the visual reference, then draft a pending proposal to store the result and optionally apply it to the same scene background or selected token.",
+      requiredPermissions: ["ai.proposeChanges", "scene.update", "token.update", "actor.update"],
+      parameters: {
+        type: "object",
+        properties: {
+          assetId: { type: "string", description: "Source image asset id. Defaults to the selected asset in the in-app agent panel when available." },
+          prompt: { type: "string", description: "Edit instructions for the source image." },
+          name: { type: "string", description: "Generated asset and proposal display name." },
+          sceneId: { type: "string", description: "Optional scene id. If its background uses the source asset, the proposal updates that background to the generated asset." },
+          tokenId: { type: "string", description: "Optional token id. If supplied, the proposal updates that token image to the generated asset." },
+          kind: { type: "string", description: "Generated asset kind.", enum: ["map", "token"] },
+          applyTo: { type: "string", description: "Whether to apply the generated asset to matching current usage or only create the asset.", enum: ["same_usage", "asset_only"] },
+          size: { type: "string", description: "Requested output size.", enum: ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152"] },
+          quality: { type: "string", description: "Requested render quality.", enum: ["auto", "low", "medium", "high"] },
+          outputFormat: { type: "string", description: "Requested raster output format.", enum: ["png", "jpeg", "webp"] }
+        },
+        required: ["prompt"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const prompt = stringFromRecord(request, "prompt");
+        if (!prompt) return toolError("invalid_tool_input", { message: "Prompt is required." });
+        const tokenId = stringFromRecord(request, "tokenId");
+        const token = tokenId ? tokenForCampaign(context, tokenId) : undefined;
+        if (tokenId && !token) return toolError("not_found", { entity: "token", id: tokenId });
+        const sceneId = stringFromRecord(request, "sceneId");
+        const scene = sceneId ? context.state.scenes.find((item) => item.id === sceneId && item.campaignId === context.campaignId) : token ? context.state.scenes.find((item) => item.id === token.sceneId && item.campaignId === context.campaignId) : context.state.scenes.find((item) => item.campaignId === context.campaignId && item.active);
+        if (sceneId && !scene) return toolError("not_found", { entity: "scene", id: sceneId });
+        const sourceAssetId = stringFromRecord(request, "assetId") ?? token?.imageAssetId ?? scene?.backgroundAssetId;
+        const sourceAsset = sourceAssetId ? imageAssetForCampaign(context, sourceAssetId) : undefined;
+        if (!sourceAssetId || !sourceAsset) return toolError("not_found", { entity: "asset", id: sourceAssetId ?? "" });
+        const actor = token?.actorId ? context.state.actors.find((item) => item.id === token.actorId && item.campaignId === context.campaignId) : undefined;
+        const kind = (enumStringFromRecord(request, "kind", ["map", "token"]) ?? inferredSourceAssetKind(sourceAsset, scene)) as "map" | "token";
+        const applyTo = enumStringFromRecord(request, "applyTo", ["same_usage", "asset_only"]) ?? "same_usage";
+        const name = stringFromRecord(request, "name") ?? `${sourceAsset.name} AI Edit`;
+        const generated = await context.generateImageAsset({
+          kind,
+          prompt: `Modify this source image: ${prompt}`,
+          name,
+          folder: normalizeAssetFolder(sourceAsset.folder) ?? (kind === "map" ? "maps/generated" : "tokens/generated"),
+          tags: normalizeAssetTags([...(sourceAsset.tags ?? []), "ai", "generated", "asset-edit", kind, `source:${sourceAsset.id}`]),
+          size: enumStringFromRecord(request, "size", ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152"]),
+          quality: enumStringFromRecord(request, "quality", ["auto", "low", "medium", "high"]),
+          outputFormat: enumStringFromRecord(request, "outputFormat", ["png", "jpeg", "webp"]),
+          sourceImageUrl: signedAssetUrlForInternalAgent(sourceAsset),
+          sourceImageMimeType: sourceAsset.mimeType
+        });
+        if (isToolErrorOutput(generated)) return generated;
+        if (!isGeneratedImageAssetToolOutput(generated)) return toolError("image_generation_failed", { message: "Generated image asset output was invalid." });
+        const changes: ProposalChange[] = [{ entity: "asset", action: "create", data: { ...generated.asset } }];
+        if (applyTo === "same_usage" && scene?.backgroundAssetId === sourceAsset.id) {
+          changes.push({
+            entity: "scene",
+            action: "update",
+            id: scene.id,
+            data: {
+              backgroundAssetId: generated.asset.id,
+              metadata: {
+                ...scene.metadata,
+                modifiedBackgroundSourceAssetId: sourceAsset.id,
+                modifiedBackgroundAssetId: generated.asset.id,
+                modifiedBackgroundPrompt: generated.sourcePrompt
+              }
+            }
+          });
+        }
+        if (applyTo === "same_usage" && token) {
+          changes.push({ entity: "token", action: "update", id: token.id, data: { imageAssetId: generated.asset.id } });
+          if (actor && (actor.imageAssetId === sourceAsset.id || token.imageAssetId === sourceAsset.id)) {
+            changes.push({ entity: "actor", action: "update", id: actor.id, data: { imageAssetId: generated.asset.id } });
+          }
+        }
+        const title = `Modified asset: ${name}`;
+        const proposalId = await context.createProposal({
+          title,
+          summary: generated.revisedPrompt ?? prompt,
+          changes
+        });
+        return {
+          proposalId,
+          title,
+          changeCount: changes.length,
+          assetId: generated.asset.id,
+          sourceAssetId: sourceAsset.id,
+          sceneId: scene?.id,
+          tokenId: token?.id,
+          actorId: actor?.id,
+          provider: generated.provider,
+          model: generated.model,
+          revisedPrompt: generated.revisedPrompt
+        };
+      }
+    },
+    {
       name: "draft_actor_update",
       description: "Draft a pending actor update proposal for GM approval.",
       requiredPermissions: ["ai.proposeChanges", "actor.update"],
@@ -12406,7 +12530,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       store.state.aiMemory.push(memory);
       return memory.id;
     },
-    generateImageAsset: async ({ kind, prompt, name, folder, tags, size, quality, outputFormat }) => {
+    generateImageAsset: async ({ kind, prompt, name, folder, tags, size, quality, outputFormat, sourceImageUrl, sourceImageMimeType }) => {
       const sourcePrompt = prompt.trim();
       if (!sourcePrompt) return { error: "invalid_tool_input", message: "Prompt is required." };
       const generated = await runtime.imageAssetGenerator.generate({
@@ -12416,6 +12540,8 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
         size,
         quality,
         outputFormat,
+        sourceImageUrl,
+        sourceImageMimeType,
         campaignId,
         userId,
         signal
@@ -13491,6 +13617,28 @@ function toolError(error: string, details: Record<string, unknown> = {}): ToolEr
 
 function tokenForCampaign(context: AiToolContext, tokenId: string): Token | undefined {
   return context.state.tokens.find((token) => token.id === tokenId && context.state.scenes.some((scene) => scene.id === token.sceneId && scene.campaignId === context.campaignId));
+}
+
+function imageAssetForCampaign(context: AiToolContext, assetId: string): MapAsset | undefined {
+  return context.state.assets.find((asset) => asset.id === assetId && asset.campaignId === context.campaignId && asset.mimeType.startsWith("image/") && asset.lifecycle?.status !== "deleted");
+}
+
+function inferredSourceAssetKind(asset: MapAsset, scene?: Scene): "map" | "token" {
+  if (scene?.backgroundAssetId === asset.id) return "map";
+  const folder = normalizeAssetFolder(asset.folder)?.toLowerCase() ?? "";
+  const tags = (asset.tags ?? []).map((tag) => tag.toLowerCase());
+  const name = asset.name.toLowerCase();
+  if (folder.startsWith("maps") || folder.includes("/maps") || tags.some((tag) => tag === "map" || tag === "battlemap" || tag === "background") || /\b(map|battlemap|background|scene)\b/i.test(name)) return "map";
+  return "token";
+}
+
+function signedAssetUrlForInternalAgent(asset: MapAsset, requestedTtlSeconds = 15 * 60): string {
+  if (/^https?:\/\//i.test(asset.url) && !asset.url.includes(`/api/v1/assets/${asset.id}/blob`)) return asset.url;
+  const expiresAt = new Date(Date.now() + assetUrlTtlSeconds(requestedTtlSeconds) * 1000).toISOString();
+  const url = new URL(`${apiBaseUrlForInternalAgent()}/api/v1/assets/${asset.id}/blob`);
+  url.searchParams.set("expiresAt", expiresAt);
+  url.searchParams.set("signature", signAssetUrl(asset.id, expiresAt, "inline"));
+  return url.toString();
 }
 
 function aiToolAvailableToCaller(tool: AiToolDefinition, permissions: PermissionName[]): boolean {

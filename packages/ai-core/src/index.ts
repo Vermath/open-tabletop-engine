@@ -81,6 +81,8 @@ export interface AiToolContext {
     size?: string;
     quality?: string;
     outputFormat?: "png" | "jpeg" | "webp";
+    sourceImageUrl?: string;
+    sourceImageMimeType?: string;
   }): Promise<{ asset: MapAsset; provider: string; model?: string; revisedPrompt?: string; sourcePrompt: string } | { error: string; message?: string; [key: string]: unknown }>;
   rollDice(input: { formula: string; label?: string; visibility: "public" | "gm_only" | "whisper" }): Promise<{ rollId: string; formula: string; label?: string; total: number; visibility: string }>;
   sendChatMessage?(input: { body: string; sceneId?: string; type?: string; visibility: "public" | "gm_only" | "whisper"; recipientUserIds: string[] }): Promise<unknown>;

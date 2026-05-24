@@ -34,4 +34,25 @@ describe("actor panel layout", () => {
     expect(appSource).toContain("const largeTokenVisualScale = 0.96;");
     expect(appSource).toContain("tokenCoordinatesFromCenter");
   });
+
+  it("exposes token resize handles and selectable map backgrounds on the board", () => {
+    expect(appSource).toContain("tokenResizeHandles");
+    expect(appSource).toContain("onTokenResizeCommit");
+    expect(appSource).toContain("scene-map-hitbox");
+    expect(stylesSource).toContain(".token-resize-handle");
+    expect(stylesSource).toContain(".scene-map-hitbox.selected");
+  });
+
+  it("opens the real sign-in surface when agent calls lose the session token", () => {
+    expect(appSource).toContain("function requireInteractiveSignIn");
+    expect(appSource).toContain("clearSession();");
+    expect(appSource).toContain("isSessionAuthError(error)");
+    expect(appSource).toContain("Sign in required.");
+  });
+
+  it("removes stale missing proposals from the agent panel instead of keeping dead actions", () => {
+    expect(appSource).toContain("isProposalNotFoundError(error)");
+    expect(appSource).toContain("Proposal no longer exists");
+    expect(appSource).toContain("proposals: current.proposals.filter((item) => item.id !== proposal.id)");
+  });
 });

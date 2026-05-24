@@ -1,7 +1,8 @@
 import { createId, nowIso, type Token } from "@open-tabletop/core";
 
 export type BoardTokenPositionChange = { tokenId: string; before: Pick<Token, "x" | "y">; after: Pick<Token, "x" | "y"> };
-export type BoardHistoryAction = { kind: "tokens.create" | "tokens.delete"; tokens: Token[] } | { kind: "tokens.move"; changes: BoardTokenPositionChange[] };
+export type BoardTokenFrameChange = { tokenId: string; before: Pick<Token, "x" | "y" | "width" | "height">; after: Pick<Token, "x" | "y" | "width" | "height"> };
+export type BoardHistoryAction = { kind: "tokens.create" | "tokens.delete"; tokens: Token[] } | { kind: "tokens.move"; changes: BoardTokenPositionChange[] } | { kind: "tokens.resize"; changes: BoardTokenFrameChange[] };
 export type BoardHistoryDirection = "undo" | "redo";
 
 export interface LocalBoardHistoryResult {
@@ -10,7 +11,7 @@ export interface LocalBoardHistoryResult {
 }
 
 export function applyLocalBoardHistoryAction(tokens: Token[], action: BoardHistoryAction, direction: BoardHistoryDirection): LocalBoardHistoryResult {
-  if (action.kind === "tokens.move") {
+  if (action.kind === "tokens.move" || action.kind === "tokens.resize") {
     const target = direction === "undo" ? "before" : "after";
     const changesById = new Map(action.changes.map((change) => [change.tokenId, change[target]]));
     return {

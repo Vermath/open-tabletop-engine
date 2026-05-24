@@ -3868,6 +3868,7 @@ const componentSchemas = {
       model: stringSchema,
       reasoningEffort: { type: "string", enum: ["none", "minimal", "low", "medium", "high", "xhigh"] },
       selectedSceneId: idSchema,
+      selectedAssetId: idSchema,
       selectedTokenIds: arrayOf(idSchema),
       messages: arrayOf(schemaRef("AiThreadMessage"))
     }

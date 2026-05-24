@@ -75,6 +75,7 @@ export interface AiThreadCreateInput {
   model?: string;
   reasoningEffort?: AiReasoningEffort;
   selectedSceneId?: string;
+  selectedAssetId?: string;
   selectedTokenIds?: string[];
   messages?: AiThreadMessageInput[];
 }

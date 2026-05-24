@@ -50,6 +50,7 @@ export interface CodexAppServerCommandCandidateOptions {
 export interface CodexAppServerImageGenerationInput {
   prompt: string;
   outputFormat?: "png" | "jpeg" | "webp";
+  sourceImages?: Array<{ url: string; mimeType?: string }>;
   cwd?: string;
   model?: string;
   modelProvider?: string;
@@ -246,7 +247,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
       const generated = rpc.waitForImageTurnCompleted();
       await rpc.request("turn/start", {
         threadId: thread.thread.id,
-        input: [{ type: "text", text: input.prompt, text_elements: [] }],
+        input: imageGenerationTurnInput(input),
         approvalPolicy: "never",
         sandboxPolicy: { type: "readOnly", networkAccess: false }
       });
@@ -1046,6 +1047,14 @@ function toDynamicToolSpec(tool: CodexTransportTool): Record<string, unknown> {
       additionalProperties: true
     }
   };
+}
+
+function imageGenerationTurnInput(input: CodexAppServerImageGenerationInput): Array<Record<string, unknown>> {
+  const items: Array<Record<string, unknown>> = [{ type: "text", text: input.prompt, text_elements: [] }];
+  for (const image of input.sourceImages ?? []) {
+    items.push({ type: "image", url: image.url, mimeType: image.mimeType });
+  }
+  return items;
 }
 
 function codexBaseInstructions(context: PermissionFilteredContext): string {

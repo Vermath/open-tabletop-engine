@@ -3,8 +3,8 @@ import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
-import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenPositionChange } from "./board-history.js";
+import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange, type BoardTokenPositionChange } from "./board-history.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { parseChatCommand } from "./chat-command.js";
@@ -546,6 +546,7 @@ export function App() {
   const [sceneId, setSceneId] = useState(() => initialStoredId("otte:selectedSceneId", "scn_vault_entry"));
   const [selectedTokenId, setSelectedTokenIdState] = useState("tok_valen");
   const [selectedTokenIds, setSelectedTokenIds] = useState<string[]>(["tok_valen"]);
+  const [selectedBoardAssetId, setSelectedBoardAssetId] = useState("");
   const [activeTokenLayer, setActiveTokenLayer] = useState<TokenLayer>("player");
   const [boardUndoStack, setBoardUndoStack] = useState<BoardHistoryAction[]>([]);
   const [boardRedoStack, setBoardRedoStack] = useState<BoardHistoryAction[]>([]);
@@ -762,6 +763,8 @@ export function App() {
   const selectedToken = snapshot.tokens.find((token) => token.id === selectedTokenId && (!selectedScene || token.sceneId === selectedScene.id));
   const selectedTokenIdSet = useMemo(() => new Set(selectedTokenIds), [selectedTokenIds]);
   const selectedTokens = snapshot.tokens.filter((token) => selectedTokenIdSet.has(token.id) && (!selectedScene || token.sceneId === selectedScene.id));
+  const selectedBoardAsset = snapshot.assets.find((asset) => asset.id === selectedBoardAssetId && asset.campaignId === campaignId);
+  const aiAgentSelectedAssetId = selectedToken?.imageAssetId ?? selectedBoardAsset?.id ?? selectedCanvasAsset?.id ?? selectedMapAsset?.id;
   const canDeleteSelectedBoardTokens = hasPermission("token.delete");
   const sessionPulseStatus = status.toLowerCase().includes("realtime") || status.toLowerCase().includes("connected")
     ? "Connected"
@@ -921,6 +924,13 @@ export function App() {
   }, [activeTokenLayer, selectedScene?.id, selectedSceneActiveLayerTokenKey]);
 
   useEffect(() => {
+    if (!selectedBoardAssetId) return;
+    const exists = snapshot.assets.some((asset) => asset.id === selectedBoardAssetId && asset.campaignId === campaignId && asset.lifecycle?.status !== "deleted");
+    const backgroundStillSelectable = activeTokenLayer === "map" && selectedScene?.backgroundAssetId === selectedBoardAssetId;
+    if (!exists || (!backgroundStillSelectable && selectedBoardAssetId === selectedScene?.backgroundAssetId)) setSelectedBoardAssetId("");
+  }, [activeTokenLayer, campaignId, selectedBoardAssetId, selectedScene?.backgroundAssetId, snapshot.assets]);
+
+  useEffect(() => {
     const handleBoardKeyboard = (event: KeyboardEvent) => {
       const action = boardKeyboardAction(event, {
         selectedCount: selectedTokens.length,
@@ -959,6 +969,16 @@ export function App() {
     setSelectedTokenIds(token ? (validSelection.length ? validSelection : [token.id]) : []);
     setSnapshotReady(true);
     if (options.syncStatus !== false) setStatus("Synced");
+  }
+
+  function requireInteractiveSignIn(message: string) {
+    clearSession();
+    setSessionToken("");
+    setAuthMode("login");
+    setAuthRequired(true);
+    setSnapshotReady(false);
+    setStatus("Sign in required");
+    setAuthStatus(message);
   }
 
   async function refreshAdmin() {
@@ -1066,11 +1086,8 @@ export function App() {
         }
         refresh().catch((error) => {
           const message = errorMessage(error);
-          if (/unauthorized|missing session token|session token/i.test(message)) {
-            setSessionToken("");
-            setAuthRequired(true);
-            setStatus("Sign in required");
-            setAuthStatus(bootstrap.publicRegistration ? "Sign in or register to open a campaign" : "Sign in or use an invite link to join the beta");
+          if (isSessionAuthError(error)) {
+            requireInteractiveSignIn(bootstrap.publicRegistration ? `Sign in or register to open a campaign. ${message}` : `Sign in or use an invite link to join the beta. ${message}`);
             return;
           }
           setStatus(`API offline at ${apiBase || "http://127.0.0.1:4000"}: ${message}. Start it with pnpm --filter @open-tabletop/api dev.`);
@@ -1907,7 +1924,7 @@ export function App() {
   }
 
   function pushBoardHistoryAction(action: BoardHistoryAction) {
-    const size = action.kind === "tokens.move" ? action.changes.length : action.tokens.length;
+    const size = action.kind === "tokens.move" || action.kind === "tokens.resize" ? action.changes.length : action.tokens.length;
     if (size === 0) return;
     setBoardUndoStack((current) => [...current, action].slice(-boardHistoryLimit));
     setBoardRedoStack([]);
@@ -1961,7 +1978,7 @@ export function App() {
   }
 
   async function persistBoardHistoryAction(action: BoardHistoryAction, direction: BoardHistoryDirection) {
-    if (action.kind === "tokens.move") {
+    if (action.kind === "tokens.move" || action.kind === "tokens.resize") {
       const target = direction === "undo" ? "before" : "after";
       for (const change of action.changes) {
         await apiPatch<Token>(`/api/v1/tokens/${change.tokenId}`, change[target]);
@@ -2016,8 +2033,14 @@ export function App() {
     setStatus(`${formatNumber(changes.length)} token${changes.length === 1 ? "" : "s"} moved`);
   }
 
+  function recordTokenResizeAction(changes: BoardTokenFrameChange[]) {
+    pushBoardHistoryAction({ kind: "tokens.resize", changes });
+    setStatus(`${formatNumber(changes.length)} token${changes.length === 1 ? "" : "s"} resized`);
+  }
+
   function boardHistoryStatus(action: BoardHistoryAction, direction: BoardHistoryDirection): string {
     if (action.kind === "tokens.move") return direction === "undo" ? "Token move undone" : "Token move redone";
+    if (action.kind === "tokens.resize") return direction === "undo" ? "Token resize undone" : "Token resize redone";
     if (action.kind === "tokens.create") {
       if (direction === "undo") return action.tokens.length === 1 ? "Token creation undone" : "Token creations undone";
       return action.tokens.length === 1 ? "Token creation redone" : "Token creations redone";
@@ -2286,11 +2309,13 @@ export function App() {
   }
 
   function selectSingleToken(tokenId: string) {
+    setSelectedBoardAssetId("");
     setSelectedTokenIdState(tokenId);
     setSelectedTokenIds(tokenId ? [tokenId] : []);
   }
 
   function selectCanvasToken(tokenId: string, options: TokenSelectionOptions = {}) {
+    setSelectedBoardAssetId("");
     if (options.additive) {
       setSelectedTokenIds((current) => {
         const alreadySelected = current.includes(tokenId);
@@ -2309,6 +2334,7 @@ export function App() {
   }
 
   function selectCanvasTokens(tokenIds: string[], options: TokenSelectionOptions = {}) {
+    setSelectedBoardAssetId("");
     const uniqueTokenIds = [...new Set(tokenIds.filter(Boolean))];
     if (options.additive) {
       if (uniqueTokenIds.length === 0) return;
@@ -2329,6 +2355,16 @@ export function App() {
   function clearTokenSelection() {
     setSelectedTokenIdState("");
     setSelectedTokenIds([]);
+    setSelectedBoardAssetId("");
+  }
+
+  function selectBoardBackgroundAsset(assetId: string) {
+    setSelectedTokenIdState("");
+    setSelectedTokenIds([]);
+    setSelectedBoardAssetId(assetId);
+    setCanvasAssetId(assetId);
+    const asset = snapshot.assets.find((item) => item.id === assetId);
+    setStatus(`${asset?.name ?? "Map"} selected`);
   }
 
   function setAnnotationLayerVisible(layer: SceneAnnotationLayer, visible: boolean) {
@@ -2920,6 +2956,7 @@ export function App() {
         prompt,
         surface: "agent_panel",
         selectedSceneId: selectedScene?.id,
+        selectedAssetId: aiAgentSelectedAssetId,
         selectedTokenIds,
         messages: aiAgentProviderMessages(requestMessages)
       }, { signal: abortController.signal });
@@ -2948,6 +2985,13 @@ export function App() {
         setAiAgentCodexAuth({ ...codexAuth, message });
         setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
         setAiAgentStatus("Agent needs ChatGPT sign-in");
+        return;
+      }
+      if (isSessionAuthError(error)) {
+        const message = errorMessage(error);
+        requireInteractiveSignIn(`Sign in required. ${message}`);
+        setAiAgentMessages((messages) => [...messages, { id: `agent-auth-session-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+        setAiAgentStatus("Sign in required");
         return;
       }
       const message = errorMessage(error);
@@ -3106,6 +3150,18 @@ export function App() {
       setAiAgentMessages((messages) => [...messages, { id: `agent-apply-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
     } catch (error) {
       const message = errorMessage(error);
+      if (isProposalNotFoundError(error)) {
+        setSnapshot((current) => ({ ...current, proposals: current.proposals.filter((item) => item.id !== proposal.id) }));
+        setAiAgentStatus("Proposal no longer exists");
+        setAiAgentMessages((messages) => [...messages, { id: `agent-apply-missing-${Date.now()}`, role: "system", content: `Proposal ${proposal.id} no longer exists.`, createdAt: new Date().toISOString() }]);
+        refresh().catch(() => undefined);
+        return;
+      }
+      if (isSessionAuthError(error)) {
+        requireInteractiveSignIn(`Sign in required. ${message}`);
+        setAiAgentStatus("Sign in required");
+        return;
+      }
       setAiAgentStatus(`Apply failed: ${message}`);
       setAiAgentMessages((messages) => [...messages, { id: `agent-apply-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
     }
@@ -3121,6 +3177,18 @@ export function App() {
       setAiAgentMessages((messages) => [...messages, { id: `agent-reject-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
     } catch (error) {
       const message = errorMessage(error);
+      if (isProposalNotFoundError(error)) {
+        setSnapshot((current) => ({ ...current, proposals: current.proposals.filter((item) => item.id !== proposal.id) }));
+        setAiAgentStatus("Proposal no longer exists");
+        setAiAgentMessages((messages) => [...messages, { id: `agent-reject-missing-${Date.now()}`, role: "system", content: `Proposal ${proposal.id} no longer exists.`, createdAt: new Date().toISOString() }]);
+        refresh().catch(() => undefined);
+        return;
+      }
+      if (isSessionAuthError(error)) {
+        requireInteractiveSignIn(`Sign in required. ${message}`);
+        setAiAgentStatus("Sign in required");
+        return;
+      }
       setAiAgentStatus(`Reject failed: ${message}`);
       setAiAgentMessages((messages) => [...messages, { id: `agent-reject-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
     }
@@ -5029,7 +5097,7 @@ export function App() {
               </details>
             </section>
             )}
-            {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenMoveCommit={recordTokenMoveAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+            {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
           <aside className="inspector">
@@ -5260,6 +5328,16 @@ interface TokenDragDraft {
   settling?: boolean;
 }
 
+type TokenResizeHandle = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
+
+interface TokenResizeDraft {
+  tokenId: string;
+  pointerId: number;
+  handle: TokenResizeHandle;
+  origin: TokenFrame;
+  frame: TokenFrame;
+}
+
 interface TokenDragOrigin {
   x: number;
   y: number;
@@ -5290,7 +5368,8 @@ interface TokenSelectionOptions {
   preserveExisting?: boolean;
 }
 
-type TokenPositionOverrides = Record<string, Pick<Token, "x" | "y">>;
+type TokenFrame = Pick<Token, "x" | "y" | "width" | "height">;
+type TokenFrameOverrides = Record<string, TokenFrame>;
 
 interface TokenDropPayload {
   type: "actor" | "asset";
@@ -5437,6 +5516,60 @@ function tokenVisualScaleFor(token: Pick<Token, "width" | "height">, gridSize: n
   return largestSideInCells > 1.1 ? largeTokenVisualScale : tokenVisualScale;
 }
 
+function tokenFrame(token: Pick<Token, "x" | "y" | "width" | "height">): TokenFrame {
+  return { x: token.x, y: token.y, width: token.width, height: token.height };
+}
+
+function tokenFrameChanged(before: TokenFrame, after: TokenFrame): boolean {
+  return before.x !== after.x || before.y !== after.y || before.width !== after.width || before.height !== after.height;
+}
+
+function snapSceneAxisToGrid(value: number, sceneSize: number, gridSize: number): number {
+  const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
+  return clampSceneCoordinate(Math.round(value / safeGridSize) * safeGridSize, 0, sceneSize);
+}
+
+function tokenResizeFrameFromPoint(scene: Pick<Scene, "width" | "height" | "gridSize">, origin: TokenFrame, handle: TokenResizeHandle, point: VisionPoint): TokenFrame {
+  const minSize = Math.max(1, Math.round(scene.gridSize) || 1);
+  let left = origin.x;
+  let top = origin.y;
+  let right = origin.x + origin.width;
+  let bottom = origin.y + origin.height;
+
+  if (handle.includes("w")) left = snapSceneAxisToGrid(point.x, scene.width, scene.gridSize);
+  if (handle.includes("e")) right = snapSceneAxisToGrid(point.x, scene.width, scene.gridSize);
+  if (handle.includes("n")) top = snapSceneAxisToGrid(point.y, scene.height, scene.gridSize);
+  if (handle.includes("s")) bottom = snapSceneAxisToGrid(point.y, scene.height, scene.gridSize);
+
+  if (handle.includes("w")) left = Math.min(left, right - minSize);
+  if (handle.includes("e")) right = Math.max(right, left + minSize);
+  if (handle.includes("n")) top = Math.min(top, bottom - minSize);
+  if (handle.includes("s")) bottom = Math.max(bottom, top + minSize);
+
+  left = clampSceneCoordinate(left, 0, Math.max(0, scene.width - minSize));
+  top = clampSceneCoordinate(top, 0, Math.max(0, scene.height - minSize));
+  right = clampSceneCoordinate(right, left + minSize, scene.width);
+  bottom = clampSceneCoordinate(bottom, top + minSize, scene.height);
+
+  return {
+    x: Math.round(left),
+    y: Math.round(top),
+    width: Math.round(right - left),
+    height: Math.round(bottom - top)
+  };
+}
+
+const tokenResizeHandles: Array<{ id: TokenResizeHandle; label: string }> = [
+  { id: "n", label: "Resize north edge" },
+  { id: "e", label: "Resize east edge" },
+  { id: "s", label: "Resize south edge" },
+  { id: "w", label: "Resize west edge" },
+  { id: "ne", label: "Resize northeast corner" },
+  { id: "nw", label: "Resize northwest corner" },
+  { id: "se", label: "Resize southeast corner" },
+  { id: "sw", label: "Resize southwest corner" }
+];
+
 function writeTokenDropData(dataTransfer: DataTransfer, payload: TokenDropPayload): void {
   dataTransfer.effectAllowed = "copy";
   dataTransfer.setData(tokenDropMime, JSON.stringify(payload));
@@ -5500,9 +5633,10 @@ function hasItemDropData(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(itemDropMime);
 }
 
-function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
+function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
-  const [tokenPositionOverrides, setTokenPositionOverrides] = useState<TokenPositionOverrides>({});
+  const [tokenResize, setTokenResize] = useState<TokenResizeDraft | null>(null);
+  const [tokenFrameOverrides, setTokenFrameOverrides] = useState<TokenFrameOverrides>({});
   const [dropActive, setDropActive] = useState(false);
   const [mapPanning, setMapPanning] = useState(false);
   const [selectionBox, setSelectionBox] = useState<SelectionBoxDraft | null>(null);
@@ -5510,6 +5644,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null);
   const [annotationMoveDraft, setAnnotationMoveDraft] = useState<AnnotationMoveDraft | null>(null);
   const tokenDragRef = useRef<TokenDragDraft | null>(null);
+  const tokenResizeRef = useRef<TokenResizeDraft | null>(null);
   const pointerSelectedTokenRef = useRef<string | null>(null);
   const mapPanRef = useRef<MapPanDraft | null>(null);
   const selectionBoxRef = useRef<SelectionBoxDraft | null>(null);
@@ -5549,12 +5684,12 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   const showGridOverlay = sceneGridOverlayVisible(props.scene);
 
   useEffect(() => {
-    setTokenPositionOverrides((current) => {
+    setTokenFrameOverrides((current) => {
       let changed = false;
       const next = { ...current };
       for (const [tokenId, override] of Object.entries(current)) {
         const token = tokens.find((item) => item.id === tokenId);
-        if (!token || (token.x === override.x && token.y === override.y)) {
+        if (!token || (token.x === override.x && token.y === override.y && token.width === override.width && token.height === override.height)) {
           delete next[tokenId];
           changed = true;
         }
@@ -5688,8 +5823,8 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     return snappedTokenCoordinates(props.scene, token, x, y);
   }
 
-  function renderedTokenPosition(token: Token): Pick<TokenDragDraft, "x" | "y"> {
-    return tokenPositionOverrides[token.id] ?? { x: token.x, y: token.y };
+  function renderedTokenFrame(token: Token): TokenFrame {
+    return tokenFrameOverrides[token.id] ?? tokenFrame(token);
   }
 
   function tokenPositionFromPointer(token: Token, clientX: number, clientY: number, offsetX: number, offsetY: number): Pick<TokenDragDraft, "x" | "y"> | undefined {
@@ -5718,8 +5853,8 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     if (!activeLayerTokenIds.has(token.id)) return;
     const point = boardPoint(event.clientX, event.clientY);
     if (!point) return;
-    const renderedPosition = renderedTokenPosition(token);
-    const start = boundedTokenPosition(token, renderedPosition.x, renderedPosition.y);
+    const renderedFrame = renderedTokenFrame(token);
+    const start = boundedTokenPosition(token, renderedFrame.x, renderedFrame.y);
     const groupTokenIds =
       selectedTokenIdSet.has(token.id) && props.selectedTokenIds.length > 1 && !event.shiftKey && !event.ctrlKey && !event.metaKey
           ? props.selectedTokenIds.filter((id) => activeLayerTokenIds.has(id))
@@ -5728,8 +5863,8 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       tokens
         .filter((item) => groupTokenIds.includes(item.id))
         .map((item) => {
-          const position = renderedTokenPosition(item);
-          return [item.id, { x: position.x, y: position.y, width: item.width, height: item.height }];
+          const frame = renderedTokenFrame(item);
+          return [item.id, { x: frame.x, y: frame.y, width: frame.width, height: frame.height }];
         })
     ) as Record<string, TokenDragOrigin>;
     const next = {
@@ -5800,9 +5935,9 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     if (movedTokens.length === 0) {
       return;
     }
-    setTokenPositionOverrides((overrides) => ({
+    setTokenFrameOverrides((overrides) => ({
       ...overrides,
-      ...Object.fromEntries(movedTokens.map(({ token: movedToken, position }) => [movedToken.id, position]))
+      ...Object.fromEntries(movedTokens.map(({ token: movedToken, position }) => [movedToken.id, { ...tokenFrame(movedToken), ...position }]))
     }));
     Promise.all(movedTokens.map(({ token: movedToken, position }) => apiPatch<Token>(`/api/v1/tokens/${movedToken.id}`, position)))
       .then(() => {
@@ -5817,9 +5952,71 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       })
       .catch((error) => {
         console.error(error);
-        setTokenPositionOverrides((overrides) => {
+        setTokenFrameOverrides((overrides) => {
           const next = { ...overrides };
           for (const { token: movedToken } of movedTokens) delete next[movedToken.id];
+          return next;
+        });
+      });
+  }
+
+  function startTokenResize(token: Token, handle: TokenResizeHandle, event: ReactPointerEvent<HTMLElement>) {
+    if (!props.canResizeToken || !activeLayerTokenIds.has(token.id) || props.fogBrushMode || props.annotationTool) return;
+    const origin = renderedTokenFrame(token);
+    const next = { tokenId: token.id, pointerId: event.pointerId, handle, origin, frame: origin };
+    tokenResizeRef.current = next;
+    setTokenResize(next);
+    tokenDragRef.current = null;
+    setTokenDrag(null);
+    pointerSelectedTokenRef.current = token.id;
+    props.onSelect(token.id, { preserveExisting: selectedTokenIdSet.has(token.id) });
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveTokenResize(clientX: number, clientY: number, pointerId: number): boolean {
+    const current = tokenResizeRef.current;
+    if (!current || current.pointerId !== pointerId) return false;
+    const point = boardPoint(clientX, clientY, { clamp: true });
+    if (!point) return true;
+    const frame = tokenResizeFrameFromPoint(props.scene, current.origin, current.handle, point);
+    if (!tokenFrameChanged(current.frame, frame)) return true;
+    const next = { ...current, frame };
+    tokenResizeRef.current = next;
+    setTokenResize(next);
+    return true;
+  }
+
+  function cancelTokenResize(pointerId: number) {
+    if (tokenResizeRef.current?.pointerId !== pointerId) return;
+    tokenResizeRef.current = null;
+    setTokenResize(null);
+  }
+
+  function finishTokenResize(pointerId: number) {
+    const current = tokenResizeRef.current;
+    if (!current || current.pointerId !== pointerId) return;
+    const token = tokens.find((item) => item.id === current.tokenId);
+    tokenResizeRef.current = null;
+    setTokenResize(null);
+    if (!token || !tokenFrameChanged(tokenFrame(token), current.frame)) return;
+    const before = tokenFrame(token);
+    const after = current.frame;
+    setTokenFrameOverrides((overrides) => ({
+      ...overrides,
+      [token.id]: after
+    }));
+    apiPatch<Token>(`/api/v1/tokens/${token.id}`, after)
+      .then(() => {
+        props.onTokenResizeCommit([{ tokenId: token.id, before, after }]);
+        return props.onMoved();
+      })
+      .catch((error) => {
+        console.error(error);
+        setTokenFrameOverrides((overrides) => {
+          const next = { ...overrides };
+          delete next[token.id];
           return next;
         });
       });
@@ -5918,7 +6115,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         ref={boardRef}
         data-agent-board-root="true"
         data-scene-id={props.scene.id}
-        className={`scene-board ${props.fogBrushMode || props.annotationTool ? "brush-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${selectionBox ? "token-selecting" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
+        className={`scene-board ${props.fogBrushMode || props.annotationTool ? "brush-mode" : ""} ${tokenDrag && !tokenDrag.settling ? "token-drag-active" : ""} ${tokenResize ? "token-resize-active" : ""} ${selectionBox ? "token-selecting" : ""} ${dropActive ? "drop-active" : ""} ${mapPanning ? "map-panning" : ""}`}
         style={boardStyle}
       onDragEnter={(event) => {
         if (!props.canDropToken || props.fogBrushMode || props.annotationTool || !hasTokenDropData(event.dataTransfer)) return;
@@ -5976,6 +6173,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         setFogStroke(next);
       }}
       onPointerMove={(event) => {
+        if (moveTokenResize(event.clientX, event.clientY, event.pointerId)) return;
         if (moveSelectionBox(event.clientX, event.clientY, event.pointerId)) return;
         if (moveMapPan(event.clientX, event.clientY, event.pointerId)) return;
         if (annotationDraftRef.current?.pointerId === event.pointerId) {
@@ -5993,6 +6191,10 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         moveTokenDrag(event.clientX, event.clientY, event.pointerId);
       }}
       onPointerUp={(event) => {
+        if (tokenResizeRef.current?.pointerId === event.pointerId) {
+          finishTokenResize(event.pointerId);
+          return;
+        }
         if (annotationDraftRef.current?.pointerId === event.pointerId) {
           finishAnnotationDraft(event.pointerId, event.clientX, event.clientY);
           return;
@@ -6025,10 +6227,12 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         cancelSelectionBox(event.pointerId);
         cancelMapPan(event.pointerId);
         cancelTokenDrag(event.pointerId);
+        cancelTokenResize(event.pointerId);
       }}
       onLostPointerCapture={(event) => {
         cancelSelectionBox(event.pointerId);
         cancelMapPan(event.pointerId);
+        cancelTokenResize(event.pointerId);
       }}
     >
       {props.backgroundAsset && <img className="scene-map" src={assetBlobUrl(props.backgroundAsset)} alt="" draggable={false} />}
@@ -6037,6 +6241,20 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
           className="grid-lines"
           style={{
             backgroundSize: `${(props.scene.gridSize / props.scene.width) * 100}% ${(props.scene.gridSize / props.scene.height) * 100}%`
+          }}
+        />
+      )}
+      {props.backgroundAsset && props.activeTokenLayer === "map" && !props.fogBrushMode && !props.annotationTool && (
+        <button
+          className={`scene-map-hitbox ${props.selectedAssetId === props.backgroundAsset.id ? "selected" : ""}`}
+          type="button"
+          aria-label={`Select map background ${props.backgroundAsset.name}`}
+          aria-pressed={props.selectedAssetId === props.backgroundAsset.id}
+          title="Select map background"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            props.onSelectBackgroundAsset(props.backgroundAsset!.id);
           }}
         />
       )}
@@ -6164,18 +6382,19 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       {orderedTokens.map((token) => {
         const dragOrigin = tokenDrag?.origins[token.id];
         const dragPosition = tokenDrag && dragOrigin ? { x: dragOrigin.x + tokenDrag.x - tokenDrag.startX, y: dragOrigin.y + tokenDrag.y - tokenDrag.startY } : undefined;
-        const positionOverride = tokenPositionOverrides[token.id];
-        const tokenX = dragPosition?.x ?? positionOverride?.x ?? token.x;
-        const tokenY = dragPosition?.y ?? positionOverride?.y ?? token.y;
-        const visualScale = tokenVisualScaleFor(token, props.scene.gridSize);
-        const visualWidth = token.width * visualScale;
-        const visualHeight = token.height * visualScale;
-        const visualX = tokenX + (token.width - visualWidth) / 2;
-        const visualY = tokenY + (token.height - visualHeight) / 2;
+        const frameOverride = tokenFrameOverrides[token.id];
+        const resizeFrame = tokenResize?.tokenId === token.id ? tokenResize.frame : undefined;
+        const displayFrame = resizeFrame ?? (dragPosition ? { ...tokenFrame(token), ...dragPosition } : frameOverride ?? tokenFrame(token));
+        const visualScale = tokenVisualScaleFor(displayFrame, props.scene.gridSize);
+        const visualWidth = displayFrame.width * visualScale;
+        const visualHeight = displayFrame.height * visualScale;
+        const visualX = displayFrame.x + (displayFrame.width - visualWidth) / 2;
+        const visualY = displayFrame.y + (displayFrame.height - visualHeight) / 2;
         const tokenImageAsset = token.imageAssetId ? tokenImageAssets.get(token.imageAssetId) : undefined;
         const selected = selectedTokenIdSet.has(token.id);
         const layer = tokenLayer(token);
         const activeLayerToken = activeLayerTokenIds.has(token.id);
+        const canResize = props.canResizeToken && selected && activeLayerToken && !props.fogBrushMode && !props.annotationTool;
         return (
           <button
             key={token.id}
@@ -6227,6 +6446,33 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
             <span className="token-label">{token.name.slice(0, 2).toUpperCase()}</span>
             {token.conditions?.length ? <small className="token-condition-count">{token.conditions.length}</small> : null}
             {token.auras?.length ? <small className="token-aura-count">{token.auras.length}</small> : null}
+            {canResize && tokenResizeHandles.map((handle) => (
+              <span
+                className={`token-resize-handle handle-${handle.id}`}
+                key={`${token.id}-${handle.id}`}
+                aria-hidden="true"
+                title={handle.label}
+                onPointerDown={(event) => startTokenResize(token, handle.id, event)}
+                onPointerMove={(event) => {
+                  if (tokenResizeRef.current?.tokenId !== token.id || tokenResizeRef.current.pointerId !== event.pointerId) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  moveTokenResize(event.clientX, event.clientY, event.pointerId);
+                }}
+                onPointerUp={(event) => {
+                  if (tokenResizeRef.current?.tokenId !== token.id || tokenResizeRef.current.pointerId !== event.pointerId) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  finishTokenResize(event.pointerId);
+                }}
+                onPointerCancel={(event) => {
+                  if (tokenResizeRef.current?.tokenId !== token.id || tokenResizeRef.current.pointerId !== event.pointerId) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  cancelTokenResize(event.pointerId);
+                }}
+              />
+            ))}
           </button>
         );
       })}
@@ -9498,6 +9744,17 @@ function formatRollTermDetail(term: DiceRoll["terms"][number]): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isSessionAuthError(error: unknown): boolean {
+  const message = errorMessage(error);
+  if (error instanceof ApiError && error.status === 401) return true;
+  return /unauthorized|missing session token|invalid session token|session token expired/i.test(message);
+}
+
+function isProposalNotFoundError(error: unknown): boolean {
+  if (error instanceof ApiError && error.status === 404 && /proposal not found/i.test(error.message)) return true;
+  return /proposal not found/i.test(errorMessage(error));
 }
 
 function isAbortError(error: unknown): boolean {

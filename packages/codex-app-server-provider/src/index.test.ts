@@ -228,7 +228,8 @@ describe("CodexAppServerWebSocketTransport", () => {
 
     const image = await transport.generateImage({
       prompt: "Generate a PNG battle map.",
-      outputFormat: "png"
+      outputFormat: "png",
+      sourceImages: [{ url: "https://assets.test/source-map.png", mimeType: "image/png" }]
     });
 
     expect(image).toEqual({
@@ -240,6 +241,12 @@ describe("CodexAppServerWebSocketTransport", () => {
     expect(socket?.sent.find((message) => message.method === "modelProvider/capabilities/read")).toBeTruthy();
     expect(socket?.sent.find((message) => message.method === "thread/start")?.params).toMatchObject({
       developerInstructions: expect.stringContaining("Do not return SVG")
+    });
+    expect(socket?.sent.find((message) => message.method === "turn/start")?.params).toMatchObject({
+      input: [
+        expect.objectContaining({ type: "text", text: "Generate a PNG battle map." }),
+        expect.objectContaining({ type: "image", url: "https://assets.test/source-map.png", mimeType: "image/png" })
+      ]
     });
   });
 });

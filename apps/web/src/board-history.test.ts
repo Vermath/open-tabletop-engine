@@ -34,6 +34,18 @@ describe("board history", () => {
     expect(result.selectedTokenIds).toEqual(["tok_a"]);
   });
 
+  it("applies token resize redo locally with frame changes", () => {
+    const tokens = [token({ id: "tok_map", sceneId: "scn_1", name: "Map", x: 50, y: 50, width: 100, height: 100 })];
+
+    const result = applyLocalBoardHistoryAction(tokens, {
+      kind: "tokens.resize",
+      changes: [{ tokenId: "tok_map", before: { x: 50, y: 50, width: 100, height: 100 }, after: { x: 50, y: 50, width: 200, height: 150 } }]
+    }, "redo");
+
+    expect(result.tokens[0]).toMatchObject({ id: "tok_map", x: 50, y: 50, width: 200, height: 150 });
+    expect(result.selectedTokenIds).toEqual(["tok_map"]);
+  });
+
   it("applies token delete undo locally with original ids preserved", () => {
     const deleted = token({ id: "tok_deleted", sceneId: "scn_1", name: "Deleted", x: 40, y: 40 });
 

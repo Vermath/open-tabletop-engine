@@ -9,7 +9,7 @@ import { openApiSpec } from "@open-tabletop/api-contracts";
 import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type CampaignArchive, type ChatMessage, type Combat, type DiceMacro, type DiceRoll, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
-import { buildApp, type ImageAssetGenerator } from "./app.js";
+import { buildApp, type ImageAssetGenerationInput, type ImageAssetGenerator } from "./app.js";
 import { loadPluginRegistry, pluginSignatureForPackage } from "./plugin-runtime.js";
 import { installedSystems } from "./registries.js";
 import { SqliteStateStore } from "./sqlite-store.js";
@@ -94,7 +94,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.includes("/assets/storage")) return { tools: ["read_asset"] };
   if (path.includes("/assets/") || path.includes("/campaigns/{campaignId}/assets")) {
     if (path.endsWith("/blob") || path.endsWith("/delivery-url")) return { tools: ["read_asset"] };
-    return method === "GET" ? { tools: ["read_asset"] } : { tools: ["create_proposal", "generate_map_asset", "generate_token_asset"] };
+    return method === "GET" ? { tools: ["read_asset"] } : { tools: ["create_proposal", "generate_map_asset", "generate_token_asset", "modify_asset_image"] };
   }
   if (path.includes("/scenes/{sceneId}/ai-edits/apply-to-target")) return { tools: ["draft_ai_edit_layer_apply", "apply_approved_proposal"] };
   if (path.includes("/scenes/{sceneId}/vision") || path.includes("/rendering/diagnostics")) return { tools: ["read_board_state", "read_scene"] };
@@ -22000,7 +22000,7 @@ registerCommand("/state", (input) => {
     const gmContext = provider.requests[1]!.context;
     expect(gmContext.publicSummary).toContain("Session Hook");
     expect(gmContext.gmSecrets.some((secret) => secret.includes("founder's oath"))).toBe(true);
-    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 2")?.visibility).toBe("gm_only");
 
     const playerChat = await app.inject({
@@ -24224,9 +24224,9 @@ registerCommand("/state", (input) => {
           })
         ],
         toolCatalog: expect.objectContaining({
-          toolCount: 43,
+          toolCount: 44,
           permissionSafeToolCount: 28,
-          proposalGatedToolCount: 15,
+          proposalGatedToolCount: 16,
           failClosedToolCount: 0,
           actionRequired: false,
           actionReasons: [],
@@ -24236,6 +24236,15 @@ registerCommand("/state", (input) => {
             expect.objectContaining({
               name: "draft_scene",
               requiredPermissions: ["ai.proposeChanges", "scene.create"],
+              permissionSafe: false,
+              proposalGated: true,
+              failClosed: false,
+              parameterSchemaType: "object",
+              rejectsAdditionalProperties: true
+            }),
+            expect.objectContaining({
+              name: "modify_asset_image",
+              requiredPermissions: ["ai.proposeChanges", "scene.update", "token.update", "actor.update"],
               permissionSafe: false,
               proposalGated: true,
               failClosed: false,
@@ -25577,6 +25586,7 @@ registerCommand("/state", (input) => {
         yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: 220, y: 240, disposition: "friendly" } };
         yield { type: "tool.started", toolName: "generate_map_asset", input: { prompt: "Mirror-lit vault battlemap with moon doors.", name: "Mirror Vault Map", sceneId: "scn_vault_entry", size: "1536x1024", quality: "low", outputFormat: "png" } };
         yield { type: "tool.started", toolName: "generate_token_asset", input: { prompt: "Valen Ash heroic fighter token portrait.", name: "Valen Token Art", tokenId: "tok_valen", size: "1024x1024", quality: "low", outputFormat: "png" } };
+        yield { type: "tool.started", toolName: "modify_asset_image", input: { assetId: "asset_ai_vault_map", prompt: "Make the vault map icy and moonlit while preserving the room layout.", name: "Icy Vault Map", sceneId: "scn_vault_entry", applyTo: "asset_only", size: "1536x1024", quality: "low", outputFormat: "png" } };
         yield { type: "tool.started", toolName: "draft_actor_update", input: { actorId: "act_valen", data: { resources: { focus: 4 } } } };
         yield { type: "tool.started", toolName: "roll_dice", input: { formula: "1d20+5", label: "AI Perception" } };
         yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: "act_valen", actionName: "Healing Word Healing", applyEffect: true, targetActorId: "act_valen" } };
@@ -25781,10 +25791,12 @@ registerCommand("/state", (input) => {
       })
     );
     const gmAssetStorage = new MemoryAssetStorage("ai-generated-assets");
+    const generatedImageInputs: ImageAssetGenerationInput[] = [];
     const gmImageGenerator = {
       id: "test-image-generator",
       label: "Test Image Generator",
       async generate(input) {
+        generatedImageInputs.push(input);
         return {
           body: tinyPng,
           mimeType: `image/${input.outputFormat ?? "png"}`,
@@ -25802,11 +25814,12 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Read the compendium, remember a key, draft an encounter, and roll dice." }
     });
     expect(gmThread.statusCode).toBe(200);
-    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_encounter")?.parameters?.required).toEqual(["name", "summary"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_token_update")?.requiredPermissions).toEqual(["ai.proposeChanges", "token.update"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "generate_map_asset")?.requiredPermissions).toEqual(["ai.proposeChanges", "scene.update"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "generate_token_asset")?.requiredPermissions).toEqual(["ai.proposeChanges", "token.update"]);
+    expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "modify_asset_image")?.requiredPermissions).toEqual(["ai.proposeChanges", "scene.update", "token.update", "actor.update"]);
     expect(gmProvider.requests[0]!.context.actors?.map((actor) => actor.name)).toContain("Valen Ash");
     expect(gmProvider.requests[0]!.context.actors?.find((actor) => actor.id === "act_valen")?.actions).toEqual(
       expect.arrayContaining([expect.objectContaining({ rollId: "spell-item_ai_healing_word-healing", label: "Healing Word Healing" })])
@@ -26016,6 +26029,7 @@ registerCommand("/state", (input) => {
         expect.objectContaining({ type: "tool.completed", toolName: "draft_token_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "generate_map_asset", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 2, assetId: expect.any(String), sceneId: "scn_vault_entry" }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "generate_token_asset", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 3, assetId: expect.any(String), tokenId: "tok_valen", actorId: "act_valen" }) }),
+        expect.objectContaining({ type: "tool.completed", toolName: "modify_asset_image", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1, assetId: expect.any(String), sourceAssetId: "asset_ai_vault_map", sceneId: "scn_vault_entry" }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "draft_actor_update", output: expect.objectContaining({ proposalId: expect.any(String), changeCount: 1 }) }),
         expect.objectContaining({ type: "tool.completed", toolName: "roll_dice", output: expect.objectContaining({ rollId: expect.any(String), formula: "1d20+5", label: "AI Perception" }) }),
         expect.objectContaining({
@@ -26078,10 +26092,18 @@ registerCommand("/state", (input) => {
     expect(tokenAssetProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "asset", action: "create", data: expect.objectContaining({ name: "Valen Token Art", mimeType: "image/png", folder: "tokens/generated" }) }));
     expect(tokenAssetProposal?.changesJson[1]).toEqual(expect.objectContaining({ entity: "token", action: "update", id: "tok_valen", data: expect.objectContaining({ imageAssetId: tokenAssetProposal?.changesJson[0]?.data.id }) }));
     expect(tokenAssetProposal?.changesJson[2]).toEqual(expect.objectContaining({ entity: "actor", action: "update", id: "act_valen", data: expect.objectContaining({ imageAssetId: tokenAssetProposal?.changesJson[0]?.data.id }) }));
+    const modifiedAssetProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Modified asset: Icy Vault Map");
+    expect(modifiedAssetProposal?.changesJson.map((change) => change.entity)).toEqual(["asset"]);
+    expect(modifiedAssetProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "asset", action: "create", data: expect.objectContaining({ name: "Icy Vault Map", mimeType: "image/png", folder: "maps/generated" }) }));
+    const assetEditInput = generatedImageInputs.find((input) => input.sourceImageUrl);
+    expect(assetEditInput?.sourceImageUrl).toContain("/api/v1/assets/asset_ai_vault_map/blob");
+    expect(assetEditInput?.sourceImageMimeType).toBe("image/png");
     const mapAssetRecord = mapAssetProposal?.changesJson[0]?.data as MapAsset | undefined;
     const tokenAssetRecord = tokenAssetProposal?.changesJson[0]?.data as MapAsset | undefined;
+    const modifiedAssetRecord = modifiedAssetProposal?.changesJson[0]?.data as MapAsset | undefined;
     expect(gmAssetStorage.objects.has(mapAssetRecord?.storage?.key ?? "")).toBe(true);
     expect(gmAssetStorage.objects.has(tokenAssetRecord?.storage?.key ?? "")).toBe(true);
+    expect(gmAssetStorage.objects.has(modifiedAssetRecord?.storage?.key ?? "")).toBe(true);
     expect(gmStore.state.proposals.find((proposal) => proposal.title === "Actor: Valen Ash")?.changesJson[0]).toEqual(expect.objectContaining({ entity: "actor", action: "update", id: "act_valen" }));
     const actorActionProposal = gmStore.state.proposals.find((proposal) => proposal.title === "Actor action: Valen Ash Healing Word Healing");
     expect(actorActionProposal?.changesJson.map((change) => change.entity)).toEqual(["actor", "roll", "chat"]);
@@ -26100,7 +26122,7 @@ registerCommand("/state", (input) => {
     });
     expect(observedToolCalls.statusCode).toBe(200);
     expect(observedToolCalls.json().map((call: { toolName: string }) => call.toolName)).toEqual(
-      expect.arrayContaining(["read_compendium", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "draft_actor_update", "roll_dice", "use_actor_action", "unknown_tool"])
+      expect.arrayContaining(["read_compendium", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "roll_dice", "use_actor_action", "unknown_tool"])
     );
     expect(gmStore.state.aiToolCalls.find((call) => call.toolName === "unknown_tool" && call.status === "failed")?.output).toEqual({
       error: "unknown_tool",
@@ -26446,7 +26468,7 @@ registerCommand("/state", (input) => {
       const gmTools = provider.requests[0]!.tools;
       const assistantTools = provider.requests[1]!.tools;
       const playerTools = provider.requests[2]!.tools;
-      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
 
       for (const tool of gmTools) {
         expect(tool.requiredPermissions.length, `${tool.name} should declare required permissions`).toBeGreaterThan(0);
@@ -26459,7 +26481,7 @@ registerCommand("/state", (input) => {
         if (!advertisedTool.permissionSafe) expect(advertisedTool.requiredPermissions).toContain("ai.proposeChanges");
       }
 
-      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "modify_asset_image", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
       expect(assistantTools.map((tool) => tool.name)).not.toContain("draft_encounter");
       for (const tool of assistantTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("assistant_gm").includes(permission))).toBe(true);
@@ -26506,6 +26528,7 @@ registerCommand("/state", (input) => {
         yield { type: "tool.started", toolName: "draft_token_update", input: { tokenId: "tok_valen", x: 300 } };
         yield { type: "tool.started", toolName: "generate_map_asset", input: { prompt: "Restricted map asset", sceneId: "scn_vault_entry" } };
         yield { type: "tool.started", toolName: "generate_token_asset", input: { prompt: "Restricted token asset", tokenId: "tok_valen" } };
+        yield { type: "tool.started", toolName: "modify_asset_image", input: { assetId: "asset_map", prompt: "Restricted asset edit", sceneId: "scn_vault_entry" } };
         yield { type: "tool.started", toolName: "draft_actor_update", input: { actorId: "act_valen", data: { hp: { current: 1 } } } };
         yield { type: "message.completed", content: "Restricted edits requested" };
       }
@@ -26540,6 +26563,7 @@ registerCommand("/state", (input) => {
         expect.objectContaining({ toolName: "draft_token_update", output: { error: "missing_permission", permission: "token.update" } }),
         expect.objectContaining({ toolName: "generate_map_asset", output: { error: "missing_permission", permission: "scene.update" } }),
         expect.objectContaining({ toolName: "generate_token_asset", output: { error: "missing_permission", permission: "token.update" } }),
+        expect.objectContaining({ toolName: "modify_asset_image", output: { error: "missing_permission", permission: "scene.update" } }),
         expect.objectContaining({ toolName: "draft_actor_update", output: { error: "missing_permission", permission: "actor.update" } })
       ])
     );

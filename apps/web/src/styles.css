@@ -904,6 +904,10 @@ a[href]:focus-visible,
   user-select: none;
 }
 
+.scene-board.token-resize-active {
+  user-select: none;
+}
+
 .scene-board.token-selecting {
   cursor: crosshair;
   user-select: none;
@@ -934,6 +938,25 @@ a[href]:focus-visible,
   object-fit: cover;
   user-select: none;
   pointer-events: none;
+}
+
+.scene-map-hitbox {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.scene-map-hitbox.selected {
+  box-shadow: inset 0 0 0 4px rgba(80, 208, 178, 0.72), inset 0 0 0 8px rgba(7, 11, 16, 0.24);
+}
+
+.scene-map-hitbox:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: -6px;
 }
 
 .grid-lines {
@@ -4156,6 +4179,81 @@ body {
   z-index: 9;
   cursor: grabbing;
   box-shadow: 0 0 0 4px rgba(80, 208, 178, 0.28), 0 16px 34px rgba(0, 0, 0, 0.46);
+}
+
+.token-resize-handle {
+  position: absolute;
+  z-index: 4;
+  display: block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(239, 228, 205, 0.92);
+  border-radius: 999px;
+  background: rgba(8, 12, 18, 0.92);
+  box-shadow: 0 0 0 2px rgba(80, 208, 178, 0.48), 0 5px 12px rgba(0, 0, 0, 0.36);
+  pointer-events: auto;
+}
+
+.token-resize-handle.handle-n,
+.token-resize-handle.handle-s {
+  left: 50%;
+  transform: translateX(-50%);
+  cursor: ns-resize;
+}
+
+.token-resize-handle.handle-e,
+.token-resize-handle.handle-w {
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: ew-resize;
+}
+
+.token-resize-handle.handle-n {
+  top: 2px;
+}
+
+.token-resize-handle.handle-e {
+  right: 2px;
+}
+
+.token-resize-handle.handle-s {
+  bottom: 2px;
+}
+
+.token-resize-handle.handle-w {
+  left: 2px;
+}
+
+.token-resize-handle.handle-ne,
+.token-resize-handle.handle-nw,
+.token-resize-handle.handle-se,
+.token-resize-handle.handle-sw {
+  width: 14px;
+  height: 14px;
+}
+
+.token-resize-handle.handle-ne {
+  top: 3px;
+  right: 3px;
+  cursor: nesw-resize;
+}
+
+.token-resize-handle.handle-nw {
+  top: 3px;
+  left: 3px;
+  cursor: nwse-resize;
+}
+
+.token-resize-handle.handle-se {
+  right: 3px;
+  bottom: 3px;
+  cursor: nwse-resize;
+}
+
+.token-resize-handle.handle-sw {
+  bottom: 3px;
+  left: 3px;
+  cursor: nesw-resize;
 }
 
 .token .token-label {
