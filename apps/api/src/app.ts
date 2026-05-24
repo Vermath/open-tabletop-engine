@@ -14662,6 +14662,7 @@ function resolveInviteUser(store: StateStore, headers: Record<string, string | s
 
   const existingUser = findLoginUser(store, input);
   if (existingUser) {
+    if (existingUser.passwordResetRequired) return forbidden(reply, "Password reset required");
     if (existingUser.passwordHash && !verifyPassword(input.password ?? "", existingUser.passwordHash)) return unauthorized(reply, "Invalid login credentials");
     return existingUser;
   }
