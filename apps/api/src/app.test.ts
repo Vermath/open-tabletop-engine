@@ -5651,6 +5651,116 @@ describe("api", () => {
     await app.close();
   });
 
+
+  it("requires MFA when accepting invites as an existing MFA-enabled user", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const attacker = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          email: "attacker@example.test",
+          displayName: "Attacker",
+          password: "attacker password"
+        }
+      });
+      expect(attacker.statusCode).toBe(200);
+
+      const victim = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          email: "victim.mfa@example.test",
+          displayName: "Victim",
+          password: "victim password"
+        }
+      });
+      expect(victim.statusCode).toBe(200);
+
+      const enrolled = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/mfa/totp/enroll",
+        headers: { authorization: `Bearer ${victim.json().token}` },
+        payload: { currentPassword: "victim password" }
+      });
+      expect(enrolled.statusCode).toBe(200);
+      const secret = enrolled.json().secret as string;
+
+      const confirmed = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/mfa/totp/confirm",
+        headers: { authorization: `Bearer ${victim.json().token}` },
+        payload: { code: testTotpCode(secret) }
+      });
+      expect(confirmed.statusCode).toBe(200);
+
+      const campaign = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns",
+        headers: { authorization: `Bearer ${attacker.json().token}` },
+        payload: { name: "Attacker Campaign" }
+      });
+      expect(campaign.statusCode).toBe(200);
+
+      const invite = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaign.json().id}/invites`,
+        headers: { authorization: `Bearer ${attacker.json().token}` },
+        payload: { email: "victim.mfa@example.test", role: "player" }
+      });
+      expect(invite.statusCode).toBe(200);
+
+      const missingMfa = await app.inject({
+        method: "POST",
+        url: "/api/v1/invites/accept",
+        payload: {
+          token: invite.json().token,
+          email: "victim.mfa@example.test",
+          password: "victim password"
+        }
+      });
+      expect(missingMfa.statusCode).toBe(401);
+      expect(missingMfa.json()).toMatchObject({ error: "mfa_required", mfaRequired: true });
+
+      const acceptedWithTotp = await app.inject({
+        method: "POST",
+        url: "/api/v1/invites/accept",
+        payload: {
+          token: invite.json().token,
+          email: "victim.mfa@example.test",
+          password: "victim password",
+          mfaCode: testTotpCode(secret)
+        }
+      });
+      expect(acceptedWithTotp.statusCode).toBe(200);
+
+      const recoveryCode = confirmed.json().recoveryCodes[0] as string;
+      const secondInvite = await app.inject({
+        method: "POST",
+        url: `/api/v1/campaigns/${campaign.json().id}/invites`,
+        headers: { authorization: `Bearer ${attacker.json().token}` },
+        payload: { email: "victim.mfa@example.test", role: "observer" }
+      });
+      expect(secondInvite.statusCode).toBe(200);
+
+      const acceptedWithRecovery = await app.inject({
+        method: "POST",
+        url: "/api/v1/invites/accept",
+        payload: {
+          token: secondInvite.json().token,
+          email: "victim.mfa@example.test",
+          password: "victim password",
+          recoveryCode
+        }
+      });
+      expect(acceptedWithRecovery.statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("starts and completes OIDC SSO with PKCE and user linking", async () => {
     let tokenRequestBody: URLSearchParams | undefined;
     let tokenRequestAuthorization: string | undefined;

@@ -2399,7 +2399,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return publicInvite(invite);
   });
 
-  app.post<{ Body: { token?: string; userId?: string; email?: string; displayName?: string; password?: string } }>("/api/v1/invites/accept", async (request, reply) => {
+  app.post<{ Body: { token?: string; userId?: string; email?: string; displayName?: string; password?: string; mfaCode?: string; recoveryCode?: string } }>("/api/v1/invites/accept", async (request, reply) => {
     const token = request.body.token?.trim();
     if (!token) return badRequest(reply, "Invite token is required");
     const invite = store.state.invites.find((item) => item.tokenHash === hashSessionToken(token));
@@ -13881,7 +13881,7 @@ function findLoginUser(store: StateStore, input: { userId?: string; email?: stri
   return undefined;
 }
 
-function resolveInviteUser(store: StateStore, headers: Record<string, string | string[] | undefined>, input: { userId?: string; email?: string; displayName?: string; password?: string }, reply: FastifyReply): User | FastifyReply {
+function resolveInviteUser(store: StateStore, headers: Record<string, string | string[] | undefined>, input: { userId?: string; email?: string; displayName?: string; password?: string; mfaCode?: string; recoveryCode?: string }, reply: FastifyReply): User | FastifyReply {
   const session = sessionFromRequest(store, undefined, headers);
   if (session) {
     const sessionUser = store.state.users.find((user) => user.id === session.userId);
@@ -13891,6 +13891,9 @@ function resolveInviteUser(store: StateStore, headers: Record<string, string | s
   const existingUser = findLoginUser(store, input);
   if (existingUser) {
     if (existingUser.passwordHash && !verifyPassword(input.password ?? "", existingUser.passwordHash)) return unauthorized(reply, "Invalid login credentials");
+    const mfaResult = verifyLoginMfa(existingUser, input.mfaCode, input.recoveryCode);
+    if (mfaResult === "required") return reply.code(401).send({ error: "mfa_required", message: "MFA code required", mfaRequired: true, userId: existingUser.id });
+    if (mfaResult === "invalid") return unauthorized(reply, "Invalid MFA code");
     return existingUser;
   }
   if (input.userId) return unauthorized(reply, "Unknown login identity");
