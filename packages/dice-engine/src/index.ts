@@ -43,6 +43,7 @@ export interface RollOptions {
 
 const diePattern = /^(\d*)d(\d+)(?:(kh|kl)(\d+))?(!)?$/i;
 const bindingPattern = /^@([a-zA-Z0-9_.-]+)$/;
+const MAX_DICE_PER_TERM = 1000;
 
 export function parseFormula(formula: string): ParsedTerm[] {
   const normalized = formula.replace(/^\/(?:roll|r|gmroll)\s+/i, "").replace(/\s+/g, "");
@@ -111,6 +112,7 @@ function parseToken(rawToken: string): ParsedTerm {
   if (dieMatch) {
     const count = Number(dieMatch[1] || "1");
     if (sign < 0) throw new Error("Negative dice groups are not supported");
+    if (!Number.isInteger(count) || count < 1 || count > MAX_DICE_PER_TERM) throw new Error(`Dice count must be between 1 and ${MAX_DICE_PER_TERM}: ${count}`);
     return {
       type: "die",
       count,

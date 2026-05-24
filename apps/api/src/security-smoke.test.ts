@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, scryptSync } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -11,6 +11,7 @@ import { MemoryStateStore } from "./store.js";
 
 const gmHeaders = { "x-user-id": "usr_demo_gm" };
 const playerHeaders = { "x-user-id": "usr_demo_player" };
+const demoPassword = "demo-password-123";
 const envKeys = [
   "NODE_ENV",
   "OTTE_ADMIN_USER_IDS",
@@ -231,14 +232,15 @@ describe("security smoke", () => {
       delete process.env.OTTE_PLUGIN_REVIEW_POLICY;
       process.env.OTTE_PLUGIN_TRUST_POLICY = "allow_unsigned";
       delete process.env.OTTE_PLUGIN_TRUST_KEYS;
+      const permissiveStore = new MemoryStateStore();
       app = await buildApp({
-        store: new MemoryStateStore(),
+        store: permissiveStore,
         pluginRegistry: loadPluginRegistry({
           pluginRoot,
           trustPolicy: { policy: "allow_unsigned" }
         })
       });
-      const permissiveRegistryAdminHeaders = await loginTestUser(app, "usr_demo_gm");
+      const permissiveRegistryAdminHeaders = await loginTestUser(app, permissiveStore, "usr_demo_gm");
       const registryReviewBlockedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/install",
@@ -275,14 +277,15 @@ describe("security smoke", () => {
       process.env.OTTE_PLUGIN_REVIEW_POLICY = "require_approved";
       process.env.OTTE_PLUGIN_TRUST_POLICY = "allow_unsigned";
       delete process.env.OTTE_PLUGIN_TRUST_KEYS;
+      const productionStore = new MemoryStateStore();
       app = await buildApp({
-        store: new MemoryStateStore(),
+        store: productionStore,
         pluginRegistry: loadPluginRegistry({
           pluginRoot,
           trustPolicy: { policy: "allow_unsigned" }
         })
       });
-      const productionAdminHeaders = await loginTestUser(app, "usr_demo_gm");
+      const productionAdminHeaders = await loginTestUser(app, productionStore, "usr_demo_gm");
       const productionUnsignedPosture = await app.inject({
         method: "GET",
         url: "/api/v1/admin/plugins/operations",
@@ -310,14 +313,15 @@ describe("security smoke", () => {
       process.env.NODE_ENV = "development";
       process.env.OTTE_PLUGIN_TRUST_POLICY = "require_trusted";
       delete process.env.OTTE_PLUGIN_TRUST_KEYS;
+      const missingKeyStore = new MemoryStateStore();
       app = await buildApp({
-        store: new MemoryStateStore(),
+        store: missingKeyStore,
         pluginRegistry: loadPluginRegistry({
           pluginRoot,
           trustPolicy: { policy: "require_trusted", keys: {} }
         })
       });
-      const missingKeyAdminHeaders = await loginTestUser(app, "usr_demo_gm");
+      const missingKeyAdminHeaders = await loginTestUser(app, missingKeyStore, "usr_demo_gm");
       const missingKeyPosture = await app.inject({
         method: "GET",
         url: "/api/v1/admin/plugins/operations",
@@ -342,14 +346,15 @@ describe("security smoke", () => {
       process.env.NODE_ENV = "production";
       process.env.OTTE_PLUGIN_TRUST_POLICY = "require_trusted";
       process.env.OTTE_PLUGIN_TRUST_KEYS = JSON.stringify({ "trusted-local": "shared-secret" });
+      const trustedStore = new MemoryStateStore();
       app = await buildApp({
-        store: new MemoryStateStore(),
+        store: trustedStore,
         pluginRegistry: loadPluginRegistry({
           pluginRoot,
           trustPolicy: { policy: "require_trusted", keys: { "trusted-local": "shared-secret" } }
         })
       });
-      const trustedAdminHeaders = await loginTestUser(app, "usr_demo_gm");
+      const trustedAdminHeaders = await loginTestUser(app, trustedStore, "usr_demo_gm");
       const reviewBlockedInstall = await app.inject({
         method: "POST",
         url: "/api/v1/campaigns/camp_demo/plugins/registry-signed-plugin/install",
@@ -465,12 +470,27 @@ function writePluginSignature(pluginRoot: string, packageId: string, keyId: stri
   );
 }
 
-async function loginTestUser(app: Awaited<ReturnType<typeof buildApp>>, userId: string): Promise<{ authorization: string }> {
+function testPasswordHash(password = demoPassword): string {
+  const salt = "test-password-salt";
+  return `scrypt:${salt}:${scryptSync(password, salt, 32).toString("base64url")}`;
+}
+
+function seedDemoPassword(store: MemoryStateStore, userId: string): { email?: string; password?: string; userId: string } {
+  const user = store.state.users.find((item) => item.id === userId);
+  if (!user) throw new Error(`Missing test user ${userId}`);
+  user.passwordHash = testPasswordHash();
+  user.passwordResetRequired = false;
+  user.mfa = undefined;
+  return { userId, email: user.email, password: user.email ? demoPassword : undefined };
+}
+
+async function loginTestUser(app: Awaited<ReturnType<typeof buildApp>>, store: MemoryStateStore, userId: string): Promise<{ authorization: string }> {
+  const credentials = seedDemoPassword(store, userId);
   const email = userId === "usr_demo_gm" ? "gm@example.test" : userId === "usr_demo_player" ? "player@example.test" : undefined;
   const login = await app.inject({
     method: "POST",
     url: "/api/v1/auth/login",
-    payload: email ? { email } : { userId }
+    payload: email ? { email, password: credentials.password } : { userId }
   });
   expect(login.statusCode).toBe(200);
   return { authorization: `Bearer ${login.json().token}` };

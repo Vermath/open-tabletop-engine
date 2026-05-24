@@ -19480,7 +19480,8 @@ function dnd5eSrdDivineSparkDice(actor: Actor): number {
 }
 
 function dnd5eSrdSearUndeadFormula(actor: Actor): string {
-  return `${Math.max(1, genericFantasyAttributeModifier(actor, "wisdom"))}d8`;
+  const wisdomModifier = clampInteger(genericFantasyAttributeModifier(actor, "wisdom"), 1, 10, 1);
+  return `${wisdomModifier}d8`;
 }
 
 function dnd5eSrdLifeSlotBonusFormula(slotLevel: number): string {

@@ -223,6 +223,7 @@ const IDEMPOTENCY_MAX_RESPONSE_BYTES = 512 * 1024;
 const IDEMPOTENCY_MAX_RECORDS = 1000;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 600;
+const DEFAULT_ASSET_QUOTA_BYTES = 1024 * 1024 * 1024;
 const ADMIN_JOB_TYPES = [
   "campaign.export",
   "campaign.import",
@@ -687,6 +688,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       appendAuthLoginFailureAudit(store, { userId: user.id, reason: "password_reset_required", statusCode: 403 });
       store.save();
       return forbidden(reply, "Password reset required");
+    }
+    if (!user.passwordHash && !allowPasswordlessDevelopmentLogin(body)) {
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "password_auth_unavailable", statusCode: 401 });
+      store.save();
+      return unauthorized(reply, "Invalid login credentials");
     }
     if (user.passwordHash && !verifyPassword(body.password ?? "", user.passwordHash)) {
       appendAuthLoginFailureAudit(store, { userId: user.id, reason: "invalid_credentials", statusCode: 401 });
@@ -2560,7 +2566,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return publicInvite(invite);
   });
 
-  app.post<{ Body: { token?: string; userId?: string; email?: string; displayName?: string; password?: string } }>("/api/v1/invites/accept", async (request, reply) => {
+  app.post<{ Body: { token?: string; userId?: string; email?: string; displayName?: string; password?: string; mfaCode?: string; recoveryCode?: string } }>("/api/v1/invites/accept", async (request, reply) => {
     const token = request.body.token?.trim();
     if (!token) return badRequest(reply, "Invite token is required");
     const invite = store.state.invites.find((item) => item.tokenHash === hashSessionToken(token));
@@ -2954,7 +2960,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   app.post<{ Params: { assetId: string }; Body: { expiresInSeconds?: number; disposition?: "inline" | "attachment" } }>("/api/v1/assets/:assetId/delivery-url", async (request, reply) => {
     const body = request.body ?? {};
-    const asset = findAssetForDelivery(store, request.params.assetId);
+    const asset = store.state.assets.find((item) => item.id === request.params.assetId);
     if (!asset) return notFound(reply, "Asset not found");
     if (!isAssetDeliverable(asset)) return assetUnavailable(reply, asset);
     const allowed = requireCampaignPermission(store, reply, request.headers, asset.campaignId, "scene.read");
@@ -2993,7 +2999,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.get<{ Params: { assetId: string }; Querystring: { userId?: string; expiresAt?: string; signature?: string; disposition?: "inline" | "attachment" } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
-    const asset = findAssetForDelivery(store, request.params.assetId);
+    const asset = store.state.assets.find((item) => item.id === request.params.assetId);
     if (!asset) return notFound(reply, "Asset not found");
     const accessMode = request.query.signature ? "signed" : "session";
     if (!isAssetDeliverable(asset)) {
@@ -5061,7 +5067,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/content-imports", async (request, reply) => {
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
     return store.state.contentImports.filter((item) => item.campaignId === request.params.campaignId && item.status !== "deleted");
   });
@@ -5129,7 +5135,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { importId: string } }>("/api/v1/content-imports/:importId", async (request, reply) => {
     const batch = store.state.contentImports.find((item) => item.id === request.params.importId);
     if (!batch || batch.status === "deleted") return notFound(reply, "Content import not found");
-    const allowed = requireCampaignPermission(store, reply, request.headers, batch.campaignId, "campaign.read");
+    const allowed = requireCampaignPermission(store, reply, request.headers, batch.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
     return batch;
   });
@@ -5578,7 +5584,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const sourceText = request.body.sourceText?.trim() || defaultMemoryExtractionSource(store, request.params.campaignId);
+    const sourceText = request.body.sourceText?.trim() || defaultMemoryExtractionSource(store, request.params.campaignId, userId);
     const startedAtMs = Date.now();
     const startedAt = new Date(startedAtMs).toISOString();
     const permissions = permissionsForUser(store, userId, request.params.campaignId);
@@ -7079,6 +7085,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
     const importWarnings = archiveImportDependencyWarnings(scope, selectedCollections.value, archive);
     const scopedArchive = archiveForImportScope(archive, scope, selectedCollections.value);
+    for (const campaignId of existingArchiveCampaignIds(store.state, scopedArchive)) {
+      const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
+      if (allowed !== true) return allowed;
+    }
     const conflicts = findArchiveConflicts(store.state, scopedArchive);
     if (mode === "reject_conflicts" && conflicts.length > 0) {
       return reply.code(409).send({ error: "import_conflict", conflicts });
@@ -9336,13 +9346,15 @@ function roundCurrency(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
 }
 
-function defaultMemoryExtractionSource(store: StateStore, campaignId: string): string {
+function defaultMemoryExtractionSource(store: StateStore, campaignId: string, userId: string): string {
+  const canReadSecretJournal = canCampaign(store, userId, campaignId, "journal.readSecret");
   const chat = store.state.chat
-    .filter((message) => message.campaignId === campaignId)
+    .filter((message) => message.campaignId === campaignId && canReadChatMessage(store, userId, message))
     .slice(-8)
     .map((message) => `${message.type}: ${message.body}`);
   const journals = store.state.journals
     .filter((journal) => journal.campaignId === campaignId)
+    .filter((journal) => journal.visibility === "public" || canReadSecretJournal || journal.visibleToUserIds.includes(userId))
     .slice(-4)
     .map((journal) => `${journal.title}: ${journal.body}`);
   const source = [...journals, ...chat].join("\n").trim();
@@ -14300,6 +14312,7 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     const payload = isRecord(event.payload) ? event.payload : {};
     return payload.userId === userId ? event : undefined;
   }
+  if (event.type.startsWith("contentImport.") && !canCampaign(store, userId, event.campaignId, "campaign.update")) return undefined;
   if (event.type.startsWith("chat.message.")) {
     const message = event.payload as Partial<ChatMessage> | undefined;
     const campaignId = message?.campaignId ?? event.campaignId;
@@ -14667,7 +14680,11 @@ function findLoginUser(store: StateStore, input: { userId?: string; email?: stri
   return undefined;
 }
 
-function resolveInviteUser(store: StateStore, headers: Record<string, string | string[] | undefined>, input: { userId?: string; email?: string; displayName?: string; password?: string }, reply: FastifyReply): User | FastifyReply {
+function allowPasswordlessDevelopmentLogin(input: { password?: string; mfaCode?: string; recoveryCode?: string }): boolean {
+  return process.env.NODE_ENV !== "production" && input.password === undefined && input.mfaCode === undefined && input.recoveryCode === undefined;
+}
+
+function resolveInviteUser(store: StateStore, headers: Record<string, string | string[] | undefined>, input: { userId?: string; email?: string; displayName?: string; password?: string; mfaCode?: string; recoveryCode?: string }, reply: FastifyReply): User | FastifyReply {
   const session = sessionFromRequest(store, undefined, headers);
   if (session) {
     const sessionUser = store.state.users.find((user) => user.id === session.userId);
@@ -14677,7 +14694,11 @@ function resolveInviteUser(store: StateStore, headers: Record<string, string | s
   const existingUser = findLoginUser(store, input);
   if (existingUser) {
     if (existingUser.passwordResetRequired) return forbidden(reply, "Password reset required");
+    if (!existingUser.passwordHash && !allowPasswordlessDevelopmentLogin(input)) return unauthorized(reply, "Invalid login credentials");
     if (existingUser.passwordHash && !verifyPassword(input.password ?? "", existingUser.passwordHash)) return unauthorized(reply, "Invalid login credentials");
+    const mfaResult = verifyLoginMfa(existingUser, input.mfaCode, input.recoveryCode);
+    if (mfaResult === "required") return reply.code(401).send({ error: "mfa_required", message: "MFA code required", mfaRequired: true, userId: existingUser.id });
+    if (mfaResult === "invalid") return unauthorized(reply, "Invalid MFA code");
     return existingUser;
   }
   if (input.userId) return unauthorized(reply, "Unknown login identity");
@@ -21622,10 +21643,15 @@ function pendingProposalAssetForDelivery(store: StateStore, assetId: string): Ma
     for (const change of proposal.changesJson) {
       if (change.entity !== "asset" || change.action !== "create") continue;
       if (mapAssetIdFromRecord(change.data) !== assetId) continue;
-      return mapAssetFromRecord(change.data);
+      const asset = mapAssetFromRecord(change.data);
+      return asset ? pendingProposalAssetDeliveryRecord(asset) : undefined;
     }
   }
   return undefined;
+}
+
+function pendingProposalAssetDeliveryRecord(asset: MapAsset): MapAsset {
+  return { ...asset, storage: undefined };
 }
 
 function mapAssetIdFromRecord(value: Record<string, unknown>): string | undefined {
@@ -21672,7 +21698,8 @@ function assetQuotaExceeded(store: StateStore, campaignId: string, incomingBytes
 
 function assetQuotaBytes(): number | undefined {
   const value = Number(process.env.OTTE_ASSET_QUOTA_BYTES);
-  return Number.isFinite(value) && value > 0 ? value : undefined;
+  if (Number.isFinite(value) && value > 0) return value;
+  return DEFAULT_ASSET_QUOTA_BYTES;
 }
 
 function assetRetentionDays(): number | undefined {
@@ -22631,7 +22658,7 @@ function topCountEntries(counts: Record<string, number>, limit: number): Array<{
 function signedAssetDelivery(asset: MapAsset, headers: Record<string, string | string[] | undefined>, requestedTtlSeconds: number | undefined, disposition: "inline" | "attachment" | undefined): Record<string, string | number | undefined> {
   const ttlSeconds = assetUrlTtlSeconds(requestedTtlSeconds);
   const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
-  const safeDisposition = disposition ?? "inline";
+  const safeDisposition = normalizeAssetDisposition(disposition) ?? "inline";
   const signature = signAssetUrl(asset.id, expiresAt, safeDisposition);
   const url = new URL(`${assetDeliveryBase(headers)}/api/v1/assets/${asset.id}/blob`);
   url.searchParams.set("expiresAt", expiresAt);
@@ -22677,9 +22704,15 @@ function signAssetUrl(assetId: string, expiresAt: string, disposition: string): 
 }
 
 function isValidAssetSignature(assetId: string, expiresAt: string | undefined, signature: string | undefined, disposition: string | undefined): boolean {
-  if (!expiresAt || !signature || Date.parse(expiresAt) <= Date.now()) return false;
+  if (!expiresAt || !signature) return false;
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) return false;
+  const maxExpiresAtMs = Date.now() + assetUrlMaxTtlSeconds() * 1000;
+  if (expiresAtMs > maxExpiresAtMs) return false;
+  const safeDisposition = normalizeAssetDisposition(disposition);
+  if (!safeDisposition) return false;
   try {
-    const expected = signAssetUrl(assetId, expiresAt, disposition ?? "inline");
+    const expected = signAssetUrl(assetId, expiresAt, safeDisposition);
     const expectedBytes = Buffer.from(expected);
     const actualBytes = Buffer.from(signature);
     return expectedBytes.length === actualBytes.length && timingSafeEqual(expectedBytes, actualBytes);
@@ -22689,7 +22722,12 @@ function isValidAssetSignature(assetId: string, expiresAt: string | undefined, s
 }
 
 function assetSignaturePayload(assetId: string, expiresAt: string, disposition: string): string {
-  return `${assetId}:${expiresAt}:${disposition}`;
+  return JSON.stringify({ assetId, expiresAt, disposition });
+}
+
+function normalizeAssetDisposition(disposition: string | undefined): "inline" | "attachment" | undefined {
+  if (!disposition) return "inline";
+  return disposition === "inline" || disposition === "attachment" ? disposition : undefined;
 }
 
 function assetSigningSecret(): string {
@@ -23360,7 +23398,7 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     return { ...asset, storage: undefined };
   });
   return {
-    users: upsertRecords(state.users, archive.data.users),
+    users: upsertUsers(state.users, archive.data.users),
     sessions: 0,
     identities: 0,
     oauthStates: 0,
@@ -23413,6 +23451,49 @@ function findArchiveConflicts(state: EngineState, archive: CampaignArchive): Arr
     }
   }
   return conflicts;
+}
+
+function existingArchiveCampaignIds(state: EngineState, archive: CampaignArchive): string[] {
+  const existingCampaignIds = new Set(state.campaigns.map((campaign) => campaign.id));
+  const campaignIds = new Set<string>();
+  for (const campaign of archive.data.campaigns) {
+    if (existingCampaignIds.has(campaign.id)) campaignIds.add(campaign.id);
+  }
+  for (const collection of Object.keys(archive.data) as Array<keyof EngineState>) {
+    const records = archive.data[collection] as Array<{ campaignId?: string }>;
+    for (const record of records) {
+      if (typeof record.campaignId === "string" && existingCampaignIds.has(record.campaignId)) campaignIds.add(record.campaignId);
+    }
+  }
+  return [...campaignIds];
+}
+
+function upsertUsers(target: User[], incoming: User[]): number {
+  for (const record of incoming) {
+    const index = target.findIndex((item) => item.id === record.id);
+    if (index >= 0) {
+      const existing = target[index];
+      if (!existing) throw new Error(`Existing user index was not found for archive user ${record.id}`);
+      const merged: User = {
+        ...record,
+        passwordHash: existing.passwordHash,
+        serverAdmin: existing.serverAdmin,
+        mfa: existing.mfa,
+        scim: existing.scim,
+        disabledAt: existing.disabledAt,
+        disabledByUserId: existing.disabledByUserId,
+        disabledReason: existing.disabledReason,
+        passwordUpdatedAt: existing.passwordUpdatedAt,
+        passwordResetRequired: existing.passwordResetRequired
+      };
+      target[index] = merged;
+    } else {
+      const imported: User = { ...record, serverAdmin: undefined };
+      if (!imported.passwordHash) imported.passwordResetRequired = true;
+      target.push(imported);
+    }
+  }
+  return incoming.length;
 }
 
 function upsertRecords<T extends { id: string }>(target: T[], incoming: T[]): number {

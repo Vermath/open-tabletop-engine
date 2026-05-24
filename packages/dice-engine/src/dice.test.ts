@@ -20,4 +20,8 @@ describe("dice engine", () => {
   it("reports a useful probability range", () => {
     expect(probabilityRange("2d20kh1+5")).toEqual({ min: 6, max: 25 });
   });
+
+  it("rejects excessive dice counts", () => {
+    expect(() => parseFormula("1001d6")).toThrow("Dice count must be between 1 and 1000: 1001");
+  });
 });
