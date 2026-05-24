@@ -754,6 +754,23 @@ a[href]:focus-visible,
   grid-column: 1 / -1;
 }
 
+.ai-edit-layer-panel {
+  top: 118px;
+  grid-template-columns: minmax(140px, 1fr) auto auto;
+  align-items: center;
+  width: min(560px, calc(100% - 36px));
+}
+
+.ai-edit-layer-panel div {
+  display: grid;
+  gap: 2px;
+}
+
+.ai-edit-layer-panel span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .table-tool-panel[aria-label="Annotation layers and history"] {
   pointer-events: none;
 }

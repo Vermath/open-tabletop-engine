@@ -236,6 +236,7 @@ describe("OpenTabletopClient", () => {
       client.createLight(sceneId, { x: 1, y: 1, radius: 5 }),
       client.updateLight(sceneId, lightId, { radius: 10 }),
       client.deleteLight(sceneId, lightId),
+      client.applyAiEditLayerToTarget(sceneId),
       client.assets(campaignId),
       client.assetStorage(campaignId),
       client.createAsset(campaignId, { name: "Asset" }),

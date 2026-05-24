@@ -54,7 +54,20 @@ export interface AssetUploadResponse {
   scene?: Scene;
 }
 
+export interface AiEditLayerApplyResult {
+  aiEditSceneId: string;
+  targetSceneId: string;
+  backgroundAssetId?: string;
+  copiedTokenCount: number;
+  replacedTokenCount: number;
+}
+
 export type AiReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+export interface AiThreadMessageInput {
+  role?: string;
+  content?: string;
+}
 
 export interface AiThreadCreateInput {
   prompt: string;
@@ -63,6 +76,7 @@ export interface AiThreadCreateInput {
   reasoningEffort?: AiReasoningEffort;
   selectedSceneId?: string;
   selectedTokenIds?: string[];
+  messages?: AiThreadMessageInput[];
 }
 
 export interface McpJsonRpcRequest {
@@ -487,6 +501,10 @@ export class OpenTabletopClient {
 
   async deleteLight(sceneId: string, lightId: string): Promise<Scene> {
     return this.delete(routes.sceneLight(sceneId, lightId));
+  }
+
+  async applyAiEditLayerToTarget(sceneId: string): Promise<AiEditLayerApplyResult> {
+    return this.post(routes.sceneAiEditsApply(sceneId), {});
   }
 
   async assets(campaignId: string): Promise<MapAsset[]> {

@@ -248,6 +248,46 @@ function persistStoredId(key: string, value: string): void {
   }
 }
 
+function aiAgentHistoryStorageKey(campaignId: string, userId: string | null): string {
+  return `otte:aiAgentHistory:${campaignId}:${userId ?? "anonymous"}`;
+}
+
+function initialAiAgentMessages(key: string): AiAgentMessage[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .flatMap<AiAgentMessage>((value) => {
+        const message = recordValue(value);
+        if (Object.keys(message).length === 0) return [];
+        const role: AiAgentMessage["role"] | undefined = message.role === "user" || message.role === "assistant" || message.role === "system" ? message.role : undefined;
+        const content = typeof message.content === "string" ? message.content : "";
+        const id = typeof message.id === "string" && message.id ? message.id : `agent-history-${Date.now()}`;
+        const createdAt = typeof message.createdAt === "string" ? message.createdAt : new Date().toISOString();
+        if (!role || !content) return [];
+        return [{ id, role, content, createdAt, proposalIds: stringArrayValue(message.proposalIds), reasoning: stringArrayValue(message.reasoning) }];
+      })
+      .slice(-80);
+  } catch {
+    return [];
+  }
+}
+
+function persistAiAgentMessages(key: string, messages: AiAgentMessage[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(messages.slice(-80)));
+  } catch {
+    // Chat history is useful context, not critical table state.
+  }
+}
+
+function aiAgentProviderMessages(messages: AiAgentMessage[]): Array<{ role: "user" | "assistant"; content: string }> {
+  return messages
+    .filter((message): message is AiAgentMessage & { role: "user" | "assistant" } => (message.role === "user" || message.role === "assistant") && message.content.trim().length > 0)
+    .map((message) => ({ role: message.role, content: message.content.trim() }))
+    .slice(-40);
+}
+
 type CampaignImportResult = {
   importedCampaignIds: string[];
   counts: Record<string, number>;
@@ -539,7 +579,8 @@ export function App() {
   const [aiGenerationJobs, setAiGenerationJobs] = useState<AiGenerationJob[]>([]);
   const [aiAgentOpen, setAiAgentOpen] = useState(false);
   const [aiAgentPrompt, setAiAgentPrompt] = useState("");
-  const [aiAgentMessages, setAiAgentMessages] = useState<AiAgentMessage[]>([]);
+  const [aiAgentHistoryKey, setAiAgentHistoryKey] = useState(() => aiAgentHistoryStorageKey(campaignId, currentUserId));
+  const [aiAgentMessages, setAiAgentMessages] = useState<AiAgentMessage[]>(() => initialAiAgentMessages(aiAgentHistoryStorageKey(campaignId, currentUserId)));
   const [aiAgentBusy, setAiAgentBusy] = useState(false);
   const [aiAgentStatus, setAiAgentStatus] = useState("Agent ready");
   const [aiAgentCodexAuth, setAiAgentCodexAuth] = useState<AiAgentCodexAuthPrompt | null>(null);
@@ -708,6 +749,7 @@ export function App() {
     .filter((scene) => !normalizedSceneSearch || [scene.name, scene.folder ?? "", scene.id].some((value) => value.toLocaleLowerCase().includes(normalizedSceneSearch)));
   const selectedPrepScenes = visibleScenes.filter((scene) => selectedPrepSceneIds.includes(scene.id));
   const selectedScene = accessibleScenes.find((scene) => scene.id === sceneId) ?? accessibleScenes.find((scene) => scene.active);
+  const selectedAiEditTargetScene = selectedScene ? aiEditTargetScene(accessibleScenes, selectedScene) : undefined;
   const selectedSceneIndex = orderedScenes.findIndex((scene) => scene.id === selectedScene?.id);
   const campaignImageAssets = snapshot.assets.filter(isUsableImageAsset).sort((left, right) => left.name.localeCompare(right.name));
   const canvasAssetFolderOptions = [...new Set(campaignImageAssets.map((asset) => normalizeAssetFolderPath(asset.folder)).filter(Boolean))].sort((left, right) => left.localeCompare(right));
@@ -977,6 +1019,17 @@ export function App() {
   useEffect(() => {
     persistStoredId("otte:selectedCampaignId", campaignId);
   }, [campaignId]);
+
+  useEffect(() => {
+    const nextKey = aiAgentHistoryStorageKey(campaignId, currentUserId);
+    setAiAgentHistoryKey(nextKey);
+    setAiAgentMessages(initialAiAgentMessages(nextKey));
+    setAiAgentHiddenProposalIds(new Set());
+  }, [campaignId, currentUserId]);
+
+  useEffect(() => {
+    persistAiAgentMessages(aiAgentHistoryKey, aiAgentMessages);
+  }, [aiAgentHistoryKey, aiAgentMessages]);
 
   useEffect(() => {
     persistStoredId("otte:selectedSceneId", sceneId);
@@ -2852,6 +2905,7 @@ export function App() {
     const prompt = aiAgentPrompt.trim();
     if (!prompt || aiAgentBusy) return;
     const userMessage: AiAgentMessage = { id: `agent-user-${Date.now()}`, role: "user", content: prompt, createdAt: new Date().toISOString() };
+    const requestMessages = [...aiAgentMessages, userMessage];
     setAiAgentMessages((messages) => [...messages, userMessage]);
     setAiAgentPrompt("");
     setAiAgentBusy(true);
@@ -2862,7 +2916,8 @@ export function App() {
         prompt,
         surface: "agent_panel",
         selectedSceneId: selectedScene?.id,
-        selectedTokenIds
+        selectedTokenIds,
+        messages: aiAgentProviderMessages(requestMessages)
       });
       const proposalIds = result.events.map((event) => event.proposalId).filter((proposalId): proposalId is string => Boolean(proposalId));
       const assistantMessage: AiAgentMessage = {
@@ -3022,6 +3077,14 @@ export function App() {
     setStatus("Proposal applied");
     await refresh();
     return { applied };
+  }
+
+  async function applySelectedAiEditLayer() {
+    if (!selectedScene || !selectedAiEditTargetScene) return;
+    const result = await apiPost<{ targetSceneId: string; copiedTokenCount: number }>(`/api/v1/scenes/${selectedScene.id}/ai-edits/apply-to-target`, {});
+    setSceneId(result.targetSceneId);
+    setStatus(`AI edits applied to ${selectedAiEditTargetScene.name}`);
+    await refresh(campaignId, result.targetSceneId);
   }
 
   async function applyAiAgentProposal(proposal: Proposal) {
@@ -4702,6 +4765,20 @@ export function App() {
             <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
             {selectedTokens.length > 1 && <MapSelectionStatus selectedCount={selectedTokens.length} onClear={clearTokenSelection} />}
             <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />
+            {selectedScene && selectedAiEditTargetScene && (
+              <section className="table-tool-panel ai-edit-layer-panel" aria-label="AI edit layer controls">
+                <div>
+                  <strong>AI edits</strong>
+                  <span>{selectedAiEditTargetScene.name}</span>
+                </div>
+                <button className="primary-button" type="button" disabled={!hasPermission("scene.update")} onClick={() => applySelectedAiEditLayer().catch((error) => setStatus(errorMessage(error)))}>
+                  <Check size={16} /> Apply to main scene
+                </button>
+                <button className="ghost-button" type="button" onClick={() => setSceneId(selectedAiEditTargetScene.id)}>
+                  Open main scene
+                </button>
+              </section>
+            )}
             {hasPermission("token.reveal") && (fogBrushMode || toolReport) && (
               <section className="table-tool-panel" aria-label="Fog and vision tools">
                 <input aria-label="Fog preset name" value={fogPresetName} placeholder="Preset name" onChange={(event) => setFogPresetName(event.target.value)} />
@@ -9309,6 +9386,12 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function stringArrayValue(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const strings = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim());
+  return strings.length > 0 ? strings : undefined;
+}
+
 function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
@@ -9415,19 +9498,27 @@ function reasoningTracesFromEvents(events: AiAgentProviderEvent[]): string[] {
 }
 
 function sceneIdToOpenAfterProposalApply(proposal: Proposal): string | undefined {
-  const generatedMapTargetSceneId = generatedMapTargetSceneIdFromProposal(proposal);
-  if (generatedMapTargetSceneId) return generatedMapTargetSceneId;
-  return createdSceneIdFromProposal(proposal);
+  return aiEditSceneIdFromProposal(proposal) ?? createdSceneIdFromProposal(proposal);
 }
 
-function generatedMapTargetSceneIdFromProposal(proposal: Proposal): string | undefined {
+function aiEditSceneIdFromProposal(proposal: Proposal): string | undefined {
   for (const change of proposal.changesJson) {
-    if (change.entity !== "scene" || change.action !== "update" || !change.id) continue;
+    if (change.entity !== "scene") continue;
     const data = recordValue(change.data);
     const metadata = recordValue(data.metadata);
-    if (typeof data.backgroundAssetId === "string" && typeof metadata.generatedBackgroundAssetId === "string") return change.id;
+    if (change.action === "create" && data.folder === "ai/edits" && typeof data.id === "string") return data.id;
+    if (change.action === "update" && change.id && metadata.source === "ai_edit_layer" && typeof metadata.targetSceneId === "string") return change.id;
   }
   return undefined;
+}
+
+function aiEditTargetSceneId(scene: Scene): string | undefined {
+  return scene.folder === "ai/edits" ? stringValue(recordValue(scene.metadata).targetSceneId) : undefined;
+}
+
+function aiEditTargetScene(scenes: Scene[], scene: Scene): Scene | undefined {
+  const targetSceneId = aiEditTargetSceneId(scene);
+  return targetSceneId ? scenes.find((item) => item.id === targetSceneId) : undefined;
 }
 
 function createdSceneIdFromProposal(proposal: Proposal): string | undefined {

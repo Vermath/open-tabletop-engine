@@ -77,6 +77,7 @@ export const routes = {
   sceneVision: (sceneId: string) => `/api/v1/scenes/${sceneId}/vision`,
   sceneVisionSample: (sceneId: string) => `/api/v1/scenes/${sceneId}/vision/sample`,
   sceneRenderingDiagnostics: (sceneId: string) => `/api/v1/scenes/${sceneId}/rendering/diagnostics`,
+  sceneAiEditsApply: (sceneId: string) => `/api/v1/scenes/${sceneId}/ai-edits/apply-to-target`,
   sceneFog: (sceneId: string) => `/api/v1/scenes/${sceneId}/fog`,
   sceneFogHistory: (sceneId: string) => `/api/v1/scenes/${sceneId}/fog/history`,
   sceneFogUndo: (sceneId: string) => `/api/v1/scenes/${sceneId}/fog/undo`,
@@ -348,6 +349,7 @@ const endpointSpecs = [
   ["GET", "/api/v1/scenes/{sceneId}"],
   ["PATCH", "/api/v1/scenes/{sceneId}"],
   ["DELETE", "/api/v1/scenes/{sceneId}"],
+  ["POST", "/api/v1/scenes/{sceneId}/ai-edits/apply-to-target"],
   ["GET", "/api/v1/scenes/{sceneId}/vision"],
   ["GET", "/api/v1/scenes/{sceneId}/vision/sample"],
   ["GET", "/api/v1/scenes/{sceneId}/rendering/diagnostics"],
@@ -3847,6 +3849,15 @@ const componentSchemas = {
       evaluations: arrayOf(schemaRef("AiEvaluationRun"))
     }
   },
+  AiThreadMessage: {
+    type: "object",
+    additionalProperties: false,
+    required: ["role", "content"],
+    properties: {
+      role: { type: "string", enum: ["user", "assistant"] },
+      content: stringSchema
+    }
+  },
   AiThreadCreateRequest: {
     type: "object",
     additionalProperties: false,
@@ -3857,7 +3868,8 @@ const componentSchemas = {
       model: stringSchema,
       reasoningEffort: { type: "string", enum: ["none", "minimal", "low", "medium", "high", "xhigh"] },
       selectedSceneId: idSchema,
-      selectedTokenIds: arrayOf(idSchema)
+      selectedTokenIds: arrayOf(idSchema),
+      messages: arrayOf(schemaRef("AiThreadMessage"))
     }
   },
   McpJsonRpcRequest: {
@@ -3906,6 +3918,18 @@ const componentSchemas = {
       height: { type: "number" },
       mimeType: { type: "string", enum: ["image/png"] },
       reason: stringSchema
+    }
+  },
+  AiEditLayerApplyResult: {
+    type: "object",
+    additionalProperties: true,
+    required: ["aiEditSceneId", "targetSceneId", "copiedTokenCount", "replacedTokenCount"],
+    properties: {
+      aiEditSceneId: idSchema,
+      targetSceneId: idSchema,
+      backgroundAssetId: idSchema,
+      copiedTokenCount: { type: "integer", minimum: 0 },
+      replacedTokenCount: { type: "integer", minimum: 0 }
     }
   },
   AiToolCallRetryRequest: {
@@ -5221,6 +5245,11 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "DELETE /api/v1/scenes/{sceneId}": {
     responses: {
       "200": jsonResponse("Deleted scene snapshot", schemaRef("Scene"))
+    }
+  },
+  "POST /api/v1/scenes/{sceneId}/ai-edits/apply-to-target": {
+    responses: {
+      "200": jsonResponse("Applied AI edit layer to its target scene", schemaRef("AiEditLayerApplyResult"))
     }
   },
   "GET /api/v1/campaigns/{campaignId}/fog-presets": {

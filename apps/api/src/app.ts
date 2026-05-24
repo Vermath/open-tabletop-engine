@@ -2,7 +2,7 @@ import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from
 import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { buildPermissionFilteredContext, type AiBoardCaptureResult, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
+import { buildPermissionFilteredContext, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
@@ -95,6 +95,7 @@ interface AgentThreadBody {
   reasoningEffort?: AiReasoningEffort;
   selectedSceneId?: string;
   selectedTokenIds?: string[];
+  messages?: Array<{ role?: string; content?: string }>;
 }
 
 interface McpJsonRpcRequest {
@@ -3259,6 +3260,123 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     return scene;
+  });
+
+  app.post<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId/ai-edits/apply-to-target", async (request, reply) => {
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const aiEditScene = store.state.scenes.find((item) => item.id === request.params.sceneId);
+    if (!aiEditScene) return notFound(reply, "Scene not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, aiEditScene.campaignId, "scene.update");
+    if (allowed !== true) return allowed;
+    if (aiEditScene.folder !== AI_EDIT_SCENE_FOLDER) return badRequest(reply, "Scene is not an AI edit layer");
+    const targetSceneId = stringFromRecord(aiEditScene.metadata, "targetSceneId");
+    if (!targetSceneId) return badRequest(reply, "AI edit layer is missing targetSceneId");
+    const targetScene = store.state.scenes.find((item) => item.id === targetSceneId && item.campaignId === aiEditScene.campaignId);
+    if (!targetScene) return notFound(reply, "Target scene not found");
+    const sourceTokens = store.state.tokens.filter((token) => token.sceneId === aiEditScene.id);
+    if (sourceTokens.length > 0) {
+      const tokenAllowed = requireCampaignPermission(store, reply, request.headers, targetScene.campaignId, "token.create");
+      if (tokenAllowed !== true) return tokenAllowed;
+    }
+    const appliedAt = nowIso();
+    const before = {
+      backgroundAssetId: targetScene.backgroundAssetId,
+      fogCount: targetScene.fog.length,
+      wallCount: targetScene.walls.length,
+      lightCount: targetScene.lights.length,
+      annotationCount: targetScene.annotations?.length ?? 0,
+      appliedTokenCount: store.state.tokens.filter((token) => token.sceneId === targetScene.id && token.metadata.aiEditSourceSceneId === aiEditScene.id).length
+    };
+    if (aiEditScene.backgroundAssetId) targetScene.backgroundAssetId = aiEditScene.backgroundAssetId;
+    if (aiEditScene.fog.length > 0) targetScene.fog = cloneJsonValue(aiEditScene.fog) as FogRegion[];
+    if (aiEditScene.walls.length > 0) targetScene.walls = cloneJsonValue(aiEditScene.walls) as Wall[];
+    if (aiEditScene.lights.length > 0) targetScene.lights = cloneJsonValue(aiEditScene.lights) as LightSource[];
+    if ((aiEditScene.annotations?.length ?? 0) > 0) targetScene.annotations = cloneJsonValue(aiEditScene.annotations ?? []) as SceneAnnotation[];
+    targetScene.metadata = {
+      ...targetScene.metadata,
+      aiEditAppliedSceneId: aiEditScene.id,
+      aiEditAppliedAt: appliedAt
+    };
+    targetScene.updatedAt = appliedAt;
+
+    let replacedTokenCount = 0;
+    store.state.tokens = store.state.tokens.filter((token) => {
+      const replace = token.sceneId === targetScene.id && token.metadata.aiEditSourceSceneId === aiEditScene.id;
+      if (replace) replacedTokenCount += 1;
+      return !replace;
+    });
+    const copiedTokens = sourceTokens.map((source) =>
+      createTimestamped("tok", {
+        sceneId: targetScene.id,
+        actorId: source.actorId,
+        name: source.name,
+        x: source.x,
+        y: source.y,
+        width: source.width,
+        height: source.height,
+        rotation: source.rotation,
+        layer: source.layer,
+        hidden: source.hidden,
+        locked: source.locked,
+        visionEnabled: source.visionEnabled,
+        visionRadius: source.visionRadius,
+        brightVisionRadius: source.brightVisionRadius,
+        dimVisionRadius: source.dimVisionRadius,
+        disposition: source.disposition,
+        imageAssetId: source.imageAssetId,
+        ownerUserIds: source.ownerUserIds,
+        notes: source.notes,
+        conditions: cloneJsonValue(source.conditions ?? []) as Token["conditions"],
+        auras: cloneJsonValue(source.auras ?? []) as Token["auras"],
+        targetedByUserIds: [],
+        metadata: {
+          ...source.metadata,
+          aiEditSourceSceneId: aiEditScene.id,
+          aiEditSourceTokenId: source.id
+        }
+      }) satisfies Token
+    );
+    store.state.tokens.push(...copiedTokens);
+    appendServerAuditLog(store, userId, {
+      campaignId: targetScene.campaignId,
+      action: "ai.edit_layer.applied",
+      targetType: "scene",
+      targetId: targetScene.id,
+      before,
+      after: {
+        aiEditSceneId: aiEditScene.id,
+        backgroundAssetId: targetScene.backgroundAssetId,
+        copiedTokenCount: copiedTokens.length,
+        replacedTokenCount
+      }
+    });
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: targetScene.campaignId,
+        type: "scene.updated",
+        targetId: targetScene.id,
+        payload: targetScene
+      })
+    );
+    for (const token of copiedTokens) {
+      broadcast(
+        createEvent({
+          campaignId: targetScene.campaignId,
+          type: "token.created",
+          targetId: token.id,
+          payload: token
+        })
+      );
+    }
+    return {
+      aiEditSceneId: aiEditScene.id,
+      targetSceneId: targetScene.id,
+      backgroundAssetId: targetScene.backgroundAssetId,
+      copiedTokenCount: copiedTokens.length,
+      replacedTokenCount
+    };
   });
 
   app.post<{
@@ -7446,8 +7564,28 @@ function agentMessagesForRequest(prompt: string, body: AgentThreadBody | undefin
       ].join("\n")
     });
   }
-  messages.push({ role: "user", content: prompt });
+  const history = agentHistoryMessages(body?.messages);
+  if (history.length > 0) {
+    messages.push(...history);
+    const lastUserMessage = [...history].reverse().find((message) => message.role === "user");
+    if (lastUserMessage?.content.trim() !== prompt.trim()) messages.push({ role: "user", content: prompt });
+  } else {
+    messages.push({ role: "user", content: prompt });
+  }
   return messages;
+}
+
+function agentHistoryMessages(value: unknown): AiProviderRequest["messages"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isRecord)
+    .flatMap<AiMessage>((message) => {
+      const role: AiMessage["role"] | undefined = message.role === "user" || message.role === "assistant" ? message.role : undefined;
+      const content = typeof message.content === "string" ? message.content.trim() : "";
+      if (!role || !content) return [];
+      return [{ role, content: content.slice(0, 8000) }];
+    })
+    .slice(-40);
 }
 
 function mcpResult(id: string | number | null, result: unknown): Record<string, unknown> {
@@ -7484,6 +7622,12 @@ function toolInputWithAgentDefaults(toolName: string, input: unknown, body: Agen
     };
   }
   if (toolName === "capture_board_view") {
+    return {
+      ...base,
+      sceneId: base.sceneId ?? body.selectedSceneId
+    };
+  }
+  if (toolName === "draft_actor_token_roster") {
     return {
       ...base,
       sceneId: base.sceneId ?? body.selectedSceneId
@@ -9401,6 +9545,8 @@ function aiGeneratedMapEditSceneName(assetName: string): string {
   return name.toLowerCase().startsWith("ai edits:") ? name : `AI edits: ${name}`;
 }
 
+const AI_EDIT_SCENE_FOLDER = "ai/edits";
+
 function createAiGeneratedMapEditScene(input: { state: EngineState; campaignId: string; targetScene: Scene; assetId: string; assetName: string; sourcePrompt: string }): Scene {
   return createTimestamped("scn", {
     campaignId: input.campaignId,
@@ -9410,7 +9556,7 @@ function createAiGeneratedMapEditScene(input: { state: EngineState; campaignId: 
     gridType: input.targetScene.gridType,
     gridSize: input.targetScene.gridSize,
     backgroundAssetId: input.assetId,
-    folder: "ai/edits",
+    folder: AI_EDIT_SCENE_FOLDER,
     active: false,
     sortOrder: input.state.scenes.filter((item) => item.campaignId === input.campaignId).length + 1,
     fog: [],
@@ -9419,12 +9565,149 @@ function createAiGeneratedMapEditScene(input: { state: EngineState; campaignId: 
     lights: [],
     annotations: [],
     metadata: {
-      source: "ai_map_generation",
+      source: "ai_edit_layer",
       targetSceneId: input.targetScene.id,
       generatedBackgroundAssetId: input.assetId,
       generatedBackgroundPrompt: input.sourcePrompt
     }
   }) satisfies Scene;
+}
+
+function createAiEditSceneForTarget(input: { state: EngineState; campaignId: string; targetScene: Scene; name: string; sourcePrompt?: string }): Scene {
+  return createTimestamped("scn", {
+    campaignId: input.campaignId,
+    name: aiGeneratedMapEditSceneName(input.name),
+    width: input.targetScene.width,
+    height: input.targetScene.height,
+    gridType: input.targetScene.gridType,
+    gridSize: input.targetScene.gridSize,
+    backgroundAssetId: input.targetScene.backgroundAssetId,
+    folder: AI_EDIT_SCENE_FOLDER,
+    active: false,
+    sortOrder: input.state.scenes.filter((item) => item.campaignId === input.campaignId).length + 1,
+    fog: [],
+    fogHistory: [],
+    walls: [],
+    lights: [],
+    annotations: [],
+    metadata: {
+      source: "ai_edit_layer",
+      targetSceneId: input.targetScene.id,
+      prompt: input.sourcePrompt?.slice(0, 500)
+    }
+  }) satisfies Scene;
+}
+
+function findAiEditSceneForTarget(state: EngineState, campaignId: string, targetSceneId: string): Scene | undefined {
+  return state.scenes
+    .filter((scene) => scene.campaignId === campaignId && scene.folder === AI_EDIT_SCENE_FOLDER && scene.metadata.targetSceneId === targetSceneId)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt))[0];
+}
+
+function draftActorTokenRosterChanges(context: AiToolContext, request: Record<string, unknown>): { title: string; summary: string; changes: ProposalChange[]; aiEditSceneId: string; actorCount: number; tokenCount: number; itemCount: number } | ToolErrorOutput {
+  const actorInputs = Array.isArray(request.actors) ? request.actors.filter(isRecord) : [];
+  if (actorInputs.length === 0) return toolError("invalid_tool_input", { message: "actors must include at least one actor." });
+  const sceneId = stringFromRecord(request, "sceneId");
+  const targetScene = sceneId
+    ? context.state.scenes.find((scene) => scene.id === sceneId && scene.campaignId === context.campaignId)
+    : context.state.scenes.find((scene) => scene.campaignId === context.campaignId && scene.active) ?? context.state.scenes.find((scene) => scene.campaignId === context.campaignId);
+  if (!targetScene) return toolError("not_found", { entity: "scene", id: sceneId ?? "" });
+  const campaign = context.state.campaigns.find((item) => item.id === context.campaignId);
+  const title = stringFromRecord(request, "title") ?? "AI actor and token roster";
+  const summary = stringFromRecord(request, "summary") ?? `Create ${actorInputs.length} actors and requested tokens.`;
+  const existingAiEditScene = findAiEditSceneForTarget(context.state, context.campaignId, targetScene.id);
+  const aiEditScene = existingAiEditScene ?? createAiEditSceneForTarget({ state: context.state, campaignId: context.campaignId, targetScene, name: `${targetScene.name} roster edits`, sourcePrompt: summary });
+  const changes: ProposalChange[] = existingAiEditScene ? [] : [{ entity: "scene", action: "create", data: { ...aiEditScene } }];
+  let tokenCount = 0;
+  let itemCount = 0;
+
+  for (const [index, actorInput] of actorInputs.entries()) {
+    const systemId = stringFromRecord(actorInput, "systemId") ?? campaign?.defaultSystemId ?? "generic-fantasy";
+    const name = stringFromRecord(actorInput, "name") ?? `AI Actor ${index + 1}`;
+    const ref = stringFromRecord(actorInput, "ref") ?? `actor_${index + 1}`;
+    const templateId = stringFromRecord(actorInput, "templateId");
+    const threatId = stringFromRecord(actorInput, "threatId");
+    const ownerUserId = stringFromRecord(actorInput, "ownerUserId") ?? context.userId;
+    let actor: Actor;
+    let items: Item[] = [];
+
+    if (templateId) {
+      const template = characterTemplatesForSystem(systemId).find((item) => item.id === templateId);
+      if (!template) return toolError("not_found", { entity: "character_template", id: templateId, systemId });
+      actor = createTimestamped("act", {
+        campaignId: context.campaignId,
+        systemId: template.systemId,
+        ownerUserId,
+        type: template.actorType,
+        name,
+        data: cloneRecord(template.data),
+        permissions: {}
+      }) satisfies Actor;
+      items = createTemplateItems(context.campaignId, actor, template);
+    } else if (threatId) {
+      if (systemId !== DND_5E_SRD_SYSTEM_ID) return toolError("invalid_tool_input", { message: "threatId roster actors require dnd-5e-srd." });
+      const threat = dnd5eSrdEncounterThreats().find((item) => item.id === threatId);
+      if (!threat) return toolError("not_found", { entity: "encounter_threat", id: threatId });
+      const data = dnd5eSrdMonsterActorData(threat.id);
+      if (!data) return toolError("not_found", { entity: "monster_stat_block", id: threatId });
+      actor = createTimestamped("act", {
+        campaignId: context.campaignId,
+        systemId,
+        ownerUserId,
+        type: "monster",
+        name,
+        data: cloneRecord(data),
+        permissions: {}
+      }) satisfies Actor;
+    } else {
+      const data = recordFromRecord(actorInput, "data") ? cloneRecord(recordFromRecord(actorInput, "data")!) : { level: 1, hp: { current: 8, max: 8 } };
+      actor = createTimestamped("act", {
+        campaignId: context.campaignId,
+        systemId,
+        ownerUserId,
+        type: stringFromRecord(actorInput, "type") ?? "character",
+        name,
+        data,
+        permissions: {}
+      }) satisfies Actor;
+    }
+
+    changes.push({ entity: "actor", action: "create", data: { ...actor, metadata: { source: "ai_roster", ref } } });
+    for (const item of items) {
+      changes.push({ entity: "item", action: "create", data: { ...item } });
+      itemCount += 1;
+    }
+
+    const tokenInput = recordFromRecord(actorInput, "token");
+    if (tokenInput) {
+      const token = createTimestamped("tok", {
+        sceneId: aiEditScene.id,
+        actorId: actor.id,
+        name: stringFromRecord(tokenInput, "name") ?? actor.name,
+        x: numberFromRecord(tokenInput, "x", 0, targetScene.width) ?? Math.min(targetScene.width - targetScene.gridSize, targetScene.gridSize * (index + 1)),
+        y: numberFromRecord(tokenInput, "y", 0, targetScene.height) ?? targetScene.gridSize,
+        width: numberFromRecord(tokenInput, "width", 10, targetScene.width) ?? targetScene.gridSize,
+        height: numberFromRecord(tokenInput, "height", 10, targetScene.height) ?? targetScene.gridSize,
+        rotation: numberFromRecord(tokenInput, "rotation", 0, 360) ?? 0,
+        layer: enumStringFromRecord(tokenInput, "layer", ["map", "player", "gm"]) as TokenLayer | undefined,
+        hidden: booleanFromRecord(tokenInput, "hidden") ?? false,
+        locked: booleanFromRecord(tokenInput, "locked") ?? false,
+        visionEnabled: booleanFromRecord(tokenInput, "visionEnabled") ?? true,
+        visionRadius: numberFromRecord(tokenInput, "visionRadius", 0, 10000) ?? 160,
+        disposition: (enumStringFromRecord(tokenInput, "disposition", ["friendly", "neutral", "hostile"]) ?? "neutral") as Token["disposition"],
+        ownerUserIds: [ownerUserId],
+        notes: stringFromRecord(tokenInput, "notes"),
+        conditions: [],
+        auras: [],
+        targetedByUserIds: [],
+        metadata: { source: "ai_roster", actorRef: ref }
+      }) satisfies Token;
+      changes.push({ entity: "token", action: "create", data: { ...token } });
+      tokenCount += 1;
+    }
+  }
+
+  return { title, summary, changes, aiEditSceneId: aiEditScene.id, actorCount: actorInputs.length, tokenCount, itemCount };
 }
 
 function createAiThreadTools(): AiToolDefinition[] {
@@ -9752,6 +10035,42 @@ function createAiThreadTools(): AiToolDefinition[] {
       }
     },
     {
+      name: "draft_actor_token_roster",
+      description: "Draft a pending proposal that creates character sheets, monster actors, and linked tokens on the reusable AI edit scene for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "actor.create", "actor.update", "token.create", "scene.create"],
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short roster title." },
+          summary: { type: "string", description: "GM-facing summary of the roster draft." },
+          sceneId: { type: "string", description: "Target main scene id; tokens are drafted into that scene's AI edit scene." },
+          actors: { type: "array", description: "Actors to create. Each actor may include ref, name, systemId, templateId, threatId, data, type, ownerUserId, and optional token settings.", items: { type: "object", additionalProperties: true } }
+        },
+        required: ["actors"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        const draft = draftActorTokenRosterChanges(context, request);
+        if (isToolErrorOutput(draft)) return draft;
+        const proposalTitle = `Roster: ${draft.title}`;
+        const proposalId = await context.createProposal({
+          title: proposalTitle,
+          summary: draft.summary,
+          changes: draft.changes
+        });
+        return {
+          proposalId,
+          title: proposalTitle,
+          changeCount: draft.changes.length,
+          aiEditSceneId: draft.aiEditSceneId,
+          actorCount: draft.actorCount,
+          tokenCount: draft.tokenCount,
+          itemCount: draft.itemCount
+        };
+      }
+    },
+    {
       name: "generate_map_asset",
       description: "Generate a map image asset and draft a pending proposal to add it to the asset library and optionally set it as a scene background.",
       requiredPermissions: ["ai.proposeChanges", "scene.create", "scene.update"],
@@ -9791,30 +10110,37 @@ function createAiThreadTools(): AiToolDefinition[] {
         const changes: ProposalChange[] = [{ entity: "asset", action: "create", data: { ...generated.asset } }];
         let aiEditSceneId: string | undefined;
         if (scene) {
-          const aiEditScene = createAiGeneratedMapEditScene({
-            state: context.state,
-            campaignId: context.campaignId,
-            targetScene: scene,
-            assetId: generated.asset.id,
-            assetName: name,
-            sourcePrompt: generated.sourcePrompt
-          });
-          aiEditSceneId = aiEditScene.id;
-          changes.push({ entity: "scene", action: "create", data: { ...aiEditScene } });
-          changes.push({
-            entity: "scene",
-            action: "update",
-            id: scene.id,
-            data: {
-              backgroundAssetId: generated.asset.id,
-              metadata: {
-                ...scene.metadata,
-                aiEditSceneId,
-                generatedBackgroundAssetId: generated.asset.id,
-                generatedBackgroundPrompt: generated.sourcePrompt
+          const existingAiEditScene = findAiEditSceneForTarget(context.state, context.campaignId, scene.id);
+          if (existingAiEditScene) {
+            aiEditSceneId = existingAiEditScene.id;
+            changes.push({
+              entity: "scene",
+              action: "update",
+              id: existingAiEditScene.id,
+              data: {
+                name: existingAiEditScene.name || aiGeneratedMapEditSceneName(name),
+                backgroundAssetId: generated.asset.id,
+                metadata: {
+                  ...existingAiEditScene.metadata,
+                  source: "ai_edit_layer",
+                  targetSceneId: scene.id,
+                  generatedBackgroundAssetId: generated.asset.id,
+                  generatedBackgroundPrompt: generated.sourcePrompt
+                }
               }
-            }
-          });
+            });
+          } else {
+            const aiEditScene = createAiGeneratedMapEditScene({
+              state: context.state,
+              campaignId: context.campaignId,
+              targetScene: scene,
+              assetId: generated.asset.id,
+              assetName: name,
+              sourcePrompt: generated.sourcePrompt
+            });
+            aiEditSceneId = aiEditScene.id;
+            changes.push({ entity: "scene", action: "create", data: { ...aiEditScene } });
+          }
         }
         const title = `Generated map: ${name}`;
         const proposalId = await context.createProposal({
@@ -11727,8 +12053,14 @@ function prepareProposalChanges(
       .map((change) => stringFromRecord(change.data, "id"))
       .filter((id): id is string => Boolean(id))
   );
+  const createdActorIds = new Set(
+    normalizedChanges
+      .filter((change) => change.entity === "actor" && change.action === "create")
+      .map((change) => stringFromRecord(change.data, "id"))
+      .filter((id): id is string => Boolean(id))
+  );
   for (const [index, change] of normalizedChanges.entries()) {
-    const scopeError = proposalChangeScopeError(store, campaignId, change, createdSceneIds, options);
+    const scopeError = proposalChangeScopeError(store, campaignId, change, createdSceneIds, createdActorIds, options);
     if (scopeError) return { error: "invalid_proposal_scope", message: `Proposal change ${index + 1} ${scopeError}` };
   }
   return { changes: normalizedChanges };
@@ -11746,13 +12078,13 @@ function proposalChangeFromInput(value: unknown): ProposalChange | undefined {
   return id ? { entity, action, id, data } : { entity, action, data };
 }
 
-function proposalChangeScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>, options: { currentProposalId?: string }): string | undefined {
+function proposalChangeScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>, createdActorIds: Set<string>, options: { currentProposalId?: string }): string | undefined {
   if (change.entity === "campaign") {
     if (change.action === "create") return "cannot create campaigns from a campaign proposal";
     const targetId = change.id ?? stringFromRecord(change.data, "id");
     return targetId === campaignId ? undefined : "targets a different campaign";
   }
-  if (change.action === "create") return proposalCreateScopeError(store, campaignId, change, createdSceneIds, options);
+  if (change.action === "create") return proposalCreateScopeError(store, campaignId, change, createdSceneIds, createdActorIds, options);
   const existingCampaignId = campaignIdForProposalEntity(store, change.entity, change.id);
   if (!existingCampaignId) return `targets a missing ${change.entity}`;
   if (existingCampaignId !== campaignId) return `targets a ${change.entity} outside this campaign`;
@@ -11760,25 +12092,25 @@ function proposalChangeScopeError(store: StateStore, campaignId: string, change:
   if (dataCampaignId && dataCampaignId !== campaignId) return `moves a ${change.entity} outside this campaign`;
   const sceneScopeError = proposalSceneReferenceScopeError(store, campaignId, change.data, createdSceneIds);
   if (sceneScopeError) return sceneScopeError;
-  const actorScopeError = proposalActorReferenceScopeError(store, campaignId, change.data);
+  const actorScopeError = proposalActorReferenceScopeError(store, campaignId, change.data, createdActorIds);
   if (actorScopeError) return actorScopeError;
   return undefined;
 }
 
-function proposalCreateScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>, options: { currentProposalId?: string }): string | undefined {
+function proposalCreateScopeError(store: StateStore, campaignId: string, change: ProposalChange, createdSceneIds: Set<string>, createdActorIds: Set<string>, options: { currentProposalId?: string }): string | undefined {
   const createdId = stringFromRecord(change.data, "id");
   if (createdId && proposalEntityExists(store, change.entity, createdId, options)) return `creates a ${change.entity} id that already exists`;
   if (change.entity === "token") {
     const sceneId = stringFromRecord(change.data, "sceneId");
     if (!sceneId) return "must include a sceneId for token creation";
     if (!createdSceneIds.has(sceneId) && !store.state.scenes.some((scene) => scene.id === sceneId && scene.campaignId === campaignId)) return "creates a token outside this campaign";
-    return proposalActorReferenceScopeError(store, campaignId, change.data);
+    return proposalActorReferenceScopeError(store, campaignId, change.data, createdActorIds);
   }
   const dataCampaignId = stringFromRecord(change.data, "campaignId");
   if (dataCampaignId !== campaignId) return `creates a ${change.entity} outside this campaign`;
   const sceneScopeError = proposalSceneReferenceScopeError(store, campaignId, change.data, createdSceneIds);
   if (sceneScopeError) return sceneScopeError;
-  const actorScopeError = proposalActorReferenceScopeError(store, campaignId, change.data);
+  const actorScopeError = proposalActorReferenceScopeError(store, campaignId, change.data, createdActorIds);
   if (actorScopeError) return actorScopeError;
   return undefined;
 }
@@ -11817,9 +12149,10 @@ function proposalSceneReferenceScopeError(store: StateStore, campaignId: string,
   return "references a scene outside this campaign";
 }
 
-function proposalActorReferenceScopeError(store: StateStore, campaignId: string, data: Record<string, unknown>): string | undefined {
+function proposalActorReferenceScopeError(store: StateStore, campaignId: string, data: Record<string, unknown>, createdActorIds: Set<string> = new Set()): string | undefined {
   const actorId = stringFromRecord(data, "actorId");
   if (!actorId) return undefined;
+  if (createdActorIds.has(actorId)) return undefined;
   return store.state.actors.some((actor) => actor.id === actorId && actor.campaignId === campaignId) ? undefined : "references an actor outside this campaign";
 }
 
