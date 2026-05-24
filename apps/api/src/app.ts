@@ -527,7 +527,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       store.save();
       return forbidden(reply, "Password reset required");
     }
-    if (user.passwordHash && !verifyPassword(body.password ?? "", user.passwordHash)) {
+    if (!user.passwordHash) {
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "password_login_unavailable", statusCode: 401 });
+      store.save();
+      return unauthorized(reply, "Password login unavailable for this account");
+    }
+    if (!verifyPassword(body.password ?? "", user.passwordHash)) {
       appendAuthLoginFailureAudit(store, { userId: user.id, reason: "invalid_credentials", statusCode: 401 });
       store.save();
       return unauthorized(reply, "Invalid login credentials");
@@ -13890,7 +13895,8 @@ function resolveInviteUser(store: StateStore, headers: Record<string, string | s
 
   const existingUser = findLoginUser(store, input);
   if (existingUser) {
-    if (existingUser.passwordHash && !verifyPassword(input.password ?? "", existingUser.passwordHash)) return unauthorized(reply, "Invalid login credentials");
+    if (!existingUser.passwordHash) return unauthorized(reply, "Password login unavailable for this account");
+    if (!verifyPassword(input.password ?? "", existingUser.passwordHash)) return unauthorized(reply, "Invalid login credentials");
     return existingUser;
   }
   if (input.userId) return unauthorized(reply, "Unknown login identity");
