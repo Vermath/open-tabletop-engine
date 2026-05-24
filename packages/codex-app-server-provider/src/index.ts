@@ -267,7 +267,6 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
           optOutNotificationMethods: [
             "command/exec/outputDelta",
             "item/fileChange/outputDelta",
-            "item/reasoning/summaryTextDelta",
             "item/reasoning/textDelta"
           ]
         }
@@ -890,8 +889,17 @@ class CodexAppServerRpc {
       this.events.push({ type: "message.delta", delta: params.delta });
       return;
     }
+    if (method === "item/reasoning/summaryTextDelta" && isRecord(params) && typeof params.delta === "string") {
+      this.events.push({ type: "reasoning.delta", delta: params.delta, summaryIndex: numberFromRecord(params, "summaryIndex") });
+      return;
+    }
     if (method === "item/completed" && isRecord(params) && isRecord(params.item) && params.item.type === "agentMessage" && typeof params.item.text === "string") {
       this.events.push({ type: "message.completed", content: params.item.text });
+      return;
+    }
+    if (method === "item/completed" && isRecord(params) && isRecord(params.item) && params.item.type === "reasoning") {
+      const summary = reasoningSummaryFromItem(params.item);
+      if (summary) this.events.push({ type: "reasoning.completed", content: summary });
       return;
     }
     if (method === "thread/tokenUsage/updated") {
@@ -1077,6 +1085,21 @@ function usageFromTokenNotification(params: unknown): { inputTokens?: number; ou
   const totalTokens = numberFromRecord(last, "totalTokens");
   if (inputTokens === undefined && outputTokens === undefined && totalTokens === undefined) return undefined;
   return { inputTokens, outputTokens, totalTokens };
+}
+
+function reasoningSummaryFromItem(item: Record<string, unknown>): string | undefined {
+  const summary = textFromReasoningSummary(item.summary).trim();
+  return summary || undefined;
+}
+
+function textFromReasoningSummary(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(textFromReasoningSummary).filter(Boolean).join("\n");
+  if (!isRecord(value)) return "";
+  if (typeof value.text === "string") return value.text;
+  if (typeof value.summary === "string") return value.summary;
+  if (Array.isArray(value.parts)) return textFromReasoningSummary(value.parts);
+  return "";
 }
 
 function generatedImageFromCodexItem(item: Record<string, unknown>, revisedPromptKey: "revisedPrompt" | "revised_prompt"): CodexAppServerGeneratedImage | undefined {

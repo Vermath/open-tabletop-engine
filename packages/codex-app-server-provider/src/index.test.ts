@@ -67,6 +67,8 @@ describe("CodexAppServerWebSocketTransport", () => {
     for await (const event of provider.stream(baseRequest)) events.push(event);
 
     expect(events).toEqual([
+      { type: "reasoning.delta", delta: "Checking the active scene and available map tools.", summaryIndex: 0 },
+      { type: "reasoning.completed", content: "Checked the active scene and selected a proposal-backed map tool." },
       {
         type: "tool.started",
         toolName: "generate_map_asset",
@@ -77,6 +79,10 @@ describe("CodexAppServerWebSocketTransport", () => {
     expect(socket?.sent.find((message) => message.method === "initialize")?.params).toMatchObject({
       capabilities: { experimentalApi: true }
     });
+    const initializeParams = socket?.sent.find((message) => message.method === "initialize")?.params as { capabilities?: { optOutNotificationMethods?: string[] } } | undefined;
+    const optOutMethods = initializeParams?.capabilities?.optOutNotificationMethods ?? [];
+    expect(optOutMethods).not.toContain("item/reasoning/summaryTextDelta");
+    expect(optOutMethods).toContain("item/reasoning/textDelta");
     expect(socket?.sent.find((message) => message.method === "thread/start")?.params).toMatchObject({
       dynamicTools: [
         expect.objectContaining({
@@ -287,6 +293,8 @@ class FakeCodexSocket {
     }
     if (message.method === "turn/start") {
       this.emitMessage({ id: message.id, result: { turn: { id: "codex_turn" } } });
+      this.emitMessage({ method: "item/reasoning/summaryTextDelta", params: { itemId: "rsn_1", summaryIndex: 0, delta: "Checking the active scene and available map tools." } });
+      this.emitMessage({ method: "item/completed", params: { item: { id: "rsn_1", type: "reasoning", summary: [{ text: "Checked the active scene and selected a proposal-backed map tool." }] } } });
       this.emitMessage({
         id: 1,
         method: "item/tool/call",

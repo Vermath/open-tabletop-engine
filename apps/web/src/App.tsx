@@ -71,12 +71,21 @@ interface AiAgentMessage {
   content: string;
   createdAt: string;
   proposalIds?: string[];
+  reasoning?: string[];
+}
+
+interface AiAgentProviderEvent {
+  type: string;
+  proposalId?: string;
+  delta?: string;
+  content?: string;
+  summaryIndex?: number;
 }
 
 interface AiAgentThreadResponse {
   thread: AiThread;
   assistantMessage: string;
-  events: Array<{ type: string; proposalId?: string }>;
+  events: AiAgentProviderEvent[];
 }
 
 interface CodexAuthStart {
@@ -89,7 +98,6 @@ interface CodexAuthStart {
 
 interface AiAgentCodexAuthPrompt extends CodexAuthStart {
   message: string;
-  opened: boolean;
 }
 
 interface BoardCaptureRequestEvent {
@@ -2860,7 +2868,8 @@ export function App() {
         role: "assistant",
         content: result.assistantMessage || "Done.",
         createdAt: result.thread.updatedAt,
-        proposalIds
+        proposalIds,
+        reasoning: reasoningTracesFromEvents(result.events)
       };
       setAiAgentMessages((messages) => [...messages, assistantMessage]);
       setAiAgentStatus(proposalIds.length > 0 ? `Agent drafted ${proposalIds.length} proposal${proposalIds.length === 1 ? "" : "s"}` : "Agent ready");
@@ -2868,11 +2877,10 @@ export function App() {
     } catch (error) {
       const codexAuth = codexAuthPromptFromError(error);
       if (codexAuth) {
-        const opened = openCodexAuthPrompt(codexAuth);
         const message = errorMessage(error);
-        setAiAgentCodexAuth({ ...codexAuth, opened, message });
+        setAiAgentCodexAuth({ ...codexAuth, message });
         setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
-        setAiAgentStatus(`Agent failed: ${message}`);
+        setAiAgentStatus("Agent needs ChatGPT sign-in");
         return;
       }
       const message = errorMessage(error);
@@ -2881,12 +2889,6 @@ export function App() {
     } finally {
       setAiAgentBusy(false);
     }
-  }
-
-  function startAiAgentCodexAuth(auth: CodexAuthStart) {
-    const opened = openCodexAuthPrompt(auth);
-    setAiAgentCodexAuth((current) => (current ? { ...current, opened } : current));
-    setAiAgentStatus(opened ? "Codex sign-in opened" : "Codex sign-in blocked");
   }
 
   async function trackAiGenerationJob(job: AiGenerationJob, task: () => Promise<void>) {
@@ -4944,7 +4946,6 @@ export function App() {
           canApply={hasPermission("ai.applyChanges")}
           onPromptChange={setAiAgentPrompt}
           onSend={() => sendAiAgentMessage().catch((error) => setAiAgentStatus(errorMessage(error)))}
-          onStartCodexAuth={startAiAgentCodexAuth}
           onClose={() => setAiAgentOpen(false)}
           onApply={(proposal) => approveAndApply(proposal).catch((error) => setAiAgentStatus(errorMessage(error)))}
           onReject={(proposal) => rejectProposalReview(proposal).catch((error) => setAiAgentStatus(errorMessage(error)))}
@@ -4964,7 +4965,6 @@ function AiAgentPanel(props: {
   canApply: boolean;
   onPromptChange(value: string): void;
   onSend(): void;
-  onStartCodexAuth(auth: CodexAuthStart): void;
   onClose(): void;
   onApply(proposal: Proposal): void;
   onReject(proposal: Proposal): void;
@@ -4994,8 +4994,29 @@ function AiAgentPanel(props: {
             <article className={`ai-agent-message ${message.role}`} key={message.id}>
               <span>{message.role === "assistant" ? "Agent" : message.role === "system" ? "System" : "You"}</span>
               <p>{message.content}</p>
+              {message.reasoning && message.reasoning.length > 0 && (
+                <details className="ai-agent-reasoning">
+                  <summary>Reasoning trace</summary>
+                  {message.reasoning.map((trace, index) => (
+                    <p key={`${message.id}-reasoning-${index}`}>{trace}</p>
+                  ))}
+                </details>
+              )}
             </article>
           ))
+        )}
+        {props.busy && (
+          <article className="ai-agent-working" aria-live="polite">
+            <Bot className="ai-agent-working-bot" size={24} />
+            <div>
+              <span>Agent working</span>
+              <div className="ai-agent-working-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </div>
+            </div>
+          </article>
         )}
       </section>
       {props.codexAuth && (
@@ -5003,11 +5024,22 @@ function AiAgentPanel(props: {
           <div>
             <strong>ChatGPT sign-in required</strong>
             <p>{props.codexAuth.message}</p>
-            {props.codexAuth.userCode && <code>{props.codexAuth.userCode}</code>}
           </div>
-          <button className="primary-button" type="button" disabled={!codexAuthUrl} onClick={() => props.onStartCodexAuth(props.codexAuth!)}>
-            <KeyRound size={16} /> Sign in
-          </button>
+          <div className="ai-agent-auth-actions">
+            {codexAuthUrl ? (
+              <a className="primary-button ai-agent-auth-link" href={codexAuthUrl} target="_blank" rel="noreferrer">
+                <KeyRound size={16} /> Open sign-in
+              </a>
+            ) : (
+              <span className="ai-agent-auth-missing">No sign-in link</span>
+            )}
+            {props.codexAuth.userCode && (
+              <div className="ai-agent-auth-code">
+                <span>Device code</span>
+                <code>{props.codexAuth.userCode}</code>
+              </div>
+            )}
+          </div>
         </section>
       )}
       {agentProposals.length > 0 && (
@@ -9321,10 +9353,27 @@ function codexAuthPromptFromError(error: unknown): CodexAuthStart | undefined {
   };
 }
 
-function openCodexAuthPrompt(auth: CodexAuthStart): boolean {
-  const url = auth.authUrl ?? auth.verificationUrl;
-  if (!url) return false;
-  return Boolean(window.open(url, "_blank", "noopener,noreferrer"));
+function reasoningTracesFromEvents(events: AiAgentProviderEvent[]): string[] {
+  const streamed = new Map<number, string>();
+  const completed: string[] = [];
+  for (const event of events) {
+    if (event.type === "reasoning.delta" && typeof event.delta === "string") {
+      const index = typeof event.summaryIndex === "number" && Number.isFinite(event.summaryIndex) ? event.summaryIndex : 0;
+      streamed.set(index, `${streamed.get(index) ?? ""}${event.delta}`);
+    }
+    if (event.type === "reasoning.completed" && typeof event.content === "string" && event.content.trim()) {
+      completed.push(event.content.trim());
+    }
+  }
+  const traces = [...streamed.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, trace]) => trace.trim())
+    .filter(Boolean);
+  const completedTraces: string[] = [];
+  for (const trace of completed) {
+    if (!completedTraces.includes(trace)) completedTraces.push(trace);
+  }
+  return (completedTraces.length > 0 ? completedTraces : traces).slice(0, 4);
 }
 
 function createdSceneIdFromProposal(proposal: Proposal): string | undefined {

@@ -124,6 +124,8 @@ export interface AiProviderRequest {
 export type AiProviderEvent =
   | { type: "message.delta"; delta: string }
   | { type: "message.completed"; content: string }
+  | { type: "reasoning.delta"; delta: string; summaryIndex?: number }
+  | { type: "reasoning.completed"; content: string }
   | { type: "tool.started"; toolName: string; input: unknown }
   | { type: "tool.completed"; toolName: string; output: unknown }
   | { type: "proposal.created"; proposalId: string }
