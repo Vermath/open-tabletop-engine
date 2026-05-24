@@ -376,12 +376,15 @@ async function spawnAndWaitForCodexAppServer(listenUrl: string, options: CodexAp
   codexAppServerChildren.set(listenUrl, child);
   child.stdout?.on("data", (chunk) => appendStartupOutput(output, chunk));
   child.stderr?.on("data", (chunk) => appendStartupOutput(output, chunk));
+  const spawnFailed = new Promise<never>((_resolve, reject) => {
+    child.once("error", (error) => reject(error));
+  });
   child.once("exit", () => {
     if (codexAppServerChildren.get(listenUrl) === child) codexAppServerChildren.delete(listenUrl);
   });
 
   try {
-    await waitForCodexAppServerReady(listenUrl, options.timeoutMs, output, child);
+    await Promise.race([waitForCodexAppServerReady(listenUrl, options.timeoutMs, output, child), spawnFailed]);
   } catch (error) {
     child.kill();
     throw error;

@@ -7255,7 +7255,8 @@ function isCodexAppServerProviderConfigured(): boolean {
 
 function codexAppServerAutoStartEnabled(): boolean {
   const value = normalizedEnvValue(process.env.OTTE_CODEX_APP_SERVER_AUTOSTART);
-  return value !== "false" && value !== "0" && value !== "off" && value !== "no";
+  if (value !== undefined) return value !== "false" && value !== "0" && value !== "off" && value !== "no";
+  return process.env.NODE_ENV !== "test" && process.env.VITEST !== "true";
 }
 
 class UnavailableAiProvider implements AiProvider {

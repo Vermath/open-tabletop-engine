@@ -143,6 +143,25 @@ describe("CodexAppServerWebSocketTransport", () => {
     expect(events).toEqual(expect.arrayContaining([{ type: "message.completed", content: "The map request was handed to OpenTabletop." }]));
   });
 
+  it("reports Codex app-server command startup failures through the provider error", async () => {
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://127.0.0.1:4500",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 1000,
+        autoStart: true,
+        codexCommand: "__missing_codex_app_server_command__",
+        webSocketFactory: () => new FailingCodexSocket("Received network error or non-101 status code")
+      })
+    });
+
+    await expect(async () => {
+      for await (const _event of provider.stream(baseRequest)) {
+        // The missing app-server command should fail before any model events stream.
+      }
+    }).rejects.toThrow(/Failed to start Codex app-server.*ENOENT/);
+  });
+
   it("returns generated image bytes from Codex app-server imageGeneration items", async () => {
     let socket: FakeCodexImageSocket | undefined;
     const transport = new CodexAppServerWebSocketTransport({
