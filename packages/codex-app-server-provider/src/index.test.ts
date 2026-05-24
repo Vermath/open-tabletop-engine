@@ -1,6 +1,6 @@
 import type { AiProviderRequest } from "@open-tabletop/ai-core";
 import { describe, expect, it } from "vitest";
-import { CodexAppServerAuthRequiredError, CodexAppServerProvider, CodexAppServerWebSocketTransport, type CodexAppServerStartOptions } from "./index";
+import { CodexAppServerAuthRequiredError, CodexAppServerProvider, CodexAppServerWebSocketTransport, codexAppServerCommandCandidates, type CodexAppServerStartOptions } from "./index";
 
 const baseRequest: AiProviderRequest = {
   threadId: "thr_test",
@@ -35,6 +35,16 @@ const baseRequest: AiProviderRequest = {
 };
 
 describe("CodexAppServerWebSocketTransport", () => {
+  it("resolves local Windows Codex launcher aliases to cmd shims", () => {
+    expect(codexAppServerCommandCandidates({ command: "codex", platform: "win32", env: { APPDATA: "C:\\Users\\treyg\\AppData\\Roaming" } })).toEqual([
+      { command: "C:\\Users\\treyg\\AppData\\Roaming\\npm\\codex.cmd", shell: true },
+      { command: "codex.cmd", shell: true },
+      { command: "codex", shell: false }
+    ]);
+    expect(codexAppServerCommandCandidates({ platform: "linux", env: {} })).toEqual([{ command: "codex", shell: false }]);
+    expect(codexAppServerCommandCandidates({ command: "C:\\Tools\\codex.cmd", platform: "win32", env: {} })).toEqual([{ command: "C:\\Tools\\codex.cmd", shell: true }]);
+  });
+
   it("bridges Codex dynamic tool requests into OpenTabletop provider events", async () => {
     let socket: FakeCodexSocket | undefined;
     const provider = new CodexAppServerProvider({

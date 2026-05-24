@@ -34,6 +34,17 @@ export interface CodexAppServerStartOptions {
 
 export type CodexAppServerStarter = (options: CodexAppServerStartOptions) => Promise<void>;
 
+export interface CodexAppServerCommandCandidate {
+  command: string;
+  shell: boolean;
+}
+
+export interface CodexAppServerCommandCandidateOptions {
+  command?: string;
+  platform?: NodeJS.Platform;
+  env?: Record<string, string | undefined>;
+}
+
 export interface CodexAppServerImageGenerationInput {
   prompt: string;
   outputFormat?: "png" | "jpeg" | "webp";
@@ -366,12 +377,34 @@ async function spawnAndWaitForCodexAppServer(listenUrl: string, options: CodexAp
     return;
   }
 
-  const output: string[] = [];
-  const command = options.command?.trim() || defaultCodexCommand();
+  const errors: string[] = [];
   const { spawn } = await import("node:child_process");
-  const child = spawn(command, ["app-server", "--listen", listenUrl], {
+  const candidates = codexAppServerCommandCandidates({ command: options.command });
+  for (const candidate of candidates) {
+    try {
+      await spawnCodexAppServerCandidate(listenUrl, options.timeoutMs, candidate, spawn);
+      return;
+    } catch (error) {
+      errors.push(`${candidate.command}: ${errorMessage(error)}`);
+      if (!isRecoverableCodexSpawnError(error)) {
+        throw new Error(`Failed to start Codex app-server with ${candidate.command}: ${errorMessage(error)}${formatStartupErrors(errors)}`);
+      }
+    }
+  }
+  throw new Error(`Unable to start Codex app-server. Tried ${candidates.map((candidate) => candidate.command).join(", ")}.${formatStartupErrors(errors)}`);
+}
+
+async function spawnCodexAppServerCandidate(
+  listenUrl: string,
+  timeoutMs: number,
+  candidate: CodexAppServerCommandCandidate,
+  spawn: typeof import("node:child_process").spawn
+): Promise<void> {
+  const output: string[] = [];
+  const child = spawn(candidate.command, ["app-server", "--listen", listenUrl], {
     stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true
+    windowsHide: true,
+    shell: candidate.shell
   });
   codexAppServerChildren.set(listenUrl, child);
   child.stdout?.on("data", (chunk) => appendStartupOutput(output, chunk));
@@ -384,7 +417,7 @@ async function spawnAndWaitForCodexAppServer(listenUrl: string, options: CodexAp
   });
 
   try {
-    await Promise.race([waitForCodexAppServerReady(listenUrl, options.timeoutMs, output, child), spawnFailed]);
+    await Promise.race([waitForCodexAppServerReady(listenUrl, timeoutMs, output, child), spawnFailed]);
   } catch (error) {
     child.kill();
     throw error;
@@ -445,8 +478,46 @@ function readyzUrlForCodexListenUrl(listenUrl: string): string {
   return `http://${parsed.host}/readyz`;
 }
 
-function defaultCodexCommand(): string {
-  return process.platform === "win32" ? "codex.cmd" : "codex";
+export function codexAppServerCommandCandidates(options: CodexAppServerCommandCandidateOptions = {}): CodexAppServerCommandCandidate[] {
+  const platform = options.platform ?? process.platform;
+  const command = options.command?.trim();
+  if (platform !== "win32") return [{ command: command || "codex", shell: false }];
+  if (command && !isBareCodexCommand(command)) return [{ command, shell: usesWindowsShell(command) }];
+
+  const candidates: CodexAppServerCommandCandidate[] = [];
+  const env = options.env ?? process.env;
+  const appData = env.APPDATA ?? env.AppData ?? env.appdata;
+  if (appData) candidates.push({ command: `${appData}\\npm\\codex.cmd`, shell: true });
+  if (command && command.toLowerCase() !== "codex") candidates.push({ command, shell: usesWindowsShell(command) });
+  candidates.push({ command: "codex.cmd", shell: true });
+  candidates.push({ command: "codex", shell: false });
+  return dedupeCodexCommandCandidates(candidates);
+}
+
+function isBareCodexCommand(command: string): boolean {
+  if (/[\\/]/.test(command)) return false;
+  return ["codex", "codex.cmd", "codex.exe", "codex.ps1"].includes(command.toLowerCase());
+}
+
+function usesWindowsShell(command: string): boolean {
+  return /\.(?:cmd|bat)$/i.test(command);
+}
+
+function dedupeCodexCommandCandidates(candidates: CodexAppServerCommandCandidate[]): CodexAppServerCommandCandidate[] {
+  const seen = new Set<string>();
+  const deduped: CodexAppServerCommandCandidate[] = [];
+  for (const candidate of candidates) {
+    const key = `${candidate.command.toLowerCase()}\0${candidate.shell}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(candidate);
+  }
+  return deduped;
+}
+
+function isRecoverableCodexSpawnError(error: unknown): boolean {
+  if (!isRecord(error)) return false;
+  return error.code === "ENOENT" || error.code === "EPERM";
 }
 
 function appendStartupOutput(output: string[], chunk: unknown): void {
@@ -461,6 +532,11 @@ function appendStartupOutput(output: string[], chunk: unknown): void {
 function formatStartupOutput(output: string[]): string {
   if (output.length === 0) return "";
   return ` Last app-server output: ${output.join("\n").slice(-2_000)}`;
+}
+
+function formatStartupErrors(errors: string[]): string {
+  if (errors.length === 0) return "";
+  return ` Startup attempts: ${errors.join(" | ")}`;
 }
 
 function delay(ms: number): Promise<void> {
