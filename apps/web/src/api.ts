@@ -2723,6 +2723,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   const tokenSceneIds = [...new Set([selectedSceneId, activeSceneId].filter((id): id is string => Boolean(id)))];
   const members = await snapshotGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`);
   const currentMember = members.find((member) => member.user.id === session.user.id);
+  const canManageCampaign = currentMember?.permissions.includes("campaign.update") ?? false;
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
   const [assets, assetStorage, fogPresets, tokens, vision, actors, items, journals, chat, rolls, diceMacros, encounters, combats, proposals, contentImports, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
     snapshotGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
@@ -2739,7 +2740,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     snapshotGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
     snapshotGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
     snapshotGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
-    snapshotGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`),
+    canManageCampaign ? snapshotGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`) : Promise.resolve([]),
     snapshotGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`),
     canViewAiOperations ? snapshotGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
     canViewAiOperations ? snapshotGet<AiUsageSummary>(`/api/v1/campaigns/${selectedCampaignId}/ai/usage`) : Promise.resolve(undefined),

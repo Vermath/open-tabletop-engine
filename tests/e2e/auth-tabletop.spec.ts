@@ -811,9 +811,10 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Asset lifecycle filter" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Asset restore recovery" })).toContainText("Recoverable");
-  await expect(page.locator('[aria-label="Asset quota usage"]').getByText("No campaign quota configured")).toBeVisible();
+  await expect(page.locator('[aria-label="Asset quota usage"]')).toContainText("remaining");
   await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Quota health");
   await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Recommended action");
+  await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("No quota cleanup needed");
   await expect(page.getByText("Delivery ready")).toBeVisible();
   await expect(page.getByText("signed_blob delivery")).toBeVisible();
   await expect(page.getByText("0 undeliverable - 0 CDN eligible")).toBeVisible();

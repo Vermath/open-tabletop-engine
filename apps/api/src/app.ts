@@ -23486,7 +23486,6 @@ function upsertUsers(target: User[], incoming: User[]): number {
         passwordUpdatedAt: existing.passwordUpdatedAt,
         passwordResetRequired: existing.passwordResetRequired
       };
-      if (!merged.passwordHash) merged.passwordResetRequired = true;
       target[index] = merged;
     } else {
       const imported: User = { ...record, serverAdmin: undefined };

@@ -2127,6 +2127,56 @@ describe("api", () => {
     await app.close();
   });
 
+  it("preserves existing passwordless demo users when importing users from archive", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const existing = store.state.users.find((user) => user.id === "usr_demo_gm");
+    if (!existing?.email) throw new Error("Demo GM user was not seeded");
+    existing.passwordHash = undefined;
+    existing.passwordResetRequired = false;
+
+    const archive: CampaignArchive = {
+      format: "ottx",
+      version: "0.2.0",
+      exportedAt: "2026-05-11T00:00:00.000Z",
+      manifest: { campaignId: "camp_imported_users", name: "Imported Users", schemaVersion: "0.3.0", assetCount: 0 },
+      data: {
+        ...emptyState(),
+        users: [
+          {
+            id: "usr_demo_gm",
+            displayName: "Imported Demo GM",
+            email: existing.email,
+            createdAt: "2026-05-11T00:00:00.000Z",
+            updatedAt: "2026-05-11T00:00:00.000Z"
+          }
+        ]
+      },
+      files: []
+    };
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    expect(imported.statusCode).toBe(200);
+    const merged = store.state.users.find((user) => user.id === "usr_demo_gm");
+    expect(merged?.displayName).toBe("Imported Demo GM");
+    expect(merged?.passwordHash).toBeUndefined();
+    expect(merged?.passwordResetRequired).toBe(false);
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { email: existing.email }
+    });
+    expect(login.statusCode).toBe(200);
+
+    await app.close();
+  });
+
   it("requires password reset for imported users without password hashes", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });
