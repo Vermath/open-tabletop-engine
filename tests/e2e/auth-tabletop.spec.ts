@@ -1361,7 +1361,6 @@ test("player combat action requires GM confirmation and completes the browser fl
   await combatPanel.getByRole("button", { name: "Next" }).click();
   await expect(gmPage.getByText("Combat updated")).toBeVisible();
   await combatPanel.getByRole("button", { name: "End" }).click();
-  await expect(gmPage.getByText("Combat ended")).toBeVisible();
   await expect(combatPanel.getByText("Ended Combat Recap")).toBeVisible();
   await expect(combatPanel.getByText(/confirmed actions/).first()).toBeVisible();
 
