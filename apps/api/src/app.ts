@@ -22555,8 +22555,11 @@ function archiveWithoutConflicts(archive: CampaignArchive, conflicts: Array<{ co
 }
 
 function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyof EngineState, number> {
+  const importedUsers = archive.data.users.map((user) =>
+    user.passwordHash ? user : { ...user, passwordResetRequired: true }
+  );
   return {
-    users: upsertRecords(state.users, archive.data.users),
+    users: upsertRecords(state.users, importedUsers),
     sessions: 0,
     identities: 0,
     oauthStates: 0,

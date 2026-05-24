@@ -2996,6 +2996,68 @@ describe("api", () => {
     await app.close();
   });
 
+  it("requires password reset for imported users without password hashes", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const archive = {
+      format: "ottx",
+      version: "0.2.0",
+      exportedAt: "2026-05-11T00:00:00.000Z",
+      manifest: { campaignId: "camp_imported_demo", name: "Imported Demo", schemaVersion: "0.2.0", assetCount: 0 },
+      data: {
+        ...emptyState(),
+        users: [
+          {
+            id: "usr_demo_gm",
+            displayName: "Demo GM",
+            email: "gm@example.test",
+            createdAt: "2026-05-11T00:00:00.000Z",
+            updatedAt: "2026-05-11T00:00:00.000Z"
+          }
+        ],
+        campaigns: [
+          {
+            id: "camp_imported_demo",
+            name: "Imported Demo",
+            ownerUserId: "usr_demo_gm",
+            createdAt: "2026-05-11T00:00:00.000Z",
+            updatedAt: "2026-05-11T00:00:00.000Z"
+          }
+        ],
+        members: [
+          {
+            id: "mem_imported_owner",
+            campaignId: "camp_imported_demo",
+            userId: "usr_demo_gm",
+            role: "owner",
+            createdAt: "2026-05-11T00:00:00.000Z",
+            updatedAt: "2026-05-11T00:00:00.000Z"
+          }
+        ]
+      },
+      files: []
+    } satisfies CampaignArchive;
+
+    const imported = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: authHeaders,
+      payload: archive
+    });
+    expect(imported.statusCode).toBe(200);
+    expect(store.state.users.find((user) => user.id === "usr_demo_gm")?.passwordResetRequired).toBe(true);
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { userId: "usr_demo_gm" }
+    });
+    expect(login.statusCode).toBe(403);
+    expect(login.json().message).toBe("Password reset required");
+
+    await app.close();
+  });
+
   it("blocks public registration in production unless explicitly enabled", async () => {
     const previousEnv = snapshotEnv(["NODE_ENV", "OTTE_PUBLIC_REGISTRATION"]);
     const store = new MemoryStateStore();
