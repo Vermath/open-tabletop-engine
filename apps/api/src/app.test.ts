@@ -5774,6 +5774,12 @@ describe("api", () => {
       expect(session.statusCode).toBe(200);
       expect(session.json().user).toEqual(expect.objectContaining({ email: "sso.user@example.test" }));
       expect(session.json().user).not.toHaveProperty("passwordHash");
+      const passwordLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "sso.user@example.test", password: "wrong-password" }
+      });
+      expect(passwordLogin.statusCode).toBe(401);
 
       const ssoUser = store.state.users.find((user) => user.id === fragment.get("ssoUserId"));
       expect(ssoUser).toBeTruthy();

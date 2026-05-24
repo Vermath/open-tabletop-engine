@@ -527,7 +527,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       store.save();
       return forbidden(reply, "Password reset required");
     }
-    if (user.passwordHash && !verifyPassword(body.password ?? "", user.passwordHash)) {
+    if (!user.passwordHash) {
+      appendAuthLoginFailureAudit(store, { userId: user.id, reason: "invalid_credentials", statusCode: 401 });
+      store.save();
+      return unauthorized(reply, "Invalid login credentials");
+    }
+    if (!verifyPassword(body.password ?? "", user.passwordHash)) {
       appendAuthLoginFailureAudit(store, { userId: user.id, reason: "invalid_credentials", statusCode: 401 });
       store.save();
       return unauthorized(reply, "Invalid login credentials");
