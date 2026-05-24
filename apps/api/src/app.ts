@@ -20858,7 +20858,11 @@ function mapAssetFromRecord(value: Record<string, unknown>): MapAsset | undefine
   ) {
     return undefined;
   }
-  return value as unknown as MapAsset;
+  const asset: MapAsset = {
+    ...(value as unknown as MapAsset),
+    storage: undefined
+  };
+  return asset;
 }
 
 function assetUnavailable(reply: FastifyReply, asset: MapAsset): FastifyReply {
