@@ -1335,14 +1335,18 @@ test("player combat action requires GM confirmation and completes the browser fl
     await playerPage.locator('select[aria-label="Session user"]').selectOption("usr_demo_player");
   }
   await expect(playerPage.locator("p", { hasText: "Demo Player" })).toBeVisible();
-  await playerPage.getByRole("button", { name: `Token ${fighterToken.name}` }).click();
+  const playerTokenButton = playerPage.getByRole("button", { name: `Token ${fighterToken.name}` });
+  await expect(playerTokenButton).toBeVisible({ timeout: 10_000 });
+  await playerTokenButton.click();
+  await expect(playerTokenButton).toHaveAttribute("aria-pressed", "true", { timeout: 10_000 });
   await openInspectorPanel(playerPage, "Actors");
-  await playerPage.getByRole("tab", { name: "Actions" }).click();
-  await expect(playerPage.getByRole("heading", { name: fighter.name })).toBeVisible();
-  await openActorDisclosure(playerPage.locator(".panel-stack", { hasText: "Selected Actor" }), "Actor details");
-  await playerPage.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
-  await setCheckbox(playerPage.getByRole("checkbox", { name: "Apply action effect" }), true);
-  const actionSheet = playerPage.getByRole("region", { name: "Actor action sheet" });
+  const playerActorPanel = playerPage.locator(".panel-stack", { hasText: "Selected Actor" });
+  await expect(playerActorPanel.getByRole("heading", { name: fighter.name })).toBeVisible({ timeout: 10_000 });
+  await playerActorPanel.getByRole("tab", { name: "Actions" }).click();
+  await openActorDisclosure(playerActorPanel, "Actor details");
+  await playerActorPanel.getByRole("combobox", { name: "Action target actor" }).selectOption({ label: target.name });
+  await setCheckbox(playerActorPanel.getByRole("checkbox", { name: "Apply action effect" }), true);
+  const actionSheet = playerActorPanel.getByRole("region", { name: "Actor action sheet" });
   const damageCard = actionSheet.locator("article", { hasText: "Longsword Damage" }).first();
   await expect(damageCard).toContainText("effect supported");
   await damageCard.getByRole("button", { name: "Use action" }).click();
