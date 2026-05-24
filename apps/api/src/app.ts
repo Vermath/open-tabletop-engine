@@ -9,7 +9,7 @@ import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogR
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type RulesActionResolutionResult, type RulesSaveOutcome, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
-import { createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
+import { assetStorageKey, createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginInventoryWarning, type PluginRuntimeRegistry } from "./plugin-runtime.js";
 import { installedSystems } from "./registries.js";
 import { RealtimeHub } from "./realtime.js";
@@ -23329,6 +23329,21 @@ function archiveWithoutConflicts(archive: CampaignArchive, conflicts: Array<{ co
 }
 
 function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyof EngineState, number> {
+  const importedAssets = archive.data.assets.map((asset) => {
+    if (!asset.storage) return asset;
+    if (asset.storage.provider === "local") return { ...asset, storage: { provider: "local", key: assetStorageKey(asset) } };
+    if (asset.storage.provider === "s3") {
+      return {
+        ...asset,
+        storage: {
+          provider: "s3",
+          bucket: asset.storage.bucket,
+          key: assetStorageKey(asset)
+        }
+      };
+    }
+    return { ...asset, storage: undefined };
+  });
   return {
     users: upsertRecords(state.users, archive.data.users),
     sessions: 0,
@@ -23345,7 +23360,7 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     members: upsertRecords(state.members, archive.data.members),
     worlds: upsertRecords(state.worlds, archive.data.worlds),
     scenes: upsertRecords(state.scenes, archive.data.scenes),
-    assets: upsertRecords(state.assets, archive.data.assets),
+    assets: upsertRecords(state.assets, importedAssets),
     tokens: upsertRecords(state.tokens, archive.data.tokens),
     actors: upsertRecords(state.actors, archive.data.actors),
     items: upsertRecords(state.items, archive.data.items),
