@@ -6447,7 +6447,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       quickRolls.find((item) => item.id === `aptitude-${request.body.ability}`) ??
       quickRolls[0];
     if (!rollDefinition) return notFound(reply, "No system roll is available for this actor");
-    const actionOptions = systemActionOptions(request.body.spellSlotLevel, request.body.resourceAmount, request.body.useFreeResource);
+    const spellSlotLevel = numberFromRecord(request.body, "spellSlotLevel", 1, 9);
+    const actionOptions = systemActionOptions(spellSlotLevel, request.body.resourceAmount, request.body.useFreeResource);
     const baseResolvedFormula = systemActionFormula(actor, items, rollDefinition.id, actionOptions) ?? rollDefinition.formula;
     const resolvedRollDefinition = { ...rollDefinition, formula: baseResolvedFormula };
     const targetActorIdsForResolution = systemRollTargetActorIds(request.body.targetActorIds, request.body.targetActorId, request.body.applyEffect ? actor.id : undefined);
