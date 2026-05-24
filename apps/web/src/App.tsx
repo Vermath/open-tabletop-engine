@@ -5559,6 +5559,27 @@ function tokenResizeFrameFromPoint(scene: Pick<Scene, "width" | "height" | "grid
   };
 }
 
+function tokenResizeHandleAtPoint(element: HTMLElement, clientX: number, clientY: number): TokenResizeHandle | undefined {
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return undefined;
+  const edgeSize = Math.min(12, Math.max(5, Math.min(rect.width, rect.height) * 0.24));
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  const west = x <= edgeSize;
+  const east = x >= rect.width - edgeSize;
+  const north = y <= edgeSize;
+  const south = y >= rect.height - edgeSize;
+  if (north && east) return "ne";
+  if (north && west) return "nw";
+  if (south && east) return "se";
+  if (south && west) return "sw";
+  if (north) return "n";
+  if (east) return "e";
+  if (south) return "s";
+  if (west) return "w";
+  return undefined;
+}
+
 const tokenResizeHandles: Array<{ id: TokenResizeHandle; label: string }> = [
   { id: "n", label: "Resize north edge" },
   { id: "e", label: "Resize east edge" },
@@ -6418,6 +6439,14 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
             onPointerDown={(event) => {
               if (!activeLayerToken) return;
               if (props.fogBrushMode || props.annotationTool) return;
+              const resizeHandle =
+                canResize && !event.shiftKey && !event.ctrlKey && !event.metaKey
+                  ? tokenResizeHandleAtPoint(event.currentTarget, event.clientX, event.clientY)
+                  : undefined;
+              if (resizeHandle) {
+                startTokenResize(token, resizeHandle, event);
+                return;
+              }
               startTokenDrag(token, event);
             }}
             onPointerMove={(event) => {
@@ -6452,25 +6481,6 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
                 key={`${token.id}-${handle.id}`}
                 aria-hidden="true"
                 title={handle.label}
-                onPointerDown={(event) => startTokenResize(token, handle.id, event)}
-                onPointerMove={(event) => {
-                  if (tokenResizeRef.current?.tokenId !== token.id || tokenResizeRef.current.pointerId !== event.pointerId) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  moveTokenResize(event.clientX, event.clientY, event.pointerId);
-                }}
-                onPointerUp={(event) => {
-                  if (tokenResizeRef.current?.tokenId !== token.id || tokenResizeRef.current.pointerId !== event.pointerId) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  finishTokenResize(event.pointerId);
-                }}
-                onPointerCancel={(event) => {
-                  if (tokenResizeRef.current?.tokenId !== token.id || tokenResizeRef.current.pointerId !== event.pointerId) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  cancelTokenResize(event.pointerId);
-                }}
               />
             ))}
           </button>

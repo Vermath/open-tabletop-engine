@@ -9701,20 +9701,6 @@ function agentTokenDimensionFromRecord(input: Record<string, unknown>, key: "wid
   return Math.min(max, Math.max(1, Math.round(value)));
 }
 
-function snapTokenTopLeftAxisToGrid(position: number, size: number, sceneSize: number, gridSize: number): number {
-  const safeSize = Math.max(1, Math.round(size) || 1);
-  const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
-  const maxPosition = Math.max(0, sceneSize - safeSize);
-  const gridCells = Math.max(1, Math.round(safeSize / safeGridSize));
-  const isGridSized = Math.abs(safeSize - gridCells * safeGridSize) <= 1;
-  if (isGridSized) return clampNumber(Math.round(position / safeGridSize) * safeGridSize, 0, maxPosition) ?? 0;
-  const center = position + safeSize / 2;
-  const firstCenter = safeSize / 2;
-  const lastCenter = Math.max(firstCenter, sceneSize - safeSize / 2);
-  const snappedCenter = snapTokenCenterAxisToGrid(center, safeSize, sceneSize, safeGridSize);
-  return Math.round((clampNumber(snappedCenter, firstCenter, lastCenter) ?? firstCenter) - safeSize / 2);
-}
-
 function snapTokenCenterAxisToGrid(center: number, size: number, sceneSize: number, gridSize: number): number {
   const safeSize = Math.max(1, Math.round(size) || 1);
   const safeGridSize = Math.max(1, Math.round(gridSize) || 1);
@@ -9729,14 +9715,6 @@ function tokenCoordinatesFromGridCenter(scene: Pick<Scene, "width" | "height" | 
   return {
     x: Math.round(snapTokenCenterAxisToGrid(centerX, width, scene.width, gridSize) - width / 2),
     y: Math.round(snapTokenCenterAxisToGrid(centerY, height, scene.height, gridSize) - height / 2)
-  };
-}
-
-function tokenCoordinatesFromGridTopLeft(scene: Pick<Scene, "width" | "height" | "gridSize">, width: number, height: number, x: number, y: number): Pick<Token, "x" | "y"> {
-  const gridSize = gridSizeForScene(scene);
-  return {
-    x: snapTokenTopLeftAxisToGrid(x, width, scene.width, gridSize),
-    y: snapTokenTopLeftAxisToGrid(y, height, scene.height, gridSize)
   };
 }
 
@@ -13463,13 +13441,25 @@ function normalizeProposalTokenCreateData(data: Record<string, unknown>, state: 
   if (!scene) return;
   const width = normalizeProposalTokenDimension(data.width, scene.width, scene.gridSize);
   const height = normalizeProposalTokenDimension(data.height, scene.height, scene.gridSize);
-  const x = typeof data.x === "number" && Number.isFinite(data.x) ? data.x : scene.gridSize;
-  const y = typeof data.y === "number" && Number.isFinite(data.y) ? data.y : scene.gridSize;
-  const position = tokenCoordinatesFromGridTopLeft(scene, width, height, x, y);
+  const centerX =
+    typeof data.centerX === "number" && Number.isFinite(data.centerX)
+      ? data.centerX
+      : typeof data.x === "number" && Number.isFinite(data.x)
+        ? data.x
+        : scene.gridSize / 2;
+  const centerY =
+    typeof data.centerY === "number" && Number.isFinite(data.centerY)
+      ? data.centerY
+      : typeof data.y === "number" && Number.isFinite(data.y)
+        ? data.y
+        : scene.gridSize / 2;
+  const position = tokenCoordinatesFromGridCenter(scene, width, height, centerX, centerY);
   data.x = position.x;
   data.y = position.y;
   data.width = width;
   data.height = height;
+  delete data.centerX;
+  delete data.centerY;
   if (typeof data.rotation !== "number" || !Number.isFinite(data.rotation)) data.rotation = 0;
   if (data.layer !== "map" && data.layer !== "player" && data.layer !== "gm") data.layer = "player";
   if (typeof data.hidden !== "boolean") data.hidden = false;

@@ -22328,7 +22328,7 @@ registerCommand("/state", (input) => {
         width: scene.gridSize,
         height: scene.gridSize,
         x: 100,
-        y: 150,
+        y: 100,
         layer: "player",
         disposition: "hostile"
       })
