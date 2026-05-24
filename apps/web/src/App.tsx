@@ -14390,7 +14390,7 @@ function proposalReviewDetail(proposal: Proposal, changeSummary: string): string
 }
 
 type ProposalChange = Proposal["changesJson"][number];
-type ProposalRecordCollections = Pick<Snapshot, "campaigns" | "scenes" | "tokens" | "actors" | "items" | "journals" | "chat" | "encounters" | "combats" | "assets">;
+type ProposalRecordCollections = Pick<Snapshot, "campaigns" | "scenes" | "tokens" | "actors" | "items" | "journals" | "chat" | "rolls" | "diceMacros" | "encounters" | "combats" | "assets" | "fogPresets">;
 type ProposalComparableRecord = ProposalRecordCollections[keyof ProposalRecordCollections][number];
 
 function ProposalDiffPreview(props: { proposal: Proposal; records: ProposalRecordCollections }) {
@@ -14545,12 +14545,18 @@ function proposalExistingRecord(records: ProposalRecordCollections, change: Prop
       return records.journals.find((item) => item.id === change.id);
     case "chat":
       return records.chat.find((item) => item.id === change.id);
+    case "roll":
+      return records.rolls.find((item) => item.id === change.id);
+    case "diceMacro":
+      return records.diceMacros.find((item) => item.id === change.id);
     case "encounter":
       return records.encounters.find((item) => item.id === change.id);
     case "combat":
       return records.combats.find((item) => item.id === change.id);
     case "asset":
       return records.assets.find((item) => item.id === change.id);
+    case "fogPreset":
+      return records.fogPresets.find((item) => item.id === change.id);
     default:
       return undefined;
   }

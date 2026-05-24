@@ -5,7 +5,7 @@ import websocket from "@fastify/websocket";
 import { buildPermissionFilteredContext, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
+import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type MessageType, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
 import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type RulesActionResolutionResult, type RulesSaveOutcome, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
@@ -9836,6 +9836,285 @@ function createAiThreadTools(): AiToolDefinition[] {
       }
     },
     {
+      name: "read_account",
+      description: "Read the current user's redacted account, session, MFA, organization, and campaign-membership context.",
+      requiredPermissions: ["campaign.read"],
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false
+      },
+      async execute(_input: unknown, context: AiToolContext): Promise<unknown> {
+        return readAccountToolOutput(context);
+      }
+    },
+    {
+      name: "read_workspace",
+      description: "Read redacted organization workspace defaults and membership context for the active campaign workspace.",
+      requiredPermissions: ["campaign.read"],
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false
+      },
+      async execute(_input: unknown, context: AiToolContext): Promise<unknown> {
+        return readWorkspaceToolOutput(context);
+      }
+    },
+    {
+      name: "read_campaign",
+      description: "Read campaign metadata, permissions, member summaries, active scene, counts, AI edit layers, and proposal status totals.",
+      requiredPermissions: ["campaign.read"],
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false
+      },
+      async execute(_input: unknown, context: AiToolContext): Promise<unknown> {
+        return readCampaignToolOutput(context);
+      }
+    },
+    {
+      name: "read_ai_activity",
+      description: "Read bounded AI thread, proposal, memory, evaluation, and tool-call activity visible to the caller.",
+      requiredPermissions: ["ai.use"],
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Maximum rows per activity collection, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return readAiActivityToolOutput(context, numberFromRecord(request, "limit", 1, 20) ?? 10);
+      }
+    },
+    {
+      name: "read_dice_macro",
+      description: "Read visible campaign dice macros without changing them.",
+      requiredPermissions: ["dice.roll"],
+      parameters: {
+        type: "object",
+        properties: {
+          macroId: { type: "string", description: "Optional dice macro id to inspect." },
+          query: { type: "string", description: "Optional name or formula search." },
+          limit: { type: "number", description: "Maximum macros to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return readDiceMacroToolOutput(context, {
+          macroId: stringFromRecord(request, "macroId"),
+          query: stringFromRecord(request, "query") ?? "",
+          limit: numberFromRecord(request, "limit", 1, 20) ?? 10
+        });
+      }
+    },
+    {
+      name: "draft_dice_macro",
+      description: "Draft a pending proposal to create, update, or delete a campaign dice macro for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "campaign.update"],
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", description: "Dice macro change action.", enum: ["create", "update", "delete"] },
+          macroId: { type: "string", description: "Existing macro id for update or delete." },
+          name: { type: "string", description: "Macro display name for create or update." },
+          formula: { type: "string", description: "Dice formula for create or update." },
+          visibility: { type: "string", description: "Macro visibility.", enum: ["public", "gm_only"] }
+        },
+        required: ["action"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        return draftDiceMacroToolOutput(context, request);
+      }
+    },
+    {
+      name: "read_fog_preset",
+      description: "Read campaign fog presets and bounded region samples.",
+      requiredPermissions: ["token.reveal"],
+      parameters: {
+        type: "object",
+        properties: {
+          presetId: { type: "string", description: "Optional fog preset id to inspect." },
+          sceneId: { type: "string", description: "Optional source scene id search." },
+          limit: { type: "number", description: "Maximum presets to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return readFogPresetToolOutput(context, {
+          presetId: stringFromRecord(request, "presetId"),
+          sceneId: stringFromRecord(request, "sceneId"),
+          limit: numberFromRecord(request, "limit", 1, 20) ?? 10
+        });
+      }
+    },
+    {
+      name: "draft_fog_preset",
+      description: "Draft a pending proposal to create, update, or delete a fog preset for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "token.reveal"],
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", description: "Fog preset change action.", enum: ["create", "update", "delete"] },
+          presetId: { type: "string", description: "Existing preset id for update or delete." },
+          name: { type: "string", description: "Preset name for create or update." },
+          description: { type: "string", description: "Optional preset description." },
+          sceneId: { type: "string", description: "Optional source scene id." },
+          regions: { type: "array", description: "Fog preset regions for create or update.", items: { type: "object", additionalProperties: true } }
+        },
+        required: ["action"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        return draftFogPresetToolOutput(context, request);
+      }
+    },
+    {
+      name: "read_systems",
+      description: "Read available rules systems plus templates, origins, encounter threats, compendium entries, and actor-sheet context.",
+      requiredPermissions: ["actor.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          systemId: { type: "string", description: "Optional rules system id." },
+          actorId: { type: "string", description: "Optional actor id for sheet and advancement context." },
+          includeDetails: { type: "boolean", description: "When true, include templates, origins, threats, and compendium summaries." },
+          limit: { type: "number", description: "Maximum detailed rows per collection, from 1 to 50." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return readSystemsToolOutput(context, {
+          systemId: stringFromRecord(request, "systemId"),
+          actorId: stringFromRecord(request, "actorId"),
+          includeDetails: booleanFromRecord(request, "includeDetails") ?? false,
+          limit: numberFromRecord(request, "limit", 1, 50) ?? 20
+        });
+      }
+    },
+    {
+      name: "read_plugins",
+      description: "Read installed campaign plugin grants, review records, and storage summaries. Agents cannot install, configure, sync, or execute plugins through this tool.",
+      requiredPermissions: ["plugin.configure"],
+      parameters: {
+        type: "object",
+        properties: {
+          pluginId: { type: "string", description: "Optional plugin id to inspect." },
+          includeStorage: { type: "boolean", description: "When true, include redacted plugin storage keys and value sizes." },
+          limit: { type: "number", description: "Maximum plugins or storage entries to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return readPluginsToolOutput(context, {
+          pluginId: stringFromRecord(request, "pluginId"),
+          includeStorage: booleanFromRecord(request, "includeStorage") ?? false,
+          limit: numberFromRecord(request, "limit", 1, 20) ?? 10
+        });
+      }
+    },
+    {
+      name: "read_content_imports",
+      description: "Read content-import preview/apply/rollback state and bounded entity summaries. Agents cannot apply, roll back, or delete imports directly.",
+      requiredPermissions: ["campaign.update"],
+      parameters: {
+        type: "object",
+        properties: {
+          importId: { type: "string", description: "Optional content import id to inspect." },
+          status: { type: "string", description: "Optional import status filter.", enum: ["previewed", "applied", "rolled_back", "deleted"] },
+          limit: { type: "number", description: "Maximum imports to return, from 1 to 20." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        return readContentImportsToolOutput(context, {
+          importId: stringFromRecord(request, "importId"),
+          status: enumStringFromRecord(request, "status", ["previewed", "applied", "rolled_back", "deleted"] as const),
+          limit: numberFromRecord(request, "limit", 1, 20) ?? 10
+        });
+      }
+    },
+    {
+      name: "send_chat_message",
+      description: "Post a plain, emote, OOC, GM, or whisper chat message as the current user.",
+      requiredPermissions: ["chat.write"],
+      parameters: {
+        type: "object",
+        properties: {
+          body: { type: "string", description: "Message body." },
+          sceneId: { type: "string", description: "Optional scene id to associate with the message." },
+          type: { type: "string", description: "Message type.", enum: ["plain", "emote", "whisper", "gm", "ooc"] },
+          visibility: { type: "string", description: "Message visibility.", enum: ["public", "gm_only", "whisper"] },
+          recipientUserIds: { type: "array", description: "Whisper recipient user ids.", items: { type: "string" } }
+        },
+        required: ["body"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        const body = stringFromRecord(request, "body");
+        if (!body) return toolError("invalid_tool_input", { message: "body is required." });
+        return context.sendChatMessage?.({
+          body,
+          sceneId: stringFromRecord(request, "sceneId"),
+          type: enumStringFromRecord(request, "type", ["plain", "emote", "whisper", "gm", "ooc"]),
+          visibility: rollVisibilityFromRecord(request, "visibility", request.type === "whisper" ? "whisper" : "public"),
+          recipientUserIds: stringArrayFromRecord(request, "recipientUserIds")
+        }) ?? toolError("tool_unavailable", { toolName: "send_chat_message" });
+      }
+    },
+    {
+      name: "target_token",
+      description: "Target or untarget a visible token for the current user.",
+      requiredPermissions: ["token.read"],
+      parameters: {
+        type: "object",
+        properties: {
+          tokenId: { type: "string", description: "Visible token id." },
+          targeted: { type: "boolean", description: "Whether the token should be targeted." }
+        },
+        required: ["tokenId", "targeted"],
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<unknown> {
+        const request = isRecord(input) ? input : {};
+        const tokenId = stringFromRecord(request, "tokenId");
+        const targeted = booleanFromRecord(request, "targeted");
+        if (!tokenId || targeted === undefined) return toolError("invalid_tool_input", { message: "tokenId and targeted are required." });
+        return context.targetToken?.({ tokenId, targeted }) ?? toolError("tool_unavailable", { toolName: "target_token" });
+      }
+    },
+    {
+      name: "draft_ai_edit_layer_apply",
+      description: "Draft a pending proposal that applies an existing AI edit scene layer onto its target scene for GM approval.",
+      requiredPermissions: ["ai.proposeChanges", "scene.update", "token.create"],
+      parameters: {
+        type: "object",
+        properties: {
+          aiEditSceneId: { type: "string", description: "AI edit scene id. Defaults to the latest AI edit layer for targetSceneId or the active scene." },
+          targetSceneId: { type: "string", description: "Target main scene id when aiEditSceneId is omitted." },
+          title: { type: "string", description: "Optional proposal title." },
+          summary: { type: "string", description: "Optional proposal summary." }
+        },
+        additionalProperties: false
+      },
+      async execute(input: unknown, context: AiToolContext): Promise<ProposalToolOutput | ToolErrorOutput> {
+        const request = isRecord(input) ? input : {};
+        return draftAiEditLayerApplyToolOutput(context, request);
+      }
+    },
+    {
       name: "draft_encounter",
       description: "Draft a pending encounter proposal and a companion scene for GM approval.",
       requiredPermissions: ["ai.proposeChanges", "campaign.update", "scene.create"],
@@ -11208,6 +11487,595 @@ interface CompendiumToolOutput {
   entries: Array<{ id: string; type: string; name: string; summary: string }>;
 }
 
+function readAccountToolOutput(context: AiToolContext): unknown {
+  const user = context.state.users.find((item) => item.id === context.userId);
+  if (!user) return toolError("not_found", { entity: "user", id: context.userId });
+  const sessions = context.state.sessions.filter((session) => session.userId === context.userId);
+  const identities = context.state.identities.filter((identity) => identity.userId === context.userId);
+  return {
+    user: redactedUserToolSummary(user),
+    mfa: {
+      totpEnabled: Boolean(user.mfa?.totpEnabledAt),
+      recoveryCodeCount: user.mfa?.recoveryCodeHashes?.length ?? 0
+    },
+    sessions: {
+      count: sessions.length,
+      recent: sessions
+        .slice()
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .slice(0, 5)
+        .map((session) => ({
+          id: session.id,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
+          expiresAt: session.expiresAt,
+          lastSeenAt: session.lastSeenAt,
+          activeOrganizationId: session.activeOrganizationId
+        }))
+    },
+    identities: identities.map((identity) => ({
+      id: identity.id,
+      provider: identity.provider,
+      issuer: identity.issuer,
+      subject: identity.subject,
+      email: identity.email,
+      createdAt: identity.createdAt,
+      updatedAt: identity.updatedAt
+    })),
+    campaignMemberships: context.state.members
+      .filter((member) => member.userId === context.userId)
+      .map((member) => ({ campaignId: member.campaignId, role: member.role, createdAt: member.createdAt, updatedAt: member.updatedAt }))
+  };
+}
+
+function readWorkspaceToolOutput(context: AiToolContext): unknown {
+  const campaign = context.state.campaigns.find((item) => item.id === context.campaignId);
+  if (!campaign) return toolError("not_found", { entity: "campaign", id: context.campaignId });
+  const organization = context.state.organizations.find((item) => item.id === campaign.organizationId);
+  const members = organization ? context.state.organizationMembers.filter((member) => member.organizationId === organization.id) : [];
+  return {
+    organization: organization
+      ? {
+          id: organization.id,
+          name: organization.name,
+          ownerUserId: organization.ownerUserId,
+          defaultSystemId: organization.defaultSystemId,
+          defaultCampaignVisibility: organization.defaultCampaignVisibility,
+          defaultPermissionTemplate: organization.defaultPermissionTemplate,
+          defaultInviteRole: organization.defaultInviteRole,
+          defaultSceneName: organization.defaultSceneName,
+          defaultSceneFolder: organization.defaultSceneFolder,
+          defaultSceneWidth: organization.defaultSceneWidth,
+          defaultSceneHeight: organization.defaultSceneHeight,
+          defaultSceneGridSize: organization.defaultSceneGridSize,
+          createdAt: organization.createdAt,
+          updatedAt: organization.updatedAt
+        }
+      : undefined,
+    members: members.map((member) => ({
+      id: member.id,
+      userId: member.userId,
+      role: member.role,
+      user: redactedUserToolSummary(context.state.users.find((user) => user.id === member.userId)),
+      createdAt: member.createdAt,
+      updatedAt: member.updatedAt
+    })),
+    memberCount: members.length
+  };
+}
+
+function readCampaignToolOutput(context: AiToolContext): unknown {
+  const campaign = context.state.campaigns.find((item) => item.id === context.campaignId);
+  if (!campaign) return toolError("not_found", { entity: "campaign", id: context.campaignId });
+  const scenes = context.state.scenes.filter((scene) => scene.campaignId === campaign.id);
+  const sceneIds = new Set(scenes.map((scene) => scene.id));
+  const proposals = context.state.proposals.filter((proposal) => proposal.campaignId === campaign.id);
+  const members = context.state.members.filter((member) => member.campaignId === campaign.id);
+  const canManageCampaign = context.permissions.includes("campaign.update");
+  return {
+    campaign: {
+      id: campaign.id,
+      organizationId: campaign.organizationId,
+      name: campaign.name,
+      description: campaign.description,
+      visibility: campaign.visibility,
+      defaultSystemId: campaign.defaultSystemId,
+      archivedAt: campaign.archivedAt,
+      createdAt: campaign.createdAt,
+      updatedAt: campaign.updatedAt
+    },
+    permissions: [...context.permissions].sort(),
+    activeScene: scenes.find((scene) => scene.active)
+      ? {
+          id: scenes.find((scene) => scene.active)?.id,
+          name: scenes.find((scene) => scene.active)?.name
+        }
+      : undefined,
+    counts: {
+      members: members.length,
+      invites: canManageCampaign ? context.state.invites.filter((invite) => invite.campaignId === campaign.id && inviteStatus(invite) === "pending").length : undefined,
+      scenes: scenes.length,
+      aiEditLayers: scenes.filter((scene) => scene.folder === AI_EDIT_SCENE_FOLDER).length,
+      tokens: context.state.tokens.filter((token) => sceneIds.has(token.sceneId)).length,
+      actors: context.state.actors.filter((actor) => actor.campaignId === campaign.id).length,
+      items: context.state.items.filter((item) => item.campaignId === campaign.id).length,
+      journals: context.state.journals.filter((journal) => journal.campaignId === campaign.id).length,
+      assets: context.state.assets.filter((asset) => asset.campaignId === campaign.id).length,
+      encounters: context.state.encounters.filter((encounter) => encounter.campaignId === campaign.id).length,
+      combats: context.state.combats.filter((combat) => combat.campaignId === campaign.id).length,
+      proposals: proposals.length
+    },
+    members: members.map((member) => ({
+      id: member.id,
+      userId: member.userId,
+      role: member.role,
+      user: redactedUserToolSummary(context.state.users.find((user) => user.id === member.userId)),
+      source: member.source,
+      createdAt: member.createdAt,
+      updatedAt: member.updatedAt
+    })),
+    invites: canManageCampaign
+      ? context.state.invites
+          .filter((invite) => invite.campaignId === campaign.id)
+          .map((invite) => ({
+            id: invite.id,
+            email: invite.email,
+            role: invite.role,
+            status: inviteStatus(invite),
+            expiresAt: invite.expiresAt,
+            createdAt: invite.createdAt,
+            updatedAt: invite.updatedAt
+          }))
+      : undefined,
+    aiEditLayers: scenes
+      .filter((scene) => scene.folder === AI_EDIT_SCENE_FOLDER)
+      .map((scene) => ({
+        id: scene.id,
+        name: scene.name,
+        targetSceneId: stringFromRecord(scene.metadata, "targetSceneId"),
+        backgroundAssetId: scene.backgroundAssetId,
+        tokenCount: context.state.tokens.filter((token) => token.sceneId === scene.id).length,
+        updatedAt: scene.updatedAt
+      })),
+    proposalStatusCounts: countBy(proposals, (proposal) => proposal.status)
+  };
+}
+
+function readAiActivityToolOutput(context: AiToolContext, limit: number): unknown {
+  const threadIds = new Set(context.state.aiThreads.filter((thread) => thread.campaignId === context.campaignId).map((thread) => thread.id));
+  const canReadGm = context.permissions.includes("ai.readGmMemory");
+  const canReadToolCalls = context.permissions.includes("ai.proposeChanges");
+  return {
+    threads: context.state.aiThreads
+      .filter((thread) => thread.campaignId === context.campaignId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, limit)
+      .map((thread) => ({
+        id: thread.id,
+        userId: thread.userId,
+        provider: thread.provider,
+        title: thread.title,
+        status: thread.status,
+        toolCallCount: thread.toolCallCount,
+        advertisedToolNames: thread.advertisedToolNames,
+        providerError: thread.providerError,
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt
+      })),
+    proposals: context.state.proposals
+      .filter((proposal) => proposal.campaignId === context.campaignId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, limit)
+      .map(proposalToolSummary),
+    memory: context.state.aiMemory
+      .filter((memory) => memory.campaignId === context.campaignId)
+      .filter((memory) => memory.visibility === "public" || canReadGm)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, limit)
+      .map((memory) => ({
+        id: memory.id,
+        text: memory.text,
+        visibility: memory.visibility,
+        sourceIds: memory.sourceIds,
+        approved: Boolean(memory.approvedByUserId),
+        createdAt: memory.createdAt,
+        updatedAt: memory.updatedAt
+      })),
+    evaluations: context.state.aiEvaluations
+      .filter((evaluation) => evaluation.campaignId === context.campaignId)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, limit)
+      .map((evaluation) => ({
+        id: evaluation.id,
+        threadId: evaluation.threadId,
+        status: evaluation.status,
+        checkCount: evaluation.checks.length,
+        failedCheckCount: evaluation.checks.filter((check) => check.status === "failed").length,
+        createdAt: evaluation.createdAt,
+        updatedAt: evaluation.updatedAt
+      })),
+    toolCalls: canReadToolCalls
+      ? context.state.aiToolCalls
+          .filter((call) => threadIds.has(call.threadId))
+          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+          .slice(0, limit)
+          .map((call) => ({
+            id: call.id,
+            threadId: call.threadId,
+            toolName: call.toolName,
+            status: call.status,
+            error: aiToolErrorCode(call.output),
+            createdAt: call.createdAt,
+            updatedAt: call.updatedAt
+          }))
+      : undefined
+  };
+}
+
+function readDiceMacroToolOutput(context: AiToolContext, input: { macroId?: string; query: string; limit: number }): unknown {
+  const canManage = context.permissions.includes("campaign.update");
+  const normalizedQuery = input.query.toLocaleLowerCase();
+  const macros = context.state.diceMacros
+    .filter((macro) => macro.campaignId === context.campaignId && (macro.visibility === "public" || canManage))
+    .filter((macro) => !input.macroId || macro.id === input.macroId)
+    .filter((macro) => !normalizedQuery || macro.name.toLocaleLowerCase().includes(normalizedQuery) || macro.formula.toLocaleLowerCase().includes(normalizedQuery))
+    .sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id))
+    .slice(0, input.limit)
+    .map((macro) => ({
+      id: macro.id,
+      name: macro.name,
+      formula: macro.formula,
+      visibility: macro.visibility,
+      createdBy: macro.createdBy,
+      createdAt: macro.createdAt,
+      updatedAt: macro.updatedAt
+    }));
+  if (input.macroId && macros.length === 0) return toolError("not_found", { entity: "diceMacro", id: input.macroId });
+  return { macroId: input.macroId, query: input.query, count: macros.length, macros };
+}
+
+async function draftDiceMacroToolOutput(context: AiToolContext, request: Record<string, unknown>): Promise<ProposalToolOutput | ToolErrorOutput> {
+  const action = enumStringFromRecord(request, "action", ["create", "update", "delete"] as const);
+  if (!action) return toolError("invalid_tool_input", { message: "action must be create, update, or delete." });
+  const macroId = stringFromRecord(request, "macroId");
+  const existing = macroId ? context.state.diceMacros.find((macro) => macro.id === macroId && macro.campaignId === context.campaignId) : undefined;
+  if ((action === "update" || action === "delete") && (!macroId || !existing)) return toolError("not_found", { entity: "diceMacro", id: macroId ?? "" });
+  const name = stringFromRecord(request, "name");
+  const formula = stringFromRecord(request, "formula");
+  if ((action === "create" || (action === "update" && formula !== undefined)) && !formula) return toolError("invalid_tool_input", { message: "formula is required." });
+  if ((action === "create" || (action === "update" && formula !== undefined)) && formula) {
+    try {
+      rollFormula(formula);
+    } catch (error) {
+      return toolError("invalid_tool_input", { message: error instanceof Error ? error.message : "Invalid dice macro formula." });
+    }
+  }
+  const visibility = enumStringFromRecord(request, "visibility", ["public", "gm_only"] as const);
+  let change: ProposalChange;
+  if (action === "create") {
+    if (!name) return toolError("invalid_tool_input", { message: "name is required." });
+    const macro = createTimestamped("mac", {
+      campaignId: context.campaignId,
+      createdBy: context.userId,
+      name,
+      formula: formula ?? "1d20",
+      visibility: visibility ?? "public"
+    }) satisfies DiceMacro;
+    change = { entity: "diceMacro", action: "create", data: { ...macro } };
+  } else if (action === "delete") {
+    change = { entity: "diceMacro", action: "delete", id: existing!.id, data: {} };
+  } else {
+    const data: Record<string, unknown> = {};
+    if (name) data.name = name;
+    if (formula) data.formula = formula;
+    if (visibility) data.visibility = visibility;
+    if (Object.keys(data).length === 0) return toolError("empty_change", { entity: "diceMacro", id: existing!.id });
+    change = { entity: "diceMacro", action: "update", id: existing!.id, data };
+  }
+  const title = `${titleCase(action)} dice macro${name ? `: ${name}` : existing ? `: ${existing.name}` : ""}`;
+  const proposalId = await context.createProposal({ title, summary: title, changes: [change] });
+  return { proposalId, title, changeCount: 1 };
+}
+
+function readFogPresetToolOutput(context: AiToolContext, input: { presetId?: string; sceneId?: string; limit: number }): unknown {
+  const presets = context.state.fogPresets
+    .filter((preset) => preset.campaignId === context.campaignId)
+    .filter((preset) => !input.presetId || preset.id === input.presetId)
+    .filter((preset) => !input.sceneId || preset.sourceSceneId === input.sceneId)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .slice(0, input.limit)
+    .map((preset) => ({
+      id: preset.id,
+      name: preset.name,
+      description: preset.description,
+      sourceSceneId: preset.sourceSceneId,
+      regionCount: preset.regions.length,
+      regions: preset.regions.slice(0, 10).map((region) => ({
+        x: region.x,
+        y: region.y,
+        radius: region.radius,
+        hidden: region.hidden,
+        shape: region.shape ?? "circle",
+        mode: region.mode ?? "reveal",
+        pointCount: region.points?.length ?? 0
+      })),
+      createdAt: preset.createdAt,
+      updatedAt: preset.updatedAt
+    }));
+  if (input.presetId && presets.length === 0) return toolError("not_found", { entity: "fogPreset", id: input.presetId });
+  return { presetId: input.presetId, sceneId: input.sceneId, count: presets.length, presets };
+}
+
+async function draftFogPresetToolOutput(context: AiToolContext, request: Record<string, unknown>): Promise<ProposalToolOutput | ToolErrorOutput> {
+  const action = enumStringFromRecord(request, "action", ["create", "update", "delete"] as const);
+  if (!action) return toolError("invalid_tool_input", { message: "action must be create, update, or delete." });
+  const presetId = stringFromRecord(request, "presetId");
+  const existing = presetId ? context.state.fogPresets.find((preset) => preset.id === presetId && preset.campaignId === context.campaignId) : undefined;
+  if ((action === "update" || action === "delete") && (!presetId || !existing)) return toolError("not_found", { entity: "fogPreset", id: presetId ?? "" });
+  const sceneId = stringFromRecord(request, "sceneId");
+  const sourceScene = sceneId ? context.state.scenes.find((scene) => scene.id === sceneId && scene.campaignId === context.campaignId) : undefined;
+  if (sceneId && !sourceScene) return toolError("not_found", { entity: "scene", id: sceneId });
+  const regionsInput = Array.isArray(request.regions) ? request.regions : undefined;
+  const inputRegions = regionsInput ? fogPresetRegionsFromInput(regionsInput) : undefined;
+  if (regionsInput && !inputRegions) return toolError("invalid_tool_input", { message: "regions must be valid fog preset regions." });
+  const name = stringFromRecord(request, "name");
+  let change: ProposalChange;
+  if (action === "create") {
+    if (!name) return toolError("invalid_tool_input", { message: "name is required." });
+    const preset = createTimestamped("fogp", {
+      campaignId: context.campaignId,
+      name,
+      description: stringFromRecord(request, "description"),
+      sourceSceneId: sourceScene?.id,
+      regions: inputRegions ?? sourceScene?.fog.map(cloneFogPresetRegion) ?? [],
+      metadata: { source: "ai_tool" }
+    }) satisfies FogPreset;
+    change = { entity: "fogPreset", action: "create", data: { ...preset } };
+  } else if (action === "delete") {
+    change = { entity: "fogPreset", action: "delete", id: existing!.id, data: {} };
+  } else {
+    const data: Record<string, unknown> = {};
+    if (name) data.name = name;
+    const description = stringFromRecord(request, "description");
+    if (description !== undefined) data.description = description;
+    if (sourceScene) data.sourceSceneId = sourceScene.id;
+    if (inputRegions) data.regions = inputRegions;
+    if (Object.keys(data).length === 0) return toolError("empty_change", { entity: "fogPreset", id: existing!.id });
+    change = { entity: "fogPreset", action: "update", id: existing!.id, data };
+  }
+  const title = `${titleCase(action)} fog preset${name ? `: ${name}` : existing ? `: ${existing.name}` : ""}`;
+  const proposalId = await context.createProposal({ title, summary: title, changes: [change] });
+  return { proposalId, title, changeCount: 1 };
+}
+
+function readSystemsToolOutput(context: AiToolContext, input: { systemId?: string; actorId?: string; includeDetails: boolean; limit: number }): unknown {
+  const campaign = context.state.campaigns.find((item) => item.id === context.campaignId);
+  const systems = installedSystems
+    .filter((system) => !input.systemId || system.id === input.systemId)
+    .map((system) => ({
+      ...system,
+      active: campaign?.defaultSystemId === system.id,
+      templates: input.includeDetails ? characterTemplatesForSystem(system.id).slice(0, input.limit).map((template) => ({ id: template.id, name: template.name, actorType: template.actorType, systemId: template.systemId })) : undefined,
+      origins: input.includeDetails && system.id === DND_5E_SRD_SYSTEM_ID ? dnd5eSrdCharacterOrigins() : undefined,
+      encounterThreats: input.includeDetails ? encounterThreatsForSystem(system.id).slice(0, input.limit).map((threat) => ({ id: threat.id, name: threat.name, challenge: "challenge" in threat ? threat.challenge : undefined, xp: "xp" in threat ? threat.xp : undefined })) : undefined,
+      compendium: input.includeDetails ? compendiumEntriesForSystem(system.id).slice(0, input.limit).map((entry) => ({ id: entry.id, type: entry.type, name: entry.name, summary: entry.summary })) : undefined
+    }));
+  if (input.systemId && systems.length === 0) return toolError("not_found", { entity: "system", id: input.systemId });
+  const actor = input.actorId ? context.state.actors.find((item) => item.id === input.actorId && item.campaignId === context.campaignId) : undefined;
+  if (input.actorId && !actor) return toolError("not_found", { entity: "actor", id: input.actorId });
+  return {
+    defaultSystemId: campaign?.defaultSystemId,
+    systems,
+    actor: actor
+      ? {
+          id: actor.id,
+          name: actor.name,
+          systemId: actor.systemId,
+          sheet: systemSheet(actor, actorItems({ state: context.state, save: () => undefined, replace: () => undefined } satisfies StateStore, actor)),
+          advancementOptions: advancementOptionsForActor(actor)
+        }
+      : undefined
+  };
+}
+
+function readPluginsToolOutput(context: AiToolContext, input: { pluginId?: string; includeStorage: boolean; limit: number }): unknown {
+  const pluginGrants = context.state.permissionGrants.filter((grant) => grant.campaignId === context.campaignId && grant.subjectType === "plugin").filter((grant) => !input.pluginId || grant.subjectId === input.pluginId);
+  const pluginIds = new Set(pluginGrants.map((grant) => grant.subjectId));
+  if (input.pluginId) pluginIds.add(input.pluginId);
+  const storage = input.includeStorage
+    ? context.state.pluginStorage
+        .filter((entry) => entry.campaignId === context.campaignId && (!input.pluginId || entry.pluginId === input.pluginId))
+        .sort((left, right) => left.pluginId.localeCompare(right.pluginId) || left.key.localeCompare(right.key))
+        .slice(0, input.limit)
+        .map((entry) => ({
+          id: entry.id,
+          pluginId: entry.pluginId,
+          key: entry.key,
+          valueSize: JSON.stringify(entry.value).length,
+          updatedByType: entry.updatedByType,
+          updatedById: entry.updatedById,
+          createdAt: entry.createdAt,
+          updatedAt: entry.updatedAt
+        }))
+    : undefined;
+  return {
+    installed: pluginGrants.slice(0, input.limit).map((grant) => ({
+      pluginId: grant.subjectId,
+      permissions: grant.permissions,
+      metadata: grant.metadata,
+      createdAt: grant.createdAt,
+      updatedAt: grant.updatedAt
+    })),
+    reviews: context.state.pluginReviews
+      .filter((review) => !input.pluginId || review.pluginId === input.pluginId)
+      .slice(0, input.limit)
+      .map((review) => ({ pluginId: review.pluginId, version: review.version, status: review.status, reviewedByUserId: review.reviewedByUserId, reviewedAt: review.reviewedAt })),
+    storage,
+    registryNote: "Plugin install, configure, registry sync, storage writes, and chat-command execution are intentionally excluded from the agent MCP surface."
+  };
+}
+
+function readContentImportsToolOutput(context: AiToolContext, input: { importId?: string; status?: string; limit: number }): unknown {
+  const imports = context.state.contentImports
+    .filter((batch) => batch.campaignId === context.campaignId)
+    .filter((batch) => !input.importId || batch.id === input.importId)
+    .filter((batch) => !input.status || batch.status === input.status)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    .slice(0, input.limit)
+    .map((batch) => ({
+      id: batch.id,
+      status: batch.status,
+      source: {
+        sourceName: batch.source.sourceName,
+        adapterId: batch.source.adapterId,
+        adapterName: batch.source.sourceType,
+        license: batch.source.license
+      },
+      entityCount: batch.entities.length,
+      selectedEntityIds: batch.selectedEntityIds,
+      appliedRecordCount: batch.appliedRecords.length,
+      appliedAt: batch.appliedAt,
+      rolledBackAt: batch.rolledBackAt,
+      deletedAt: batch.deletedAt,
+      entities: batch.entities.slice(0, 20).map((entity) => ({
+        id: entity.id,
+        kind: entity.kind,
+        name: entity.name,
+        warnings: entity.warnings,
+        dataKeys: Object.keys(entity.data ?? {})
+      })),
+      createdAt: batch.createdAt,
+      updatedAt: batch.updatedAt
+    }));
+  if (input.importId && imports.length === 0) return toolError("not_found", { entity: "contentImport", id: input.importId });
+  return {
+    importId: input.importId,
+    status: input.status,
+    count: imports.length,
+    imports,
+    mutationNote: "Content import apply, rollback, delete, and raw import are intentionally not exposed as direct agent MCP tools."
+  };
+}
+
+async function draftAiEditLayerApplyToolOutput(context: AiToolContext, request: Record<string, unknown>): Promise<ProposalToolOutput | ToolErrorOutput> {
+  const requestedEditSceneId = stringFromRecord(request, "aiEditSceneId");
+  const targetSceneId = stringFromRecord(request, "targetSceneId");
+  const targetScene = targetSceneId
+    ? context.state.scenes.find((scene) => scene.id === targetSceneId && scene.campaignId === context.campaignId)
+    : context.state.scenes.find((scene) => scene.campaignId === context.campaignId && scene.active) ?? context.state.scenes.find((scene) => scene.campaignId === context.campaignId);
+  if (targetSceneId && !targetScene) return toolError("not_found", { entity: "scene", id: targetSceneId });
+  const aiEditScene = requestedEditSceneId
+    ? context.state.scenes.find((scene) => scene.id === requestedEditSceneId && scene.campaignId === context.campaignId)
+    : targetScene
+      ? findAiEditSceneForTarget(context.state, context.campaignId, targetScene.id)
+      : undefined;
+  if (!aiEditScene) return toolError("not_found", { entity: "ai_edit_scene", id: requestedEditSceneId ?? targetSceneId ?? "active" });
+  if (aiEditScene.folder !== AI_EDIT_SCENE_FOLDER) return toolError("invalid_tool_input", { message: "Scene is not an AI edit layer.", sceneId: aiEditScene.id });
+  const resolvedTargetSceneId = stringFromRecord(aiEditScene.metadata, "targetSceneId") ?? targetScene?.id;
+  const resolvedTargetScene = resolvedTargetSceneId ? context.state.scenes.find((scene) => scene.id === resolvedTargetSceneId && scene.campaignId === context.campaignId) : undefined;
+  if (!resolvedTargetScene) return toolError("not_found", { entity: "target_scene", id: resolvedTargetSceneId ?? "" });
+  const draft = draftAiEditLayerApplyChanges(context.state, aiEditScene, resolvedTargetScene);
+  if (draft.changes.length === 0) return toolError("empty_change", { entity: "scene", id: aiEditScene.id });
+  const title = stringFromRecord(request, "title") ?? `Apply AI edits: ${aiEditScene.name}`;
+  const summary = stringFromRecord(request, "summary") ?? `Apply AI edit layer ${aiEditScene.name} onto ${resolvedTargetScene.name}.`;
+  const proposalId = await context.createProposal({ title, summary, changes: draft.changes });
+  return { proposalId, title, changeCount: draft.changes.length, aiEditSceneId: aiEditScene.id, targetSceneId: resolvedTargetScene.id, copiedTokenCount: draft.copiedTokenCount, replacedTokenCount: draft.replacedTokenCount };
+}
+
+function draftAiEditLayerApplyChanges(state: EngineState, aiEditScene: Scene, targetScene: Scene): { changes: ProposalChange[]; copiedTokenCount: number; replacedTokenCount: number } {
+  const appliedAt = nowIso();
+  const sceneData: Record<string, unknown> = {
+    metadata: {
+      ...targetScene.metadata,
+      aiEditAppliedSceneId: aiEditScene.id,
+      aiEditAppliedAt: appliedAt
+    }
+  };
+  if (aiEditScene.backgroundAssetId) sceneData.backgroundAssetId = aiEditScene.backgroundAssetId;
+  if (aiEditScene.fog.length > 0) sceneData.fog = cloneJsonValue(aiEditScene.fog);
+  if (aiEditScene.walls.length > 0) sceneData.walls = cloneJsonValue(aiEditScene.walls);
+  if (aiEditScene.lights.length > 0) sceneData.lights = cloneJsonValue(aiEditScene.lights);
+  if ((aiEditScene.annotations?.length ?? 0) > 0) sceneData.annotations = cloneJsonValue(aiEditScene.annotations ?? []);
+  const changes: ProposalChange[] = [{ entity: "scene", action: "update", id: targetScene.id, data: sceneData }];
+  const replacementTokens = state.tokens.filter((token) => token.sceneId === targetScene.id && token.metadata.aiEditSourceSceneId === aiEditScene.id);
+  for (const token of replacementTokens) changes.push({ entity: "token", action: "delete", id: token.id, data: {} });
+  const sourceTokens = state.tokens.filter((token) => token.sceneId === aiEditScene.id);
+  for (const source of sourceTokens) {
+    const token = createTimestamped("tok", {
+      sceneId: targetScene.id,
+      actorId: source.actorId,
+      name: source.name,
+      x: source.x,
+      y: source.y,
+      width: source.width,
+      height: source.height,
+      rotation: source.rotation,
+      layer: source.layer,
+      hidden: source.hidden,
+      locked: source.locked,
+      visionEnabled: source.visionEnabled,
+      visionRadius: source.visionRadius,
+      brightVisionRadius: source.brightVisionRadius,
+      dimVisionRadius: source.dimVisionRadius,
+      disposition: source.disposition,
+      imageAssetId: source.imageAssetId,
+      ownerUserIds: source.ownerUserIds,
+      notes: source.notes,
+      conditions: cloneJsonValue(source.conditions ?? []) as Token["conditions"],
+      auras: cloneJsonValue(source.auras ?? []) as Token["auras"],
+      targetedByUserIds: [],
+      metadata: {
+        ...source.metadata,
+        aiEditSourceSceneId: aiEditScene.id,
+        aiEditSourceTokenId: source.id
+      }
+    }) satisfies Token;
+    changes.push({ entity: "token", action: "create", data: { ...token } });
+  }
+  return { changes, copiedTokenCount: sourceTokens.length, replacedTokenCount: replacementTokens.length };
+}
+
+function redactedUserToolSummary(user: User | undefined): Record<string, unknown> | undefined {
+  if (!user) return undefined;
+  return {
+    id: user.id,
+    displayName: user.displayName,
+    email: user.email,
+    serverAdmin: user.serverAdmin,
+    disabledAt: user.disabledAt,
+    disabledReason: user.disabledReason,
+    passwordResetRequired: user.passwordResetRequired,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt
+  };
+}
+
+function fogPresetRegionsFromInput(values: unknown[]): FogPresetRegion[] | undefined {
+  const regions: FogPresetRegion[] = [];
+  for (const value of values) {
+    if (!isRecord(value)) return undefined;
+    const x = numberFromRecord(value, "x", 0, 100000);
+    const y = numberFromRecord(value, "y", 0, 100000);
+    const radius = numberFromRecord(value, "radius", 0, 100000);
+    if (x === undefined || y === undefined || radius === undefined) return undefined;
+    const points = Array.isArray(value.points)
+      ? value.points
+          .filter(isRecord)
+          .map((point) => ({ x: numberFromRecord(point, "x", 0, 100000) ?? 0, y: numberFromRecord(point, "y", 0, 100000) ?? 0 }))
+      : undefined;
+    regions.push({
+      x,
+      y,
+      radius,
+      hidden: booleanFromRecord(value, "hidden") ?? false,
+      shape: enumStringFromRecord(value, "shape", ["circle", "polygon"] as const),
+      mode: enumStringFromRecord(value, "mode", ["reveal", "hide"] as const),
+      points
+    });
+  }
+  return regions;
+}
+
 interface SystemRollPoolEffectResult {
   type: "damage" | "healing";
   targetActorId: string;
@@ -11450,6 +12318,60 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       }) satisfies ChatMessage;
       store.state.chat.push(message);
       return { rollId: roll.id, formula: roll.formula, label: roll.label, total: roll.total, visibility: roll.visibility };
+    },
+    sendChatMessage: async ({ body, sceneId, type, visibility, recipientUserIds }) => {
+      if (sceneId && !store.state.scenes.some((scene) => scene.id === sceneId && scene.campaignId === campaignId)) return toolError("not_found", { entity: "scene", id: sceneId });
+      const messageType = type === "emote" || type === "ooc" || type === "gm" || type === "whisper" ? type : "plain";
+      const resolvedVisibility = messageType === "whisper" ? "whisper" : visibility;
+      if (resolvedVisibility === "whisper") {
+        const campaignUserIds = new Set(store.state.members.filter((member) => member.campaignId === campaignId).map((member) => member.userId));
+        const invalidRecipient = recipientUserIds.find((recipientId) => !campaignUserIds.has(recipientId));
+        if (recipientUserIds.length === 0) return toolError("invalid_tool_input", { message: "Whisper messages require recipientUserIds." });
+        if (invalidRecipient) return toolError("not_found", { entity: "recipient_user", id: invalidRecipient });
+      }
+      const message = createTimestamped("msg", {
+        campaignId,
+        sceneId,
+        userId,
+        type: messageType as MessageType,
+        body,
+        visibility: resolvedVisibility,
+        recipientUserIds: resolvedVisibility === "whisper" ? [...new Set(recipientUserIds)].sort() : []
+      }) satisfies ChatMessage;
+      store.state.chat.push(message);
+      runtime.broadcast?.(
+        createEvent({
+          campaignId,
+          type: "chat.message.created",
+          actorUserId: userId,
+          targetId: message.id,
+          payload: message
+        })
+      );
+      return { messageId: message.id, type: message.type, visibility: message.visibility, recipientUserIds: message.recipientUserIds, sceneId: message.sceneId };
+    },
+    targetToken: async ({ tokenId, targeted }) => {
+      const tokenCampaignId = campaignIdForToken(store, tokenId);
+      if (tokenCampaignId !== campaignId) return toolError("not_found", { entity: "token", id: tokenId });
+      const token = store.state.tokens.find((item) => item.id === tokenId);
+      if (!token) return toolError("not_found", { entity: "token", id: tokenId });
+      if (!isTokenVisibleToUser(store, userId, campaignId, token)) return toolError("not_found", { entity: "token", id: tokenId });
+      if (!canReadHiddenTokens(store, userId, campaignId) && tokenLayer(token) !== "player") return missingPermissionToolOutput("token.read");
+      const targetedByUserIds = new Set(token.targetedByUserIds ?? []);
+      if (targeted) targetedByUserIds.add(userId);
+      else targetedByUserIds.delete(userId);
+      token.targetedByUserIds = [...targetedByUserIds].sort();
+      token.updatedAt = nowIso();
+      runtime.broadcast?.(
+        createEvent({
+          campaignId,
+          type: "token.updated",
+          actorUserId: userId,
+          targetId: token.id,
+          payload: token
+        })
+      );
+      return { tokenId: token.id, targeted, targetedByUserIds: token.targetedByUserIds };
     },
     captureBoardView: async ({ sceneId }) => {
       if (!runtime.requestBoardCapture) {
@@ -12029,7 +12951,7 @@ function systemEffectPool(actor: Actor): "hp" | "strain" | "composure" | undefin
   return undefined;
 }
 
-const proposalChangeEntities = new Set<ProposalChange["entity"]>(["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "encounter", "combat", "asset"]);
+const proposalChangeEntities = new Set<ProposalChange["entity"]>(["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "diceMacro", "encounter", "combat", "asset", "fogPreset"]);
 const proposalChangeActions = new Set<ProposalChange["action"]>(["create", "update", "delete"]);
 
 function prepareProposalChanges(
@@ -12133,12 +13055,16 @@ function proposalEntityExists(store: StateStore, entity: ProposalChange["entity"
       return store.state.chat.some((item) => item.id === id);
     case "roll":
       return store.state.rolls.some((item) => item.id === id);
+    case "diceMacro":
+      return store.state.diceMacros.some((item) => item.id === id);
     case "encounter":
       return store.state.encounters.some((item) => item.id === id);
     case "combat":
       return store.state.combats.some((item) => item.id === id);
     case "asset":
       return store.state.assets.some((item) => item.id === id) || Boolean(pendingProposalAssetForDelivery(store, id, options.currentProposalId));
+    case "fogPreset":
+      return store.state.fogPresets.some((item) => item.id === id);
   }
 }
 
@@ -12175,12 +13101,16 @@ function campaignIdForProposalEntity(store: StateStore, entity: ProposalChange["
       return store.state.chat.find((item) => item.id === id)?.campaignId;
     case "roll":
       return store.state.rolls.find((item) => item.id === id)?.campaignId;
+    case "diceMacro":
+      return store.state.diceMacros.find((item) => item.id === id)?.campaignId;
     case "encounter":
       return store.state.encounters.find((item) => item.id === id)?.campaignId;
     case "combat":
       return store.state.combats.find((item) => item.id === id)?.campaignId;
     case "asset":
       return store.state.assets.find((item) => item.id === id)?.campaignId ?? pendingProposalAssetForDelivery(store, id)?.campaignId;
+    case "fogPreset":
+      return store.state.fogPresets.find((item) => item.id === id)?.campaignId;
     case "campaign":
       return store.state.campaigns.find((item) => item.id === id)?.id;
   }
@@ -12204,6 +13134,16 @@ function normalizeProposalChanges(changes: ProposalChange[], campaignId: string,
       if (!Array.isArray(data.tags)) data.tags = ["ai"];
       if (typeof data.createdBy !== "string") data.createdBy = userId;
       if (typeof data.updatedBy !== "string") data.updatedBy = userId;
+    }
+
+    if (change.entity === "diceMacro") {
+      if (typeof data.createdBy !== "string") data.createdBy = userId;
+      if (data.visibility !== "gm_only") data.visibility = "public";
+    }
+
+    if (change.entity === "fogPreset") {
+      if (!Array.isArray(data.regions)) data.regions = [];
+      if (!isRecord(data.metadata)) data.metadata = { source: "ai_tool" };
     }
 
     return {
@@ -12266,12 +13206,16 @@ function prefixForProposalEntity(entity: ProposalChange["entity"]): string {
       return "msg";
     case "roll":
       return "roll";
+    case "diceMacro":
+      return "mac";
     case "encounter":
       return "enc";
     case "combat":
       return "cmb";
     case "asset":
       return "asset";
+    case "fogPreset":
+      return "fogp";
   }
 }
 
@@ -12307,6 +13251,7 @@ function permissionForProposalChange(change: ProposalChange): PermissionName | u
   }
   if (change.entity === "chat") return change.action === "create" ? "chat.write" : "chat.moderate";
   if (change.entity === "roll") return "dice.roll";
+  if (change.entity === "diceMacro") return "campaign.update";
   if (change.entity === "combat") return "combat.manage";
   if (change.entity === "encounter") return "campaign.update";
   if (change.entity === "item") return "actor.update";
@@ -12314,6 +13259,7 @@ function permissionForProposalChange(change: ProposalChange): PermissionName | u
     if (change.action === "create") return "scene.create";
     return "scene.update";
   }
+  if (change.entity === "fogPreset") return "token.reveal";
   return undefined;
 }
 
@@ -12340,7 +13286,36 @@ function aiToolAvailableToCaller(tool: AiToolDefinition, permissions: Permission
   return tool.requiredPermissions.every((permission) => permissions.includes(permission));
 }
 
-const AI_PERMISSION_SAFE_TOOL_NAMES = new Set(["list_proposals", "get_proposal", "apply_approved_proposal", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+const AI_PERMISSION_SAFE_TOOL_NAMES = new Set([
+  "list_proposals",
+  "get_proposal",
+  "apply_approved_proposal",
+  "read_account",
+  "read_workspace",
+  "read_campaign",
+  "read_ai_activity",
+  "search_memory",
+  "read_chat",
+  "read_roll",
+  "read_journal",
+  "read_board_state",
+  "capture_board_view",
+  "read_scene",
+  "read_token",
+  "read_asset",
+  "read_combat",
+  "read_encounter",
+  "read_actor",
+  "read_dice_macro",
+  "read_fog_preset",
+  "read_systems",
+  "read_plugins",
+  "read_content_imports",
+  "send_chat_message",
+  "target_token",
+  "roll_dice",
+  "read_compendium"
+]);
 
 function aiToolPermissionSafe(tool: AiToolDefinition): boolean {
   return AI_PERMISSION_SAFE_TOOL_NAMES.has(tool.name);
@@ -12482,7 +13457,7 @@ function isProposalChange(value: unknown): value is ProposalChange {
     typeof value.entity === "string" &&
     typeof value.action === "string" &&
     isRecord(value.data) &&
-    ["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "encounter", "combat", "asset"].includes(value.entity) &&
+    ["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "diceMacro", "encounter", "combat", "asset", "fogPreset"].includes(value.entity) &&
     ["create", "update", "delete"].includes(value.action)
   );
 }

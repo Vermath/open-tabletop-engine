@@ -82,6 +82,8 @@ export interface AiToolContext {
     outputFormat?: "png" | "jpeg" | "webp";
   }): Promise<{ asset: MapAsset; provider: string; model?: string; revisedPrompt?: string; sourcePrompt: string } | { error: string; message?: string; [key: string]: unknown }>;
   rollDice(input: { formula: string; label?: string; visibility: "public" | "gm_only" | "whisper" }): Promise<{ rollId: string; formula: string; label?: string; total: number; visibility: string }>;
+  sendChatMessage?(input: { body: string; sceneId?: string; type?: string; visibility: "public" | "gm_only" | "whisper"; recipientUserIds: string[] }): Promise<unknown>;
+  targetToken?(input: { tokenId: string; targeted: boolean }): Promise<unknown>;
   useActorAction(input: { actorId: string; actionRollId?: string; actionName?: string; targetActorId?: string; applyEffect?: boolean; spellSlotLevel?: number; resourceAmount?: number; useFreeResource?: boolean; saveOutcomes?: Record<string, AiRulesSaveOutcome>; visibility: "public" | "gm_only" | "whisper" }): Promise<{
     proposalId: string;
     changeCount: number;

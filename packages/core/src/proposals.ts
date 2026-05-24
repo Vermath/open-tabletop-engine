@@ -120,12 +120,16 @@ function bucketForEntity(state: EngineState, entity: string): any[] {
       return state.chat;
     case "roll":
       return state.rolls;
+    case "diceMacro":
+      return state.diceMacros;
     case "encounter":
       return state.encounters;
     case "combat":
       return state.combats;
     case "asset":
       return state.assets;
+    case "fogPreset":
+      return state.fogPresets;
     default:
       throw new Error(`Unsupported proposal entity: ${entity}`);
   }

@@ -65,12 +65,16 @@ function applyProposalChangeToSnapshot(snapshot: Snapshot, change: ProposalChang
       return { ...snapshot, chat: applyRecordChange(snapshot.chat, change, updatedAt) };
     case "roll":
       return { ...snapshot, rolls: applyRecordChange(snapshot.rolls, change, updatedAt) };
+    case "diceMacro":
+      return { ...snapshot, diceMacros: applyRecordChange(snapshot.diceMacros, change, updatedAt) };
     case "encounter":
       return { ...snapshot, encounters: applyRecordChange(snapshot.encounters, change, updatedAt) };
     case "combat":
       return { ...snapshot, combats: applyRecordChange(snapshot.combats, change, updatedAt) };
     case "asset":
       return { ...snapshot, assets: applyRecordChange(snapshot.assets, change, updatedAt) };
+    case "fogPreset":
+      return { ...snapshot, fogPresets: applyRecordChange(snapshot.fogPresets, change, updatedAt) };
   }
 }
 

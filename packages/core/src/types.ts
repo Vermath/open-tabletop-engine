@@ -700,7 +700,7 @@ export interface ProposalHistoryEntry {
 }
 
 export interface ProposalChange {
-  entity: "campaign" | "scene" | "token" | "actor" | "item" | "journal" | "chat" | "roll" | "encounter" | "combat" | "asset";
+  entity: "campaign" | "scene" | "token" | "actor" | "item" | "journal" | "chat" | "roll" | "diceMacro" | "encounter" | "combat" | "asset" | "fogPreset";
   action: "create" | "update" | "delete";
   id?: ID;
   data: Record<string, unknown>;

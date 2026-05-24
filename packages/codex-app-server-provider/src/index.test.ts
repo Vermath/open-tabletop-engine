@@ -198,11 +198,11 @@ describe("CodexAppServerWebSocketTransport", () => {
   it("reports Codex app-server command startup failures through the provider error", async () => {
     const provider = new CodexAppServerProvider({
       transport: new CodexAppServerWebSocketTransport({
-        url: "ws://127.0.0.1:4500",
+        url: "ws://127.0.0.1:45987",
         requestTimeoutMs: 1000,
         turnTimeoutMs: 1000,
         autoStart: true,
-        codexCommand: "__missing_codex_app_server_command__",
+        codexCommand: "C:\\__missing_codex_app_server_command__\\codex.exe",
         webSocketFactory: () => new FailingCodexSocket("Received network error or non-101 status code")
       })
     });

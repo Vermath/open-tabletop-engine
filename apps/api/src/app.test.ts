@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
+import { openApiSpec } from "@open-tabletop/api-contracts";
 import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type CampaignArchive, type ChatMessage, type Combat, type DiceMacro, type DiceRoll, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
@@ -48,6 +49,107 @@ async function loginDemoUser(app: Awaited<ReturnType<typeof buildApp>>, store: M
     };
   }
   return response;
+}
+
+function uncoveredMcpRouteSurfaces(toolNames: Set<string>): string[] {
+  const gaps: string[] = [];
+  for (const [path, pathItem] of Object.entries(openApiSpec.paths)) {
+    for (const method of ["get", "post", "put", "patch", "delete"] as const) {
+      if (!pathItem[method]) continue;
+      const coverage = classifyMcpRouteSurface(method.toUpperCase(), path);
+      if (!coverage) {
+        gaps.push(`${method.toUpperCase()} ${path}: unclassified`);
+        continue;
+      }
+      for (const toolName of coverage.tools ?? []) {
+        if (!toolNames.has(toolName)) gaps.push(`${method.toUpperCase()} ${path}: missing ${toolName}`);
+      }
+    }
+  }
+  return gaps;
+}
+
+function classifyMcpRouteSurface(method: string, path: string): { tools?: string[]; excluded?: string } | undefined {
+  if (path.startsWith("/api/v1/admin/") || path.startsWith("/api/v1/scim/")) return { excluded: "server_admin_or_scim" };
+  if (path === "/api/v1/health" || path === "/api/v1/openapi.json") return { excluded: "public_diagnostics" };
+  if (path === "/api/v1/mcp") return { excluded: "mcp_transport" };
+  if (path.startsWith("/api/v1/agent/board-captures/")) return { tools: ["capture_board_view"] };
+  if (path.startsWith("/api/v1/auth/")) {
+    if (method === "GET" && (path === "/api/v1/auth/session" || path === "/api/v1/auth/sessions" || path === "/api/v1/auth/mfa")) return { tools: ["read_account"] };
+    return { excluded: "account_auth_self_service" };
+  }
+  if (path === "/api/v1/organizations" || path.startsWith("/api/v1/organization/")) {
+    if (method === "GET") return { tools: ["read_workspace"] };
+    return { excluded: "organization_admin_or_session" };
+  }
+  if (path === "/api/v1/invites/accept" || path.startsWith("/api/v1/invites/")) return { excluded: "invite_admin" };
+  if (path === "/api/v1/campaigns") return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "campaign_lifecycle" };
+  if (path === "/api/v1/campaigns/{campaignId}" || path.endsWith("/archive") || path.endsWith("/restore")) {
+    return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "campaign_lifecycle" };
+  }
+  if (path.endsWith("/members")) return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "campaign_member_admin" };
+  if (path.endsWith("/invites")) return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "invite_admin" };
+  if (path.includes("/fog-presets")) return method === "GET" ? { tools: ["read_fog_preset"] } : { tools: ["draft_fog_preset", "create_proposal"] };
+  if (path.includes("/assets/upload")) return { excluded: "binary_asset_upload" };
+  if (path.includes("/assets/storage")) return { tools: ["read_asset"] };
+  if (path.includes("/assets/") || path.includes("/campaigns/{campaignId}/assets")) {
+    if (path.endsWith("/blob") || path.endsWith("/delivery-url")) return { tools: ["read_asset"] };
+    return method === "GET" ? { tools: ["read_asset"] } : { tools: ["create_proposal", "generate_map_asset", "generate_token_asset"] };
+  }
+  if (path.includes("/scenes/{sceneId}/ai-edits/apply-to-target")) return { tools: ["draft_ai_edit_layer_apply", "apply_approved_proposal"] };
+  if (path.includes("/scenes/{sceneId}/vision") || path.includes("/rendering/diagnostics")) return { tools: ["read_board_state", "read_scene"] };
+  if (path.includes("/scenes/{sceneId}/fog") || path.includes("/scenes/{sceneId}/walls") || path.includes("/scenes/{sceneId}/lights") || path.includes("/scenes/{sceneId}/annotations")) {
+    return method === "GET" ? { tools: ["read_scene", "read_board_state"] } : { tools: ["create_proposal", "read_board_state"] };
+  }
+  if (path.includes("/scenes/{sceneId}/tokens") || path.includes("/tokens/{tokenId}")) {
+    if (path.endsWith("/target")) return { tools: ["target_token"] };
+    return method === "GET" ? { tools: ["read_token", "read_board_state"] } : { tools: ["create_proposal", "draft_token_update"] };
+  }
+  if (path.includes("/campaigns/{campaignId}/scenes") || path === "/api/v1/scenes/{sceneId}") {
+    return method === "GET" ? { tools: ["read_scene", "read_board_state"] } : { tools: ["create_proposal", "draft_scene"] };
+  }
+  if (path.includes("/campaigns/{campaignId}/actors") || path.includes("/actors/{actorId}")) return method === "GET" ? { tools: ["read_actor"] } : { tools: ["create_proposal", "draft_actor_update", "draft_actor_token_roster"] };
+  if (path.includes("/campaigns/{campaignId}/items") || path.includes("/items/{itemId}")) return method === "GET" ? { tools: ["read_actor"] } : { tools: ["create_proposal", "draft_actor_update"] };
+  if (path.includes("/campaigns/{campaignId}/journal") || path.includes("/journal/{entryId}")) return method === "GET" ? { tools: ["read_journal"] } : { tools: ["create_proposal", "draft_journal_entry"] };
+  if (path.includes("/chat/export")) return { tools: ["read_chat"] };
+  if (path.includes("/chat/messages")) return method === "GET" ? { tools: ["read_chat"] } : method === "POST" ? { tools: ["send_chat_message", "create_proposal"] } : { tools: ["create_proposal"] };
+  if (path.includes("/dice/roll")) return { tools: ["roll_dice"] };
+  if (path.includes("/rolls")) return { tools: ["read_roll"] };
+  if (path.includes("/dice-macros")) return method === "GET" ? { tools: ["read_dice_macro"] } : { tools: ["draft_dice_macro", "create_proposal"] };
+  if (path.includes("/campaigns/{campaignId}/encounters")) return method === "GET" ? { tools: ["read_encounter"] } : { tools: ["draft_encounter", "create_proposal"] };
+  if (path.includes("/campaigns/{campaignId}/combats")) return method === "GET" ? { tools: ["read_combat"] } : { excluded: "direct_combat_start" };
+  if (path.includes("/combats/{combatId}/audit")) return { tools: ["read_combat"] };
+  if (path.includes("/combats/{combatId}/actions")) return { tools: ["use_actor_action", "read_combat"] };
+  if (path.includes("/combats/{combatId}/combatants") || path === "/api/v1/combats/{combatId}") return method === "DELETE" ? { excluded: "direct_combat_end" } : { tools: ["read_combat", "create_proposal"] };
+  if (path.includes("/proposals/{proposalId}/approve")) return { excluded: "proposal_approval" };
+  if (path.includes("/proposals/{proposalId}/reject")) return { excluded: "proposal_rejection" };
+  if (path.includes("/proposals/{proposalId}/apply")) return { tools: ["apply_approved_proposal"] };
+  if (path.includes("/proposals")) return method === "GET" ? { tools: ["list_proposals", "get_proposal"] } : { tools: ["create_proposal"] };
+  if (path.includes("/ai/threads")) return method === "GET" ? { tools: ["read_ai_activity"] } : { excluded: "agent_thread_transport" };
+  if (path.includes("/ai/usage") || path.includes("/ai/evaluations") || path.includes("/ai/tool-calls")) return method === "GET" ? { tools: ["read_ai_activity"] } : { excluded: "ai_operations" };
+  if (path.includes("/ai/memory")) {
+    if (path.endsWith("/approve")) return { excluded: "memory_approval" };
+    if (method === "GET") return { tools: ["read_ai_activity", "search_memory"] };
+    if (method === "POST") return { tools: ["create_memory"] };
+    return { excluded: "memory_admin" };
+  }
+  if (path.includes("/ai/session-recap") || path.includes("/ai/encounter-design")) return { tools: ["create_memory", "draft_encounter"] };
+  if (path.includes("/ai/generate-map-asset")) return { tools: ["generate_map_asset"] };
+  if (path.includes("/ai/generate-token-asset")) return { tools: ["generate_token_asset"] };
+  if (path === "/api/v1/plugins" || path.includes("/campaigns/{campaignId}/plugins")) return method === "GET" ? { tools: ["read_plugins"] } : { excluded: "plugin_install_config_or_execution" };
+  if (path.includes("/plugins/registry/sync") || path.includes("/plugins/install")) return { excluded: "plugin_install_config_or_execution" };
+  if (path === "/api/v1/systems/install") return { excluded: "system_install_config" };
+  if (path === "/api/v1/systems" || path.includes("/campaigns/{campaignId}/systems")) {
+    if (path.includes("/install")) return { excluded: "system_install_config" };
+    if (path.includes("/characters") || path.includes("/monsters")) return method === "GET" ? { tools: ["read_systems"] } : { tools: ["draft_actor_token_roster", "create_proposal"] };
+    if (path.includes("/actors/")) return method === "GET" ? { tools: ["read_systems", "read_actor"] } : { tools: ["use_actor_action", "draft_actor_update", "create_proposal"] };
+    if (path.includes("/encounter-plan")) return { tools: ["draft_encounter", "read_systems"] };
+    return { tools: ["read_systems", "read_compendium"] };
+  }
+  if (path.includes("/export") || path.includes("/dogfood-report-bundle")) return { excluded: "file_export" };
+  if (path.includes("/import/campaign")) return { excluded: "destructive_import" };
+  if (path.includes("/content-imports")) return method === "GET" ? { tools: ["read_content_imports"] } : { excluded: "content_import_mutation" };
+  return undefined;
 }
 
 class MemoryAssetStorage implements AssetStorage {
@@ -21884,7 +21986,7 @@ registerCommand("/state", (input) => {
     expect(playerContext.publicSummary).toContain("Public Rumor");
     expect(playerContext.publicSummary).not.toContain("Session Hook");
     expect(playerContext.gmSecrets).toEqual([]);
-    expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 1")?.visibility).toBe("public");
 
     const gmThread = await app.inject({
@@ -21898,7 +22000,7 @@ registerCommand("/state", (input) => {
     const gmContext = provider.requests[1]!.context;
     expect(gmContext.publicSummary).toContain("Session Hook");
     expect(gmContext.gmSecrets.some((secret) => secret.includes("founder's oath"))).toBe(true);
-    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(provider.requests[1]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 2")?.visibility).toBe("gm_only");
 
     const playerChat = await app.inject({
@@ -22190,6 +22292,237 @@ registerCommand("/state", (input) => {
     expect(blocked.json().result.isError).toBe(true);
     expect(blockedOutput).toMatchObject({ error: "blocked_critical_action", entity: "campaign" });
     await app.close();
+  });
+
+  it("covers non-admin application surfaces through MCP tools or explicit safety exclusions", async () => {
+    const store = new MemoryStateStore();
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const token = store.state.tokens.find((item) => item.id === "tok_valen")!;
+    const actor = store.state.actors.find((item) => item.id === "act_valen")!;
+    const item = createTimestamped("item", {
+      id: "item_mcp_coverage",
+      campaignId: "camp_demo",
+      systemId: "generic-fantasy",
+      actorId: actor.id,
+      type: "gear",
+      name: "Coverage Gear",
+      data: { quantity: 1 }
+    });
+    const asset = createTimestamped("asset", {
+      id: "asset_mcp_coverage",
+      campaignId: "camp_demo",
+      name: "Coverage Asset",
+      url: "/api/v1/assets/asset_mcp_coverage/blob",
+      mimeType: "image/png",
+      sizeBytes: 16
+    }) satisfies MapAsset;
+    const encounter = createTimestamped("enc", {
+      id: "enc_mcp_coverage",
+      campaignId: "camp_demo",
+      name: "Coverage Encounter",
+      summary: "Original encounter summary.",
+      tokenIds: [token.id],
+      difficulty: "easy"
+    });
+    const combat = createTimestamped("cmb", {
+      id: "cmb_mcp_coverage",
+      campaignId: "camp_demo",
+      encounterId: encounter.id,
+      active: true,
+      round: 1,
+      turnIndex: 0,
+      combatants: [{ id: "cmbt_mcp_valen", tokenId: token.id, actorId: actor.id, name: token.name, initiative: 15, defeated: false }]
+    }) satisfies Combat;
+    const aiEditScene = createTimestamped("scn", {
+      id: "scn_mcp_ai_edit",
+      campaignId: "camp_demo",
+      name: "AI edits: MCP Coverage",
+      width: scene.width,
+      height: scene.height,
+      gridType: scene.gridType,
+      gridSize: scene.gridSize,
+      backgroundAssetId: asset.id,
+      folder: "ai/edits",
+      active: false,
+      sortOrder: 99,
+      fog: [],
+      fogHistory: [],
+      walls: [{ id: "wall_mcp_edit", x1: 0, y1: 0, x2: 120, y2: 0, blocksVision: true, blocksMovement: true, kind: "wall" as const }],
+      lights: [],
+      annotations: [],
+      metadata: { source: "ai_edit_layer", targetSceneId: scene.id }
+    }) satisfies Scene;
+    const aiEditToken = createTimestamped("tok", {
+      id: "tok_mcp_ai_edit",
+      sceneId: aiEditScene.id,
+      actorId: actor.id,
+      name: "AI Edit Valen",
+      x: 180,
+      y: 180,
+      width: 50,
+      height: 50,
+      rotation: 0,
+      layer: "player" as const,
+      hidden: false,
+      locked: false,
+      visionEnabled: true,
+      visionRadius: 160,
+      disposition: "friendly" as const,
+      ownerUserIds: ["usr_demo_gm"],
+      conditions: [],
+      auras: [],
+      targetedByUserIds: [],
+      metadata: {}
+    }) satisfies Token;
+    store.state.items.push(item);
+    store.state.assets.push(asset);
+    store.state.encounters.push(encounter);
+    store.state.combats.push(combat);
+    store.state.scenes.push(aiEditScene);
+    store.state.tokens.push(aiEditToken);
+    const app = await buildApp({ store });
+
+    try {
+      const mcp = async (id: number, name: string, args: Record<string, unknown> = {}) => {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/v1/mcp",
+          headers: authHeaders,
+          payload: { jsonrpc: "2.0", id, method: "tools/call", params: { campaignId: "camp_demo", name, arguments: args } }
+        });
+        expect(response.statusCode, name).toBe(200);
+        return { result: response.json().result, output: JSON.parse(response.json().result.content[0].text) };
+      };
+
+      const listed = await app.inject({
+        method: "POST",
+        url: "/api/v1/mcp",
+        headers: authHeaders,
+        payload: { jsonrpc: "2.0", id: 1, method: "tools/list", params: { campaignId: "camp_demo" } }
+      });
+      const listedTools = listed.json().result.tools as Array<{ name: string }>;
+      const toolNames = new Set<string>(listedTools.map((tool) => tool.name));
+      const requiredTools = [
+        "read_account",
+        "read_workspace",
+        "read_campaign",
+        "read_ai_activity",
+        "read_dice_macro",
+        "draft_dice_macro",
+        "read_fog_preset",
+        "draft_fog_preset",
+        "read_systems",
+        "read_plugins",
+        "read_content_imports",
+        "send_chat_message",
+        "target_token",
+        "draft_ai_edit_layer_apply",
+        "create_proposal",
+        "apply_approved_proposal",
+        "read_board_state",
+        "capture_board_view"
+      ];
+      for (const toolName of requiredTools) expect(toolNames.has(toolName), `${toolName} should be advertised to GM`).toBe(true);
+
+      const coverageGaps = uncoveredMcpRouteSurfaces(toolNames);
+      expect(coverageGaps).toEqual([]);
+
+      for (const [index, toolName] of ["read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_fog_preset", "read_systems", "read_plugins", "read_content_imports"].entries()) {
+        const { output } = await mcp(10 + index, toolName, toolName === "read_systems" ? { systemId: "dnd-5e-srd", includeDetails: true, limit: 4 } : {});
+        expect(output.error, toolName).toBeUndefined();
+      }
+
+      const chat = await mcp(30, "send_chat_message", { body: "MCP direct chat control", visibility: "public" });
+      expect(chat.output).toMatchObject({ messageId: expect.any(String), visibility: "public" });
+      const targeted = await mcp(31, "target_token", { tokenId: token.id, targeted: true });
+      expect(targeted.output).toMatchObject({ tokenId: token.id, targeted: true });
+
+      const diceMacroDraft = await mcp(32, "draft_dice_macro", { action: "create", name: "MCP Initiative", formula: "1d20+2", visibility: "public" });
+      expect(diceMacroDraft.output).toMatchObject({ proposalId: expect.any(String), changeCount: 1 });
+      const fogPresetDraft = await mcp(33, "draft_fog_preset", { action: "create", name: "MCP Fog", regions: [{ x: 100, y: 100, radius: 60, hidden: false, mode: "reveal" }] });
+      expect(fogPresetDraft.output).toMatchObject({ proposalId: expect.any(String), changeCount: 1 });
+      const aiEditDraft = await mcp(34, "draft_ai_edit_layer_apply", { aiEditSceneId: aiEditScene.id });
+      expect(aiEditDraft.output).toMatchObject({ proposalId: expect.any(String), aiEditSceneId: aiEditScene.id, targetSceneId: scene.id, copiedTokenCount: 1 });
+
+      const validChat = createTimestamped("msg", {
+        id: "msg_mcp_proposal",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        type: "plain" as const,
+        body: "MCP proposal chat control",
+        visibility: "public" as const,
+        recipientUserIds: []
+      }) satisfies ChatMessage;
+      const validRoll = createTimestamped("roll", {
+        id: "roll_mcp_proposal",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        formula: "1d4+1",
+        label: "MCP Roll",
+        visibility: "public" as const,
+        terms: [{ type: "die" as const, sides: 4, count: 1, results: [3] }, { type: "modifier" as const, value: 1 }],
+        total: 4
+      }) satisfies DiceRoll;
+      const boardAnnotation = createTimestamped("ann", {
+        id: "ann_mcp_proposal",
+        kind: "drawing" as const,
+        layer: "drawings" as const,
+        color: "#22c55e",
+        points: [
+          { x: 40, y: 40 },
+          { x: 100, y: 100 }
+        ]
+      });
+      const proposal = await mcp(40, "create_proposal", {
+        title: "MCP full surface proposal",
+        summary: "Covers proposal-backed non-admin tabletop entities.",
+        changes: [
+          {
+            entity: "scene",
+            action: "update",
+            id: scene.id,
+            data: {
+              metadata: { ...scene.metadata, mcpCoverage: true },
+              walls: [{ id: "wall_mcp_proposal", x1: 0, y1: 0, x2: 240, y2: 0, blocksVision: true, blocksMovement: true, kind: "wall" }],
+              lights: [{ id: "light_mcp_proposal", x: 80, y: 80, radius: 120, color: "#facc15" }],
+              fog: [{ id: "fog_mcp_proposal", x: 90, y: 90, radius: 45, hidden: false, shape: "circle", mode: "reveal" }],
+              annotations: [boardAnnotation]
+            }
+          },
+          { entity: "token", action: "update", id: token.id, data: { x: token.x + 25, y: token.y + 25, name: "MCP Valen" } },
+          { entity: "actor", action: "update", id: actor.id, data: { data: { ...actor.data, mcpCoverage: true } } },
+          { entity: "item", action: "update", id: item.id, data: { name: "MCP Coverage Gear", data: { quantity: 2 } } },
+          { entity: "journal", action: "create", data: { title: "MCP Journal", body: "Journal controlled through MCP.", visibility: "gm_only", visibleToUserIds: [], visibleToActorIds: [], tags: ["mcp"], createdBy: "usr_demo_gm", updatedBy: "usr_demo_gm" } },
+          { entity: "chat", action: "create", data: validChat },
+          { entity: "roll", action: "create", data: validRoll },
+          { entity: "diceMacro", action: "create", data: { name: "MCP Damage", formula: "1d8+3", visibility: "public" } },
+          { entity: "encounter", action: "update", id: encounter.id, data: { summary: "Updated through MCP." } },
+          { entity: "combat", action: "update", id: combat.id, data: { round: 2 } },
+          { entity: "asset", action: "update", id: asset.id, data: { name: "MCP Coverage Asset" } },
+          { entity: "fogPreset", action: "create", data: { name: "MCP Proposal Fog", regions: [{ x: 200, y: 200, radius: 100, hidden: false, shape: "circle", mode: "reveal" }], metadata: { source: "mcp_test" } } }
+        ]
+      });
+      expect(proposal.output).toMatchObject({ proposalId: expect.any(String), changeCount: 12 });
+      const approved = await app.inject({ method: "POST", url: `/api/v1/proposals/${proposal.output.proposalId}/approve`, headers: authHeaders });
+      expect(approved.statusCode).toBe(200);
+      const applied = await mcp(41, "apply_approved_proposal", { proposalId: proposal.output.proposalId });
+      expect(applied.output).toMatchObject({ boardStateChanged: true });
+
+      expect(store.state.scenes.find((item) => item.id === scene.id)?.metadata.mcpCoverage).toBe(true);
+      expect(store.state.tokens.find((item) => item.id === token.id)).toMatchObject({ name: "MCP Valen" });
+      expect(store.state.actors.find((item) => item.id === actor.id)?.data.mcpCoverage).toBe(true);
+      expect(store.state.items.find((entry) => entry.id === item.id)).toMatchObject({ name: "MCP Coverage Gear" });
+      expect(store.state.journals.some((entry) => entry.title === "MCP Journal")).toBe(true);
+      expect(store.state.chat.some((entry) => entry.id === validChat.id)).toBe(true);
+      expect(store.state.rolls.some((entry) => entry.id === validRoll.id)).toBe(true);
+      expect(store.state.diceMacros.some((entry) => entry.name === "MCP Damage")).toBe(true);
+      expect(store.state.encounters.find((entry) => entry.id === encounter.id)?.summary).toBe("Updated through MCP.");
+      expect(store.state.combats.find((entry) => entry.id === combat.id)?.round).toBe(2);
+      expect(store.state.assets.find((entry) => entry.id === asset.id)?.name).toBe("MCP Coverage Asset");
+      expect(store.state.fogPresets.some((entry) => entry.name === "MCP Proposal Fog")).toBe(true);
+    } finally {
+      await app.close();
+    }
   });
 
   it("can select the codex loopback ai provider from configuration", async () => {
@@ -23666,14 +23999,14 @@ registerCommand("/state", (input) => {
           })
         ],
         toolCatalog: expect.objectContaining({
-          toolCount: 29,
-          permissionSafeToolCount: 17,
-          proposalGatedToolCount: 12,
+          toolCount: 43,
+          permissionSafeToolCount: 28,
+          proposalGatedToolCount: 15,
           failClosedToolCount: 0,
           actionRequired: false,
           actionReasons: [],
           remediation: "All provider-visible AI tools are either proposal-gated or explicitly permission-safe.",
-          permissionSafeAllowlist: ["apply_approved_proposal", "capture_board_view", "get_proposal", "list_proposals", "read_actor", "read_asset", "read_board_state", "read_chat", "read_combat", "read_compendium", "read_encounter", "read_journal", "read_roll", "read_scene", "read_token", "roll_dice", "search_memory"],
+          permissionSafeAllowlist: ["apply_approved_proposal", "capture_board_view", "get_proposal", "list_proposals", "read_account", "read_actor", "read_ai_activity", "read_asset", "read_board_state", "read_campaign", "read_chat", "read_combat", "read_compendium", "read_content_imports", "read_dice_macro", "read_encounter", "read_fog_preset", "read_journal", "read_plugins", "read_roll", "read_scene", "read_systems", "read_token", "read_workspace", "roll_dice", "search_memory", "send_chat_message", "target_token"],
           tools: expect.arrayContaining([
             expect.objectContaining({
               name: "draft_scene",
@@ -25244,7 +25577,7 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Read the compendium, remember a key, draft an encounter, and roll dice." }
     });
     expect(gmThread.statusCode).toBe(200);
-    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+    expect(gmProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_encounter")?.parameters?.required).toEqual(["name", "summary"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "draft_token_update")?.requiredPermissions).toEqual(["ai.proposeChanges", "token.update"]);
     expect(gmProvider.requests[0]!.tools.find((tool) => tool.name === "generate_map_asset")?.requiredPermissions).toEqual(["ai.proposeChanges", "scene.create", "scene.update"]);
@@ -25665,7 +25998,7 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Try expanded tools as a player." }
     });
     expect(playerThread.statusCode).toBe(200);
-    expect(playerProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    expect(playerProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
     const playerCompleted = playerThread.json().events.filter((event: { type: string }) => event.type === "tool.completed");
     expect(playerCompleted).toEqual(
       expect.arrayContaining([
@@ -25824,7 +26157,7 @@ registerCommand("/state", (input) => {
       }
     }
 
-    const permissionSafeTools = new Set(["list_proposals", "get_proposal", "apply_approved_proposal", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    const permissionSafeTools = new Set(["list_proposals", "get_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
     const provider = new ToolPolicyProvider();
     const store = new MemoryStateStore();
     store.state.users.push(
@@ -25890,7 +26223,7 @@ registerCommand("/state", (input) => {
       const gmTools = provider.requests[0]!.tools;
       const assistantTools = provider.requests[1]!.tools;
       const playerTools = provider.requests[2]!.tools;
-      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(gmTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "draft_dice_macro", "read_fog_preset", "draft_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_encounter", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
 
       for (const tool of gmTools) {
         expect(tool.requiredPermissions.length, `${tool.name} should declare required permissions`).toBeGreaterThan(0);
@@ -25903,13 +26236,13 @@ registerCommand("/state", (input) => {
         if (!advertisedTool.permissionSafe) expect(advertisedTool.requiredPermissions).toContain("ai.proposeChanges");
       }
 
-      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
+      expect(assistantTools.map((tool) => tool.name)).toEqual(["create_proposal", "list_proposals", "get_proposal", "revise_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "draft_ai_edit_layer_apply", "draft_journal_entry", "draft_scene", "draft_token_update", "draft_actor_token_roster", "generate_map_asset", "generate_token_asset", "draft_actor_update", "create_memory", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "use_actor_action", "read_compendium"]);
       expect(assistantTools.map((tool) => tool.name)).not.toContain("draft_encounter");
       for (const tool of assistantTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("assistant_gm").includes(permission))).toBe(true);
       }
 
-      expect(playerTools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+      expect(playerTools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
       for (const tool of playerTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("player").includes(permission))).toBe(true);
         expect(permissionSafeTools.has(tool.name)).toBe(true);

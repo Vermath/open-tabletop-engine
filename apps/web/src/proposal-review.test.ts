@@ -46,7 +46,9 @@ describe("proposal review helpers", () => {
       updatedAt: "2026-05-24T04:00:00.000Z",
       changesJson: [
         { entity: "scene", action: "update", id: "scn_demo", data: { name: "AI-built chamber", backgroundAssetId: "asset_map" } },
-        { entity: "token", action: "create", data: { id: "tok_ai", sceneId: "scn_demo", name: "AI Guard", x: 200, y: 240 } }
+        { entity: "token", action: "create", data: { id: "tok_ai", sceneId: "scn_demo", name: "AI Guard", x: 200, y: 240 } },
+        { entity: "diceMacro", action: "create", data: { id: "mac_ai", campaignId: "camp_demo", name: "AI Damage", formula: "1d8+2", visibility: "public" } },
+        { entity: "fogPreset", action: "create", data: { id: "fogp_ai", campaignId: "camp_demo", name: "AI Fog", regions: [] } }
       ]
     });
     const snapshot = snapshotFixture({
@@ -59,6 +61,8 @@ describe("proposal review helpers", () => {
 
     expect(next.scenes.find((scene) => scene.id === "scn_demo")).toMatchObject({ name: "AI-built chamber", backgroundAssetId: "asset_map", updatedAt: "2026-05-24T04:00:00.000Z" });
     expect(next.tokens).toEqual([expect.objectContaining({ id: "tok_ai", sceneId: "scn_demo", name: "AI Guard" })]);
+    expect(next.diceMacros).toEqual([expect.objectContaining({ id: "mac_ai", name: "AI Damage" })]);
+    expect(next.fogPresets).toEqual([expect.objectContaining({ id: "fogp_ai", name: "AI Fog" })]);
     expect(next.proposals.find((item) => item.id === "prop_apply")).toMatchObject({ status: "applied" });
   });
 });

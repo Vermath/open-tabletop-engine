@@ -3709,7 +3709,7 @@ const componentSchemas = {
     additionalProperties: false,
     required: ["entity", "action", "data"],
     properties: {
-      entity: { type: "string", enum: ["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "encounter", "combat", "asset"] },
+      entity: { type: "string", enum: ["campaign", "scene", "token", "actor", "item", "journal", "chat", "roll", "diceMacro", "encounter", "combat", "asset", "fogPreset"] },
       action: { type: "string", enum: ["create", "update", "delete"] },
       id: idSchema,
       data: { type: "object", additionalProperties: true }
