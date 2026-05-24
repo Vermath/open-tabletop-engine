@@ -8,6 +8,7 @@ import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryActio
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { parseChatCommand } from "./chat-command.js";
+import { proposalReviewActionLabel, proposalReviewSteps } from "./proposal-review.js";
 import { templateConePoints } from "./scene-annotations.js";
 import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
 import { sceneTabWrapClass } from "./scene-tabs.js";
@@ -3005,17 +3006,34 @@ export function App() {
 
   async function approveAndApply(proposal: Proposal) {
     const createdSceneId = createdSceneIdFromProposal(proposal);
-    await apiPost(`/api/v1/proposals/${proposal.id}/approve`, {});
+    const steps = proposalReviewSteps(proposal);
+    if (!steps.includes("apply")) throw new Error(`Proposal is ${proposal.status} and cannot be applied.`);
+    if (steps.includes("approve")) await apiPost(`/api/v1/proposals/${proposal.id}/approve`, {});
     const applied = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/apply`, {});
     const appliedSceneId = createdSceneIdFromProposal(applied) ?? createdSceneId;
     if (appliedSceneId) {
       setSceneId(appliedSceneId);
       setStatus("Proposal applied; opened new scene");
       await refresh(campaignId, appliedSceneId);
-      return;
+      return { applied, openedSceneId: appliedSceneId };
     }
     setStatus("Proposal applied");
     await refresh();
+    return { applied };
+  }
+
+  async function applyAiAgentProposal(proposal: Proposal) {
+    setAiAgentStatus(proposal.status === "pending" ? "Approving and applying proposal" : "Applying proposal");
+    try {
+      const result = await approveAndApply(proposal);
+      const message = result.openedSceneId ? "Proposal applied; opened new scene" : "Proposal applied";
+      setAiAgentStatus(message);
+      setAiAgentMessages((messages) => [...messages, { id: `agent-apply-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+    } catch (error) {
+      const message = errorMessage(error);
+      setAiAgentStatus(`Apply failed: ${message}`);
+      setAiAgentMessages((messages) => [...messages, { id: `agent-apply-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+    }
   }
 
   async function rejectProposalReview(proposal: Proposal) {
@@ -4947,7 +4965,7 @@ export function App() {
           onPromptChange={setAiAgentPrompt}
           onSend={() => sendAiAgentMessage().catch((error) => setAiAgentStatus(errorMessage(error)))}
           onClose={() => setAiAgentOpen(false)}
-          onApply={(proposal) => approveAndApply(proposal).catch((error) => setAiAgentStatus(errorMessage(error)))}
+          onApply={applyAiAgentProposal}
           onReject={(proposal) => rejectProposalReview(proposal).catch((error) => setAiAgentStatus(errorMessage(error)))}
         />
       )}
@@ -5052,7 +5070,7 @@ function AiAgentPanel(props: {
               {(proposal.status === "pending" || proposal.status === "approved") && (
                 <div>
                   <button className="ghost-button" type="button" disabled={!props.canApply} onClick={() => props.onApply(proposal)}>
-                    <Check size={14} /> Apply
+                    <Check size={14} /> {proposalReviewActionLabel(proposal)}
                   </button>
                   <button className="ghost-button" type="button" disabled={!props.canApply} onClick={() => props.onReject(proposal)}>
                     <X size={14} /> Reject
@@ -14107,7 +14125,7 @@ function AiProposalReviewCard(props: { proposal: Proposal; records: ProposalReco
       {props.proposal.status !== "applied" && props.proposal.status !== "rejected" && (
         <div className="button-row ai-action-row">
           <button className="ghost-button" type="button" onClick={() => props.onApply(props.proposal)} disabled={!props.canApply}>
-            <Check size={15} /> Apply
+            <Check size={15} /> {proposalReviewActionLabel(props.proposal)}
           </button>
           <button className="ghost-button" type="button" onClick={() => props.onReject(props.proposal)} disabled={!props.canApply}>
             <X size={15} /> Reject
