@@ -300,7 +300,20 @@ export class PluginRuntimeRegistry {
       packageChecksum,
       syncedAt: new Date().toISOString()
     });
+    this.ensureNoRegistryManifestCollision(packageId);
     return this.registerPackage(packageId);
+  }
+
+  private ensureNoRegistryManifestCollision(packageId: string): void {
+    const loaded = loadPluginPackage(this.pluginRoot, resolvePackageDirectory(this.pluginRoot, packageId), this.trustPolicy);
+    if (loaded.error || !loaded.plugin) throw new PluginPackageError(`Invalid plugin package: ${packageId}`, loaded.error?.errors ?? ["Plugin package is invalid"]);
+    const versions = this.plugins.get(loaded.plugin.id) ?? [];
+    const existing = versions.find((plugin) => plugin.version === loaded.plugin!.version);
+    if (!existing) return;
+    if (existing.source.packageId === loaded.plugin.source.packageId && existing.source.checksum === loaded.plugin.source.checksum) return;
+    throw new PluginPackageError(`Refusing to import colliding plugin version: ${packageId}`, [
+      `Plugin ${loaded.plugin.id}@${loaded.plugin.version} is already provided by package ${existing.source.packageId}`
+    ]);
   }
 
   private runtimeFor(plugin: RuntimePlugin): SandboxedPluginRuntime {
