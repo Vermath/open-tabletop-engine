@@ -565,6 +565,49 @@ a[href]:focus-visible,
   font-size: 12px;
 }
 
+.scene-size-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #463b2a;
+  border-radius: 7px;
+  background: #15130f;
+}
+
+.scene-size-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.scene-size-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.scene-size-summary strong {
+  min-width: 0;
+  color: var(--paper);
+  font-size: 12px;
+  text-align: right;
+}
+
+.scene-size-presets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.scene-size-presets .ghost-button {
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 11px;
+  white-space: normal;
+}
+
 .table-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;

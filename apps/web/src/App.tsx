@@ -9,6 +9,7 @@ import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { parseChatCommand } from "./chat-command.js";
 import { templateConePoints } from "./scene-annotations.js";
+import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
 import { sceneTabWrapClass } from "./scene-tabs.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
@@ -632,6 +633,8 @@ export function App() {
   const [sceneSearch, setSceneSearch] = useState("");
   const [bulkSceneFolder, setBulkSceneFolder] = useState("");
   const [selectedPrepSceneIds, setSelectedPrepSceneIds] = useState<string[]>([]);
+  const newSceneCellSummary = sceneGridCellSummary(newSceneWidth, newSceneHeight, newSceneGridSize);
+  const sceneEditCellSummary = sceneGridCellSummary(sceneEditWidth, sceneEditHeight, sceneEditGridSize);
   const [sceneDeleteConfirm, setSceneDeleteConfirm] = useState("");
   const [newTokenName, setNewTokenName] = useState("");
   const [newTokenActorId, setNewTokenActorId] = useState("");
@@ -1419,14 +1422,29 @@ export function App() {
     await refresh(nextCampaign?.id ?? "", "");
   }
 
+  function applyNewSceneSizePreset(preset: SceneSizePreset): void {
+    const gridSize = Math.max(10, normalizeSceneSizeValue(newSceneGridSize, 50));
+    const dimensions = sceneDimensionsFromCells(preset, gridSize);
+    setNewSceneWidth(dimensions.width);
+    setNewSceneHeight(dimensions.height);
+  }
+
+  function applySceneEditSizePreset(preset: SceneSizePreset): void {
+    const gridSize = Math.max(10, normalizeSceneSizeValue(sceneEditGridSize, selectedScene?.gridSize ?? 50));
+    const dimensions = sceneDimensionsFromCells(preset, gridSize);
+    setSceneEditWidth(dimensions.width);
+    setSceneEditHeight(dimensions.height);
+  }
+
   async function createScene() {
     const name = newSceneName.trim();
+    const gridSize = Math.max(10, normalizeSceneSizeValue(newSceneGridSize, 50));
     const scene = await apiPost<Scene>(`/api/v1/campaigns/${campaignId}/scenes`, {
       name: name || `Scene ${snapshot.scenes.length + 1}`,
       folder: newSceneFolder.trim() || undefined,
-      width: newSceneWidth,
-      height: newSceneHeight,
-      gridSize: newSceneGridSize,
+      width: Math.max(200, normalizeSceneSizeValue(newSceneWidth, 1200)),
+      height: Math.max(200, normalizeSceneSizeValue(newSceneHeight, 800)),
+      gridSize,
       backgroundAssetId: newSceneBackgroundAssetId || undefined,
       active: newSceneActive || snapshot.scenes.length === 0,
       sortOrder: orderedScenes.length + 1
@@ -1442,9 +1460,9 @@ export function App() {
     const scene = await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}`, {
       name: sceneEditName.trim() || selectedScene.name,
       folder: sceneEditFolder.trim() || null,
-      width: Math.max(200, sceneEditWidth),
-      height: Math.max(200, sceneEditHeight),
-      gridSize: Math.max(10, sceneEditGridSize),
+      width: Math.max(200, normalizeSceneSizeValue(sceneEditWidth, selectedScene.width)),
+      height: Math.max(200, normalizeSceneSizeValue(sceneEditHeight, selectedScene.height)),
+      gridSize: Math.max(10, normalizeSceneSizeValue(sceneEditGridSize, selectedScene.gridSize)),
       backgroundAssetId: sceneEditBackgroundAssetId || null,
       active: sceneEditActive,
       metadata: {
@@ -4125,6 +4143,19 @@ export function App() {
             <input aria-label="Scene width" type="number" min={200} value={newSceneWidth} onChange={(event) => setNewSceneWidth(Number(event.target.value))} />
             <input aria-label="Scene height" type="number" min={200} value={newSceneHeight} onChange={(event) => setNewSceneHeight(Number(event.target.value))} />
             <input aria-label="Scene grid size" type="number" min={10} value={newSceneGridSize} onChange={(event) => setNewSceneGridSize(Number(event.target.value))} />
+            <div className="scene-size-panel" aria-label="Scene size presets">
+              <div className="scene-size-summary">
+                <span>Map size</span>
+                <strong>{newSceneCellSummary}</strong>
+              </div>
+              <div className="scene-size-presets">
+                {sceneSizePresets.map((preset) => (
+                  <button className="ghost-button" type="button" key={preset.id} onClick={() => applyNewSceneSizePreset(preset)}>
+                    {preset.description} {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <select aria-label="Scene background asset" value={newSceneBackgroundAssetId} onChange={(event) => setNewSceneBackgroundAssetId(event.target.value)}>
               <option value="">No background</option>
               {campaignImageAssets.map((asset) => (
@@ -4163,6 +4194,19 @@ export function App() {
             <input aria-label="Edit scene width" type="number" min={200} value={sceneEditWidth} onChange={(event) => setSceneEditWidth(Number(event.target.value))} />
             <input aria-label="Edit scene height" type="number" min={200} value={sceneEditHeight} onChange={(event) => setSceneEditHeight(Number(event.target.value))} />
             <input aria-label="Edit scene grid size" type="number" min={10} value={sceneEditGridSize} onChange={(event) => setSceneEditGridSize(Number(event.target.value))} />
+            <div className="scene-size-panel" aria-label="Edit scene size presets">
+              <div className="scene-size-summary">
+                <span>Map size</span>
+                <strong>{sceneEditCellSummary}</strong>
+              </div>
+              <div className="scene-size-presets">
+                {sceneSizePresets.map((preset) => (
+                  <button className="ghost-button" type="button" key={preset.id} onClick={() => applySceneEditSizePreset(preset)}>
+                    {preset.description} {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <select aria-label="Edit scene background asset" value={sceneEditBackgroundAssetId} onChange={(event) => setSceneEditBackgroundAssetId(event.target.value)}>
               <option value="">No background</option>
               {campaignImageAssets.map((asset) => (
