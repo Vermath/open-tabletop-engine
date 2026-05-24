@@ -2021,6 +2021,24 @@ describe("api", () => {
     });
     expect(invalidImportMode.statusCode).toBe(400);
 
+    const unauthorizedGrantImportArchive = structuredClone(exported.json()) as CampaignArchive;
+    unauthorizedGrantImportArchive.data.permissionGrants.push({
+      id: "perm_illegal_cross_campaign_grant",
+      campaignId: "camp_public_alpha_ember_vault",
+      subjectType: "user",
+      subjectId: "usr_demo_player",
+      permissions: ["campaign.update"],
+      createdAt: "2026-05-01T00:00:00.000Z",
+      createdBy: "usr_demo_player"
+    });
+    const unauthorizedGrantImport = await app.inject({
+      method: "POST",
+      url: "/api/v1/import/campaign",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { archive: unauthorizedGrantImportArchive, mode: "upsert" }
+    });
+    expect(unauthorizedGrantImport.statusCode).toBe(403);
+
     const invalidExport = await app.inject({
       method: "GET",
       url: "/api/v1/campaigns/camp_demo/export?scope=organization",

@@ -6896,6 +6896,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
     const importWarnings = archiveImportDependencyWarnings(scope, selectedCollections.value, archive);
     const scopedArchive = archiveForImportScope(archive, scope, selectedCollections.value);
+    const referencedCampaignIds = archiveReferencedCampaignIds(scopedArchive);
+    for (const campaignId of referencedCampaignIds) {
+      const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
+      if (allowed !== true) return allowed;
+    }
     const conflicts = findArchiveConflicts(store.state, scopedArchive);
     if (mode === "reject_conflicts" && conflicts.length > 0) {
       return reply.code(409).send({ error: "import_conflict", conflicts });
@@ -22609,6 +22614,40 @@ function findArchiveConflicts(state: EngineState, archive: CampaignArchive): Arr
     }
   }
   return conflicts;
+}
+
+function archiveReferencedCampaignIds(archive: CampaignArchive): string[] {
+  const campaignIds = new Set<string>();
+  const addCampaignIds = <T extends { campaignId: string }>(records: T[]) => {
+    for (const record of records) campaignIds.add(record.campaignId);
+  };
+  addCampaignIds(archive.data.members);
+  addCampaignIds(archive.data.worlds);
+  addCampaignIds(archive.data.scenes);
+  addCampaignIds(archive.data.assets);
+  addCampaignIds(archive.data.tokens);
+  addCampaignIds(archive.data.actors);
+  addCampaignIds(archive.data.items);
+  addCampaignIds(archive.data.journals);
+  addCampaignIds(archive.data.handouts);
+  addCampaignIds(archive.data.chat);
+  addCampaignIds(archive.data.rolls);
+  addCampaignIds(archive.data.diceMacros ?? []);
+  addCampaignIds(archive.data.encounters);
+  addCampaignIds(archive.data.combats);
+  addCampaignIds(archive.data.compendia);
+  addCampaignIds(archive.data.proposals);
+  addCampaignIds(archive.data.aiThreads);
+  addCampaignIds(archive.data.aiEvaluations ?? []);
+  addCampaignIds(archive.data.aiMemory);
+  addCampaignIds(archive.data.aiToolCalls);
+  addCampaignIds(archive.data.auditLogs);
+  addCampaignIds(archive.data.permissionGrants);
+  addCampaignIds(archive.data.pluginStorage ?? []);
+  addCampaignIds(archive.data.contentImports ?? []);
+  addCampaignIds(archive.data.fogPresets ?? []);
+  for (const campaign of archive.data.campaigns) campaignIds.add(campaign.id);
+  return [...campaignIds];
 }
 
 function upsertRecords<T extends { id: string }>(target: T[], incoming: T[]): number {
