@@ -790,9 +790,7 @@ class CodexAppServerRpc {
 
   waitForTurnCompleted(): Promise<AiProviderEvent[]> {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(`Timed out waiting ${this.options.turnTimeoutMs}ms for Codex app-server turn completion`));
-      }, this.options.turnTimeoutMs);
+      const timer = this.createTurnTimeout(reject);
       this.turnCompleted = { resolve, reject, timer };
     });
   }
@@ -858,6 +856,7 @@ class CodexAppServerRpc {
         try {
           const output = await this.options.executeTool(toolCall.tool, toolCall.arguments);
           this.events.push({ type: "tool.completed", toolName: toolCall.tool, output });
+          this.refreshTurnTimeoutAfterProgress(output);
           this.respond(id, {
             success: true,
             contentItems: [
@@ -915,6 +914,18 @@ class CodexAppServerRpc {
       return;
     }
     this.respondError(id, -32601, `Unsupported Codex app-server request method: ${method}`);
+  }
+
+  private refreshTurnTimeoutAfterProgress(output: unknown): void {
+    if (!this.turnCompleted || !isSuccessfulToolOutput(output)) return;
+    clearTimeout(this.turnCompleted.timer);
+    this.turnCompleted.timer = this.createTurnTimeout(this.turnCompleted.reject);
+  }
+
+  private createTurnTimeout(reject: (error: Error) => void): ReturnType<typeof setTimeout> {
+    return setTimeout(() => {
+      reject(new Error(`Timed out waiting ${this.options.turnTimeoutMs}ms for Codex app-server turn completion`));
+    }, this.options.turnTimeoutMs);
   }
 
   private handleServerNotification(method: string, params: unknown): void {
@@ -1450,6 +1461,10 @@ async function executeLoopbackTools(events: AiProviderEvent[], params: unknown):
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSuccessfulToolOutput(output: unknown): boolean {
+  return !isRecord(output) || typeof output.error !== "string";
 }
 
 function numberFromRecord(record: Record<string, unknown>, key: string): number | undefined {

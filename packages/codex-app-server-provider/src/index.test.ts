@@ -101,6 +101,41 @@ describe("CodexAppServerWebSocketTransport", () => {
     });
   });
 
+  it("extends the turn timeout after successful in-turn tool implementation progress", async () => {
+    let socket: SlowCompletionCodexSocket | undefined;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 80,
+        webSocketFactory: () => {
+          socket = new SlowCompletionCodexSocket();
+          return socket;
+        }
+      })
+    });
+
+    const events = [];
+    for await (const event of provider.stream({
+      ...baseRequest,
+      executeTool: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        return { proposalId: "prop_map", implemented: true };
+      }
+    })) events.push(event);
+
+    expect(events).toEqual([
+      {
+        type: "tool.started",
+        toolName: "generate_map_asset",
+        input: { prompt: "ember vault tactical battlemap", name: "Ember Vault Map", sceneId: "scn_vault" }
+      },
+      { type: "tool.completed", toolName: "generate_map_asset", output: { proposalId: "prop_map", implemented: true } },
+      { type: "message.completed", content: "The map proposal was implemented." }
+    ]);
+    expect(socket?.toolResponse).toMatchObject({ id: 1, result: { success: true } });
+  });
+
   it("starts the managed ChatGPT login flow when Codex has no account", async () => {
     let socket: FakeCodexSocket | undefined;
     const provider = new CodexAppServerProvider({
@@ -361,6 +396,86 @@ class FailingCodexSocket {
 
   removeEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
     this.listeners.get(type)?.delete(listener);
+  }
+
+  private emit(type: string, event: { data?: unknown; reason?: string; message?: string }): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
+class SlowCompletionCodexSocket {
+  readonly sent: Array<{ id?: string | number; method?: string; params?: unknown; result?: unknown; error?: unknown }> = [];
+  toolResponse: unknown;
+  private readonly listeners = new Map<string, Set<(event: { data?: unknown; reason?: string; message?: string }) => void>>();
+
+  constructor() {
+    queueMicrotask(() => this.emit("open", {}));
+  }
+
+  send(data: string): void {
+    const message = JSON.parse(data) as { id?: string | number; method?: string; params?: unknown; result?: unknown; error?: unknown };
+    this.sent.push(message);
+    if (message.result && message.id === 1) {
+      this.toolResponse = message;
+      setTimeout(() => {
+        this.emitMessage({
+          method: "item/completed",
+          params: {
+            item: {
+              type: "agentMessage",
+              text: "The map proposal was implemented."
+            }
+          }
+        });
+        this.emitMessage({ method: "turn/completed", params: { threadId: "codex_thread", turn: { id: "codex_turn", status: "completed" } } });
+      }, 50);
+      return;
+    }
+    if (message.method === "initialize") {
+      this.emitMessage({ id: message.id, result: { userAgent: "fake", codexHome: "C:\\tmp", platformFamily: "windows", platformOs: "windows" } });
+      return;
+    }
+    if (message.method === "account/read") {
+      this.emitMessage({ id: message.id, result: { authMode: "chatgpt" } });
+      return;
+    }
+    if (message.method === "thread/start") {
+      this.emitMessage({ id: message.id, result: { thread: { id: "codex_thread" } } });
+      return;
+    }
+    if (message.method === "turn/start") {
+      this.emitMessage({ id: message.id, result: { turn: { id: "codex_turn" } } });
+      this.emitMessage({
+        id: 1,
+        method: "item/tool/call",
+        params: {
+          threadId: "codex_thread",
+          turnId: "codex_turn",
+          callId: "call_1",
+          namespace: "open_tabletop",
+          tool: "generate_map_asset",
+          arguments: { prompt: "ember vault tactical battlemap", name: "Ember Vault Map", sceneId: "scn_vault" }
+        }
+      });
+    }
+  }
+
+  close(): void {
+    this.emit("close", {});
+  }
+
+  addEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  private emitMessage(message: unknown): void {
+    this.emit("message", { data: JSON.stringify(message) });
   }
 
   private emit(type: string, event: { data?: unknown; reason?: string; message?: string }): void {
