@@ -10960,6 +10960,14 @@ function ContentImportPanel(props: {
   const lifecycleEntries = Object.entries(props.assetStorage?.lifecycleCounts ?? {}).sort(([left], [right]) => left.localeCompare(right));
   const providerEntries = Object.entries(props.assetStorage?.providerCounts ?? {}).sort(([left], [right]) => left.localeCompare(right));
   const delivery = props.assetStorage?.delivery;
+  const visibleImageAssetCount = filteredAssets.filter((asset) => asset.mimeType.startsWith("image/") && asset.lifecycle?.status !== "deleted").length;
+  const visibleActiveAssetCount = filteredAssets.filter((asset) => asset.lifecycle?.status !== "deleted").length;
+  const storageSummary = quotaBytes === undefined ? `${formatStorageBytes(storageUsedBytes)} stored` : `${formatStorageBytes(storageUsedBytes)} / ${formatStorageBytes(quotaBytes)}`;
+  const deliveryStatusLabel = delivery?.actionRequired ? "Needs attention" : delivery ? "Ready" : "Unknown";
+  const hasRecoverableAssets = recoverableAssets.length > 0;
+  const hasAssetDiagnostics = largestAssets.length > 0 || Boolean(delivery) || lifecycleEntries.length > 0 || providerEntries.length > 0;
+  const hasAssetActivityStatus = props.assetStatus !== "No asset action this session";
+  const isFilteringAssets = Boolean(normalizedSearch) || assetFolderFilter !== "all" || assetLifecycleFilter !== "all";
   const uploadInputId = "asset-library-upload";
   const backgroundInputId = "asset-library-background-upload";
   const currentDraftEntity = { kind: props.kind, name: props.name.trim(), body: props.body };
@@ -10998,64 +11006,64 @@ function ContentImportPanel(props: {
     setSelectedAssetIds([]);
   }
   return (
-    <div className="panel-stack">
-      <div className="panel-heading">
-        <div>
-          <div className="section-title">Asset Library</div>
+    <div className="panel-stack content-manager">
+      <section className="operator-section asset-library asset-library-clean" aria-label="Asset library">
+        <div className="asset-library-header">
+          <div>
+            <div className="section-title">Assets</div>
+            <h2>Asset manager</h2>
+            <p>Find, upload, place, and retire campaign art without the storage ledger getting in the way.</p>
+          </div>
+          <div className="asset-primary-actions">
+            <button className="primary-button" type="button" disabled={!props.canCreateAsset} title={props.canCreateAsset ? "Upload an asset" : "Requires scene.create"} onClick={() => document.getElementById(uploadInputId)?.click()}>
+              <Upload size={16} /> Upload
+            </button>
+            <button className="ghost-button" type="button" disabled={!props.canCreateAsset || !props.canUpdateScene || !props.selectedScene} title={props.selectedScene ? "Upload and set as current scene background" : "Select a scene first"} onClick={() => document.getElementById(backgroundInputId)?.click()}>
+              <ImageIcon size={16} /> Background
+            </button>
+          </div>
         </div>
-      </div>
-      <section className="operator-section asset-library" aria-label="Asset library">
-        <div className="asset-summary">
-          <MetricTile label="Assets" value={formatNumber(props.assets.length)} />
-          <MetricTile label="Active" value={formatNumber(activeAssetCount)} />
-          <MetricTile label="Size" value={formatStorageBytes(totalAssetBytes)} />
-          <MetricTile label="Quota" value={quotaBytes === undefined ? "none" : formatStorageBytes(quotaBytes)} />
-          <MetricTile label="Remaining" value={props.assetStorage?.remainingBytes === undefined ? "n/a" : formatStorageBytes(props.assetStorage.remainingBytes)} />
-          <MetricTile label="Used" value={quotaPercent} />
-          <MetricTile label="Folders" value={formatNumber(assetFolderOptions.length)} />
-          <MetricTile label="Delivery" value={delivery?.mode ?? "unknown"} />
-          <MetricTile label="CDN" value={delivery?.cdnConfigured ? "yes" : "no"} />
-          <MetricTile label="Signing" value={delivery?.signingSecretRequired ? (delivery.signingSecretConfigured ? "ready" : "missing") : "optional"} />
-          <MetricTile label="Delivery Action" value={delivery?.actionRequired ? "yes" : "no"} />
+        <div className="asset-command-strip" aria-label="Asset library summary">
+          <div className="asset-command-stat">
+            <span>Total</span>
+            <strong>{formatNumber(props.assets.length)}</strong>
+          </div>
+          <div className="asset-command-stat">
+            <span>Active</span>
+            <strong>{formatNumber(activeAssetCount)}</strong>
+          </div>
+          <div className="asset-command-stat">
+            <span>Shown</span>
+            <strong>{formatNumber(filteredAssets.length)}</strong>
+            <small>{formatNumber(visibleActiveAssetCount)} active</small>
+          </div>
+          <div className="asset-command-stat">
+            <span>Images</span>
+            <strong>{formatNumber(visibleImageAssetCount)}</strong>
+          </div>
+          <div className="asset-command-stat wide">
+            <span>Storage</span>
+            <strong>{storageSummary}</strong>
+          </div>
+          <div className={`asset-command-stat ${delivery?.actionRequired ? "attention" : ""}`}>
+            <span>Delivery</span>
+            <strong>{deliveryStatusLabel}</strong>
+          </div>
         </div>
-        <div className="asset-quota" aria-label="Asset quota usage">
+        <div className="asset-quota asset-quota-compact" aria-label="Asset quota usage">
           <div className="asset-quota-track">
             <div className={`asset-quota-fill ${quotaRatio >= 0.9 ? "danger" : quotaRatio >= 0.75 ? "warning" : ""}`} style={{ width: `${Math.round(quotaRatio * 100)}%` }} />
           </div>
           <div className="admin-meta">
-            <span>{formatStorageBytes(storageUsedBytes)} active bytes</span>
-            {quotaBytes === undefined ? <span>No campaign quota configured</span> : <span>{formatStorageBytes(Math.max(0, quotaBytes - storageUsedBytes))} remaining</span>}
-            {lifecycleEntries.length > 0 && <span>{lifecycleEntries.map(([status, count]) => `${status} ${count}`).join(", ")}</span>}
-            {providerEntries.length > 0 && <span>{providerEntries.map(([provider, count]) => `${provider} ${count}`).join(", ")}</span>}
-            {delivery && <span>{formatPercent(delivery.posture.deliverableCoverageRate)} deliverable</span>}
-            {delivery && <span>{delivery.purgeWebhookConfigured ? "purge webhook configured" : "purge webhook missing"}</span>}
-            {delivery && <span>URL TTL {formatDurationSeconds(delivery.defaultTtlSeconds)} / max {formatDurationSeconds(delivery.maxTtlSeconds)}</span>}
+            <span>{quotaBytes === undefined ? "No quota configured" : `${quotaPercent} used`}</span>
+            {quotaRemainingBytes !== undefined && <span>{formatStorageBytes(quotaRemainingBytes)} remaining</span>}
+            <span>{quotaRiskLabel}</span>
           </div>
         </div>
-        <div className="asset-pressure-list" aria-label="Asset quota management">
-          <div className="operator-row tool-call-row">
-            <span>Quota policy</span>
-            <strong>{quotaBytes === undefined ? "No campaign quota configured" : `${formatStorageBytes(storageUsedBytes)} of ${formatStorageBytes(quotaBytes)} used`}</strong>
-          </div>
-          <div className="operator-row tool-call-row">
-            <span>Quota health</span>
-            <strong>{quotaRiskLabel} - {quotaRemainingBytes === undefined ? "unbounded uploads" : `${formatStorageBytes(quotaRemainingBytes)} remaining`}</strong>
-          </div>
-          <div className="operator-row tool-call-row">
-            <span>Recommended action</span>
-            <strong>{quotaRecommendedAction}</strong>
-          </div>
-          {largestAsset && (
-            <div className="operator-row tool-call-row">
-              <span>Largest cleanup candidate</span>
-              <strong>{largestAsset.name} - {formatStorageBytes(largestAsset.sizeBytes)} - {largestAsset.lifecycleStatus}</strong>
-            </div>
-          )}
-        </div>
-        <div className="admin-form-grid">
-          <label>
+        <div className="asset-toolbar" aria-label="Asset filters and batch actions">
+          <label className="asset-search-field">
             <span>Search</span>
-            <input aria-label="Asset search" value={props.assetSearch} placeholder="Name, mime, lifecycle" onChange={(event) => props.setAssetSearch(event.target.value)} />
+            <input aria-label="Asset search" value={props.assetSearch} placeholder="Name, folder, tag" onChange={(event) => props.setAssetSearch(event.target.value)} />
           </label>
           <label>
             <span>Folder</span>
@@ -11069,110 +11077,166 @@ function ContentImportPanel(props: {
             </select>
           </label>
           <label>
-            <span>Lifecycle</span>
+            <span>Status</span>
             <select aria-label="Asset lifecycle filter" value={assetLifecycleFilter} onChange={(event) => setAssetLifecycleFilter(event.target.value as AssetLifecycleStatus | "all")}>
-              <option value="all">All lifecycle states</option>
+              <option value="all">All statuses</option>
               <option value="active">Active</option>
               <option value="archived">Archived</option>
               <option value="deleted">Deleted</option>
             </select>
           </label>
-          <label>
-            <span>Lifecycle reason</span>
-            <input aria-label="Asset lifecycle reason" value={props.lifecycleReason} onChange={(event) => props.setLifecycleReason(event.target.value)} />
-          </label>
-          <label>
-            <span>Upload folder</span>
-            <input aria-label="Asset upload folder" value={props.assetFolder} placeholder="maps" onChange={(event) => props.setAssetFolder(event.target.value)} />
-          </label>
-          <label>
-            <span>Upload tags</span>
-            <input aria-label="Asset upload tags" value={props.assetTags} placeholder="map, dungeon" onChange={(event) => props.setAssetTags(event.target.value)} />
-          </label>
+          {visibleAssetIds.length > 0 && (
+            <div className="asset-selection-actions">
+              <label className="inline-check">
+                <input aria-label="Select visible assets" type="checkbox" checked={allVisibleAssetsSelected} onChange={(event) => setVisibleAssetsSelected(event.target.checked)} />
+                <span>{formatNumber(selectedAssetIds.length)} selected</span>
+              </label>
+              {selectedAssets.length > 0 && (
+                <>
+                  <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("archived").catch(console.error)}>
+                    <RotateCcw size={15} /> Archive
+                  </button>
+                  <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("active").catch(console.error)}>
+                    <Check size={15} /> Restore
+                  </button>
+                  <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("deleted").catch(console.error)}>
+                    <X size={15} /> Delete
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
-        <section className="asset-restore-recovery" aria-label="Asset restore recovery">
-          <div className="operator-heading">
-            <div className="section-title">Restore Recovery</div>
-            <RefreshCw size={15} />
-          </div>
-          <div className="metric-grid">
-            <MetricTile label="Recoverable" value={formatNumber(recoverableAssets.length)} />
-            <MetricTile label="Archived" value={formatNumber(archivedAssets.length)} />
-            <MetricTile label="Deleted" value={formatNumber(deletedAssets.length)} />
-            <MetricTile label="Selected" value={formatNumber(selectedAssets.length)} />
-          </div>
-          <div className="button-row">
-            <button className="ghost-button" type="button" onClick={() => setAssetLifecycleFilter("archived")}>
-              <Boxes size={14} /> Show archived
-            </button>
-            <button className="ghost-button" type="button" onClick={() => setAssetLifecycleFilter("deleted")}>
-              <X size={14} /> Show deleted
-            </button>
-            <button className="ghost-button" type="button" disabled={!props.canUpdateScene || recoverableAssets.length === 0} onClick={() => { setAssetLifecycleFilter("all"); setSelectedAssetIds(recoverableAssets.map((asset) => asset.id)); }}>
-              <Check size={14} /> Select recoverable
-            </button>
-            <button className="ghost-button" type="button" disabled={!props.canUpdateScene || selectedAssets.length === 0} onClick={() => updateSelectedAssetLifecycle("active").catch(console.error)}>
-              <RefreshCw size={14} /> Restore selected
-            </button>
-          </div>
-          <div className="operator-list">
-            {recoverableAssets.length === 0 ? (
-              <div className="empty-state compact">No archived or deleted assets need recovery.</div>
-            ) : (
-              recoverableAssets.slice(0, 4).map((asset) => (
-                <div className="operator-row tool-call-row" key={`recoverable-${asset.id}`}>
-                  <span>{asset.name}</span>
-                  <strong>{asset.lifecycle?.status ?? "active"} - {formatDateTime(asset.updatedAt)}</strong>
+        {hasRecoverableAssets && (
+          <details className="asset-maintenance-drawer">
+            <summary>
+              <span>Recovery</span>
+              <strong>{formatNumber(recoverableAssets.length)} recoverable</strong>
+            </summary>
+            <div className="asset-maintenance-body">
+              <div className="button-row">
+                <button className="ghost-button" type="button" onClick={() => setAssetLifecycleFilter("archived")}>
+                  <Boxes size={14} /> Show archived
+                </button>
+                <button className="ghost-button" type="button" onClick={() => setAssetLifecycleFilter("deleted")}>
+                  <X size={14} /> Show deleted
+                </button>
+                <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => { setAssetLifecycleFilter("all"); setSelectedAssetIds(recoverableAssets.map((asset) => asset.id)); }}>
+                  <Check size={14} /> Select recoverable
+                </button>
+              </div>
+              <div className="operator-list">
+                {recoverableAssets.slice(0, 4).map((asset) => (
+                  <div className="operator-row tool-call-row" key={`recoverable-${asset.id}`}>
+                    <span>{asset.name}</span>
+                    <strong>{asset.lifecycle?.status ?? "active"} - {formatDateTime(asset.updatedAt)}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </details>
+        )}
+        {hasAssetDiagnostics && (
+          <details className="asset-maintenance-drawer">
+            <summary>
+              <span>Storage and delivery details</span>
+              <strong>{deliveryStatusLabel}</strong>
+            </summary>
+            <div className="asset-maintenance-body">
+              <label>
+                <span>Lifecycle reason</span>
+                <input aria-label="Asset lifecycle reason" value={props.lifecycleReason} onChange={(event) => props.setLifecycleReason(event.target.value)} />
+              </label>
+              <div className="asset-pressure-list" aria-label="Asset quota management">
+                <div className="operator-row tool-call-row">
+                  <span>Quota policy</span>
+                  <strong>{quotaBytes === undefined ? "No campaign quota configured" : `${formatStorageBytes(storageUsedBytes)} of ${formatStorageBytes(quotaBytes)} used`}</strong>
                 </div>
-              ))
+                <div className="operator-row tool-call-row">
+                  <span>Recommended action</span>
+                  <strong>{quotaRecommendedAction}</strong>
+                </div>
+                {largestAsset && (
+                  <div className="operator-row tool-call-row">
+                    <span>Largest cleanup candidate</span>
+                    <strong>{largestAsset.name} - {formatStorageBytes(largestAsset.sizeBytes)} - {largestAsset.lifecycleStatus}</strong>
+                  </div>
+                )}
+              </div>
+              {largestAssets.length > 0 && (
+                <div className="asset-pressure-list" aria-label="Largest assets">
+                  {largestAssets.slice(0, 3).map((asset) => (
+                    <div className="operator-row tool-call-row" key={`largest-${asset.id}`}>
+                      <span>{asset.name}</span>
+                      <strong>{formatStorageBytes(asset.sizeBytes)} - {asset.provider} - {asset.lifecycleStatus}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {delivery && (
+                <div className="asset-pressure-list" aria-label="Asset delivery diagnostics">
+                  <div className="operator-row tool-call-row">
+                    <span>{delivery.actionRequired ? "Delivery action required" : "Delivery ready"}</span>
+                    <strong>{delivery.actionReasons.length > 0 ? delivery.actionReasons.join(", ") : `${delivery.mode} delivery`}</strong>
+                  </div>
+                  <div className="operator-row tool-call-row">
+                    <span>{formatNumber(delivery.posture.deliverableActiveAssetCount)} deliverable / {formatNumber(delivery.posture.activeManagedAssetCount)} managed</span>
+                    <strong>{formatNumber(delivery.posture.undeliverableActiveAssetCount)} undeliverable - {formatNumber(delivery.posture.cdnEligibleAssetCount)} CDN eligible</strong>
+                  </div>
+                  {delivery.warnings.slice(0, 3).map((warning) => (
+                    <div className="operator-row tool-call-row" key={`asset-delivery-warning-${warning.code}`}>
+                      <span>{warning.message}</span>
+                      <strong>{warning.env.length > 0 ? warning.env.join(", ") : warning.severity}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </details>
+        )}
+        <details className="asset-maintenance-drawer asset-upload-defaults">
+          <summary>
+            <span>Upload defaults</span>
+            <strong>{props.assetFolder || "No folder"}</strong>
+          </summary>
+          <div className="asset-maintenance-body">
+            <div className="asset-upload-settings" aria-label="Asset upload defaults">
+              <label>
+                <span>Upload folder</span>
+                <input aria-label="Asset upload folder" value={props.assetFolder} placeholder="maps" onChange={(event) => props.setAssetFolder(event.target.value)} />
+              </label>
+              <label>
+                <span>Upload tags</span>
+                <input aria-label="Asset upload tags" value={props.assetTags} placeholder="map, dungeon" onChange={(event) => props.setAssetTags(event.target.value)} />
+              </label>
+            </div>
+          </div>
+        </details>
+        {(assetFolderBreadcrumbs.length > 0 || assetFolderChildren.length > 0) && (
+          <section className="asset-folder-browser" aria-label="Asset folder navigation">
+            <div className="asset-folder-breadcrumbs">
+              <button type="button" className={assetFolderFilter === "all" ? "ghost-button active" : "ghost-button"} onClick={() => setAssetFolderFilter("all")} aria-pressed={assetFolderFilter === "all"}>
+                All assets
+              </button>
+              {assetFolderBreadcrumbs.map((folder) => (
+                <button key={folder.path} type="button" className={assetFolderFilter === folder.path ? "ghost-button active" : "ghost-button"} onClick={() => setAssetFolderFilter(folder.path)} aria-label={`Open asset folder ${folder.path}`} aria-pressed={assetFolderFilter === folder.path}>
+                  {folder.label}
+                </button>
+              ))}
+            </div>
+            {assetFolderChildren.length > 0 && (
+              <div className="asset-folder-children" aria-label="Child asset folders">
+                {assetFolderChildren.map((folder) => (
+                  <button key={folder.path} type="button" className="ghost-button" onClick={() => setAssetFolderFilter(folder.path)} aria-label={`Open asset folder ${folder.path}`}>
+                    <Boxes size={15} />
+                    <span>{folder.label}</span>
+                    <small>{formatNumber(folder.count)}</small>
+                  </button>
+                ))}
+              </div>
             )}
-          </div>
-        </section>
-        <section className="asset-folder-browser" aria-label="Asset folder navigation">
-          <div className="asset-folder-breadcrumbs">
-            <button type="button" className={assetFolderFilter === "all" ? "ghost-button active" : "ghost-button"} onClick={() => setAssetFolderFilter("all")} aria-pressed={assetFolderFilter === "all"}>
-              All assets
-            </button>
-            {assetFolderBreadcrumbs.map((folder) => (
-              <button key={folder.path} type="button" className={assetFolderFilter === folder.path ? "ghost-button active" : "ghost-button"} onClick={() => setAssetFolderFilter(folder.path)} aria-label={`Open asset folder ${folder.path}`} aria-pressed={assetFolderFilter === folder.path}>
-                {folder.label}
-              </button>
-            ))}
-          </div>
-          <div className="asset-folder-children" aria-label="Child asset folders">
-            {assetFolderChildren.map((folder) => (
-              <button key={folder.path} type="button" className="ghost-button" onClick={() => setAssetFolderFilter(folder.path)} aria-label={`Open asset folder ${folder.path}`}>
-                <Boxes size={15} />
-                <span>{folder.label}</span>
-                <small>{formatNumber(folder.count)}</small>
-              </button>
-            ))}
-            {assetFolderChildren.length === 0 && <span className="empty-state compact">No child folders.</span>}
-          </div>
-        </section>
-        <div className="admin-actions">
-          <button className="ghost-button" type="button" disabled={!props.canCreateAsset} title={props.canCreateAsset ? "Upload an asset" : "Requires scene.create"} onClick={() => document.getElementById(uploadInputId)?.click()}>
-            <Upload size={16} /> Upload Asset
-          </button>
-          <button className="ghost-button" type="button" disabled={!props.canCreateAsset || !props.canUpdateScene || !props.selectedScene} title={props.selectedScene ? "Upload and set as current scene background" : "Select a scene first"} onClick={() => document.getElementById(backgroundInputId)?.click()}>
-            <Upload size={16} /> Upload Background
-          </button>
-        </div>
-        <div className="admin-actions asset-batch-actions" aria-label="Asset batch actions">
-          <label className="inline-check">
-            <input aria-label="Select visible assets" type="checkbox" checked={allVisibleAssetsSelected} disabled={visibleAssetIds.length === 0} onChange={(event) => setVisibleAssetsSelected(event.target.checked)} />
-            <span>{formatNumber(selectedAssetIds.length)} selected</span>
-          </label>
-          <button className="ghost-button" type="button" disabled={!props.canUpdateScene || selectedAssets.length === 0} onClick={() => updateSelectedAssetLifecycle("archived").catch(console.error)}>
-            <RotateCcw size={16} /> Batch archive assets
-          </button>
-          <button className="ghost-button" type="button" disabled={!props.canUpdateScene || selectedAssets.length === 0} onClick={() => updateSelectedAssetLifecycle("active").catch(console.error)}>
-            <Check size={16} /> Batch restore assets
-          </button>
-          <button className="ghost-button" type="button" disabled={!props.canUpdateScene || selectedAssets.length === 0} onClick={() => updateSelectedAssetLifecycle("deleted").catch(console.error)}>
-            <X size={16} /> Batch delete assets
-          </button>
-        </div>
+          </section>
+        )}
         <input
           id={uploadInputId}
           type="file"
@@ -11199,7 +11263,7 @@ function ContentImportPanel(props: {
             input.value = "";
           }}
         />
-        <div className="admin-status" role="status" aria-live="polite">{props.assetStatus}</div>
+        {hasAssetActivityStatus && <div className="admin-status asset-activity-status" role="status" aria-live="polite">{props.assetStatus}</div>}
         {props.failedAssetUpload && (
           <div className="operator-row tool-call-row" aria-label="Asset upload recovery">
             <span>{props.failedAssetUpload.file.name} failed: {props.failedAssetUpload.message}</span>
@@ -11213,84 +11277,47 @@ function ContentImportPanel(props: {
             </div>
           </div>
         )}
-        {largestAssets.length > 0 && (
-          <div className="asset-pressure-list" aria-label="Largest assets">
-            {largestAssets.slice(0, 3).map((asset) => (
-              <div className="operator-row tool-call-row" key={`largest-${asset.id}`}>
-                <span>{asset.name}</span>
-                <strong>{formatStorageBytes(asset.sizeBytes)} - {asset.provider} - {asset.lifecycleStatus}</strong>
-              </div>
-            ))}
-          </div>
-        )}
-        {delivery && (
-          <div className="asset-pressure-list" aria-label="Asset delivery diagnostics">
-            <div className="operator-row tool-call-row">
-              <span>{delivery.actionRequired ? "Delivery action required" : "Delivery ready"}</span>
-              <strong>{delivery.actionReasons.length > 0 ? delivery.actionReasons.join(", ") : `${delivery.mode} delivery`}</strong>
-            </div>
-            <div className="operator-row tool-call-row">
-              <span>{formatNumber(delivery.posture.deliverableActiveAssetCount)} deliverable / {formatNumber(delivery.posture.activeManagedAssetCount)} managed</span>
-              <strong>{formatNumber(delivery.posture.undeliverableActiveAssetCount)} undeliverable - {formatNumber(delivery.posture.cdnEligibleAssetCount)} CDN eligible</strong>
-            </div>
-            {delivery.warnings.slice(0, 3).map((warning) => (
-              <div className="operator-row tool-call-row" key={`asset-delivery-warning-${warning.code}`}>
-                <span>{warning.message}</span>
-                <strong>{warning.env.length > 0 ? warning.env.join(", ") : warning.severity}</strong>
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="asset-list">
+        <div className="asset-list asset-list-clean">
           {filteredAssets.length === 0 ? (
-            <div className="empty-state compact">No assets match this view.</div>
+            <div className="empty-state compact asset-empty-state">
+              <strong>{props.assets.length === 0 ? "No assets yet." : "No assets match this view."}</strong>
+              <span>{props.assets.length === 0 ? "Upload campaign art, maps, handouts, or PDFs to start the library." : isFilteringAssets ? "Try clearing search or filters." : "Upload an asset to add it here."}</span>
+            </div>
           ) : (
             filteredAssets.map((asset) => {
               const lifecycle = asset.lifecycle?.status ?? "active";
               const isDeleted = lifecycle === "deleted";
               const isImage = asset.mimeType.startsWith("image/");
+              const selected = selectedAssetIds.includes(asset.id);
+              const assetKind = isImage ? "Image" : asset.mimeType.includes("pdf") ? "PDF" : "File";
+              const folderLabel = asset.folder || "Unfiled";
+              const tagPreview = (asset.tags ?? []).slice(0, 3);
+              const hiddenTagCount = Math.max(0, (asset.tags?.length ?? 0) - tagPreview.length);
               return (
-                <article className="asset-card" key={asset.id}>
+                <article className={selected ? "asset-card asset-card-clean selected" : "asset-card asset-card-clean"} key={asset.id}>
                   <div className="asset-thumb">{isImage && !isDeleted ? <img src={assetBlobUrl(asset)} alt="" /> : <FileText size={24} />}</div>
                   <div className="asset-detail">
-                    <div className="operator-heading">
+                    <div className="asset-card-main">
                       <div>
-                        <label className="inline-check">
+                        <label className="asset-select-toggle">
                           <input aria-label={`Select ${asset.name} asset`} type="checkbox" checked={selectedAssetIds.includes(asset.id)} onChange={(event) => setAssetSelected(asset.id, event.target.checked)} />
-                          <span>Select</span>
+                          <span>{selected ? "Selected" : "Select"}</span>
                         </label>
                         <h3>{asset.name}</h3>
-                        <p>{asset.mimeType} - {formatStorageBytes(asset.sizeBytes)}</p>
+                        <p>{assetKind} - {formatStorageBytes(asset.sizeBytes)} - {folderLabel}</p>
                       </div>
-                      <span className={`status-pill ${lifecycle === "active" ? "completed" : lifecycle === "deleted" ? "failed" : "running"}`}>{lifecycle}</span>
+                      <span className={`status-pill ${lifecycle === "active" ? "completed" : lifecycle === "deleted" ? "failed" : "running"}`}>{titleCaseLabel(lifecycle)}</span>
                     </div>
-                    <div className="admin-meta">
-                      <span>{asset.storage?.provider ?? "external"}</span>
-                      <span>{asset.security?.status ?? "unscanned"}</span>
-                      {asset.folder && <span>{asset.folder}</span>}
-                      {asset.tags && asset.tags.length > 0 && <span>{asset.tags.join(", ")}</span>}
-                      {asset.lifecycle?.expiresAt && <span>expires {formatDateTime(asset.lifecycle.expiresAt)}</span>}
+                    <div className="asset-chip-row" aria-label={`${asset.name} quick details`}>
+                      {tagPreview.map((tag) => (
+                        <span className="asset-chip" key={`${asset.id}-${tag}`}>{tag}</span>
+                      ))}
+                      {hiddenTagCount > 0 && <span className="asset-chip muted">+{formatNumber(hiddenTagCount)}</span>}
+                      {!isImage && <span className="asset-chip muted">{asset.mimeType}</span>}
+                      {asset.security && asset.security.findings.length > 0 && <span className="asset-chip warning">{formatNumber(asset.security.findings.length)} findings</span>}
+                      {asset.lifecycle?.expiresAt && <span className="asset-chip muted">expires {formatDateTime(asset.lifecycle.expiresAt)}</span>}
                     </div>
-                    <form
-                      className="mini-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        const form = new FormData(event.currentTarget);
-                        props.onUpdateAssetMetadata(asset, {
-                          name: String(form.get("name") ?? asset.name),
-                          folder: String(form.get("folder") ?? asset.folder ?? ""),
-                          tags: String(form.get("tags") ?? (asset.tags ?? []).join(", "))
-                        }).catch(console.error);
-                      }}
-                    >
-                      <input name="name" aria-label={`${asset.name} asset name`} defaultValue={asset.name} />
-                      <input name="folder" aria-label={`${asset.name} asset folder`} defaultValue={asset.folder ?? ""} placeholder="folder" />
-                      <input name="tags" aria-label={`${asset.name} asset tags`} defaultValue={(asset.tags ?? []).join(", ")} placeholder="tags" />
-                      <button className="ghost-button" type="submit" disabled={!props.canUpdateScene}>
-                        <Check size={16} /> Save Metadata
-                      </button>
-                    </form>
-                    <div className="admin-actions">
+                    <div className="asset-card-actions">
                       <button
                         className="ghost-button"
                         type="button"
@@ -11304,24 +11331,62 @@ function ContentImportPanel(props: {
                           setTokenDropPreview(event.dataTransfer, asset.name, assetBlobUrl(asset));
                         }}
                       >
-                        <MapPin size={16} /> Token
+                        <MapPin size={16} /> Place
                       </button>
                       <button className="ghost-button" type="button" disabled={!props.canUpdateScene || !props.selectedScene || isDeleted || !isImage} onClick={() => props.onSetSceneBackground(asset).catch(console.error)}>
                         <Eye size={16} /> Background
                       </button>
-                      <button className="ghost-button" type="button" disabled={isDeleted} onClick={() => props.onCreateAssetDeliveryUrl(asset).catch(console.error)}>
-                        <Download size={16} /> Signed URL
-                      </button>
-                      <button className="ghost-button" type="button" disabled={!props.canUpdateScene || lifecycle === "archived"} onClick={() => props.onUpdateAssetLifecycle(asset, "archived").catch(console.error)}>
-                        <RotateCcw size={16} /> Archive
-                      </button>
-                      <button className="ghost-button" type="button" disabled={!props.canUpdateScene || lifecycle === "active"} onClick={() => props.onUpdateAssetLifecycle(asset, "active").catch(console.error)}>
-                        <Check size={16} /> Restore
-                      </button>
-                      <button className="ghost-button" type="button" disabled={!props.canUpdateScene || isDeleted} onClick={() => props.onUpdateAssetLifecycle(asset, "deleted").catch(console.error)}>
-                        <X size={16} /> Delete
-                      </button>
+                      {lifecycle === "active" ? (
+                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => props.onUpdateAssetLifecycle(asset, "archived").catch(console.error)}>
+                          <RotateCcw size={16} /> Archive
+                        </button>
+                      ) : (
+                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => props.onUpdateAssetLifecycle(asset, "active").catch(console.error)}>
+                          <Check size={16} /> Restore
+                        </button>
+                      )}
                     </div>
+                    <details className="asset-card-details">
+                      <summary>Edit details and delivery</summary>
+                      <form
+                        className="mini-form asset-edit-form"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          const form = new FormData(event.currentTarget);
+                          props.onUpdateAssetMetadata(asset, {
+                            name: String(form.get("name") ?? asset.name),
+                            folder: String(form.get("folder") ?? asset.folder ?? ""),
+                            tags: String(form.get("tags") ?? (asset.tags ?? []).join(", "))
+                          }).catch(console.error);
+                        }}
+                      >
+                        <input name="name" aria-label={`${asset.name} asset name`} defaultValue={asset.name} />
+                        <input name="folder" aria-label={`${asset.name} asset folder`} defaultValue={asset.folder ?? ""} placeholder="folder" />
+                        <input name="tags" aria-label={`${asset.name} asset tags`} defaultValue={(asset.tags ?? []).join(", ")} placeholder="tags" />
+                        <button className="ghost-button" type="submit" disabled={!props.canUpdateScene}>
+                          <Check size={16} /> Save
+                        </button>
+                      </form>
+                      <div className="admin-meta">
+                        <span>{asset.storage?.provider ?? "external"}</span>
+                        <span>{asset.security?.status ?? "unscanned"}</span>
+                        {asset.lifecycle?.expiresAt && <span>expires {formatDateTime(asset.lifecycle.expiresAt)}</span>}
+                      </div>
+                      <div className="admin-actions">
+                        <button className="ghost-button" type="button" disabled={isDeleted} onClick={() => props.onCreateAssetDeliveryUrl(asset).catch(console.error)}>
+                          <Download size={16} /> Signed URL
+                        </button>
+                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene || lifecycle === "archived"} onClick={() => props.onUpdateAssetLifecycle(asset, "archived").catch(console.error)}>
+                          <RotateCcw size={16} /> Archive
+                        </button>
+                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene || lifecycle === "active"} onClick={() => props.onUpdateAssetLifecycle(asset, "active").catch(console.error)}>
+                          <Check size={16} /> Restore
+                        </button>
+                        <button className="ghost-button" type="button" disabled={!props.canUpdateScene || isDeleted} onClick={() => props.onUpdateAssetLifecycle(asset, "deleted").catch(console.error)}>
+                          <X size={16} /> Delete
+                        </button>
+                      </div>
+                    </details>
                   </div>
                 </article>
               );
@@ -11330,18 +11395,22 @@ function ContentImportPanel(props: {
         </div>
       </section>
 
-      <div className="panel-heading">
-        <div>
-          <div className="section-title">Content Import</div>
-        </div>
-      </div>
-      <form
-        className="operator-section content-import-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          props.onPreview(previewEntities, previewSource).then(() => setDraftEntities([])).catch(console.error);
-        }}
-      >
+      <details className="content-import-drawer">
+        <summary>
+          <span>
+            <strong>Content import</strong>
+            <small>Adapters, previews, apply, and rollback tools</small>
+          </span>
+          <span>{formatNumber(props.imports.length)} batches</span>
+        </summary>
+        <div className="content-import-drawer-body">
+          <form
+            className="operator-section content-import-form content-import-form-clean"
+            onSubmit={(event) => {
+              event.preventDefault();
+              props.onPreview(previewEntities, previewSource).then(() => setDraftEntities([])).catch(console.error);
+            }}
+          >
         <section className="operator-section compact" aria-label="Content import adapter setup">
           <div className="operator-heading">
             <div>
@@ -11420,9 +11489,9 @@ function ContentImportPanel(props: {
             ))}
           </div>
         )}
-      </form>
-      <div className="admin-status" role="status" aria-live="polite">{props.status}</div>
-      <div className="operator-list">
+          </form>
+          <div className="admin-status" role="status" aria-live="polite">{props.status}</div>
+          <div className="operator-list content-import-list">
         {props.imports.length === 0 ? (
           <div className="empty-state compact">No content imports for this campaign.</div>
         ) : (
@@ -11513,7 +11582,9 @@ function ContentImportPanel(props: {
             );
           })
         )}
-      </div>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
