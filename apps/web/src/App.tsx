@@ -4,6 +4,7 @@ import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circ
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
 import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange, type BoardTokenPositionChange } from "./board-history.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
@@ -780,7 +781,7 @@ export function App() {
       : "Ready";
   const activeSystemId = snapshot.systems.find((system) => system.active)?.id ?? selectedCampaign?.defaultSystemId;
   const selectedActor = snapshot.actors.find((actor) => actor.id === selectedToken?.actorId) ?? snapshot.actors.find((actor) => actor.systemId === activeSystemId) ?? snapshot.actors[0];
-  const adversaryActors = snapshot.actors.filter((actor) => isAdversaryActor(actor, snapshot.tokens));
+  const adversaryActors = adversaryActorsForSceneBoard(snapshot.actors, snapshot.tokens, selectedScene?.id);
   const partyActors = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
   const activeCombat = snapshot.combats.find((combat) => combat.active);
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
@@ -4062,7 +4063,7 @@ export function App() {
                 key={actor.id}
                 type="button"
                 onClick={() => {
-                  const token = snapshot.tokens.find((item) => item.actorId === actor.id && item.sceneId === sceneId);
+                  const token = snapshot.tokens.find((item) => item.actorId === actor.id && item.sceneId === selectedScene?.id);
                   if (token) selectSingleToken(token.id);
                   setTab("actors");
                 }}
@@ -9847,14 +9848,6 @@ function stringArrayValue(value: unknown): string[] | undefined {
 
 function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-function isAdversaryActor(actor: Actor, tokens: Token[]): boolean {
-  const type = actor.type.toLowerCase();
-  if (type === "monster" || type === "adversary" || type === "enemy") return true;
-  const role = stringValue(recordValue(actor.data).role)?.toLowerCase() ?? stringValue(recordValue(actor.data).category)?.toLowerCase();
-  if (role === "adversary" || role === "enemy" || role === "monster") return true;
-  return tokens.some((token) => token.actorId === actor.id && token.disposition === "hostile");
 }
 
 function actorRailSubtitle(actor: Actor): string {
