@@ -2570,7 +2570,7 @@ export function App() {
     setFogBrushMode(null);
     const next = annotationTool === kind ? null : kind;
     setAnnotationTool(next);
-    setAnnotationPanelOpen(Boolean(next && !isTransientMeasurementTool(next)));
+    setAnnotationPanelOpen(Boolean(next && annotationToolShowsSettings(next)));
     setStatus(next ? `${annotationToolLabel(next)} tool active` : "Annotation tool inactive");
   }
 
@@ -5164,7 +5164,7 @@ export function App() {
                 {toolReport && <pre>{toolReport}</pre>}
               </section>
             )}
-            {annotationPanelOpen && !fogBrushMode && annotationTool && !isTransientMeasurementTool(annotationTool) && (
+            {annotationPanelOpen && !fogBrushMode && annotationTool && annotationToolShowsSettings(annotationTool) && (
             <section className="table-tool-panel annotation-panel movable-panel" aria-label="Annotation layers and history" style={annotationToolPanel.style}>
               <header className="annotation-panel-header floating-panel-header" {...annotationToolPanel.dragHandleProps}>
                 <div>
@@ -6966,6 +6966,10 @@ function isDistanceMeasurementTool(kind: ActiveAnnotationTool): kind is "ruler" 
 
 function isTransientMeasurementTool(kind: ActiveAnnotationTool): kind is "ruler" | MeasurementTool {
   return isDistanceMeasurementTool(kind);
+}
+
+function annotationToolShowsSettings(kind: ActiveAnnotationTool): boolean {
+  return kind === "drawing" || kind === "template";
 }
 
 function draftAnnotationKind(kind: ActiveAnnotationTool): SceneAnnotationKind {

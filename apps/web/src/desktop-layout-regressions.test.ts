@@ -290,6 +290,9 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain("activeSceneAnnotations(props.scene.annotations, annotationExpiryNow)");
     expect(appSource).toContain("activeSceneAnnotations(props.scene?.annotations, annotationExpiryNow).length");
     expect(appSource).toContain("const annotations = selectedCurrentAnnotations;");
+    expect(appSource).toContain("annotationToolShowsSettings(next)");
+    expect(appSource).toContain("function annotationToolShowsSettings(kind: ActiveAnnotationTool): boolean");
+    expect(appSource).toContain('return kind === "drawing" || kind === "template";');
   });
 
   it("keeps the mobile layer stack shallow so it does not swallow the board", () => {
