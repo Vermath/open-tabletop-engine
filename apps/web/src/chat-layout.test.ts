@@ -20,4 +20,15 @@ describe("chat layout", () => {
     expect(streamIndex).toBeGreaterThan(chatRailIndex);
     expect(composerIndex).toBeGreaterThan(streamIndex);
   });
+
+  it("keeps chat rail sections stacked in one column", () => {
+    const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+
+    expect(styles).toContain("grid-template-columns: minmax(0, 1fr);");
+    expect(styles).toContain(".chat-rail > .chat-dice-box");
+    expect(styles).toContain(".chat-rail > .chat-rail-stream");
+    expect(styles).toContain(".chat-rail > .chat-composer-dock");
+    expect(styles).toContain("grid-column: 1;");
+    expect(styles).toContain("grid-area: auto;");
+  });
 });
