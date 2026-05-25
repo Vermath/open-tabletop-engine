@@ -52,6 +52,10 @@ describe("desktop layout regressions", () => {
     expect(appSource).not.toContain('label: "AI Studio"');
     expect(appSource).toContain("AI Studio is deprecated. Use the AI Agent for AI-assisted table work.");
     expect(stylesSource).toContain(".ai-agent-deprecation-note {");
+    expect(appSource).toContain("const agentPanel = useMovablePanel(initialAiAgentPanelPosition);");
+    expect(appSource).toContain('<aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style}>');
+    expect(appSource).toContain('<header className="ai-agent-header floating-panel-header" {...agentPanel.dragHandleProps}>');
+    expect(stylesSource).toContain(".ai-agent-popout.movable-panel {\n  top: var(--floating-panel-y, 20px);");
     expect(stylesSource).toContain("background: #070b10;\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(229, 176, 74, 0.08);\n  isolation: isolate;");
     expect(stylesSource).toContain("@media (max-width: 900px) {\n  .ai-agent-popout {\n    right: 12px;\n    bottom: calc(76px + env(safe-area-inset-bottom, 0px));");
     expect(stylesSource).toContain("@media (max-width: 760px) {\n  .ai-agent-popout {\n    right: 8px;\n    bottom: calc(70px + env(safe-area-inset-bottom, 0px));");

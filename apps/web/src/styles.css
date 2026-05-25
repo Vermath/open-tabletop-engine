@@ -7317,6 +7317,14 @@ body {
   }
 }
 
+.ai-agent-popout.movable-panel {
+  top: var(--floating-panel-y, 20px);
+  right: auto;
+  bottom: auto;
+  left: var(--floating-panel-x, 20px);
+  width: min(420px, calc(100vw - 32px));
+}
+
 .ai-agent-header,
 .ai-agent-composer {
   display: flex;

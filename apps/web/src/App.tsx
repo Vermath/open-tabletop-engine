@@ -562,8 +562,17 @@ function clampFloatingPanel(value: number, max: number): number {
   return Math.max(8, Math.min(Math.max(8, max), Math.round(value)));
 }
 
-function useMovablePanel(initialPosition: FloatingPanelPosition) {
-  const [position, setPosition] = useState(initialPosition);
+function initialAiAgentPanelPosition(): FloatingPanelPosition {
+  const width = Math.min(420, Math.max(280, window.innerWidth - 32));
+  const height = Math.min(680, Math.max(260, window.innerHeight - 40));
+  return {
+    x: clampFloatingPanel(window.innerWidth - width - 20, window.innerWidth - 48),
+    y: clampFloatingPanel(window.innerHeight - height - 20, window.innerHeight - 48)
+  };
+}
+
+function useMovablePanel(initialPosition: FloatingPanelPosition | (() => FloatingPanelPosition)) {
+  const [position, setPosition] = useState<FloatingPanelPosition>(() => (typeof initialPosition === "function" ? initialPosition() : initialPosition));
   const dragRef = useRef<FloatingPanelDrag | null>(null);
   const style = useMemo(
     () =>
@@ -5466,9 +5475,10 @@ function AiAgentPanel(props: {
 }) {
   const agentProposals = visibleAiAgentProposals(props.proposals, props.messages, props.hiddenProposalIds);
   const codexAuthUrl = props.codexAuth?.authUrl ?? props.codexAuth?.verificationUrl;
+  const agentPanel = useMovablePanel(initialAiAgentPanelPosition);
   return (
-    <aside className="ai-agent-popout" aria-label="AI Agent">
-      <header className="ai-agent-header">
+    <aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style}>
+      <header className="ai-agent-header floating-panel-header" {...agentPanel.dragHandleProps}>
         <div>
           <span className="section-title">AI Agent</span>
           <strong>{props.status}</strong>
