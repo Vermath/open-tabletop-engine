@@ -444,6 +444,12 @@ export interface SessionInfo {
   };
 }
 
+function canManageActiveOrganization(session: SessionInfo): boolean {
+  const activeOrganizationId = session.organization?.id;
+  const activeOrganization = activeOrganizationId ? session.organizations?.find((organization) => organization.id === activeOrganizationId) : undefined;
+  return Boolean(session.serverAdmin || activeOrganization?.role === "owner" || activeOrganization?.role === "admin");
+}
+
 export interface PublicSession extends Pick<UserSession, "id" | "userId" | "activeOrganizationId" | "expiresAt" | "lastSeenAt" | "createdAt" | "updatedAt"> {}
 
 export interface AdminSessionRiskItem {
@@ -2692,13 +2698,13 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
   };
-  const [session, campaigns, workspaceDefaults, organizationMembers, organizationInvites] = await Promise.all([
+  const [session, campaigns, workspaceDefaults, organizationMembers] = await Promise.all([
     snapshotGet<SessionInfo>("/api/v1/auth/session"),
     snapshotGet<Campaign[]>("/api/v1/campaigns"),
     snapshotGet<OrganizationWorkspace>("/api/v1/organization/workspace-defaults"),
-    snapshotGet<OrganizationMemberInfo[]>("/api/v1/organization/members"),
-    snapshotGet<OrganizationInviteInfo[]>("/api/v1/organization/invites").catch(() => [])
+    snapshotGet<OrganizationMemberInfo[]>("/api/v1/organization/members")
   ]);
+  const organizationInvites = canManageActiveOrganization(session) ? await snapshotGet<OrganizationInviteInfo[]>("/api/v1/organization/invites").catch(() => []) : [];
   const selectedCampaignId = campaigns.find((campaign) => campaign.id === campaignId)?.id ?? campaigns[0]?.id;
   if (!selectedCampaignId) {
     return {

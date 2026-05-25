@@ -16,6 +16,12 @@ import { sceneTabWrapClass } from "./scene-tabs.js";
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 const boardHistoryLimit = 50;
 
+function apiOfflineStatus(detail?: unknown): string {
+  const message = (typeof detail === "string" ? detail : detail instanceof Error ? detail.message : detail == null ? "" : String(detail)).trim();
+  const suffix = message ? `: ${message}` : "";
+  return `API offline at ${apiBase || "http://127.0.0.1:4000"}${suffix}. Start it with pnpm --filter @open-tabletop/api dev.`;
+}
+
 interface FailedAssetUpload {
   file: File;
   setAsBackground: boolean;
@@ -99,6 +105,7 @@ interface CodexAuthStart {
 
 interface AiAgentCodexAuthPrompt extends CodexAuthStart {
   message: string;
+  opened: boolean;
 }
 
 interface BoardCaptureRequestEvent {
@@ -912,6 +919,12 @@ export function App() {
   const canUpdateSelectedActor = hasPermission("actor.update") || (selectedActor?.ownerUserId === currentUserId && hasPermission("actor.updateOwned"));
   const activeOrganization = snapshot.organizations.find((organization) => organization.id === activeOrganizationId);
   const canManageActiveOrganization = activeOrganization?.role === "owner" || activeOrganization?.role === "admin";
+  const canManageCampaignSettings = hasPermission("campaign.update") || hasPermission("campaign.delete") || canManageActiveOrganization;
+  const canManagePeople = hasPermission("campaign.update") || canManageActiveOrganization;
+  const canManageScenes = hasPermission("scene.create") || hasPermission("scene.update") || hasPermission("scene.delete") || hasPermission("scene.activate");
+  const canManageArchives = hasPermission("campaign.update") || canManageActiveOrganization;
+  const canUsePrepWorkspace = canManageScenes || hasPermission("journal.create") || hasPermission("journal.update") || hasPermission("plugin.install") || hasPermission("plugin.configure") || hasPermission("actor.create");
+  const canUseAiStudioWorkspace = hasPermission("ai.proposeChanges") || hasPermission("ai.applyChanges") || hasPermission("ai.readGmMemory") || hasPermission("combat.manage");
 
   useEffect(() => {
     const activeLayerTokenIds = new Set(selectedSceneActiveLayerTokenKey ? selectedSceneActiveLayerTokenKey.split("|") : []);
@@ -1090,11 +1103,11 @@ export function App() {
             requireInteractiveSignIn(bootstrap.publicRegistration ? `Sign in or register to open a campaign. ${message}` : `Sign in or use an invite link to join the beta. ${message}`);
             return;
           }
-          setStatus(`API offline at ${apiBase || "http://127.0.0.1:4000"}: ${message}. Start it with pnpm --filter @open-tabletop/api dev.`);
+          setStatus(apiOfflineStatus(message));
         });
       })
       .catch((error) => {
-        if (!cancelled) setStatus(`API offline at ${apiBase || "http://127.0.0.1:4000"}: ${error instanceof Error ? error.message : String(error)}. Start it with pnpm --filter @open-tabletop/api dev.`);
+        if (!cancelled) setStatus(apiOfflineStatus(error));
       });
     return () => {
       cancelled = true;
@@ -1130,8 +1143,31 @@ export function App() {
   }, [tab, workspaceMode]);
 
   useEffect(() => {
-    if (manageCategory === "serverAdmin" && snapshot.session && !snapshot.session.serverAdmin) setManageCategory("campaign");
-  }, [manageCategory, snapshot.session?.serverAdmin, snapshot.session?.user.id]);
+    if (workspaceMode === "prep" && !canUsePrepWorkspace) setWorkspaceMode("live");
+    if (workspaceMode === "ai" && !canUseAiStudioWorkspace) setWorkspaceMode("live");
+  }, [canUseAiStudioWorkspace, canUsePrepWorkspace, workspaceMode]);
+
+  useEffect(() => {
+    if (workspaceMode === "manage" && aiAgentOpen) setAiAgentOpen(false);
+  }, [aiAgentOpen, workspaceMode]);
+
+  useEffect(() => {
+    if (!aiAgentOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAiAgentOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [aiAgentOpen]);
+
+  useEffect(() => {
+    if (!snapshot.session) return;
+    if (manageCategory === "campaign" && !canManageCampaignSettings) setManageCategory("account");
+    if (manageCategory === "people" && !canManagePeople) setManageCategory("account");
+    if (manageCategory === "scenes" && !canManageScenes) setManageCategory("account");
+    if (manageCategory === "archives" && !canManageArchives) setManageCategory("account");
+    if (manageCategory === "serverAdmin" && !snapshot.session.serverAdmin) setManageCategory("account");
+  }, [canManageArchives, canManageCampaignSettings, canManagePeople, canManageScenes, manageCategory, snapshot.session?.serverAdmin, snapshot.session?.user.id]);
 
   useEffect(() => {
     if (!selectedActor || tab !== "actors") return;
@@ -2981,10 +3017,13 @@ export function App() {
       }
       const codexAuth = codexAuthPromptFromError(error);
       if (codexAuth) {
-        const message = errorMessage(error);
-        setAiAgentCodexAuth({ ...codexAuth, message });
-        setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
-        setAiAgentStatus("Agent needs ChatGPT sign-in");
+        const opened = openCodexAuthPrompt(codexAuth);
+        const promptMessage = opened
+          ? "Codex sign-in opened. Finish the ChatGPT OAuth flow, then send your agent request again."
+          : "Codex sign-in is required. Use the sign-in button below, then send your agent request again.";
+        setAiAgentCodexAuth({ ...codexAuth, opened, message: promptMessage });
+        setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: promptMessage, createdAt: new Date().toISOString() }]);
+        setAiAgentStatus(opened ? "Codex sign-in opened" : "Codex sign-in required");
         return;
       }
       if (isSessionAuthError(error)) {
@@ -3007,6 +3046,12 @@ export function App() {
     if (!aiAgentAbortRef.current) return;
     setAiAgentStatus("Stopping agent turn");
     aiAgentAbortRef.current.abort();
+  }
+
+  function startAiAgentCodexAuth(auth: CodexAuthStart) {
+    const opened = openCodexAuthPrompt(auth);
+    setAiAgentCodexAuth((current) => (current ? { ...current, opened } : current));
+    setAiAgentStatus(opened ? "Codex sign-in opened" : "Codex sign-in blocked");
   }
 
   async function trackAiGenerationJob(job: AiGenerationJob, task: () => Promise<void>) {
@@ -3848,6 +3893,7 @@ export function App() {
   }
 
   if (!snapshotReady) {
+    const apiOffline = status.startsWith("API offline");
     return (
       <main className="auth-shell">
         <section className="reset-panel auth-panel" aria-labelledby="snapshot-loading-title">
@@ -3855,10 +3901,15 @@ export function App() {
             <RefreshCw size={22} />
           </div>
           <div>
-            <div className="eyebrow">Workspace</div>
-            <h1 id="snapshot-loading-title">Loading campaign</h1>
+            <div className="eyebrow">{apiOffline ? "Connection" : "Workspace"}</div>
+            <h1 id="snapshot-loading-title">{apiOffline ? "API connection required" : "Loading campaign"}</h1>
           </div>
-          <div className="status reset-status" role="status" aria-live="polite">{status}</div>
+          <div className={`status reset-status ${apiOffline ? "connection-status" : ""}`} role="status" aria-live="polite">{status}</div>
+          {apiOffline && (
+            <button className="ghost-button wide" type="button" onClick={() => window.location.reload()}>
+              <RefreshCw size={16} /> Retry connection
+            </button>
+          )}
         </section>
       </main>
     );
@@ -3866,28 +3917,35 @@ export function App() {
 
   const manageCategories = [
     { id: "account", label: "Account", description: "Profile, workspace, password, and MFA", icon: <UserCog size={16} />, badge: snapshot.organizations.length > 0 ? formatNumber(snapshot.organizations.length) : undefined },
-    { id: "campaign", label: "Campaign", description: "Create, edit, archive, and permissions", icon: <Shield size={16} />, badge: selectedCampaign?.archivedAt ? "archived" : "active" },
-    { id: "people", label: "People", description: "Invites and table joining", icon: <UserPlus size={16} />, badge: formatNumber(snapshot.organizationInvites.filter((invite) => invite.status === "pending").length) },
-    { id: "scenes", label: "Scenes", description: "Scene creation, ordering, maps, and activation", icon: <MapPin size={16} />, badge: formatNumber(accessibleScenes.length) },
-    { id: "archives", label: "Archives", description: "Portable exports, imports, and recovery", icon: <Download size={16} />, badge: archiveImportReport ? "ready" : undefined },
+    { id: "campaign", label: "Campaign", description: "Create, edit, archive, and permissions", icon: <Shield size={16} />, visible: canManageCampaignSettings, badge: selectedCampaign?.archivedAt ? "archived" : "active" },
+    { id: "people", label: "People", description: "Invites and table joining", icon: <UserPlus size={16} />, visible: canManagePeople, badge: formatNumber(snapshot.organizationInvites.filter((invite) => invite.status === "pending").length) },
+    { id: "scenes", label: "Scenes", description: "Scene creation, ordering, maps, and activation", icon: <MapPin size={16} />, visible: canManageScenes, badge: formatNumber(accessibleScenes.length) },
+    { id: "archives", label: "Archives", description: "Portable exports, imports, and recovery", icon: <Download size={16} />, visible: canManageArchives, badge: archiveImportReport ? "ready" : undefined },
     { id: "serverAdmin", label: "Server Admin", description: "Operational admin tools", icon: <UserCog size={16} />, visible: Boolean(snapshot.session?.serverAdmin), badge: adminSnapshot ? "synced" : undefined }
   ] satisfies Array<{ id: ManageCategoryId; label: string; description: string; icon: React.ReactNode; badge?: string; visible?: boolean }>;
   const visibleManageCategories = manageCategories.filter((category) => category.visible !== false);
-  const activeManageCategory = visibleManageCategories.some((category) => category.id === manageCategory) ? manageCategory : "campaign";
+  const activeManageCategory = visibleManageCategories.some((category) => category.id === manageCategory) ? manageCategory : (visibleManageCategories[0]?.id ?? "account");
   const adminPanel = snapshot.session?.serverAdmin ? <AdminPanel admin={adminSnapshot} campaigns={snapshot.campaigns} systems={snapshot.systems} workspaceDefaults={snapshot.workspaceDefaults} organizationMembers={snapshot.organizationMembers} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onRevokeRiskSessions={revokeAdminRiskSessions} onPruneExpiredPasswordResets={pruneExpiredPasswordResets} onRetryEmail={retryAdminEmail} onRetryAllEmails={retryAllAdminEmails} onRetryAiToolCall={retryAdminAiToolCall} onFailStaleAiThreads={failStaleAiThreads} onFailStaleAiToolCalls={failStaleAiToolCalls} onRejectStaleAiProposals={rejectStaleAiProposals} onCleanupStoredAssetBytes={cleanupStoredAssetBytes} onMigrateStoredAssetBytes={migrateStoredAssetBytes} onQuarantineAssetIntegrityFailures={quarantineAssetIntegrityFailures} onPurgeAssetCdnCache={purgeAssetCdnCache} onUpdatePluginReview={updatePluginReview} onSyncPluginRegistries={syncAdminPluginRegistries} onUpdateWorkspaceDefaults={updateOrganizationWorkspaceDefaults} onAddOrganizationMember={addOrganizationMember} onUpdateOrganizationMember={updateOrganizationMember} onRemoveOrganizationMember={deleteOrganizationMember} onCreateScimMapping={createScimGroupRoleMapping} onDeleteScimMapping={deleteScimGroupRoleMapping} /> : null;
+  const accountOnlyManageMode = visibleManageCategories.length === 1 && visibleManageCategories[0]?.id === "account";
+  const manageWorkspaceEyebrow = accountOnlyManageMode ? "Account" : "Manage";
+  const manageWorkspaceHeading = accountOnlyManageMode ? (snapshot.session?.user.displayName ?? "Account settings") : (selectedCampaign?.name ?? "Workspace settings");
   const workspaceModeOptions = [
     { id: "live", label: "Live Table", icon: <Eye size={15} /> },
-    { id: "prep", label: "Prep", icon: <MapPin size={15} /> },
-    { id: "ai", label: "AI Studio", icon: <Bot size={15} /> },
-    { id: "manage", label: "Manage", icon: <Boxes size={15} /> }
+    ...(canUsePrepWorkspace ? [{ id: "prep" as const, label: "Prep", icon: <MapPin size={15} /> }] : []),
+    ...(canUseAiStudioWorkspace ? [{ id: "ai" as const, label: "AI Studio", icon: <Bot size={15} /> }] : []),
+    { id: "manage", label: accountOnlyManageMode ? "Account" : "Manage", icon: accountOnlyManageMode ? <UserCog size={15} /> : <Boxes size={15} /> }
   ] satisfies Array<{ id: WorkspaceMode; label: string; icon: React.ReactNode }>;
-  const workspaceEyebrow = workspaceMode === "ai" ? "AI Studio" : workspaceMode === "prep" ? "Prep" : workspaceMode === "manage" ? "Manage" : (selectedCampaign?.defaultSystemId ?? "No system");
-  const workspaceHeading = workspaceMode === "ai" ? "Build, review, and apply generated table content" : workspaceMode === "prep" ? "Prep scenes, assets, journals, and imports" : workspaceMode === "manage" ? (selectedCampaign?.name ?? "Workspace settings") : (selectedCampaign?.name ?? "Create a campaign");
+  const selectWorkspaceMode = (mode: WorkspaceMode) => {
+    setWorkspaceMode(mode);
+    setAiAgentOpen(false);
+  };
+  const workspaceEyebrow = workspaceMode === "ai" ? "AI Studio" : workspaceMode === "prep" ? "Prep" : workspaceMode === "manage" ? manageWorkspaceEyebrow : (selectedCampaign?.defaultSystemId ?? "No system");
+  const workspaceHeading = workspaceMode === "ai" ? "Build, review, and apply generated table content" : workspaceMode === "prep" ? "Prep scenes, assets, journals, and imports" : workspaceMode === "manage" ? manageWorkspaceHeading : (selectedCampaign?.name ?? "Create a campaign");
   const showSceneTabs = workspaceMode !== "manage" || activeManageCategory === "scenes";
   const showScenePrepControls = workspaceMode === "prep";
   const showSceneSelectionControls = workspaceMode === "prep" || (workspaceMode === "manage" && activeManageCategory === "scenes");
   const canSelectPrepScenes = showSceneSelectionControls && hasPermission("scene.update");
-  const showQuickCreate = workspaceMode === "live" || workspaceMode === "prep";
+  const showQuickCreate = (workspaceMode === "live" || workspaceMode === "prep") && hasPermission("token.create");
   const showTableWorkspace = workspaceMode === "live" || workspaceMode === "prep";
   const inspectorTabs: InspectorTab[] = workspaceMode === "live"
     ? ["actors", "chat", "combat"]
@@ -3980,13 +4038,17 @@ export function App() {
         </p>
         <div className="rail-mode workspace-mode-switcher" role="group" aria-label="Workspace mode">
           {workspaceModeOptions.map((mode) => (
-            <button className={workspaceMode === mode.id ? "ghost-button active" : "ghost-button"} key={mode.id} type="button" onClick={() => setWorkspaceMode(mode.id)}>
+            <button className={workspaceMode === mode.id ? "ghost-button active" : "ghost-button"} key={mode.id} type="button" aria-label={mode.label} title={mode.label} onClick={() => selectWorkspaceMode(mode.id)}>
               {mode.icon} {mode.label}
             </button>
           ))}
         </div>
-        <button className={aiAgentOpen ? "ai-agent-toggle active" : "ai-agent-toggle"} type="button" onClick={() => setAiAgentOpen((open) => !open)} aria-expanded={aiAgentOpen}>
-          <Bot size={16} /> AI Agent
+        <button className={aiAgentOpen ? "ai-agent-toggle active" : "ai-agent-toggle"} type="button" onClick={() => setAiAgentOpen((open) => !open)} aria-label="AI Agent" title="AI Agent" aria-expanded={aiAgentOpen}>
+          <Bot size={16} />
+          <span className="ai-agent-toggle-label ai-agent-toggle-label-full">AI Agent</span>
+          <span className="ai-agent-toggle-label ai-agent-toggle-label-compact" aria-hidden="true">
+            AI
+          </span>
         </button>
         <section className="party-rail" aria-label="Party">
           <div className="operator-heading">
@@ -4045,10 +4107,10 @@ export function App() {
         <section className="rail-admin" hidden={workspaceMode !== "manage"} aria-label="Manage workspace panel">
           <div className="manage-drawer-heading">
             <div>
-              <div className="section-title">Manage</div>
-              <strong>{selectedCampaign?.name ?? "Workspace"}</strong>
+              <div className="section-title">{manageWorkspaceEyebrow}</div>
+              <strong>{manageWorkspaceHeading}</strong>
             </div>
-            <button className="ghost-button manage-drawer-close" type="button" onClick={() => setWorkspaceMode("live")}>
+            <button className="ghost-button manage-drawer-close" type="button" onClick={() => selectWorkspaceMode("live")}>
               <X size={16} /> Close
             </button>
           </div>
@@ -4090,7 +4152,7 @@ export function App() {
               <select aria-label="Active organization workspace" value={activeOrganizationId} onChange={(event) => switchActiveOrganization(event.target.value).catch((error) => setAccountStatus(error instanceof Error ? error.message : String(error)))}>
                 {snapshot.organizations.map((organization) => (
                   <option key={organization.id} value={organization.id}>
-                    {organization.name} - {organization.role} - {organization.campaignCount} campaigns
+                    {organization.name}
                   </option>
                 ))}
               </select>
@@ -4165,7 +4227,7 @@ export function App() {
         >
           <div className="section-title">Campaign Setup</div>
           <input aria-label="Campaign name" value={newCampaignName} placeholder="Campaign name" onChange={(event) => setNewCampaignName(event.target.value)} />
-          <input aria-label="Campaign description" value={newCampaignDescription} placeholder="Description" onChange={(event) => setNewCampaignDescription(event.target.value)} />
+          <textarea aria-label="Campaign description" value={newCampaignDescription} placeholder="Description" onChange={(event) => setNewCampaignDescription(event.target.value)} />
           <select aria-label="Campaign rules system" value={newCampaignSystemId} onChange={(event) => setNewCampaignSystemId(event.target.value)}>
             {snapshot.systems.length === 0 ? (
               <option value="dnd-5e-srd">D&D 5.5e SRD</option>
@@ -4245,7 +4307,7 @@ export function App() {
           >
             <div className="section-title">Campaign Settings</div>
             <input aria-label="Edit campaign name" value={campaignEditName} onChange={(event) => setCampaignEditName(event.target.value)} />
-            <input aria-label="Edit campaign description" value={campaignEditDescription} placeholder="Description" onChange={(event) => setCampaignEditDescription(event.target.value)} />
+            <textarea aria-label="Edit campaign description" value={campaignEditDescription} placeholder="Description" onChange={(event) => setCampaignEditDescription(event.target.value)} />
             <select aria-label="Edit campaign rules system" value={campaignEditSystemId} onChange={(event) => setCampaignEditSystemId(event.target.value)}>
               {snapshot.systems.length === 0 ? (
                 <option value="dnd-5e-srd">D&D 5.5e SRD</option>
@@ -4401,11 +4463,39 @@ export function App() {
             }}
           >
             <div className="section-title">Scene Setup</div>
-            <input aria-label="Scene name" value={newSceneName} placeholder="Scene name" onChange={(event) => setNewSceneName(event.target.value)} />
-            <input aria-label="Scene folder" value={newSceneFolder} placeholder="prep" onChange={(event) => setNewSceneFolder(event.target.value)} />
-            <input aria-label="Scene width" type="number" min={200} value={newSceneWidth} onChange={(event) => setNewSceneWidth(Number(event.target.value))} />
-            <input aria-label="Scene height" type="number" min={200} value={newSceneHeight} onChange={(event) => setNewSceneHeight(Number(event.target.value))} />
-            <input aria-label="Scene grid size" type="number" min={10} value={newSceneGridSize} onChange={(event) => setNewSceneGridSize(Number(event.target.value))} />
+            <div className="admin-form-grid scene-field-grid">
+              <label className="span-full">
+                <span>Name</span>
+                <input aria-label="Scene name" value={newSceneName} placeholder="Scene name" onChange={(event) => setNewSceneName(event.target.value)} />
+              </label>
+              <label>
+                <span>Folder</span>
+                <input aria-label="Scene folder" value={newSceneFolder} placeholder="prep" onChange={(event) => setNewSceneFolder(event.target.value)} />
+              </label>
+              <label>
+                <span>Width</span>
+                <input aria-label="Scene width" type="number" min={200} value={newSceneWidth} onChange={(event) => setNewSceneWidth(Number(event.target.value))} />
+              </label>
+              <label>
+                <span>Height</span>
+                <input aria-label="Scene height" type="number" min={200} value={newSceneHeight} onChange={(event) => setNewSceneHeight(Number(event.target.value))} />
+              </label>
+              <label>
+                <span>Grid</span>
+                <input aria-label="Scene grid size" type="number" min={10} value={newSceneGridSize} onChange={(event) => setNewSceneGridSize(Number(event.target.value))} />
+              </label>
+              <label className="span-full">
+                <span>Background</span>
+                <select aria-label="Scene background asset" value={newSceneBackgroundAssetId} onChange={(event) => setNewSceneBackgroundAssetId(event.target.value)}>
+                  <option value="">No background</option>
+                  {campaignImageAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div className="scene-size-panel" aria-label="Scene size presets">
               <div className="scene-size-summary">
                 <span>Map size</span>
@@ -4419,14 +4509,6 @@ export function App() {
                 ))}
               </div>
             </div>
-            <select aria-label="Scene background asset" value={newSceneBackgroundAssetId} onChange={(event) => setNewSceneBackgroundAssetId(event.target.value)}>
-              <option value="">No background</option>
-              {campaignImageAssets.map((asset) => (
-                <option key={asset.id} value={asset.id}>
-                  {asset.name}
-                </option>
-              ))}
-            </select>
             <label className="inline-check">
               <input type="checkbox" checked={newSceneActive} onChange={(event) => setNewSceneActive(event.target.checked)} />
               <span>Activate for players</span>
@@ -4452,11 +4534,39 @@ export function App() {
                 <span>{selectedScene.width} x {selectedScene.height} / grid {selectedScene.gridSize}</span>
               </div>
             </div>
-            <input aria-label="Edit scene name" value={sceneEditName} onChange={(event) => setSceneEditName(event.target.value)} />
-            <input aria-label="Edit scene folder" value={sceneEditFolder} placeholder="folder" onChange={(event) => setSceneEditFolder(event.target.value)} />
-            <input aria-label="Edit scene width" type="number" min={200} value={sceneEditWidth} onChange={(event) => setSceneEditWidth(Number(event.target.value))} />
-            <input aria-label="Edit scene height" type="number" min={200} value={sceneEditHeight} onChange={(event) => setSceneEditHeight(Number(event.target.value))} />
-            <input aria-label="Edit scene grid size" type="number" min={10} value={sceneEditGridSize} onChange={(event) => setSceneEditGridSize(Number(event.target.value))} />
+            <div className="admin-form-grid scene-field-grid">
+              <label className="span-full">
+                <span>Name</span>
+                <input aria-label="Edit scene name" value={sceneEditName} onChange={(event) => setSceneEditName(event.target.value)} />
+              </label>
+              <label>
+                <span>Folder</span>
+                <input aria-label="Edit scene folder" value={sceneEditFolder} placeholder="folder" onChange={(event) => setSceneEditFolder(event.target.value)} />
+              </label>
+              <label>
+                <span>Width</span>
+                <input aria-label="Edit scene width" type="number" min={200} value={sceneEditWidth} onChange={(event) => setSceneEditWidth(Number(event.target.value))} />
+              </label>
+              <label>
+                <span>Height</span>
+                <input aria-label="Edit scene height" type="number" min={200} value={sceneEditHeight} onChange={(event) => setSceneEditHeight(Number(event.target.value))} />
+              </label>
+              <label>
+                <span>Grid</span>
+                <input aria-label="Edit scene grid size" type="number" min={10} value={sceneEditGridSize} onChange={(event) => setSceneEditGridSize(Number(event.target.value))} />
+              </label>
+              <label className="span-full">
+                <span>Background</span>
+                <select aria-label="Edit scene background asset" value={sceneEditBackgroundAssetId} onChange={(event) => setSceneEditBackgroundAssetId(event.target.value)}>
+                  <option value="">No background</option>
+                  {campaignImageAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div className="scene-size-panel" aria-label="Edit scene size presets">
               <div className="scene-size-summary">
                 <span>Map size</span>
@@ -4470,14 +4580,6 @@ export function App() {
                 ))}
               </div>
             </div>
-            <select aria-label="Edit scene background asset" value={sceneEditBackgroundAssetId} onChange={(event) => setSceneEditBackgroundAssetId(event.target.value)}>
-              <option value="">No background</option>
-              {campaignImageAssets.map((asset) => (
-                <option key={asset.id} value={asset.id}>
-                  {asset.name}
-                </option>
-              ))}
-            </select>
             <label className="inline-check">
               <input type="checkbox" checked={sceneEditActive} onChange={(event) => setSceneEditActive(event.target.checked)} />
               <span>Active player scene</span>
@@ -4865,7 +4967,7 @@ export function App() {
         {showTableWorkspace ? (
         <div className={`table-grid workspace-${workspaceMode}`}>
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
-            <Toolbar onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
+            <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
             {selectedTokens.length > 1 && <MapSelectionStatus selectedCount={selectedTokens.length} onClear={clearTokenSelection} />}
             <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />
@@ -5015,7 +5117,7 @@ export function App() {
             )}
             {workspaceMode === "prep" && !fogBrushMode && tab === "content" && (
             <section className="table-tool-panel canvas-asset-dock" aria-label="Canvas asset picker">
-              <details open>
+              <details>
                 <summary>
                   <Upload size={15} /> Assets
                 </summary>
@@ -5111,7 +5213,7 @@ export function App() {
             </div>
             {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
-            {tab === "chat" && <ChatRail command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} members={snapshot.members} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} />}
+            {tab === "chat" && <ChatRail command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
@@ -5155,6 +5257,7 @@ export function App() {
           onPromptChange={setAiAgentPrompt}
           onSend={() => sendAiAgentMessage().catch((error) => setAiAgentStatus(errorMessage(error)))}
           onStop={stopAiAgentTurn}
+          onStartCodexAuth={startAiAgentCodexAuth}
           onClose={() => setAiAgentOpen(false)}
           onApply={applyAiAgentProposal}
           onReject={rejectAiAgentProposal}
@@ -5176,6 +5279,7 @@ function AiAgentPanel(props: {
   onPromptChange(value: string): void;
   onSend(): void;
   onStop(): void;
+  onStartCodexAuth(auth: CodexAuthStart): void;
   onClose(): void;
   onApply(proposal: Proposal): void;
   onReject(proposal: Proposal): void;
@@ -5234,9 +5338,9 @@ function AiAgentPanel(props: {
           </div>
           <div className="ai-agent-auth-actions">
             {codexAuthUrl ? (
-              <a className="primary-button ai-agent-auth-link" href={codexAuthUrl} target="_blank" rel="noreferrer">
+              <button className="primary-button ai-agent-auth-link" type="button" onClick={() => props.onStartCodexAuth(props.codexAuth!)}>
                 <KeyRound size={16} /> Open sign-in
-              </a>
+              </button>
             ) : (
               <span className="ai-agent-auth-missing">No sign-in link</span>
             )}
@@ -5381,10 +5485,10 @@ interface TokenDropPayload {
   layer?: TokenLayer;
 }
 
-const tokenLayers: Array<{ id: TokenLayer; label: string; description: string }> = [
-  { id: "map", label: "Map & Background", description: "Scene props and map dressing below playable tokens." },
-  { id: "player", label: "Player Objects & Tokens", description: "Player-visible, selectable combat and interaction tokens." },
-  { id: "gm", label: "GM Info Overlay", description: "GM-only tokens and notes hidden from players." }
+const tokenLayers: Array<{ id: TokenLayer; label: string; compactLabel: string; description: string }> = [
+  { id: "map", label: "Map & Background", compactLabel: "Props", description: "Scene props and map dressing below playable tokens." },
+  { id: "player", label: "Player Objects & Tokens", compactLabel: "Players", description: "Player-visible, selectable combat and interaction tokens." },
+  { id: "gm", label: "GM Info Overlay", compactLabel: "GM", description: "GM-only tokens and notes hidden from players." }
 ];
 const tokenLayerRanks: Record<TokenLayer, number> = { map: 0, player: 1, gm: 2 };
 const tokenVisualScale = 0.92;
@@ -5435,7 +5539,7 @@ function MapLayerStack(props: { scene?: Scene; tokens: Token[]; activeTokenLayer
       </div>
       {tokenLayers.map((layer) => (
         <button className={`map-layer-row map-layer-button ${props.activeTokenLayer === layer.id ? "active" : ""}`} type="button" aria-pressed={props.activeTokenLayer === layer.id} title={layer.description} key={layer.id} onClick={() => props.onSelectTokenLayer(layer.id)}>
-          <span>{layer.label}</span>
+          <span>{layer.compactLabel}</span>
           <strong>{formatNumber(layerCounts[layer.id])}</strong>
         </button>
       ))}
@@ -5686,6 +5790,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   );
   const orderedActiveLayerTokens = useMemo(() => orderedTokens.filter((token) => activeLayerTokenIds.has(token.id)), [orderedTokens, activeLayerTokenIds]);
   const selectedTokenIdSet = useMemo(() => new Set(props.selectedTokenIds), [props.selectedTokenIds]);
+  const selectedViewportToken = useMemo(() => tokens.find((token) => token.id === props.selectedTokenId), [tokens, props.selectedTokenId]);
   const tokenImageAssets = useMemo(() => new Map(props.assets.filter(isUsableImageAsset).map((asset) => [asset.id, asset])), [props.assets]);
   const visibleAnnotations = useMemo(() => (props.scene.annotations ?? []).filter((annotation) => props.visibleAnnotationLayers[annotation.layer ?? defaultAnnotationLayer(annotation.kind)] !== false), [props.scene.annotations, props.visibleAnnotationLayers]);
   const displayAnnotations = useMemo(
@@ -5718,6 +5823,29 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       return changed ? next : current;
     });
   }, [tokens]);
+
+  useEffect(() => {
+    const token = selectedViewportToken;
+    if (!token) return;
+    const frame = window.requestAnimationFrame(() => {
+      const viewport = viewportRef.current;
+      const board = boardRef.current;
+      if (!viewport || !board || board.clientWidth <= 0 || board.clientHeight <= 0) return;
+      const tokenCenterX = ((token.x + token.width / 2) / props.scene.width) * board.clientWidth;
+      const tokenCenterY = ((token.y + token.height / 2) / props.scene.height) * board.clientHeight;
+      const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+      const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+      const compactViewport = viewport.clientWidth < 360 || viewport.clientHeight < 220;
+      const targetViewportX = compactViewport ? viewport.clientWidth * 0.24 : viewport.clientWidth / 2;
+      const targetViewportY = compactViewport ? Math.max(36, viewport.clientHeight * 0.22) : viewport.clientHeight / 2;
+      viewport.scrollTo({
+        left: Math.min(maxScrollLeft, Math.max(0, tokenCenterX - targetViewportX)),
+        top: Math.min(maxScrollTop, Math.max(0, tokenCenterY - targetViewportY)),
+        behavior: "auto"
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [props.scene.height, props.scene.id, props.scene.width, props.zoom, selectedViewportToken]);
 
   function boardPoint(clientX: number, clientY: number, options: { clamp?: boolean } = {}): VisionPoint | undefined {
     const rect = boardRef.current?.getBoundingClientRect();
@@ -6649,7 +6777,6 @@ function annotationGroupKey(annotation: SceneAnnotation): string {
   return annotation.groupLabel ?? annotation.groupId ?? "Ungrouped";
 }
 
-
 function annotationToolLabel(kind: ActiveAnnotationTool): string {
   if (kind === "ping") return "Ping";
   if (kind === "ruler") return "Ruler";
@@ -6731,14 +6858,42 @@ function MapSelectionStatus(props: { selectedCount: number; onClear(): void }) {
 }
 
 function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onHideFog(): void; onRevealFogPolygon(): void; onToggleFogBrush(mode: FogMode): void; onToggleAnnotationTool(kind: ActiveAnnotationTool): void; onDeleteLatestAnnotation(): void; onUndoFog(): void; onShowFogHistory(): void; onSampleVisionPoint(): void; onSaveFogPreset(): void; onApplyFogPreset(): void; onDeleteFogPreset(): void; onAddWall(): void; onAddTerrainWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; activeFogBrushMode: FogMode | null; activeAnnotationTool: AnnotationTool; hasFogPresets: boolean; canUpdateScene: boolean; canAnnotate: boolean }) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const advancedToolsRef = useRef<HTMLDetailsElement>(null);
+  const closeAdvancedTools = () => setAdvancedOpen(false);
+  const runAdvancedAction = (action: () => void) => {
+    closeAdvancedTools();
+    action();
+  };
+
+  useEffect(() => {
+    if (!advancedOpen) return;
+    const closeOnPointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!advancedToolsRef.current?.contains(event.target as Node)) closeAdvancedTools();
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeAdvancedTools();
+    };
+    document.addEventListener("mousedown", closeOnPointerDown);
+    document.addEventListener("touchstart", closeOnPointerDown);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnPointerDown);
+      document.removeEventListener("touchstart", closeOnPointerDown);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [advancedOpen]);
+
   return (
     <div className="toolbar">
       <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select" aria-label="Select" onClick={props.onSelectTool}>
         <Hand size={17} />
       </button>
-      <button className="tool" title="Token" aria-label="Add token" tabIndex={1} autoFocus onClick={props.onCreateToken} disabled={!props.canCreateToken}>
-        <Plus size={17} />
-      </button>
+      {props.canCreateToken && (
+        <button className="tool" title="Token" aria-label="Add token" tabIndex={1} autoFocus onClick={props.onCreateToken}>
+          <Plus size={17} />
+        </button>
+      )}
       <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
         <Ruler size={17} />
       </button>
@@ -6751,85 +6906,87 @@ function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCo
       <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
         <MapPin size={17} />
       </button>
-      <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={props.onRevealFog} disabled={!props.canRevealFog}>
-        <Eye size={17} />
-      </button>
-      <button className={`tool ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing" aria-label="Drawing" onClick={() => props.onToggleAnnotationTool("drawing")} disabled={!props.canUpdateScene}>
-        <PencilLine size={17} />
-      </button>
-      <button className={`tool ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")} disabled={!props.canUpdateScene}>
-        <Circle size={17} />
-      </button>
-      <button className="tool" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={props.onDeleteLatestAnnotation} disabled={!props.canUpdateScene}>
-        <X size={17} />
-      </button>
-      <details className="tool-more">
-        <summary className="tool" title="More tools" aria-label="More tools">
-          <Boxes size={17} />
-        </summary>
-        <div className="tool-more-panel" aria-label="Advanced table tools">
-          <button className="ghost-button" type="button" onClick={props.onStartCombat} disabled={!props.canManageCombat}>
-            <Swords size={15} /> Combat
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onRevealFog} disabled={!props.canRevealFog}>
-            <Eye size={15} /> Reveal fog
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onHideFog} disabled={!props.canRevealFog}>
-            <Eraser size={15} /> Hide fog
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onRevealFogPolygon} disabled={!props.canRevealFog}>
-            <Pentagon size={15} /> Polygon fog
-          </button>
-          <button className={`ghost-button ${props.activeFogBrushMode === "reveal" ? "active" : ""}`} type="button" onClick={() => props.onToggleFogBrush("reveal")} disabled={!props.canRevealFog}>
-            <Paintbrush size={15} /> Reveal brush
-          </button>
-          <button className={`ghost-button ${props.activeFogBrushMode === "hide" ? "active" : ""}`} type="button" onClick={() => props.onToggleFogBrush("hide")} disabled={!props.canRevealFog}>
-            <Eraser size={15} /> Hide brush
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onUndoFog} disabled={!props.canRevealFog}>
-            <RotateCcw size={15} /> Undo fog
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onShowFogHistory} disabled={!props.canRevealFog}>
-            <ScrollText size={15} /> Fog history
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onSampleVisionPoint} disabled={!props.canRevealFog}>
-            <Crosshair size={15} /> Sample vision
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onSaveFogPreset} disabled={!props.canRevealFog}>
-            <Download size={15} /> Save preset
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onApplyFogPreset} disabled={!props.canRevealFog || !props.hasFogPresets}>
-            <Upload size={15} /> Apply preset
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onDeleteFogPreset} disabled={!props.canRevealFog || !props.hasFogPresets}>
-            <UserX size={15} /> Delete preset
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onAddWall} disabled={!props.canUpdateScene}>
-            <BrickWall size={15} /> Wall
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onAddTerrainWall} disabled={!props.canUpdateScene}>
-            <BrickWall size={15} /> Terrain
-          </button>
-          <button className="ghost-button" type="button" onClick={props.onAddLight} disabled={!props.canUpdateScene}>
-            <Lightbulb size={15} /> Light
-          </button>
-          <button className={`ghost-button ${props.activeAnnotationTool === "ping" ? "active" : ""}`} type="button" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
-            <MapPin size={15} /> Ping
-          </button>
-          <button className={`ghost-button ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} type="button" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
-            <Circle size={15} /> Measure circle
-          </button>
-          <button className={`ghost-button ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} type="button" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
-            <Triangle size={15} /> Measure cone
-          </button>
-          <button className={`ghost-button ${props.activeAnnotationTool === "template" ? "active" : ""}`} type="button" onClick={() => props.onToggleAnnotationTool("template")} disabled={!props.canUpdateScene}>
-            <Circle size={15} /> Template
-          </button>
-          <button className="ghost-button danger-button" type="button" onClick={props.onDeleteLatestAnnotation} disabled={!props.canUpdateScene}>
-            <X size={15} /> Delete mark
-          </button>
-        </div>
-      </details>
+      {props.canRevealFog && (
+        <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={props.onRevealFog}>
+          <Eye size={17} />
+        </button>
+      )}
+      {props.canUpdateScene && (
+        <button className={`tool ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing" aria-label="Drawing" onClick={() => props.onToggleAnnotationTool("drawing")}>
+          <PencilLine size={17} />
+        </button>
+      )}
+      {props.canUpdateScene && (
+        <button className={`tool ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")}>
+          <Circle size={17} />
+        </button>
+      )}
+      {props.canUpdateScene && (
+        <button className="tool" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={props.onDeleteLatestAnnotation}>
+          <X size={17} />
+        </button>
+      )}
+      {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && (
+        <details ref={advancedToolsRef} className="tool-more" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
+          <summary className="tool" title="Advanced tools" aria-label="Advanced tools">
+            <Boxes size={17} />
+          </summary>
+          <div className="tool-more-panel" aria-label="Advanced table tools">
+            {props.canManageCombat && (
+              <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onStartCombat)}>
+                <Swords size={15} /> Combat
+              </button>
+            )}
+            {props.canRevealFog && (
+              <>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onHideFog)}>
+                  <Eraser size={15} /> Hide fog
+                </button>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onRevealFogPolygon)}>
+                  <Pentagon size={15} /> Polygon fog
+                </button>
+                <button className={`ghost-button ${props.activeFogBrushMode === "reveal" ? "active" : ""}`} type="button" onClick={() => runAdvancedAction(() => props.onToggleFogBrush("reveal"))}>
+                  <Paintbrush size={15} /> Reveal brush
+                </button>
+                <button className={`ghost-button ${props.activeFogBrushMode === "hide" ? "active" : ""}`} type="button" onClick={() => runAdvancedAction(() => props.onToggleFogBrush("hide"))}>
+                  <Eraser size={15} /> Hide brush
+                </button>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onUndoFog)}>
+                  <RotateCcw size={15} /> Undo fog
+                </button>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onShowFogHistory)}>
+                  <ScrollText size={15} /> Fog history
+                </button>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onSampleVisionPoint)}>
+                  <Crosshair size={15} /> Sample vision
+                </button>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onSaveFogPreset)}>
+                  <Download size={15} /> Save preset
+                </button>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onApplyFogPreset)} disabled={!props.hasFogPresets}>
+                  <Upload size={15} /> Apply preset
+                </button>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onDeleteFogPreset)} disabled={!props.hasFogPresets}>
+                  <UserX size={15} /> Delete preset
+                </button>
+              </>
+            )}
+            {props.canUpdateScene && (
+              <>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onAddWall)}>
+                  <BrickWall size={15} /> Wall
+                </button>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onAddTerrainWall)}>
+                  <BrickWall size={15} /> Terrain
+                </button>
+                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onAddLight)}>
+                  <Lightbulb size={15} /> Light
+                </button>
+              </>
+            )}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -7119,6 +7276,14 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
     setFullSheetOpen(false);
   }, [props.token?.id]);
   useEffect(() => {
+    if (!fullSheetOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFullSheetOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [fullSheetOpen]);
+  useEffect(() => {
     if (!props.actor || props.actor.systemId !== "dnd-5e-srd" || !props.canUseAction) {
       setActionPreview(undefined);
       setActionPreviewStatus("");
@@ -7297,12 +7462,14 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
         </div>
       </section>
       {fullSheetOpen && (
-        <div className="modal-backdrop" role="presentation">
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setFullSheetOpen(false);
+        }}>
           <div className="modal-dialog actor-sheet-dialog" role="dialog" aria-modal="true" aria-labelledby={`actor-full-sheet-title-${props.actor.id}`}>
             <div className="operator-heading">
               <div>
                 <div className="section-title">Character Sheet</div>
-                <h2 id={`actor-full-sheet-title-${props.actor.id}`}>{props.actor.name} full character sheet</h2>
+                <h2 id={`actor-full-sheet-title-${props.actor.id}`}>{props.actor.name}</h2>
               </div>
               <button className="ghost-button" type="button" aria-label="Close full character sheet" onClick={() => setFullSheetOpen(false)}>
                 <X size={16} /> Close
@@ -9821,6 +9988,12 @@ function updatedSceneIdFromProposal(proposal: Proposal): string | undefined {
   return undefined;
 }
 
+function openCodexAuthPrompt(auth: CodexAuthStart): boolean {
+  const url = auth.authUrl ?? auth.verificationUrl;
+  if (!url) return false;
+  return Boolean(window.open(url, "_blank", "noopener,noreferrer"));
+}
+
 function createdSceneIdFromProposal(proposal: Proposal): string | undefined {
   for (const change of proposal.changesJson) {
     if (change.entity !== "scene" || change.action !== "create") continue;
@@ -9911,8 +10084,17 @@ type ChatRailProps = {
   messages: ChatMessage[];
   rolls: DiceRoll[];
   members: Snapshot["members"];
+  diceFormula: string;
+  setDiceFormula(value: string): void;
+  diceVisibility: DiceRoll["visibility"];
+  setDiceVisibility(value: DiceRoll["visibility"]): void;
+  savedDiceFormulas: string[];
+  diceMacros: Snapshot["diceMacros"];
+  onRollDice(): Promise<void>;
+  onSaveDiceFormula(): Promise<void>;
   onSubmitCommand(): Promise<void>;
   onClearReply(): void;
+  canRollDice: boolean;
 };
 
 function ChatRail(props: ChatRailProps) {
@@ -9920,6 +10102,7 @@ function ChatRail(props: ChatRailProps) {
   const memberNames = new Map(props.members.map((member) => [member.user.id, member.user.displayName]));
   const messageById = new Map(props.messages.map((message) => [message.id, message]));
   const rollById = new Map(props.rolls.map((roll) => [roll.id, roll]));
+  const savedFormulaOptions = [...props.diceMacros.map((macro) => ({ label: macro.name === macro.formula ? macro.formula : `${macro.name} - ${macro.formula}`, formula: macro.formula })), ...props.savedDiceFormulas.map((formula) => ({ label: formula, formula }))].filter((option, index, options) => options.findIndex((item) => item.formula === option.formula) === index);
 
   useEffect(() => {
     streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight });
@@ -9927,6 +10110,33 @@ function ChatRail(props: ChatRailProps) {
 
   return (
     <section className="chat-rail" aria-label="Chat">
+      <form
+        className="dice-box chat-dice-box"
+        aria-label="Dice roller"
+        onSubmit={(event) => {
+          event.preventDefault();
+          props.onRollDice().catch(console.error);
+        }}
+      >
+        <Activity size={16} />
+        <input aria-label="Dice formula" value={props.diceFormula} placeholder="1d20+5" onChange={(event) => props.setDiceFormula(event.target.value)} />
+        <button className="icon-button" type="submit" title="Roll dice" aria-label="Roll dice" disabled={!props.canRollDice || !props.diceFormula.trim()}>
+          <Activity size={15} />
+        </button>
+        <select aria-label="Dice roll visibility" value={props.diceVisibility} onChange={(event) => props.setDiceVisibility(event.target.value as DiceRoll["visibility"])}>
+          <option value="public">Public</option>
+          <option value="gm_only">GM only</option>
+        </select>
+        <button className="icon-button" type="button" title="Save dice formula" aria-label="Save dice formula" disabled={!props.diceFormula.trim()} onClick={() => props.onSaveDiceFormula().catch(console.error)}>
+          <Plus size={15} />
+        </button>
+        <select aria-label="Saved dice formula" value="" onChange={(event) => event.target.value && props.setDiceFormula(event.target.value)}>
+          <option value="">Saved formulas</option>
+          {savedFormulaOptions.map((option) => (
+            <option key={option.formula} value={option.formula}>{option.label}</option>
+          ))}
+        </select>
+      </form>
       <div className="chat-rail-stream" aria-label="Chat messages" ref={streamRef}>
         {props.messages.length === 0 ? (
           <div className="empty-state compact">No messages yet.</div>
@@ -10009,7 +10219,7 @@ function ChatComposer(props: { command: string; setCommand(value: string): void;
       <div className="chat-composer-row">
         <MessageSquare size={16} />
         <textarea
-          aria-label="Chat command line"
+          aria-label="Chat message"
           value={props.command}
           placeholder="Message, /1d20 + 2, /roll 2d6, /gm secret, /w player message"
           rows={2}
@@ -10049,9 +10259,6 @@ function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLog
           <h2>{props.combat ? `Round ${props.combat.round}` : "No Active Combat"}</h2>
           <p className="panel-subtitle">{activeCombatant ? `Turn: ${activeCombatant.name}` : "Start from scene tokens when ready"}</p>
         </div>
-        <button className="icon-button" title="Start combat" aria-label="Start combat" onClick={props.onStart} disabled={!props.canManage}>
-          <Swords size={16} />
-        </button>
       </header>
       {props.combat ? (
         <>
@@ -10177,9 +10384,18 @@ function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLog
         </>
       ) : (
         <>
-          <button className="primary-button wide" onClick={props.onStart} disabled={!props.canManage}>
-            Start from scene tokens
-          </button>
+          <section className="combat-empty-state" aria-label="Start combat from scene tokens">
+            <div>
+              <Swords size={18} />
+              <div>
+                <strong>Ready to roll initiative</strong>
+                <p>Build the first round from every token in the active scene.</p>
+              </div>
+            </div>
+            <button className="primary-button" onClick={props.onStart} disabled={!props.canManage}>
+              <Swords size={15} /> Start combat
+            </button>
+          </section>
           {props.recentCombats.length > 0 && (
             <section className="admin-list" aria-label="Ended combat recap">
               <div className="section-title">Ended Combat Recap</div>
@@ -14156,6 +14372,7 @@ function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(
     { id: "memory", label: "Extract Memory", detail: "Queue campaign memory facts for review.", icon: <FileText size={16} />, disabled: !props.canPropose }
   ] satisfies Array<{ id: AiIntentId; label: string; detail: string; icon: React.ReactNode; disabled: boolean }>;
   const activeIntentOption = intentOptions.find((intent) => intent.id === activeIntent) ?? intentOptions[0]!;
+  const activeIntentClass = activeIntent === "tokenBatch" ? "token-batch" : activeIntent === "selectedToken" ? "selected-token" : activeIntent;
   return (
     <div className="panel-stack ai-workspace">
       <header className="ai-command-header">
@@ -14196,7 +14413,7 @@ function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(
       )}
 
       {activeView === "create" && (
-        <section className="ai-view-panel ai-create-workflow" aria-label="AI creation workflow">
+        <section className={`ai-view-panel ai-create-workflow ai-create-intent-${activeIntentClass}`} aria-label="AI creation workflow">
           <section className="operator-section ai-intent-panel" aria-label="AI intent selection">
             <div className="operator-heading">
               <div>
@@ -14323,7 +14540,7 @@ function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(
               </section>
             )}
             <div className="ai-asset-grid">
-              <section className="ai-asset-task" aria-label="Map generation">
+              <section className="ai-asset-task ai-map-asset-task" aria-label="Map generation">
                 <div className="operator-heading">
                   <strong>Map</strong>
                   <span>{props.selectedSceneName ?? "No scene"}</span>
@@ -14337,7 +14554,7 @@ function AiPanel(props: { prompt: string; setPrompt(value: string): void; askAi(
                 </button>
               </section>
 
-              <section className="ai-asset-task" aria-label="Token art generation">
+              <section className="ai-asset-task ai-token-asset-task" aria-label="Token art generation">
                 <div className="operator-heading">
                   <strong>Token Art</strong>
                   <span>{tokenArtStatus}</span>
