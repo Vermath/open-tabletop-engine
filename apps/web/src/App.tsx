@@ -3933,7 +3933,6 @@ export function App() {
   const workspaceModeOptions = [
     { id: "live", label: "Live Table", icon: <Eye size={15} /> },
     ...(canUsePrepWorkspace ? [{ id: "prep" as const, label: "Prep", icon: <MapPin size={15} /> }] : []),
-    ...(canUseAiStudioWorkspace ? [{ id: "ai" as const, label: "AI Studio", icon: <Bot size={15} /> }] : []),
     { id: "manage", label: accountOnlyManageMode ? "Account" : "Manage", icon: accountOnlyManageMode ? <UserCog size={15} /> : <Boxes size={15} /> }
   ] satisfies Array<{ id: WorkspaceMode; label: string; icon: React.ReactNode }>;
   const selectWorkspaceMode = (mode: WorkspaceMode) => {
@@ -5298,6 +5297,7 @@ function AiAgentPanel(props: {
           <X size={17} />
         </button>
       </header>
+      <p className="ai-agent-deprecation-note">AI Studio is deprecated. Use the AI Agent for AI-assisted table work.</p>
       <section className="ai-agent-messages" aria-label="AI Agent messages">
         {props.messages.length === 0 ? (
           <div className="empty-state compact">Ask for table prep, board edits, proposal review, or rules-supported actions.</div>
