@@ -61,6 +61,20 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain("@media (max-width: 760px) {\n  .ai-agent-popout {\n    right: 8px;\n    bottom: calc(70px + env(safe-area-inset-bottom, 0px));");
   });
 
+  it("lets the AI agent auto-apply turn proposals and submit with Ctrl+Enter", () => {
+    expect(appSource).toContain('type AiAgentApprovalMode = "manual" | "auto";');
+    expect(appSource).toContain('const [aiAgentApprovalMode, setAiAgentApprovalMode] = useState<AiAgentApprovalMode>("manual");');
+    expect(appSource).toContain('approvalMode={aiAgentApprovalMode}');
+    expect(appSource).toContain('onApprovalModeChange={setAiAgentApprovalMode}');
+    expect(appSource).toContain('aria-label="AI Agent approval mode"');
+    expect(appSource).toContain('autoApplyAiAgentProposals(proposalIds, refreshedSnapshot)');
+    expect(appSource).toContain('if (event.key === "Enter" && (event.ctrlKey || event.metaKey))');
+    expect(appSource).toContain('onKeyDown={handleAiAgentPromptKeyDown}');
+    expect(appSource).toContain('aiAgentPendingAuthRequestRef.current = { prompt, requestMessages };');
+    expect(appSource).toContain('scheduleAiAgentAuthRetry();');
+    expect(stylesSource).toContain(".ai-agent-controls {");
+  });
+
   it("lets the mobile manage drawer occupy the full viewport instead of exposing inactive rail slivers", () => {
     expect(stylesSource).toContain("@media (max-width: 640px) {\n  .rail-admin {\n    top: 0;\n    right: 0;\n    bottom: 0;\n    left: 0;");
     expect(stylesSource).toContain(".manage-category-list {\n    display: grid;\n    grid-template-columns: repeat(2, minmax(0, 1fr));");

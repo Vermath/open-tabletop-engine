@@ -1,7 +1,7 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
@@ -20,6 +20,8 @@ const boardHistoryLimit = 50;
 const pingAnnotationTtlSeconds = 5;
 const annotationExpiryTimerSlackMs = 25;
 const maxBrowserTimerDelayMs = 2_147_483_647;
+const aiAgentAuthRetryIntervalMs = 3_000;
+const aiAgentAuthRetryTimeoutMs = 10 * 60_000;
 
 function apiOfflineStatus(detail?: unknown): string {
   const message = (typeof detail === "string" ? detail : detail instanceof Error ? detail.message : detail == null ? "" : String(detail)).trim();
@@ -73,6 +75,7 @@ type ArchiveImportCollection = "assets" | "scenes" | "tokens" | "actors" | "item
 type ManageCategoryId = "account" | "campaign" | "people" | "scenes" | "archives" | "serverAdmin";
 type WorkspaceMode = "live" | "prep" | "ai" | "manage";
 type InspectorTab = "actors" | "journal" | "chat" | "combat" | "content" | "plugins";
+type AiAgentApprovalMode = "manual" | "auto";
 type AiGenerationJobKind = "map" | "token" | "tokenBatch";
 type RulesSaveOutcome = "success" | "failure";
 type ActorActionCommitOptions = { targetActorId?: string; applyEffect?: boolean; consumeResources?: boolean; saveOutcomes?: Record<string, RulesSaveOutcome>; effectChoice?: string };
@@ -119,6 +122,11 @@ interface AiAgentThreadResponse {
   thread: AiThread;
   assistantMessage: string;
   events: AiAgentProviderEvent[];
+}
+
+interface AiAgentPendingAuthRequest {
+  prompt: string;
+  requestMessages: AiAgentMessage[];
 }
 
 interface CodexAuthStart {
@@ -743,6 +751,7 @@ export function App() {
   const [aiGenerationJobs, setAiGenerationJobs] = useState<AiGenerationJob[]>([]);
   const [aiAgentOpen, setAiAgentOpen] = useState(false);
   const [aiAgentPrompt, setAiAgentPrompt] = useState("");
+  const [aiAgentApprovalMode, setAiAgentApprovalMode] = useState<AiAgentApprovalMode>("manual");
   const [aiAgentHistoryKey, setAiAgentHistoryKey] = useState(() => aiAgentHistoryStorageKey(campaignId, currentUserId));
   const [aiAgentMessages, setAiAgentMessages] = useState<AiAgentMessage[]>(() => initialAiAgentMessages(aiAgentHistoryStorageKey(campaignId, currentUserId)));
   const [aiAgentBusy, setAiAgentBusy] = useState(false);
@@ -750,6 +759,9 @@ export function App() {
   const [aiAgentCodexAuth, setAiAgentCodexAuth] = useState<AiAgentCodexAuthPrompt | null>(null);
   const [aiAgentHiddenProposalIds, setAiAgentHiddenProposalIds] = useState<Set<string>>(() => new Set());
   const aiAgentAbortRef = useRef<AbortController | null>(null);
+  const aiAgentAuthRetryTimerRef = useRef<number | null>(null);
+  const aiAgentAuthRetryStartedAtRef = useRef(0);
+  const aiAgentPendingAuthRequestRef = useRef<AiAgentPendingAuthRequest | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole>("player");
   const [inviteToken, setInviteToken] = useState("");
@@ -1149,6 +1161,7 @@ export function App() {
     setSelectedTokenIds(token ? (validSelection.length ? validSelection : [token.id]) : []);
     setSnapshotReady(true);
     if (options.syncStatus !== false) setStatus("Synced");
+    return next;
   }
 
   function requireInteractiveSignIn(message: string) {
@@ -1232,6 +1245,10 @@ export function App() {
   useEffect(() => {
     persistAiAgentMessages(aiAgentHistoryKey, aiAgentMessages);
   }, [aiAgentHistoryKey, aiAgentMessages]);
+
+  useEffect(() => () => {
+    if (aiAgentAuthRetryTimerRef.current !== null) window.clearTimeout(aiAgentAuthRetryTimerRef.current);
+  }, []);
 
   useEffect(() => {
     persistStoredId("otte:selectedSceneId", sceneId);
@@ -3152,15 +3169,58 @@ export function App() {
     await refresh();
   }
 
+  function clearAiAgentAuthRetry() {
+    if (aiAgentAuthRetryTimerRef.current !== null) window.clearTimeout(aiAgentAuthRetryTimerRef.current);
+    aiAgentAuthRetryTimerRef.current = null;
+    aiAgentAuthRetryStartedAtRef.current = 0;
+  }
+
+  function scheduleAiAgentAuthRetry() {
+    if (!aiAgentPendingAuthRequestRef.current) return;
+    if (aiAgentAuthRetryStartedAtRef.current === 0) aiAgentAuthRetryStartedAtRef.current = Date.now();
+    if (Date.now() - aiAgentAuthRetryStartedAtRef.current > aiAgentAuthRetryTimeoutMs) {
+      aiAgentPendingAuthRequestRef.current = null;
+      clearAiAgentAuthRetry();
+      const message = "ChatGPT sign-in timed out before the original agent request could resume.";
+      setAiAgentStatus("Codex sign-in timed out");
+      setAiAgentMessages((messages) => [...messages, { id: `agent-auth-timeout-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+      return;
+    }
+    if (aiAgentAuthRetryTimerRef.current !== null) window.clearTimeout(aiAgentAuthRetryTimerRef.current);
+    aiAgentAuthRetryTimerRef.current = window.setTimeout(() => {
+      aiAgentAuthRetryTimerRef.current = null;
+      retryAiAgentPendingAuthRequest().catch((error) => {
+        const message = errorMessage(error);
+        aiAgentPendingAuthRequestRef.current = null;
+        clearAiAgentAuthRetry();
+        setAiAgentStatus(`Agent failed: ${message}`);
+        setAiAgentMessages((messages) => [...messages, { id: `agent-auth-retry-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+      });
+    }, aiAgentAuthRetryIntervalMs);
+  }
+
+  async function retryAiAgentPendingAuthRequest() {
+    const pending = aiAgentPendingAuthRequestRef.current;
+    if (!pending) return;
+    await submitAiAgentTurn(pending, { authRetry: true });
+  }
+
   async function sendAiAgentMessage() {
     const prompt = aiAgentPrompt.trim();
     if (!prompt || aiAgentBusy) return;
     const userMessage: AiAgentMessage = { id: `agent-user-${Date.now()}`, role: "user", content: prompt, createdAt: new Date().toISOString() };
     const requestMessages = [...aiAgentMessages, userMessage];
+    aiAgentPendingAuthRequestRef.current = null;
+    clearAiAgentAuthRetry();
     setAiAgentMessages((messages) => [...messages, userMessage]);
     setAiAgentPrompt("");
+    await submitAiAgentTurn({ prompt, requestMessages });
+  }
+
+  async function submitAiAgentTurn({ prompt, requestMessages }: AiAgentPendingAuthRequest, options: { authRetry?: boolean } = {}) {
+    if (aiAgentBusy && !options.authRetry) return;
     setAiAgentBusy(true);
-    setAiAgentStatus("Agent working");
+    setAiAgentStatus(options.authRetry ? "Retrying agent request after sign-in" : "Agent working");
     setAiAgentCodexAuth(null);
     const abortController = new AbortController();
     aiAgentAbortRef.current = abortController;
@@ -3182,12 +3242,17 @@ export function App() {
         proposalIds,
         reasoning: reasoningTracesFromEvents(result.events)
       };
+      aiAgentPendingAuthRequestRef.current = null;
+      clearAiAgentAuthRetry();
       setAiAgentMessages((messages) => [...messages, assistantMessage]);
       setAiAgentStatus(proposalIds.length > 0 ? `Agent drafted ${proposalIds.length} proposal${proposalIds.length === 1 ? "" : "s"}` : "Agent ready");
-      await refresh();
+      const refreshedSnapshot = await refresh();
+      if (aiAgentApprovalMode === "auto" && proposalIds.length > 0) await autoApplyAiAgentProposals(proposalIds, refreshedSnapshot);
     } catch (error) {
       if (isAbortError(error) || abortController.signal.aborted) {
         const message = "Agent turn stopped.";
+        aiAgentPendingAuthRequestRef.current = null;
+        clearAiAgentAuthRetry();
         setAiAgentMessages((messages) => [...messages, { id: `agent-stop-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
         setAiAgentStatus("Agent stopped");
         return;
@@ -3195,22 +3260,28 @@ export function App() {
       const codexAuth = codexAuthPromptFromError(error);
       if (codexAuth) {
         const opened = openCodexAuthPrompt(codexAuth);
+        aiAgentPendingAuthRequestRef.current = { prompt, requestMessages };
         const promptMessage = opened
-          ? "Codex sign-in opened. Finish the ChatGPT OAuth flow, then send your agent request again."
-          : "Codex sign-in is required. Use the sign-in button below, then send your agent request again.";
+          ? "Codex sign-in opened. Finish the ChatGPT OAuth flow; the original agent request will resume automatically."
+          : "Codex sign-in is required. Use the sign-in button below; the original agent request will resume automatically.";
         setAiAgentCodexAuth({ ...codexAuth, opened, message: promptMessage });
-        setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: promptMessage, createdAt: new Date().toISOString() }]);
-        setAiAgentStatus(opened ? "Codex sign-in opened" : "Codex sign-in required");
+        if (!options.authRetry) setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: promptMessage, createdAt: new Date().toISOString() }]);
+        setAiAgentStatus(opened || options.authRetry ? "Waiting for ChatGPT sign-in" : "Codex sign-in required");
+        if (opened || options.authRetry) scheduleAiAgentAuthRetry();
         return;
       }
       if (isSessionAuthError(error)) {
         const message = errorMessage(error);
+        aiAgentPendingAuthRequestRef.current = null;
+        clearAiAgentAuthRetry();
         requireInteractiveSignIn(`Sign in required. ${message}`);
         setAiAgentMessages((messages) => [...messages, { id: `agent-auth-session-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
         setAiAgentStatus("Sign in required");
         return;
       }
       const message = errorMessage(error);
+      aiAgentPendingAuthRequestRef.current = null;
+      clearAiAgentAuthRetry();
       setAiAgentMessages((messages) => [...messages, { id: `agent-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
       setAiAgentStatus(`Agent failed: ${message}`);
     } finally {
@@ -3220,15 +3291,18 @@ export function App() {
   }
 
   function stopAiAgentTurn() {
-    if (!aiAgentAbortRef.current) return;
+    if (!aiAgentAbortRef.current && !aiAgentPendingAuthRequestRef.current) return;
+    aiAgentPendingAuthRequestRef.current = null;
+    clearAiAgentAuthRetry();
     setAiAgentStatus("Stopping agent turn");
-    aiAgentAbortRef.current.abort();
+    aiAgentAbortRef.current?.abort();
   }
 
   function startAiAgentCodexAuth(auth: CodexAuthStart) {
     const opened = openCodexAuthPrompt(auth);
     setAiAgentCodexAuth((current) => (current ? { ...current, opened } : current));
-    setAiAgentStatus(opened ? "Codex sign-in opened" : "Codex sign-in blocked");
+    setAiAgentStatus(opened ? "Waiting for ChatGPT sign-in" : "Codex sign-in blocked");
+    if (opened) scheduleAiAgentAuthRetry();
   }
 
   async function trackAiGenerationJob(job: AiGenerationJob, task: () => Promise<void>) {
@@ -3360,6 +3434,46 @@ export function App() {
     setStatus("Proposal applied");
     await refresh();
     return { applied };
+  }
+
+  async function autoApplyAiAgentProposals(proposalIds: string[], sourceSnapshot: Snapshot) {
+    if (!hasPermission("ai.applyChanges")) {
+      const message = "Auto approve needs AI apply permission; proposals are waiting for review.";
+      setAiAgentStatus("Auto approve unavailable");
+      setAiAgentMessages((messages) => [...messages, { id: `agent-auto-apply-permission-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
+      return;
+    }
+
+    const proposalsToApply = proposalIds
+      .map((proposalId) => sourceSnapshot.proposals.find((proposal) => proposal.id === proposalId))
+      .filter((proposal): proposal is Proposal => Boolean(proposal))
+      .filter((proposal) => proposal.status === "pending" || proposal.status === "approved");
+    if (proposalsToApply.length === 0) return;
+
+    setAiAgentStatus(`Auto-approving ${proposalsToApply.length} proposal${proposalsToApply.length === 1 ? "" : "s"}`);
+    let appliedCount = 0;
+    let failedCount = 0;
+    for (const proposal of proposalsToApply) {
+      hideAiAgentProposal(proposal.id);
+      try {
+        await approveAndApply(proposal);
+        appliedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        const message = errorMessage(error);
+        if (isProposalNotFoundError(error)) {
+          setSnapshot((current) => ({ ...current, proposals: current.proposals.filter((item) => item.id !== proposal.id) }));
+        }
+        setAiAgentMessages((messages) => [...messages, { id: `agent-auto-apply-error-${proposal.id}-${Date.now()}`, role: "system", content: `Auto approve failed for ${proposal.id}: ${message}`, createdAt: new Date().toISOString() }]);
+      }
+    }
+
+    const message =
+      failedCount > 0
+        ? `Auto-approved ${appliedCount} proposal${appliedCount === 1 ? "" : "s"}; ${failedCount} failed.`
+        : `Auto-approved and applied ${appliedCount} proposal${appliedCount === 1 ? "" : "s"}.`;
+    setAiAgentStatus(message);
+    setAiAgentMessages((messages) => [...messages, { id: `agent-auto-apply-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
   }
 
   async function applyAiAgentProposal(proposal: Proposal) {
@@ -5145,7 +5259,7 @@ export function App() {
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
-              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={() => refresh().then(() => undefined)} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
             </div>
             <div className="map-layer-dock" aria-label="Map controls and layers">
               <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
@@ -5443,6 +5557,8 @@ export function App() {
           proposals={snapshot.proposals}
           hiddenProposalIds={aiAgentHiddenProposalIds}
           canApply={hasPermission("ai.applyChanges")}
+          approvalMode={aiAgentApprovalMode}
+          onApprovalModeChange={setAiAgentApprovalMode}
           onPromptChange={setAiAgentPrompt}
           onSend={() => sendAiAgentMessage().catch((error) => setAiAgentStatus(errorMessage(error)))}
           onStop={stopAiAgentTurn}
@@ -5465,6 +5581,8 @@ function AiAgentPanel(props: {
   proposals: Proposal[];
   hiddenProposalIds: ReadonlySet<string>;
   canApply: boolean;
+  approvalMode: AiAgentApprovalMode;
+  onApprovalModeChange(value: AiAgentApprovalMode): void;
   onPromptChange(value: string): void;
   onSend(): void;
   onStop(): void;
@@ -5476,6 +5594,12 @@ function AiAgentPanel(props: {
   const agentProposals = visibleAiAgentProposals(props.proposals, props.messages, props.hiddenProposalIds);
   const codexAuthUrl = props.codexAuth?.authUrl ?? props.codexAuth?.verificationUrl;
   const agentPanel = useMovablePanel(initialAiAgentPanelPosition);
+  const handleAiAgentPromptKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      if (!props.busy && props.prompt.trim()) props.onSend();
+    }
+  };
   return (
     <aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style}>
       <header className="ai-agent-header floating-panel-header" {...agentPanel.dragHandleProps}>
@@ -5488,6 +5612,20 @@ function AiAgentPanel(props: {
         </button>
       </header>
       <p className="ai-agent-deprecation-note">AI Studio is deprecated. Use the AI Agent for AI-assisted table work.</p>
+      <div className="ai-agent-controls">
+        <label>
+          <span>Approval</span>
+          <select
+            aria-label="AI Agent approval mode"
+            value={props.approvalMode}
+            onChange={(event) => props.onApprovalModeChange(event.target.value as AiAgentApprovalMode)}
+            disabled={!props.canApply}
+          >
+            <option value="manual">Ask before applying</option>
+            <option value="auto">Auto approve and apply</option>
+          </select>
+        </label>
+      </div>
       <section className="ai-agent-messages" aria-label="AI Agent messages">
         {props.messages.length === 0 ? (
           <div className="empty-state compact">Ask for table prep, board edits, proposal review, or rules-supported actions.</div>
@@ -5572,7 +5710,7 @@ function AiAgentPanel(props: {
           props.onSend();
         }}
       >
-        <textarea aria-label="AI Agent prompt" value={props.prompt} placeholder="Ask the agent..." onChange={(event) => props.onPromptChange(event.target.value)} disabled={props.busy} />
+        <textarea aria-label="AI Agent prompt" value={props.prompt} placeholder="Ask the agent..." onChange={(event) => props.onPromptChange(event.target.value)} onKeyDown={handleAiAgentPromptKeyDown} disabled={props.busy} />
         {props.busy ? (
           <button className="ghost-button ai-agent-stop-button" type="button" onClick={props.onStop}>
             <X size={16} /> Stop
