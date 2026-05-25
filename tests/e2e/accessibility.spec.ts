@@ -253,7 +253,7 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Content" }).click();
   const assetSearch = page.getByRole("textbox", { name: "Asset search" });
-  await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Quota health");
+  await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Quota policy");
   await assetSearch.focus();
   await expect(assetSearch).toBeFocused();
   await assetSearch.fill("vault");
@@ -304,7 +304,7 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
   const contentNav = page.getByRole("button", { name: "Content" });
   await tabUntilFocused(page, contentNav);
   await contentNav.press("Enter");
-  await expect(page.getByText("Asset Library")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Asset library" })).toBeVisible();
 
   const assetSearch = page.getByRole("textbox", { name: "Asset search" });
   await tabUntilFocused(page, assetSearch);

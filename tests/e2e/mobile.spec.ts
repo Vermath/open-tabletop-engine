@@ -156,7 +156,7 @@ for (const viewport of viewportCases) {
 
       await page.getByRole("button", { name: "Prep", exact: true }).click();
       await page.getByRole("button", { name: "Content" }).click();
-      await expect(page.getByText("Asset Library")).toBeVisible();
+      await expect(page.getByRole("region", { name: "Asset library" })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
 
       await page.getByRole("button", { name: "Live Table", exact: true }).click();

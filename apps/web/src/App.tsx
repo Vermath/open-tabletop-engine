@@ -11015,10 +11015,10 @@ function ContentImportPanel(props: {
             <p>Find, upload, place, and retire campaign art without the storage ledger getting in the way.</p>
           </div>
           <div className="asset-primary-actions">
-            <button className="primary-button" type="button" disabled={!props.canCreateAsset} title={props.canCreateAsset ? "Upload an asset" : "Requires scene.create"} onClick={() => document.getElementById(uploadInputId)?.click()}>
+            <button className="primary-button" type="button" aria-label="Upload Asset" disabled={!props.canCreateAsset} title={props.canCreateAsset ? "Upload an asset" : "Requires scene.create"} onClick={() => document.getElementById(uploadInputId)?.click()}>
               <Upload size={16} /> Upload
             </button>
-            <button className="ghost-button" type="button" disabled={!props.canCreateAsset || !props.canUpdateScene || !props.selectedScene} title={props.selectedScene ? "Upload and set as current scene background" : "Select a scene first"} onClick={() => document.getElementById(backgroundInputId)?.click()}>
+            <button className="ghost-button" type="button" aria-label="Upload Background" disabled={!props.canCreateAsset || !props.canUpdateScene || !props.selectedScene} title={props.selectedScene ? "Upload and set as current scene background" : "Select a scene first"} onClick={() => document.getElementById(backgroundInputId)?.click()}>
               <ImageIcon size={16} /> Background
             </button>
           </div>
@@ -11093,13 +11093,13 @@ function ContentImportPanel(props: {
               </label>
               {selectedAssets.length > 0 && (
                 <>
-                  <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("archived").catch(console.error)}>
+                  <button className="ghost-button" type="button" aria-label="Batch archive assets" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("archived").catch(console.error)}>
                     <RotateCcw size={15} /> Archive
                   </button>
-                  <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("active").catch(console.error)}>
+                  <button className="ghost-button" type="button" aria-label="Batch restore assets" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("active").catch(console.error)}>
                     <Check size={15} /> Restore
                   </button>
-                  <button className="ghost-button" type="button" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("deleted").catch(console.error)}>
+                  <button className="ghost-button" type="button" aria-label="Batch delete assets" disabled={!props.canUpdateScene} onClick={() => updateSelectedAssetLifecycle("deleted").catch(console.error)}>
                     <X size={15} /> Delete
                   </button>
                 </>
@@ -11108,7 +11108,7 @@ function ContentImportPanel(props: {
           )}
         </div>
         {hasRecoverableAssets && (
-          <details className="asset-maintenance-drawer">
+          <details className="asset-maintenance-drawer" role="region" aria-label="Asset restore recovery">
             <summary>
               <span>Recovery</span>
               <strong>{formatNumber(recoverableAssets.length)} recoverable</strong>
@@ -11363,7 +11363,7 @@ function ContentImportPanel(props: {
                         <input name="name" aria-label={`${asset.name} asset name`} defaultValue={asset.name} />
                         <input name="folder" aria-label={`${asset.name} asset folder`} defaultValue={asset.folder ?? ""} placeholder="folder" />
                         <input name="tags" aria-label={`${asset.name} asset tags`} defaultValue={(asset.tags ?? []).join(", ")} placeholder="tags" />
-                        <button className="ghost-button" type="submit" disabled={!props.canUpdateScene}>
+                        <button className="ghost-button" type="submit" aria-label="Save Metadata" disabled={!props.canUpdateScene}>
                           <Check size={16} /> Save
                         </button>
                       </form>

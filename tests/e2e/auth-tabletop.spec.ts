@@ -55,6 +55,17 @@ async function openActorDisclosure(root: Locator, summaryText: string) {
   }
 }
 
+async function openDetails(details: Locator) {
+  await expect(details.locator("summary")).toBeVisible();
+  const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+  if (!isOpen) {
+    await details.evaluate((element) => {
+      (element as HTMLDetailsElement).open = true;
+      element.scrollIntoView({ block: "nearest" });
+    });
+  }
+}
+
 async function expectJsonResponse<T>(response: APIResponse): Promise<T> {
   const body = await response.text();
   expect(response.ok(), body).toBeTruthy();
@@ -672,11 +683,12 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
     { id: "concentrating", name: "Concentrating" }
   ]);
   const annotationPanel = page.getByRole("region", { name: "Annotation layers and history" });
-  await page.getByRole("button", { name: "Ping" }).click();
+  await page.getByRole("button", { name: "Drawing", exact: true }).click();
   await expect(annotationPanel).toBeVisible();
   await annotationPanel.getByRole("textbox", { name: "Annotation group label" }).fill("E2E Markup");
   await annotationPanel.getByRole("combobox", { name: "Annotation layer" }).selectOption("measurement");
   await annotationPanel.getByRole("button", { name: "Close annotation settings" }).click();
+  await page.getByRole("button", { name: "Ping" }).click();
   await sceneBoard.click({ position: { x: Math.round(box!.width * 0.2), y: Math.round(box!.height * 0.76) } });
   await expect(page.getByText("Ping added")).toBeVisible();
   await page.getByRole("button", { name: "Drawing", exact: true }).click();
@@ -813,7 +825,6 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(deleteGroup).toBeFocused();
   await deleteGroup.press("Enter");
   await expect(page.getByText(/Deleted [23] annotations in E2E Markup/)).toBeVisible();
-  await page.getByRole("button", { name: "Ping" }).click();
   await expect(annotationPanel).toBeVisible();
   await expect(annotationPanel.getByRole("region", { name: "Annotation layer summary" })).toContainText("No annotations yet");
   await page.getByRole("button", { name: "Select", exact: true }).click();
@@ -833,19 +844,22 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Content" }).click();
-  await expect(page.getByText("Asset Library")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Asset library" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Asset search" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Asset lifecycle filter" })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Asset restore recovery" })).toContainText("Recoverable");
+  const recoveryPanel = page.getByRole("region", { name: "Asset restore recovery" });
   await expect(page.locator('[aria-label="Asset quota usage"]')).toContainText("remaining");
-  await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Quota health");
+  await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Quota policy");
   await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("Recommended action");
   await expect(page.locator('[aria-label="Asset quota management"]')).toContainText("No quota cleanup needed");
+  const storageDetails = page.locator("details.asset-maintenance-drawer").filter({ hasText: "Storage and delivery details" }).first();
+  await openDetails(storageDetails);
   await expect(page.getByText("Delivery ready")).toBeVisible();
   await expect(page.getByText("signed_blob delivery")).toBeVisible();
   await expect(page.getByText("0 undeliverable - 0 CDN eligible")).toBeVisible();
   await expect(page.getByRole("button", { name: "Upload Asset" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Upload Background" })).toBeEnabled();
+  await openDetails(page.locator("details.asset-upload-defaults"));
   await page.getByRole("textbox", { name: "Asset upload folder" }).fill("maps/vault");
   await page.getByRole("textbox", { name: "Asset upload tags" }).fill("e2e, map");
   await page.locator("#asset-library-upload").setInputFiles({
@@ -870,13 +884,16 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   const uploadedAsset = assetLibrary.locator("article", { hasText: "e2e-map.svg" });
   await expect(uploadedAsset).toBeVisible();
   await expect(uploadedAsset).toContainText("maps/vault");
-  await expect(uploadedAsset).toContainText("e2e, map");
+  await expect(uploadedAsset).toContainText("e2e");
+  await expect(uploadedAsset).toContainText("map");
+  await openDetails(uploadedAsset.locator("details.asset-card-details"));
   await uploadedAsset.getByRole("textbox", { name: "e2e-map.svg asset folder" }).fill("maps/revised");
   await uploadedAsset.getByRole("textbox", { name: "e2e-map.svg asset tags" }).fill("vault, background");
   await uploadedAsset.getByRole("button", { name: "Save Metadata" }).click();
   await expect(page.getByText("e2e-map.svg metadata updated")).toBeVisible();
   await expect(uploadedAsset).toContainText("maps/revised");
-  await expect(uploadedAsset).toContainText("vault, background");
+  await expect(uploadedAsset).toContainText("vault");
+  await expect(uploadedAsset).toContainText("background");
   await uploadedAsset.getByRole("button", { name: "Signed URL" }).click();
   await expect(page.getByText("Signed URL ready for e2e-map.svg")).toBeVisible();
   await expect(page.getByText("Asset delivery URL created")).toBeVisible();
@@ -934,29 +951,31 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await uploadedAsset.getByRole("checkbox", { name: "Select e2e-map.svg asset" }).check();
   await page.getByRole("button", { name: "Batch archive assets" }).click();
   await expect(page.getByText("e2e-map.svg marked archived")).toBeVisible();
-  await expect(uploadedAsset.locator(".status-pill")).toContainText("archived");
-  await expect(page.getByRole("region", { name: "Asset restore recovery" })).toContainText("e2e-map.svg");
+  await expect(uploadedAsset.locator(".status-pill")).toContainText("Archived");
+  await openDetails(recoveryPanel);
+  await expect(recoveryPanel).toContainText("e2e-map.svg");
   await page.getByRole("combobox", { name: "Asset lifecycle filter" }).selectOption("archived");
   await expect(uploadedAsset).toBeVisible();
   await uploadedAsset.getByRole("checkbox", { name: "Select e2e-map.svg asset" }).check();
   await page.getByRole("button", { name: "Batch restore assets" }).click();
   await expect(page.getByText("e2e-map.svg marked active")).toBeVisible();
   await page.getByRole("combobox", { name: "Asset lifecycle filter" }).selectOption("all");
-  await expect(uploadedAsset.locator(".status-pill")).toContainText("active");
+  await expect(uploadedAsset.locator(".status-pill")).toContainText("Active");
   await uploadedAsset.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("e2e-map.svg marked deleted")).toBeVisible();
-  await expect(uploadedAsset.locator(".status-pill")).toContainText("deleted");
+  await expect(uploadedAsset.locator(".status-pill")).toContainText("Deleted");
   await expect(uploadedAsset.getByRole("button", { name: "Place e2e-map.svg asset on scene" })).toBeDisabled();
   await expect(uploadedAsset.getByRole("button", { name: "Background", exact: true })).toBeDisabled();
   await expect(uploadedAsset.getByRole("button", { name: "Signed URL" })).toBeDisabled();
-  await expect(page.getByRole("region", { name: "Asset restore recovery" })).toContainText("e2e-map.svg");
+  await openDetails(recoveryPanel);
+  await expect(recoveryPanel).toContainText("e2e-map.svg");
   await page.getByRole("combobox", { name: "Asset lifecycle filter" }).selectOption("deleted");
   await expect(uploadedAsset).toBeVisible();
   await uploadedAsset.getByRole("checkbox", { name: "Select e2e-map.svg asset" }).check();
   await page.getByRole("button", { name: "Batch restore assets" }).click();
   await expect(page.getByText("e2e-map.svg marked active")).toBeVisible();
   await page.getByRole("combobox", { name: "Asset lifecycle filter" }).selectOption("all");
-  await expect(uploadedAsset.locator(".status-pill")).toContainText("active");
+  await expect(uploadedAsset.locator(".status-pill")).toContainText("Active");
   await page.getByRole("combobox", { name: "Asset folder filter" }).selectOption("maps/revised");
   await expect(uploadedAsset).toBeVisible();
   await page.getByRole("combobox", { name: "Asset folder filter" }).selectOption("all");
@@ -973,7 +992,9 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await closeManage(page);
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Content" }).click();
-  await expect(page.getByText("Content Import", { exact: true })).toBeVisible();
+  const contentImportDrawer = page.locator("details.content-import-drawer");
+  await openDetails(contentImportDrawer);
+  await expect(contentImportDrawer).toContainText("Content import");
 
   await page.getByRole("combobox", { name: "Content import adapter" }).selectOption("csv_items");
   await page.getByRole("textbox", { name: "Adapter source name" }).fill("E2E CSV Adapter Source");
@@ -1049,6 +1070,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(importedLoadoutItem).toContainText("E2E Import Ledger x1");
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Content" }).click();
+  await openDetails(contentImportDrawer);
   await importReport.getByRole("button", { name: "Rollback" }).click();
   await expect(page.getByText("Content import rolled back")).toBeVisible();
   await expect(importReport.locator('[aria-label="Import history"]')).toContainText("Rolled back:");
@@ -1639,6 +1661,8 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   );
   expect(proposals.find((proposal) => proposal.id === rejectedDraft.proposal.id)?.status).toBe("rejected");
 
+  await aiAgent.getByRole("button", { name: "Close AI Agent" }).click();
+  await expect(aiAgent).toBeHidden();
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Journal" }).click();
   const recapJournal = page.locator("article.journal-entry", { hasText: "Session Recap" });
