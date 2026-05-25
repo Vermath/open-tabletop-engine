@@ -165,19 +165,22 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
 
   managePanel = await openManageCategory(page, "Account");
   let workspaceSelector = managePanel.getByLabel("Active organization workspace");
-  await expect(workspaceSelector).toContainText("Bootstrap Owner's Workspace - owner - 1 campaigns");
+  await expect(workspaceSelector).toContainText("Bootstrap Owner's Workspace");
+  await expect(managePanel.locator(".mini-form-meta")).toContainText("Owner - 1 campaigns");
   await managePanel.getByRole("textbox", { name: "New workspace name" }).fill("Side Workspace");
   await managePanel.getByRole("button", { name: "Workspace", exact: true }).click();
   await expect(managePanel.locator(".status", { hasText: "Workspace created: Side Workspace" })).toBeVisible();
-  await expect(workspaceSelector).toContainText("Side Workspace - owner - 0 campaigns");
+  await expect(workspaceSelector).toContainText("Side Workspace");
+  await expect(managePanel.locator(".mini-form-meta")).toContainText("Owner - 0 campaigns");
   managePanel = await openManageCategory(page, "Campaign");
   await managePanel.getByRole("textbox", { name: "Campaign name", exact: true }).fill("Side Workspace Campaign");
   await managePanel.getByRole("button", { name: "Create Campaign Setup", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
   managePanel = await openManageCategory(page, "Account");
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
-  await expect(workspaceSelector).toContainText("Side Workspace - owner - 1 campaigns");
-  await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace - owner - 1 campaigns" });
+  await expect(workspaceSelector).toContainText("Side Workspace");
+  await expect(managePanel.locator(".mini-form-meta")).toContainText("Owner - 1 campaigns");
+  await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Bootstrap Owner's Workspace" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).not.toBeVisible();
@@ -192,7 +195,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(revokedInviteRow).toContainText("revoked");
   managePanel = await openManageCategory(page, "Account");
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
-  await workspaceSelector.selectOption({ label: "Side Workspace - owner - 1 campaigns" });
+  await workspaceSelector.selectOption({ label: "Side Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Side Workspace" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
   managePanel = await openManageCategory(page, "People");
@@ -204,7 +207,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(sideInviteRow).toContainText("pending");
   managePanel = await openManageCategory(page, "Account");
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
-  await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace - owner - 1 campaigns" });
+  await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Bootstrap Owner's Workspace" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
   managePanel = await openManageCategory(page, "People");
@@ -489,7 +492,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(orgMemberCard).toContainText("admin");
   managePanel = await openManageCategory(page, "Account");
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
-  await workspaceSelector.selectOption({ label: "Side Workspace - owner - 1 campaigns" });
+  await workspaceSelector.selectOption({ label: "Side Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Side Workspace" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
   managePanel = await openManageCategory(page, "Server Admin");
@@ -502,7 +505,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(sideMemberCard).toContainText("member");
   managePanel = await openManageCategory(page, "Account");
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
-  await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace - owner - 1 campaigns" });
+  await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Bootstrap Owner's Workspace" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
   managePanel = await openManageCategory(page, "Server Admin");

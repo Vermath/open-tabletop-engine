@@ -83,7 +83,7 @@ test("main tabletop controls expose accessible names and keyboard reachability",
   await expect(page.getByRole("navigation", { name: "Campaigns" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add token" })).toBeVisible();
   await openInspectorPanel(page, "Chat");
-  await expect(page.getByRole("textbox", { name: "Chat command line" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
 
   const unnamedControls = await page.evaluate(() => {
     function isVisible(element: Element): boolean {
@@ -221,7 +221,7 @@ test("main tabletop controls expose accessible names and keyboard reachability",
   );
   expect(longestReducedMotionMs).toBeLessThanOrEqual(0.01);
 
-  const chatCommandLine = page.getByRole("textbox", { name: "Chat command line" });
+  const chatCommandLine = page.getByRole("textbox", { name: "Chat message" });
   await chatCommandLine.focus();
   await expect(chatCommandLine).toBeFocused();
   await chatCommandLine.fill("/roll 1d20");
@@ -243,7 +243,7 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
   await openInspectorPanel(page, "Chat");
-  const chatCommandLine = page.getByRole("textbox", { name: "Chat command line" });
+  const chatCommandLine = page.getByRole("textbox", { name: "Chat message" });
   await expect(chatCommandLine).toBeVisible();
   await chatCommandLine.focus();
   await expect(chatCommandLine).toBeFocused();
@@ -259,13 +259,15 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await assetSearch.fill("vault");
   await expect(assetSearch).toHaveValue("vault");
 
-  await page.getByRole("button", { name: "AI Studio", exact: true }).click();
-  const aiPrompt = page.getByLabel("AI prompt");
-  await expect(page.getByRole("region", { name: "AI proposal review queue" })).toBeVisible();
+  await page.getByRole("button", { name: "AI Agent", exact: true }).click();
+  const aiAgent = page.getByRole("complementary", { name: "AI Agent" });
+  const aiPrompt = aiAgent.getByLabel("AI Agent prompt");
+  await expect(aiAgent).toContainText("AI Studio is deprecated");
   await aiPrompt.focus();
   await expect(aiPrompt).toBeFocused();
   await aiPrompt.fill("accessibility review prompt");
   await expect(aiPrompt).toHaveValue("accessibility review prompt");
+  await aiAgent.getByRole("button", { name: "Close AI Agent" }).click();
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "SDK", exact: true }).click();
@@ -290,7 +292,7 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
   await chatNav.press("Enter");
   await expect(page.locator('[aria-label="Chat messages"]')).toBeVisible();
 
-  const chatCommandLine = page.getByRole("textbox", { name: "Chat command line" });
+  const chatCommandLine = page.getByRole("textbox", { name: "Chat message" });
   await tabUntilFocused(page, chatCommandLine);
   await chatCommandLine.fill("Valen");
   await expect(chatCommandLine).toHaveValue("Valen");
@@ -329,7 +331,7 @@ test("actor sheet targeting controls expose screen-reader structure", async ({ p
   await expect(page.getByRole("tablist", { name: "Actor sheet views" })).toBeVisible();
 
   await page.getByRole("button", { name: "Open Full Sheet" }).click();
-  const fullSheet = page.getByRole("dialog", { name: "Valen Ash full character sheet" });
+  const fullSheet = page.getByRole("dialog", { name: "Valen Ash" });
   await expect(fullSheet).toBeVisible();
   await expect(fullSheet).toHaveAttribute("aria-modal", "true");
   await expect(fullSheet.getByRole("region", { name: "Full sheet stats" })).toContainText("HP");
