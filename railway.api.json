@@ -16,7 +16,7 @@
     ]
   },
   "deploy": {
-    "startCommand": "NODE_ENV=production OTTE_CODEX_APP_SERVER_COMMAND=apps/api/node_modules/.bin/codex OTTE_CODEX_APP_SERVER_LOGIN_TYPE=chatgptDeviceCode node apps/api/dist/server.js",
+    "startCommand": "NODE_ENV=production OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite OTTE_UPLOAD_DIR=/app/storage/uploads OTTE_DEMO_SEED=false OTTE_SQLITE_BACKUP_RUN_ON_START=true OTTE_SQLITE_BACKUP_INTERVAL_SECONDS=86400 OTTE_SQLITE_BACKUP_REASON=railway-nightly OTTE_CODEX_APP_SERVER_COMMAND=apps/api/node_modules/.bin/codex OTTE_CODEX_APP_SERVER_LOGIN_TYPE=chatgptDeviceCode node apps/api/dist/server.js",
     "numReplicas": 1,
     "healthcheckPath": "/api/v1/health",
     "healthcheckTimeout": 300,

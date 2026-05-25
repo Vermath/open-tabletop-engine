@@ -21,6 +21,8 @@ Copy-Item -LiteralPath "storage\opentabletop.sqlite" -Destination "storage\backu
 
 For Docker Compose, copy the SQLite file out of the `api-storage` volume or snapshot the volume with the host's backup tooling.
 
+For Railway, attach the API service volume at `/app/storage` and keep `OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite`. Use Railway Volume backups for platform recovery, and keep the app's SQLite backups inside the same volume for restore drills and pre-upgrade checks.
+
 Server admins can also create an online SQLite backup through the Admin UI, the server-admin API, or the worker CLI:
 
 ```bash

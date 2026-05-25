@@ -63,6 +63,13 @@ describe("deployment smoke", () => {
     expect(apiPackage.dependencies["@openai/codex"]).toBeTruthy();
 
     const railwayApi = readWorkspaceFile("railway.api.json");
+    expect(railwayApi).toContain("OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite");
+    expect(railwayApi).toContain("OTTE_UPLOAD_DIR=/app/storage/uploads");
+    expect(railwayApi).toContain("OTTE_DEMO_SEED=false");
+    expect(railwayApi).toContain("OTTE_SQLITE_BACKUP_RUN_ON_START=true");
+    expect(railwayApi).toContain("OTTE_SQLITE_BACKUP_INTERVAL_SECONDS=86400");
+    expect(railwayApi).toContain("OTTE_SQLITE_BACKUP_REASON=railway-nightly");
+    expect(railwayApi).toContain("\"numReplicas\": 1");
     expect(railwayApi).toContain("OTTE_CODEX_APP_SERVER_COMMAND=apps/api/node_modules/.bin/codex");
     expect(railwayApi).toContain("OTTE_CODEX_APP_SERVER_LOGIN_TYPE=chatgptDeviceCode");
 
@@ -72,6 +79,18 @@ describe("deployment smoke", () => {
     expect(selfHosting).toContain("docker compose --profile worker up -d --scale worker=3 worker");
     expect(selfHosting).toContain("OTTE_SESSION_TOKEN`/`OTTE_WORKER_SESSION_TOKEN");
     expect(selfHosting).toContain("preview-only");
+
+    const hostedRecipes = readWorkspaceFile("docs/deployment/hosted-deployment-recipes.md");
+    expect(hostedRecipes).toContain("Mount the API service volume at `/app/storage`");
+    expect(hostedRecipes).toContain("[Railway Persistence](./railway-persistence.md)");
+
+    const railwayPersistence = readWorkspaceFile("docs/deployment/railway-persistence.md");
+    expect(railwayPersistence).toContain("Attach one Railway Volume to the API service");
+    expect(railwayPersistence).toContain("/app/storage");
+    expect(railwayPersistence).toContain("OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite");
+    expect(railwayPersistence).toContain("OTTE_SQLITE_BACKUP_INTERVAL_SECONDS=86400");
+    expect(railwayPersistence).toContain("GET /api/v1/admin/storage/operations");
+    expect(railwayPersistence).toContain("POST /api/v1/admin/storage/restore-drill");
 
     const securityChecklist = readWorkspaceFile("docs/deployment/security-checklist.md");
     expect(securityChecklist).toContain("OTTE_PLUGIN_TRUST_POLICY=require_trusted");

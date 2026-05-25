@@ -25,6 +25,7 @@ This page is the Markdown source for the public documentation site. `pnpm docs:s
 
 - [Self-hosting](../deployment/self-hosting.md)
 - [Hosted deployment recipes](../deployment/hosted-deployment-recipes.md)
+- [Railway persistence](../deployment/railway-persistence.md)
 - [Upgrade guide](../deployment/upgrade-guide.md)
 - [Backup and restore](../deployment/backup-restore.md)
 - [Identity provider setup](../deployment/identity-providers.md)

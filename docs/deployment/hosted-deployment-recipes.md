@@ -115,6 +115,16 @@ Map the platform features to OpenTabletop responsibilities:
 
 If the platform cannot keep the SQLite volume and backup directory across redeploys, treat it as preview-only.
 
+### Railway API Service
+
+For Railway, use the managed-app pattern with one API service, one mounted volume, and optional worker/web services:
+
+- Mount the API service volume at `/app/storage`.
+- Keep `railway.api.json` `numReplicas` at `1`.
+- Keep `OTTE_SQLITE_PATH=/app/storage/opentabletop.sqlite` and `OTTE_UPLOAD_DIR=/app/storage/uploads`.
+- Keep startup and daily SQLite backups enabled with `OTTE_SQLITE_BACKUP_RUN_ON_START=true`, `OTTE_SQLITE_BACKUP_INTERVAL_SECONDS=86400`, and `OTTE_SQLITE_BACKUP_REASON=railway-nightly`.
+- Run the validation flow in [Railway Persistence](./railway-persistence.md) after the first durable deploy.
+
 ## Recipe 5: Static Preview Or Hosted Demo
 
 Use this only for demos, screenshots, and short-lived previews.

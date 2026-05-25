@@ -40,6 +40,7 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, sce
 - v1.0 release notes: `docs/release/v1.0.md`
 - Self-hosting and deployment: `docs/deployment/self-hosting.md`
 - Hosted deployment recipes: `docs/deployment/hosted-deployment-recipes.md`
+- Railway persistence: `docs/deployment/railway-persistence.md`
 
 Render the public documentation site locally:
 
