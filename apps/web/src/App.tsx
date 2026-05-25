@@ -1332,10 +1332,6 @@ export function App() {
   }, [canUseAiStudioWorkspace, canUsePrepWorkspace, workspaceMode]);
 
   useEffect(() => {
-    if (workspaceMode === "manage" && aiAgentOpen) setAiAgentOpen(false);
-  }, [aiAgentOpen, workspaceMode]);
-
-  useEffect(() => {
     if (!aiAgentOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setAiAgentOpen(false);
@@ -4227,7 +4223,6 @@ export function App() {
   ] satisfies Array<{ id: WorkspaceMode; label: string; icon: React.ReactNode }>;
   const selectWorkspaceMode = (mode: WorkspaceMode) => {
     setWorkspaceMode(mode);
-    setAiAgentOpen(false);
   };
   const workspaceEyebrow = workspaceMode === "ai" ? "AI Studio" : workspaceMode === "prep" ? "Prep" : workspaceMode === "manage" ? manageWorkspaceEyebrow : (selectedCampaign?.defaultSystemId ?? "No system");
   const workspaceHeading = workspaceMode === "ai" ? "Build, review, and apply generated table content" : workspaceMode === "prep" ? "Prep scenes, assets, journals, and imports" : workspaceMode === "manage" ? manageWorkspaceHeading : (selectedCampaign?.name ?? "Create a campaign");
@@ -4410,6 +4405,8 @@ export function App() {
                 className={category.id === activeManageCategory ? "manage-category-button active" : "manage-category-button"}
                 key={category.id}
                 type="button"
+                aria-current={category.id === activeManageCategory ? "page" : undefined}
+                title={category.description}
                 onClick={() => setManageCategory(category.id)}
               >
                 {category.icon}
@@ -5268,7 +5265,8 @@ export function App() {
             </div>
             {hasPermission("token.reveal") && (fogBrushMode || toolReport) && (
               <section className="table-tool-panel movable-panel" aria-label="Fog and vision tools" style={fogToolPanel.style}>
-                <header className="floating-panel-header table-tool-panel-header" {...fogToolPanel.dragHandleProps}>
+                <header className="floating-panel-header table-tool-panel-header" title="Drag panel" {...fogToolPanel.dragHandleProps}>
+                  <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
                   <div>
                     <strong>{toolReport ? toolReportTitle : "Fog tools"}</strong>
                     <span>{toolReport ? "Report output" : fogBrushMode ? `${titleCaseLabel(fogBrushMode)} brush active` : "Presets and vision samples"}</span>
@@ -5289,7 +5287,8 @@ export function App() {
             )}
             {annotationPanelOpen && !fogBrushMode && annotationTool && annotationToolShowsSettings(annotationTool) && (
             <section className="table-tool-panel annotation-panel movable-panel" aria-label="Annotation layers and history" style={annotationToolPanel.style}>
-              <header className="annotation-panel-header floating-panel-header" {...annotationToolPanel.dragHandleProps}>
+              <header className="annotation-panel-header floating-panel-header" title="Drag panel" {...annotationToolPanel.dragHandleProps}>
+                <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
                 <div>
                   <strong>Annotations</strong>
                   <span>{annotationToolLabel(annotationTool)} settings</span>
@@ -5602,7 +5601,8 @@ function AiAgentPanel(props: {
   };
   return (
     <aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style}>
-      <header className="ai-agent-header floating-panel-header" {...agentPanel.dragHandleProps}>
+      <header className="ai-agent-header floating-panel-header" title="Drag panel" {...agentPanel.dragHandleProps}>
+        <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
         <div>
           <span className="section-title">AI Agent</span>
           <strong>{props.status}</strong>

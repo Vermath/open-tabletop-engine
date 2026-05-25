@@ -7096,9 +7096,18 @@ body {
 }
 
 .floating-panel-header {
-  cursor: move;
+  cursor: grab;
   touch-action: none;
   user-select: none;
+}
+
+.floating-panel-header:active {
+  cursor: grabbing;
+}
+
+.floating-panel-drag-icon {
+  flex: 0 0 auto;
+  color: var(--muted);
 }
 
 .floating-panel-header button,
@@ -7812,7 +7821,7 @@ body {
 }
 
 .rail-manage .ai-agent-toggle {
-  display: none;
+  display: inline-flex;
 }
 
 .ai-agent-popout {
@@ -8190,6 +8199,95 @@ body {
 
 .manage-stage-card {
   width: min(100%, 620px);
+}
+
+.rail-admin:has(> .manage-category-list) {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 264px;
+  grid-template-columns: 196px minmax(0, 1fr);
+  width: auto;
+  max-width: none;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  background: #080d13;
+  box-shadow: none;
+}
+
+.rail-admin:has(> .manage-category-list) .manage-drawer-heading {
+  padding: 14px 18px;
+  background: #0b121a;
+}
+
+.manage-category-list {
+  gap: 4px;
+  padding: 12px 10px;
+  background: #070c12;
+}
+
+.manage-category-button {
+  min-height: 40px;
+  padding: 0 9px;
+}
+
+.manage-category-button small {
+  display: none;
+}
+
+.manage-category-content {
+  padding: 16px 20px 22px;
+  background: #090f16;
+}
+
+.manage-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 420px));
+  justify-content: start;
+  align-content: start;
+  gap: 14px;
+}
+
+.manage-card-grid > .account-box,
+.manage-card-grid > form.account-box,
+.manage-card-grid > section.account-box {
+  max-width: 420px;
+}
+
+.rail-manage + .workspace .manage-workspace-stage {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .rail-admin:has(> .manage-category-list) {
+    left: 0;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .rail-admin:has(> .manage-category-list) .manage-drawer-heading {
+    grid-column: 1;
+  }
+
+  .manage-category-list {
+    grid-column: 1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid rgba(148, 160, 173, 0.18);
+  }
+
+  .manage-category-content {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .manage-card-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ai-create-workflow {

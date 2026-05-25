@@ -36,9 +36,11 @@ describe("desktop layout regressions", () => {
   it("keeps the manage drawer opaque and scene filters visible while scrolling", () => {
     expect(stylesSource).toContain(".rail-admin {\n  position: fixed;");
     expect(stylesSource).toContain("background: #090e14;");
-    expect(stylesSource).toContain(".rail-admin:has(> .manage-category-list) {\n  grid-template-columns: 240px minmax(0, 1fr);");
+    expect(stylesSource).toContain(".rail-admin:has(> .manage-category-list) {\n  top: 0;\n  right: 0;\n  bottom: 0;\n  left: 264px;");
+    expect(stylesSource).toContain("grid-template-columns: 196px minmax(0, 1fr);");
     expect(stylesSource).toContain(".manage-category-content {\n  grid-column: 2;");
-    expect(stylesSource).toContain("background: #0a1017;");
+    expect(stylesSource).toContain("background: #090f16;");
+    expect(stylesSource).toContain(".rail-manage + .workspace .manage-workspace-stage {\n  display: none;");
     expect(stylesSource).toContain(".manage-scene-filter-panel {\n  position: sticky;");
     expect(stylesSource).toContain("grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr) auto auto;");
     expect(appSource).toContain('<textarea aria-label="Campaign description"');
@@ -46,15 +48,18 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".account-box textarea {\n  min-height: 82px;");
   });
 
-  it("does not leave the floating AI agent panel blocking workspace navigation", () => {
-    expect(appSource).toContain("const selectWorkspaceMode = (mode: WorkspaceMode) => {\n    setWorkspaceMode(mode);\n    setAiAgentOpen(false);");
-    expect(stylesSource).toContain(".rail-manage .ai-agent-toggle {\n  display: none;");
+  it("keeps the floating AI agent available while switching workspaces", () => {
+    expect(appSource).toContain("const selectWorkspaceMode = (mode: WorkspaceMode) => {\n    setWorkspaceMode(mode);\n  };");
+    expect(appSource).not.toContain("const selectWorkspaceMode = (mode: WorkspaceMode) => {\n    setWorkspaceMode(mode);\n    setAiAgentOpen(false);");
+    expect(appSource).not.toContain('if (workspaceMode === "manage" && aiAgentOpen) setAiAgentOpen(false);');
+    expect(stylesSource).toContain(".rail-manage .ai-agent-toggle {\n  display: inline-flex;");
     expect(appSource).not.toContain('label: "AI Studio"');
     expect(appSource).toContain("AI Studio is deprecated. Use the AI Agent for AI-assisted table work.");
     expect(stylesSource).toContain(".ai-agent-deprecation-note {");
     expect(appSource).toContain("const agentPanel = useMovablePanel(initialAiAgentPanelPosition);");
     expect(appSource).toContain('<aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style}>');
-    expect(appSource).toContain('<header className="ai-agent-header floating-panel-header" {...agentPanel.dragHandleProps}>');
+    expect(appSource).toContain('<header className="ai-agent-header floating-panel-header" title="Drag panel" {...agentPanel.dragHandleProps}>');
+    expect(appSource).toContain('<Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />');
     expect(stylesSource).toContain(".ai-agent-popout.movable-panel {\n  top: var(--floating-panel-y, 20px);");
     expect(stylesSource).toContain("background: #070b10;\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(229, 176, 74, 0.08);\n  isolation: isolate;");
     expect(stylesSource).toContain("@media (max-width: 900px) {\n  .ai-agent-popout {\n    right: 12px;\n    bottom: calc(76px + env(safe-area-inset-bottom, 0px));");
@@ -297,7 +302,9 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".tool-more-panel {\n  position: absolute;\n  top: 0;\n  left: 46px;\n  z-index: 10;");
     expect(stylesSource).toContain(".table-tool-panel.movable-panel {\n  top: var(--floating-panel-y, 24px);");
     expect(stylesSource).toContain("resize: both;");
-    expect(stylesSource).toContain(".floating-panel-header {\n  cursor: move;");
+    expect(stylesSource).toContain(".floating-panel-header {\n  cursor: grab;");
+    expect(stylesSource).toContain(".floating-panel-header:active {\n  cursor: grabbing;");
+    expect(stylesSource).toContain(".floating-panel-drag-icon {");
   });
 
   it("keeps ping annotations transient instead of leaving them on the board", () => {
