@@ -7600,9 +7600,14 @@ function agentMessagesForRequest(prompt: string, body: AgentThreadBody | undefin
         "Do not put adversaries in the party. Actors created from encounter threats, monster stat blocks, or hostile tokens are adversaries and should remain separate from player characters and friendly NPCs.",
         "Apply visual scene edits to the active scene or explicitly requested target scene. Do not create lingering AI edit scenes or ai/edits folders for new work.",
         "Place generated assets on the correct surface: maps are scene backgrounds or map-layer art, characters and creatures are token/portrait assets on player or GM token layers, and annotations stay in their matching annotation layer.",
+        "Do not leave generated map or token art as asset-only/library-only proposals unless the user explicitly asks for library-only output.",
+        "When generating a map for a scene, include the scene/background update in the same proposal so approval applies the map to the active or requested scene.",
+        "When generating token or portrait art for an existing token or actor, include the token image update and matching actor image update in the same proposal whenever those targets are known.",
         "For creature and character tokens, use a 1x1 grid footprint unless a larger creature size is explicitly needed, and place tokens at grid-cell centers so they sit cleanly inside squares.",
         "When generating token art, reuse existing generated token art for repeated enemies when the same creature or reuse key is appropriate.",
         "When creating fresh player characters, NPCs, or adversaries, generate stored token/portrait art for them and reference the stored asset from the actor and token proposal.",
+        "When creating actors with tokens, use draft_actor_token_roster with generateArt enabled so created actors and tokens reference the generated asset ids.",
+        "If no scene, token, actor, or selected asset target is known for generated art, ask one short clarification instead of silently making detached assets.",
         "When the user asks to edit, repaint, restyle, clean up, or otherwise modify a selected or pointed image asset, use modify_asset_image so the source asset image is attached as the visual reference and the result is proposed as a new stored asset.",
         "For many high-quality art assets, prefer parallel independent image-generation tool calls with one clear prompt per asset, then assemble the proposal after the assets exist.",
         "For board-changing work, final success requires both read_board_state and capture_board_view after the successful mutation. If capture_board_view reports board_capture_unavailable, state that visual verification was unavailable."
@@ -10515,14 +10520,14 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "generate_map_asset",
-      description: "Generate a map image asset and draft a pending proposal to add it to the asset library and optionally set it as a scene background.",
+      description: "Generate a map image asset and draft a pending proposal that stores it and applies it to the target scene background when a scene is available. Use asset-library-only output only when the user explicitly asks for a detached/library asset.",
       requiredPermissions: ["ai.proposeChanges", "scene.update"],
       parameters: {
         type: "object",
         properties: {
           prompt: { type: "string", description: "Visual prompt for the generated battlemap." },
           name: { type: "string", description: "Asset and proposal display name." },
-          sceneId: { type: "string", description: "Optional scene id to receive this generated map as its background." },
+          sceneId: { type: "string", description: "Scene id that should receive this generated map as its background. In the agent panel this defaults to the selected scene when available." },
           size: { type: "string", description: "Requested output size.", enum: ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152"] },
           quality: { type: "string", description: "Requested render quality.", enum: ["auto", "low", "medium", "high"] },
           outputFormat: { type: "string", description: "Requested raster output format.", enum: ["png", "jpeg", "webp"] }
@@ -10587,14 +10592,14 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "generate_token_asset",
-      description: "Generate token art and draft a pending proposal to add it to the asset library and optionally attach it to an existing token.",
+      description: "Generate token art and draft a pending proposal that stores it and applies it to the target token plus its linked actor when those targets are available. For new actor/token batches, prefer draft_actor_token_roster with generateArt enabled.",
       requiredPermissions: ["ai.proposeChanges", "token.update"],
       parameters: {
         type: "object",
         properties: {
           prompt: { type: "string", description: "Visual prompt for the generated token art." },
           name: { type: "string", description: "Asset and proposal display name." },
-          tokenId: { type: "string", description: "Optional token id to receive this generated art." },
+          tokenId: { type: "string", description: "Token id that should receive this generated art. In the agent panel this defaults to the selected token when available, and the linked actor is updated too." },
           reuseKey: { type: "string", description: "Optional stable creature or character art reuse key. Matching generated token art is reused before creating new art." },
           reuseExisting: { type: "boolean", description: "When false, always generate new art even if reusable art exists." },
           size: { type: "string", description: "Requested output size.", enum: ["auto", "1024x1024", "2048x2048"] },
@@ -10687,7 +10692,7 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "modify_asset_image",
-      description: "Generate a new image asset using an existing campaign image asset as the visual reference, then draft a pending proposal to store the result and optionally apply it to the same scene background or selected token.",
+      description: "Generate a new image asset using an existing campaign image asset as the visual reference, then draft a pending proposal to store the result and apply it to the same scene background, selected token, and linked actor when those targets match. Use asset_only only when the user explicitly asks for a detached/library edit.",
       requiredPermissions: ["ai.proposeChanges", "scene.update", "token.update", "actor.update"],
       parameters: {
         type: "object",
@@ -10695,10 +10700,10 @@ function createAiThreadTools(): AiToolDefinition[] {
           assetId: { type: "string", description: "Source image asset id. Defaults to the selected asset in the in-app agent panel when available." },
           prompt: { type: "string", description: "Edit instructions for the source image." },
           name: { type: "string", description: "Generated asset and proposal display name." },
-          sceneId: { type: "string", description: "Optional scene id. If its background uses the source asset, the proposal updates that background to the generated asset." },
-          tokenId: { type: "string", description: "Optional token id. If supplied, the proposal updates that token image to the generated asset." },
+          sceneId: { type: "string", description: "Scene id to check for source-asset usage. If its background uses the source asset, the proposal updates that background to the generated asset." },
+          tokenId: { type: "string", description: "Token id to update with the generated asset. The linked actor image is updated too when present." },
           kind: { type: "string", description: "Generated asset kind.", enum: ["map", "token"] },
-          applyTo: { type: "string", description: "Whether to apply the generated asset to matching current usage or only create the asset.", enum: ["same_usage", "asset_only"] },
+          applyTo: { type: "string", description: "Use same_usage by default so generated edits apply to matching scene/token/actor targets. Use asset_only only for explicit detached/library edits.", enum: ["same_usage", "asset_only"] },
           size: { type: "string", description: "Requested output size.", enum: ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152"] },
           quality: { type: "string", description: "Requested render quality.", enum: ["auto", "low", "medium", "high"] },
           outputFormat: { type: "string", description: "Requested raster output format.", enum: ["png", "jpeg", "webp"] }

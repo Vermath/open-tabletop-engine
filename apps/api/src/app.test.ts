@@ -22052,6 +22052,10 @@ registerCommand("/state", (input) => {
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("Do not put adversaries in the party") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("Apply visual scene edits to the active scene") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("reuse existing generated token art") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("Do not leave generated map or token art as asset-only") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("include the scene/background update in the same proposal") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("include the token image update and matching actor image update") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("use draft_actor_token_roster with generateArt enabled") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("parallel independent image-generation tool calls") });
     expect(provider.requests[0]!.signal).toBeInstanceOf(AbortSignal);
     expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["read_board_state", "capture_board_view", "apply_approved_proposal"]));
