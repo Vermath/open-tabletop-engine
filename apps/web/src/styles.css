@@ -762,7 +762,9 @@ a[href]:focus-visible,
 .table-tool-panel pre {
   grid-column: 1 / -1;
   max-height: 96px;
+  overflow-wrap: anywhere;
   font-size: 11px;
+  white-space: pre-wrap;
 }
 
 .table-tool-panel .asset-card {
@@ -3972,7 +3974,7 @@ body {
 }
 
 .tool-more {
-  position: relative;
+  position: static;
 }
 
 .toolbar:has(.tool-more[open]) {
@@ -3991,6 +3993,7 @@ body {
   position: absolute;
   top: 0;
   left: 46px;
+  z-index: 10;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
@@ -5572,7 +5575,7 @@ body {
 }
 
 .tool-more {
-  position: relative;
+  position: static;
 }
 
 .tool-more > summary {
@@ -5587,6 +5590,7 @@ body {
   position: absolute;
   top: 0;
   left: 46px;
+  z-index: 10;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
@@ -6518,6 +6522,72 @@ body {
 
 .annotation-panel-section .button-row {
   grid-template-columns: 1fr;
+}
+
+.table-tool-panel.movable-panel {
+  top: var(--floating-panel-y, 24px);
+  right: auto;
+  left: var(--floating-panel-x, 88px);
+  z-index: 8;
+  min-width: 280px;
+  min-height: 128px;
+  width: min(320px, calc(100% - 112px));
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  resize: both;
+}
+
+.table-tool-panel.movable-panel[aria-label="Fog and vision tools"] {
+  grid-template-columns: minmax(110px, 1fr) minmax(86px, 0.8fr) 48px 48px;
+}
+
+.table-tool-panel-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(148, 160, 173, 0.18);
+}
+
+.table-tool-panel-header div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.table-tool-panel-header strong {
+  color: var(--paper);
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.table-tool-panel-header span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.floating-panel-header {
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+
+.floating-panel-header button,
+.floating-panel-header input,
+.floating-panel-header select,
+.floating-panel-header textarea {
+  cursor: pointer;
+}
+
+.map-layer-stack {
+  right: 18px;
+  left: auto;
+  width: min(200px, calc(100% - 112px));
+  max-height: min(260px, calc(100% - 48px));
 }
 
 @media (max-width: 900px) {
@@ -7800,6 +7870,13 @@ body {
   font-size: 11px;
 }
 
+.map-layer-stack {
+  right: 18px;
+  left: auto;
+  width: min(200px, calc(100% - 112px));
+  max-height: min(260px, calc(100% - 48px));
+}
+
 @media (max-width: 1040px) and (min-width: 641px) {
   .map-layer-stack {
     top: 84px;
@@ -7963,5 +8040,131 @@ body {
   .toolbar:has([title="Reveal fog"]) ~ .map-layer-stack:has(.map-layer-details[open]) {
     max-height: min(180px, calc(100% - 74px));
     overflow-y: auto;
+  }
+}
+
+.table-area {
+  display: grid;
+  grid-template-areas: "map layers";
+  grid-template-columns: minmax(0, 1fr) minmax(188px, 220px);
+  align-items: stretch;
+  justify-items: stretch;
+  gap: 10px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+.map-play-surface {
+  position: relative;
+  grid-area: map;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+}
+
+.map-layer-dock {
+  grid-area: layers;
+  display: grid;
+  grid-template-rows: auto auto auto;
+  align-self: stretch;
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.map-layer-dock .map-zoom-control,
+.map-layer-dock .map-selection-status {
+  position: static;
+  z-index: auto;
+  width: 100%;
+  max-width: none;
+  justify-content: space-between;
+  border-color: rgba(148, 160, 173, 0.22);
+  border-radius: 10px;
+  background: rgba(9, 14, 20, 0.96);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
+}
+
+.map-layer-dock .map-zoom-control {
+  grid-row: 1;
+}
+
+.map-layer-dock .map-selection-status {
+  grid-row: 2;
+  display: flex;
+  padding: 6px;
+}
+
+.map-layer-dock .map-layer-stack {
+  grid-row: 3;
+  position: static;
+  z-index: 2;
+  align-self: start;
+  align-content: start;
+  width: 100%;
+  max-height: min(620px, 100%);
+  min-height: 0;
+  pointer-events: auto;
+}
+
+.scene-viewport {
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 1040px) and (min-width: 641px) {
+  .table-area {
+    grid-template-areas: "map";
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map-layer-dock {
+    position: absolute;
+    z-index: 5;
+    top: 12px;
+    right: 12px;
+    width: min(220px, calc(100% - 24px));
+    max-height: min(340px, calc(100% - 24px));
+  }
+
+  .map-layer-dock .map-layer-stack {
+    max-height: min(220px, calc(100% - 104px));
+  }
+}
+
+@media (max-width: 640px) {
+  .table-area {
+    grid-template-areas: "map";
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .map-layer-dock {
+    position: absolute;
+    z-index: 5;
+    top: 58px;
+    right: 8px;
+    left: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    max-height: min(200px, calc(100% - 68px));
+  }
+
+  .map-layer-dock .map-zoom-control {
+    grid-column: 2;
+    width: max-content;
+    justify-self: end;
+  }
+
+  .map-layer-dock .map-selection-status {
+    grid-column: 1 / -1;
+  }
+
+  .map-layer-dock .map-layer-stack {
+    grid-column: 1 / -1;
+    max-height: min(96px, calc(100% - 74px));
   }
 }

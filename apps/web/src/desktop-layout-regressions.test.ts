@@ -25,8 +25,11 @@ describe("desktop layout regressions", () => {
 
   it("prevents floating tabletop controls from covering the lower desktop board", () => {
     expect(appSource).not.toContain("<details open>");
-    expect(stylesSource).toContain(".map-layer-stack {\n  position: absolute;\n  z-index: 5;\n  top: 24px;");
-    expect(stylesSource).toContain("max-height: min(260px, calc(100% - 48px));");
+    expect(appSource).toContain('className="map-play-surface"');
+    expect(appSource).toContain('className="map-layer-dock" aria-label="Map controls and layers"');
+    expect(stylesSource).toContain('grid-template-areas: "map layers";');
+    expect(stylesSource).toContain("grid-template-columns: minmax(0, 1fr) minmax(188px, 220px);");
+    expect(stylesSource).toContain(".map-layer-dock .map-layer-stack {\n  grid-row: 3;\n  position: static;");
     expect(stylesSource).toContain("overflow: auto;");
   });
 
@@ -169,7 +172,9 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".manage-category-button em {\n    display: none;");
     expect(stylesSource).not.toContain("calc(160px * var(--scene-aspect, 1.5) * var(--map-zoom, 1))");
     expect(stylesSource).not.toContain("calc(480px * var(--scene-aspect, 1.5) * var(--map-zoom, 1))");
-    expect(stylesSource).toContain("calc(640px * var(--scene-aspect, 1.5) * var(--map-zoom, 1))");
+    expect(appSource).toContain("function battleMapBoardDimensions(");
+    expect(appSource).toContain('width: `${boardDimensions.width}px`,');
+    expect(appSource).toContain('height: `${boardDimensions.height}px`,');
     expect(stylesSource).toContain(".rail-prep + .workspace .scene-filter-panel .button-row {\n    display: none;");
     expect(stylesSource).toContain(".rail-prep + .workspace .scene-filter-panel .inline-check {\n    display: none;");
     expect(stylesSource).toContain(".rail-prep + .workspace .scene-tab-select {\n    display: none;");
@@ -185,7 +190,7 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".actor-sheet-dialog {\n    max-height: calc(100svh - 114px - env(safe-area-inset-bottom, 0px));");
     expect(stylesSource).toContain(".tool-more-panel {\n    top: auto;\n    right: 0;\n    bottom: 46px;\n    left: auto;");
     expect(stylesSource).toContain("max-height: min(190px, calc(100svh - 240px));");
-    expect(stylesSource).toContain(".map-zoom-control {\n    right: 12px;\n    top: 8px;\n    bottom: auto;");
+    expect(stylesSource).toContain(".map-layer-dock .map-zoom-control {\n    grid-column: 2;");
     expect(stylesSource).toContain(".map-selection-status {\n    right: auto;\n    bottom: 76px;\n    left: 12px;");
     expect(appSource).toContain("const selectedViewportToken = useMemo(() => tokens.find((token) => token.id === props.selectedTokenId), [tokens, props.selectedTokenId]);");
     expect(appSource).toContain("const compactViewport = viewport.clientWidth < 360 || viewport.clientHeight < 220;");
@@ -223,8 +228,9 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".toolbar {\n    top: auto;\n    bottom: 12px;\n    left: 12px;\n    right: 12px;\n    display: flex;\n    flex-wrap: wrap;\n    justify-content: center;\n    gap: 6px;");
     expect(stylesSource).toContain("overflow-x: visible;\n    overflow-y: visible;");
     expect(stylesSource).toContain(".tool-more-panel {\n    top: auto;\n    right: 0;\n    bottom: 52px;\n    left: auto;");
-    expect(stylesSource).toContain(".map-layer-stack {\n    top: 84px;\n    max-height: min(220px, calc(100% - 96px));");
-    expect(stylesSource).toContain(".toolbar:has([title=\"Reveal fog\"]) + .map-zoom-control {\n    top: 12px;\n    right: 12px;\n    bottom: auto;");
+    expect(stylesSource).toContain("@media (max-width: 1040px) and (min-width: 641px) {\n  .table-area {\n    grid-template-areas: \"map\";");
+    expect(stylesSource).toContain(".map-layer-dock {\n    position: absolute;\n    z-index: 5;\n    top: 12px;");
+    expect(stylesSource).toContain(".map-layer-dock .map-layer-stack {\n    max-height: min(220px, calc(100% - 104px));");
   });
 
   it("wraps tablet manage categories instead of hiding sections off the drawer edge", () => {
@@ -249,8 +255,8 @@ describe("desktop layout regressions", () => {
   it("makes the layer stack readable and targetable after moving it away from lower controls", () => {
     expect(appSource).toContain("compactLabel: \"Players\"");
     expect(appSource).toContain("compactLabel: \"Props\"");
-    expect(stylesSource).toContain("width: min(260px, calc(100% - 112px));");
-    expect(stylesSource).toContain("width: min(220px, calc(100% - 24px));");
+    expect(stylesSource).toContain(".map-layer-dock {\n  grid-area: layers;");
+    expect(stylesSource).toContain(".map-layer-dock .map-layer-stack {\n  grid-row: 3;\n  position: static;");
     expect(stylesSource).toContain(".map-layer-button {\n  width: 100%;\n  min-height: 34px;");
     expect(stylesSource).toContain(".map-layer-details summary {\n  min-height: 34px;");
     expect(stylesSource).toContain(".map-layer-toggles .inline-check {\n  min-height: 32px;");
@@ -261,10 +267,36 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".annotation-panel-section summary::before {\n  content: \"+\";");
   });
 
+  it("keeps advanced and fog tool popups closeable, movable, and away from the layer stack", () => {
+    expect(appSource).toContain("function useMovablePanel(");
+    expect(appSource).toContain('aria-label="Close fog and vision panel"');
+    expect(appSource).toContain("if (event) updateDragPosition(drag, event.clientX, event.clientY);");
+    expect(appSource).toContain("setFogBrushMode(null);");
+    expect(appSource).toContain("setToolReportTitle(\"Fog history\");");
+    expect(appSource).toContain('className="table-tool-panel movable-panel"');
+    expect(appSource).toContain('className="table-tool-panel annotation-panel movable-panel"');
+    expect(stylesSource).toContain(".tool-more {\n  position: static;");
+    expect(stylesSource).toContain(".tool-more-panel {\n  position: absolute;\n  top: 0;\n  left: 46px;\n  z-index: 10;");
+    expect(stylesSource).toContain(".table-tool-panel.movable-panel {\n  top: var(--floating-panel-y, 24px);");
+    expect(stylesSource).toContain("resize: both;");
+    expect(stylesSource).toContain(".floating-panel-header {\n  cursor: move;");
+  });
+
+  it("keeps ping annotations transient instead of leaving them on the board", () => {
+    expect(appSource).toContain("const pingAnnotationTtlSeconds = 5;");
+    expect(appSource).toContain('expiresInSeconds: kind === "ping" ? pingAnnotationTtlSeconds : undefined');
+    expect(appSource).toContain("function useAnnotationExpiryClock(");
+    expect(appSource).toContain("window.setTimeout(() => setNowMs(Date.now()), delayMs)");
+    expect(appSource).toContain("activeSceneAnnotations(props.scene.annotations, annotationExpiryNow)");
+    expect(appSource).toContain("activeSceneAnnotations(props.scene?.annotations, annotationExpiryNow).length");
+    expect(appSource).toContain("const annotations = selectedCurrentAnnotations;");
+  });
+
   it("keeps the mobile layer stack shallow so it does not swallow the board", () => {
-    expect(stylesSource).toContain("@media (max-width: 640px) {\n  .map-layer-stack {\n    top: 58px;\n    right: 8px;\n    left: 8px;\n    display: flex;");
-    expect(stylesSource).toContain("flex-wrap: wrap;");
-    expect(stylesSource).toContain("max-height: min(96px, calc(100% - 68px));");
+    expect(stylesSource).toContain("@media (max-width: 640px) {\n  .table-area {\n    grid-template-areas: \"map\";");
+    expect(stylesSource).toContain(".map-layer-dock {\n    position: absolute;\n    z-index: 5;\n    top: 58px;");
+    expect(stylesSource).toContain("grid-template-columns: minmax(0, 1fr) auto;");
+    expect(stylesSource).toContain(".map-layer-dock .map-layer-stack {\n    grid-column: 1 / -1;\n    max-height: min(96px, calc(100% - 74px));");
     expect(stylesSource).toContain("overflow-x: hidden;\n    overflow-y: auto;");
     expect(stylesSource).toContain(".map-layer-stack:has(.map-layer-details[open]) {\n    align-items: flex-start;");
     expect(stylesSource).toContain(".map-layer-button {\n    width: auto;\n    min-width: 64px;");
@@ -272,8 +304,6 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".map-layer-stack-heading strong {\n    display: none;");
     expect(stylesSource).toContain("min-height: 34px;\n    padding: 0 6px;");
     expect(stylesSource).toContain(".table-tool-panel.annotation-panel {\n    top: 68px;\n    right: 8px;\n    bottom: auto;\n    left: 8px;\n    width: auto;\n    max-height: calc(100% - 76px);");
-    expect(stylesSource).toContain(".toolbar:has([title=\"Reveal fog\"]) ~ .map-layer-stack {\n    top: 64px;\n    right: 8px;\n    left: 8px;\n    flex-wrap: wrap;");
-    expect(stylesSource).toContain("max-height: min(96px, calc(100% - 74px));\n    overflow-x: hidden;\n    overflow-y: auto;");
     expect(stylesSource).not.toContain("right: 190px;");
   });
 
@@ -288,7 +318,7 @@ describe("desktop layout regressions", () => {
     expect(toolbarSource).toContain("{props.canCreateToken && (\n        <button className=\"tool\" title=\"Token\"");
     expect(toolbarSource).toContain("{props.canRevealFog && (\n        <button className=\"tool\" title=\"Reveal fog\"");
     expect(toolbarSource).toContain("{props.canUpdateScene && (\n        <button className={`tool ${props.activeAnnotationTool === \"drawing\" ? \"active\" : \"\"}`}");
-    expect(toolbarSource).toContain("{props.canManageCombat && (\n              <button className=\"ghost-button\" type=\"button\" onClick={() => runAdvancedAction(props.onStartCombat)}>");
+    expect(toolbarSource).toContain("{props.canManageCombat && (\n              <button className=\"ghost-button\" type=\"button\" onClick={() => runToolAction(props.onStartCombat, { closeAdvanced: true })}>");
     expect(toolbarSource).toContain("{(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && (");
     expect(toolbarSource).not.toContain("disabled={!props.canCreateToken}");
     expect(toolbarSource).not.toContain("disabled={!props.canRevealFog}");
@@ -299,10 +329,11 @@ describe("desktop layout regressions", () => {
   it("keeps the advanced table menu focused on actions that are not already in the primary toolbar", () => {
     expect(appSource).toContain("<Toolbar key={`${workspaceMode}-${tab}`}");
     expect(toolbarSource).toContain("const [advancedOpen, setAdvancedOpen] = useState(false);");
+    expect(toolbarSource).toContain("void Promise.resolve(action()).catch(props.onActionError);");
     expect(toolbarSource).toContain('document.addEventListener("mousedown", closeOnPointerDown);');
     expect(toolbarSource).toContain('document.addEventListener("keydown", closeOnEscape);');
     expect(toolbarSource).toContain('open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}');
-    expect(countOccurrences(toolbarSource, "runAdvancedAction(")).toBeGreaterThan(8);
+    expect(countOccurrences(toolbarSource, "runToolAction(")).toBeGreaterThan(8);
     expect(countOccurrences(toolbarSource, "<button className=\"tool\" title=\"Reveal fog\"")).toBe(1);
     expect(toolbarSource).not.toContain("<Eye size={15} /> Reveal fog");
     expect(toolbarSource).not.toContain("<MapPin size={15} /> Ping");

@@ -5,6 +5,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
+import { activeSceneAnnotations, nextAnnotationExpiryMs } from "./annotation-expiry.js";
 import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange, type BoardTokenPositionChange } from "./board-history.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
@@ -16,6 +17,9 @@ import { sceneTabWrapClass } from "./scene-tabs.js";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "";
 const boardHistoryLimit = 50;
+const pingAnnotationTtlSeconds = 5;
+const annotationExpiryTimerSlackMs = 25;
+const maxBrowserTimerDelayMs = 2_147_483_647;
 
 function apiOfflineStatus(detail?: unknown): string {
   const message = (typeof detail === "string" ? detail : detail instanceof Error ? detail.message : detail == null ? "" : String(detail)).trim();
@@ -34,6 +38,27 @@ interface FailedAssetUpload {
 interface FailedArchiveImport {
   file: File;
   message: string;
+}
+
+interface FloatingPanelPosition {
+  x: number;
+  y: number;
+}
+
+interface FloatingPanelDrag {
+  pointerId: number;
+  handle: HTMLElement;
+  startClientX: number;
+  startClientY: number;
+  startX: number;
+  startY: number;
+  maxX: number;
+  maxY: number;
+}
+
+interface SceneViewportSize {
+  width: number;
+  height: number;
 }
 
 type ChatExportFormat = "json" | "ndjson";
@@ -518,6 +543,127 @@ function sceneGridOverlayVisible(scene: Scene): boolean {
   return true;
 }
 
+function useAnnotationExpiryClock(annotations: readonly Pick<SceneAnnotation, "expiresAt">[] | undefined): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    const nextExpiry = nextAnnotationExpiryMs(annotations, nowMs);
+    if (nextExpiry === undefined) return;
+
+    const delayMs = Math.max(0, Math.min(nextExpiry - Date.now() + annotationExpiryTimerSlackMs, maxBrowserTimerDelayMs));
+    const timeoutId = window.setTimeout(() => setNowMs(Date.now()), delayMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [annotations, nowMs]);
+
+  return nowMs;
+}
+
+function clampFloatingPanel(value: number, max: number): number {
+  return Math.max(8, Math.min(Math.max(8, max), Math.round(value)));
+}
+
+function useMovablePanel(initialPosition: FloatingPanelPosition) {
+  const [position, setPosition] = useState(initialPosition);
+  const dragRef = useRef<FloatingPanelDrag | null>(null);
+  const style = useMemo(
+    () =>
+      ({
+        "--floating-panel-x": `${position.x}px`,
+        "--floating-panel-y": `${position.y}px`
+      }) as CSSProperties,
+    [position]
+  );
+
+  const releaseDrag = (drag: FloatingPanelDrag) => {
+    try {
+      drag.handle.releasePointerCapture(drag.pointerId);
+    } catch {
+      // The browser may already have released capture if the pointer left the viewport.
+    }
+  };
+
+  const updateDragPosition = (drag: FloatingPanelDrag, clientX: number, clientY: number) => {
+    setPosition({
+      x: clampFloatingPanel(drag.startX + clientX - drag.startClientX, drag.maxX),
+      y: clampFloatingPanel(drag.startY + clientY - drag.startClientY, drag.maxY)
+    });
+  };
+
+  const endCurrentDrag = (event?: PointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (event && drag.pointerId !== event.pointerId) return;
+    if (event) updateDragPosition(drag, event.clientX, event.clientY);
+    dragRef.current = null;
+    releaseDrag(drag);
+  };
+
+  useEffect(() => {
+    const endWindowDrag = (event: PointerEvent) => endCurrentDrag(event);
+    const cancelWindowDrag = (event: PointerEvent) => endCurrentDrag(event);
+    const endDragOnBlur = () => endCurrentDrag();
+    window.addEventListener("pointerup", endWindowDrag);
+    window.addEventListener("pointercancel", cancelWindowDrag);
+    window.addEventListener("blur", endDragOnBlur);
+    return () => {
+      window.removeEventListener("pointerup", endWindowDrag);
+      window.removeEventListener("pointercancel", cancelWindowDrag);
+      window.removeEventListener("blur", endDragOnBlur);
+    };
+  }, []);
+
+  const endDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    updateDragPosition(drag, event.clientX, event.clientY);
+    dragRef.current = null;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // The browser may already have released capture if the pointer left the viewport.
+    }
+  };
+
+  return {
+    style,
+    dragHandleProps: {
+      onPointerDown(event: ReactPointerEvent<HTMLElement>) {
+        if (event.button !== 0) return;
+        const target = event.target as HTMLElement;
+        if (target.closest("button,input,select,textarea,a")) return;
+        const panel = event.currentTarget.closest<HTMLElement>(".movable-panel");
+        if (!panel) return;
+        const container = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : document.documentElement;
+        const panelRect = panel.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        dragRef.current = {
+          pointerId: event.pointerId,
+          handle: event.currentTarget,
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          startX: panelRect.left - containerRect.left,
+          startY: panelRect.top - containerRect.top,
+          maxX: containerRect.width - 48,
+          maxY: containerRect.height - 48
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      },
+      onPointerMove(event: ReactPointerEvent<HTMLElement>) {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        if (event.buttons === 0) {
+          endDrag(event);
+          return;
+        }
+        updateDragPosition(drag, event.clientX, event.clientY);
+      },
+      onPointerUp: endDrag,
+      onPointerCancel: endDrag
+    }
+  };
+}
+
 export function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>({
     campaigns: [],
@@ -738,6 +884,9 @@ export function App() {
   const [visionSampleX, setVisionSampleX] = useState("");
   const [visionSampleY, setVisionSampleY] = useState("");
   const [toolReport, setToolReport] = useState("");
+  const [toolReportTitle, setToolReportTitle] = useState("Fog and vision");
+  const fogToolPanel = useMovablePanel({ x: 88, y: 24 });
+  const annotationToolPanel = useMovablePanel({ x: 88, y: 24 });
   const [canvasAssetDragging, setCanvasAssetDragging] = useState(false);
   const tokenDropHandledRef = useRef(false);
 
@@ -828,6 +977,14 @@ export function App() {
   const latestSceneActivation = sceneActivationHistory[0];
   const activeScene = accessibleScenes.find((scene) => scene.active);
   const activeMapAsset = snapshot.assets.find((asset) => asset.id === activeScene?.backgroundAssetId);
+  const comparedSceneAnnotations = useMemo<SceneAnnotation[]>(() => {
+    const annotations = [...(selectedScene?.annotations ?? [])];
+    if (activeScene && activeScene.id !== selectedScene?.id) annotations.push(...(activeScene.annotations ?? []));
+    return annotations;
+  }, [activeScene?.annotations, activeScene?.id, selectedScene?.annotations, selectedScene?.id]);
+  const annotationExpiryNow = useAnnotationExpiryClock(comparedSceneAnnotations);
+  const selectedCurrentAnnotations = useMemo(() => activeSceneAnnotations(selectedScene?.annotations, annotationExpiryNow), [annotationExpiryNow, selectedScene?.annotations]);
+  const liveCurrentAnnotations = useMemo(() => activeSceneAnnotations(activeScene?.annotations, annotationExpiryNow), [activeScene?.annotations, annotationExpiryNow]);
   const selectedSceneTokens = selectedScene ? snapshot.tokens.filter((token) => token.sceneId === selectedScene.id) : [];
   const selectedSceneActiveLayerTokens = selectedSceneTokens.filter((token) => tokenLayer(token) === activeTokenLayer);
   const selectedSceneActiveLayerTokenKey = selectedSceneActiveLayerTokens.map((token) => token.id).join("|");
@@ -861,7 +1018,7 @@ export function App() {
           { label: "Fog", selected: formatNumber(selectedScene.fog.length), active: formatNumber(activeScene.fog.length) },
           { label: "Walls", selected: formatNumber(selectedScene.walls.length), active: formatNumber(activeScene.walls.length) },
           { label: "Lights", selected: formatNumber(selectedScene.lights.length), active: formatNumber(activeScene.lights.length) },
-          { label: "Annotations", selected: formatNumber(selectedScene.annotations?.length ?? 0), active: formatNumber(activeScene.annotations?.length ?? 0) },
+          { label: "Annotations", selected: formatNumber(selectedCurrentAnnotations.length), active: formatNumber(liveCurrentAnnotations.length) },
           { label: "Background", selected: selectedScene.backgroundAssetId ? "set" : "none", active: activeScene.backgroundAssetId ? "set" : "none" }
         ]
       : [];
@@ -892,9 +1049,9 @@ export function App() {
               selectedScene.fog.length === activeScene.fog.length &&
               selectedScene.walls.length === activeScene.walls.length &&
               selectedScene.lights.length === activeScene.lights.length &&
-              (selectedScene.annotations?.length ?? 0) === (activeScene.annotations?.length ?? 0)
+              selectedCurrentAnnotations.length === liveCurrentAnnotations.length
                 ? "Fog, walls, lights, and annotations match by count"
-                : `Fog ${selectedScene.fog.length}/${activeScene.fog.length}; walls ${selectedScene.walls.length}/${activeScene.walls.length}; lights ${selectedScene.lights.length}/${activeScene.lights.length}; annotations ${selectedScene.annotations?.length ?? 0}/${activeScene.annotations?.length ?? 0}`
+                : `Fog ${selectedScene.fog.length}/${activeScene.fog.length}; walls ${selectedScene.walls.length}/${activeScene.walls.length}; lights ${selectedScene.lights.length}/${activeScene.lights.length}; annotations ${selectedCurrentAnnotations.length}/${liveCurrentAnnotations.length}`
           },
           {
             label: "Background asset",
@@ -906,17 +1063,17 @@ export function App() {
         ]
       : [];
   const sceneAnnotationHistory = [...(selectedScene?.annotationHistory ?? [])].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  const annotationLayerCounts = (selectedScene?.annotations ?? []).reduce<Record<string, number>>((counts, annotation) => {
+  const annotationLayerCounts = selectedCurrentAnnotations.reduce<Record<string, number>>((counts, annotation) => {
     const layer = annotation.layer ?? defaultAnnotationLayer(annotation.kind);
     counts[layer] = (counts[layer] ?? 0) + 1;
     return counts;
   }, {});
-  const annotationGroupCounts = (selectedScene?.annotations ?? []).reduce<Record<string, number>>((counts, annotation) => {
+  const annotationGroupCounts = selectedCurrentAnnotations.reduce<Record<string, number>>((counts, annotation) => {
     const group = annotationGroupKey(annotation);
     counts[group] = (counts[group] ?? 0) + 1;
     return counts;
   }, {});
-  const latestAreaTemplate = [...(selectedScene?.annotations ?? [])].reverse().find((annotation) => annotation.kind === "template");
+  const latestAreaTemplate = [...selectedCurrentAnnotations].reverse().find((annotation) => annotation.kind === "template");
   const canUpdateSelectedActor = hasPermission("actor.update") || (selectedActor?.ownerUserId === currentUserId && hasPermission("actor.updateOwned"));
   const activeOrganization = snapshot.organizations.find((organization) => organization.id === activeOrganizationId);
   const canManageActiveOrganization = activeOrganization?.role === "owner" || activeOrganization?.role === "admin";
@@ -2433,7 +2590,7 @@ export function App() {
       templateDamageFormula: kind === "template" ? templateDamageFormula.trim() || undefined : undefined,
       templateDamageType: kind === "template" ? templateDamageType.trim() || undefined : undefined,
       snapToGrid: kind === "ruler" ? false : annotationSnapToGrid,
-      expiresInSeconds: kind === "ping" ? 45 : undefined
+      expiresInSeconds: kind === "ping" ? pingAnnotationTtlSeconds : undefined
     });
     await refresh();
     setStatus(`${annotationToolLabel(kind)} added`);
@@ -2441,7 +2598,7 @@ export function App() {
 
   async function deleteLatestAnnotation() {
     if (!selectedScene) return;
-    const annotations = selectedScene.annotations ?? [];
+    const annotations = selectedCurrentAnnotations;
     const annotation = annotations.at(-1);
     if (!annotation) {
       setStatus("No annotation to delete");
@@ -2454,7 +2611,7 @@ export function App() {
 
   async function deleteAnnotationGroup(group: string) {
     if (!selectedScene) return;
-    const annotations = (selectedScene.annotations ?? []).filter((annotation) => annotationGroupKey(annotation) === group);
+    const annotations = selectedCurrentAnnotations.filter((annotation) => annotationGroupKey(annotation) === group);
     if (annotations.length === 0) {
       setStatus(`No annotations in ${group}`);
       return;
@@ -2468,7 +2625,7 @@ export function App() {
 
   async function nudgeAnnotationGroup(group: string) {
     if (!selectedScene) return;
-    const annotations = (selectedScene.annotations ?? []).filter((annotation) => annotationGroupKey(annotation) === group);
+    const annotations = selectedCurrentAnnotations.filter((annotation) => annotationGroupKey(annotation) === group);
     if (annotations.length === 0) {
       setStatus(`No annotations in ${group}`);
       return;
@@ -2485,7 +2642,7 @@ export function App() {
 
   async function recolorAnnotationGroup(group: string) {
     if (!selectedScene) return;
-    const annotations = (selectedScene.annotations ?? []).filter((annotation) => annotationGroupKey(annotation) === group);
+    const annotations = selectedCurrentAnnotations.filter((annotation) => annotationGroupKey(annotation) === group);
     if (annotations.length === 0) {
       setStatus(`No annotations in ${group}`);
       return;
@@ -2527,10 +2684,18 @@ export function App() {
     await refresh();
   }
 
+  function closeFogToolPanel() {
+    setToolReport("");
+    setToolReportTitle("Fog and vision");
+    setFogBrushMode(null);
+    setStatus("Fog tools closed");
+  }
+
   async function showFogHistory() {
     if (!selectedScene) return;
     const history = await apiGet<FogHistoryEntry[]>(`/api/v1/scenes/${selectedScene.id}/fog/history`);
     const recent = history.slice(-8).reverse();
+    setToolReportTitle("Fog history");
     setToolReport(recent.length ? recent.map(formatFogHistoryEntry).join("\n") : "No fog history for this scene.");
     setStatus("Fog history loaded");
   }
@@ -2543,10 +2708,12 @@ export function App() {
       y: visionSampleY.trim() ? Number(visionSampleY) : fallbackPoint.y
     };
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.y < 0 || point.x > selectedScene.width || point.y > selectedScene.height) {
+      setToolReportTitle("Vision sample");
       setToolReport(`Point must be inside 0,0 to ${selectedScene.width},${selectedScene.height}.`);
       return;
     }
     const sample = await apiGet<VisionPointSample>(`/api/v1/scenes/${selectedScene.id}/vision/sample?x=${Math.round(point.x)}&y=${Math.round(point.y)}`);
+    setToolReportTitle("Vision sample");
     setToolReport(formatVisionPointSample(sample));
     setStatus("Vision sample loaded");
   }
@@ -4967,12 +5134,26 @@ export function App() {
         {showTableWorkspace ? (
         <div className={`table-grid workspace-${workspaceMode}`}>
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
-            <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
-            <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
-            {selectedTokens.length > 1 && <MapSelectionStatus selectedCount={selectedTokens.length} onClear={clearTokenSelection} />}
-            <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />
+            <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
+            <div className="map-play-surface">
+              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+            </div>
+            <div className="map-layer-dock" aria-label="Map controls and layers">
+              <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
+              {selectedTokens.length > 1 && <MapSelectionStatus selectedCount={selectedTokens.length} onClear={clearTokenSelection} />}
+              <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />
+            </div>
             {hasPermission("token.reveal") && (fogBrushMode || toolReport) && (
-              <section className="table-tool-panel" aria-label="Fog and vision tools">
+              <section className="table-tool-panel movable-panel" aria-label="Fog and vision tools" style={fogToolPanel.style}>
+                <header className="floating-panel-header table-tool-panel-header" {...fogToolPanel.dragHandleProps}>
+                  <div>
+                    <strong>{toolReport ? toolReportTitle : "Fog tools"}</strong>
+                    <span>{toolReport ? "Report output" : fogBrushMode ? `${titleCaseLabel(fogBrushMode)} brush active` : "Presets and vision samples"}</span>
+                  </div>
+                  <button className="icon-button" type="button" aria-label="Close fog and vision panel" title="Close" onClick={closeFogToolPanel}>
+                    <X size={15} />
+                  </button>
+                </header>
                 <input aria-label="Fog preset name" value={fogPresetName} placeholder="Preset name" onChange={(event) => setFogPresetName(event.target.value)} />
                 <select aria-label="Fog preset mode" value={fogPresetMode} onChange={(event) => setFogPresetMode(event.target.value as "replace" | "append")}>
                   <option value="replace">Replace</option>
@@ -4984,8 +5165,8 @@ export function App() {
               </section>
             )}
             {annotationPanelOpen && !fogBrushMode && annotationTool && !isTransientMeasurementTool(annotationTool) && (
-            <section className="table-tool-panel annotation-panel" aria-label="Annotation layers and history">
-              <header className="annotation-panel-header">
+            <section className="table-tool-panel annotation-panel movable-panel" aria-label="Annotation layers and history" style={annotationToolPanel.style}>
+              <header className="annotation-panel-header floating-panel-header" {...annotationToolPanel.dragHandleProps}>
                 <div>
                   <strong>Annotations</strong>
                   <span>{annotationToolLabel(annotationTool)} settings</span>
@@ -5199,7 +5380,6 @@ export function App() {
               </details>
             </section>
             )}
-            {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={refresh} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
           </section>
 
           <aside className="inspector">
@@ -5475,6 +5655,7 @@ interface TokenSelectionOptions {
 
 type TokenFrame = Pick<Token, "x" | "y" | "width" | "height">;
 type TokenFrameOverrides = Record<string, TokenFrame>;
+type ToolAction = () => void | Promise<void>;
 
 interface TokenDropPayload {
   type: "actor" | "asset";
@@ -5508,6 +5689,23 @@ function clampBattleMapZoom(value: number): number {
   return Math.max(battleMapZoomMin, Math.min(battleMapZoomMax, Number(value.toFixed(2))));
 }
 
+function battleMapBoardDimensions(scene: Pick<Scene, "width" | "height">, viewport: SceneViewportSize, zoom: number): { width: number; height: number } {
+  const aspect = Math.max(0.1, scene.width / Math.max(1, scene.height));
+  const availableWidth = Math.max(240, viewport.width - 20);
+  const availableHeight = Math.max(180, viewport.height - 20);
+  let baseWidth = Math.max(240, Math.min(availableWidth, availableHeight * aspect));
+  let baseHeight = baseWidth / aspect;
+  if (baseHeight > availableHeight) {
+    baseHeight = availableHeight;
+    baseWidth = baseHeight * aspect;
+  }
+  const safeZoom = clampBattleMapZoom(zoom);
+  return {
+    width: Math.round(baseWidth * safeZoom),
+    height: Math.round(baseHeight * safeZoom)
+  };
+}
+
 function formatBattleMapZoom(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
@@ -5526,7 +5724,8 @@ function MapLayerStack(props: { scene?: Scene; tokens: Token[]; activeTokenLayer
     counts[layer.id] = sceneTokens.filter((token) => tokenLayer(token) === layer.id).length;
     return counts;
   }, { map: 0, player: 0, gm: 0 });
-  const annotationCount = props.scene?.annotations?.length ?? 0;
+  const annotationExpiryNow = useAnnotationExpiryClock(props.scene?.annotations);
+  const annotationCount = useMemo(() => activeSceneAnnotations(props.scene?.annotations, annotationExpiryNow).length, [annotationExpiryNow, props.scene?.annotations]);
   const visibleAnnotationCount = annotationLayers.filter((layer) => props.visibleAnnotationLayers[layer]).length;
   return (
     <aside className="map-layer-stack" aria-label="Map layer stack">
@@ -5759,7 +5958,7 @@ function hasItemDropData(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(itemDropMime);
 }
 
-function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void> }) {
+function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onZoomBy(delta: number): void }) {
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
   const [tokenResize, setTokenResize] = useState<TokenResizeDraft | null>(null);
   const [tokenFrameOverrides, setTokenFrameOverrides] = useState<TokenFrameOverrides>({});
@@ -5779,6 +5978,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   const annotationMoveDraftRef = useRef<AnnotationMoveDraft | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  const [viewportSize, setViewportSize] = useState<SceneViewportSize>({ width: 960, height: 640 });
   const tokens = useMemo(() => props.tokens.filter((token) => token.sceneId === props.scene.id), [props.tokens, props.scene.id]);
   const activeLayerTokenIds = useMemo(() => new Set(tokens.filter((token) => tokenLayer(token) === props.activeTokenLayer).map((token) => token.id)), [tokens, props.activeTokenLayer]);
   const orderedTokens = useMemo(
@@ -5793,7 +5993,11 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   const selectedTokenIdSet = useMemo(() => new Set(props.selectedTokenIds), [props.selectedTokenIds]);
   const selectedViewportToken = useMemo(() => tokens.find((token) => token.id === props.selectedTokenId), [tokens, props.selectedTokenId]);
   const tokenImageAssets = useMemo(() => new Map(props.assets.filter(isUsableImageAsset).map((asset) => [asset.id, asset])), [props.assets]);
-  const visibleAnnotations = useMemo(() => (props.scene.annotations ?? []).filter((annotation) => props.visibleAnnotationLayers[annotation.layer ?? defaultAnnotationLayer(annotation.kind)] !== false), [props.scene.annotations, props.visibleAnnotationLayers]);
+  const annotationExpiryNow = useAnnotationExpiryClock(props.scene.annotations);
+  const visibleAnnotations = useMemo(
+    () => activeSceneAnnotations(props.scene.annotations, annotationExpiryNow).filter((annotation) => props.visibleAnnotationLayers[annotation.layer ?? defaultAnnotationLayer(annotation.kind)] !== false),
+    [annotationExpiryNow, props.scene.annotations, props.visibleAnnotationLayers]
+  );
   const displayAnnotations = useMemo(
     () => visibleAnnotations.map((annotation) => (annotationMoveDraft?.annotationId === annotation.id ? { ...annotation, points: annotationMoveDraft.points } : annotation)),
     [visibleAnnotations, annotationMoveDraft]
@@ -5803,12 +6007,35 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   const revealedPolygons = useMemo(() => (vision?.fogActive ? vision.polygons.filter((polygon) => polygon.source !== "light" && polygon.mode !== "hide" && polygon.points.length > 2) : []), [vision]);
   const hiddenPolygons = useMemo(() => (vision?.fogActive ? vision.polygons.filter((polygon) => polygon.source === "fog" && polygon.mode === "hide" && polygon.points.length > 2) : []), [vision]);
   const maskId = `vision-mask-${props.scene.id}`;
+  const boardDimensions = useMemo(() => battleMapBoardDimensions(props.scene, viewportSize, props.zoom), [props.scene.height, props.scene.width, props.zoom, viewportSize.height, viewportSize.width]);
   const boardStyle = {
     aspectRatio: `${props.scene.width} / ${props.scene.height}`,
+    width: `${boardDimensions.width}px`,
+    height: `${boardDimensions.height}px`,
     "--scene-aspect": String(props.scene.width / props.scene.height),
     "--map-zoom": String(props.zoom)
   } as CSSProperties;
   const showGridOverlay = sceneGridOverlayVisible(props.scene);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    let frame = 0;
+    const updateViewportSize = () => {
+      const next = { width: viewport.clientWidth, height: viewport.clientHeight };
+      setViewportSize((current) => (current.width === next.width && current.height === next.height ? current : next));
+    };
+    updateViewportSize();
+    const resizeObserver = new ResizeObserver(() => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(updateViewportSize);
+    });
+    resizeObserver.observe(viewport);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     setTokenFrameOverrides((current) => {
@@ -6260,7 +6487,17 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   }
 
   return (
-    <div ref={viewportRef} className={`scene-viewport ${mapPanning ? "panning" : ""}`} role="region" aria-label={`${props.scene.name} battle map viewport`}>
+    <div
+      ref={viewportRef}
+      className={`scene-viewport ${mapPanning ? "panning" : ""}`}
+      role="region"
+      aria-label={`${props.scene.name} battle map viewport`}
+      onWheel={(event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        props.onZoomBy(event.deltaY > 0 ? -battleMapZoomStep : battleMapZoomStep);
+      }}
+    >
       <div
         ref={boardRef}
         data-agent-board-root="true"
@@ -6858,13 +7095,13 @@ function MapSelectionStatus(props: { selectedCount: number; onClear(): void }) {
   );
 }
 
-function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCombat(): void; onRevealFog(): void; onHideFog(): void; onRevealFogPolygon(): void; onToggleFogBrush(mode: FogMode): void; onToggleAnnotationTool(kind: ActiveAnnotationTool): void; onDeleteLatestAnnotation(): void; onUndoFog(): void; onShowFogHistory(): void; onSampleVisionPoint(): void; onSaveFogPreset(): void; onApplyFogPreset(): void; onDeleteFogPreset(): void; onAddWall(): void; onAddTerrainWall(): void; onAddLight(): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; activeFogBrushMode: FogMode | null; activeAnnotationTool: AnnotationTool; hasFogPresets: boolean; canUpdateScene: boolean; canAnnotate: boolean }) {
+function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; onStartCombat: ToolAction; onRevealFog: ToolAction; onHideFog: ToolAction; onRevealFogPolygon: ToolAction; onToggleFogBrush(mode: FogMode): void; onToggleAnnotationTool(kind: ActiveAnnotationTool): void; onDeleteLatestAnnotation: ToolAction; onUndoFog: ToolAction; onShowFogHistory: ToolAction; onSampleVisionPoint: ToolAction; onSaveFogPreset: ToolAction; onApplyFogPreset: ToolAction; onDeleteFogPreset: ToolAction; onAddWall: ToolAction; onAddTerrainWall: ToolAction; onAddLight: ToolAction; onActionError(error: unknown): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; activeFogBrushMode: FogMode | null; activeAnnotationTool: AnnotationTool; hasFogPresets: boolean; canUpdateScene: boolean; canAnnotate: boolean }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const advancedToolsRef = useRef<HTMLDetailsElement>(null);
   const closeAdvancedTools = () => setAdvancedOpen(false);
-  const runAdvancedAction = (action: () => void) => {
-    closeAdvancedTools();
-    action();
+  const runToolAction = (action: ToolAction, options: { closeAdvanced?: boolean } = {}) => {
+    if (options.closeAdvanced) closeAdvancedTools();
+    void Promise.resolve(action()).catch(props.onActionError);
   };
 
   useEffect(() => {
@@ -6887,11 +7124,11 @@ function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCo
 
   return (
     <div className="toolbar">
-      <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select" aria-label="Select" onClick={props.onSelectTool}>
+      <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select" aria-label="Select" onClick={() => runToolAction(props.onSelectTool)}>
         <Hand size={17} />
       </button>
       {props.canCreateToken && (
-        <button className="tool" title="Token" aria-label="Add token" tabIndex={1} autoFocus onClick={props.onCreateToken}>
+        <button className="tool" title="Token" aria-label="Add token" tabIndex={1} autoFocus onClick={() => runToolAction(props.onCreateToken)}>
           <Plus size={17} />
         </button>
       )}
@@ -6908,7 +7145,7 @@ function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCo
         <MapPin size={17} />
       </button>
       {props.canRevealFog && (
-        <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={props.onRevealFog}>
+        <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={() => runToolAction(props.onRevealFog)}>
           <Eye size={17} />
         </button>
       )}
@@ -6923,7 +7160,7 @@ function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCo
         </button>
       )}
       {props.canUpdateScene && (
-        <button className="tool" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={props.onDeleteLatestAnnotation}>
+        <button className="tool" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={() => runToolAction(props.onDeleteLatestAnnotation)}>
           <X size={17} />
         </button>
       )}
@@ -6934,53 +7171,53 @@ function Toolbar(props: { onSelectTool(): void; onCreateToken(): void; onStartCo
           </summary>
           <div className="tool-more-panel" aria-label="Advanced table tools">
             {props.canManageCombat && (
-              <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onStartCombat)}>
+              <button className="ghost-button" type="button" onClick={() => runToolAction(props.onStartCombat, { closeAdvanced: true })}>
                 <Swords size={15} /> Combat
               </button>
             )}
             {props.canRevealFog && (
               <>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onHideFog)}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onHideFog, { closeAdvanced: true })}>
                   <Eraser size={15} /> Hide fog
                 </button>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onRevealFogPolygon)}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onRevealFogPolygon, { closeAdvanced: true })}>
                   <Pentagon size={15} /> Polygon fog
                 </button>
-                <button className={`ghost-button ${props.activeFogBrushMode === "reveal" ? "active" : ""}`} type="button" onClick={() => runAdvancedAction(() => props.onToggleFogBrush("reveal"))}>
+                <button className={`ghost-button ${props.activeFogBrushMode === "reveal" ? "active" : ""}`} type="button" onClick={() => runToolAction(() => props.onToggleFogBrush("reveal"), { closeAdvanced: true })}>
                   <Paintbrush size={15} /> Reveal brush
                 </button>
-                <button className={`ghost-button ${props.activeFogBrushMode === "hide" ? "active" : ""}`} type="button" onClick={() => runAdvancedAction(() => props.onToggleFogBrush("hide"))}>
+                <button className={`ghost-button ${props.activeFogBrushMode === "hide" ? "active" : ""}`} type="button" onClick={() => runToolAction(() => props.onToggleFogBrush("hide"), { closeAdvanced: true })}>
                   <Eraser size={15} /> Hide brush
                 </button>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onUndoFog)}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onUndoFog, { closeAdvanced: true })}>
                   <RotateCcw size={15} /> Undo fog
                 </button>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onShowFogHistory)}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onShowFogHistory, { closeAdvanced: true })}>
                   <ScrollText size={15} /> Fog history
                 </button>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onSampleVisionPoint)}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onSampleVisionPoint, { closeAdvanced: true })}>
                   <Crosshair size={15} /> Sample vision
                 </button>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onSaveFogPreset)}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onSaveFogPreset, { closeAdvanced: true })}>
                   <Download size={15} /> Save preset
                 </button>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onApplyFogPreset)} disabled={!props.hasFogPresets}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onApplyFogPreset, { closeAdvanced: true })} disabled={!props.hasFogPresets}>
                   <Upload size={15} /> Apply preset
                 </button>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onDeleteFogPreset)} disabled={!props.hasFogPresets}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onDeleteFogPreset, { closeAdvanced: true })} disabled={!props.hasFogPresets}>
                   <UserX size={15} /> Delete preset
                 </button>
               </>
             )}
             {props.canUpdateScene && (
               <>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onAddWall)}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onAddWall, { closeAdvanced: true })}>
                   <BrickWall size={15} /> Wall
                 </button>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onAddTerrainWall)}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onAddTerrainWall, { closeAdvanced: true })}>
                   <BrickWall size={15} /> Terrain
                 </button>
-                <button className="ghost-button" type="button" onClick={() => runAdvancedAction(props.onAddLight)}>
+                <button className="ghost-button" type="button" onClick={() => runToolAction(props.onAddLight, { closeAdvanced: true })}>
                   <Lightbulb size={15} /> Light
                 </button>
               </>
