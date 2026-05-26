@@ -56,11 +56,20 @@ describe("desktop layout regressions", () => {
     expect(appSource).not.toContain('label: "AI Studio"');
     expect(appSource).toContain("AI Studio is deprecated. Use the AI Agent for AI-assisted table work.");
     expect(stylesSource).toContain(".ai-agent-deprecation-note {");
-    expect(appSource).toContain("const agentPanel = useMovablePanel(initialAiAgentPanelPosition);");
+    expect(appSource).toContain("const agentPanel = useMovablePanel(initialAiAgentPanelPosition, initialAiAgentPanelSize, { minWidth: 340, minHeight: 420 });");
     expect(appSource).toContain('<aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style}>');
     expect(appSource).toContain('<header className="ai-agent-header floating-panel-header" title="Drag panel" {...agentPanel.dragHandleProps}>');
     expect(appSource).toContain('<Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />');
+    expect(appSource).toContain('className="ai-agent-title-block"');
+    expect(appSource).toContain('className="ai-agent-status-pill"');
+    expect(appSource).toContain('className="ai-agent-body"');
+    expect(appSource).toContain('className="ai-agent-utility-bar ai-agent-controls"');
+    expect(appSource).toContain('className="ai-agent-feed"');
     expect(stylesSource).toContain(".ai-agent-popout.movable-panel {\n  top: var(--floating-panel-y, 20px);");
+    expect(stylesSource).toContain(".ai-agent-body {");
+    expect(stylesSource).toContain(".ai-agent-utility-bar {");
+    expect(stylesSource).toContain(".ai-agent-feed {");
+    expect(stylesSource).toContain(".ai-agent-status-pill {");
     expect(stylesSource).toContain("background: #070b10;\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(229, 176, 74, 0.08);\n  isolation: isolate;");
     expect(stylesSource).toContain("@media (max-width: 900px) {\n  .ai-agent-popout {\n    right: 12px;\n    bottom: calc(76px + env(safe-area-inset-bottom, 0px));");
     expect(stylesSource).toContain("@media (max-width: 760px) {\n  .ai-agent-popout {\n    right: 8px;\n    bottom: calc(70px + env(safe-area-inset-bottom, 0px));");
@@ -292,19 +301,35 @@ describe("desktop layout regressions", () => {
 
   it("keeps advanced and fog tool popups closeable, movable, and away from the layer stack", () => {
     expect(appSource).toContain("function useMovablePanel(");
+    expect(appSource).toContain("interface FloatingPanelSize {");
+    expect(appSource).toContain("interface FloatingPanelResize {");
+    expect(appSource).toContain("const resizeRef = useRef<FloatingPanelResize | null>(null);");
+    expect(appSource).toContain("function clampFloatingPanelSize(");
+    expect(appSource).toContain('"--floating-panel-width": `${size.width}px`,');
+    expect(appSource).toContain('"--floating-panel-height": `${size.height}px`');
+    expect(appSource).toContain("resizeHandleProps:");
     expect(appSource).toContain('aria-label="Close fog and vision panel"');
+    expect(appSource).toContain('aria-label="Resize fog and vision panel"');
+    expect(appSource).toContain('aria-label="Resize annotation panel"');
+    expect(appSource).toContain('aria-label="Resize AI Agent panel"');
     expect(appSource).toContain("if (event) updateDragPosition(drag, event.clientX, event.clientY);");
     expect(appSource).toContain("setFogBrushMode(null);");
+    expect(appSource).toContain("setToolReport(\"\");\n    setToolReportTitle(\"Fog and vision\");");
+    expect(appSource).toContain("async function showFogHistory() {\n    if (!selectedScene) return;\n    setAnnotationPanelOpen(false);\n    setAnnotationTool(null);");
     expect(appSource).toContain("setToolReportTitle(\"Fog history\");");
     expect(appSource).toContain('className="table-tool-panel movable-panel"');
     expect(appSource).toContain('className="table-tool-panel annotation-panel movable-panel"');
     expect(stylesSource).toContain(".tool-more {\n  position: static;");
     expect(stylesSource).toContain(".tool-more-panel {\n  position: absolute;\n  top: 0;\n  left: 46px;\n  z-index: 10;");
     expect(stylesSource).toContain(".table-tool-panel.movable-panel {\n  top: var(--floating-panel-y, 24px);");
-    expect(stylesSource).toContain("resize: both;");
+    expect(stylesSource).toContain("width: min(var(--floating-panel-width, 320px), calc(100% - 24px));");
+    expect(stylesSource).toContain("height: min(var(--floating-panel-height, 280px), calc(100% - 24px));");
+    expect(stylesSource).not.toContain("resize: both;");
     expect(stylesSource).toContain(".floating-panel-header {\n  cursor: grab;");
     expect(stylesSource).toContain(".floating-panel-header:active {\n  cursor: grabbing;");
     expect(stylesSource).toContain(".floating-panel-drag-icon {");
+    expect(stylesSource).toContain(".floating-panel-resize-handle {");
+    expect(stylesSource).toContain("cursor: nwse-resize;");
   });
 
   it("keeps ping annotations transient instead of leaving them on the board", () => {

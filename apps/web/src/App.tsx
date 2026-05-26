@@ -1,6 +1,6 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { toPng } from "html-to-image";
-import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Grip, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
@@ -47,6 +47,11 @@ interface FloatingPanelPosition {
   y: number;
 }
 
+interface FloatingPanelSize {
+  width: number;
+  height: number;
+}
+
 interface FloatingPanelDrag {
   pointerId: number;
   handle: HTMLElement;
@@ -56,6 +61,24 @@ interface FloatingPanelDrag {
   startY: number;
   maxX: number;
   maxY: number;
+}
+
+interface FloatingPanelResize {
+  pointerId: number;
+  handle: HTMLElement;
+  startClientX: number;
+  startClientY: number;
+  startWidth: number;
+  startHeight: number;
+  minWidth: number;
+  minHeight: number;
+  maxWidth: number;
+  maxHeight: number;
+}
+
+interface FloatingPanelResizeOptions {
+  minWidth?: number;
+  minHeight?: number;
 }
 
 interface SceneViewportSize {
@@ -570,25 +593,41 @@ function clampFloatingPanel(value: number, max: number): number {
   return Math.max(8, Math.min(Math.max(8, max), Math.round(value)));
 }
 
+function clampFloatingPanelSize(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(Math.max(min, max), Math.round(value)));
+}
+
+function initialAiAgentPanelSize(): FloatingPanelSize {
+  return {
+    width: Math.min(420, Math.max(340, window.innerWidth - 32)),
+    height: Math.min(640, Math.max(460, window.innerHeight - 40))
+  };
+}
+
 function initialAiAgentPanelPosition(): FloatingPanelPosition {
-  const width = Math.min(420, Math.max(280, window.innerWidth - 32));
-  const height = Math.min(680, Math.max(260, window.innerHeight - 40));
+  const { width, height } = initialAiAgentPanelSize();
   return {
     x: clampFloatingPanel(window.innerWidth - width - 20, window.innerWidth - 48),
     y: clampFloatingPanel(window.innerHeight - height - 20, window.innerHeight - 48)
   };
 }
 
-function useMovablePanel(initialPosition: FloatingPanelPosition | (() => FloatingPanelPosition)) {
+function useMovablePanel(initialPosition: FloatingPanelPosition | (() => FloatingPanelPosition), initialSize: FloatingPanelSize | (() => FloatingPanelSize) = { width: 320, height: 280 }, resizeOptions: FloatingPanelResizeOptions = {}) {
   const [position, setPosition] = useState<FloatingPanelPosition>(() => (typeof initialPosition === "function" ? initialPosition() : initialPosition));
+  const [size, setSize] = useState<FloatingPanelSize>(() => (typeof initialSize === "function" ? initialSize() : initialSize));
   const dragRef = useRef<FloatingPanelDrag | null>(null);
+  const resizeRef = useRef<FloatingPanelResize | null>(null);
+  const minWidth = resizeOptions.minWidth ?? 280;
+  const minHeight = resizeOptions.minHeight ?? 180;
   const style = useMemo(
     () =>
       ({
         "--floating-panel-x": `${position.x}px`,
-        "--floating-panel-y": `${position.y}px`
+        "--floating-panel-y": `${position.y}px`,
+        "--floating-panel-width": `${size.width}px`,
+        "--floating-panel-height": `${size.height}px`
       }) as CSSProperties,
-    [position]
+    [position, size]
   );
 
   const releaseDrag = (drag: FloatingPanelDrag) => {
@@ -606,6 +645,21 @@ function useMovablePanel(initialPosition: FloatingPanelPosition | (() => Floatin
     });
   };
 
+  const releaseResize = (resize: FloatingPanelResize) => {
+    try {
+      resize.handle.releasePointerCapture(resize.pointerId);
+    } catch {
+      // The browser may already have released capture if the pointer left the viewport.
+    }
+  };
+
+  const updateResizeSize = (resize: FloatingPanelResize, clientX: number, clientY: number) => {
+    setSize({
+      width: clampFloatingPanelSize(resize.startWidth + clientX - resize.startClientX, resize.minWidth, resize.maxWidth),
+      height: clampFloatingPanelSize(resize.startHeight + clientY - resize.startClientY, resize.minHeight, resize.maxHeight)
+    });
+  };
+
   const endCurrentDrag = (event?: PointerEvent) => {
     const drag = dragRef.current;
     if (!drag) return;
@@ -615,17 +669,35 @@ function useMovablePanel(initialPosition: FloatingPanelPosition | (() => Floatin
     releaseDrag(drag);
   };
 
+  const endCurrentResize = (event?: PointerEvent) => {
+    const resize = resizeRef.current;
+    if (!resize) return;
+    if (event && resize.pointerId !== event.pointerId) return;
+    if (event) updateResizeSize(resize, event.clientX, event.clientY);
+    resizeRef.current = null;
+    releaseResize(resize);
+  };
+
   useEffect(() => {
-    const endWindowDrag = (event: PointerEvent) => endCurrentDrag(event);
-    const cancelWindowDrag = (event: PointerEvent) => endCurrentDrag(event);
-    const endDragOnBlur = () => endCurrentDrag();
-    window.addEventListener("pointerup", endWindowDrag);
-    window.addEventListener("pointercancel", cancelWindowDrag);
-    window.addEventListener("blur", endDragOnBlur);
+    const endWindowPointer = (event: PointerEvent) => {
+      endCurrentDrag(event);
+      endCurrentResize(event);
+    };
+    const cancelWindowPointer = (event: PointerEvent) => {
+      endCurrentDrag(event);
+      endCurrentResize(event);
+    };
+    const endPointerOnBlur = () => {
+      endCurrentDrag();
+      endCurrentResize();
+    };
+    window.addEventListener("pointerup", endWindowPointer);
+    window.addEventListener("pointercancel", cancelWindowPointer);
+    window.addEventListener("blur", endPointerOnBlur);
     return () => {
-      window.removeEventListener("pointerup", endWindowDrag);
-      window.removeEventListener("pointercancel", cancelWindowDrag);
-      window.removeEventListener("blur", endDragOnBlur);
+      window.removeEventListener("pointerup", endWindowPointer);
+      window.removeEventListener("pointercancel", cancelWindowPointer);
+      window.removeEventListener("blur", endPointerOnBlur);
     };
   }, []);
 
@@ -639,6 +711,34 @@ function useMovablePanel(initialPosition: FloatingPanelPosition | (() => Floatin
     } catch {
       // The browser may already have released capture if the pointer left the viewport.
     }
+  };
+
+  const endResize = (event: ReactPointerEvent<HTMLElement>) => {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    updateResizeSize(resize, event.clientX, event.clientY);
+    resizeRef.current = null;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // The browser may already have released capture if the pointer left the viewport.
+    }
+  };
+
+  const resizeByKeyboard = (event: ReactKeyboardEvent<HTMLElement>, deltaWidth: number, deltaHeight: number) => {
+    const panel = event.currentTarget.closest<HTMLElement>(".movable-panel");
+    if (!panel) return;
+    const container = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : document.documentElement;
+    const panelRect = panel.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const maxWidth = containerRect.right - panelRect.left - 8;
+    const maxHeight = containerRect.bottom - panelRect.top - 8;
+    setSize((current) => ({
+      width: clampFloatingPanelSize(current.width + deltaWidth, minWidth, maxWidth),
+      height: clampFloatingPanelSize(current.height + deltaHeight, minHeight, maxHeight)
+    }));
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   return {
@@ -677,6 +777,50 @@ function useMovablePanel(initialPosition: FloatingPanelPosition | (() => Floatin
       },
       onPointerUp: endDrag,
       onPointerCancel: endDrag
+    },
+    resizeHandleProps: {
+      onKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+        const step = event.shiftKey ? 48 : 16;
+        if (event.key === "ArrowRight") resizeByKeyboard(event, step, 0);
+        else if (event.key === "ArrowLeft") resizeByKeyboard(event, -step, 0);
+        else if (event.key === "ArrowDown") resizeByKeyboard(event, 0, step);
+        else if (event.key === "ArrowUp") resizeByKeyboard(event, 0, -step);
+      },
+      onPointerDown(event: ReactPointerEvent<HTMLElement>) {
+        if (event.button !== 0) return;
+        const panel = event.currentTarget.closest<HTMLElement>(".movable-panel");
+        if (!panel) return;
+        const container = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : document.documentElement;
+        const panelRect = panel.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        dragRef.current = null;
+        resizeRef.current = {
+          pointerId: event.pointerId,
+          handle: event.currentTarget,
+          startClientX: event.clientX,
+          startClientY: event.clientY,
+          startWidth: panelRect.width,
+          startHeight: panelRect.height,
+          minWidth,
+          minHeight,
+          maxWidth: containerRect.right - panelRect.left - 8,
+          maxHeight: containerRect.bottom - panelRect.top - 8
+        };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.preventDefault();
+        event.stopPropagation();
+      },
+      onPointerMove(event: ReactPointerEvent<HTMLElement>) {
+        const resize = resizeRef.current;
+        if (!resize || resize.pointerId !== event.pointerId) return;
+        if (event.buttons === 0) {
+          endResize(event);
+          return;
+        }
+        updateResizeSize(resize, event.clientX, event.clientY);
+      },
+      onPointerUp: endResize,
+      onPointerCancel: endResize
     }
   };
 }
@@ -906,8 +1050,8 @@ export function App() {
   const [visionSampleY, setVisionSampleY] = useState("");
   const [toolReport, setToolReport] = useState("");
   const [toolReportTitle, setToolReportTitle] = useState("Fog and vision");
-  const fogToolPanel = useMovablePanel({ x: 88, y: 24 });
-  const annotationToolPanel = useMovablePanel({ x: 88, y: 24 });
+  const fogToolPanel = useMovablePanel({ x: 88, y: 24 }, { width: 320, height: 240 }, { minWidth: 280, minHeight: 160 });
+  const annotationToolPanel = useMovablePanel({ x: 88, y: 24 }, { width: 312, height: 480 }, { minWidth: 280, minHeight: 280 });
   const [canvasAssetDragging, setCanvasAssetDragging] = useState(false);
   const tokenDropHandledRef = useRef(false);
 
@@ -2590,6 +2734,8 @@ export function App() {
 
   function toggleAnnotationTool(kind: ActiveAnnotationTool) {
     setFogBrushMode(null);
+    setToolReport("");
+    setToolReportTitle("Fog and vision");
     const next = annotationTool === kind ? null : kind;
     setAnnotationTool(next);
     setAnnotationPanelOpen(Boolean(next && annotationToolShowsSettings(next)));
@@ -2715,6 +2861,8 @@ export function App() {
 
   async function showFogHistory() {
     if (!selectedScene) return;
+    setAnnotationPanelOpen(false);
+    setAnnotationTool(null);
     const history = await apiGet<FogHistoryEntry[]>(`/api/v1/scenes/${selectedScene.id}/fog/history`);
     const recent = history.slice(-8).reverse();
     setToolReportTitle("Fog history");
@@ -2724,6 +2872,8 @@ export function App() {
 
   async function sampleVisionPoint() {
     if (!selectedScene) return;
+    setAnnotationPanelOpen(false);
+    setAnnotationTool(null);
     const fallbackPoint = selectedToken ? tokenCenter(selectedToken) : { x: selectedScene.width / 2, y: selectedScene.height / 2 };
     const point = {
       x: visionSampleX.trim() ? Number(visionSampleX) : fallbackPoint.x,
@@ -5283,6 +5433,9 @@ export function App() {
                 <input aria-label="Vision sample x" value={visionSampleX} placeholder="X" onChange={(event) => setVisionSampleX(event.target.value)} />
                 <input aria-label="Vision sample y" value={visionSampleY} placeholder="Y" onChange={(event) => setVisionSampleY(event.target.value)} />
                 {toolReport && <pre>{toolReport}</pre>}
+                <button className="floating-panel-resize-handle" type="button" aria-label="Resize fog and vision panel" title="Resize panel" {...fogToolPanel.resizeHandleProps}>
+                  <Grip size={13} aria-hidden="true" />
+                </button>
               </section>
             )}
             {annotationPanelOpen && !fogBrushMode && annotationTool && annotationToolShowsSettings(annotationTool) && (
@@ -5416,6 +5569,9 @@ export function App() {
                 ) : null}
               </div>
               </details>
+              <button className="floating-panel-resize-handle" type="button" aria-label="Resize annotation panel" title="Resize panel" {...annotationToolPanel.resizeHandleProps}>
+                <Grip size={13} aria-hidden="true" />
+              </button>
             </section>
             )}
             {workspaceMode === "prep" && !fogBrushMode && tab === "content" && (
@@ -5592,7 +5748,8 @@ function AiAgentPanel(props: {
 }) {
   const agentProposals = visibleAiAgentProposals(props.proposals, props.messages, props.hiddenProposalIds);
   const codexAuthUrl = props.codexAuth?.authUrl ?? props.codexAuth?.verificationUrl;
-  const agentPanel = useMovablePanel(initialAiAgentPanelPosition);
+  const agentPanel = useMovablePanel(initialAiAgentPanelPosition, initialAiAgentPanelSize, { minWidth: 340, minHeight: 420 });
+  const agentStatusLabel = props.busy ? "Working" : agentProposals.length > 0 ? `${formatNumber(agentProposals.length)} ${agentProposals.length === 1 ? "proposal" : "proposals"}` : "Ready";
   const handleAiAgentPromptKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
@@ -5603,106 +5760,110 @@ function AiAgentPanel(props: {
     <aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style}>
       <header className="ai-agent-header floating-panel-header" title="Drag panel" {...agentPanel.dragHandleProps}>
         <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
-        <div>
+        <div className="ai-agent-title-block">
           <span className="section-title">AI Agent</span>
           <strong>{props.status}</strong>
         </div>
+        <span className="ai-agent-status-pill">{agentStatusLabel}</span>
         <button className="icon-button" type="button" aria-label="Close AI Agent" title="Close" onClick={props.onClose}>
           <X size={17} />
         </button>
       </header>
       <p className="ai-agent-deprecation-note">AI Studio is deprecated. Use the AI Agent for AI-assisted table work.</p>
-      <div className="ai-agent-controls">
-        <label>
-          <span>Approval</span>
-          <select
-            aria-label="AI Agent approval mode"
-            value={props.approvalMode}
-            onChange={(event) => props.onApprovalModeChange(event.target.value as AiAgentApprovalMode)}
-            disabled={!props.canApply}
-          >
-            <option value="manual">Ask before applying</option>
-            <option value="auto">Auto approve and apply</option>
-          </select>
-        </label>
-      </div>
-      <section className="ai-agent-messages" aria-label="AI Agent messages">
-        {props.messages.length === 0 ? (
-          <div className="empty-state compact">Ask for table prep, board edits, proposal review, or rules-supported actions.</div>
-        ) : (
-          props.messages.map((message) => (
-            <article className={`ai-agent-message ${message.role}`} key={message.id}>
-              <span>{message.role === "assistant" ? "Agent" : message.role === "system" ? "System" : "You"}</span>
-              <p>{message.content}</p>
-              {message.reasoning && message.reasoning.length > 0 && (
-                <details className="ai-agent-reasoning">
-                  <summary>Reasoning trace</summary>
-                  {message.reasoning.map((trace, index) => (
-                    <p key={`${message.id}-reasoning-${index}`}>{trace}</p>
-                  ))}
-                </details>
-              )}
+      <div className="ai-agent-body">
+        <div className="ai-agent-utility-bar ai-agent-controls">
+          <label>
+            <span>Approval</span>
+            <select
+              aria-label="AI Agent approval mode"
+              value={props.approvalMode}
+              onChange={(event) => props.onApprovalModeChange(event.target.value as AiAgentApprovalMode)}
+              disabled={!props.canApply}
+            >
+              <option value="manual">Ask before applying</option>
+              <option value="auto">Auto approve and apply</option>
+            </select>
+          </label>
+          <span className="ai-agent-mode-hint">{props.canApply ? "Proposal-first" : "Read only"}</span>
+        </div>
+        <section className="ai-agent-feed" aria-label="AI Agent messages">
+          {props.messages.length === 0 ? (
+            <div className="empty-state compact">Ask for table prep, board edits, proposal review, or rules-supported actions.</div>
+          ) : (
+            props.messages.map((message) => (
+              <article className={`ai-agent-message ${message.role}`} key={message.id}>
+                <span>{message.role === "assistant" ? "Agent" : message.role === "system" ? "System" : "You"}</span>
+                <p>{message.content}</p>
+                {message.reasoning && message.reasoning.length > 0 && (
+                  <details className="ai-agent-reasoning">
+                    <summary>Reasoning trace</summary>
+                    {message.reasoning.map((trace, index) => (
+                      <p key={`${message.id}-reasoning-${index}`}>{trace}</p>
+                    ))}
+                  </details>
+                )}
+              </article>
+            ))
+          )}
+          {props.busy && (
+            <article className="ai-agent-working" aria-live="polite">
+              <Bot className="ai-agent-working-bot" size={24} />
+              <div>
+                <span>Agent working</span>
+                <div className="ai-agent-working-dots" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </div>
+              </div>
             </article>
-          ))
-        )}
-        {props.busy && (
-          <article className="ai-agent-working" aria-live="polite">
-            <Bot className="ai-agent-working-bot" size={24} />
-            <div>
-              <span>Agent working</span>
-              <div className="ai-agent-working-dots" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-              </div>
-            </div>
-          </article>
-        )}
-      </section>
-      {props.codexAuth && (
-        <section className="ai-agent-auth-callout" aria-label="Codex app-server sign-in">
-          <div>
-            <strong>ChatGPT sign-in required</strong>
-            <p>{props.codexAuth.message}</p>
-          </div>
-          <div className="ai-agent-auth-actions">
-            {codexAuthUrl ? (
-              <button className="primary-button ai-agent-auth-link" type="button" onClick={() => props.onStartCodexAuth(props.codexAuth!)}>
-                <KeyRound size={16} /> Open sign-in
-              </button>
-            ) : (
-              <span className="ai-agent-auth-missing">No sign-in link</span>
-            )}
-            {props.codexAuth.userCode && (
-              <div className="ai-agent-auth-code">
-                <span>Device code</span>
-                <code>{props.codexAuth.userCode}</code>
-              </div>
-            )}
-          </div>
+          )}
         </section>
-      )}
-      {agentProposals.length > 0 && (
-        <section className="ai-agent-proposals" aria-label="AI Agent proposals">
-          {agentProposals.map((proposal) => (
-            <div className="ai-agent-proposal-row" key={proposal.id}>
-              <span className={`status-pill ${proposal.status}`}>{proposal.status}</span>
-              <strong>{proposal.title}</strong>
-              <small>{formatNumber(proposal.changesJson.length)} changes</small>
-              {(proposal.status === "pending" || proposal.status === "approved") && (
-                <div>
-                  <button className="ghost-button" type="button" disabled={!props.canApply} onClick={() => props.onApply(proposal)}>
-                    <Check size={14} /> {proposalReviewActionLabel(proposal)}
-                  </button>
-                  <button className="ghost-button" type="button" disabled={!props.canApply} onClick={() => props.onReject(proposal)}>
-                    <X size={14} /> Reject
-                  </button>
+        {props.codexAuth && (
+          <section className="ai-agent-auth-callout" aria-label="Codex app-server sign-in">
+            <div>
+              <strong>ChatGPT sign-in required</strong>
+              <p>{props.codexAuth.message}</p>
+            </div>
+            <div className="ai-agent-auth-actions">
+              {codexAuthUrl ? (
+                <button className="primary-button ai-agent-auth-link" type="button" onClick={() => props.onStartCodexAuth(props.codexAuth!)}>
+                  <KeyRound size={16} /> Open sign-in
+                </button>
+              ) : (
+                <span className="ai-agent-auth-missing">No sign-in link</span>
+              )}
+              {props.codexAuth.userCode && (
+                <div className="ai-agent-auth-code">
+                  <span>Device code</span>
+                  <code>{props.codexAuth.userCode}</code>
                 </div>
               )}
             </div>
-          ))}
-        </section>
-      )}
+          </section>
+        )}
+        {agentProposals.length > 0 && (
+          <section className="ai-agent-proposal-list ai-agent-proposals" aria-label="AI Agent proposals">
+            {agentProposals.map((proposal) => (
+              <div className="ai-agent-proposal-row" key={proposal.id}>
+                <span className={`status-pill ${proposal.status}`}>{proposal.status}</span>
+                <strong>{proposal.title}</strong>
+                <small>{formatNumber(proposal.changesJson.length)} changes</small>
+                {(proposal.status === "pending" || proposal.status === "approved") && (
+                  <div>
+                    <button className="ghost-button" type="button" disabled={!props.canApply} onClick={() => props.onApply(proposal)}>
+                      <Check size={14} /> {proposalReviewActionLabel(proposal)}
+                    </button>
+                    <button className="ghost-button" type="button" disabled={!props.canApply} onClick={() => props.onReject(proposal)}>
+                      <X size={14} /> Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </section>
+        )}
+      </div>
       <form
         className="ai-agent-composer"
         onSubmit={(event) => {
@@ -5721,6 +5882,9 @@ function AiAgentPanel(props: {
           </button>
         )}
       </form>
+      <button className="floating-panel-resize-handle" type="button" aria-label="Resize AI Agent panel" title="Resize panel" {...agentPanel.resizeHandleProps}>
+        <Grip size={13} aria-hidden="true" />
+      </button>
     </aside>
   );
 }
