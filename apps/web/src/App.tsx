@@ -4762,9 +4762,6 @@ export function App() {
             <button className="primary-button wide" type="button" onClick={startBlankCanvasDemo}>
               <MapIcon size={16} /> Try Blank Canvas
             </button>
-            <button className="ghost-button wide" type="button" onClick={() => switchSession("usr_demo_gm").catch((error) => setAuthStatus(error instanceof Error ? error.message : String(error)))}>
-              <Users size={16} /> Demo GM
-            </button>
             {ssoEnabled && (
               <button className="ghost-button wide" type="button" onClick={() => startSso().catch((error) => setAuthStatus(error instanceof Error ? error.message : String(error)))}>
                 <Shield size={16} /> SSO

@@ -69,6 +69,8 @@ describe("blank canvas demo", () => {
   it("enters stateless demo mode through the existing app experience", () => {
     expect(appSource).toContain("startBlankCanvasDemo");
     expect(appSource).toContain("Try Blank Canvas");
+    expect(appSource).not.toContain("Demo GM");
+    expect(appSource).not.toContain('switchSession("usr_demo_gm")');
     expect(appSource).toContain("createBlankCanvasDemoSnapshot()");
     expect(appSource).toContain("blankCanvasDemoOpen");
     expect(appSource).toContain("demo-mode-banner");
