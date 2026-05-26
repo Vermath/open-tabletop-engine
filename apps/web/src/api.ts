@@ -4,6 +4,7 @@ export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
 const sessionTokenKey = "otte:sessionToken";
 const sessionTokenUserKey = "otte:sessionTokenUser";
+let statelessDemoApiMode = false;
 
 export class ApiError extends Error {
   constructor(
@@ -40,6 +41,10 @@ export function storeSession(login: SessionLoginInfo): void {
 export function clearSession(): void {
   localStorage.removeItem(sessionTokenKey);
   localStorage.removeItem(sessionTokenUserKey);
+}
+
+export function setStatelessDemoApiMode(enabled: boolean): void {
+  statelessDemoApiMode = enabled;
 }
 
 export function consumeSsoRedirect(): string | undefined {
@@ -227,6 +232,7 @@ export async function loadOidcConfig(): Promise<OidcConfigInfo> {
 }
 
 async function ensureSessionToken(): Promise<string> {
+  if (statelessDemoApiMode) throw new Error("Demo mode is local-only and cannot call the authenticated API.");
   const token = localStorage.getItem(sessionTokenKey);
   const tokenUserId = localStorage.getItem(sessionTokenUserKey);
   const userId = getSessionUserId();

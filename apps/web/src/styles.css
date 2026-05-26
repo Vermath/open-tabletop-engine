@@ -341,6 +341,22 @@ a[href]:focus-visible,
   background: #15130f;
 }
 
+.demo-mode-banner {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(143, 200, 179, 0.34);
+  border-radius: 7px;
+  color: #d4eadf;
+  background: rgba(22, 72, 60, 0.32);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.demo-mode-banner .ghost-button {
+  justify-self: start;
+}
+
 .reset-form {
   display: grid;
   gap: 10px;

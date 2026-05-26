@@ -3,10 +3,11 @@ import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Grip, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
 import { activeSceneAnnotations, nextAnnotationExpiryMs } from "./annotation-expiry.js";
 import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange, type BoardTokenPositionChange } from "./board-history.js";
+import { blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoSnapshot } from "./blank-canvas-demo.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { parseChatCommand } from "./chat-command.js";
@@ -310,6 +311,52 @@ function persistStoredId(key: string, value: string): void {
   } catch {
     // Selection persistence is a convenience; private-mode storage failures should not block the table.
   }
+}
+
+function rollLocalDiceFormula(formula: string): Pick<DiceRoll, "terms" | "total"> {
+  const normalized = formula.replace(/^\/(?:roll|r|gmroll)\s+/i, "").replace(/\s+/g, "");
+  const rawTerms = normalized.match(/[+-]?[^+-]+/g) ?? [];
+  if (rawTerms.length === 0) throw new Error("Dice formula is empty");
+  const terms: DiceRoll["terms"] = [];
+  let total = 0;
+
+  for (const rawTerm of rawTerms) {
+    const sign = rawTerm.startsWith("-") ? -1 : 1;
+    const term = rawTerm.replace(/^[+-]/, "");
+    const dieMatch = term.match(/^(\d*)d(\d+)(?:(kh|kl)(\d+))?(!)?$/i);
+    if (dieMatch) {
+      if (sign < 0) throw new Error("Negative dice groups are not supported");
+      const count = Number(dieMatch[1] || "1");
+      const sides = Number(dieMatch[2]);
+      const keepMode = dieMatch[3];
+      const keepCount = dieMatch[4] ? Number(dieMatch[4]) : undefined;
+      if (!Number.isInteger(count) || count < 1 || count > 1000) throw new Error(`Dice count must be between 1 and 1000: ${count}`);
+      if (!Number.isInteger(sides) || sides < 2) throw new Error(`Invalid die sides: ${sides}`);
+      const results: number[] = [];
+      const exploded: number[] = [];
+      for (let index = 0; index < count; index += 1) {
+        let value = Math.floor(Math.random() * sides) + 1;
+        results.push(value);
+        while (dieMatch[5] && value === sides) {
+          value = Math.floor(Math.random() * sides) + 1;
+          exploded.push(value);
+          results.push(value);
+          if (exploded.length > 100) throw new Error("Explosion limit exceeded");
+        }
+      }
+      const kept = keepMode && keepCount ? [...results].sort((left, right) => (keepMode === "kh" ? right - left : left - right)).slice(0, keepCount) : results;
+      terms.push({ type: "die", count, sides, results, kept, exploded });
+      total += kept.reduce((sum, value) => sum + value, 0);
+      continue;
+    }
+
+    const numeric = Number(term);
+    if (!Number.isFinite(numeric)) throw new Error(`Unsupported dice token: ${rawTerm}`);
+    terms.push({ type: "modifier", value: sign * numeric });
+    total += sign * numeric;
+  }
+
+  return { terms, total };
 }
 
 function aiAgentHistoryStorageKey(campaignId: string, userId: string | null): string {
@@ -917,6 +964,7 @@ export function App() {
   const [authRequired, setAuthRequired] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [publicRegistration, setPublicRegistration] = useState(true);
+  const [blankCanvasDemoOpen, setBlankCanvasDemoOpen] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginMfaCode, setLoginMfaCode] = useState("");
@@ -1054,6 +1102,7 @@ export function App() {
   const annotationToolPanel = useMovablePanel({ x: 88, y: 24 }, { width: 312, height: 480 }, { minWidth: 280, minHeight: 280 });
   const [canvasAssetDragging, setCanvasAssetDragging] = useState(false);
   const tokenDropHandledRef = useRef(false);
+  const blankCanvasDemoIdRef = useRef(0);
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const activeOrganizationId = snapshot.session?.organization?.id ?? snapshot.session?.session?.activeOrganizationId ?? snapshot.organizations[0]?.id ?? "";
@@ -1288,9 +1337,14 @@ export function App() {
     };
     window.addEventListener("keydown", handleBoardKeyboard);
     return () => window.removeEventListener("keydown", handleBoardKeyboard);
-  }, [boardClipboardTokens, boardRedoStack.length, boardUndoStack.length, canDeleteSelectedBoardTokens, selectedScene?.id, selectedScene?.gridSize, selectedTokens]);
+  }, [blankCanvasDemoOpen, boardClipboardTokens, boardRedoStack.length, boardUndoStack.length, canDeleteSelectedBoardTokens, selectedScene?.id, selectedScene?.gridSize, selectedTokens]);
 
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean } = {}) {
+    if (blankCanvasDemoOpen) {
+      setSnapshotReady(true);
+      if (options.syncStatus !== false) setStatus(blankCanvasDemoNotice);
+      return snapshot;
+    }
     const next = await loadSnapshot(nextCampaignId, nextSceneId);
     setSnapshot(next);
     setSessionToken(getSessionToken());
@@ -1376,30 +1430,34 @@ export function App() {
   }, [snapshot.workspaceDefaults]);
 
   useEffect(() => {
+    if (blankCanvasDemoOpen) return;
     persistStoredId("otte:selectedCampaignId", campaignId);
-  }, [campaignId]);
+  }, [blankCanvasDemoOpen, campaignId]);
 
   useEffect(() => {
+    if (blankCanvasDemoOpen) return;
     const nextKey = aiAgentHistoryStorageKey(campaignId, currentUserId);
     setAiAgentHistoryKey(nextKey);
     setAiAgentMessages(initialAiAgentMessages(nextKey));
     setAiAgentHiddenProposalIds(new Set());
-  }, [campaignId, currentUserId]);
+  }, [blankCanvasDemoOpen, campaignId, currentUserId]);
 
   useEffect(() => {
+    if (blankCanvasDemoOpen) return;
     persistAiAgentMessages(aiAgentHistoryKey, aiAgentMessages);
-  }, [aiAgentHistoryKey, aiAgentMessages]);
+  }, [blankCanvasDemoOpen, aiAgentHistoryKey, aiAgentMessages]);
 
   useEffect(() => () => {
     if (aiAgentAuthRetryTimerRef.current !== null) window.clearTimeout(aiAgentAuthRetryTimerRef.current);
   }, []);
 
   useEffect(() => {
+    if (blankCanvasDemoOpen) return;
     persistStoredId("otte:selectedSceneId", sceneId);
-  }, [sceneId]);
+  }, [blankCanvasDemoOpen, sceneId]);
 
   useEffect(() => {
-    if (resetMode) return;
+    if (blankCanvasDemoOpen || resetMode) return;
     let cancelled = false;
     loadBootstrapStatus()
       .then((bootstrap) => {
@@ -1440,14 +1498,14 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [resetMode]);
+  }, [blankCanvasDemoOpen, resetMode]);
 
   useEffect(() => {
     if (!publicRegistration && authMode === "register") setAuthMode("login");
   }, [authMode, publicRegistration]);
 
   useEffect(() => {
-    if (!campaignId || !sessionToken) return;
+    if (blankCanvasDemoOpen || !campaignId || !sessionToken) return;
     const wsUrl = `${apiBase || window.location.origin}`.replace(/^http/, "ws") + `/api/v1/realtime?campaignId=${encodeURIComponent(campaignId)}`;
     const socket = new WebSocket(wsUrl, ["otte.v1", `otte.auth.${sessionToken}`]);
     socket.onopen = () => setStatus((current) => (current === "Loading campaign" || current.toLowerCase().includes("realtime") || current.startsWith("API offline") ? "Realtime connected" : current));
@@ -1457,12 +1515,12 @@ export function App() {
     };
     socket.onerror = () => setStatus("Realtime unavailable");
     return () => socket.close();
-  }, [campaignId, sceneId, selectedScene?.id, sessionToken]);
+  }, [blankCanvasDemoOpen, campaignId, sceneId, selectedScene?.id, sessionToken]);
 
   useEffect(() => {
-    if (workspaceMode !== "manage" || manageCategory !== "serverAdmin" || !snapshot.session?.serverAdmin) return;
+    if (blankCanvasDemoOpen || workspaceMode !== "manage" || manageCategory !== "serverAdmin" || !snapshot.session?.serverAdmin) return;
     refreshAdmin().catch((error) => setAdminStatus(error instanceof Error ? error.message : String(error)));
-  }, [manageCategory, workspaceMode, snapshot.session?.serverAdmin]);
+  }, [blankCanvasDemoOpen, manageCategory, workspaceMode, snapshot.session?.serverAdmin]);
 
   useEffect(() => {
     if (workspaceMode === "live" && tab !== "actors" && tab !== "chat" && tab !== "combat") setTab("actors");
@@ -1494,7 +1552,7 @@ export function App() {
   }, [canManageArchives, canManageCampaignSettings, canManagePeople, canManageScenes, manageCategory, snapshot.session?.serverAdmin, snapshot.session?.user.id]);
 
   useEffect(() => {
-    if (!selectedActor || tab !== "actors") return;
+    if (blankCanvasDemoOpen || !selectedActor || tab !== "actors") return;
     let cancelled = false;
     apiGet<{ entries: RulesCompendiumEntry[] }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/compendium`)
       .then((result) => {
@@ -1506,9 +1564,13 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [campaignId, selectedActor?.id, selectedActor?.systemId, tab]);
+  }, [blankCanvasDemoOpen, campaignId, selectedActor?.id, selectedActor?.systemId, tab]);
 
   useEffect(() => {
+    if (blankCanvasDemoOpen) {
+      setAdvancementOptions([]);
+      return;
+    }
     if (!selectedActor) {
       setAdvancementOptions([]);
       return;
@@ -1524,7 +1586,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [campaignId, selectedActor?.id, selectedActor?.systemId]);
+  }, [blankCanvasDemoOpen, campaignId, selectedActor?.id, selectedActor?.systemId]);
 
   useEffect(() => {
     if (!selectedCampaign) return;
@@ -1555,11 +1617,11 @@ export function App() {
   }, [sceneFolderFilter, sceneFolderOptions]);
 
   useEffect(() => {
-    if (authRequired || !sessionToken || !snapshot.session?.user.id) return;
+    if (blankCanvasDemoOpen || authRequired || !sessionToken || !snapshot.session?.user.id) return;
     loadMfaStatus()
       .then((info) => setMfaInfo(info))
       .catch(() => setMfaInfo(undefined));
-  }, [authRequired, sessionToken, snapshot.session?.user.id]);
+  }, [blankCanvasDemoOpen, authRequired, sessionToken, snapshot.session?.user.id]);
 
   async function switchSession(userId: string) {
     setSessionUserId(userId);
@@ -1597,6 +1659,69 @@ export function App() {
     await refresh("", "", { syncStatus: false });
     setStatus(`Workspace created: ${result.organization.name}`);
     setAccountStatus(`Workspace created: ${result.organization.name}`);
+  }
+
+  function nextBlankCanvasDemoId(prefix: string): string {
+    blankCanvasDemoIdRef.current += 1;
+    return `${prefix}_${blankCanvasDemoIdRef.current}`;
+  }
+
+  function startBlankCanvasDemo() {
+    const snapshot = createBlankCanvasDemoSnapshot();
+    blankCanvasDemoIdRef.current = 0;
+    clearSession();
+    setStatelessDemoApiMode(true);
+    setSnapshot(snapshot);
+    setCurrentUserId(blankCanvasDemoUserId);
+    setSessionToken("");
+    setSnapshotReady(true);
+    setCampaignId(blankCanvasDemoCampaignId);
+    setSceneId(blankCanvasDemoSceneId);
+    setSelectedTokenIdState("");
+    setSelectedTokenIds([]);
+    setSelectedBoardAssetId("");
+    setBoardUndoStack([]);
+    setBoardRedoStack([]);
+    setBoardClipboardTokens([]);
+    setActiveTokenLayer("player");
+    setBattleMapZoom(1);
+    setFogBrushMode(null);
+    setAnnotationTool(null);
+    setTab("actors");
+    setWorkspaceMode("live");
+    setManageCategory("account");
+    setCompendiumEntries([]);
+    setAdvancementOptions([]);
+    setAiAgentOpen(false);
+    setAiAgentMessages([]);
+    setAiAgentHiddenProposalIds(new Set());
+    setAiAgentHistoryKey(aiAgentHistoryStorageKey(blankCanvasDemoCampaignId, blankCanvasDemoUserId));
+    setChatBody("");
+    setChatReplyToMessageId("");
+    setAuthRequired(false);
+    setBootstrapRequired(false);
+    setBlankCanvasDemoOpen(true);
+    setStatus(blankCanvasDemoNotice);
+    setAuthStatus("Blank canvas demo");
+  }
+
+  function exitBlankCanvasDemo() {
+    setStatelessDemoApiMode(false);
+    setBlankCanvasDemoOpen(false);
+    setSnapshotReady(false);
+    setAuthRequired(true);
+    setCurrentUserId(getSessionUserId());
+    setSessionToken(getSessionToken());
+    setCampaignId(initialStoredId("otte:selectedCampaignId", "camp_demo"));
+    setSceneId(initialStoredId("otte:selectedSceneId", "scn_vault_entry"));
+    setSelectedTokenIdState("tok_valen");
+    setSelectedTokenIds(["tok_valen"]);
+    setBoardUndoStack([]);
+    setBoardRedoStack([]);
+    setBoardClipboardTokens([]);
+    setAiAgentMessages(initialAiAgentMessages(aiAgentHistoryStorageKey(initialStoredId("otte:selectedCampaignId", "camp_demo"), getSessionUserId())));
+    setStatus("Sign in required");
+    setAuthStatus(publicRegistration ? "Sign in or register to open a campaign" : "Sign in or use an invite link to join the beta");
   }
 
   async function submitLogin() {
@@ -2074,16 +2199,51 @@ export function App() {
     const centerY = options.y ?? selectedScene.height / 2;
     const position = tokenCoordinatesFromCenter(selectedScene, width, height, centerX, centerY);
     const layer = options.layer ?? activeTokenLayer;
+    const tokenName = options.name?.trim() || actor?.name || newTokenName.trim() || "New Token";
+    const disposition = options.disposition ?? (actor ? "friendly" : newTokenDisposition);
+    if (blankCanvasDemoOpen) {
+      const timestamp = new Date().toISOString();
+      const token: Token = {
+        id: nextBlankCanvasDemoId("tok_demo"),
+        sceneId: selectedScene.id,
+        actorId,
+        imageAssetId,
+        name: tokenName,
+        x: position.x,
+        y: position.y,
+        width,
+        height,
+        rotation: 0,
+        layer,
+        hidden: false,
+        locked: false,
+        visionEnabled: false,
+        visionRadius: 0,
+        disposition,
+        ownerUserIds: [],
+        metadata: { demo: true },
+        createdAt: timestamp,
+        updatedAt: timestamp
+      };
+      setSnapshot((current) => ({ ...current, tokens: [...current.tokens, token] }));
+      pushBoardHistoryAction({ kind: "tokens.create", tokens: [token] });
+      setActiveTokenLayer(layer);
+      selectSingleToken(token.id);
+      setNewTokenName("");
+      setNewTokenActorId("");
+      setStatus(`${token.name} ${options.x !== undefined || options.y !== undefined ? "placed on scene" : "created"} for this demo tab`);
+      return;
+    }
     const token = await apiPost<Token>(`/api/v1/scenes/${selectedScene.id}/tokens`, {
       actorId,
       imageAssetId,
-      name: options.name?.trim() || actor?.name || newTokenName.trim() || "New Token",
+      name: tokenName,
       x: position.x,
       y: position.y,
       width,
       height,
       layer,
-      disposition: options.disposition ?? (actor ? "friendly" : newTokenDisposition)
+      disposition
     });
     pushBoardHistoryAction({ kind: "tokens.create", tokens: [token] });
     setActiveTokenLayer(layer);
@@ -2272,12 +2432,33 @@ export function App() {
 
   async function updateSelectedTokenVision(patch: TokenVisionPatch) {
     if (!selectedToken) return;
+    if (blankCanvasDemoOpen) {
+      const normalizedPatch: Partial<Token> = {};
+      if (patch.visionEnabled !== undefined) normalizedPatch.visionEnabled = patch.visionEnabled;
+      if (patch.visionRadius !== undefined) normalizedPatch.visionRadius = patch.visionRadius;
+      if (patch.dimVisionRadius !== undefined) normalizedPatch.dimVisionRadius = patch.dimVisionRadius;
+      if (patch.brightVisionRadius !== undefined) normalizedPatch.brightVisionRadius = patch.brightVisionRadius ?? undefined;
+      setSnapshot((current) => ({
+        ...current,
+        tokens: current.tokens.map((token) => (token.id === selectedToken.id ? { ...token, ...normalizedPatch, updatedAt: new Date().toISOString() } : token))
+      }));
+      setStatus("Token vision updated for this demo tab");
+      return;
+    }
     await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, patch);
     await refresh();
   }
 
   async function updateSelectedToken(patch: Partial<Token>) {
     if (!selectedToken) return;
+    if (blankCanvasDemoOpen) {
+      setSnapshot((current) => ({
+        ...current,
+        tokens: current.tokens.map((token) => (token.id === selectedToken.id ? { ...token, ...patch, id: token.id, sceneId: token.sceneId, updatedAt: new Date().toISOString() } : token))
+      }));
+      setStatus("Token updated for this demo tab");
+      return;
+    }
     await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, patch);
     await refresh();
     setStatus("Token updated");
@@ -2315,6 +2496,36 @@ export function App() {
       auras: token.auras,
       metadata: token.metadata
     };
+  }
+
+  async function persistSceneCanvasTokenMove(changes: TokenMovePersistenceChange[]) {
+    if (blankCanvasDemoOpen) {
+      const timestamp = new Date().toISOString();
+      const positions = new Map(changes.map(({ token, position }) => [token.id, position]));
+      setSnapshot((current) => ({
+        ...current,
+        tokens: current.tokens.map((token) => {
+          const position = positions.get(token.id);
+          return position ? { ...token, ...position, updatedAt: timestamp } : token;
+        })
+      }));
+      return;
+    }
+
+    await Promise.all(changes.map(({ token, position }) => apiPatch<Token>(`/api/v1/tokens/${token.id}`, position)));
+  }
+
+  async function persistSceneCanvasTokenResize(token: Token, frame: TokenFrame) {
+    if (blankCanvasDemoOpen) {
+      const timestamp = new Date().toISOString();
+      setSnapshot((current) => ({
+        ...current,
+        tokens: current.tokens.map((item) => (item.id === token.id ? { ...item, ...frame, updatedAt: timestamp } : item))
+      }));
+      return;
+    }
+
+    await apiPatch<Token>(`/api/v1/tokens/${token.id}`, frame);
   }
 
   async function createTokensOnServer(tokens: Token[]) {
@@ -2363,7 +2574,7 @@ export function App() {
     }));
     selectCanvasTokens(result.selectedTokenIds);
     setStatus(boardHistoryStatus(action, direction));
-    enqueueBoardSync(() => persistBoardHistoryAction(action, direction));
+    if (!blankCanvasDemoOpen) enqueueBoardSync(() => persistBoardHistoryAction(action, direction));
   }
 
   async function deleteTokens(tokensToDelete: Token[], options: { recordHistory: boolean; statusLabel?: string }) {
@@ -2376,7 +2587,7 @@ export function App() {
     if (options.recordHistory) pushBoardHistoryAction({ kind: "tokens.delete", tokens: tokensToDelete });
     clearTokenSelection();
     setStatus(options.statusLabel ?? `${formatNumber(tokensToDelete.length)} token${tokensToDelete.length === 1 ? "" : "s"} deleted`);
-    enqueueBoardSync(() => deleteTokensOnServer(tokensToDelete));
+    if (!blankCanvasDemoOpen) enqueueBoardSync(() => deleteTokensOnServer(tokensToDelete));
   }
 
   async function deleteSelectedToken() {
@@ -2456,10 +2667,25 @@ export function App() {
     selectCanvasTokens(pastedTokens.map((token) => token.id));
     pushBoardHistoryAction({ kind: "tokens.create", tokens: pastedTokens });
     setStatus(`${formatNumber(pastedTokens.length)} token${pastedTokens.length === 1 ? "" : "s"} pasted`);
-    enqueueBoardSync(() => createTokensOnServer(pastedTokens));
+    if (!blankCanvasDemoOpen) enqueueBoardSync(() => createTokensOnServer(pastedTokens));
   }
 
   async function setTokenTarget(tokenId: string, targeted: boolean) {
+    if (blankCanvasDemoOpen) {
+      const timestamp = new Date().toISOString();
+      setSnapshot((current) => ({
+        ...current,
+        tokens: current.tokens.map((token) => {
+          if (token.id !== tokenId) return token;
+          const targetedBy = new Set(token.targetedByUserIds ?? []);
+          if (targeted) targetedBy.add(currentUserId);
+          else targetedBy.delete(currentUserId);
+          return { ...token, targetedByUserIds: [...targetedBy], updatedAt: timestamp };
+        })
+      }));
+      setStatus(targeted ? "Token targeted for this demo tab" : "Token untargeted for this demo tab");
+      return;
+    }
     await apiPost<Token>(`/api/v1/tokens/${tokenId}/target`, { targeted });
     await refresh();
     setStatus(targeted ? "Token targeted" : "Token untargeted");
@@ -2469,6 +2695,22 @@ export function App() {
     const uniqueTokenIds = [...new Set(tokenIds.filter(Boolean))];
     if (uniqueTokenIds.length === 0) {
       setStatus(targeted ? "No tokens to target" : "No targets to clear");
+      return;
+    }
+    if (blankCanvasDemoOpen) {
+      const targetIds = new Set(uniqueTokenIds);
+      const timestamp = new Date().toISOString();
+      setSnapshot((current) => ({
+        ...current,
+        tokens: current.tokens.map((token) => {
+          if (!targetIds.has(token.id)) return token;
+          const targetedBy = new Set(token.targetedByUserIds ?? []);
+          if (targeted) targetedBy.add(currentUserId);
+          else targetedBy.delete(currentUserId);
+          return { ...token, targetedByUserIds: [...targetedBy], updatedAt: timestamp };
+        })
+      }));
+      setStatus(targeted ? `Targeted ${uniqueTokenIds.length} tokens for this demo tab` : `Cleared ${uniqueTokenIds.length} demo targets`);
       return;
     }
     for (const tokenId of uniqueTokenIds) {
@@ -2995,7 +3237,49 @@ export function App() {
     await refresh();
   }
 
+  function createBlankCanvasDemoRoll(formula: string, visibility: DiceRoll["visibility"], label: string): DiceRoll {
+    const timestamp = new Date().toISOString();
+    const result = rollLocalDiceFormula(formula);
+    return {
+      id: nextBlankCanvasDemoId("roll_demo"),
+      campaignId,
+      userId: currentUserId,
+      formula,
+      label,
+      visibility,
+      terms: result.terms,
+      total: result.total,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+  }
+
+  function createBlankCanvasDemoChatMessage(input: Pick<ChatMessage, "body" | "type" | "visibility" | "recipientUserIds"> & { rollId?: string; replyToMessageId?: string }): ChatMessage {
+    const timestamp = new Date().toISOString();
+    return {
+      id: nextBlankCanvasDemoId("chat_demo"),
+      campaignId,
+      sceneId: selectedScene?.id,
+      userId: currentUserId,
+      body: input.body,
+      type: input.type,
+      visibility: input.visibility,
+      recipientUserIds: input.recipientUserIds,
+      rollId: input.rollId,
+      replyToMessageId: input.replyToMessageId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+  }
+
   async function rollDice() {
+    if (blankCanvasDemoOpen) {
+      const roll = createBlankCanvasDemoRoll(diceFormula, diceVisibility, "Table roll");
+      const message = createBlankCanvasDemoChatMessage({ body: diceFormula, type: "roll", visibility: diceVisibility, recipientUserIds: [], rollId: roll.id });
+      setSnapshot((current) => ({ ...current, rolls: [...current.rolls, roll], chat: [...current.chat, message] }));
+      setStatus(`Rolled ${roll.total} for this demo tab`);
+      return;
+    }
     const roll = await apiPost<{ total: number }>("/api/v1/dice/roll", {
       campaignId,
       formula: diceFormula,
@@ -3121,6 +3405,12 @@ export function App() {
   async function saveCurrentDiceFormula() {
     const formula = diceFormula.trim();
     if (!formula) return;
+    if (blankCanvasDemoOpen) {
+      const next = [formula, ...savedDiceFormulas.filter((item) => item !== formula)].slice(0, 12);
+      setSavedDiceFormulas(next);
+      setStatus(`Saved ${formula} for this demo tab`);
+      return;
+    }
     if (hasPermission("campaign.update")) {
       const existing = snapshot.diceMacros.find((macro) => macro.formula === formula);
       if (existing) {
@@ -3156,6 +3446,15 @@ export function App() {
     const parsed = parseChatCommand(chatBody);
     if (!parsed) return;
     if (parsed.kind === "roll") {
+      if (blankCanvasDemoOpen) {
+        const roll = createBlankCanvasDemoRoll(parsed.formula, parsed.visibility, "Table roll");
+        const message = createBlankCanvasDemoChatMessage({ body: parsed.formula, type: "roll", visibility: parsed.visibility, recipientUserIds: [], rollId: roll.id, replyToMessageId: chatReplyTarget?.id });
+        setSnapshot((current) => ({ ...current, rolls: [...current.rolls, roll], chat: [...current.chat, message] }));
+        setChatBody("");
+        setChatReplyToMessageId("");
+        setStatus(`Rolled ${roll.total} for this demo tab`);
+        return;
+      }
       const roll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
         campaignId,
         formula: parsed.formula,
@@ -3172,6 +3471,20 @@ export function App() {
     const recipientUserId = parsed.visibility === "whisper" ? resolveChatRecipient(parsed.recipientQuery) : undefined;
     if (parsed.visibility === "whisper" && !recipientUserId) {
       setStatus(parsed.recipientQuery ? `No whisper recipient matched "${parsed.recipientQuery}"` : "Use /w name message to whisper");
+      return;
+    }
+    if (blankCanvasDemoOpen) {
+      const message = createBlankCanvasDemoChatMessage({
+        body: parsed.body,
+        type: parsed.messageType,
+        visibility: parsed.visibility,
+        recipientUserIds: recipientUserId ? [recipientUserId] : [],
+        replyToMessageId: chatReplyTarget?.id
+      });
+      setSnapshot((current) => ({ ...current, chat: [...current.chat, message] }));
+      setChatBody("");
+      setChatReplyToMessageId("");
+      setStatus("Message added for this demo tab");
       return;
     }
     await apiPost<ChatMessage>("/api/v1/chat/messages", {
@@ -3363,7 +3676,87 @@ export function App() {
     await submitAiAgentTurn({ prompt, requestMessages });
   }
 
+  function createBlankCanvasDemoAiProposal(prompt: string): Proposal {
+    const timestamp = new Date().toISOString();
+    const proposalId = nextBlankCanvasDemoId("prop_demo");
+    const journalId = nextBlankCanvasDemoId("jrnl_demo");
+    const title = prompt.split(/\s+/).filter(Boolean).slice(0, 6).join(" ") || "AI Agent Demo Note";
+    return {
+      id: proposalId,
+      campaignId,
+      createdByUserId: currentUserId,
+      createdByType: "ai",
+      sourceId: "blank-canvas-demo-agent",
+      title: `Demo proposal: ${title}`,
+      summary: "Local demo proposal from the AI Agent. It can be reviewed and applied without saving to the server.",
+      status: "pending",
+      changesJson: [
+        {
+          entity: "journal",
+          action: "create",
+          id: journalId,
+          data: {
+            id: journalId,
+            campaignId,
+            title: `AI Agent: ${title}`,
+            body: `Demo prompt:\n\n${prompt}\n\nThis proposal is local to this browser tab and resets when the demo is left or refreshed.`,
+            visibility: "gm_only",
+            visibleToUserIds: [],
+            visibleToActorIds: [],
+            tags: ["demo", "ai-agent"],
+            createdBy: currentUserId,
+            updatedBy: currentUserId,
+            createdAt: timestamp,
+            updatedAt: timestamp
+          }
+        }
+      ],
+      diffJson: { demo: true, source: "blank-canvas-demo-agent" },
+      approvalRequired: true,
+      history: [
+        {
+          action: "created",
+          status: "pending",
+          at: timestamp,
+          actorType: "ai",
+          note: "Created by the local stateless demo agent."
+        }
+      ],
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+  }
+
+  async function submitBlankCanvasDemoAiAgentTurn({ prompt }: AiAgentPendingAuthRequest, options: { authRetry?: boolean } = {}) {
+    if (aiAgentBusy && !options.authRetry) return;
+    setAiAgentBusy(true);
+    setAiAgentStatus("Agent working locally");
+    setAiAgentCodexAuth(null);
+    try {
+      const proposal = createBlankCanvasDemoAiProposal(prompt);
+      const assistantMessage: AiAgentMessage = {
+        id: nextBlankCanvasDemoId("agent_demo"),
+        role: "assistant",
+        content: "I drafted a local proposal for the blank-canvas demo. Review it here, or apply it to this tab only.",
+        createdAt: proposal.updatedAt,
+        proposalIds: [proposal.id],
+        reasoning: ["Demo mode keeps the AI Agent local so it does not save campaign state or consume server AI usage."]
+      };
+      const sourceSnapshot = { ...snapshot, proposals: [...snapshot.proposals, proposal] };
+      setSnapshot((current) => ({ ...current, proposals: [...current.proposals, proposal] }));
+      setAiAgentMessages((messages) => [...messages, assistantMessage]);
+      setAiAgentStatus("Agent drafted 1 local proposal");
+      if (aiAgentApprovalMode === "auto") await autoApplyAiAgentProposals([proposal.id], sourceSnapshot);
+    } finally {
+      setAiAgentBusy(false);
+    }
+  }
+
   async function submitAiAgentTurn({ prompt, requestMessages }: AiAgentPendingAuthRequest, options: { authRetry?: boolean } = {}) {
+    if (blankCanvasDemoOpen) {
+      await submitBlankCanvasDemoAiAgentTurn({ prompt, requestMessages }, options);
+      return;
+    }
     if (aiAgentBusy && !options.authRetry) return;
     setAiAgentBusy(true);
     setAiAgentStatus(options.authRetry ? "Retrying agent request after sign-in" : "Agent working");
@@ -3564,6 +3957,7 @@ export function App() {
   }
 
   async function approveAndApply(proposal: Proposal) {
+    if (blankCanvasDemoOpen) return applyBlankCanvasDemoProposal(proposal);
     const sceneIdToOpen = sceneIdToOpenAfterProposalApply(proposal);
     const steps = proposalReviewSteps(proposal);
     if (!steps.includes("apply")) throw new Error(`Proposal is ${proposal.status} and cannot be applied.`);
@@ -3580,6 +3974,43 @@ export function App() {
     setStatus("Proposal applied");
     await refresh();
     return { applied };
+  }
+
+  function applyBlankCanvasDemoProposal(proposal: Proposal): { applied: Proposal; openedSceneId?: string } {
+    const timestamp = new Date().toISOString();
+    const history: NonNullable<Proposal["history"]> = [...(proposal.history ?? [])];
+    if (proposal.status === "pending") {
+      history.push({
+        action: "approved",
+        status: "approved",
+        previousStatus: "pending",
+        at: timestamp,
+        actorUserId: currentUserId,
+        actorType: "user",
+        note: "Approved in stateless demo mode."
+      });
+    }
+    history.push({
+      action: "applied",
+      status: "applied",
+      previousStatus: proposal.status === "pending" ? "approved" : proposal.status,
+      at: timestamp,
+      actorUserId: currentUserId,
+      actorType: "user",
+      note: "Applied to local demo state only."
+    });
+    const applied: Proposal = {
+      ...proposal,
+      status: "applied",
+      approvedByUserId: proposal.approvedByUserId ?? currentUserId,
+      history,
+      updatedAt: timestamp
+    };
+    setSnapshot((current) => applyProposalChangesToSnapshot(current, applied));
+    const openedSceneId = sceneIdToOpenAfterProposalApply(applied);
+    if (openedSceneId) setSceneId(openedSceneId);
+    setStatus(openedSceneId ? "Demo proposal applied; opened scene" : "Demo proposal applied locally");
+    return openedSceneId ? { applied, openedSceneId } : { applied };
   }
 
   async function autoApplyAiAgentProposals(proposalIds: string[], sourceSnapshot: Snapshot) {
@@ -3681,6 +4112,30 @@ export function App() {
   }
 
   async function rejectProposalReview(proposal: Proposal) {
+    if (blankCanvasDemoOpen) {
+      const timestamp = new Date().toISOString();
+      const history: NonNullable<Proposal["history"]> = [
+        ...(proposal.history ?? []),
+        {
+          action: "rejected",
+          status: "rejected",
+          previousStatus: proposal.status,
+          at: timestamp,
+          actorUserId: currentUserId,
+          actorType: "user",
+          note: "Rejected in stateless demo mode."
+        }
+      ];
+      const rejected: Proposal = {
+        ...proposal,
+        status: "rejected",
+        history,
+        updatedAt: timestamp
+      };
+      setSnapshot((current) => ({ ...current, proposals: current.proposals.map((item) => (item.id === proposal.id ? rejected : item)) }));
+      setStatus("Demo proposal rejected locally");
+      return;
+    }
     await apiPost(`/api/v1/proposals/${proposal.id}/reject`, {});
     setStatus("Proposal rejected");
     await refresh();
@@ -4304,6 +4759,9 @@ export function App() {
             </form>
           )}
           <div className="auth-actions">
+            <button className="primary-button wide" type="button" onClick={startBlankCanvasDemo}>
+              <MapIcon size={16} /> Try Blank Canvas
+            </button>
             <button className="ghost-button wide" type="button" onClick={() => switchSession("usr_demo_gm").catch((error) => setAuthStatus(error instanceof Error ? error.message : String(error)))}>
               <Users size={16} /> Demo GM
             </button>
@@ -4439,6 +4897,14 @@ export function App() {
           <div className="brand">OpenTabletop</div>
           <div className="subtle">API-first VTT engine</div>
         </div>
+        {blankCanvasDemoOpen && (
+          <section className="demo-mode-banner" aria-label="Demo mode">
+            <span>{blankCanvasDemoNotice}</span>
+            <button className="ghost-button small" type="button" onClick={exitBlankCanvasDemo}>
+              Exit
+            </button>
+          </section>
+        )}
         <nav className="campaign-list" aria-label="Campaigns">
           {snapshot.campaigns.map((campaign) => (
             <button
@@ -4446,7 +4912,7 @@ export function App() {
               key={campaign.id}
               onClick={() => {
                 setCampaignId(campaign.id);
-                refresh(campaign.id).catch(console.error);
+                if (!blankCanvasDemoOpen) refresh(campaign.id).catch(console.error);
               }}
             >
               <Shield size={16} />
@@ -4456,7 +4922,7 @@ export function App() {
         </nav>
         <label className="session-switcher">
           <span>Session</span>
-          <select aria-label="Session user" value={currentUserId} onChange={(event) => switchSession(event.target.value).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+          <select aria-label="Session user" value={currentUserId} disabled={blankCanvasDemoOpen} onChange={(event) => switchSession(event.target.value).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
             {snapshot.members.length === 0 ? (
               <option value={currentUserId}>{currentUserId}</option>
             ) : (
@@ -5406,7 +5872,7 @@ export function App() {
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
-              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={() => refresh().then(() => undefined)} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={blankCanvasDemoOpen ? async () => undefined : () => refresh().then(() => undefined)} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
             </div>
             <div className="map-layer-dock" aria-label="Map controls and layers">
               <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
@@ -5967,6 +6433,7 @@ interface TokenSelectionOptions {
 
 type TokenFrame = Pick<Token, "x" | "y" | "width" | "height">;
 type TokenFrameOverrides = Record<string, TokenFrame>;
+type TokenMovePersistenceChange = { token: Token; position: Pick<Token, "x" | "y"> };
 type ToolAction = () => void | Promise<void>;
 
 interface TokenDropPayload {
@@ -6270,7 +6737,7 @@ function hasItemDropData(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(itemDropMime);
 }
 
-function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onZoomBy(delta: number): void }) {
+function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onZoomBy(delta: number): void }) {
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
   const [tokenResize, setTokenResize] = useState<TokenResizeDraft | null>(null);
   const [tokenFrameOverrides, setTokenFrameOverrides] = useState<TokenFrameOverrides>({});
@@ -6628,7 +7095,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       ...overrides,
       ...Object.fromEntries(movedTokens.map(({ token: movedToken, position }) => [movedToken.id, { ...tokenFrame(movedToken), ...position }]))
     }));
-    Promise.all(movedTokens.map(({ token: movedToken, position }) => apiPatch<Token>(`/api/v1/tokens/${movedToken.id}`, position)))
+    props.onTokenMovePersist(movedTokens)
       .then(() => {
         props.onTokenMoveCommit(
           movedTokens.map(({ token: movedToken, position }) => ({
@@ -6696,7 +7163,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
       ...overrides,
       [token.id]: after
     }));
-    apiPatch<Token>(`/api/v1/tokens/${token.id}`, after)
+    props.onTokenResizePersist(token, after)
       .then(() => {
         props.onTokenResizeCommit([{ tokenId: token.id, before, after }]);
         return props.onMoved();
