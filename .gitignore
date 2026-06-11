@@ -21,3 +21,6 @@ uploads/
 *.tsbuildinfo
 
 .vercel
+
+# 3D dice assets are copied from node_modules by the web vite config
+apps/web/public/assets/dice-box/

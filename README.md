@@ -48,6 +48,13 @@ Render the public documentation site locally:
 pnpm docs:site:check
 ```
 
+## Client UX
+
+- Two crafted themes: Midnight (default) and Ember, toggled from the rail and persisted per browser.
+- Command palette: press `Ctrl+K` (or `Cmd+K`) to jump to scenes, switch workspaces or campaigns, toggle the AI Agent, and roll dice formulas such as `2d6+3` directly from the search box.
+- Quick dice tray in the chat rail builds formulas with one click; roll cards celebrate natural 20s and flag natural 1s.
+- Optional 3D dice (`@3d-dice/dice-box-threejs`) land on the server-rolled values with a lightweight CSS fallback when WebGL is unavailable; the `3D` chip can switch to text-only roll cards on slower setups.
+
 ## Development
 
 ```bash

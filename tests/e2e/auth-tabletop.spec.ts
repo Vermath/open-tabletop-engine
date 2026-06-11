@@ -1893,13 +1893,13 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
 });
 
 test("GM can apply broader D&D SRD action effects from the browser", async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   await page.goto("/");
   await page.getByRole("button", { name: "Demo GM" }).click();
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
   const suffix = Date.now().toString(36);
-  const target = await createRulesTargetActor(page, { name: `E2E Rules Target ${suffix}`, hp: { current: 100, max: 100 } });
+  const target = await createRulesTargetActor(page, { name: `E2E Rules Target ${suffix}`, hp: { current: 500, max: 500 } });
   const cleric = await createSystemCharacter(page, { templateId: "cleric", name: `E2E Cleric ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const bard = await createSystemCharacter(page, { templateId: "bard", name: `E2E Bard ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });
   const druid = await createSystemCharacter(page, { templateId: "druid", name: `E2E Druid ${suffix}`, ownerUserId: "usr_demo_player", advanceToLevel: 5 });

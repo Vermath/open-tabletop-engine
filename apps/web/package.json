@@ -13,6 +13,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@3d-dice/dice-box-threejs": "^0.0.12",
     "@open-tabletop/api-client": "workspace:*",
     "@open-tabletop/core": "workspace:*",
     "html-to-image": "^1.11.13",

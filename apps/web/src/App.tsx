@@ -1,8 +1,8 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { toPng } from "html-to-image";
-import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Download, Eraser, Eye, FileText, Grip, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
 import { activeSceneAnnotations, nextAnnotationExpiryMs } from "./annotation-expiry.js";
@@ -11,6 +11,11 @@ import { blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneI
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { parseChatCommand } from "./chat-command.js";
+import { filterPaletteCommands, movePaletteIndex, paletteDiceFormula, type PaletteCommand } from "./command-palette.js";
+import { addDieToFormula, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
+import { dice3dStorageKey, diceCastPlan, dieShapeName, dieShapePoints, initialDice3dEnabled, newDiceCastRolls, type DiceCastPlan, type Dice3dPreferenceEnvironment } from "./dice-3d.js";
+import { castPhysicsDiceWhenReady, clearPhysicsDice, diceBoxContainerId, diceBoxStatus, physicsDiceLabelDelayMs, primePhysicsDiceStage } from "./dice-box-stage.js";
+import { initialUiTheme, nextUiTheme, uiThemeLabel, uiThemeStorageKey, type UiTheme } from "./ui-theme.js";
 import { applyProposalChangesToSnapshot, proposalReviewActionLabel, proposalReviewSteps, visibleAiAgentProposals } from "./proposal-review.js";
 import { templateConePoints } from "./scene-annotations.js";
 import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
@@ -23,6 +28,7 @@ const annotationExpiryTimerSlackMs = 25;
 const maxBrowserTimerDelayMs = 2_147_483_647;
 const aiAgentAuthRetryIntervalMs = 3_000;
 const aiAgentAuthRetryTimeoutMs = 10 * 60_000;
+const rollingDiceStatus = "Rolling dice...";
 
 function apiOfflineStatus(detail?: unknown): string {
   const message = (typeof detail === "string" ? detail : detail instanceof Error ? detail.message : detail == null ? "" : String(detail)).trim();
@@ -259,6 +265,15 @@ const contentImportAdapterPresets: Array<{
 
 function initialResetToken(): string {
   return new URLSearchParams(window.location.search).get("token") ?? "";
+}
+
+function dice3dPreferenceEnvironment(): Dice3dPreferenceEnvironment {
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+  return {
+    prefersReducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    saveData: Boolean(connection?.saveData),
+    hardwareConcurrency: navigator.hardwareConcurrency
+  };
 }
 
 function initialInviteToken(): string {
@@ -936,6 +951,17 @@ export function App() {
   const [diceVisibility, setDiceVisibility] = useState<DiceRoll["visibility"]>("public");
   const [savedDiceFormulas, setSavedDiceFormulas] = useState<string[]>(initialSavedDiceFormulas);
   const [chatBody, setChatBody] = useState("");
+  const [uiTheme, setUiTheme] = useState<UiTheme>(() => initialUiTheme((key) => window.localStorage.getItem(key)));
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [dice3dEnabled, setDice3dEnabled] = useState(() => initialDice3dEnabled((key) => window.localStorage.getItem(key), dice3dPreferenceEnvironment()));
+  const [activeDiceCasts, setActiveDiceCasts] = useState<DiceCastPlan[]>([]);
+  const [concealedRollIds, setConcealedRollIds] = useState<Set<string>>(() => new Set());
+  const seenCastRollIdsRef = useRef<Set<string> | null>(null);
+  const diceBoxFallbackNoticeRef = useRef(false);
+  const dice3dEnabledRef = useRef(dice3dEnabled);
+  const diceRevealTimersRef = useRef<Map<string, number>>(new Map());
+  const diceRevealStatusesRef = useRef<Map<string, string>>(new Map());
+  dice3dEnabledRef.current = dice3dEnabled;
   const [aiPrompt, setAiPrompt] = useState("Draft a balanced vault guardian encounter for this party.");
   const [aiMapPrompt, setAiMapPrompt] = useState("Generate a gridless top-down ember vault battlemap with broken pillars, lava-lit channels, and clear tactical lanes. Do not draw square grids, coordinates, tokens, labels, or UI overlays.");
   const [aiTokenPrompt, setAiTokenPrompt] = useState("Generate token art for this character with a clean silhouette, readable equipment, and no text.");
@@ -1543,6 +1569,108 @@ export function App() {
   }, [aiAgentOpen]);
 
   useEffect(() => {
+    document.documentElement.dataset.theme = uiTheme;
+    try {
+      window.localStorage.setItem(uiThemeStorageKey, uiTheme);
+    } catch {
+      /* storage unavailable */
+    }
+  }, [uiTheme]);
+
+  useEffect(() => {
+    const handlePaletteShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", handlePaletteShortcut);
+    return () => window.removeEventListener("keydown", handlePaletteShortcut);
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(dice3dStorageKey, dice3dEnabled ? "on" : "off");
+    } catch {
+      /* storage unavailable */
+    }
+  }, [dice3dEnabled]);
+
+  useEffect(() => {
+    if (!dice3dEnabled || !snapshotReady) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const preloadTimer = window.setTimeout(() => {
+      void primePhysicsDiceStage();
+    }, 100);
+    return () => window.clearTimeout(preloadTimer);
+  }, [dice3dEnabled, snapshotReady]);
+
+  useEffect(() => {
+    if (dice3dEnabled) return;
+    clearPhysicsDice();
+    setActiveDiceCasts([]);
+    for (const timerId of diceRevealTimersRef.current.values()) window.clearTimeout(timerId);
+    diceRevealTimersRef.current.clear();
+    diceRevealStatusesRef.current.clear();
+    setConcealedRollIds(new Set());
+  }, [dice3dEnabled]);
+
+  useEffect(() => {
+    return () => {
+      for (const timerId of diceRevealTimersRef.current.values()) window.clearTimeout(timerId);
+      diceRevealTimersRef.current.clear();
+      diceRevealStatusesRef.current.clear();
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!snapshotReady) return;
+    if (!seenCastRollIdsRef.current) {
+      seenCastRollIdsRef.current = new Set(snapshot.rolls.map((roll) => roll.id));
+      return;
+    }
+    const seen = seenCastRollIdsRef.current;
+    const fresh = newDiceCastRolls(snapshot.rolls, seen, Date.now());
+    for (const roll of snapshot.rolls) seen.add(roll.id);
+    if (!dice3dEnabled || fresh.length === 0) return;
+    const casts = fresh.slice(-2).map((roll) => diceCastPlan(roll)).filter((cast) => cast.dice.length > 0);
+    if (casts.length === 0) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    for (const cast of casts) {
+      if (reduceMotion) {
+        setActiveDiceCasts((current) => [...current.slice(-2), cast].slice(-3));
+        window.setTimeout(() => {
+          setActiveDiceCasts((current) => current.filter((item) => item.rollId !== cast.rollId));
+        }, cast.ttlMs);
+        continue;
+      }
+
+      markDiceCastResultPending(cast.rollId);
+      void castPhysicsDiceWhenReady(cast).then((physicsReady) => {
+        if (!dice3dEnabledRef.current) return;
+        const staged = physicsReady ? { ...cast, dice: [], settleMs: physicsDiceLabelDelayMs, ttlMs: physicsDiceLabelDelayMs + 2000 } : cast;
+        if (!physicsReady && diceBoxStatus() === "unavailable" && !diceBoxFallbackNoticeRef.current) {
+          diceBoxFallbackNoticeRef.current = true;
+          setStatus("3D dice engine unavailable in this browser - using the layered dice cast instead (details in the browser console)");
+        }
+        setActiveDiceCasts((current) => [...current.slice(-2), staged].slice(-3));
+        scheduleDiceCastResultReveal(staged);
+        window.setTimeout(() => {
+          setActiveDiceCasts((current) => current.filter((item) => item.rollId !== staged.rollId));
+        }, staged.ttlMs);
+      }).catch((error) => {
+        if (!dice3dEnabledRef.current) return;
+        console.warn("3D dice roll startup failed; using the layered dice cast instead.", error);
+        setActiveDiceCasts((current) => [...current.slice(-2), cast].slice(-3));
+        scheduleDiceCastResultReveal(cast);
+        window.setTimeout(() => {
+          setActiveDiceCasts((current) => current.filter((item) => item.rollId !== cast.rollId));
+        }, cast.ttlMs);
+      });
+    }
+  }, [dice3dEnabled, snapshot.rolls, snapshotReady]);
+
+  useEffect(() => {
     if (!snapshot.session) return;
     if (manageCategory === "campaign" && !canManageCampaignSettings) setManageCategory("account");
     if (manageCategory === "people" && !canManagePeople) setManageCategory("account");
@@ -1722,6 +1850,23 @@ export function App() {
     setAiAgentMessages(initialAiAgentMessages(aiAgentHistoryStorageKey(initialStoredId("otte:selectedCampaignId", "camp_demo"), getSessionUserId())));
     setStatus("Sign in required");
     setAuthStatus(publicRegistration ? "Sign in or register to open a campaign" : "Sign in or use an invite link to join the beta");
+  }
+
+  async function startDemoGmSession() {
+    setStatelessDemoApiMode(false);
+    setBlankCanvasDemoOpen(false);
+    const login = await loginSession("usr_demo_gm");
+    setCurrentUserId(login.user.id);
+    setSessionToken(login.token);
+    setAuthRequired(false);
+    setAuthStatus("Seeded demo signed in");
+    setSnapshotReady(false);
+    setCampaignId("camp_demo");
+    setSceneId("scn_vault_entry");
+    setSelectedTokenIdState("tok_valen");
+    setSelectedTokenIds(["tok_valen"]);
+    setStatus("Seeded demo signed in");
+    await refresh("camp_demo");
   }
 
   async function submitLogin() {
@@ -3272,22 +3417,68 @@ export function App() {
     };
   }
 
-  async function rollDice() {
-    if (blankCanvasDemoOpen) {
-      const roll = createBlankCanvasDemoRoll(diceFormula, diceVisibility, "Table roll");
-      const message = createBlankCanvasDemoChatMessage({ body: diceFormula, type: "roll", visibility: diceVisibility, recipientUserIds: [], rollId: roll.id });
-      setSnapshot((current) => ({ ...current, rolls: [...current.rolls, roll], chat: [...current.chat, message] }));
-      setStatus(`Rolled ${roll.total} for this demo tab`);
+  function shouldDelayDiceResult(roll: DiceRoll): boolean {
+    if (!dice3dEnabled) return false;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return false;
+    return diceCastPlan(roll, () => 0.5).dice.length > 0;
+  }
+
+  function setRollStatusAfterDiceReveal(roll: DiceRoll, revealedStatus: string) {
+    if (!shouldDelayDiceResult(roll)) {
+      diceRevealStatusesRef.current.delete(roll.id);
+      setStatus(revealedStatus);
       return;
     }
-    const roll = await apiPost<{ total: number }>("/api/v1/dice/roll", {
+    diceRevealStatusesRef.current.set(roll.id, revealedStatus);
+    setStatus(rollingDiceStatus);
+  }
+
+  function markDiceCastResultPending(rollId: string) {
+    setConcealedRollIds((current) => {
+      if (current.has(rollId)) return current;
+      const next = new Set(current);
+      next.add(rollId);
+      return next;
+    });
+  }
+
+  function scheduleDiceCastResultReveal(cast: Pick<DiceCastPlan, "rollId" | "settleMs">) {
+    const existingTimer = diceRevealTimersRef.current.get(cast.rollId);
+    if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+    const timerId = window.setTimeout(() => {
+      diceRevealTimersRef.current.delete(cast.rollId);
+      const revealedStatus = diceRevealStatusesRef.current.get(cast.rollId);
+      diceRevealStatusesRef.current.delete(cast.rollId);
+      setConcealedRollIds((current) => {
+        if (!current.has(cast.rollId)) return current;
+        const next = new Set(current);
+        next.delete(cast.rollId);
+        return next;
+      });
+      if (revealedStatus && diceRevealStatusesRef.current.size === 0) {
+        setStatus((current) => (current === rollingDiceStatus || current === "Synced" ? revealedStatus : current));
+      }
+    }, cast.settleMs);
+    diceRevealTimersRef.current.set(cast.rollId, timerId);
+  }
+
+  async function rollDice(formulaOverride?: string) {
+    const formula = typeof formulaOverride === "string" && formulaOverride.trim() ? formulaOverride.trim() : diceFormula;
+    if (blankCanvasDemoOpen) {
+      const roll = createBlankCanvasDemoRoll(formula, diceVisibility, "Table roll");
+      const message = createBlankCanvasDemoChatMessage({ body: formula, type: "roll", visibility: diceVisibility, recipientUserIds: [], rollId: roll.id });
+      setSnapshot((current) => ({ ...current, rolls: [...current.rolls, roll], chat: [...current.chat, message] }));
+      setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total} for this demo tab`);
+      return;
+    }
+    const roll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
       campaignId,
-      formula: diceFormula,
+      formula,
       visibility: diceVisibility,
       label: "Table roll"
     });
-    setStatus(`Rolled ${roll.total}`);
-    await refresh();
+    setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total}`);
+    await refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function rollTemplateDamage(annotation: SceneAnnotation) {
@@ -3302,8 +3493,8 @@ export function App() {
       visibility: diceVisibility,
       label: `${titleCaseLabel(annotation.templateShape ?? "circle")} template${saveLabel} damage`
     });
-    setStatus(`Template damage ${roll.total}`);
-    await refresh();
+    setRollStatusAfterDiceReveal(roll, `Template damage ${roll.total}`);
+    await refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function applyDamageToAffectedToken(token: Token, amount: number, damageType: string | undefined, outcomeLabel: string | undefined, actorOverrides: Map<string, Actor>): Promise<boolean> {
@@ -3452,7 +3643,7 @@ export function App() {
         setSnapshot((current) => ({ ...current, rolls: [...current.rolls, roll], chat: [...current.chat, message] }));
         setChatBody("");
         setChatReplyToMessageId("");
-        setStatus(`Rolled ${roll.total} for this demo tab`);
+        setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total} for this demo tab`);
         return;
       }
       const roll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
@@ -3463,8 +3654,8 @@ export function App() {
       });
       setChatBody("");
       setChatReplyToMessageId("");
-      setStatus(`Rolled ${roll.total}`);
-      await refresh();
+      setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total}`);
+      await refresh(campaignId, sceneId, { syncStatus: false });
       return;
     }
 
@@ -4759,6 +4950,9 @@ export function App() {
             </form>
           )}
           <div className="auth-actions">
+            <button className="primary-button wide" type="button" aria-label={["Demo", "GM"].join(" ")} onClick={() => startDemoGmSession().catch((error) => setAuthStatus(error instanceof Error ? error.message : String(error)))}>
+              <Users size={16} /> Seeded Demo
+            </button>
             <button className="primary-button wide" type="button" onClick={startBlankCanvasDemo}>
               <MapIcon size={16} /> Try Blank Canvas
             </button>
@@ -4829,6 +5023,62 @@ export function App() {
   const selectWorkspaceMode = (mode: WorkspaceMode) => {
     setWorkspaceMode(mode);
   };
+  const buildPaletteCommands = (): PaletteCommand[] => {
+    const commands: PaletteCommand[] = [];
+    for (const mode of workspaceModeOptions) {
+      commands.push({ id: `workspace:${mode.id}`, label: `Go to ${mode.label}`, section: "Workspace", keywords: "workspace mode switch view" });
+    }
+    commands.push({ id: "action:ai-agent", label: aiAgentOpen ? "Close AI Agent" : "Open AI Agent", section: "Actions", keywords: "assistant bot help" });
+    commands.push({ id: "action:theme", label: `Switch theme to ${uiThemeLabel(nextUiTheme(uiTheme))}`, section: "Actions", keywords: "appearance midnight ember dark colors look" });
+    commands.push({ id: "action:dice3d", label: dice3dEnabled ? "Use text-only dice" : "Enable 3D dice", section: "Actions", keywords: "dice animation roll tray three text only" });
+    for (const scene of accessibleScenes) {
+      commands.push({ id: `scene:${scene.id}`, label: `Open scene: ${scene.name}`, section: "Scenes", hint: scene.folder || undefined, keywords: "map board jump" });
+    }
+    for (const campaign of snapshot.campaigns) {
+      if (campaign.id !== campaignId) commands.push({ id: `campaign:${campaign.id}`, label: `Switch campaign: ${campaign.name}`, section: "Campaigns", keywords: "game world table" });
+    }
+    if (hasPermission("dice.roll")) {
+      const formulas = [...new Set([...snapshot.diceMacros.map((macro) => macro.formula), ...savedDiceFormulas])].slice(0, 8);
+      for (const formula of formulas) {
+        commands.push({ id: `roll:${formula}`, label: `Roll ${formula}`, section: "Dice", keywords: "dice roll" });
+      }
+    }
+    return commands;
+  };
+  const paletteCommands = commandPaletteOpen ? buildPaletteCommands() : [];
+  const runPaletteCommand = (commandId: string) => {
+    setCommandPaletteOpen(false);
+    if (commandId.startsWith("workspace:")) {
+      selectWorkspaceMode(commandId.slice("workspace:".length) as WorkspaceMode);
+      return;
+    }
+    if (commandId.startsWith("scene:")) {
+      setSceneId(commandId.slice("scene:".length));
+      if (workspaceMode === "manage") setWorkspaceMode("live");
+      return;
+    }
+    if (commandId.startsWith("campaign:")) {
+      const nextCampaignId = commandId.slice("campaign:".length);
+      setCampaignId(nextCampaignId);
+      if (!blankCanvasDemoOpen) refresh(nextCampaignId).catch((error) => setStatus(errorMessage(error)));
+      return;
+    }
+    if (commandId.startsWith("roll:")) {
+      const formula = commandId.slice("roll:".length);
+      setDiceFormula(formula);
+      rollDice(formula).catch((error) => setStatus(errorMessage(error)));
+      return;
+    }
+    if (commandId === "action:ai-agent") {
+      setAiAgentOpen((open) => !open);
+      return;
+    }
+    if (commandId === "action:dice3d") {
+      setDice3dEnabled((enabled) => !enabled);
+      return;
+    }
+    if (commandId === "action:theme") setUiTheme((current) => nextUiTheme(current));
+  };
   const workspaceEyebrow = workspaceMode === "ai" ? "AI Studio" : workspaceMode === "prep" ? "Prep" : workspaceMode === "manage" ? manageWorkspaceEyebrow : (selectedCampaign?.defaultSystemId ?? "No system");
   const workspaceHeading = workspaceMode === "ai" ? "Build, review, and apply generated table content" : workspaceMode === "prep" ? "Prep scenes, assets, journals, and imports" : workspaceMode === "manage" ? manageWorkspaceHeading : (selectedCampaign?.name ?? "Create a campaign");
   const showSceneTabs = workspaceMode !== "manage" || activeManageCategory === "scenes";
@@ -4890,9 +5140,19 @@ export function App() {
   return (
     <main className="shell" aria-label="OpenTabletop workspace">
       <aside className={`rail rail-${workspaceMode} ${workspaceMode === "manage" ? "rail-manage" : "rail-play"}`}>
-        <div>
-          <div className="brand">OpenTabletop</div>
-          <div className="subtle">API-first VTT engine</div>
+        <div className="brand-block">
+          <div>
+            <div className="brand">OpenTabletop</div>
+            <div className="subtle">API-first VTT engine</div>
+          </div>
+          <div className="rail-quick-actions">
+            <button className="icon-button" type="button" title="Command palette (Ctrl+K)" aria-label="Open command palette" onClick={() => setCommandPaletteOpen(true)}>
+              <Search size={15} />
+            </button>
+            <button className="icon-button" type="button" title={`Theme: ${uiThemeLabel(uiTheme)} - switch to ${uiThemeLabel(nextUiTheme(uiTheme))}`} aria-label="Switch color theme" onClick={() => setUiTheme((current) => nextUiTheme(current))}>
+              {uiTheme === "midnight" ? <Moon size={15} /> : <Flame size={15} />}
+            </button>
+          </div>
         </div>
         {blankCanvasDemoOpen && (
           <section className="demo-mode-banner" aria-label="Demo mode">
@@ -6134,7 +6394,7 @@ export function App() {
             </div>
             {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
-            {tab === "chat" && <ChatRail command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} />}
+            {tab === "chat" && <ChatRail command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
@@ -6186,7 +6446,152 @@ export function App() {
           onReject={rejectAiAgentProposal}
         />
       )}
+      <div id={diceBoxContainerId} className="dice-box-stage" aria-hidden="true" />
+      {commandPaletteOpen && <CommandPalette commands={paletteCommands} onRun={runPaletteCommand} onClose={() => setCommandPaletteOpen(false)} />}
+      {activeDiceCasts.length > 0 && <DiceCastOverlay casts={activeDiceCasts} />}
     </main>
+  );
+}
+
+function CommandPalette(props: { commands: PaletteCommand[]; onRun(commandId: string): void; onClose(): void }) {
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const queryFormula = paletteDiceFormula(query);
+  const matches = filterPaletteCommands(props.commands, query).slice(0, 12);
+  const results: PaletteCommand[] = queryFormula
+    ? [{ id: `roll:${queryFormula}`, label: `Roll ${queryFormula}`, section: "Dice", hint: "press Enter to roll" }, ...matches.filter((command) => command.id !== `roll:${queryFormula}`)]
+    : matches;
+  const active = results.length === 0 ? 0 : Math.min(activeIndex, results.length - 1);
+
+  useEffect(() => {
+    listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [active, query]);
+
+  return (
+    <div
+      className="command-palette-backdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) props.onClose();
+      }}
+    >
+      <div className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette">
+        <div className="command-palette-input-row">
+          <Search size={16} aria-hidden="true" />
+          <input
+            ref={inputRef}
+            aria-label="Command palette search"
+            placeholder="Jump to a scene, switch workspace, or roll 2d6+3..."
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActiveIndex(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                props.onClose();
+                return;
+              }
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setActiveIndex(movePaletteIndex(active, 1, results.length));
+                return;
+              }
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setActiveIndex(movePaletteIndex(active, -1, results.length));
+                return;
+              }
+              if (event.key === "Enter") {
+                event.preventDefault();
+                const target = results[active];
+                if (target) props.onRun(target.id);
+              }
+            }}
+          />
+          <kbd>Esc</kbd>
+        </div>
+        <div className="command-palette-list" ref={listRef} role="listbox" aria-label="Command results">
+          {results.length === 0 && <div className="command-palette-empty">No matching commands.</div>}
+          {results.map((command, index) => (
+            <button
+              key={command.id}
+              type="button"
+              role="option"
+              aria-selected={index === active}
+              data-active={index === active ? "true" : undefined}
+              className={index === active ? "command-palette-item active" : "command-palette-item"}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => props.onRun(command.id)}
+            >
+              <span className="command-palette-item-label">{command.label}</span>
+              {command.hint && <small>{command.hint}</small>}
+              <span className="command-palette-item-section">{command.section}</span>
+            </button>
+          ))}
+        </div>
+        <footer className="command-palette-footer">
+          <span>
+            <kbd>Up</kbd>
+            <kbd>Down</kbd> navigate
+          </span>
+          <span>
+            <kbd>Enter</kbd> run
+          </span>
+          <span>
+            <kbd>Ctrl</kbd>
+            <kbd>K</kbd> toggle
+          </span>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function DiceCastOverlay(props: { casts: DiceCastPlan[] }) {
+  return (
+    <div className="dice-cast-overlay" aria-hidden="true">
+      {props.casts.map((cast) => (
+        <div className={cast.highlight ? `dice-cast dice-cast-${cast.highlight}` : "dice-cast"} key={cast.rollId}>
+          <div className="dice-cast-dice">
+            {cast.dice.map((die) => {
+              const shape = dieShapeName(die.sides);
+              const points = dieShapePoints(shape);
+              const face = die.value >= die.sides ? "crit" : die.value === 1 ? "fumble" : "plain";
+              const style = {
+                "--cast-delay": `${die.delayMs}ms`,
+                "--cast-spin-x": `${die.spinXTurns}turn`,
+                "--cast-spin-y": `${die.spinYTurns}turn`,
+                "--cast-from-x": `${die.fromXVmin}vmin`,
+                "--cast-from-y": `${die.fromYVmin}vmin`,
+                "--cast-rest": `${360 + die.restTiltDeg}deg`,
+                "--cast-final-opacity": die.kept ? 1 : 0.4
+              } as CSSProperties;
+              return (
+                <span className={`dice-cast-die dice-cast-die-${shape} dice-cast-die-${face}${die.kept ? "" : " dice-cast-die-dropped"}`} key={die.id} style={style}>
+                  <svg viewBox="0 0 48 48" aria-hidden="true">
+                    {points ? <polygon className="dice-cast-face" points={points} /> : <rect className="dice-cast-face" x="5" y="5" width="38" height="38" rx="8" />}
+                  </svg>
+                  <strong>{die.value}</strong>
+                </span>
+              );
+            })}
+          </div>
+          <div className="dice-cast-label" style={{ "--cast-label-delay": `${cast.settleMs}ms` } as CSSProperties}>
+            <span>{cast.label}</span>
+            <strong>{formatNumber(cast.total)}</strong>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -11093,6 +11498,7 @@ type ChatRailProps = {
   replyTarget?: ChatMessage;
   messages: ChatMessage[];
   rolls: DiceRoll[];
+  concealedRollIds: ReadonlySet<string>;
   members: Snapshot["members"];
   diceFormula: string;
   setDiceFormula(value: string): void;
@@ -11105,6 +11511,8 @@ type ChatRailProps = {
   onSubmitCommand(): Promise<void>;
   onClearReply(): void;
   canRollDice: boolean;
+  dice3dEnabled: boolean;
+  onToggleDice3d(): void;
 };
 
 function ChatRail(props: ChatRailProps) {
@@ -11146,13 +11554,23 @@ function ChatRail(props: ChatRailProps) {
             <option key={option.formula} value={option.formula}>{option.label}</option>
           ))}
         </select>
+        <div className="dice-tray" role="group" aria-label="Quick dice">
+          {diceTraySides.map((sides) => (
+            <button className="dice-chip" key={sides} type="button" title={`Add 1d${sides} to the formula`} aria-label={`Add 1d${sides} to the formula`} onClick={() => props.setDiceFormula(addDieToFormula(props.diceFormula, sides))}>
+              d{sides}
+            </button>
+          ))}
+          <button className={props.dice3dEnabled ? "dice-chip dice-3d-toggle active" : "dice-chip dice-3d-toggle"} type="button" title={props.dice3dEnabled ? "3D dice on; click for text-only rolling" : "Text-only rolling; click to enable 3D dice"} aria-label={props.dice3dEnabled ? "Use text-only dice" : "Enable 3D dice"} aria-pressed={props.dice3dEnabled} onClick={props.onToggleDice3d}>
+            <Dices size={13} aria-hidden="true" /> 3D
+          </button>
+        </div>
       </form>
       <div className="chat-rail-stream" aria-label="Chat messages" ref={streamRef}>
         {props.messages.length === 0 ? (
           <div className="empty-state compact">No messages yet.</div>
         ) : (
           props.messages.map((message) => (
-            <ChatMessageItem key={message.id} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} memberNames={memberNames} messageById={messageById} />
+            <ChatMessageItem key={message.id} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} rollConcealed={message.rollId ? props.concealedRollIds.has(message.rollId) : false} memberNames={memberNames} messageById={messageById} />
           ))
         )}
       </div>
@@ -11161,7 +11579,7 @@ function ChatRail(props: ChatRailProps) {
   );
 }
 
-function ChatMessageItem(props: { message: ChatMessage; roll?: DiceRoll; memberNames: Map<string, string>; messageById: Map<string, ChatMessage> }) {
+function ChatMessageItem(props: { message: ChatMessage; roll?: DiceRoll; rollConcealed?: boolean; memberNames: Map<string, string>; messageById: Map<string, ChatMessage> }) {
   const messageKind = props.roll || props.message.type === "roll" ? "roll" : props.message.type;
   const author = props.memberNames.get(props.message.userId) ?? props.message.userId;
   const replyMessage = props.message.replyToMessageId ? props.messageById.get(props.message.replyToMessageId) : undefined;
@@ -11181,7 +11599,7 @@ function ChatMessageItem(props: { message: ChatMessage; roll?: DiceRoll; memberN
         </div>
       )}
       {props.roll ? (
-        <RollMessageCard message={props.message} roll={props.roll} />
+        <RollMessageCard message={props.message} roll={props.roll} concealed={props.rollConcealed === true} />
       ) : messageKind === "emote" ? null : (
         <p className="chat-body">{props.message.body}</p>
       )}
@@ -11191,28 +11609,38 @@ function ChatMessageItem(props: { message: ChatMessage; roll?: DiceRoll; memberN
   );
 }
 
-function RollMessageCard(props: { message: ChatMessage; roll: DiceRoll }) {
+function RollMessageCard(props: { message: ChatMessage; roll: DiceRoll; concealed?: boolean }) {
   const label = props.roll.label || props.message.body || "Roll";
+  const highlight = props.concealed ? null : rollHighlight(props.roll.terms);
+  const className = ["chat-roll-card", highlight ? `chat-roll-card-${highlight}` : "", props.concealed ? "chat-roll-card-pending" : ""].filter(Boolean).join(" ");
   return (
-    <div className="chat-roll-card">
+    <div className={className} aria-busy={props.concealed ? "true" : undefined}>
       <div className="chat-roll-main">
         <span>{props.roll.visibility === "gm_only" ? "GM Roll" : "Roll"}</span>
         <strong>{label}</strong>
         <p>{props.roll.formula}</p>
+        {highlight && (
+          <em className={`chat-roll-flag chat-roll-flag-${highlight}`} aria-label={highlight === "crit" ? "Natural 20" : "Natural 1"}>
+            {highlight === "crit" ? "Natural 20 - Critical!" : "Natural 1 - Fumble"}
+          </em>
+        )}
       </div>
-      <strong className="chat-roll-total" aria-label={`Roll total ${props.roll.total}`}>{formatNumber(props.roll.total)}</strong>
-      <div className="chat-roll-dice" aria-label="Dice term breakdown">
-        {props.roll.terms.map((term, index) => {
-          const termTotal = rollTermTotal(term);
-          return (
-            <span className="chat-roll-die" key={`${props.roll.id}-${index}`}>
-              <strong>{termTotal === undefined ? formatRollTermName(term, index) : formatNumber(termTotal)}</strong>
-              <span>{formatRollTermName(term, index)}</span>
-              <small>{formatRollTermDetail(term)}</small>
-            </span>
-          );
-        })}
-      </div>
+      <strong className="chat-roll-total" aria-label={props.concealed ? "Roll result pending" : `Roll total ${props.roll.total}`}>{props.concealed ? "..." : formatNumber(props.roll.total)}</strong>
+      {!props.concealed && (
+        <div className="chat-roll-dice" aria-label="Dice term breakdown">
+          {props.roll.terms.map((term, index) => {
+            const termTotal = rollTermTotal(term);
+            const termHighlight = rollTermHighlight(term);
+            return (
+              <span className={termHighlight ? `chat-roll-die chat-roll-die-${termHighlight}` : "chat-roll-die"} key={`${props.roll.id}-${index}`}>
+                <strong>{termTotal === undefined ? formatRollTermName(term, index) : formatNumber(termTotal)}</strong>
+                <span>{formatRollTermName(term, index)}</span>
+                <small>{formatRollTermDetail(term)}</small>
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
