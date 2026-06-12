@@ -1,4 +1,4 @@
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -376,6 +376,39 @@ export interface Snapshot {
   plugins: PluginRuntimeInfo[];
   systems: SystemRuntimeInfo[];
   characterTemplates: CharacterTemplateInfo[];
+}
+
+interface CampaignSnapshotPayload {
+  generatedAt: string;
+  campaign: Campaign;
+  members: CampaignMemberInfo[];
+  scenes: Scene[];
+  selectedSceneId?: string;
+  activeSceneId?: string;
+  vision?: VisionSnapshot;
+  tokens: Token[];
+  fogPresets: FogPreset[];
+  assets: MapAsset[];
+  actors: Actor[];
+  items: Item[];
+  journals: JournalEntry[];
+  chat: ChatMessage[];
+  rolls: DiceRoll[];
+  diceMacros: DiceMacro[];
+  encounters: Encounter[];
+  combats: Combat[];
+  proposals: Proposal[];
+  memory: AiMemoryFact[];
+}
+
+export interface DiceRollVerification {
+  rollId: string;
+  formula: string;
+  verified: boolean;
+  reason?: "fairness_unavailable" | "unsupported_algorithm" | "seed_hash_mismatch" | "formula_unparseable" | "result_mismatch";
+  fairness?: DiceRollFairness;
+  expected: { total: number };
+  recomputed?: { total: number };
 }
 
 export interface CampaignAssetStorageInfo {
@@ -2696,6 +2729,10 @@ export async function apiUploadAsset(input: { campaignId: string; sceneId?: stri
   return response.json() as Promise<{ asset: MapAsset; scene?: Scene }>;
 }
 
+export async function verifyDiceRoll(campaignId: string, rollId: string): Promise<DiceRollVerification> {
+  return apiGet<DiceRollVerification>(`/api/v1/campaigns/${campaignId}/rolls/${rollId}/verify`);
+}
+
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
   const snapshotHeaders = { authorization: `Bearer ${await ensureSessionToken()}` };
   const snapshotGet = async <T,>(path: string): Promise<T> => {
@@ -2747,43 +2784,28 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       characterTemplates: []
     };
   }
-  const scenes = await snapshotGet<Scene[]>(`/api/v1/campaigns/${selectedCampaignId}/scenes`);
-  const selectedSceneId = scenes.find((scene) => scene.id === sceneId)?.id ?? scenes.find((scene) => scene.active)?.id ?? scenes[0]?.id;
-  const activeSceneId = scenes.find((scene) => scene.active)?.id;
-  const tokenSceneIds = [...new Set([selectedSceneId, activeSceneId].filter((id): id is string => Boolean(id)))];
-  const members = await snapshotGet<CampaignMemberInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/members`);
+  const snapshotQuery = new URLSearchParams();
+  if (sceneId) snapshotQuery.set("sceneId", sceneId);
+  const campaignSnapshot = await snapshotGet<CampaignSnapshotPayload>(`/api/v1/campaigns/${selectedCampaignId}/snapshot${snapshotQuery.size > 0 ? `?${snapshotQuery.toString()}` : ""}`);
+  const members = campaignSnapshot.members;
   const currentMember = members.find((member) => member.user.id === session.user.id);
   const canManageCampaign = currentMember?.permissions.includes("campaign.update") ?? false;
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
-  const [assets, assetStorage, fogPresets, tokens, vision, actors, items, journals, chat, rolls, diceMacros, audioTracks, encounters, combats, proposals, contentImports, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
-    snapshotGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
+  const activeCombatId = campaignSnapshot.combats.find((combat) => combat.active)?.id;
+  const [assetStorage, audioTracks, contentImports, aiThreads, aiUsage, aiToolCalls, plugins, systems, combatAudit] = await Promise.all([
     snapshotGet<CampaignAssetStorageInfo>(`/api/v1/campaigns/${selectedCampaignId}/assets/storage`),
-    currentMember?.permissions.includes("token.reveal") ? snapshotGet<FogPreset[]>(`/api/v1/campaigns/${selectedCampaignId}/fog-presets`) : Promise.resolve([]),
-    tokenSceneIds.length > 0 ? Promise.all(tokenSceneIds.map((id) => snapshotGet<Token[]>(`/api/v1/scenes/${id}/tokens`))).then((sceneTokens) => sceneTokens.flat()) : Promise.resolve([]),
-    selectedSceneId ? snapshotGet<VisionSnapshot>(`/api/v1/scenes/${selectedSceneId}/vision`) : Promise.resolve(undefined),
-    snapshotGet<Actor[]>(`/api/v1/campaigns/${selectedCampaignId}/actors`),
-    snapshotGet<Item[]>(`/api/v1/campaigns/${selectedCampaignId}/items`),
-    snapshotGet<JournalEntry[]>(`/api/v1/campaigns/${selectedCampaignId}/journal`),
-    snapshotGet<ChatMessage[]>(`/api/v1/chat/messages?campaignId=${selectedCampaignId}`),
-    snapshotGet<DiceRoll[]>(`/api/v1/campaigns/${selectedCampaignId}/rolls`),
-    snapshotGet<DiceMacro[]>(`/api/v1/campaigns/${selectedCampaignId}/dice-macros`),
     snapshotGet<AudioTrack[]>(`/api/v1/campaigns/${selectedCampaignId}/audio`),
-    snapshotGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
-    snapshotGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
-    snapshotGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
     canManageCampaign ? snapshotGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`) : Promise.resolve([]),
-    snapshotGet<AiMemoryFact[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/memory`),
     canViewAiOperations ? snapshotGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
     canViewAiOperations ? snapshotGet<AiUsageSummary>(`/api/v1/campaigns/${selectedCampaignId}/ai/usage`) : Promise.resolve(undefined),
     canViewAiOperations ? snapshotGet<AiToolCall[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/tool-calls`) : Promise.resolve([]),
     snapshotGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
-    snapshotGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`)
+    snapshotGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`),
+    activeCombatId ? snapshotGet<AuditLog[]>(`/api/v1/combats/${activeCombatId}/audit`) : Promise.resolve([])
   ]);
-  const activeCombatId = combats.find((combat) => combat.active)?.id;
-  const combatAudit = activeCombatId ? await snapshotGet<AuditLog[]>(`/api/v1/combats/${activeCombatId}/audit`) : [];
   const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
   const characterTemplates = activeSystemId ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
-  const displayAssets = await withAssetDeliveryUrls(assets);
+  const displayAssets = await withAssetDeliveryUrls(campaignSnapshot.assets);
   return {
     session,
     workspaceDefaults,
@@ -2792,25 +2814,25 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     organizationInvites,
     campaigns,
     members,
-    scenes,
-    fogPresets,
+    scenes: campaignSnapshot.scenes,
+    fogPresets: campaignSnapshot.fogPresets,
     assets: displayAssets,
     assetStorage,
-    tokens,
-    vision,
-    actors,
-    items,
-    journals,
-    chat,
-    rolls,
-    diceMacros,
+    tokens: campaignSnapshot.tokens,
+    vision: campaignSnapshot.vision,
+    actors: campaignSnapshot.actors,
+    items: campaignSnapshot.items,
+    journals: campaignSnapshot.journals,
+    chat: campaignSnapshot.chat,
+    rolls: campaignSnapshot.rolls,
+    diceMacros: campaignSnapshot.diceMacros,
     audioTracks,
-    encounters,
-    combats,
+    encounters: campaignSnapshot.encounters,
+    combats: campaignSnapshot.combats,
     combatAudit,
-    proposals,
+    proposals: campaignSnapshot.proposals,
     contentImports,
-    memory,
+    memory: campaignSnapshot.memory,
     aiThreads,
     aiUsage,
     aiToolCalls,

@@ -4,7 +4,7 @@ import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
 import { activeSceneAnnotations, nextAnnotationExpiryMs } from "./annotation-expiry.js";
 import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange, type BoardTokenPositionChange } from "./board-history.js";
@@ -34,6 +34,19 @@ const maxBrowserTimerDelayMs = 2_147_483_647;
 const aiAgentAuthRetryIntervalMs = 3_000;
 const aiAgentAuthRetryTimeoutMs = 10 * 60_000;
 const rollingDiceStatus = "Rolling dice...";
+
+function audioTrackNameFromFile(file: File): string {
+  return file.name.replace(/\.[^.]+$/, "").trim() || file.name || "Uploaded audio";
+}
+
+function authenticatedAudioUrl(url: string): string {
+  if (!url.startsWith("/api/v1/assets/")) return url;
+  const token = getSessionToken();
+  const authenticatedUrl = token ? `${url}${url.includes("?") ? "&" : "?"}sessionToken=${encodeURIComponent(token)}` : url;
+  if (/^(https?:|data:|blob:)/.test(authenticatedUrl)) return authenticatedUrl;
+  if (!apiBase) return authenticatedUrl;
+  return `${apiBase.replace(/\/+$/, "")}${authenticatedUrl.startsWith("/") ? authenticatedUrl : `/${authenticatedUrl}`}`;
+}
 
 function apiOfflineStatus(detail?: unknown): string {
   const message = (typeof detail === "string" ? detail : detail instanceof Error ? detail.message : detail == null ? "" : String(detail)).trim();
@@ -1054,6 +1067,7 @@ export function App() {
   const [sceneEditActive, setSceneEditActive] = useState(false);
   const [sceneEditBackgroundAssetId, setSceneEditBackgroundAssetId] = useState("");
   const [sceneEditGridOverlayVisible, setSceneEditGridOverlayVisible] = useState(true);
+  const [sceneEditDirty, setSceneEditDirty] = useState(false);
   const [sceneDuplicateName, setSceneDuplicateName] = useState("");
   const [sceneFolderFilter, setSceneFolderFilter] = useState("all");
   const [sceneSearch, setSceneSearch] = useState("");
@@ -1181,6 +1195,8 @@ export function App() {
         lights: selectedScene.lights.length
       }
     : undefined;
+  const sceneDeleteTarget = accessibleScenes.find((scene) => scene.id === selectedScene?.id && scene.name === sceneEditName) ?? accessibleScenes.find((scene) => scene.name === sceneEditName) ?? selectedScene;
+  const sceneDeleteConfirmed = Boolean(sceneDeleteTarget && sceneEditName.trim() && sceneDeleteConfirm === sceneEditName);
   const sceneActivationHistory = [...(selectedScene?.activationHistory ?? [])].sort((left, right) => right.activatedAt.localeCompare(left.activatedAt));
   const latestSceneActivation = sceneActivationHistory[0];
   const activeScene = accessibleScenes.find((scene) => scene.active);
@@ -1711,6 +1727,7 @@ export function App() {
 
   useEffect(() => {
     if (!selectedScene) return;
+    if (sceneEditDirty) return;
     setSceneEditName(selectedScene.name);
     setSceneEditFolder(selectedScene.folder ?? "");
     setSceneEditWidth(selectedScene.width);
@@ -1720,8 +1737,12 @@ export function App() {
     setSceneEditBackgroundAssetId(selectedScene.backgroundAssetId ?? "");
     setSceneEditGridOverlayVisible(sceneGridOverlayVisible(selectedScene));
     setSceneDuplicateName(`${selectedScene.name} Copy`);
+  }, [sceneEditDirty, selectedScene?.id, selectedScene?.name, selectedScene?.folder, selectedScene?.width, selectedScene?.height, selectedScene?.gridSize, selectedScene?.active, selectedScene?.backgroundAssetId, selectedScene?.metadata]);
+
+  useEffect(() => {
+    setSceneEditDirty(false);
     setSceneDeleteConfirm("");
-  }, [selectedScene?.id, selectedScene?.name, selectedScene?.folder, selectedScene?.width, selectedScene?.height, selectedScene?.gridSize, selectedScene?.active, selectedScene?.backgroundAssetId, selectedScene?.metadata]);
+  }, [selectedScene?.id]);
 
   useEffect(() => {
     if (sceneFolderFilter === "all") return;
@@ -2145,8 +2166,21 @@ export function App() {
   function applySceneEditSizePreset(preset: SceneSizePreset): void {
     const gridSize = Math.max(10, normalizeSceneSizeValue(sceneEditGridSize, selectedScene?.gridSize ?? 50));
     const dimensions = sceneDimensionsFromCells(preset, gridSize);
+    setSceneEditDirty(true);
     setSceneEditWidth(dimensions.width);
     setSceneEditHeight(dimensions.height);
+  }
+
+  function sceneFormValue(form: HTMLFormElement | undefined, name: string, fallback: string): string {
+    const field = form?.elements.namedItem(name) as { value?: unknown } | null;
+    if (typeof field?.value === "string") return field.value;
+    return fallback;
+  }
+
+  function sceneFormChecked(form: HTMLFormElement | undefined, name: string, fallback: boolean): boolean {
+    const field = form?.elements.namedItem(name) as { checked?: unknown } | null;
+    if (typeof field?.checked === "boolean") return field.checked;
+    return fallback;
   }
 
   async function createScene() {
@@ -2168,23 +2202,49 @@ export function App() {
     await refresh(campaignId, scene.id);
   }
 
-  async function saveSceneSettings() {
+  async function saveSceneSettings(form?: HTMLFormElement) {
     if (!selectedScene) return;
-    const scene = await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}`, {
-      name: sceneEditName.trim() || selectedScene.name,
-      folder: sceneEditFolder.trim() || null,
-      width: Math.max(200, normalizeSceneSizeValue(sceneEditWidth, selectedScene.width)),
-      height: Math.max(200, normalizeSceneSizeValue(sceneEditHeight, selectedScene.height)),
-      gridSize: Math.max(10, normalizeSceneSizeValue(sceneEditGridSize, selectedScene.gridSize)),
-      backgroundAssetId: sceneEditBackgroundAssetId || null,
-      active: sceneEditActive,
+    const targetScene = selectedScene;
+    const targetCampaignId = campaignId;
+    const draftName = sceneFormValue(form, "sceneEditName", sceneEditName);
+    const draftFolder = sceneFormValue(form, "sceneEditFolder", sceneEditFolder);
+    const draftWidth = Number(sceneFormValue(form, "sceneEditWidth", String(sceneEditWidth)));
+    const draftHeight = Number(sceneFormValue(form, "sceneEditHeight", String(sceneEditHeight)));
+    const draftGridSize = Number(sceneFormValue(form, "sceneEditGridSize", String(sceneEditGridSize)));
+    const draftBackgroundAssetId = sceneFormValue(form, "sceneEditBackgroundAssetId", sceneEditBackgroundAssetId);
+    const draftActive = sceneFormChecked(form, "sceneEditActive", sceneEditActive);
+    const draftGridOverlayVisible = sceneFormChecked(form, "sceneEditGridOverlayVisible", sceneEditGridOverlayVisible);
+
+    const scene = await apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, {
+      name: draftName.trim() || targetScene.name,
+      folder: draftFolder.trim() || null,
+      width: Math.max(200, normalizeSceneSizeValue(draftWidth, targetScene.width)),
+      height: Math.max(200, normalizeSceneSizeValue(draftHeight, targetScene.height)),
+      gridSize: Math.max(10, normalizeSceneSizeValue(draftGridSize, targetScene.gridSize)),
+      backgroundAssetId: draftBackgroundAssetId || null,
+      active: draftActive,
       metadata: {
-        ...selectedScene.metadata,
-        gridOverlayVisible: sceneEditGridOverlayVisible
+        ...targetScene.metadata,
+        gridOverlayVisible: draftGridOverlayVisible
       }
     });
+    setSnapshot((current) => ({
+      ...current,
+      scenes: current.scenes.map((item) => (item.id === scene.id ? scene : item))
+    }));
+    setSceneEditDirty(false);
+    setSceneId(scene.id);
+    setSceneEditName(scene.name);
+    setSceneEditFolder(scene.folder ?? "");
+    setSceneEditWidth(scene.width);
+    setSceneEditHeight(scene.height);
+    setSceneEditGridSize(scene.gridSize);
+    setSceneEditActive(scene.active);
+    setSceneEditBackgroundAssetId(scene.backgroundAssetId ?? "");
+    setSceneEditGridOverlayVisible(sceneGridOverlayVisible(scene));
+    setSceneDuplicateName(`${scene.name} Copy`);
     setStatus(`${scene.name} updated`);
-    await refresh(campaignId, scene.id);
+    await refresh(targetCampaignId, scene.id, { syncStatus: false });
   }
 
   async function moveVisibleScenesToFolder() {
@@ -2306,14 +2366,34 @@ export function App() {
     await refresh(campaignId, scene.id);
   }
 
-  async function deleteSelectedScene() {
-    if (!selectedScene || sceneDeleteConfirm !== selectedScene.name) return;
-    const nextScene = orderedScenes.find((scene) => scene.id !== selectedScene.id);
-    await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}`);
+  async function deleteScene(targetScene: Scene) {
+    const previousSceneId = sceneId;
+    const nextScene = accessibleScenes.find((scene) => scene.id !== targetScene.id);
+    const nextSceneId = nextScene?.id ?? "";
     setSceneDeleteConfirm("");
-    setSceneId(nextScene?.id ?? "");
-    setStatus(`${selectedScene.name} deleted; audit logged`);
-    await refresh(campaignId, nextScene?.id ?? "");
+    setSceneEditDirty(false);
+    setSelectedPrepSceneIds((current) => current.filter((id) => id !== targetScene.id));
+    setSceneId(nextSceneId);
+    if (nextScene) {
+      setSceneEditName(nextScene.name);
+      setSceneEditFolder(nextScene.folder ?? "");
+      setSceneEditWidth(nextScene.width);
+      setSceneEditHeight(nextScene.height);
+      setSceneEditGridSize(nextScene.gridSize);
+      setSceneEditActive(nextScene.active);
+      setSceneEditBackgroundAssetId(nextScene.backgroundAssetId ?? "");
+      setSceneEditGridOverlayVisible(sceneGridOverlayVisible(nextScene));
+      setSceneDuplicateName(`${nextScene.name} Copy`);
+    }
+    try {
+      await apiDelete<Scene>(`/api/v1/scenes/${targetScene.id}`);
+      setStatus(`${targetScene.name} deleted; audit logged`);
+      await refresh(campaignId, nextSceneId);
+    } catch (error) {
+      setSceneId(previousSceneId);
+      await refresh(campaignId, previousSceneId, { syncStatus: false }).catch(() => undefined);
+      throw error;
+    }
   }
 
   async function createToken(options: Partial<TokenDropPayload> & { x?: number; y?: number } = {}) {
@@ -2580,17 +2660,19 @@ export function App() {
 
   async function updateSelectedToken(patch: Partial<Token>) {
     if (!selectedToken) return;
+    const statusLabel = "Token updated";
     if (blankCanvasDemoOpen) {
       setSnapshot((current) => ({
         ...current,
         tokens: current.tokens.map((token) => (token.id === selectedToken.id ? { ...token, ...patch, id: token.id, sceneId: token.sceneId, updatedAt: new Date().toISOString() } : token))
       }));
-      setStatus("Token updated for this demo tab");
+      setStatus(`${statusLabel} for this demo tab`);
       return;
     }
+    setStatus(statusLabel);
     await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, patch);
-    await refresh();
-    setStatus("Token updated");
+    await refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
+    setStatus(statusLabel);
   }
 
   function pushBoardHistoryAction(action: BoardHistoryAction) {
@@ -2749,6 +2831,12 @@ export function App() {
     return action.tokens.length === 1 ? "Token deletion redone" : "Token deletions redone";
   }
 
+  function selectCombatantToken(combatant?: Combat["combatants"][number]) {
+    if (!combatant?.tokenId) return;
+    setSelectedTokenIdState(combatant.tokenId);
+    setSelectedTokenIds([combatant.tokenId]);
+  }
+
   async function undoBoardAction() {
     const action = boardUndoStack.at(-1);
     if (!action) {
@@ -2800,6 +2888,7 @@ export function App() {
   }
 
   async function setTokenTarget(tokenId: string, targeted: boolean) {
+    const statusLabel = targeted ? "Token targeted" : "Token untargeted";
     if (blankCanvasDemoOpen) {
       const timestamp = new Date().toISOString();
       setSnapshot((current) => ({
@@ -2812,12 +2901,13 @@ export function App() {
           return { ...token, targetedByUserIds: [...targetedBy], updatedAt: timestamp };
         })
       }));
-      setStatus(targeted ? "Token targeted for this demo tab" : "Token untargeted for this demo tab");
+      setStatus(`${statusLabel} for this demo tab`);
       return;
     }
+    setStatus(statusLabel);
     await apiPost<Token>(`/api/v1/tokens/${tokenId}/target`, { targeted });
-    await refresh();
-    setStatus(targeted ? "Token targeted" : "Token untargeted");
+    await refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
+    setStatus(statusLabel);
   }
 
   async function setTokenTargets(tokenIds: string[], targeted: boolean) {
@@ -2842,11 +2932,13 @@ export function App() {
       setStatus(targeted ? `Targeted ${uniqueTokenIds.length} tokens for this demo tab` : `Cleared ${uniqueTokenIds.length} demo targets`);
       return;
     }
+    const statusLabel = targeted ? `Targeted ${uniqueTokenIds.length} tokens` : `Cleared ${uniqueTokenIds.length} targets`;
+    setStatus(statusLabel);
     for (const tokenId of uniqueTokenIds) {
       await apiPost<Token>(`/api/v1/tokens/${tokenId}/target`, { targeted });
     }
-    await refresh();
-    setStatus(targeted ? `Targeted ${uniqueTokenIds.length} tokens` : `Cleared ${uniqueTokenIds.length} targets`);
+    await refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
+    setStatus(statusLabel);
   }
 
   async function uploadMap(file: File) {
@@ -3223,6 +3315,13 @@ export function App() {
     await refresh();
   }
 
+  async function undoSceneEdit() {
+    if (!selectedScene) return;
+    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/undo`, {});
+    setStatus("Scene edit undone");
+    await refresh(campaignId, selectedScene.id);
+  }
+
   function closeFogToolPanel() {
     setToolReport("");
     setToolReportTitle("Fog and vision");
@@ -3373,6 +3472,29 @@ export function App() {
       await refresh();
     } catch (error) {
       setStatus(errorMessage(error));
+    }
+  }
+
+  async function uploadAudioTrack(file: File, input: { name?: string; kind: AudioTrack["kind"]; loop: boolean }) {
+    const name = input.name?.trim() || audioTrackNameFromFile(file);
+    try {
+      setStatus(`Uploading ${file.name} to the soundboard...`);
+      const result = await apiUploadAsset({
+        campaignId,
+        file,
+        folder: "audio",
+        tags: ["audio", input.kind]
+      });
+      await apiPost<AudioTrack>(`/api/v1/campaigns/${campaignId}/audio`, {
+        name,
+        url: result.asset.url,
+        kind: input.kind,
+        loop: input.loop
+      });
+      setStatus(`Uploaded ${name} to the soundboard`);
+      await refresh();
+    } catch (error) {
+      setStatus(`Audio upload failed: ${errorMessage(error)}`);
     }
   }
 
@@ -3771,17 +3893,19 @@ export function App() {
         resourceUsed: false
       };
     });
-    await apiPost<Combat>(`/api/v1/campaigns/${campaignId}/combats`, {
+    const combat = await apiPost<Combat>(`/api/v1/campaigns/${campaignId}/combats`, {
       combatants
     });
     setTab("combat");
-    await refresh();
+    await refresh(campaignId, sceneId, { syncStatus: false });
+    selectCombatantToken(combat.combatants[combat.turnIndex] ?? combat.combatants[0]);
   }
 
   async function updateCombat(combat: Combat, patch: Partial<Combat>) {
-    await apiPatch<Combat>(`/api/v1/combats/${combat.id}`, patch);
+    const updated = await apiPatch<Combat>(`/api/v1/combats/${combat.id}`, patch);
     setStatus("Combat updated");
-    await refresh();
+    await refresh(campaignId, sceneId, { syncStatus: false });
+    selectCombatantToken(updated.combatants[updated.turnIndex] ?? updated.combatants[0]);
   }
 
   async function advanceCombatTurn(combat: Combat, direction: 1 | -1) {
@@ -3800,27 +3924,28 @@ export function App() {
         hasPermission("actor.update") &&
         (patch.readiness !== undefined || patch.defeated !== undefined || patch.conditions !== undefined || patch.deathSaveSuccesses !== undefined || patch.deathSaveFailures !== undefined || patch.resourceUsed !== undefined)
     );
-    await apiPatch<Combat>(`/api/v1/combats/${combat.id}/combatants/${combatantId}`, { ...patch, syncActorSheet });
+    const updated = await apiPatch<Combat>(`/api/v1/combats/${combat.id}/combatants/${combatantId}`, { ...patch, syncActorSheet });
     setStatus("Combatant updated");
-    await refresh();
+    await refresh(campaignId, sceneId, { syncStatus: false });
+    selectCombatantToken(updated.combatants.find((candidate) => candidate.id === combatantId));
   }
 
   async function endCombat(combat: Combat) {
     await apiDelete<Combat>(`/api/v1/combats/${combat.id}`);
     setStatus("Combat ended");
-    await refresh();
+    await refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function confirmCombatAction(combat: Combat, action: CombatAction) {
     await apiPost(`/api/v1/combats/${combat.id}/actions/${action.id}/confirm`, {});
     setStatus(`${action.actionLabel} confirmed`);
-    await refresh();
+    await refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function rejectCombatAction(combat: Combat, action: CombatAction) {
     await apiPost(`/api/v1/combats/${combat.id}/actions/${action.id}/reject`, {});
     setStatus(`${action.actionLabel} rejected`);
-    await refresh();
+    await refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function askAi() {
@@ -5709,7 +5834,7 @@ export function App() {
             className="account-box"
             onSubmit={(event) => {
               event.preventDefault();
-              saveSceneSettings().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
+              saveSceneSettings(event.currentTarget).catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
             }}
           >
             <div className="section-title">Scene Manager</div>
@@ -5723,27 +5848,82 @@ export function App() {
             <div className="admin-form-grid scene-field-grid">
               <label className="span-full">
                 <span>Name</span>
-                <input aria-label="Edit scene name" value={sceneEditName} onChange={(event) => setSceneEditName(event.target.value)} />
+                <input
+                  aria-label="Edit scene name"
+                  name="sceneEditName"
+                  value={sceneEditName}
+                  onChange={(event) => {
+                    setSceneEditDirty(true);
+                    setSceneEditName(event.target.value);
+                  }}
+                />
               </label>
               <label>
                 <span>Folder</span>
-                <input aria-label="Edit scene folder" value={sceneEditFolder} placeholder="folder" onChange={(event) => setSceneEditFolder(event.target.value)} />
+                <input
+                  aria-label="Edit scene folder"
+                  name="sceneEditFolder"
+                  value={sceneEditFolder}
+                  placeholder="folder"
+                  onChange={(event) => {
+                    setSceneEditDirty(true);
+                    setSceneEditFolder(event.target.value);
+                  }}
+                />
               </label>
               <label>
                 <span>Width</span>
-                <input aria-label="Edit scene width" type="number" min={200} value={sceneEditWidth} onChange={(event) => setSceneEditWidth(Number(event.target.value))} />
+                <input
+                  aria-label="Edit scene width"
+                  name="sceneEditWidth"
+                  type="number"
+                  min={200}
+                  value={sceneEditWidth}
+                  onChange={(event) => {
+                    setSceneEditDirty(true);
+                    setSceneEditWidth(Number(event.target.value));
+                  }}
+                />
               </label>
               <label>
                 <span>Height</span>
-                <input aria-label="Edit scene height" type="number" min={200} value={sceneEditHeight} onChange={(event) => setSceneEditHeight(Number(event.target.value))} />
+                <input
+                  aria-label="Edit scene height"
+                  name="sceneEditHeight"
+                  type="number"
+                  min={200}
+                  value={sceneEditHeight}
+                  onChange={(event) => {
+                    setSceneEditDirty(true);
+                    setSceneEditHeight(Number(event.target.value));
+                  }}
+                />
               </label>
               <label>
                 <span>Grid</span>
-                <input aria-label="Edit scene grid size" type="number" min={10} value={sceneEditGridSize} onChange={(event) => setSceneEditGridSize(Number(event.target.value))} />
+                <input
+                  aria-label="Edit scene grid size"
+                  name="sceneEditGridSize"
+                  type="number"
+                  min={10}
+                  value={sceneEditGridSize}
+                  onChange={(event) => {
+                    setSceneEditDirty(true);
+                    setSceneEditGridSize(Number(event.target.value));
+                  }}
+                />
               </label>
               <label className="span-full">
                 <span>Background</span>
-                <select aria-label="Edit scene background asset" value={sceneEditBackgroundAssetId} onChange={(event) => setSceneEditBackgroundAssetId(event.target.value)}>
+                <select
+                  aria-label="Edit scene background asset"
+                  name="sceneEditBackgroundAssetId"
+                  value={sceneEditBackgroundAssetId}
+                  onChange={(event) => {
+                    setSceneEditDirty(true);
+                    setSceneEditBackgroundAssetId(event.target.value);
+                  }}
+                >
                   <option value="">No background</option>
                   {campaignImageAssets.map((asset) => (
                     <option key={asset.id} value={asset.id}>
@@ -5767,11 +5947,27 @@ export function App() {
               </div>
             </div>
             <label className="inline-check">
-              <input type="checkbox" checked={sceneEditActive} onChange={(event) => setSceneEditActive(event.target.checked)} />
+              <input
+                type="checkbox"
+                name="sceneEditActive"
+                checked={sceneEditActive}
+                onChange={(event) => {
+                  setSceneEditDirty(true);
+                  setSceneEditActive(event.target.checked);
+                }}
+              />
               <span>Active player scene</span>
             </label>
             <label className="inline-check">
-              <input type="checkbox" checked={sceneEditGridOverlayVisible} onChange={(event) => setSceneEditGridOverlayVisible(event.target.checked)} />
+              <input
+                type="checkbox"
+                name="sceneEditGridOverlayVisible"
+                checked={sceneEditGridOverlayVisible}
+                onChange={(event) => {
+                  setSceneEditDirty(true);
+                  setSceneEditGridOverlayVisible(event.target.checked);
+                }}
+              />
               <span>Show VTT grid overlay</span>
             </label>
             <section className="asset-pressure-list" aria-label="Scene activation history">
@@ -5849,8 +6045,15 @@ export function App() {
                     Delete is audited and removes {formatNumber(sceneDeleteImpact.tokens)} tokens, {formatNumber(sceneDeleteImpact.sceneChatMessages)} scene chat messages, {formatNumber(sceneDeleteImpact.fogRegions)} fog regions, {formatNumber(sceneDeleteImpact.walls)} walls, and {formatNumber(sceneDeleteImpact.lights)} lights.
                   </p>
                 )}
-                <input aria-label="Confirm scene delete" value={sceneDeleteConfirm} placeholder={`Type ${selectedScene.name} to delete`} onChange={(event) => setSceneDeleteConfirm(event.target.value)} />
-                <button className="ghost-button wide danger-button" type="button" disabled={sceneDeleteConfirm !== selectedScene.name} onClick={() => deleteSelectedScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                <input
+                  aria-label="Confirm scene delete"
+                  value={sceneDeleteConfirm}
+                  placeholder={`Type ${selectedScene.name} to delete`}
+                  onChange={(event) => {
+                    setSceneDeleteConfirm(event.target.value);
+                  }}
+                />
+                <button className="ghost-button wide danger-button" type="button" disabled={!sceneDeleteConfirmed} onClick={() => sceneDeleteTarget && deleteScene(sceneDeleteTarget).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                   <UserX size={16} /> Delete Scene
                 </button>
               </div>
@@ -6153,7 +6356,7 @@ export function App() {
         {showTableWorkspace ? (
         <div className={`table-grid workspace-${workspaceMode}`}>
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
-            <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
+            <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
               {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={blankCanvasDemoOpen ? async () => undefined : () => refresh().then(() => undefined)} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
             </div>
@@ -6420,7 +6623,7 @@ export function App() {
             </div>
             {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
-            {tab === "chat" && <ChatRail command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
+            {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
@@ -6483,7 +6686,8 @@ export function App() {
           onToggleMuted={() => setAudioMuted((muted) => !muted)}
           onToggleTrack={(track) => void toggleAudioTrack(track)}
           onDeleteTrack={(track) => void deleteAudioTrack(track)}
-          onCreateTrack={(input) => void createAudioTrack(input)}
+          onCreateTrack={createAudioTrack}
+          onUploadTrack={uploadAudioTrack}
           onClose={() => setAudioSoundboardOpen(false)}
         />
       )}
@@ -6513,9 +6717,10 @@ function AudioPlaybackLayer(props: { tracks: AudioTrack[]; masterVolume: number;
         element.preload = "auto";
         elements.set(state.trackId, element);
       }
-      if (element.getAttribute("data-otte-src") !== state.url) {
-        element.setAttribute("data-otte-src", state.url);
-        element.src = state.url;
+      const playbackUrl = authenticatedAudioUrl(state.url);
+      if (element.getAttribute("data-otte-src") !== playbackUrl) {
+        element.setAttribute("data-otte-src", playbackUrl);
+        element.src = playbackUrl;
       }
       element.loop = state.loop;
       element.volume = state.volume;
@@ -6548,19 +6753,33 @@ function AudioSoundboard(props: {
   onToggleMuted(): void;
   onToggleTrack(track: AudioTrack): void;
   onDeleteTrack(track: AudioTrack): void;
-  onCreateTrack(input: { name: string; url: string; kind: AudioTrack["kind"]; loop: boolean }): void;
+  onCreateTrack(input: { name: string; url: string; kind: AudioTrack["kind"]; loop: boolean }): Promise<void>;
+  onUploadTrack(file: File, input: { name?: string; kind: AudioTrack["kind"]; loop: boolean }): Promise<void>;
   onClose(): void;
 }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [kind, setKind] = useState<AudioTrack["kind"]>("ambient");
+  const [uploading, setUploading] = useState(false);
   const playingCount = activeAudioCount(props.tracks);
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim() || !url.trim()) return;
-    props.onCreateTrack({ name: name.trim(), url: url.trim(), kind, loop: kind !== "sfx" });
+    await props.onCreateTrack({ name: name.trim(), url: url.trim(), kind, loop: kind !== "sfx" });
     setName("");
     setUrl("");
+  };
+
+  const uploadFile = async (file: File, input: HTMLInputElement) => {
+    setUploading(true);
+    try {
+      await props.onUploadTrack(file, { name: name.trim() || audioTrackNameFromFile(file), kind, loop: kind !== "sfx" });
+      setName("");
+      setUrl("");
+    } finally {
+      input.value = "";
+      setUploading(false);
+    }
   };
 
   return (
@@ -6601,18 +6820,34 @@ function AudioSoundboard(props: {
         className="audio-soundboard-add"
         onSubmit={(event) => {
           event.preventDefault();
-          submit();
+          submit().catch(console.error);
         }}
       >
         <input value={name} placeholder="Track name" aria-label="Track name" onChange={(event) => setName(event.target.value)} />
         <input value={url} placeholder="https://… or /audio/…" aria-label="Track URL" onChange={(event) => setUrl(event.target.value)} />
+        <label className="audio-upload-control">
+          <span>
+            <Upload size={14} /> Upload audio
+          </span>
+          <input
+            type="file"
+            accept="audio/*"
+            aria-label="Upload audio file"
+            disabled={uploading}
+            onChange={(event) => {
+              const input = event.currentTarget;
+              const file = input.files?.[0];
+              if (file) uploadFile(file, input).catch(console.error);
+            }}
+          />
+        </label>
         <div className="audio-soundboard-add-row">
           <select value={kind} aria-label="Track kind" onChange={(event) => setKind(event.target.value as AudioTrack["kind"])}>
             <option value="ambient">Ambience</option>
             <option value="music">Music</option>
             <option value="sfx">Effect</option>
           </select>
-          <button className="primary-button" type="submit" disabled={!name.trim() || !url.trim()}>
+          <button className="primary-button" type="submit" disabled={uploading || !name.trim() || !url.trim()}>
             <Plus size={15} /> Add
           </button>
         </div>
@@ -8484,7 +8719,7 @@ function MapSelectionStatus(props: { selectedCount: number; onClear(): void }) {
   );
 }
 
-function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; onStartCombat: ToolAction; onRevealFog: ToolAction; onHideFog: ToolAction; onRevealFogPolygon: ToolAction; onToggleFogBrush(mode: FogMode): void; onToggleAnnotationTool(kind: ActiveAnnotationTool): void; onDeleteLatestAnnotation: ToolAction; onUndoFog: ToolAction; onShowFogHistory: ToolAction; onSampleVisionPoint: ToolAction; onSaveFogPreset: ToolAction; onApplyFogPreset: ToolAction; onDeleteFogPreset: ToolAction; onAddWall: ToolAction; onAddTerrainWall: ToolAction; onAddLight: ToolAction; onActionError(error: unknown): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; activeFogBrushMode: FogMode | null; activeAnnotationTool: AnnotationTool; hasFogPresets: boolean; canUpdateScene: boolean; canAnnotate: boolean }) {
+function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; onStartCombat: ToolAction; onRevealFog: ToolAction; onHideFog: ToolAction; onRevealFogPolygon: ToolAction; onToggleFogBrush(mode: FogMode): void; onToggleAnnotationTool(kind: ActiveAnnotationTool): void; onDeleteLatestAnnotation: ToolAction; onUndoScene: ToolAction; onUndoFog: ToolAction; onShowFogHistory: ToolAction; onSampleVisionPoint: ToolAction; onSaveFogPreset: ToolAction; onApplyFogPreset: ToolAction; onDeleteFogPreset: ToolAction; onAddWall: ToolAction; onAddTerrainWall: ToolAction; onAddLight: ToolAction; onActionError(error: unknown): void; canCreateToken: boolean; canManageCombat: boolean; canRevealFog: boolean; activeFogBrushMode: FogMode | null; activeAnnotationTool: AnnotationTool; hasFogPresets: boolean; canUpdateScene: boolean; canAnnotate: boolean }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const advancedToolsRef = useRef<HTMLDetailsElement>(null);
   const closeAdvancedTools = () => setAdvancedOpen(false);
@@ -8551,6 +8786,11 @@ function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; o
       {props.canUpdateScene && (
         <button className="tool" title="Delete latest annotation" aria-label="Delete latest annotation" onClick={() => runToolAction(props.onDeleteLatestAnnotation)}>
           <X size={17} />
+        </button>
+      )}
+      {props.canUpdateScene && (
+        <button className="tool" title="Undo scene edit" aria-label="Undo scene edit" onClick={() => runToolAction(props.onUndoScene)}>
+          <RotateCcw size={17} />
         </button>
       )}
       {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && (
@@ -9333,6 +9573,8 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           </div>
           {actorItems.length === 0 ? (
             <div className="empty-state compact">No inventory, spells, talents, clues, or rituals on this actor.</div>
+          ) : filteredActorItems.length === 0 ? (
+            <div className="empty-state compact">No loadout items match the current search and filter.</div>
           ) : (
             filteredActorItems.map((item) => {
               const data = recordValue(item.data);
@@ -11710,6 +11952,7 @@ function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle
 }
 
 type ChatRailProps = {
+  campaignId: string;
   command: string;
   setCommand(value: string): void;
   replyTarget?: ChatMessage;
@@ -11787,7 +12030,7 @@ function ChatRail(props: ChatRailProps) {
           <div className="empty-state compact">No messages yet.</div>
         ) : (
           props.messages.map((message) => (
-            <ChatMessageItem key={message.id} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} rollConcealed={message.rollId ? props.concealedRollIds.has(message.rollId) : false} memberNames={memberNames} messageById={messageById} />
+            <ChatMessageItem key={message.id} campaignId={props.campaignId} message={message} roll={message.rollId ? rollById.get(message.rollId) : undefined} rollConcealed={message.rollId ? props.concealedRollIds.has(message.rollId) : false} memberNames={memberNames} messageById={messageById} />
           ))
         )}
       </div>
@@ -11796,7 +12039,7 @@ function ChatRail(props: ChatRailProps) {
   );
 }
 
-function ChatMessageItem(props: { message: ChatMessage; roll?: DiceRoll; rollConcealed?: boolean; memberNames: Map<string, string>; messageById: Map<string, ChatMessage> }) {
+function ChatMessageItem(props: { campaignId: string; message: ChatMessage; roll?: DiceRoll; rollConcealed?: boolean; memberNames: Map<string, string>; messageById: Map<string, ChatMessage> }) {
   const messageKind = props.roll || props.message.type === "roll" ? "roll" : props.message.type;
   const author = props.memberNames.get(props.message.userId) ?? props.message.userId;
   const replyMessage = props.message.replyToMessageId ? props.messageById.get(props.message.replyToMessageId) : undefined;
@@ -11816,7 +12059,7 @@ function ChatMessageItem(props: { message: ChatMessage; roll?: DiceRoll; rollCon
         </div>
       )}
       {props.roll ? (
-        <RollMessageCard message={props.message} roll={props.roll} concealed={props.rollConcealed === true} />
+        <RollMessageCard campaignId={props.campaignId} message={props.message} roll={props.roll} concealed={props.rollConcealed === true} />
       ) : messageKind === "emote" ? null : (
         <p className="chat-body">{props.message.body}</p>
       )}
@@ -11826,11 +12069,25 @@ function ChatMessageItem(props: { message: ChatMessage; roll?: DiceRoll; rollCon
   );
 }
 
-function RollMessageCard(props: { message: ChatMessage; roll: DiceRoll; concealed?: boolean }) {
+function RollMessageCard(props: { campaignId: string; message: ChatMessage; roll: DiceRoll; concealed?: boolean }) {
+  const [verification, setVerification] = useState<DiceRollVerification | undefined>();
+  const [verificationStatus, setVerificationStatus] = useState("");
   const label = props.roll.label || props.message.body || "Roll";
   const highlight = props.concealed ? null : rollHighlight(props.roll.terms);
   const range = props.concealed ? undefined : safeProbabilityRange(props.roll.formula);
   const className = ["chat-roll-card", highlight ? `chat-roll-card-${highlight}` : "", props.concealed ? "chat-roll-card-pending" : ""].filter(Boolean).join(" ");
+  const verify = async () => {
+    if (props.concealed) return;
+    setVerificationStatus("Checking");
+    try {
+      const result = await verifyDiceRoll(props.campaignId, props.roll.id);
+      setVerification(result);
+      setVerificationStatus(result.verified ? `Verified total ${formatNumber(result.expected.total)}` : `Failed: ${diceVerificationReasonLabel(result.reason)}`);
+    } catch (error) {
+      setVerification(undefined);
+      setVerificationStatus(`Failed: ${errorMessage(error)}`);
+    }
+  };
   return (
     <div className={className} aria-busy={props.concealed ? "true" : undefined}>
       <div className="chat-roll-main">
@@ -11859,8 +12116,37 @@ function RollMessageCard(props: { message: ChatMessage; roll: DiceRoll; conceale
           })}
         </div>
       )}
+      {!props.concealed && (
+        <div className="chat-roll-verification">
+          <button className="ghost-button small" type="button" onClick={() => verify().catch(console.error)}>
+            <Check size={13} /> Verify
+          </button>
+          {verificationStatus && (
+            <span className={verification?.verified ? "verification-status verified" : "verification-status"} role="status">
+              {verificationStatus}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function diceVerificationReasonLabel(reason: DiceRollVerification["reason"]): string {
+  switch (reason) {
+    case "fairness_unavailable":
+      return "fairness data missing";
+    case "unsupported_algorithm":
+      return "unsupported algorithm";
+    case "seed_hash_mismatch":
+      return "seed hash mismatch";
+    case "formula_unparseable":
+      return "formula could not be replayed";
+    case "result_mismatch":
+      return "result mismatch";
+    default:
+      return "verification unavailable";
+  }
 }
 
 function ChatComposer(props: { command: string; setCommand(value: string): void; replyTarget?: ChatMessage; onSubmitCommand(): Promise<void>; onClearReply(): void }) {

@@ -8813,6 +8813,29 @@ body {
   width: 100%;
 }
 
+.audio-upload-control {
+  display: grid;
+  gap: 5px;
+  padding: 7px 8px;
+  border: 1px dashed rgba(239, 228, 205, 0.22);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 12px;
+}
+
+.audio-upload-control span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #d9ceb7;
+}
+
+.audio-upload-control input[type="file"] {
+  max-width: 100%;
+  color: #f4efe2;
+  font-size: 11px;
+}
+
 .audio-soundboard-add-row {
   display: flex;
   gap: 6px;
@@ -9800,6 +9823,31 @@ a:focus-visible {
   border-color: var(--line);
   color: var(--muted);
   background: var(--surface-1);
+}
+
+.chat-roll-verification {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px 10px;
+}
+
+.chat-roll-verification .ghost-button.small {
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.verification-status {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.verification-status.verified {
+  color: var(--teal);
 }
 
 .chat-roll-card-crit .chat-roll-total {
