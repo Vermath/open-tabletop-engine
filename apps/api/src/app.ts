@@ -538,6 +538,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.addContentTypeParser(/^image\/(png|jpeg|webp|gif|svg\+xml)$/i, { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
     done(null, body);
   });
+  app.addContentTypeParser(/^audio\/[-+.\w]+$/i, { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
+    done(null, body);
+  });
   app.addContentTypeParser("application/octet-stream", { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
     done(null, body);
   });

@@ -9562,6 +9562,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
               <span>{formatNumber(actorItems.filter((item) => recordValue(item.data).quantity !== undefined).length)} consumables</span>
               <span>{formatNumber(spells.length + talents.length + rituals.length)} magic</span>
             </div>
+            {actorItems.length > 0 && filteredActorItems.length === 0 && <div className="empty-state compact">No loadout items match the current search and filter.</div>}
             <div className="button-row">
               <button className="ghost-button" type="button" disabled={!props.canUpdateActor || readyableGear.length === 0} onClick={() => Promise.all(readyableGear.map((item) => props.updateItemData(item, { equipped: true }))).catch(console.error)}>
                 <Check size={14} /> Ready carried gear
@@ -9574,7 +9575,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           {actorItems.length === 0 ? (
             <div className="empty-state compact">No inventory, spells, talents, clues, or rituals on this actor.</div>
           ) : filteredActorItems.length === 0 ? (
-            <div className="empty-state compact">No loadout items match the current search and filter.</div>
+            null
           ) : (
             filteredActorItems.map((item) => {
               const data = recordValue(item.data);

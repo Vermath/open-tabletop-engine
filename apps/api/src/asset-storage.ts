@@ -188,6 +188,22 @@ function extensionForMimeType(mimeType: string): string {
       return ".gif";
     case "image/svg+xml":
       return ".svg";
+    case "audio/mpeg":
+      return ".mp3";
+    case "audio/wav":
+    case "audio/wave":
+    case "audio/x-wav":
+      return ".wav";
+    case "audio/ogg":
+      return ".ogg";
+    case "audio/webm":
+      return ".webm";
+    case "audio/aac":
+      return ".aac";
+    case "audio/flac":
+      return ".flac";
+    case "audio/mp4":
+      return ".m4a";
     default:
       return ".bin";
   }

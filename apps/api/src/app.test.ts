@@ -28793,6 +28793,55 @@ registerCommand("/state", (input) => {
     rmSync(directory, { recursive: true, force: true });
   });
 
+  it("accepts uploaded audio assets for soundboard tracks", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "otte-audio-assets-"));
+    const store = new MemoryStateStore();
+    const app = await buildApp({
+      store,
+      uploadDir: directory
+    });
+    const bytes = Buffer.from("fake-wav-bytes");
+
+    const uploaded = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/assets/upload",
+      headers: {
+        ...authHeaders,
+        "content-type": "audio/wav",
+        "x-asset-name": encodeURIComponent("Vault Ambience.wav"),
+        "x-asset-folder": encodeURIComponent("audio"),
+        "x-asset-tags": encodeURIComponent("audio,ambient")
+      },
+      payload: bytes
+    });
+    expect(uploaded.statusCode).toBe(200);
+    expect(uploaded.json().asset).toMatchObject({
+      name: "Vault Ambience.wav",
+      mimeType: "audio/wav",
+      sizeBytes: bytes.length,
+      folder: "audio",
+      tags: ["audio", "ambient"],
+      storage: {
+        provider: "local",
+        key: expect.stringMatching(/^camp_demo\/asset_.+\.wav$/)
+      }
+    });
+
+    const assetId = uploaded.json().asset.id as string;
+    expect(existsSync(join(directory, "camp_demo", `${assetId}.wav`))).toBe(true);
+
+    const blob = await app.inject({
+      method: "GET",
+      url: `/api/v1/assets/${assetId}/blob?userId=usr_demo_gm`
+    });
+    expect(blob.statusCode).toBe(200);
+    expect(blob.headers["content-type"]).toContain("audio/wav");
+    expect(blob.body).toBe("fake-wav-bytes");
+
+    await app.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
   it("scans uploaded map assets before writing asset records or bytes", async () => {
     const directory = mkdtempSync(join(tmpdir(), "otte-asset-scan-"));
     const store = new MemoryStateStore();
