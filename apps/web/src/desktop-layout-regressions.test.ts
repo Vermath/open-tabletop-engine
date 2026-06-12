@@ -54,8 +54,7 @@ describe("desktop layout regressions", () => {
     expect(appSource).not.toContain('if (workspaceMode === "manage" && aiAgentOpen) setAiAgentOpen(false);');
     expect(stylesSource).toContain(".rail-manage .ai-agent-toggle {\n  display: inline-flex;");
     expect(appSource).not.toContain('label: "AI Studio"');
-    expect(appSource).toContain("AI Studio is deprecated. Use the AI Agent for AI-assisted table work.");
-    expect(stylesSource).toContain(".ai-agent-deprecation-note {");
+    expect(appSource).not.toContain("AI Studio is deprecated.");
     expect(appSource).toContain("const agentPanel = useMovablePanel(initialAiAgentPanelPosition, initialAiAgentPanelSize, { minWidth: 340, minHeight: 420 });");
     expect(appSource).toContain('<aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style}>');
     expect(appSource).toContain('<header className="ai-agent-header floating-panel-header" title="Drag panel" {...agentPanel.dragHandleProps}>');

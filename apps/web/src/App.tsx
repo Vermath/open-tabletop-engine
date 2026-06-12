@@ -1,7 +1,7 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
 import { toPng } from "html-to-image";
-import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Activity, Bot, Boxes, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
@@ -638,12 +638,52 @@ function initialAiAgentPanelSize(): FloatingPanelSize {
   };
 }
 
+/** Width reserved for the inspector rail so floating utilities land on the stage, not over chat. */
+function floatingPanelInspectorAllowance(): number {
+  return window.innerWidth >= 1180 ? 392 : 0;
+}
+
 function initialAiAgentPanelPosition(): FloatingPanelPosition {
   const { width, height } = initialAiAgentPanelSize();
   return {
-    x: clampFloatingPanel(window.innerWidth - width - 20, window.innerWidth - 48),
+    x: clampFloatingPanel(window.innerWidth - floatingPanelInspectorAllowance() - width - 16, window.innerWidth - 48),
     y: clampFloatingPanel(window.innerHeight - height - 20, window.innerHeight - 48)
   };
+}
+
+function initialSoundboardPanelSize(): FloatingPanelSize {
+  return {
+    width: Math.min(300, Math.max(260, window.innerWidth - 32)),
+    height: Math.min(440, Math.max(320, window.innerHeight - 96))
+  };
+}
+
+function initialSoundboardPanelPosition(): FloatingPanelPosition {
+  const { width } = initialSoundboardPanelSize();
+  return {
+    x: clampFloatingPanel(window.innerWidth - floatingPanelInspectorAllowance() - width - 16, window.innerWidth - 48),
+    y: clampFloatingPanel(96, window.innerHeight - 48)
+  };
+}
+
+const mapDockOpenStorageKey = "otte:mapDockOpen";
+const quickCreateOpenStorageKey = "otte:quickCreateOpen";
+
+function initialStoredPanelFlag(key: string, fallback: boolean): boolean {
+  try {
+    const stored = window.localStorage.getItem(key);
+    return stored === null ? fallback : stored === "true";
+  } catch {
+    return fallback;
+  }
+}
+
+function persistStoredPanelFlag(key: string, value: boolean): void {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    // Storage may be unavailable in private sessions; the preference is non-essential.
+  }
 }
 
 function useMovablePanel(initialPosition: FloatingPanelPosition | (() => FloatingPanelPosition), initialSize: FloatingPanelSize | (() => FloatingPanelSize) = { width: 320, height: 280 }, resizeOptions: FloatingPanelResizeOptions = {}) {
@@ -941,6 +981,22 @@ export function App() {
   const [aiGenerationJobs, setAiGenerationJobs] = useState<AiGenerationJob[]>([]);
   const [aiAgentOpen, setAiAgentOpen] = useState(false);
   const [audioSoundboardOpen, setAudioSoundboardOpen] = useState(false);
+  const [mapDockOpen, setMapDockOpen] = useState(() => initialStoredPanelFlag(mapDockOpenStorageKey, false));
+  const [quickCreateOpen, setQuickCreateOpen] = useState(() => initialStoredPanelFlag(quickCreateOpenStorageKey, false));
+  const toggleMapDock = () => {
+    setMapDockOpen((open) => {
+      const next = !open;
+      persistStoredPanelFlag(mapDockOpenStorageKey, next);
+      return next;
+    });
+  };
+  const toggleQuickCreate = () => {
+    setQuickCreateOpen((open) => {
+      const next = !open;
+      persistStoredPanelFlag(quickCreateOpenStorageKey, next);
+      return next;
+    });
+  };
   const [audioMasterVolume, setAudioMasterVolume] = useState(0.8);
   const [audioMuted, setAudioMuted] = useState(false);
   const [aiAgentPrompt, setAiAgentPrompt] = useState("");
@@ -5058,10 +5114,12 @@ export function App() {
                 <span>Password</span>
                 <input aria-label="Login password" type="password" autoComplete="current-password" required value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} />
               </label>
-              <label>
-                <span>MFA Code</span>
-                <input aria-label="Login MFA code" inputMode="numeric" autoComplete="one-time-code" value={loginMfaCode} placeholder="Optional" onChange={(event) => setLoginMfaCode(event.target.value)} />
-              </label>
+              {(Boolean(loginMfaCode) || /mfa/i.test(authStatus)) && (
+                <label>
+                  <span>MFA Code</span>
+                  <input aria-label="Login MFA code" inputMode="numeric" autoComplete="one-time-code" value={loginMfaCode} placeholder="6-digit code" onChange={(event) => setLoginMfaCode(event.target.value)} />
+                </label>
+              )}
               <button className="primary-button wide" type="submit" disabled={!loginEmail.trim() || !loginPassword}>
                 <KeyRound size={16} /> Login
               </button>
@@ -5092,10 +5150,11 @@ export function App() {
             </form>
           )}
           <div className="auth-actions">
-            <button className="primary-button wide" type="button" aria-label={["Demo", "GM"].join(" ")} onClick={() => startDemoGmSession().catch((error) => setAuthStatus(error instanceof Error ? error.message : String(error)))}>
+            <div className="auth-actions-heading">Or try it without an account</div>
+            <button className="ghost-button wide" type="button" aria-label={["Demo", "GM"].join(" ")} onClick={() => startDemoGmSession().catch((error) => setAuthStatus(error instanceof Error ? error.message : String(error)))}>
               <Users size={16} /> Seeded Demo
             </button>
-            <button className="primary-button wide" type="button" onClick={startBlankCanvasDemo}>
+            <button className="ghost-button wide" type="button" onClick={startBlankCanvasDemo}>
               <MapIcon size={16} /> Try Blank Canvas
             </button>
             {ssoEnabled && (
@@ -5221,7 +5280,8 @@ export function App() {
     }
     if (commandId === "action:theme") setUiTheme((current) => nextUiTheme(current));
   };
-  const workspaceEyebrow = workspaceMode === "ai" ? "AI Studio" : workspaceMode === "prep" ? "Prep" : workspaceMode === "manage" ? manageWorkspaceEyebrow : (selectedCampaign?.defaultSystemId ?? "No system");
+  const campaignSystemName = snapshot.systems.find((system) => system.id === selectedCampaign?.defaultSystemId)?.name ?? selectedCampaign?.defaultSystemId ?? "No system";
+  const workspaceEyebrow = workspaceMode === "ai" ? "AI Studio" : workspaceMode === "prep" ? "Prep" : workspaceMode === "manage" ? manageWorkspaceEyebrow : campaignSystemName;
   const workspaceHeading = workspaceMode === "ai" ? "Build, review, and apply generated table content" : workspaceMode === "prep" ? "Prep scenes, assets, journals, and imports" : workspaceMode === "manage" ? manageWorkspaceHeading : (selectedCampaign?.name ?? "Create a campaign");
   const showSceneTabs = workspaceMode !== "manage" || activeManageCategory === "scenes";
   const showScenePrepControls = workspaceMode === "prep";
@@ -5343,6 +5403,7 @@ export function App() {
             </button>
           ))}
         </div>
+        <div className="rail-utilities-heading" aria-hidden="true">Utilities</div>
         <button className={aiAgentOpen ? "ai-agent-toggle active" : "ai-agent-toggle"} type="button" onClick={() => setAiAgentOpen((open) => !open)} aria-label="AI Agent" title="AI Agent" aria-expanded={aiAgentOpen}>
           <Bot size={16} />
           <span className="ai-agent-toggle-label ai-agent-toggle-label-full">AI Agent</span>
@@ -5529,8 +5590,10 @@ export function App() {
             )}
             {activeManageCategory === "campaign" && (
               <div className="manage-card-grid">
+        <details className="account-box create-drawer">
+          <summary><Plus size={15} /> New campaign</summary>
         <form
-          className="account-box"
+          className="create-drawer-form"
           onSubmit={(event) => {
             event.preventDefault();
             createCampaignFromSetup().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
@@ -5608,6 +5671,7 @@ export function App() {
             <Plus size={16} /> Create Campaign Setup
           </button>
         </form>
+        </details>
         {selectedCampaign && hasPermission("campaign.update") && (
           <form
             className="account-box"
@@ -5700,8 +5764,10 @@ export function App() {
             </div>
           </form>
         )}
+        <details className="account-box create-drawer">
+          <summary><UserPlus size={15} /> Join with an invite token</summary>
         <form
-          className="account-box"
+          className="create-drawer-form"
           onSubmit={(event) => {
             event.preventDefault();
             acceptInvite().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
@@ -5716,6 +5782,7 @@ export function App() {
             <ChevronRight size={16} /> Join
           </button>
         </form>
+        </details>
               </div>
             )}
             {activeManageCategory === "scenes" && (
@@ -5762,12 +5829,11 @@ export function App() {
             </div>
           )}
         </div>
-        <button className="ghost-button" onClick={createScene} disabled={!hasPermission("scene.create")} title={hasPermission("scene.create") ? "Create scene" : "Requires scene.create"}>
-          <Plus size={16} /> Scene
-        </button>
         {hasPermission("scene.create") && (
+          <details className="account-box create-drawer">
+            <summary><Plus size={15} /> New scene</summary>
           <form
-            className="account-box"
+            className="create-drawer-form"
             onSubmit={(event) => {
               event.preventDefault();
               createScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
@@ -5828,6 +5894,7 @@ export function App() {
               <Plus size={16} /> Add Scene
             </button>
           </form>
+          </details>
         )}
         {selectedScene && hasPermission("scene.update") && (
           <form
@@ -6319,9 +6386,14 @@ export function App() {
             })}
             {visibleScenes.length === 0 && <span className="empty-state compact">No scenes match filters.</span>}
           </div>}
+          {showQuickCreate && !quickCreateOpen && (
+            <button className="ghost-button quick-create-toggle" type="button" aria-expanded={false} onClick={toggleQuickCreate}>
+              <Plus size={15} /> Token <ChevronDown size={14} aria-hidden="true" />
+            </button>
+          )}
           <form
             className="quick-create-form"
-            hidden={!showQuickCreate}
+            hidden={!showQuickCreate || !quickCreateOpen}
             onSubmit={(event) => {
               event.preventDefault();
               createToken().catch((error) => setStatus(error instanceof Error ? error.message : String(error)));
@@ -6350,6 +6422,9 @@ export function App() {
             <button className="primary-button" type="submit" disabled={!hasPermission("token.create")} title={hasPermission("token.create") ? "Create token" : "Requires token.create"}>
               <Plus size={16} /> Token
             </button>
+            <button className="icon-button quick-create-close" type="button" aria-label="Collapse token creation" title="Collapse token creation" onClick={toggleQuickCreate}>
+              <X size={15} />
+            </button>
           </form>
         </header>
 
@@ -6360,10 +6435,15 @@ export function App() {
             <div className="map-play-surface">
               {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={blankCanvasDemoOpen ? async () => undefined : () => refresh().then(() => undefined)} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
             </div>
-            <div className="map-layer-dock" aria-label="Map controls and layers">
+            <div className="map-layer-dock" aria-label="Map controls and layers" data-collapsed={mapDockOpen ? undefined : "true"}>
               <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
               {selectedTokens.length > 1 && <MapSelectionStatus selectedCount={selectedTokens.length} onClear={clearTokenSelection} />}
-              <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />
+              <button className="ghost-button map-layer-dock-toggle" type="button" aria-expanded={mapDockOpen} aria-label={mapDockOpen ? "Collapse layer panel" : "Expand layer panel"} onClick={toggleMapDock}>
+                <Layers size={15} />
+                <span>Layers</span>
+                {mapDockOpen ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+              </button>
+              {mapDockOpen && <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />}
             </div>
             {hasPermission("token.reveal") && (fogBrushMode || toolReport) && (
               <section className="table-tool-panel movable-panel" aria-label="Fog and vision tools" style={fogToolPanel.style}>
@@ -6619,9 +6699,9 @@ export function App() {
               {inspectorTabs.includes("chat") && <TabButton active={tab === "chat"} icon={<MessageSquare size={15} />} label="Chat" onClick={() => setTab("chat")} />}
               {inspectorTabs.includes("combat") && <TabButton active={tab === "combat"} icon={<Swords size={15} />} label="Combat" onClick={() => setTab("combat")} />}
               {inspectorTabs.includes("content") && <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Content" onClick={() => setTab("content")} />}
-              {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="SDK" onClick={() => setTab("plugins")} />}
+              {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" onClick={() => setTab("plugins")} />}
             </div>
-            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
@@ -6762,6 +6842,7 @@ function AudioSoundboard(props: {
   const [kind, setKind] = useState<AudioTrack["kind"]>("ambient");
   const [uploading, setUploading] = useState(false);
   const playingCount = activeAudioCount(props.tracks);
+  const soundboardPanel = useMovablePanel(initialSoundboardPanelPosition, initialSoundboardPanelSize, { minWidth: 260, minHeight: 320 });
 
   const submit = async () => {
     if (!name.trim() || !url.trim()) return;
@@ -6783,8 +6864,9 @@ function AudioSoundboard(props: {
   };
 
   return (
-    <aside className="audio-soundboard movable-panel" aria-label="Soundboard">
-      <header className="audio-soundboard-header">
+    <aside className="audio-soundboard movable-panel" aria-label="Soundboard" style={soundboardPanel.style}>
+      <header className="audio-soundboard-header floating-panel-header" title="Drag panel" {...soundboardPanel.dragHandleProps}>
+        <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
         <div className="section-title">
           <Music size={16} /> Soundboard
         </div>
@@ -6852,6 +6934,9 @@ function AudioSoundboard(props: {
           </button>
         </div>
       </form>
+      <button className="floating-panel-resize-handle" type="button" aria-label="Resize soundboard panel" title="Resize panel" {...soundboardPanel.resizeHandleProps}>
+        <Grip size={13} aria-hidden="true" />
+      </button>
     </aside>
   );
 }
@@ -7040,7 +7125,6 @@ function AiAgentPanel(props: {
           <X size={17} />
         </button>
       </header>
-      <p className="ai-agent-deprecation-note">AI Studio is deprecated. Use the AI Agent for AI-assisted table work.</p>
       <div className="ai-agent-body">
         <div className="ai-agent-utility-bar ai-agent-controls">
           <label>
@@ -8752,11 +8836,12 @@ function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; o
         <Hand size={17} />
       </button>
       {props.canCreateToken && (
-        <button className="tool" title="Token" aria-label="Add token" tabIndex={1} autoFocus onClick={() => runToolAction(props.onCreateToken)}>
+        <button className="tool" title="Token" aria-label="Add token" onClick={() => runToolAction(props.onCreateToken)}>
           <Plus size={17} />
         </button>
       )}
-      <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
+      <span className="tool-divider" aria-hidden="true" />
+      <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler - measure distance" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
         <Ruler size={17} />
       </button>
       <button className={`tool ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle" aria-label="Measure circle" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
@@ -8765,9 +8850,10 @@ function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; o
       <button className={`tool ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone" aria-label="Measure cone" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
         <Triangle size={17} />
       </button>
-      <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
+      <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping - point everyone here" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
         <MapPin size={17} />
       </button>
+      <span className="tool-divider" aria-hidden="true" />
       {props.canRevealFog && (
         <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={() => runToolAction(props.onRevealFog)}>
           <Eye size={17} />
@@ -8793,12 +8879,14 @@ function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; o
           <RotateCcw size={17} />
         </button>
       )}
+      <span className="tool-divider" aria-hidden="true" />
       {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && (
         <details ref={advancedToolsRef} className="tool-more" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
           <summary className="tool" title="Advanced tools" aria-label="Advanced tools">
             <Boxes size={17} />
           </summary>
           <div className="tool-more-panel" aria-label="Advanced table tools">
+            {props.canManageCombat && <div className="tool-more-heading">Encounter</div>}
             {props.canManageCombat && (
               <button className="ghost-button" type="button" onClick={() => runToolAction(props.onStartCombat, { closeAdvanced: true })}>
                 <Swords size={15} /> Combat
@@ -8806,6 +8894,7 @@ function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; o
             )}
             {props.canRevealFog && (
               <>
+                <div className="tool-more-heading">Fog and vision</div>
                 <button className="ghost-button" type="button" onClick={() => runToolAction(props.onHideFog, { closeAdvanced: true })}>
                   <Eraser size={15} /> Hide fog
                 </button>
@@ -8840,6 +8929,7 @@ function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; o
             )}
             {props.canUpdateScene && (
               <>
+                <div className="tool-more-heading">Scene building</div>
                 <button className="ghost-button" type="button" onClick={() => runToolAction(props.onAddWall, { closeAdvanced: true })}>
                   <BrickWall size={15} /> Wall
                 </button>
@@ -9115,7 +9205,7 @@ function slugId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 }
 
-function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
+function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
   const [sheetView, setSheetView] = useState<"stats" | "loadout" | "actions" | "compendium">("stats");
   const [assignItemId, setAssignItemId] = useState("");
   const [itemDropActive, setItemDropActive] = useState(false);
@@ -9311,8 +9401,8 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           <div className="section-title">Selected Actor</div>
           <h2>{props.actor.name}</h2>
           <div className="admin-meta">
-            <span>{props.actor.systemId}</span>
-            <span>{props.token ? `Token ${props.token.name}` : "No linked token"}</span>
+            <span title="Rules system">{props.systemLabel ?? props.actor.systemId}</span>
+            <span title={props.token ? "Linked token" : undefined}>{props.token ? props.token.name : "No linked token"}</span>
             {combatState.length > 0 && <span>{combatState[0]}</span>}
           </div>
         </div>
@@ -11888,20 +11978,18 @@ function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle
         <div>
           <div className="section-title">Journal</div>
           <h2>Campaign Notes</h2>
-          <p className="panel-subtitle">{formatNumber(props.journals.length)} entries</p>
         </div>
-        <button className="icon-button" title="Create journal entry" aria-label="Create journal entry" onClick={props.onCreate} disabled={!props.canCreate}>
-          <Plus size={16} />
-        </button>
       </header>
-      <section className="metric-grid panel-summary-grid" aria-label="Journal summary">
-        <MetricTile label="Public" value={formatNumber(publicCount)} />
-        <MetricTile label="GM Only" value={formatNumber(gmOnlyCount)} />
-        <MetricTile label="Tagged" value={formatNumber(taggedCount)} />
-        <MetricTile label="Drafting" value={props.title.trim() ? "Active" : "Idle"} />
-      </section>
+      <p className="panel-status-line" aria-label="Journal summary">
+        <span>{formatNumber(props.journals.length)} entries</span>
+        <span>{formatNumber(publicCount)} public</span>
+        <span>{formatNumber(gmOnlyCount)} GM only</span>
+        <span>{formatNumber(taggedCount)} tagged</span>
+      </p>
+      <details className="create-drawer">
+        <summary><Plus size={15} /> New entry</summary>
       <form
-        className="operator-section content-import-form"
+        className="operator-section content-import-form create-drawer-form"
         onSubmit={(event) => {
           event.preventDefault();
           props.onCreate();
@@ -11932,6 +12020,7 @@ function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle
           <Plus size={16} /> Create Entry
         </button>
       </form>
+      </details>
       <section className="journal-list" aria-label="Journal entries">
         {props.journals.length === 0 ? (
           <div className="empty-state compact">No journal entries yet.</div>
@@ -12073,6 +12162,7 @@ function ChatMessageItem(props: { campaignId: string; message: ChatMessage; roll
 function RollMessageCard(props: { campaignId: string; message: ChatMessage; roll: DiceRoll; concealed?: boolean }) {
   const [verification, setVerification] = useState<DiceRollVerification | undefined>();
   const [verificationStatus, setVerificationStatus] = useState("");
+  const [detailOpen, setDetailOpen] = useState(false);
   const label = props.roll.label || props.message.body || "Roll";
   const highlight = props.concealed ? null : rollHighlight(props.roll.terms);
   const range = props.concealed ? undefined : safeProbabilityRange(props.roll.formula);
@@ -12091,42 +12181,50 @@ function RollMessageCard(props: { campaignId: string; message: ChatMessage; roll
   };
   return (
     <div className={className} aria-busy={props.concealed ? "true" : undefined}>
-      <div className="chat-roll-main">
-        <span>{props.roll.visibility === "gm_only" ? "GM Roll" : "Roll"}</span>
-        <strong>{label}</strong>
-        <p>{props.roll.formula}{range ? ` (${formatNumber(range.min)}-${formatNumber(range.max)})` : ""}</p>
+      <button
+        className="chat-roll-summary"
+        type="button"
+        aria-expanded={detailOpen}
+        aria-label={props.concealed ? "Roll result pending" : `${label}: rolled ${props.roll.formula} for ${props.roll.total}. Toggle breakdown.`}
+        disabled={props.concealed}
+        onClick={() => setDetailOpen((open) => !open)}
+      >
+        <span className="chat-roll-kind">{props.roll.visibility === "gm_only" ? "GM Roll" : "Roll"}</span>
+        <strong className="chat-roll-label">{label}</strong>
+        <code className="chat-roll-formula">{props.roll.formula}{range ? ` (${formatNumber(range.min)}-${formatNumber(range.max)})` : ""}</code>
         {highlight && (
           <em className={`chat-roll-flag chat-roll-flag-${highlight}`} aria-label={highlight === "crit" ? "Natural 20" : "Natural 1"}>
-            {highlight === "crit" ? "Natural 20 - Critical!" : "Natural 1 - Fumble"}
+            {highlight === "crit" ? "Nat 20" : "Nat 1"}
           </em>
         )}
-      </div>
-      <strong className="chat-roll-total" aria-label={props.concealed ? "Roll result pending" : `Roll total ${props.roll.total}`}>{props.concealed ? "..." : formatNumber(props.roll.total)}</strong>
-      {!props.concealed && (
-        <div className="chat-roll-dice" aria-label="Dice term breakdown">
-          {props.roll.terms.map((term, index) => {
-            const termTotal = rollTermTotal(term);
-            const termHighlight = rollTermHighlight(term);
-            return (
-              <span className={termHighlight ? `chat-roll-die chat-roll-die-${termHighlight}` : "chat-roll-die"} key={`${props.roll.id}-${index}`}>
-                <strong>{termTotal === undefined ? formatRollTermName(term, index) : formatNumber(termTotal)}</strong>
-                <span>{formatRollTermName(term, index)}</span>
-                <small>{formatRollTermDetail(term)}</small>
+        <strong className="chat-roll-total" aria-hidden="true">{props.concealed ? "..." : formatNumber(props.roll.total)}</strong>
+        {!props.concealed && <ChevronDown className={detailOpen ? "chat-roll-chevron open" : "chat-roll-chevron"} size={14} aria-hidden="true" />}
+      </button>
+      {detailOpen && !props.concealed && (
+        <div className="chat-roll-detail">
+          <div className="chat-roll-dice" aria-label="Dice term breakdown">
+            {props.roll.terms.map((term, index) => {
+              const termTotal = rollTermTotal(term);
+              const termHighlight = rollTermHighlight(term);
+              return (
+                <span className={termHighlight ? `chat-roll-die chat-roll-die-${termHighlight}` : "chat-roll-die"} key={`${props.roll.id}-${index}`}>
+                  <strong>{termTotal === undefined ? formatRollTermName(term, index) : formatNumber(termTotal)}</strong>
+                  <span>{formatRollTermName(term, index)}</span>
+                  <small>{formatRollTermDetail(term)}</small>
+                </span>
+              );
+            })}
+          </div>
+          <div className="chat-roll-verification">
+            <button className="ghost-button small" type="button" onClick={() => verify().catch(console.error)}>
+              <Check size={13} /> Verify fairness
+            </button>
+            {verificationStatus && (
+              <span className={verification?.verified ? "verification-status verified" : "verification-status"} role="status">
+                {verificationStatus}
               </span>
-            );
-          })}
-        </div>
-      )}
-      {!props.concealed && (
-        <div className="chat-roll-verification">
-          <button className="ghost-button small" type="button" onClick={() => verify().catch(console.error)}>
-            <Check size={13} /> Verify
-          </button>
-          {verificationStatus && (
-            <span className={verification?.verified ? "verification-status verified" : "verification-status"} role="status">
-              {verificationStatus}
-            </span>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -12522,7 +12620,6 @@ function ContentImportPanel(props: {
   const providerEntries = Object.entries(props.assetStorage?.providerCounts ?? {}).sort(([left], [right]) => left.localeCompare(right));
   const delivery = props.assetStorage?.delivery;
   const visibleImageAssetCount = filteredAssets.filter((asset) => asset.mimeType.startsWith("image/") && asset.lifecycle?.status !== "deleted").length;
-  const visibleActiveAssetCount = filteredAssets.filter((asset) => asset.lifecycle?.status !== "deleted").length;
   const storageSummary = quotaBytes === undefined ? `${formatStorageBytes(storageUsedBytes)} stored` : `${formatStorageBytes(storageUsedBytes)} / ${formatStorageBytes(quotaBytes)}`;
   const deliveryStatusLabel = delivery?.actionRequired ? "Needs attention" : delivery ? "Ready" : "Unknown";
   const hasRecoverableAssets = recoverableAssets.length > 0;
@@ -12584,33 +12681,13 @@ function ContentImportPanel(props: {
             </button>
           </div>
         </div>
-        <div className="asset-command-strip" aria-label="Asset library summary">
-          <div className="asset-command-stat">
-            <span>Total</span>
-            <strong>{formatNumber(props.assets.length)}</strong>
-          </div>
-          <div className="asset-command-stat">
-            <span>Active</span>
-            <strong>{formatNumber(activeAssetCount)}</strong>
-          </div>
-          <div className="asset-command-stat">
-            <span>Shown</span>
-            <strong>{formatNumber(filteredAssets.length)}</strong>
-            <small>{formatNumber(visibleActiveAssetCount)} active</small>
-          </div>
-          <div className="asset-command-stat">
-            <span>Images</span>
-            <strong>{formatNumber(visibleImageAssetCount)}</strong>
-          </div>
-          <div className="asset-command-stat wide">
-            <span>Storage</span>
-            <strong>{storageSummary}</strong>
-          </div>
-          <div className={`asset-command-stat ${delivery?.actionRequired ? "attention" : ""}`}>
-            <span>Delivery</span>
-            <strong>{deliveryStatusLabel}</strong>
-          </div>
-        </div>
+        <p className="panel-status-line" aria-label="Asset library summary">
+          <span>{formatNumber(filteredAssets.length)} of {formatNumber(props.assets.length)} shown</span>
+          <span>{formatNumber(activeAssetCount)} active</span>
+          <span>{formatNumber(visibleImageAssetCount)} images</span>
+          <span>{storageSummary}</span>
+          {delivery?.actionRequired && <span className="attention">Delivery needs attention</span>}
+        </p>
         <div className="asset-quota asset-quota-compact" aria-label="Asset quota usage">
           <div className="asset-quota-track">
             <div className={`asset-quota-fill ${quotaRatio >= 0.9 ? "danger" : quotaRatio >= 0.75 ? "warning" : ""}`} style={{ width: `${Math.round(quotaRatio * 100)}%` }} />
@@ -17350,17 +17427,14 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
       <button className="ghost-button wide" type="button" onClick={props.onSyncPluginRegistries} disabled={!props.canInstall}>
         <RefreshCw size={16} /> Sync marketplace registries
       </button>
-      <section className="operator-section" aria-label="Plugin marketplace risk review">
-        <div className="operator-heading">
-          <div className="section-title">Marketplace Risk Review</div>
-          <strong>{formatNumber(marketplaceRiskSamples.length)} samples</strong>
-        </div>
-        <div className="metric-grid">
-          <MetricTile label="Trust blocked" value={formatNumber(trustBlockedPlugins.length)} />
-          <MetricTile label="Review blocked" value={formatNumber(reviewBlockedPlugins.length)} />
-          <MetricTile label="Core blocked" value={formatNumber(incompatiblePlugins.length)} />
-          <MetricTile label="Signature warnings" value={formatNumber(signatureWarningPlugins.length)} />
-        </div>
+      <details className="create-drawer diagnostics-drawer" aria-label="Plugin marketplace risk review">
+        <summary><Shield size={15} /> Marketplace risk review <strong>{formatNumber(marketplaceRiskSamples.length)} flagged</strong></summary>
+        <p className="panel-status-line">
+          <span>{formatNumber(trustBlockedPlugins.length)} trust blocked</span>
+          <span>{formatNumber(reviewBlockedPlugins.length)} review blocked</span>
+          <span>{formatNumber(incompatiblePlugins.length)} core blocked</span>
+          <span>{formatNumber(signatureWarningPlugins.length)} signature warnings</span>
+        </p>
         {marketplaceRiskSamples.length === 0 ? (
           <div className="empty-state compact">No marketplace trust, review, core, or signature warnings in the current catalog.</div>
         ) : (
@@ -17379,18 +17453,14 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
             ))}
           </div>
         )}
-      </section>
-      <section className="operator-section" aria-label="Plugin registry history">
-        <div className="operator-heading">
-          <div className="section-title">Registry History</div>
-          <strong>{formatNumber(registryHistory.length)} sources</strong>
-        </div>
-        <div className="metric-grid">
-          <MetricTile label="Registry sources" value={formatNumber(registryHistory.length)} />
-          <MetricTile label="Registry packages" value={formatNumber(registryPlugins.length)} />
-          <MetricTile label="Installed registry" value={formatNumber(registryPlugins.filter((plugin) => plugin.installed).length)} />
-          <MetricTile label="Registry warnings" value={formatNumber(registryHistory.reduce((total, registry) => total + registry.warningCount, 0))} />
-        </div>
+      </details>
+      <details className="create-drawer diagnostics-drawer" aria-label="Plugin registry history">
+        <summary><RefreshCw size={15} /> Registry history <strong>{formatNumber(registryHistory.length)} sources</strong></summary>
+        <p className="panel-status-line">
+          <span>{formatNumber(registryPlugins.length)} registry packages</span>
+          <span>{formatNumber(registryPlugins.filter((plugin) => plugin.installed).length)} installed</span>
+          <span>{formatNumber(registryHistory.reduce((total, registry) => total + registry.warningCount, 0))} warnings</span>
+        </p>
         {registryHistory.length === 0 ? (
           <div className="empty-state compact">No registry package history is present in the current catalog; last sync is unknown.</div>
         ) : (
@@ -17403,7 +17473,7 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
             ))}
           </div>
         )}
-      </section>
+      </details>
       <section className="operator-section content-import-form" aria-label="Plugin marketplace filters">
         <div className="admin-form-grid">
           <label>

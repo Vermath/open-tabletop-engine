@@ -1,6 +1,6 @@
 :root {
   color-scheme: dark;
-  font-family: "Aptos", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-sans, "Aptos", "Segoe UI", system-ui, sans-serif);
   --ink: #171512;
   --panel: #242018;
   --panel-2: #302a20;
@@ -61,7 +61,7 @@ button {
 }
 
 .brand {
-  font-family: Georgia, serif;
+  font-family: var(--font-display, Georgia, serif);
   font-size: 28px;
   line-height: 1;
 }
@@ -325,7 +325,7 @@ a[href]:focus-visible,
 
 .reset-panel h1 {
   margin: 4px 0 0;
-  font-family: Georgia, serif;
+  font-family: var(--font-display, Georgia, serif);
   font-size: 30px;
   line-height: 1;
 }
@@ -465,7 +465,7 @@ a[href]:focus-visible,
 
 .topbar h1 {
   margin: 2px 0 0;
-  font-family: Georgia, serif;
+  font-family: var(--font-display, Georgia, serif);
   font-size: 30px;
   line-height: 1.05;
 }
@@ -1480,7 +1480,7 @@ a[href]:focus-visible,
 }
 
 .panel-stack h2 {
-  font-family: Georgia, serif;
+  font-family: var(--font-display, Georgia, serif);
   font-size: 26px;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -1679,7 +1679,7 @@ a[href]:focus-visible,
 
 .ai-command-header h2 {
   margin: 2px 0 0;
-  font-family: "Aptos Display", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-sans, "Aptos Display", "Segoe UI", system-ui, sans-serif);
   font-size: 20px;
   line-height: 1.12;
 }
@@ -3799,7 +3799,7 @@ body {
 }
 
 .brand {
-  font-family: "Aptos Display", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-sans, "Aptos Display", "Segoe UI", system-ui, sans-serif);
   font-size: 22px;
   font-weight: 800;
   letter-spacing: 0;
@@ -4328,7 +4328,7 @@ body {
 
 .topbar h1 {
   margin: 1px 0 0;
-  font-family: "Aptos Display", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-sans, "Aptos Display", "Segoe UI", system-ui, sans-serif);
   font-size: 22px;
   font-weight: 750;
   line-height: 1.15;
@@ -4719,7 +4719,7 @@ body {
 }
 
 .panel-stack h2 {
-  font-family: "Aptos Display", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-sans, "Aptos Display", "Segoe UI", system-ui, sans-serif);
   font-size: 22px;
 }
 
@@ -5178,7 +5178,7 @@ body {
   min-width: 0;
   margin: 0;
   color: rgba(218, 228, 238, 0.72);
-  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -5274,7 +5274,7 @@ body {
 .chat-command-reference {
   margin: 0;
   color: rgba(191, 207, 222, 0.62);
-  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -5531,7 +5531,7 @@ body {
 }
 
 .brand {
-  font-family: "Aptos Display", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-sans, "Aptos Display", "Segoe UI", system-ui, sans-serif);
   font-size: 22px;
   font-weight: 800;
   letter-spacing: 0;
@@ -5938,7 +5938,7 @@ body {
 
 .topbar h1 {
   margin: 1px 0 0;
-  font-family: "Aptos Display", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-sans, "Aptos Display", "Segoe UI", system-ui, sans-serif);
   font-size: 22px;
   font-weight: 750;
   line-height: 1.15;
@@ -6396,7 +6396,7 @@ body {
 }
 
 .panel-stack h2 {
-  font-family: "Aptos Display", "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-sans, "Aptos Display", "Segoe UI", system-ui, sans-serif);
   font-size: 22px;
 }
 
@@ -7992,17 +7992,6 @@ body {
   white-space: nowrap;
 }
 
-.ai-agent-deprecation-note {
-  margin: 0;
-  padding: 7px 9px;
-  border: 1px solid rgba(148, 160, 173, 0.16);
-  border-radius: 7px;
-  color: rgba(203, 213, 225, 0.74);
-  background: rgba(15, 23, 32, 0.54);
-  font-size: 0.72rem;
-  line-height: 1.25;
-}
-
 .ai-agent-body {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
@@ -9178,6 +9167,7 @@ body {
   --radius-l: 14px;
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
   --font-mono: "Cascadia Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --font-sans: "Aptos", "Segoe UI", system-ui, sans-serif;
   --halo-a: rgba(96, 78, 190, 0.1);
   --halo-b: rgba(201, 164, 95, 0.05);
 }
@@ -10244,4 +10234,445 @@ a:focus-visible {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+/* ============================================================================
+   Stage-first layout layer
+   The battle map is the hero surface: the layer dock collapses to a slim
+   control strip, token quick-create folds behind a toggle, and floating
+   utilities (Soundboard, AI Agent) land on the stage instead of covering the
+   chat composer. Rides the cascade over earlier generations on purpose.
+   ========================================================================= */
+
+@media (min-width: 1041px) {
+  .table-area {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .map-layer-dock {
+    width: 220px;
+  }
+
+  .map-layer-dock[data-collapsed="true"] {
+    width: max-content;
+    min-width: 0;
+  }
+}
+
+.map-layer-dock {
+  grid-template-rows: auto auto auto auto;
+}
+
+.map-layer-dock .map-layer-dock-toggle {
+  grid-row: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  min-height: 34px;
+  border-color: rgba(148, 160, 173, 0.22);
+  border-radius: 10px;
+  background: rgba(9, 14, 20, 0.96);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.3);
+}
+
+.map-layer-dock .map-layer-dock-toggle span {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.map-layer-dock .map-layer-stack {
+  grid-row: 4;
+}
+
+.rail-play + .workspace .quick-create-toggle,
+.rail-prep + .workspace .quick-create-toggle {
+  grid-area: create;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+}
+
+.quick-create-form .quick-create-close {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  justify-self: end;
+}
+
+.quick-create-form {
+  grid-template-columns: minmax(120px, 1.2fr) minmax(120px, 1fr) minmax(104px, 0.8fr) minmax(88px, 0.6fr) auto auto;
+}
+
+@media (min-width: 901px) {
+  .rail-prep + .workspace .quick-create-form {
+    grid-template-columns: minmax(160px, 1.2fr) minmax(160px, 1fr) minmax(120px, 0.7fr) minmax(92px, 0.45fr) minmax(96px, max-content) auto;
+  }
+}
+
+@media (max-width: 1040px) and (min-width: 901px) {
+  .rail-play + .workspace .quick-create-form {
+    grid-template-columns: minmax(110px, 1.2fr) minmax(104px, 1fr) minmax(88px, 0.8fr) minmax(74px, 0.6fr) minmax(96px, max-content) auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .quick-create-form .quick-create-close {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 36px;
+  }
+}
+
+.rail-utilities-heading {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 160, 173, 0.14);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted, #94a0ad);
+}
+
+@media (max-width: 900px) {
+  .rail-utilities-heading {
+    display: none;
+  }
+}
+
+.audio-soundboard.movable-panel {
+  top: var(--floating-panel-y, auto);
+  left: var(--floating-panel-x, auto);
+  right: auto;
+  bottom: auto;
+  z-index: 80;
+  width: min(var(--floating-panel-width, 300px), calc(100vw - 16px));
+  height: min(var(--floating-panel-height, 440px), calc(100vh - 16px));
+  max-height: none;
+}
+
+.audio-soundboard .audio-soundboard-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.audio-soundboard .audio-soundboard-header .section-title {
+  flex: 1 1 auto;
+}
+
+.audio-soundboard .floating-panel-resize-handle {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+}
+
+.audio-soundboard:focus-within,
+.ai-agent-popout:focus-within {
+  z-index: 85;
+}
+
+@media (max-width: 900px) {
+  .audio-soundboard.movable-panel {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    height: auto;
+    max-height: 56vh;
+  }
+}
+
+/* Content-first panels: one-line status summaries and collapsed create drawers
+   replace metric-tile walls and always-expanded creation forms. */
+
+.panel-status-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted, #94a0ad);
+}
+
+.panel-status-line span + span::before {
+  content: "\00b7";
+  margin-right: 8px;
+  opacity: 0.6;
+}
+
+.panel-status-line .attention {
+  color: var(--red, #d66c62);
+  font-weight: 600;
+}
+
+.create-drawer > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  color: var(--accent-strong, #dcbe85);
+}
+
+.create-drawer > summary::-webkit-details-marker {
+  display: none;
+}
+
+.create-drawer > summary::after {
+  content: "+";
+  margin-left: auto;
+  font-size: 15px;
+  color: var(--muted, #94a0ad);
+  transition: transform 0.15s ease;
+}
+
+.create-drawer[open] > summary::after {
+  transform: rotate(45deg);
+}
+
+.create-drawer > summary:hover {
+  background: rgba(148, 160, 173, 0.08);
+}
+
+.create-drawer > summary strong {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #94a0ad);
+}
+
+.create-drawer > summary strong + ::after,
+.create-drawer > summary:has(strong)::after {
+  margin-left: 8px;
+}
+
+.create-drawer-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.create-drawer .panel-status-line {
+  margin-top: 8px;
+}
+
+.diagnostics-drawer > summary::after {
+  content: "\203a";
+  transform: none;
+}
+
+.diagnostics-drawer[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.panel-stack {
+  align-content: start;
+}
+
+/* Compact one-line roll rows: summary first, per-die breakdown and fairness
+   verification behind a click. */
+
+.chat-roll-card {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  padding: 4px 6px;
+}
+
+.chat-roll-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-roll-summary:hover:not(:disabled) {
+  background: rgba(148, 160, 173, 0.08);
+}
+
+.chat-roll-summary:disabled {
+  cursor: default;
+}
+
+.chat-roll-kind {
+  flex: none;
+  color: rgba(128, 222, 199, 0.88);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.chat-roll-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #ffffff;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-roll-formula {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(218, 228, 238, 0.72);
+  font-family: var(--font-mono, "Cascadia Mono", Consolas, monospace);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-roll-summary .chat-roll-flag {
+  flex: none;
+  margin: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.chat-roll-summary .chat-roll-total {
+  flex: none;
+  min-width: 34px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: 15px;
+}
+
+.chat-roll-chevron {
+  flex: none;
+  color: var(--muted, #94a0ad);
+  transition: transform 0.15s ease;
+}
+
+.chat-roll-chevron.open {
+  transform: rotate(180deg);
+}
+
+.chat-roll-detail {
+  display: grid;
+  gap: 8px;
+  padding: 8px 4px 6px;
+  border-top: 1px solid rgba(148, 160, 173, 0.14);
+  margin-top: 4px;
+}
+
+.chat-roll-detail .chat-roll-dice {
+  grid-column: auto;
+}
+
+/* Grouped board toolbar: dividers between tool clusters and labeled sections
+   in the advanced flyout. */
+
+.toolbar .tool-divider {
+  display: block;
+  width: 22px;
+  height: 1px;
+  margin: 2px auto;
+  background: rgba(148, 160, 173, 0.22);
+}
+
+@media (max-width: 900px) {
+  .toolbar .tool-divider {
+    width: 1px;
+    height: 22px;
+    margin: auto 2px;
+  }
+}
+
+.tool-more-heading {
+  margin: 6px 4px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted, #94a0ad);
+}
+
+.tool-more-heading:first-child {
+  margin-top: 2px;
+}
+
+/* Character sheet modal: header stays pinned while the sheet scrolls. */
+
+.actor-sheet-dialog > .operator-heading {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: -18px -18px 0;
+  padding: 18px 18px 10px;
+  border-bottom: 1px solid var(--line, #2e2a48);
+  background: var(--surface-1, #18140d);
+}
+
+/* Prep topbar: give the scene tab strip its own row before the filter
+   controls can collide with it on mid-width desktops. */
+
+@media (max-width: 1366px) and (min-width: 1041px) {
+  .rail-prep + .workspace .topbar {
+    grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+    grid-template-areas:
+      "title filters"
+      "scenes scenes"
+      "create create";
+  }
+}
+
+.auth-actions-heading {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 160, 173, 0.14);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--muted, #94a0ad);
+}
+
+/* Label de-shouting: form field labels and inline metadata read in sentence
+   case; ALL-CAPS stays reserved for section eyebrows and status pills. */
+
+.reset-form label,
+.session-switcher,
+.ai-field,
+.admin-form-grid label,
+.content-import-form > label,
+.asset-toolbar label > span,
+.asset-upload-settings label > span,
+.asset-maintenance-body label > span,
+.raw-data-details summary,
+.compendium-browser label,
+.combatant-controls label,
+.inspector-grid label,
+.inline-check,
+.journal-entry span,
+.proposal span,
+.chat-line span,
+.roll-term-breakdown > strong,
+.import-status strong,
+.proposal-change dt {
+  text-transform: none;
+  letter-spacing: 0.01em;
 }
