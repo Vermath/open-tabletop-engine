@@ -74,6 +74,13 @@ async function openInspectorPanel(page: Page, panelName: string) {
   await page.locator(".inspector-tabs").getByRole("button", { name: panelName, exact: true }).click();
 }
 
+async function openTokenQuickCreate(page: Page) {
+  const tokenName = page.getByRole("textbox", { name: "Token name" });
+  if (await tokenName.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "Token", exact: true }).click();
+  await expect(tokenName).toBeVisible();
+}
+
 async function submitChatCommand(page: Page, command: string) {
   await openInspectorPanel(page, "Chat");
   const commandLine = page.getByRole("textbox", { name: "Chat message" });
@@ -127,6 +134,7 @@ for (const viewport of viewportCases) {
       expect(addTokenBox?.y ?? 0).toBeGreaterThan((tableAreaBox?.y ?? 0) + (tableAreaBox?.height ?? 0) * 0.45);
       await openInspectorPanel(page, "Chat");
       await expect(page.getByRole("textbox", { name: "Chat message" })).toBeVisible();
+      await openTokenQuickCreate(page);
       const controlsFitViewport = await page.locator(".topbar").evaluate(() => {
         const viewportWidth = window.innerWidth;
         const controls = Array.from(document.querySelectorAll(".scene-filter-panel input, .scene-filter-panel select, .scene-filter-panel button, .quick-create-form input, .quick-create-form select, .quick-create-form button"));
@@ -161,6 +169,7 @@ for (const viewport of viewportCases) {
 
       await page.getByRole("button", { name: "Live Table", exact: true }).click();
       await openInspectorPanel(page, "Actors");
+      await openTokenQuickCreate(page);
       await expect(page.getByRole("combobox", { name: "Token actor" })).toBeVisible();
 
       if (!viewport.isMobile) {

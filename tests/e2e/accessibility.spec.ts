@@ -43,7 +43,8 @@ async function deleteTokenById(page: Page, tokenId: string) {
 }
 
 async function openInspectorPanel(page: Page, panelName: string) {
-  await page.locator(".inspector-tabs").getByRole("button", { name: panelName, exact: true }).click();
+  const visiblePanelName = panelName === "SDK" ? "Plugins" : panelName;
+  await page.locator(".inspector-tabs").getByRole("button", { name: visiblePanelName, exact: true }).click();
 }
 
 async function openActorDisclosure(root: Locator, summaryText: string) {
@@ -262,7 +263,6 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await page.getByRole("button", { name: "AI Agent", exact: true }).click();
   const aiAgent = page.getByRole("complementary", { name: "AI Agent" });
   const aiPrompt = aiAgent.getByLabel("AI Agent prompt");
-  await expect(aiAgent).toContainText("AI Studio is deprecated");
   await aiPrompt.focus();
   await expect(aiPrompt).toBeFocused();
   await aiPrompt.fill("accessibility review prompt");
@@ -270,7 +270,7 @@ test("advanced panels expose labelled controls and keyboard focus states", async
   await aiAgent.getByRole("button", { name: "Close AI Agent" }).click();
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   const pluginSearch = page.getByRole("textbox", { name: "Plugin marketplace search" });
   await expect(page.getByRole("region", { name: "Plugin marketplace filters" })).toBeVisible();
   await pluginSearch.focus();
@@ -311,7 +311,7 @@ test("multi-panel keyboard journey remains operable without pointer input", asyn
   await assetSearch.fill("vault");
   await expect(assetSearch).toHaveValue("vault");
 
-  const sdkNav = page.getByRole("button", { name: "SDK", exact: true });
+  const sdkNav = page.getByRole("button", { name: "Plugins", exact: true });
   await shiftTabUntilFocused(page, sdkNav);
   await sdkNav.press("Enter");
   await expect(page.getByRole("region", { name: "Plugin marketplace filters" })).toBeVisible();

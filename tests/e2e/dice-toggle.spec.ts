@@ -79,6 +79,8 @@ test("3D dice hides the roll result until the cast settles", async ({ page }) =>
   await expect(page.locator(".rail > .status")).toContainText("Rolling dice");
 
   await expect(rollCard.locator(".chat-roll-total")).toHaveText(/[1-4]/, { timeout: 4_000 });
+  await expect(rollCard.locator(".chat-roll-dice")).toHaveCount(0);
+  await rollCard.locator(".chat-roll-summary").click();
   await expect(rollCard.locator(".chat-roll-dice")).toHaveCount(1);
   await expect(page.locator(".rail > .status")).toContainText(/Rolled [1-4]/);
 });

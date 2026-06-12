@@ -40,7 +40,8 @@ async function closeManage(page: Page) {
 }
 
 async function openInspectorPanel(page: Page, panelName: string) {
-  await page.locator(".inspector-tabs").getByRole("button", { name: panelName, exact: true }).click();
+  const visiblePanelName = panelName === "SDK" ? "Plugins" : panelName;
+  await page.locator(".inspector-tabs").getByRole("button", { name: visiblePanelName, exact: true }).click();
 }
 
 async function openActorDisclosure(root: Locator, summaryText: string) {
@@ -64,6 +65,17 @@ async function openDetails(details: Locator) {
       element.scrollIntoView({ block: "nearest" });
     });
   }
+}
+
+async function openCreateDrawer(page: Page, label: string) {
+  await openDetails(page.locator("details.create-drawer").filter({ hasText: label }).first());
+}
+
+async function openTokenQuickCreate(page: Page) {
+  const tokenName = page.getByRole("textbox", { name: "Token name" });
+  if (await tokenName.isVisible().catch(() => false)) return;
+  await page.getByRole("button", { name: "Token", exact: true }).click();
+  await expect(tokenName).toBeVisible();
 }
 
 async function expectJsonResponse<T>(response: APIResponse): Promise<T> {
@@ -504,6 +516,8 @@ test("GM can box-select and drag multiple scene tokens", async ({ page }) => {
     await page.reload();
     await expect(page.getByRole("button", { name: `Token ${firstToken.name}` })).toBeVisible();
     await expect(page.getByRole("button", { name: `Token ${secondToken.name}` })).toBeVisible();
+    const expandLayerPanel = page.getByRole("button", { name: "Expand layer panel" });
+    if (await expandLayerPanel.isVisible().catch(() => false)) await expandLayerPanel.click();
     await expect(page.getByLabel("Map layer stack")).toContainText("Player");
 
     const start = await scenePointToClient(page, { x: 880, y: 580 });
@@ -667,6 +681,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await setCheckbox(page.getByRole("checkbox", { name: "Targeted" }), true);
   await expect(page.getByText("Token targeted")).toBeVisible();
   const sceneBoard = page.locator(".scene-board").first();
+  await openTokenQuickCreate(page);
   await page.getByRole("combobox", { name: "Token actor" }).selectOption("act_valen");
   await page.getByRole("button", { name: "Add token" }).click();
   await expect(page.getByText("Valen Ash created")).toBeVisible();
@@ -674,6 +689,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await deleteNewestTokenByName(page, "Valen Ash");
   const box = await sceneBoard.boundingBox();
   expect(box).not.toBeNull();
+  await openTokenQuickCreate(page);
   await page.getByRole("textbox", { name: "Token name" }).fill("AOE Target");
   await page.getByRole("button", { name: "Token", exact: true }).click();
   await expect(page.getByText("AOE Target created")).toBeVisible();
@@ -1081,6 +1097,7 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
 
   await page.getByRole("button", { name: "Demo GM" }).click();
   await openManageCategory(page, "Campaign");
+  await openCreateDrawer(page, "New campaign");
   await expect(page.getByText("Campaign Setup", { exact: true })).toBeVisible();
 
   await page.getByRole("textbox", { name: "Campaign name", exact: true }).fill("E2E Setup Campaign");
@@ -1254,13 +1271,14 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
   await sdkPanel.getByRole("button", { name: "Create Monster" }).click();
   await expect(page.getByText("Goblin Minion monster created")).toBeVisible();
   await expect(sdkPanel.locator(".metric-row", { hasText: "Created Monster" })).toContainText("Goblin Minion");
 
   await openInspectorPanel(page, "Actors");
+  await openTokenQuickCreate(page);
   await page.getByRole("textbox", { name: "Token name" }).fill("Goblin Minion");
   await page.getByRole("combobox", { name: "Token actor" }).selectOption({ label: "Goblin Minion" });
   await page.getByRole("combobox", { name: "Token disposition" }).selectOption("hostile");
@@ -1529,7 +1547,6 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
   let aiAgent = await openAiAgent(page);
-  await expect(aiAgent).toContainText("AI Studio is deprecated");
   await expect(aiAgent.getByLabel("AI Agent prompt")).toBeVisible();
   await expect(aiAgent.locator(".ai-agent-proposal-row", { hasText: "Scene comparison check" })).toContainText("pending");
 
@@ -1676,7 +1693,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
   await expect(sdkPanel.locator(".metric-row", { hasText: "Active System" })).toContainText("D&D 5.5e SRD");
   await expect(sdkPanel.locator(".metric-row", { hasText: "Registry Browser" })).toContainText("registry packages");
@@ -1685,12 +1702,14 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(sdkPanel.getByRole("combobox", { name: "Plugin marketplace source filter" })).toBeVisible();
   await expect(sdkPanel.getByRole("combobox", { name: "Plugin marketplace status filter" })).toBeVisible();
   await expect(sdkPanel.getByRole("combobox", { name: "Plugin marketplace core filter" })).toBeVisible();
-  const marketplaceRiskReview = sdkPanel.getByRole("region", { name: "Plugin marketplace risk review" });
-  await expect(marketplaceRiskReview).toContainText("Signature warnings");
+  const marketplaceRiskReview = sdkPanel.locator('details[aria-label="Plugin marketplace risk review"]');
+  await openDetails(marketplaceRiskReview);
+  await expect(marketplaceRiskReview).toContainText("signature warnings");
   await expect(marketplaceRiskReview).toContainText("signature warning");
-  const registryHistory = sdkPanel.getByRole("region", { name: "Plugin registry history" });
-  await expect(registryHistory).toContainText("Registry sources");
-  await expect(registryHistory).toContainText("Registry packages");
+  const registryHistory = sdkPanel.locator('details[aria-label="Plugin registry history"]');
+  await openDetails(registryHistory);
+  await expect(registryHistory).toContainText("sources");
+  await expect(registryHistory).toContainText("registry packages");
   await expect(registryHistory).toContainText("last sync");
   await expect(sdkPanel).toContainText("0 incompatible");
   await sdkPanel.getByRole("textbox", { name: "Plugin marketplace search" }).fill("versioned");
@@ -1811,7 +1830,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   await expect(actionPreview).toContainText("Effect support");
   await expect(actionPreview).toContainText("Resources");
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   await expect(sdkPanel.getByRole("region", { name: "Actor advancement choices" })).toContainText("1 choices");
   await expect(sdkPanel.getByRole("combobox", { name: "Advancement option" })).toContainText("Level 2");
   await expect(sdkPanel.getByRole("button", { name: "Level Up" })).toBeDisabled();
@@ -1853,7 +1872,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
   expect(encounterPlan.plan.summary.toLowerCase()).toContain("encounter");
   expect(encounterPlan.plan.difficulty).toBeTruthy();
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   const rollCountBeforeSystemCheck = await page.evaluate(async (apiBaseUrl) => {
     const bearer = localStorage.getItem("otte:sessionToken");
     if (!bearer) throw new Error("No browser session token available for roll lookup");
@@ -1879,7 +1898,7 @@ test("GM can run SDK plugin and system workflows from the browser", async ({ pag
     .toBeGreaterThan(rollCountBeforeSystemCheck);
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   const genericSystemCard = sdkPanel.locator("article", { hasText: "Generic Fantasy" });
   await expect(genericSystemCard).toContainText("available system");
   await expect(genericSystemCard).toContainText("Core: >=0.1.0");
@@ -2229,10 +2248,11 @@ test("SDK marketplace blocks trust-policy failures in the browser", async ({ pag
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await page.getByRole("button", { name: "SDK", exact: true }).click();
+  await openInspectorPanel(page, "SDK");
   const sdkPanel = page.locator(".panel-stack", { hasText: "Runtime SDK" });
-  const marketplaceRiskReview = sdkPanel.getByRole("region", { name: "Plugin marketplace risk review" });
-  await expect(marketplaceRiskReview).toContainText("2 samples");
+  const marketplaceRiskReview = sdkPanel.locator('details[aria-label="Plugin marketplace risk review"]');
+  await openDetails(marketplaceRiskReview);
+  await expect(marketplaceRiskReview).toContainText("2 flagged");
   await expect(marketplaceRiskReview).toContainText("Unsigned Fixture Plugin");
   await expect(marketplaceRiskReview).toContainText("trust blocked");
   await expect(marketplaceRiskReview).toContainText("Tampered Fixture Plugin");
@@ -2259,7 +2279,7 @@ test("SDK marketplace is hidden from players in the browser", async ({ page }) =
   await expect(page.getByLabel("Session user")).toHaveValue("usr_demo_player");
 
   await expect(page.getByRole("button", { name: "Prep", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "SDK", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Plugins", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "AI Studio", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Add token" })).toHaveCount(0);
@@ -2414,6 +2434,7 @@ test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
   await expect(page.getByText("Scene Manager")).toBeVisible();
 
   const prefix = `Bulk Prep ${Date.now()}`;
+  await openCreateDrawer(page, "New scene");
   const activeForPlayers = page.getByRole("checkbox", { name: "Activate for players" });
   if (await activeForPlayers.isChecked()) await activeForPlayers.uncheck();
 
