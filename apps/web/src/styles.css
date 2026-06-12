@@ -1253,11 +1253,50 @@ a[href]:focus-visible,
   font-weight: 800;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.42);
   touch-action: none;
+  transition: left var(--token-move-duration, 300ms) ease-out, top var(--token-move-duration, 300ms) ease-out;
+}
+
+/* While the local user drags or resizes a token, follow the pointer exactly;
+   the glide transition is only for remote/applied position changes. */
+.scene-board.token-drag-active .token,
+.scene-board.token-resize-active .token {
+  transition: none;
 }
 
 .token.inactive-layer {
   opacity: 0.58;
   pointer-events: none;
+}
+
+.token-move-distance {
+  position: absolute;
+  z-index: 8;
+  transform: translate(-50%, -190%);
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  background: rgba(18, 18, 22, 0.86);
+  color: #f4f4f5;
+  pointer-events: none;
+  animation: token-move-distance-fade 1300ms ease forwards;
+}
+
+@keyframes token-move-distance-fade {
+  0% {
+    opacity: 0;
+  }
+  16% {
+    opacity: 1;
+  }
+  68% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .token.active-layer {
@@ -8669,6 +8708,119 @@ body {
 .inspector > .tabs .tab:nth-child(n + 5),
 .tab:nth-child(n + 5) {
   display: inline-flex;
+}
+
+.audio-soundboard {
+  position: fixed;
+  right: 18px;
+  bottom: 84px;
+  z-index: 40;
+  width: 300px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(22, 20, 16, 0.97);
+  border: 1px solid rgba(239, 228, 205, 0.22);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.52);
+  color: #f4efe2;
+}
+
+.audio-soundboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.audio-soundboard-header .section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.audio-soundboard-master {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.audio-soundboard-master input[type="range"] {
+  flex: 1;
+}
+
+.audio-soundboard-count {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.audio-soundboard-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.audio-soundboard-empty {
+  font-size: 12px;
+  opacity: 0.65;
+  padding: 6px 2px;
+}
+
+.audio-track {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+
+.audio-track.playing {
+  background: rgba(80, 208, 178, 0.16);
+}
+
+.audio-track-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.audio-track-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+.audio-soundboard-add {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid rgba(239, 228, 205, 0.14);
+  padding-top: 8px;
+}
+
+.audio-soundboard-add input,
+.audio-soundboard-add select {
+  width: 100%;
+}
+
+.audio-soundboard-add-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.audio-soundboard-add-row select {
+  flex: 1;
 }
 
 .rail-prep + .workspace .workspace-scene-filter-panel {

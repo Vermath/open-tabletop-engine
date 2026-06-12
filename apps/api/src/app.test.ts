@@ -97,6 +97,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path === "/api/v1/campaigns/{campaignId}" || path.endsWith("/archive") || path.endsWith("/restore")) {
     return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "campaign_lifecycle" };
   }
+  if (path === "/api/v1/campaigns/{campaignId}/snapshot") return { excluded: "client_state_aggregation" };
   if (path.endsWith("/members")) return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "campaign_member_admin" };
   if (path.endsWith("/invites")) return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "invite_admin" };
   if (path.includes("/fog-presets")) return method === "GET" ? { tools: ["read_fog_preset"] } : { tools: ["draft_fog_preset", "create_proposal"] };
@@ -106,6 +107,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
     if (path.endsWith("/blob") || path.endsWith("/delivery-url")) return { tools: ["read_asset"] };
     return method === "GET" ? { tools: ["read_asset"] } : { tools: ["create_proposal", "generate_map_asset", "generate_token_asset", "modify_asset_image"] };
   }
+  if (path === "/api/v1/scenes/{sceneId}/edits" || path === "/api/v1/scenes/{sceneId}/undo") return { excluded: "scene_edit_undo" };
   if (path.includes("/scenes/{sceneId}/ai-edits/apply-to-target")) return { tools: ["draft_ai_edit_layer_apply", "apply_approved_proposal"] };
   if (path.includes("/scenes/{sceneId}/vision") || path.includes("/rendering/diagnostics")) return { tools: ["read_board_state", "read_scene"] };
   if (path.includes("/scenes/{sceneId}/fog") || path.includes("/scenes/{sceneId}/walls") || path.includes("/scenes/{sceneId}/lights") || path.includes("/scenes/{sceneId}/annotations")) {
@@ -126,6 +128,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.includes("/dice/roll")) return { tools: ["roll_dice"] };
   if (path.includes("/rolls")) return { tools: ["read_roll"] };
   if (path.includes("/dice-macros")) return method === "GET" ? { tools: ["read_dice_macro"] } : { tools: ["draft_dice_macro", "create_proposal"] };
+  if (path.includes("/campaigns/{campaignId}/audio") || path.includes("/audio/{trackId}")) return { excluded: "audio_soundboard" };
   if (path.includes("/campaigns/{campaignId}/encounters")) return method === "GET" ? { tools: ["read_encounter"] } : { tools: ["draft_encounter", "create_proposal"] };
   if (path.includes("/campaigns/{campaignId}/combats")) return method === "GET" ? { tools: ["read_combat"] } : { excluded: "direct_combat_start" };
   if (path.includes("/combats/{combatId}/audit")) return { tools: ["read_combat"] };
@@ -2067,6 +2070,123 @@ describe("api", () => {
       }
     });
     expect(invalid.statusCode).toBe(400);
+
+    await app.close();
+  });
+
+  it("records provably-fair seeds on rolls and verifies them", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const roll = await app.inject({
+      method: "POST",
+      url: "/api/v1/dice/roll",
+      headers: authHeaders,
+      payload: { campaignId: "camp_demo", formula: "2d20+3", visibility: "public", clientSeed: "player-entropy" }
+    });
+    expect(roll.statusCode).toBe(200);
+    const rollBody = roll.json();
+    expect(rollBody.fairness).toMatchObject({ algorithm: "xmur3-mulberry32", clientSeed: "player-entropy" });
+    expect(rollBody.fairness.serverSeed).toMatch(/^[a-f0-9]{64}$/);
+    expect(rollBody.fairness.serverSeedHash).toMatch(/^[a-f0-9]{64}$/);
+
+    const verify = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/camp_demo/rolls/${rollBody.id}/verify`,
+      headers: authHeaders
+    });
+    expect(verify.statusCode).toBe(200);
+    expect(verify.json()).toMatchObject({ rollId: rollBody.id, verified: true, recomputed: { total: rollBody.total } });
+
+    const stored = store.state.rolls.find((item: DiceRoll) => item.id === rollBody.id)!;
+    stored.total += 1;
+    const reverify = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/camp_demo/rolls/${rollBody.id}/verify`,
+      headers: authHeaders
+    });
+    expect(reverify.json()).toMatchObject({ verified: false, reason: "result_mismatch" });
+
+    await app.close();
+  });
+
+  it("composes a permission-filtered campaign snapshot in one request", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const gm = (await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot", headers: { "x-user-id": "usr_demo_gm" } })).json();
+    expect(gm.campaign.id).toBe("camp_demo");
+    expect(gm.scenes.length).toBeGreaterThan(0);
+    expect(gm.selectedSceneId).toBe("scn_vault_entry");
+    expect(gm.vision?.sceneId).toBe("scn_vault_entry");
+    expect(gm.journals.some((entry: { visibility: string }) => entry.visibility === "gm_only")).toBe(true);
+    expect(gm.tokens.some((token: { id: string }) => token.id === "tok_valen")).toBe(true);
+
+    const player = (await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot", headers: { "x-user-id": "usr_demo_player" } })).json();
+    expect(player.campaign.id).toBe("camp_demo");
+    expect(player.journals.some((entry: { visibility: string }) => entry.visibility === "gm_only")).toBe(false);
+    expect(player.tokens.some((token: { id: string }) => token.id === "tok_valen")).toBe(true);
+    expect(player.diceMacros.every((macro: { visibility: string }) => macro.visibility === "public")).toBe(true);
+
+    await app.close();
+  });
+
+  it("captures scene edits and undoes the last change", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const headers = { "x-user-id": "usr_demo_gm" };
+
+    const created = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/walls", headers, payload: { x1: 10, y1: 10, x2: 200, y2: 10 } });
+    expect(created.statusCode).toBe(200);
+    const wallCountAfterCreate = created.json().walls.length;
+
+    const edits = await app.inject({ method: "GET", url: "/api/v1/scenes/scn_vault_entry/edits", headers });
+    expect(edits.statusCode).toBe(200);
+    expect(edits.json().entries.at(-1)).toMatchObject({ kind: "scene.wall.create", byUserId: "usr_demo_gm" });
+
+    const undone = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/undo", headers });
+    expect(undone.statusCode).toBe(200);
+    expect(undone.json().walls.length).toBe(wallCountAfterCreate - 1);
+
+    const scenes = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/scenes", headers });
+    expect(scenes.json()[0].sceneEditHistory).toBeUndefined();
+
+    const exhausted = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/undo", headers });
+    expect(exhausted.statusCode).toBe(400);
+
+    await app.close();
+  });
+
+  it("manages a synced audio soundboard with one bed per kind", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const headers = { "x-user-id": "usr_demo_gm" };
+
+    const tavern = (await app.inject({ method: "POST", url: "/api/v1/campaigns/camp_demo/audio", headers, payload: { name: "Tavern", url: "https://example.test/tavern.mp3", kind: "ambient" } })).json();
+    expect(tavern).toMatchObject({ name: "Tavern", kind: "ambient", playing: false, loop: true });
+    const forest = (await app.inject({ method: "POST", url: "/api/v1/campaigns/camp_demo/audio", headers, payload: { name: "Forest", url: "/audio/forest.mp3", kind: "ambient" } })).json();
+
+    const playTavern = await app.inject({ method: "PATCH", url: `/api/v1/audio/${tavern.id}`, headers, payload: { playing: true } });
+    expect(playTavern.json()).toMatchObject({ playing: true });
+    expect(playTavern.json().startedAt).toBeDefined();
+
+    await app.inject({ method: "PATCH", url: `/api/v1/audio/${forest.id}`, headers, payload: { playing: true } });
+    const list = (await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/audio", headers })).json();
+    expect(list.find((track: { id: string }) => track.id === forest.id).playing).toBe(true);
+    expect(list.find((track: { id: string }) => track.id === tavern.id).playing).toBe(false);
+
+    const playerList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/audio", headers: { "x-user-id": "usr_demo_player" } });
+    expect(playerList.statusCode).toBe(200);
+    const playerControl = await app.inject({ method: "PATCH", url: `/api/v1/audio/${forest.id}`, headers: { "x-user-id": "usr_demo_player" }, payload: { playing: false } });
+    expect(playerControl.statusCode).toBe(403);
+
+    const badUrl = await app.inject({ method: "POST", url: "/api/v1/campaigns/camp_demo/audio", headers, payload: { name: "Bad", url: "javascript:alert(1)" } });
+    expect(badUrl.statusCode).toBe(400);
+
+    const deleted = await app.inject({ method: "DELETE", url: `/api/v1/audio/${forest.id}`, headers });
+    expect(deleted.statusCode).toBe(200);
+    const afterDelete = (await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/audio", headers })).json();
+    expect(afterDelete.some((track: { id: string }) => track.id === forest.id)).toBe(false);
 
     await app.close();
   });
@@ -8220,6 +8340,26 @@ describe("api", () => {
       visibility: "public" as const,
       recipientUserIds: []
     }) satisfies EngineState["chat"][number];
+    const authMatrixRoll = createTimestamped("roll", {
+      id: "roll_auth_matrix",
+      campaignId: "camp_demo",
+      userId: "usr_demo_gm",
+      formula: "1d20",
+      visibility: "public" as const,
+      terms: [{ type: "die" as const, count: 1, sides: 20, results: [11], kept: [11] }],
+      total: 11
+    }) satisfies EngineState["rolls"][number];
+    const authMatrixAudioTrack = createTimestamped("aud", {
+      id: "aud_auth_matrix",
+      campaignId: "camp_demo",
+      createdBy: "usr_demo_gm",
+      name: "Auth Matrix Ambience",
+      url: "https://example.test/ambience.mp3",
+      kind: "ambient" as const,
+      loop: true,
+      playing: false,
+      volume: 0.8
+    }) satisfies EngineState["audioTracks"][number];
     const authMatrixCombat = createTimestamped("cmb", {
       id: "cmb_auth_matrix",
       campaignId: "camp_demo",
@@ -8357,6 +8497,8 @@ describe("api", () => {
     store.state.scenes.push(authMatrixAiEditScene);
     store.state.items.push(authMatrixItem);
     store.state.chat.push(authMatrixChat);
+    store.state.rolls.push(authMatrixRoll);
+    store.state.audioTracks.push(authMatrixAudioTrack);
     store.state.combats.push(authMatrixCombat);
     store.state.proposals.push(authMatrixProposal);
     store.state.contentImports.push(authMatrixImport);
@@ -8411,6 +8553,7 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns" },
       { method: "POST", url: "/api/v1/campaigns", payload: { name: "No Auth Campaign" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/members" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/invites" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/invites", payload: { email: "invite@example.test" } },
@@ -8436,6 +8579,8 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/vision" },
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/vision/sample?x=100&y=100" },
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/rendering/diagnostics" },
+      { method: "GET", url: "/api/v1/scenes/scn_vault_entry/edits" },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/undo" },
       { method: "PATCH", url: "/api/v1/scenes/scn_vault_entry", payload: { name: "No Auth Scene Rename" } },
       { method: "POST", url: "/api/v1/scenes/scn_vault_entry/annotations", payload: { kind: "drawing", points: [{ x: 300, y: 300 }] } },
       { method: "PATCH", url: "/api/v1/scenes/scn_vault_entry/annotations/ann_auth_matrix", payload: { label: "No Auth" } },
@@ -8470,10 +8615,15 @@ describe("api", () => {
       { method: "PATCH", url: "/api/v1/journal/jnl_hook", payload: { title: "No Auth Journal Rename" } },
       { method: "POST", url: "/api/v1/dice/roll", payload: { campaignId: "camp_demo", formula: "1d20" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/rolls" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/rolls/roll_auth_matrix/verify" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/dice-macros" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/dice-macros", payload: { name: "No Auth Macro", formula: "1d4" } },
       { method: "PATCH", url: "/api/v1/dice-macros/mac_demo_attack", payload: { name: "No Auth Macro Rename" } },
       { method: "DELETE", url: "/api/v1/dice-macros/mac_demo_attack" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/audio" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/audio", payload: { name: "No Auth Track", url: "https://example.test/x.mp3" } },
+      { method: "PATCH", url: "/api/v1/audio/aud_auth_matrix", payload: { playing: true } },
+      { method: "DELETE", url: "/api/v1/audio/aud_auth_matrix" },
       { method: "GET", url: "/api/v1/chat/messages?campaignId=camp_demo" },
       { method: "POST", url: "/api/v1/chat/messages", payload: { campaignId: "camp_demo", body: "blocked" } },
       { method: "PATCH", url: "/api/v1/chat/messages/msg_auth_matrix", payload: { body: "No Auth Edit" } },
@@ -8715,6 +8865,7 @@ describe("api", () => {
       ["GET /api/v1/campaigns/{campaignId}/invites", "campaign invite roster requires campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/fog-presets", "fog presets require token reveal"],
       ["GET /api/v1/scenes/{sceneId}/rendering/diagnostics", "rendering diagnostics require scene update"],
+      ["GET /api/v1/scenes/{sceneId}/edits", "scene edit history requires scene update"],
       ["GET /api/v1/scenes/{sceneId}/fog/history", "fog history requires token reveal"],
       ["GET /api/v1/campaigns/{campaignId}/dice-macros", "macro roster requires dice rolling"],
       ["GET /api/v1/campaigns/{campaignId}/ai/threads", "AI thread roster requires AI proposal permission"],

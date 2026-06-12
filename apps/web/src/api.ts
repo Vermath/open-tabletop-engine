@@ -1,4 +1,4 @@
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot } from "@open-tabletop/core";
 
 export const baseUrl = import.meta.env.VITE_API_URL ?? "";
 
@@ -363,6 +363,7 @@ export interface Snapshot {
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  audioTracks: AudioTrack[];
   encounters: Encounter[];
   combats: Combat[];
   combatAudit: AuditLog[];
@@ -2732,6 +2733,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
       chat: [],
       rolls: [],
       diceMacros: [],
+      audioTracks: [],
       encounters: [],
       combats: [],
       combatAudit: [],
@@ -2753,7 +2755,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   const currentMember = members.find((member) => member.user.id === session.user.id);
   const canManageCampaign = currentMember?.permissions.includes("campaign.update") ?? false;
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
-  const [assets, assetStorage, fogPresets, tokens, vision, actors, items, journals, chat, rolls, diceMacros, encounters, combats, proposals, contentImports, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
+  const [assets, assetStorage, fogPresets, tokens, vision, actors, items, journals, chat, rolls, diceMacros, audioTracks, encounters, combats, proposals, contentImports, memory, aiThreads, aiUsage, aiToolCalls, plugins, systems] = await Promise.all([
     snapshotGet<MapAsset[]>(`/api/v1/campaigns/${selectedCampaignId}/assets`),
     snapshotGet<CampaignAssetStorageInfo>(`/api/v1/campaigns/${selectedCampaignId}/assets/storage`),
     currentMember?.permissions.includes("token.reveal") ? snapshotGet<FogPreset[]>(`/api/v1/campaigns/${selectedCampaignId}/fog-presets`) : Promise.resolve([]),
@@ -2765,6 +2767,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     snapshotGet<ChatMessage[]>(`/api/v1/chat/messages?campaignId=${selectedCampaignId}`),
     snapshotGet<DiceRoll[]>(`/api/v1/campaigns/${selectedCampaignId}/rolls`),
     snapshotGet<DiceMacro[]>(`/api/v1/campaigns/${selectedCampaignId}/dice-macros`),
+    snapshotGet<AudioTrack[]>(`/api/v1/campaigns/${selectedCampaignId}/audio`),
     snapshotGet<Encounter[]>(`/api/v1/campaigns/${selectedCampaignId}/encounters`),
     snapshotGet<Combat[]>(`/api/v1/campaigns/${selectedCampaignId}/combats`),
     snapshotGet<Proposal[]>(`/api/v1/campaigns/${selectedCampaignId}/proposals`),
@@ -2801,6 +2804,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     chat,
     rolls,
     diceMacros,
+    audioTracks,
     encounters,
     combats,
     combatAudit,

@@ -1,5 +1,5 @@
 import { routes } from "@open-tabletop/api-contracts";
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, CombatAction, ContentImportBatch, DiceMacro, DiceRoll, EngineEvent, FogPreset, FogRegion, Item, JournalEntry, LightSource, MapAsset, OrganizationMember, OrganizationWorkspace, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, Token, User, UserSession, VisionPoint, VisionPointSample, VisionSnapshot, Wall } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, CampaignMember, ChatMessage, Combat, CombatAction, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, Encounter, EngineEvent, FogPreset, FogRegion, Item, JournalEntry, LightSource, MapAsset, OrganizationMember, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, Token, User, UserSession, VisionPoint, VisionPointSample, VisionSnapshot, Wall } from "@open-tabletop/core";
 
 export interface OpenTabletopClientOptions {
   token?: string;
@@ -41,6 +41,57 @@ export interface CampaignArchiveImportResult {
   counts: Record<string, number>;
   conflicts: Array<{ collection: string; id: string }>;
   assetFiles: number;
+}
+
+export interface DiceRollVerification {
+  rollId: string;
+  formula: string;
+  verified: boolean;
+  reason?: "fairness_unavailable" | "unsupported_algorithm" | "seed_hash_mismatch" | "formula_unparseable" | "result_mismatch";
+  fairness?: DiceRollFairness;
+  expected: { total: number };
+  recomputed?: { total: number };
+}
+
+export interface SceneEditHistoryEntry {
+  id: string;
+  at: string;
+  byUserId?: string;
+  kind: string;
+}
+
+export interface SceneEditHistory {
+  sceneId: string;
+  limit: number;
+  entries: SceneEditHistoryEntry[];
+}
+
+export interface CampaignSnapshotMember extends CampaignMember {
+  user: Pick<User, "id" | "displayName" | "email">;
+  permissions: PermissionName[];
+}
+
+export interface CampaignSnapshot {
+  generatedAt: string;
+  campaign: Campaign;
+  members: CampaignSnapshotMember[];
+  scenes: Scene[];
+  selectedSceneId?: string;
+  activeSceneId?: string;
+  vision?: VisionSnapshot;
+  tokens: Token[];
+  fogPresets: FogPreset[];
+  assets: MapAsset[];
+  actors: Actor[];
+  items: Item[];
+  journals: JournalEntry[];
+  chat: ChatMessage[];
+  rolls: DiceRoll[];
+  diceMacros: DiceMacro[];
+  encounters: Encounter[];
+  combats: Combat[];
+  proposals: Proposal[];
+  memory: AiMemoryFact[];
 }
 
 export interface CampaignArchiveImportOptions {
@@ -487,6 +538,14 @@ export class OpenTabletopClient {
     return this.post(routes.sceneFogUndo(sceneId), {});
   }
 
+  async sceneEdits(sceneId: string): Promise<SceneEditHistory> {
+    return this.get(routes.sceneEdits(sceneId));
+  }
+
+  async undoScene(sceneId: string): Promise<Scene> {
+    return this.post(routes.sceneUndo(sceneId), {});
+  }
+
   async createWall(sceneId: string, input: Partial<Wall>): Promise<Scene> {
     return this.post(routes.sceneWalls(sceneId), input);
   }
@@ -632,12 +691,21 @@ export class OpenTabletopClient {
     return this.getText(`${routes.chatExport(campaignId)}?format=ndjson`);
   }
 
-  async roll(input: { campaignId: string; formula: string; visibility?: DiceRoll["visibility"]; label?: string }): Promise<DiceRoll> {
+  async roll(input: { campaignId: string; formula: string; visibility?: DiceRoll["visibility"]; label?: string; clientSeed?: string }): Promise<DiceRoll> {
     return this.post(routes.dice, input);
   }
 
   async rolls(campaignId: string): Promise<DiceRoll[]> {
     return this.get(routes.campaignRolls(campaignId));
+  }
+
+  async verifyRoll(campaignId: string, rollId: string): Promise<DiceRollVerification> {
+    return this.get(routes.campaignRollVerify(campaignId, rollId));
+  }
+
+  async campaignSnapshot(campaignId: string, sceneId?: string): Promise<CampaignSnapshot> {
+    const query = sceneId ? `?sceneId=${encodeURIComponent(sceneId)}` : "";
+    return this.get(`${routes.campaignSnapshot(campaignId)}${query}`);
   }
 
   async diceMacros(campaignId: string): Promise<DiceMacro[]> {
@@ -654,6 +722,22 @@ export class OpenTabletopClient {
 
   async deleteDiceMacro(macroId: string): Promise<DiceMacro> {
     return this.delete(routes.diceMacro(macroId));
+  }
+
+  async audioTracks(campaignId: string): Promise<AudioTrack[]> {
+    return this.get(routes.campaignAudio(campaignId));
+  }
+
+  async createAudioTrack(campaignId: string, input: { name: string; url: string; kind?: AudioTrack["kind"]; loop?: boolean; volume?: number }): Promise<AudioTrack> {
+    return this.post(routes.campaignAudio(campaignId), input);
+  }
+
+  async updateAudioTrack(trackId: string, input: Partial<Pick<AudioTrack, "name" | "url" | "kind" | "loop" | "volume" | "playing">>): Promise<AudioTrack> {
+    return this.patch(routes.audioTrack(trackId), input);
+  }
+
+  async deleteAudioTrack(trackId: string): Promise<AudioTrack> {
+    return this.delete(routes.audioTrack(trackId));
   }
 
   async combats(campaignId: string): Promise<Combat[]> {

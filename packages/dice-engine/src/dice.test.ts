@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFormula, probabilityRange, rollFormula } from "./index.js";
+import { composeFairnessSeed, parseFormula, probabilityRange, rollFormula, seededRng } from "./index.js";
 
 function sequenceRng(values: number[]): () => number {
   let index = 0;
@@ -182,5 +182,33 @@ describe("dice engine", () => {
 
   it("rejects excessive dice counts", () => {
     expect(() => parseFormula("1001d6")).toThrow("Dice count must be between 1 and 1000: 1001");
+  });
+
+  it("produces a deterministic, reproducible stream from a seed", () => {
+    const first = Array.from({ length: 5 }, seededRng("seed-alpha"));
+    const again = Array.from({ length: 5 }, seededRng("seed-alpha"));
+    const other = Array.from({ length: 5 }, seededRng("seed-beta"));
+
+    expect(first).toEqual(again);
+    expect(first).not.toEqual(other);
+    for (const value of first) {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThan(1);
+    }
+  });
+
+  it("replays an identical roll from the same composed fairness seed", () => {
+    const seed = composeFairnessSeed("server-xyz", "client-abc");
+    const original = rollFormula("4d6kh3+2", { rng: seededRng(seed) });
+    const replay = rollFormula("4d6kh3+2", { rng: seededRng(composeFairnessSeed("server-xyz", "client-abc")) });
+
+    expect(replay).toEqual(original);
+  });
+
+  it("changes the outcome when the client seed changes", () => {
+    const withClient = rollFormula("20d20", { rng: seededRng(composeFairnessSeed("server-xyz", "client-abc")) });
+    const withoutClient = rollFormula("20d20", { rng: seededRng(composeFairnessSeed("server-xyz")) });
+
+    expect(withClient.total).not.toBe(withoutClient.total);
   });
 });

@@ -107,6 +107,48 @@ export function rollFormula(formula: string, options: RollOptions = {}): RollRes
   return { formula, terms, total };
 }
 
+/**
+ * Composes the final RNG seed for a provably-fair roll. The client-contributed
+ * seed is prepended so a host cannot target an outcome without also controlling
+ * the client seed.
+ */
+export function composeFairnessSeed(serverSeed: string, clientSeed?: string): string {
+  return clientSeed ? `${clientSeed}:${serverSeed}` : serverSeed;
+}
+
+/**
+ * Deterministic, dependency-free PRNG (xmur3 seed hash + mulberry32 stream) so a
+ * roll can be reproduced from its seed in any JS runtime, including the browser.
+ */
+export function seededRng(seed: string): () => number {
+  const nextSeed = xmur3(seed);
+  return mulberry32(nextSeed());
+}
+
+function xmur3(input: string): () => number {
+  let h = 1779033703 ^ input.length;
+  for (let index = 0; index < input.length; index += 1) {
+    h = Math.imul(h ^ input.charCodeAt(index), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    h ^= h >>> 16;
+    return h >>> 0;
+  };
+}
+
+function mulberry32(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export function formatRoll(result: RollResult): string {
   return `${result.formula} = ${result.total}`;
 }

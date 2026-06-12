@@ -11,6 +11,8 @@ const itemId = "item_client";
 const entryId = "jnl_client";
 const messageId = "msg_client";
 const macroId = "mac_client";
+const rollId = "roll_client";
+const audioTrackId = "aud_client";
 const combatId = "cmb_client";
 const combatantId = "cmbt_client";
 const combatActionId = "cact_client";
@@ -201,6 +203,7 @@ describe("OpenTabletopClient", () => {
       client.campaigns(),
       client.createCampaign({ name: "Campaign" }),
       client.campaign(campaignId),
+      client.campaignSnapshot(campaignId),
       client.updateCampaign(campaignId, { name: "Renamed" }),
       client.archiveCampaign(campaignId),
       client.restoreCampaign(campaignId),
@@ -229,6 +232,8 @@ describe("OpenTabletopClient", () => {
       client.deleteFogRegion(sceneId, fogId),
       client.fogHistory(sceneId),
       client.undoFog(sceneId),
+      client.sceneEdits(sceneId),
+      client.undoScene(sceneId),
       client.applyFogPreset(sceneId, { presetId: "preset_client" }),
       client.createWall(sceneId, { x1: 0, y1: 0, x2: 1, y2: 1 }),
       client.updateWall(sceneId, wallId, { blocksVision: false }),
@@ -266,10 +271,15 @@ describe("OpenTabletopClient", () => {
       client.exportChat(campaignId),
       client.roll({ campaignId, formula: "1d20" }),
       client.rolls(campaignId),
+      client.verifyRoll(campaignId, rollId),
       client.diceMacros(campaignId),
       client.createDiceMacro(campaignId, { name: "Macro", formula: "1d20" }),
       client.updateDiceMacro(macroId, { name: "Macro 2" }),
       client.deleteDiceMacro(macroId),
+      client.audioTracks(campaignId),
+      client.createAudioTrack(campaignId, { name: "Ambience", url: "https://example.test/ambience.mp3" }),
+      client.updateAudioTrack(audioTrackId, { playing: true }),
+      client.deleteAudioTrack(audioTrackId),
       client.combats(campaignId),
       client.combatAudit(combatId),
       client.startCombat(campaignId, { combatants: [] }),
@@ -386,6 +396,8 @@ function normalizeCall(call: string): string {
     .replace(entryId, "{entryId}")
     .replace(messageId, "{messageId}")
     .replace(macroId, "{macroId}")
+    .replace(rollId, "{rollId}")
+    .replace(audioTrackId, "{trackId}")
     .replace(combatId, "{combatId}")
     .replace(combatantId, "{combatantId}")
     .replace(proposalId, "{proposalId}")

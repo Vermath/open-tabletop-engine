@@ -1,7 +1,7 @@
-import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
 import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
 import { toPng } from "html-to-image";
-import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
@@ -11,6 +11,8 @@ import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryActio
 import { blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoSnapshot } from "./blank-canvas-demo.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
+import { computeTokenMovements, formatGridDistance } from "./board-animation.js";
+import { activeAudioCount, desiredAudioStates } from "./audio-sync.js";
 import { parseChatCommand } from "./chat-command.js";
 import { filterPaletteCommands, movePaletteIndex, paletteDiceFormula, type PaletteCommand } from "./command-palette.js";
 import { addDieToFormula, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
@@ -861,6 +863,7 @@ export function App() {
     chat: [],
     rolls: [],
     diceMacros: [],
+    audioTracks: [],
     encounters: [],
     combats: [],
     combatAudit: [],
@@ -924,6 +927,9 @@ export function App() {
   const [aiTokenPrompt, setAiTokenPrompt] = useState("Generate token art for this character with a clean silhouette, readable equipment, and no text.");
   const [aiGenerationJobs, setAiGenerationJobs] = useState<AiGenerationJob[]>([]);
   const [aiAgentOpen, setAiAgentOpen] = useState(false);
+  const [audioSoundboardOpen, setAudioSoundboardOpen] = useState(false);
+  const [audioMasterVolume, setAudioMasterVolume] = useState(0.8);
+  const [audioMuted, setAudioMuted] = useState(false);
   const [aiAgentPrompt, setAiAgentPrompt] = useState("");
   const [aiAgentApprovalMode, setAiAgentApprovalMode] = useState<AiAgentApprovalMode>("manual");
   const [aiAgentHistoryKey, setAiAgentHistoryKey] = useState(() => aiAgentHistoryStorageKey(campaignId, currentUserId));
@@ -3360,6 +3366,35 @@ export function App() {
     await refresh();
   }
 
+  async function createAudioTrack(input: { name: string; url: string; kind: AudioTrack["kind"]; loop: boolean }) {
+    try {
+      await apiPost<AudioTrack>(`/api/v1/campaigns/${campaignId}/audio`, input);
+      setStatus(`Added ${input.name} to the soundboard`);
+      await refresh();
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  }
+
+  async function toggleAudioTrack(track: AudioTrack) {
+    try {
+      await apiPatch<AudioTrack>(`/api/v1/audio/${track.id}`, { playing: !track.playing });
+      await refresh();
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  }
+
+  async function deleteAudioTrack(track: AudioTrack) {
+    try {
+      await apiDelete<AudioTrack>(`/api/v1/audio/${track.id}`);
+      setStatus(`Removed ${track.name} from the soundboard`);
+      await refresh();
+    } catch (error) {
+      setStatus(errorMessage(error));
+    }
+  }
+
   function createBlankCanvasDemoRoll(formula: string, visibility: DiceRoll["visibility"], label: string): DiceRoll {
     const timestamp = new Date().toISOString();
     const result = rollFormula(formula);
@@ -5190,6 +5225,15 @@ export function App() {
             AI
           </span>
         </button>
+        {!blankCanvasDemoOpen && hasPermission("scene.update") && (
+          <button className={audioSoundboardOpen ? "ai-agent-toggle active" : "ai-agent-toggle"} type="button" onClick={() => setAudioSoundboardOpen((open) => !open)} aria-label="Soundboard" title="Soundboard" aria-expanded={audioSoundboardOpen}>
+            <Music size={16} />
+            <span className="ai-agent-toggle-label ai-agent-toggle-label-full">Soundboard</span>
+            <span className="ai-agent-toggle-label ai-agent-toggle-label-compact" aria-hidden="true">
+              Aud
+            </span>
+          </button>
+        )}
         <section className="party-rail" aria-label="Party">
           <div className="operator-heading">
             <div className="section-title">Party</div>
@@ -6429,9 +6473,151 @@ export function App() {
         />
       )}
       <div id={diceBoxContainerId} className="dice-box-stage" aria-hidden="true" />
+      {!blankCanvasDemoOpen && <AudioPlaybackLayer tracks={snapshot.audioTracks} masterVolume={audioMasterVolume} muted={audioMuted} />}
+      {!blankCanvasDemoOpen && audioSoundboardOpen && hasPermission("scene.update") && (
+        <AudioSoundboard
+          tracks={snapshot.audioTracks}
+          masterVolume={audioMasterVolume}
+          muted={audioMuted}
+          onMasterVolumeChange={setAudioMasterVolume}
+          onToggleMuted={() => setAudioMuted((muted) => !muted)}
+          onToggleTrack={(track) => void toggleAudioTrack(track)}
+          onDeleteTrack={(track) => void deleteAudioTrack(track)}
+          onCreateTrack={(input) => void createAudioTrack(input)}
+          onClose={() => setAudioSoundboardOpen(false)}
+        />
+      )}
       {commandPaletteOpen && <CommandPalette commands={paletteCommands} onRun={runPaletteCommand} onClose={() => setCommandPaletteOpen(false)} />}
       {activeDiceCasts.length > 0 && <DiceCastOverlay casts={activeDiceCasts} />}
     </main>
+  );
+}
+
+function AudioPlaybackLayer(props: { tracks: AudioTrack[]; masterVolume: number; muted: boolean }) {
+  const elementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const desired = useMemo(() => desiredAudioStates(props.tracks, { masterVolume: props.masterVolume, muted: props.muted }), [props.masterVolume, props.muted, props.tracks]);
+
+  useEffect(() => {
+    const elements = elementsRef.current;
+    const desiredIds = new Set(desired.map((state) => state.trackId));
+    for (const [id, element] of elements) {
+      if (!desiredIds.has(id)) {
+        element.pause();
+        elements.delete(id);
+      }
+    }
+    for (const state of desired) {
+      let element = elements.get(state.trackId);
+      if (!element) {
+        element = new Audio();
+        element.preload = "auto";
+        elements.set(state.trackId, element);
+      }
+      if (element.getAttribute("data-otte-src") !== state.url) {
+        element.setAttribute("data-otte-src", state.url);
+        element.src = state.url;
+      }
+      element.loop = state.loop;
+      element.volume = state.volume;
+      if (state.playing && element.paused) {
+        // Browsers may block autoplay until a user gesture; the GM's click counts as one.
+        void element.play().catch(() => undefined);
+      } else if (!state.playing && !element.paused) {
+        element.pause();
+        element.currentTime = 0;
+      }
+    }
+  }, [desired]);
+
+  useEffect(
+    () => () => {
+      for (const element of elementsRef.current.values()) element.pause();
+      elementsRef.current.clear();
+    },
+    []
+  );
+
+  return null;
+}
+
+function AudioSoundboard(props: {
+  tracks: AudioTrack[];
+  masterVolume: number;
+  muted: boolean;
+  onMasterVolumeChange(volume: number): void;
+  onToggleMuted(): void;
+  onToggleTrack(track: AudioTrack): void;
+  onDeleteTrack(track: AudioTrack): void;
+  onCreateTrack(input: { name: string; url: string; kind: AudioTrack["kind"]; loop: boolean }): void;
+  onClose(): void;
+}) {
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [kind, setKind] = useState<AudioTrack["kind"]>("ambient");
+  const playingCount = activeAudioCount(props.tracks);
+
+  const submit = () => {
+    if (!name.trim() || !url.trim()) return;
+    props.onCreateTrack({ name: name.trim(), url: url.trim(), kind, loop: kind !== "sfx" });
+    setName("");
+    setUrl("");
+  };
+
+  return (
+    <aside className="audio-soundboard movable-panel" aria-label="Soundboard">
+      <header className="audio-soundboard-header">
+        <div className="section-title">
+          <Music size={16} /> Soundboard
+        </div>
+        <button className="icon-button" type="button" aria-label="Close soundboard" title="Close" onClick={props.onClose}>
+          <X size={16} />
+        </button>
+      </header>
+      <div className="audio-soundboard-master">
+        <button className="icon-button" type="button" aria-label={props.muted ? "Unmute" : "Mute"} title={props.muted ? "Unmute" : "Mute"} onClick={props.onToggleMuted}>
+          {props.muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+        </button>
+        <input type="range" min={0} max={1} step={0.05} value={props.masterVolume} aria-label="Master volume" onChange={(event) => props.onMasterVolumeChange(Number(event.target.value))} />
+        <span className="audio-soundboard-count">{playingCount} playing</span>
+      </div>
+      <ul className="audio-soundboard-list">
+        {props.tracks.length === 0 ? <li className="audio-soundboard-empty">No tracks yet. Add a music or ambience URL below.</li> : null}
+        {props.tracks.map((track) => (
+          <li key={track.id} className={track.playing ? "audio-track playing" : "audio-track"}>
+            <button className="icon-button" type="button" aria-label={track.playing ? `Stop ${track.name}` : `Play ${track.name}`} title={track.playing ? "Stop" : "Play"} onClick={() => props.onToggleTrack(track)}>
+              {track.playing ? <Pause size={15} /> : <Play size={15} />}
+            </button>
+            <span className="audio-track-name" title={track.url}>
+              {track.name}
+            </span>
+            <span className="audio-track-kind">{track.kind}</span>
+            <button className="icon-button" type="button" aria-label={`Delete ${track.name}`} title="Delete" onClick={() => props.onDeleteTrack(track)}>
+              <Trash2 size={15} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="audio-soundboard-add"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <input value={name} placeholder="Track name" aria-label="Track name" onChange={(event) => setName(event.target.value)} />
+        <input value={url} placeholder="https://… or /audio/…" aria-label="Track URL" onChange={(event) => setUrl(event.target.value)} />
+        <div className="audio-soundboard-add-row">
+          <select value={kind} aria-label="Track kind" onChange={(event) => setKind(event.target.value as AudioTrack["kind"])}>
+            <option value="ambient">Ambience</option>
+            <option value="music">Music</option>
+            <option value="sfx">Effect</option>
+          </select>
+          <button className="primary-button" type="submit" disabled={!name.trim() || !url.trim()}>
+            <Plus size={15} /> Add
+          </button>
+        </div>
+      </form>
+    </aside>
   );
 }
 
@@ -7142,6 +7328,9 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   const viewportRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const [viewportSize, setViewportSize] = useState<SceneViewportSize>({ width: 960, height: 640 });
+  const previousSceneTokensRef = useRef<Token[]>([]);
+  const tokenMoveSeqRef = useRef(0);
+  const [tokenMoveDistances, setTokenMoveDistances] = useState<Record<string, { distancePx: number; seq: number }>>({});
   const tokens = useMemo(() => props.tokens.filter((token) => token.sceneId === props.scene.id), [props.tokens, props.scene.id]);
   const activeLayerTokenIds = useMemo(() => new Set(tokens.filter((token) => tokenLayer(token) === props.activeTokenLayer).map((token) => token.id)), [tokens, props.activeTokenLayer]);
   const orderedTokens = useMemo(
@@ -7179,6 +7368,22 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     "--map-zoom": String(props.zoom)
   } as CSSProperties;
   const showGridOverlay = sceneGridOverlayVisible(props.scene);
+
+  useEffect(() => {
+    const previous = previousSceneTokensRef.current;
+    previousSceneTokensRef.current = orderedTokens;
+    if (previous.length === 0) return;
+    const movements = computeTokenMovements(previous, orderedTokens, { minDistancePx: Math.max(2, props.scene.gridSize * 0.1) });
+    if (movements.length === 0) return;
+    setTokenMoveDistances((current) => {
+      const next = { ...current };
+      for (const movement of movements) {
+        tokenMoveSeqRef.current += 1;
+        next[movement.tokenId] = { distancePx: movement.distancePx, seq: tokenMoveSeqRef.current };
+      }
+      return next;
+    });
+  }, [orderedTokens, props.scene.gridSize]);
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -8013,6 +8218,23 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
               />
             ))}
           </button>
+        );
+      })}
+      {orderedTokens.map((token) => {
+        const moveDistance = tokenMoveDistances[token.id];
+        if (!moveDistance) return null;
+        const frame = tokenFrame(token);
+        const centerX = frame.x + frame.width / 2;
+        const centerY = frame.y + frame.height / 2;
+        return (
+          <span
+            key={`${token.id}-move-${moveDistance.seq}`}
+            className="token-move-distance"
+            style={{ left: `${(centerX / props.scene.width) * 100}%`, top: `${(centerY / props.scene.height) * 100}%` }}
+            aria-hidden="true"
+          >
+            {formatGridDistance(moveDistance.distancePx, props.scene.gridSize)}
+          </span>
         );
       })}
       </div>

@@ -23,6 +23,8 @@ export type EngineEventType =
   | "chat.message.updated"
   | "chat.message.deleted"
   | "dice.roll.created"
+  | "audio.updated"
+  | "audio.deleted"
   | "combat.started"
   | "combat.roundAdvanced"
   | "combat.turnChanged"

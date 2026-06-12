@@ -207,6 +207,32 @@ export interface Scene extends Timestamps {
   lights: LightSource[];
   annotations: SceneAnnotation[];
   metadata: Record<string, unknown>;
+  sceneEditHistory?: SceneEditSnapshot[];
+}
+
+/** The editable geometry/layout fields a scene-edit undo restores. */
+export interface SceneEditableState {
+  name: string;
+  width: number;
+  height: number;
+  gridType: GridType;
+  gridSize: number;
+  backgroundAssetId?: ID;
+  folder?: string;
+  fog: FogRegion[];
+  walls: Wall[];
+  lights: LightSource[];
+  annotations: SceneAnnotation[];
+  metadata: Record<string, unknown>;
+}
+
+/** A pre-mutation snapshot pushed before a scene edit so a GM can undo the last N changes. */
+export interface SceneEditSnapshot {
+  id: ID;
+  at: string;
+  byUserId?: ID;
+  kind: string;
+  state: SceneEditableState;
 }
 
 export interface SceneActivationHistoryEntry {
@@ -546,6 +572,19 @@ export interface DiceRoll extends Timestamps {
   visibility: "public" | "gm_only" | "whisper";
   terms: DiceRollTerm[];
   total: number;
+  fairness?: DiceRollFairness;
+}
+
+/**
+ * Provably-fair metadata for a server-authoritative roll. `serverSeedHash` is the
+ * commitment (publishable before the result is trusted); `serverSeed` is the
+ * reveal, letting anyone recompute the roll and confirm it was not altered.
+ */
+export interface DiceRollFairness {
+  algorithm: "xmur3-mulberry32";
+  serverSeed: string;
+  serverSeedHash: string;
+  clientSeed?: string;
 }
 
 export interface DiceMacro extends Timestamps {
@@ -555,6 +594,25 @@ export interface DiceMacro extends Timestamps {
   name: string;
   formula: string;
   visibility: "public" | "gm_only";
+}
+
+export type AudioTrackKind = "music" | "ambient" | "sfx";
+
+/**
+ * A GM-curated soundboard entry. `playing`/`volume`/`loop` are synced to every
+ * connected client so ambient beds and sound effects play in unison.
+ */
+export interface AudioTrack extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  createdBy: ID;
+  name: string;
+  url: string;
+  kind: AudioTrackKind;
+  loop: boolean;
+  playing: boolean;
+  volume: number;
+  startedAt?: string;
 }
 
 export interface DiceRollTerm {
@@ -1006,6 +1064,7 @@ export interface EngineState {
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  audioTracks: AudioTrack[];
   encounters: Encounter[];
   combats: Combat[];
   compendia: CompendiumPack[];

@@ -101,6 +101,7 @@ function snapshotFixture(overrides: Partial<Snapshot> = {}): Snapshot {
     chat: [],
     rolls: [],
     diceMacros: [],
+    audioTracks: [],
     encounters: [],
     combats: [],
     combatAudit: [],

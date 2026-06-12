@@ -147,6 +147,7 @@ export function createBlankCanvasDemoSnapshot(timestamp = new Date().toISOString
     chat: [],
     rolls: [],
     diceMacros: [],
+    audioTracks: [],
     encounters: [],
     combats: [],
     combatAudit: [],

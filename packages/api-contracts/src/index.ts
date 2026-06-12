@@ -81,6 +81,8 @@ export const routes = {
   sceneFog: (sceneId: string) => `/api/v1/scenes/${sceneId}/fog`,
   sceneFogHistory: (sceneId: string) => `/api/v1/scenes/${sceneId}/fog/history`,
   sceneFogUndo: (sceneId: string) => `/api/v1/scenes/${sceneId}/fog/undo`,
+  sceneEdits: (sceneId: string) => `/api/v1/scenes/${sceneId}/edits`,
+  sceneUndo: (sceneId: string) => `/api/v1/scenes/${sceneId}/undo`,
   sceneFogApplyPreset: (sceneId: string) => `/api/v1/scenes/${sceneId}/fog/apply-preset`,
   sceneFogRegion: (sceneId: string, fogId: string) => `/api/v1/scenes/${sceneId}/fog/${fogId}`,
   sceneWalls: (sceneId: string) => `/api/v1/scenes/${sceneId}/walls`,
@@ -104,6 +106,8 @@ export const routes = {
   chatExport: (campaignId: string) => `/api/v1/campaigns/${campaignId}/chat/export`,
   dice: "/api/v1/dice/roll",
   diceMacros: (campaignId: string) => `/api/v1/campaigns/${campaignId}/dice-macros`,
+  campaignAudio: (campaignId: string) => `/api/v1/campaigns/${campaignId}/audio`,
+  audioTrack: (trackId: string) => `/api/v1/audio/${trackId}`,
   diceMacro: (macroId: string) => `/api/v1/dice-macros/${macroId}`,
   encounters: (campaignId: string) => `/api/v1/campaigns/${campaignId}/encounters`,
   combats: (campaignId: string) => `/api/v1/campaigns/${campaignId}/combats`,
@@ -164,6 +168,8 @@ export const routes = {
   dogfoodReportBundle: (campaignId: string) => `/api/v1/campaigns/${campaignId}/dogfood-report-bundle`,
   importCampaign: "/api/v1/import/campaign",
   campaignRolls: (campaignId: string) => `/api/v1/campaigns/${campaignId}/rolls`,
+  campaignRollVerify: (campaignId: string, rollId: string) => `/api/v1/campaigns/${campaignId}/rolls/${rollId}/verify`,
+  campaignSnapshot: (campaignId: string) => `/api/v1/campaigns/${campaignId}/snapshot`,
   contentImports: (campaignId: string) => `/api/v1/campaigns/${campaignId}/content-imports`,
   contentImportPreview: (campaignId: string) => `/api/v1/campaigns/${campaignId}/content-imports/preview`,
   contentImport: (importId: string) => `/api/v1/content-imports/${importId}`,
@@ -361,6 +367,8 @@ const endpointSpecs = [
   ["POST", "/api/v1/scenes/{sceneId}/fog"],
   ["GET", "/api/v1/scenes/{sceneId}/fog/history"],
   ["POST", "/api/v1/scenes/{sceneId}/fog/undo"],
+  ["GET", "/api/v1/scenes/{sceneId}/edits"],
+  ["POST", "/api/v1/scenes/{sceneId}/undo"],
   ["POST", "/api/v1/scenes/{sceneId}/fog/apply-preset"],
   ["PATCH", "/api/v1/scenes/{sceneId}/fog/{fogId}"],
   ["DELETE", "/api/v1/scenes/{sceneId}/fog/{fogId}"],
@@ -394,9 +402,15 @@ const endpointSpecs = [
   ["PATCH", "/api/v1/chat/messages/{messageId}/moderation"],
   ["DELETE", "/api/v1/chat/messages/{messageId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/rolls"],
+  ["GET", "/api/v1/campaigns/{campaignId}/rolls/{rollId}/verify"],
+  ["GET", "/api/v1/campaigns/{campaignId}/snapshot"],
   ["GET", "/api/v1/campaigns/{campaignId}/chat/export"],
   ["GET", "/api/v1/campaigns/{campaignId}/dice-macros"],
   ["POST", "/api/v1/campaigns/{campaignId}/dice-macros"],
+  ["GET", "/api/v1/campaigns/{campaignId}/audio"],
+  ["POST", "/api/v1/campaigns/{campaignId}/audio"],
+  ["PATCH", "/api/v1/audio/{trackId}"],
+  ["DELETE", "/api/v1/audio/{trackId}"],
   ["PATCH", "/api/v1/dice-macros/{macroId}"],
   ["DELETE", "/api/v1/dice-macros/{macroId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/combats"],
@@ -2753,6 +2767,33 @@ const componentSchemas = {
       permissionTemplate: { type: "string", enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"] }
     }
   },
+  CampaignSnapshot: {
+    type: "object",
+    additionalProperties: true,
+    required: ["generatedAt", "campaign", "members", "scenes", "tokens", "fogPresets", "assets", "actors", "items", "journals", "chat", "rolls", "diceMacros", "encounters", "combats", "proposals", "memory"],
+    properties: {
+      generatedAt: { type: "string", format: "date-time" },
+      campaign: schemaRef("Campaign"),
+      members: arrayOf(schemaRef("CampaignMember")),
+      scenes: arrayOf(schemaRef("Scene")),
+      selectedSceneId: idSchema,
+      activeSceneId: idSchema,
+      vision: schemaRef("VisionSnapshot"),
+      tokens: arrayOf(schemaRef("Token")),
+      fogPresets: arrayOf(schemaRef("FogPreset")),
+      assets: arrayOf(schemaRef("MapAsset")),
+      actors: arrayOf(schemaRef("Actor")),
+      items: arrayOf(schemaRef("Item")),
+      journals: arrayOf(schemaRef("JournalEntry")),
+      chat: arrayOf(schemaRef("ChatMessage")),
+      rolls: arrayOf(schemaRef("DiceRoll")),
+      diceMacros: arrayOf(schemaRef("DiceMacro")),
+      encounters: arrayOf(schemaRef("Encounter")),
+      combats: arrayOf(schemaRef("Combat")),
+      proposals: arrayOf(schemaRef("Proposal")),
+      memory: arrayOf(schemaRef("AiMemoryFact"))
+    }
+  },
   CampaignPatchRequest: {
     type: "object",
     additionalProperties: false,
@@ -2933,6 +2974,27 @@ const componentSchemas = {
       actorUserId: idSchema,
       region: schemaRef("FogRegion"),
       targetHistoryId: idSchema
+    }
+  },
+  SceneEditHistory: {
+    type: "object",
+    additionalProperties: false,
+    required: ["sceneId", "limit", "entries"],
+    properties: {
+      sceneId: idSchema,
+      limit: { type: "integer", minimum: 0 },
+      entries: arrayOf(schemaRef("SceneEditHistoryEntry"))
+    }
+  },
+  SceneEditHistoryEntry: {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "at", "kind"],
+    properties: {
+      id: idSchema,
+      at: { type: "string", format: "date-time" },
+      byUserId: idSchema,
+      kind: stringSchema
     }
   },
   VisionPoint: {
@@ -3283,7 +3345,33 @@ const componentSchemas = {
       label: stringSchema,
       visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
       terms: arrayOf(schemaRef("DiceRollTerm")),
-      total: { type: "number" }
+      total: { type: "number" },
+      fairness: schemaRef("DiceRollFairness")
+    }
+  },
+  DiceRollFairness: {
+    type: "object",
+    additionalProperties: false,
+    required: ["algorithm", "serverSeed", "serverSeedHash"],
+    properties: {
+      algorithm: { type: "string", enum: ["xmur3-mulberry32"] },
+      serverSeed: stringSchema,
+      serverSeedHash: stringSchema,
+      clientSeed: stringSchema
+    }
+  },
+  DiceRollVerification: {
+    type: "object",
+    additionalProperties: false,
+    required: ["rollId", "formula", "verified", "expected"],
+    properties: {
+      rollId: idSchema,
+      formula: stringSchema,
+      verified: { type: "boolean" },
+      reason: { type: "string", enum: ["fairness_unavailable", "unsupported_algorithm", "seed_hash_mismatch", "formula_unparseable", "result_mismatch"] },
+      fairness: schemaRef("DiceRollFairness"),
+      expected: { type: "object", additionalProperties: false, required: ["total"], properties: { total: { type: "number" } } },
+      recomputed: { type: "object", additionalProperties: false, required: ["total"], properties: { total: { type: "number" } } }
     }
   },
   DiceRollPage: paginatedObjectOf(schemaRef("DiceRoll")),
@@ -3317,7 +3405,8 @@ const componentSchemas = {
       campaignId: idSchema,
       formula: stringSchema,
       visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
-      label: stringSchema
+      label: stringSchema,
+      clientSeed: stringSchema
     }
   },
   MapAsset: {
@@ -3876,6 +3965,47 @@ const componentSchemas = {
       name: stringSchema,
       formula: stringSchema,
       visibility: { type: "string", enum: ["public", "gm_only"] }
+    }
+  },
+  AudioTrack: {
+    type: "object",
+    additionalProperties: true,
+    required: ["id", "campaignId", "createdBy", "name", "url", "kind", "loop", "playing", "volume", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties,
+      campaignId: idSchema,
+      createdBy: idSchema,
+      name: stringSchema,
+      url: stringSchema,
+      kind: { type: "string", enum: ["music", "ambient", "sfx"] },
+      loop: { type: "boolean" },
+      playing: { type: "boolean" },
+      volume: { type: "number", minimum: 0, maximum: 1 },
+      startedAt: { type: "string", format: "date-time" }
+    }
+  },
+  AudioTrackRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "url"],
+    properties: {
+      name: stringSchema,
+      url: stringSchema,
+      kind: { type: "string", enum: ["music", "ambient", "sfx"] },
+      loop: { type: "boolean" },
+      volume: { type: "number", minimum: 0, maximum: 1 }
+    }
+  },
+  AudioTrackPatchRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      name: stringSchema,
+      url: stringSchema,
+      kind: { type: "string", enum: ["music", "ambient", "sfx"] },
+      loop: { type: "boolean" },
+      volume: { type: "number", minimum: 0, maximum: 1 },
+      playing: { type: "boolean" }
     }
   },
   AiThread: {
@@ -5433,6 +5563,16 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "200": jsonResponse("Updated scene after undoing the latest fog edit", schemaRef("Scene"))
     }
   },
+  "GET /api/v1/scenes/{sceneId}/edits": {
+    responses: {
+      "200": jsonResponse("Scene edit undo history (geometry, lighting, and annotation changes)", schemaRef("SceneEditHistory"))
+    }
+  },
+  "POST /api/v1/scenes/{sceneId}/undo": {
+    responses: {
+      "200": jsonResponse("Updated scene after undoing the latest scene edit", schemaRef("Scene"))
+    }
+  },
   "POST /api/v1/scenes/{sceneId}/fog/apply-preset": {
     requestBody: jsonRequestBody(schemaRef("FogPresetApplyRequest")),
     responses: {
@@ -5558,6 +5698,16 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "GET /api/v1/campaigns/{campaignId}/rolls": {
     responses: {
       "200": jsonResponse("Dice rolls visible to the caller", { oneOf: [arrayOf(schemaRef("DiceRoll")), schemaRef("DiceRollPage")] })
+    }
+  },
+  "GET /api/v1/campaigns/{campaignId}/rolls/{rollId}/verify": {
+    responses: {
+      "200": jsonResponse("Provably-fair verification of a recorded dice roll", schemaRef("DiceRollVerification"))
+    }
+  },
+  "GET /api/v1/campaigns/{campaignId}/snapshot": {
+    responses: {
+      "200": jsonResponse("Permission-filtered campaign state composed into a single payload", schemaRef("CampaignSnapshot"))
     }
   },
   "GET /api/v1/campaigns/{campaignId}/assets": {
@@ -5795,6 +5945,28 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "DELETE /api/v1/dice-macros/{macroId}": {
     responses: {
       "200": jsonResponse("Deleted dice macro snapshot", schemaRef("DiceMacro"))
+    }
+  },
+  "GET /api/v1/campaigns/{campaignId}/audio": {
+    responses: {
+      "200": jsonResponse("Campaign soundboard tracks and their synced playback state", arrayOf(schemaRef("AudioTrack")))
+    }
+  },
+  "POST /api/v1/campaigns/{campaignId}/audio": {
+    requestBody: jsonRequestBody(schemaRef("AudioTrackRequest")),
+    responses: {
+      "200": jsonResponse("Created audio track", schemaRef("AudioTrack"))
+    }
+  },
+  "PATCH /api/v1/audio/{trackId}": {
+    requestBody: jsonRequestBody(schemaRef("AudioTrackPatchRequest")),
+    responses: {
+      "200": jsonResponse("Updated audio track with synced playback state", schemaRef("AudioTrack"))
+    }
+  },
+  "DELETE /api/v1/audio/{trackId}": {
+    responses: {
+      "200": jsonResponse("Deleted audio track snapshot", schemaRef("AudioTrack"))
     }
   },
   "GET /api/v1/campaigns/{campaignId}/encounters": {

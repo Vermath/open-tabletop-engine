@@ -47,6 +47,7 @@ const stateCollections = [
   "chat",
   "rolls",
   "diceMacros",
+  "audioTracks",
   "encounters",
   "combats",
   "compendia",

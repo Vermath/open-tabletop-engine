@@ -6,8 +6,8 @@ import websocket from "@fastify/websocket";
 import { buildPermissionFilteredContext, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
 import { apiContractPolicy, openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
-import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type MessageType, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
-import { rollFormula } from "@open-tabletop/dice-engine";
+import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AudioTrack, type AudioTrackKind, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type DiceRollFairness, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type MessageType, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneEditSnapshot, type SceneEditableState, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
+import { composeFairnessSeed, rollFormula, seededRng } from "@open-tabletop/dice-engine";
 import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdInitiativeRoll, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type RulesActionResolutionResult, type RulesSaveOutcome, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { assetStorageKey, createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
@@ -2614,6 +2614,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return campaign;
   });
 
+  app.get<{ Params: { campaignId: string }; Querystring: { sceneId?: string } }>("/api/v1/campaigns/:campaignId/snapshot", async (request, reply) => {
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, request.params.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    return buildCampaignSnapshot(store, userId, campaign, { sceneId: request.query.sceneId });
+  });
+
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/members", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
@@ -2827,7 +2837,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.read");
     if (allowed !== true) return allowed;
-    return store.state.scenes.filter((item) => item.campaignId === request.params.campaignId).sort(compareScenesForDisplay);
+    return store.state.scenes.filter((item) => item.campaignId === request.params.campaignId).sort(compareScenesForDisplay).map(withoutSceneEditHistory);
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<Scene> }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
@@ -3319,6 +3329,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers);
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    if (SCENE_EDITABLE_PATCH_FIELDS.some((field) => field in request.body)) captureSceneEditSnapshot(scene, userId, "scene.update");
     const body = { ...request.body };
     const activating = body.active === true && !scene.active;
     const activatedAt = nowIso();
@@ -3352,6 +3363,45 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       createEvent({
         campaignId: scene.campaignId,
         type: activating ? "scene.activated" : "scene.updated",
+        targetId: scene.id,
+        payload: scene
+      })
+    );
+    return scene;
+  });
+
+  app.get<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId/edits", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    return { sceneId: scene.id, limit: SCENE_EDIT_HISTORY_LIMIT, entries: publicSceneEditHistory(scene) };
+  });
+
+  app.post<{ Params: { sceneId: string } }>("/api/v1/scenes/:sceneId/undo", async (request, reply) => {
+    const campaignId = campaignIdForScene(store, request.params.sceneId);
+    if (!campaignId) return notFound(reply, "Scene not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const allowed = requireCampaignPermissionForUser(store, reply, request.headers, userId, campaignId, "scene.update");
+    if (allowed !== true) return allowed;
+    const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
+    const undone = undoSceneEdit(scene);
+    if (!undone) return badRequest(reply, "No scene edits available to undo");
+    appendServerAuditLog(store, userId, {
+      campaignId,
+      action: "scene.edit.undo",
+      targetType: "scene",
+      targetId: scene.id,
+      before: { snapshotId: undone.id, kind: undone.kind, at: undone.at }
+    });
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: scene.campaignId,
+        type: "scene.updated",
+        actorUserId: userId,
         targetId: scene.id,
         payload: scene
       })
@@ -3511,6 +3561,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       normalized.annotation.affectedTokenIds = templateAffectedTokenIds(store, scene, normalized.annotation);
       normalized.annotation.effectHint = templateEffectHint(normalized.annotation.rulesSystemId, normalized.annotation);
     }
+    if (requiredPermission === "scene.update") captureSceneEditSnapshot(scene, userId, "scene.annotation.create");
     const annotations = ensureSceneAnnotations(scene);
     annotations.push(normalized.annotation);
     if (annotations.length > 100) annotations.splice(0, annotations.length - 100);
@@ -3568,6 +3619,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalized = normalizeSceneAnnotationPatch(scene, annotation, request.body ?? {});
     if ("error" in normalized) return badRequest(reply, normalized.error);
     const before = { ...annotation, points: annotation.points.map((point) => ({ ...point })) };
+    captureSceneEditSnapshot(scene, userId, "scene.annotation.update");
     Object.assign(annotation, normalized.patch, { updatedAt: nowIso() });
     if (annotation.kind === "template") {
       const campaign = store.state.campaigns.find((item) => item.id === campaignId);
@@ -3609,6 +3661,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const annotations = ensureSceneAnnotations(scene);
     const index = annotations.findIndex((annotation) => annotation.id === request.params.annotationId);
     if (index < 0) return notFound(reply, "Annotation not found");
+    captureSceneEditSnapshot(scene, userId, "scene.annotation.delete");
     const deleted = annotations.splice(index, 1)[0]!;
     appendSceneAnnotationHistory(scene, userId, "delete", deleted);
     scene.updatedAt = nowIso();
@@ -3930,6 +3983,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       blocksMovement: request.body.blocksMovement ?? (kind === "wall"),
       kind
     };
+    captureSceneEditSnapshot(scene, userId, "scene.wall.create");
     scene.walls.push(wall);
     scene.updatedAt = nowIso();
     appendServerAuditLog(store, userId, {
@@ -3994,6 +4048,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return badRequest(reply, "Wall endpoints must not be identical");
     }
     const before = { ...wall };
+    captureSceneEditSnapshot(scene, userId, "scene.wall.update");
     Object.assign(wall, normalized.patch);
     scene.updatedAt = nowIso();
     appendServerAuditLog(store, userId, {
@@ -4027,6 +4082,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const index = scene.walls.findIndex((item) => item.id === request.params.wallId);
     if (index < 0) return notFound(reply, "Wall not found");
+    captureSceneEditSnapshot(scene, userId, "scene.wall.delete");
     const deleted = scene.walls.splice(index, 1)[0]!;
     scene.updatedAt = nowIso();
     appendServerAuditLog(store, userId, {
@@ -4073,6 +4129,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalized = normalizeLightSourcePatch(light);
     if ("error" in normalized) return badRequest(reply, normalized.error);
     Object.assign(light, normalized.patch);
+    captureSceneEditSnapshot(scene, userId, "scene.light.create");
     scene.lights.push(light);
     scene.updatedAt = nowIso();
     appendServerAuditLog(store, userId, {
@@ -4123,6 +4180,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return badRequest(reply, normalized.error);
     }
     const before = { ...light };
+    captureSceneEditSnapshot(scene, userId, "scene.light.update");
     Object.assign(light, normalized.patch);
     scene.updatedAt = nowIso();
     appendServerAuditLog(store, userId, {
@@ -4156,6 +4214,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const index = scene.lights.findIndex((item) => item.id === request.params.lightId);
     if (index < 0) return notFound(reply, "Light source not found");
+    captureSceneEditSnapshot(scene, userId, "scene.light.delete");
     const deleted = scene.lights.splice(index, 1)[0]!;
     scene.updatedAt = nowIso();
     appendServerAuditLog(store, userId, {
@@ -4560,14 +4619,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       formula: string;
       visibility?: "public" | "gm_only" | "whisper";
       label?: string;
+      clientSeed?: string;
     };
   }>("/api/v1/dice/roll", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.body.campaignId, "dice.roll");
     if (allowed !== true) return allowed;
     const userId = currentUserId(store, request.headers)!;
     let rolled: ReturnType<typeof rollFormula>;
+    let fairness: DiceRollFairness;
     try {
-      rolled = rollFormula(request.body.formula);
+      const fairRoll = rollWithFairness(request.body.formula, request.body.clientSeed);
+      rolled = fairRoll.rolled;
+      fairness = fairRoll.fairness;
     } catch (error) {
       return badRequest(reply, error instanceof Error ? error.message : "Invalid dice formula");
     }
@@ -4578,7 +4641,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       label: request.body.label,
       visibility: request.body.visibility ?? "public",
       terms: rolled.terms,
-      total: rolled.total
+      total: rolled.total,
+      fairness
     });
     store.state.rolls.push(roll);
     const message = createTimestamped("msg", {
@@ -4611,6 +4675,18 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     return roll;
+  });
+
+  app.get<{ Params: { campaignId: string; rollId: string } }>("/api/v1/campaigns/:campaignId/rolls/:rollId/verify", async (request, reply) => {
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "chat.read");
+    if (allowed !== true) return allowed;
+    const roll = store.state.rolls.find((item) => item.id === request.params.rollId && item.campaignId === request.params.campaignId);
+    if (!roll) return notFound(reply, "Dice roll not found");
+    const linkedMessage = store.state.chat.find((message) => message.rollId === roll.id && message.campaignId === roll.campaignId);
+    if (!canReadDiceRoll(store, userId, roll, linkedMessage)) return notFound(reply, "Dice roll not found");
+    return verifyDiceRollRecord(roll);
   });
 
   app.get<{ Params: { campaignId: string }; Querystring: ListPaginationQuery }>("/api/v1/campaigns/:campaignId/rolls", async (request, reply) => {
@@ -4703,6 +4779,89 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     store.state.diceMacros = store.state.diceMacros.filter((item) => item.id !== macro.id);
     store.save();
     return macro;
+  });
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/audio", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    return store.state.audioTracks.filter((track) => track.campaignId === request.params.campaignId);
+  });
+
+  app.post<{ Params: { campaignId: string }; Body: Partial<AudioTrack> }>("/api/v1/campaigns/:campaignId/audio", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.update");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const name = typeof request.body.name === "string" ? request.body.name.trim() : "";
+    if (!name) return badRequest(reply, "Audio track name is required");
+    const url = normalizeAudioTrackUrl(request.body.url);
+    if (!url) return badRequest(reply, "Audio track url must be a valid http(s) or relative URL");
+    const track = createTimestamped("aud", {
+      campaignId: request.params.campaignId,
+      createdBy: userId,
+      name: name.slice(0, 120),
+      url,
+      kind: normalizeAudioTrackKind(request.body.kind),
+      loop: request.body.loop ?? true,
+      playing: false,
+      volume: normalizeAudioVolume(request.body.volume)
+    }) satisfies AudioTrack;
+    store.state.audioTracks.push(track);
+    store.save();
+    broadcast(createEvent({ campaignId: track.campaignId, type: "audio.updated", actorUserId: userId, targetId: track.id, payload: track }));
+    return track;
+  });
+
+  app.patch<{ Params: { trackId: string }; Body: Partial<AudioTrack> }>("/api/v1/audio/:trackId", async (request, reply) => {
+    const track = store.state.audioTracks.find((item) => item.id === request.params.trackId);
+    if (!track) return notFound(reply, "Audio track not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, track.campaignId, "scene.update");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    if (request.body.name !== undefined) {
+      const name = typeof request.body.name === "string" ? request.body.name.trim() : "";
+      if (!name) return badRequest(reply, "Audio track name is required");
+      track.name = name.slice(0, 120);
+    }
+    if (request.body.url !== undefined) {
+      const url = normalizeAudioTrackUrl(request.body.url);
+      if (!url) return badRequest(reply, "Audio track url must be a valid http(s) or relative URL");
+      track.url = url;
+    }
+    if (request.body.kind !== undefined) track.kind = normalizeAudioTrackKind(request.body.kind);
+    if (typeof request.body.loop === "boolean") track.loop = request.body.loop;
+    if (request.body.volume !== undefined) track.volume = normalizeAudioVolume(request.body.volume);
+    if (typeof request.body.playing === "boolean") {
+      const wasPlaying = track.playing;
+      track.playing = request.body.playing;
+      if (track.playing && !wasPlaying) track.startedAt = nowIso();
+      if (!track.playing) track.startedAt = undefined;
+      if (track.playing && track.kind !== "sfx") {
+        for (const other of store.state.audioTracks) {
+          if (other.id !== track.id && other.campaignId === track.campaignId && other.kind === track.kind && other.playing) {
+            other.playing = false;
+            other.startedAt = undefined;
+            other.updatedAt = nowIso();
+            broadcast(createEvent({ campaignId: other.campaignId, type: "audio.updated", actorUserId: userId, targetId: other.id, payload: other }));
+          }
+        }
+      }
+    }
+    track.updatedAt = nowIso();
+    store.save();
+    broadcast(createEvent({ campaignId: track.campaignId, type: "audio.updated", actorUserId: userId, targetId: track.id, payload: track }));
+    return track;
+  });
+
+  app.delete<{ Params: { trackId: string } }>("/api/v1/audio/:trackId", async (request, reply) => {
+    const track = store.state.audioTracks.find((item) => item.id === request.params.trackId);
+    if (!track) return notFound(reply, "Audio track not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, track.campaignId, "scene.update");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    store.state.audioTracks = store.state.audioTracks.filter((item) => item.id !== track.id);
+    store.save();
+    broadcast(createEvent({ campaignId: track.campaignId, type: "audio.deleted", actorUserId: userId, targetId: track.id, payload: track }));
+    return track;
   });
 
   app.get<{ Querystring: { campaignId?: string } & ListPaginationQuery }>("/api/v1/chat/messages", async (request, reply) => {
@@ -16580,6 +16739,11 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     if (!message?.id || !message.userId || !message.type || typeof message.body !== "string" || !message.visibility || !Array.isArray(message.recipientUserIds)) return undefined;
     return canReadChatMessage(store, userId, message as ChatMessage) ? event : undefined;
   }
+  if (event.type.startsWith("scene.")) {
+    const scene = event.payload as Partial<Scene> | undefined;
+    if (scene && "sceneEditHistory" in scene) return { ...event, payload: withoutSceneEditHistory(scene as Scene) };
+    return event;
+  }
   if (!event.type.startsWith("token.")) return event;
   const token = event.payload as Partial<Token> | undefined;
   if (!token?.sceneId) return event;
@@ -19629,6 +19793,230 @@ function canReadDiceRoll(store: StateStore, userId: string, roll: DiceRoll, link
   if (roll.visibility === "public") return true;
   if (roll.visibility === "whisper") return roll.userId === userId || canCampaign(store, userId, roll.campaignId, "chat.moderate");
   return canCampaign(store, userId, roll.campaignId, "chat.moderate") || canCampaign(store, userId, roll.campaignId, "journal.readSecret") || canCampaign(store, userId, roll.campaignId, "ai.readGmMemory");
+}
+
+function normalizeClientSeed(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 200) : undefined;
+}
+
+function normalizeAudioTrackKind(value: unknown): AudioTrackKind {
+  return value === "music" || value === "ambient" || value === "sfx" ? value : "ambient";
+}
+
+function normalizeAudioVolume(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0.8;
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeAudioTrackUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 2000) return undefined;
+  if (trimmed.startsWith("/")) return trimmed;
+  try {
+    const url = new URL(trimmed);
+    return url.protocol === "http:" || url.protocol === "https:" ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function rollWithFairness(formula: string, clientSeedInput: unknown): { rolled: ReturnType<typeof rollFormula>; fairness: DiceRollFairness } {
+  const serverSeed = randomBytes(32).toString("hex");
+  const serverSeedHash = createHash("sha256").update(serverSeed).digest("hex");
+  const clientSeed = normalizeClientSeed(clientSeedInput);
+  const rolled = rollFormula(formula, { rng: seededRng(composeFairnessSeed(serverSeed, clientSeed)) });
+  const fairness: DiceRollFairness = {
+    algorithm: "xmur3-mulberry32",
+    serverSeed,
+    serverSeedHash,
+    ...(clientSeed ? { clientSeed } : {})
+  };
+  return { rolled, fairness };
+}
+
+interface DiceRollVerification {
+  rollId: string;
+  formula: string;
+  verified: boolean;
+  reason?: "fairness_unavailable" | "unsupported_algorithm" | "seed_hash_mismatch" | "formula_unparseable" | "result_mismatch";
+  fairness?: DiceRollFairness;
+  expected: { total: number };
+  recomputed?: { total: number };
+}
+
+function verifyDiceRollRecord(roll: DiceRoll): DiceRollVerification {
+  const base = { rollId: roll.id, formula: roll.formula, expected: { total: roll.total } };
+  const fairness = roll.fairness;
+  if (!fairness) return { ...base, verified: false, reason: "fairness_unavailable" };
+  if (fairness.algorithm !== "xmur3-mulberry32") return { ...base, verified: false, reason: "unsupported_algorithm", fairness };
+  const recomputedHash = createHash("sha256").update(fairness.serverSeed).digest("hex");
+  if (recomputedHash !== fairness.serverSeedHash) return { ...base, verified: false, reason: "seed_hash_mismatch", fairness };
+  let recomputed: ReturnType<typeof rollFormula>;
+  try {
+    recomputed = rollFormula(roll.formula, { rng: seededRng(composeFairnessSeed(fairness.serverSeed, fairness.clientSeed)) });
+  } catch {
+    return { ...base, verified: false, reason: "formula_unparseable", fairness };
+  }
+  const matches = recomputed.total === roll.total && stableJson(recomputed.terms) === stableJson(roll.terms);
+  return {
+    ...base,
+    verified: matches,
+    ...(matches ? {} : { reason: "result_mismatch" as const }),
+    fairness,
+    recomputed: { total: recomputed.total }
+  };
+}
+
+interface CampaignSnapshotResult {
+  generatedAt: string;
+  campaign: Campaign;
+  members: ReturnType<typeof memberSessionInfo>[];
+  scenes: Scene[];
+  selectedSceneId?: string;
+  activeSceneId?: string;
+  vision?: VisionSnapshot;
+  tokens: Token[];
+  fogPresets: FogPreset[];
+  assets: MapAsset[];
+  actors: Actor[];
+  items: Item[];
+  journals: JournalEntry[];
+  chat: ChatMessage[];
+  rolls: DiceRoll[];
+  diceMacros: DiceMacro[];
+  encounters: Encounter[];
+  combats: Combat[];
+  proposals: Proposal[];
+  memory: AiMemoryFact[];
+}
+
+/**
+ * Server-composed, permission-filtered campaign snapshot. Collapses the web client's
+ * per-collection fan-out into one payload while reusing the exact filters each list
+ * route applies, so a caller never sees state a dedicated endpoint would withhold.
+ */
+function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Campaign, options: { sceneId?: string }): CampaignSnapshotResult {
+  const campaignId = campaign.id;
+  const permissions = permissionsForUser(store, userId, campaignId);
+  const canScene = canCampaign(store, userId, campaignId, "scene.read");
+  const canActor = canCampaign(store, userId, campaignId, "actor.read");
+  const canJournal = canCampaign(store, userId, campaignId, "journal.read");
+  const canJournalSecret = canCampaign(store, userId, campaignId, "journal.readSecret");
+  const canChat = canCampaign(store, userId, campaignId, "chat.read");
+  const canDice = canCampaign(store, userId, campaignId, "dice.roll");
+  const canManage = canCampaign(store, userId, campaignId, "campaign.update");
+  const canReveal = canCampaign(store, userId, campaignId, "token.reveal");
+  const canMemory = canCampaign(store, userId, campaignId, "ai.readPublicMemory") || canCampaign(store, userId, campaignId, "ai.readGmMemory");
+  const canMemoryGm = canCampaign(store, userId, campaignId, "ai.readGmMemory");
+
+  const scenes = canScene ? store.state.scenes.filter((scene) => scene.campaignId === campaignId) : [];
+  const activeScene = scenes.find((scene) => scene.active);
+  const selectedScene = (options.sceneId ? scenes.find((scene) => scene.id === options.sceneId) : undefined) ?? activeScene ?? scenes[0];
+  const sceneIdsForTokens = [...new Set([selectedScene?.id, activeScene?.id].filter((id): id is string => Boolean(id)))];
+  const visibilityCache = createTokenVisibilityCache();
+  const tokens = canScene ? visibleTokensForUser(store, userId, campaignId, store.state.tokens.filter((token) => sceneIdsForTokens.includes(token.sceneId)), visibilityCache) : [];
+  const vision = canScene && selectedScene ? visionSnapshotForUser(store, userId, campaignId, selectedScene, visibilityCache) : undefined;
+
+  const linkedMessagesByRollId = new Map<string, ChatMessage>();
+  if (canChat) {
+    for (const message of store.state.chat) {
+      if (message.campaignId !== campaignId || !message.rollId || linkedMessagesByRollId.has(message.rollId)) continue;
+      linkedMessagesByRollId.set(message.rollId, message);
+    }
+  }
+
+  return {
+    generatedAt: nowIso(),
+    campaign,
+    members: store.state.members.filter((member) => member.campaignId === campaignId).map((member) => memberSessionInfo(store, member)),
+    scenes: scenes.map(withoutSceneEditHistory),
+    ...(selectedScene ? { selectedSceneId: selectedScene.id } : {}),
+    ...(activeScene ? { activeSceneId: activeScene.id } : {}),
+    ...(vision ? { vision } : {}),
+    tokens,
+    fogPresets: canReveal ? store.state.fogPresets.filter((preset) => preset.campaignId === campaignId) : [],
+    assets: canScene ? store.state.assets.filter((asset) => asset.campaignId === campaignId) : [],
+    actors: canActor ? store.state.actors.filter((actor) => actor.campaignId === campaignId) : [],
+    items: canActor ? store.state.items.filter((item) => item.campaignId === campaignId) : [],
+    journals: canJournal
+      ? store.state.journals.filter((entry) => entry.campaignId === campaignId).filter((entry) => entry.visibility === "public" || canJournalSecret || entry.visibleToUserIds.includes(userId))
+      : [],
+    chat: canChat ? store.state.chat.filter((message) => message.campaignId === campaignId && canReadChatMessage(store, userId, message)) : [],
+    rolls: canChat ? store.state.rolls.filter((roll) => roll.campaignId === campaignId && canReadDiceRoll(store, userId, roll, linkedMessagesByRollId.get(roll.id))) : [],
+    diceMacros: canDice ? store.state.diceMacros.filter((macro) => macro.campaignId === campaignId && (macro.visibility === "public" || canManage)) : [],
+    encounters: store.state.encounters.filter((encounter) => encounter.campaignId === campaignId),
+    combats: store.state.combats.filter((combat) => combat.campaignId === campaignId),
+    proposals: visibleProposalsForUser(store.state, userId, campaignId, permissions),
+    memory: canMemory ? store.state.aiMemory.filter((item) => item.campaignId === campaignId && (item.visibility === "public" || canMemoryGm)) : []
+  };
+}
+
+const SCENE_EDIT_HISTORY_LIMIT = 50;
+const SCENE_EDITABLE_PATCH_FIELDS: Array<keyof Scene> = ["name", "width", "height", "gridType", "gridSize", "backgroundAssetId", "folder", "fog", "walls", "lights", "annotations", "metadata"];
+
+function cloneSceneEditableState(scene: Scene): SceneEditableState {
+  return structuredClone({
+    name: scene.name,
+    width: scene.width,
+    height: scene.height,
+    gridType: scene.gridType,
+    gridSize: scene.gridSize,
+    backgroundAssetId: scene.backgroundAssetId,
+    folder: scene.folder,
+    fog: scene.fog,
+    walls: scene.walls,
+    lights: scene.lights,
+    annotations: scene.annotations,
+    metadata: scene.metadata
+  });
+}
+
+/** Snapshots the scene's editable state before a mutation so a GM can undo the last N scene edits. */
+function captureSceneEditSnapshot(scene: Scene, userId: string | undefined, kind: string): void {
+  const snapshot: SceneEditSnapshot = {
+    id: createId("sedit"),
+    at: nowIso(),
+    kind,
+    state: cloneSceneEditableState(scene),
+    ...(userId ? { byUserId: userId } : {})
+  };
+  scene.sceneEditHistory = [...(scene.sceneEditHistory ?? []), snapshot].slice(-SCENE_EDIT_HISTORY_LIMIT);
+}
+
+function undoSceneEdit(scene: Scene): SceneEditSnapshot | undefined {
+  const history = scene.sceneEditHistory ?? [];
+  const last = history[history.length - 1];
+  if (!last) return undefined;
+  scene.sceneEditHistory = history.slice(0, -1);
+  const restored = structuredClone(last.state);
+  scene.name = restored.name;
+  scene.width = restored.width;
+  scene.height = restored.height;
+  scene.gridType = restored.gridType;
+  scene.gridSize = restored.gridSize;
+  scene.backgroundAssetId = restored.backgroundAssetId;
+  scene.folder = restored.folder;
+  scene.fog = restored.fog;
+  scene.walls = restored.walls;
+  scene.lights = restored.lights;
+  scene.annotations = restored.annotations;
+  scene.metadata = restored.metadata;
+  scene.updatedAt = nowIso();
+  return last;
+}
+
+function publicSceneEditHistory(scene: Scene): Array<Pick<SceneEditSnapshot, "id" | "at" | "byUserId" | "kind">> {
+  return (scene.sceneEditHistory ?? []).map(({ id, at, byUserId, kind }) => ({ id, at, byUserId, kind }));
+}
+
+/** Drops the (potentially large) undo history from a scene before it is broadcast or listed; the full log is served by GET /scenes/:id/edits. */
+function withoutSceneEditHistory(scene: Scene): Scene {
+  if (!scene.sceneEditHistory) return scene;
+  const { sceneEditHistory: _history, ...rest } = scene;
+  return rest;
 }
 
 function currentUserId(store: StateStore, headers: Record<string, string | string[] | undefined>): string | undefined {
@@ -26179,6 +26567,7 @@ function mergeArchive(state: EngineState, archive: CampaignArchive): Record<keyo
     chat: upsertRecords(state.chat, archive.data.chat),
     rolls: upsertRecords(state.rolls, archive.data.rolls),
     diceMacros: upsertRecords(state.diceMacros, archive.data.diceMacros ?? []),
+    audioTracks: upsertRecords(state.audioTracks, archive.data.audioTracks ?? []),
     encounters: upsertRecords(state.encounters, archive.data.encounters),
     combats: upsertRecords(state.combats, archive.data.combats),
     compendia: upsertRecords(state.compendia, archive.data.compendia),
