@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHmac } from "node:crypto";
 import { createServer, type Server } from "node:http";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 
 const apiBaseUrl = `http://127.0.0.1:${Number(process.env.OTTE_E2E_BOOTSTRAP_API_PORT ?? 4110)}`;
@@ -72,6 +72,18 @@ async function openManageCategory(page: Page, categoryName: string) {
   await expect(panel).toBeVisible();
   await panel.locator(".manage-category-button", { hasText: categoryName }).click();
   return panel;
+}
+
+async function openCreateDrawer(root: Locator, label: string) {
+  const details = root.locator("details.create-drawer").filter({ hasText: label }).first();
+  await expect(details.locator("summary")).toBeVisible();
+  const isOpen = await details.evaluate((element) => (element as HTMLDetailsElement).open);
+  if (!isOpen) {
+    await details.evaluate((element) => {
+      (element as HTMLDetailsElement).open = true;
+      element.scrollIntoView({ block: "nearest" });
+    });
+  }
 }
 
 test("clean deployment routes to owner bootstrap and opens the starter campaign", async ({ page }) => {
@@ -173,6 +185,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(workspaceSelector).toContainText("Side Workspace");
   await expect(managePanel.locator(".mini-form-meta")).toContainText("Owner - 0 campaigns");
   managePanel = await openManageCategory(page, "Campaign");
+  await openCreateDrawer(managePanel, "New campaign");
   await managePanel.getByRole("textbox", { name: "Campaign name", exact: true }).fill("Side Workspace Campaign");
   await managePanel.getByRole("button", { name: "Create Campaign Setup", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
@@ -477,6 +490,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await workspaceDefaults.getByRole("button", { name: "Save workspace defaults" }).click();
   await expect(workspaceDefaults).toContainText("Workspace defaults saved");
   managePanel = await openManageCategory(page, "Campaign");
+  await openCreateDrawer(managePanel, "New campaign");
   await expect(managePanel.getByRole("textbox", { name: "Setup initial scene name" })).toHaveValue("Workspace Opening");
   await expect(managePanel.getByLabel("Setup campaign permission template")).toHaveValue("player_authoring");
   managePanel = await openManageCategory(page, "Server Admin");
