@@ -74,6 +74,24 @@ interface EngineRecordRow {
   data: string;
 }
 
+interface StoredEngineRecordRow {
+  collection: string;
+  id: string;
+  campaign_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  data: string;
+}
+
+interface DesiredEngineRecord {
+  collection: StateCollection;
+  id: string;
+  campaignId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  data: string;
+}
+
 interface CountRow {
   collection: string;
   count: number;
@@ -182,25 +200,80 @@ export class SqliteStateStore implements StateStore {
   save(): void {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.db.prepare("delete from engine_records").run();
+      const desiredRecords = this.recordsForState();
+      const desiredByKey = new Map<string, DesiredEngineRecord>();
+      for (const record of desiredRecords) {
+        const key = engineRecordKey(record.collection, record.id);
+        if (desiredByKey.has(key))
+          throw new Error(
+            `Duplicate engine record key: ${record.collection}/${record.id}`,
+          );
+        desiredByKey.set(key, record);
+      }
+
+      const existingRows = this.db
+        .prepare(
+          "select collection, id, campaign_id, created_at, updated_at, data from engine_records",
+        )
+        .all() as StoredEngineRecordRow[];
+      const existingByKey = new Map(
+        existingRows.map((row) => [
+          engineRecordKey(row.collection, row.id),
+          row,
+        ]),
+      );
+      const deleteRecord = this.db.prepare(
+        "delete from engine_records where collection = ? and id = ?",
+      );
       const insert = this.db.prepare(`
         insert into engine_records (collection, id, campaign_id, created_at, updated_at, data)
         values (?, ?, ?, ?, ?, ?)
       `);
+      const update = this.db.prepare(`
+        update engine_records
+        set campaign_id = ?, created_at = ?, updated_at = ?, data = ?
+        where collection = ? and id = ?
+      `);
 
-      for (const collection of stateCollections) {
-        const records = this.state[collection] as IdentifiedRecord[];
-        for (const record of records) {
+      for (const row of existingRows) {
+        if (!desiredByKey.has(engineRecordKey(row.collection, row.id))) {
+          deleteRecord.run(row.collection, row.id);
+        }
+      }
+
+      for (const record of desiredRecords) {
+        const existing = existingByKey.get(
+          engineRecordKey(record.collection, record.id),
+        );
+        if (!existing) {
           insert.run(
-            collection,
+            record.collection,
             record.id,
-            this.campaignIdForRecord(collection, record),
-            record.createdAt ?? null,
-            record.updatedAt ?? null,
-            JSON.stringify(record)
+            record.campaignId,
+            record.createdAt,
+            record.updatedAt,
+            record.data,
+          );
+          continue;
+        }
+
+        if (
+          existing.campaign_id !== record.campaignId ||
+          existing.created_at !== record.createdAt ||
+          existing.updated_at !== record.updatedAt ||
+          existing.data !== record.data
+        ) {
+          update.run(
+            record.campaignId,
+            record.createdAt,
+            record.updatedAt,
+            record.data,
+            record.collection,
+            record.id,
           );
         }
       }
+
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -413,6 +486,23 @@ export class SqliteStateStore implements StateStore {
     return null;
   }
 
+  private recordsForState(): DesiredEngineRecord[] {
+    const records: DesiredEngineRecord[] = [];
+    for (const collection of stateCollections) {
+      for (const record of this.state[collection] as IdentifiedRecord[]) {
+        records.push({
+          collection,
+          id: record.id,
+          campaignId: this.campaignIdForRecord(collection, record),
+          createdAt: record.createdAt ?? null,
+          updatedAt: record.updatedAt ?? null,
+          data: JSON.stringify(record),
+        });
+      }
+    }
+    return records;
+  }
+
   private backupDir(): string {
     return resolve(dirname(this.filePath), "backups");
   }
@@ -447,4 +537,8 @@ export class SqliteStateStore implements StateStore {
 
 function isStateCollection(value: string): value is StateCollection {
   return (stateCollections as readonly string[]).includes(value);
+}
+
+function engineRecordKey(collection: string, id: string): string {
+  return JSON.stringify([collection, id]);
 }

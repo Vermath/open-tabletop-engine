@@ -171,6 +171,52 @@ registerCommand("/probe", () => ({
     }
   });
 
+  it("bounds CPU-heavy async command execution without blocking later commands", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(
+        pluginRoot,
+        "bounded-command-plugin",
+        `
+registerCommand("/spin", () => {
+  while (true) {}
+});
+registerCommand("/probe", () => ({ body: "Probe still works", visibility: "public" }));
+`,
+        {
+          commands: [
+            { command: "/spin", description: "Spin until bounded" },
+            { command: "/probe", description: "Prove later commands still work" }
+          ]
+        }
+      );
+      const registry = loadPluginRegistry({ pluginRoot });
+
+      const startedAt = Date.now();
+      const slowCommand = registry.executeChatCommandAsync("bounded-command-plugin", {
+        ...sandboxInput(),
+        pluginId: "bounded-command-plugin",
+        command: "/spin"
+      });
+
+      const timerStartedAt = Date.now();
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(Date.now() - timerStartedAt).toBeLessThan(250);
+
+      await expect(slowCommand).rejects.toThrow("Plugin command timed out");
+      expect(Date.now() - startedAt).toBeLessThan(1500);
+      await expect(
+        registry.executeChatCommandAsync("bounded-command-plugin", {
+          ...sandboxInput(),
+          pluginId: "bounded-command-plugin",
+          command: "/probe"
+        })
+      ).resolves.toEqual({ body: "Probe still works", visibility: "public" });
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("tracks multiple package versions and executes the requested installed version", () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
     try {
@@ -202,6 +248,37 @@ registerCommand("/probe", () => ({
       expect(older).toEqual(expect.objectContaining({ version: "1.0.0", source: expect.objectContaining({ packageId: "versioned-plugin-1" }) }));
       expect(registry.executeChatCommand("versioned-plugin", { ...sandboxInput(), pluginId: "versioned-plugin", command: "/version" }, "1.0.0").body).toBe("Version 1");
       expect(registry.executeChatCommand("versioned-plugin", { ...sandboxInput(), pluginId: "versioned-plugin", command: "/version" }, "2.0.0").body).toBe("Version 2");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("ranks a stable release ahead of its prerelease builds", () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(pluginRoot, "prerelease-plugin-stable", `registerCommand("/version", () => ({ body: "Stable", visibility: "public" }));`, {
+        manifestId: "prerelease-plugin",
+        version: "1.0.0",
+        command: "/version"
+      });
+      writePluginPackage(pluginRoot, "prerelease-plugin-beta", `registerCommand("/version", () => ({ body: "Beta", visibility: "public" }));`, {
+        manifestId: "prerelease-plugin",
+        version: "1.0.0-beta.2",
+        command: "/version"
+      });
+
+      const registry = loadPluginRegistry({ pluginRoot });
+      const latest = registry.find("prerelease-plugin");
+
+      expect(registry.errors).toEqual([]);
+      expect(latest).toEqual(
+        expect.objectContaining({
+          version: "1.0.0",
+          source: expect.objectContaining({ packageId: "prerelease-plugin-stable" }),
+          distribution: { availableVersions: ["1.0.0", "1.0.0-beta.2"], latestVersion: "1.0.0" }
+        })
+      );
+      expect(registry.executeChatCommand("prerelease-plugin", { ...sandboxInput(), pluginId: "prerelease-plugin", command: "/version" }).body).toBe("Stable");
     } finally {
       rmSync(pluginRoot, { recursive: true, force: true });
     }
@@ -424,7 +501,7 @@ function writePluginPackage(
   pluginRoot: string,
   packageId: string,
   serverSource: string,
-  options: { manifestId?: string; version?: string; command?: string } = {}
+  options: { manifestId?: string; version?: string; command?: string; commands?: Array<{ command: string; description: string }> } = {}
 ): void {
   const packagePath = resolve(pluginRoot, packageId);
   const command = options.command ?? "/probe";
@@ -439,7 +516,7 @@ function writePluginPackage(
       entrypoints: { server: "./server.js" },
       runtime: { apiVersion: "0.1", sandbox: "vm" },
       permissions: ["chat.write"],
-      chatCommands: [{ command, description: "Probe sandbox behavior" }]
+      chatCommands: options.commands ?? [{ command, description: "Probe sandbox behavior" }]
     })
   );
   writeFileSync(join(packagePath, "server.js"), serverSource);

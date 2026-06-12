@@ -333,6 +333,99 @@ describe("worker job runner", () => {
     expect(JSON.parse(calls[0]!.init!.body as string)).toEqual({ workerId: "worker-loop", leaseSeconds: 30 });
   });
 
+  it("backs off and retries when a leased loop poll throws", async () => {
+    const observed: string[] = [];
+    const sleepDelays: number[] = [];
+    let leaseAttempts = 0;
+    const result = await runLeasedWorkerLoop({
+      apiBaseUrl: "http://api.test",
+      sessionToken: "ots_admin",
+      workerId: "worker-loop",
+      pollIntervalMs: 25,
+      maxIdlePolls: 1,
+      maxRetainedResults: 10,
+      fetch: async () => {
+        leaseAttempts += 1;
+        if (leaseAttempts === 1) throw new Error("socket hang up");
+        return new Response(null, { status: 204 });
+      },
+      sleep: async (milliseconds) => {
+        sleepDelays.push(milliseconds);
+      },
+      onResult: (leaseResult) => {
+        observed.push(leaseResult.status === "failed" ? leaseResult.error : leaseResult.status);
+      }
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      workerId: "worker-loop",
+      jobsRun: 0,
+      failures: 1,
+      idlePolls: 1
+    });
+    expect(result.results).toMatchObject([{ status: "failed", error: "socket hang up" }, { status: "idle" }]);
+    expect(observed).toEqual(["socket hang up", "idle"]);
+    expect(sleepDelays).toEqual([25]);
+    expect(leaseAttempts).toBe(2);
+  });
+
+  it("backs off and retries when a leased job status PATCH fails", async () => {
+    const calls: Array<{ url: string | URL | Request; init?: RequestInit }> = [];
+    const sleepDelays: number[] = [];
+    let leaseAttempts = 0;
+    const result = await runLeasedWorkerLoop({
+      apiBaseUrl: "http://api.test",
+      sessionToken: "ots_admin",
+      workerId: "worker-loop",
+      leaseSeconds: 30,
+      pollIntervalMs: 10,
+      maxIdlePolls: 1,
+      maxRetainedResults: 10,
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        const path = String(url).replace("http://api.test", "");
+        if (path === "/api/v1/admin/jobs/lease") {
+          leaseAttempts += 1;
+          if (leaseAttempts === 1) return new Response(JSON.stringify({ id: "job_export", type: "campaign.export", payload: { campaignId: "camp_demo" } }), { status: 200 });
+          return new Response(null, { status: 204 });
+        }
+        if (path === "/api/v1/admin/jobs/job_export/heartbeat") {
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        }
+        if (path === "/api/v1/campaigns/camp_demo/export") {
+          return new Response(JSON.stringify({ error: "upstream timeout" }), { status: 500 });
+        }
+        if (path === "/api/v1/admin/jobs/job_export") {
+          return new Response(JSON.stringify({ error: "status store unavailable" }), { status: 503 });
+        }
+        return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+      },
+      sleep: async (milliseconds) => {
+        sleepDelays.push(milliseconds);
+      }
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      workerId: "worker-loop",
+      jobsRun: 0,
+      failures: 1,
+      idlePolls: 1
+    });
+    expect(result.results[0]).toMatchObject({ status: "failed" });
+    expect(result.results[0]?.status === "failed" ? result.results[0].error : "").toContain("Worker API request failed with 503 PATCH /api/v1/admin/jobs/job_export");
+    expect(result.results[1]).toEqual({ status: "idle" });
+    expect(sleepDelays).toEqual([10]);
+    expect(calls.map((call) => [call.init?.method, String(call.url)])).toEqual([
+      ["POST", "http://api.test/api/v1/admin/jobs/lease"],
+      ["POST", "http://api.test/api/v1/admin/jobs/job_export/heartbeat"],
+      ["GET", "http://api.test/api/v1/campaigns/camp_demo/export"],
+      ["PATCH", "http://api.test/api/v1/admin/jobs/job_export"],
+      ["POST", "http://api.test/api/v1/admin/jobs/lease"]
+    ]);
+  });
+
   it("streams leased loop results without retaining an unbounded daemon history by default", async () => {
     const observed: string[] = [];
     const result = await runLeasedWorkerLoop({

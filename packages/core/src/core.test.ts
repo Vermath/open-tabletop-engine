@@ -98,6 +98,70 @@ describe("proposal application", () => {
     expect(() => applyProposal({ ...state, proposals: [rejected] }, rejected)).toThrow("approved");
     expect(() => rejectProposal(applied)).toThrow("pending or approved");
   });
+
+  it("copies only collections touched by proposal application", () => {
+    const state = seedState();
+    const originalToken = state.tokens.find((item) => item.id === "tok_valen")!;
+    const proposal = {
+      id: "prop_copy_scope",
+      campaignId: "camp_demo",
+      createdByType: "ai" as const,
+      title: "Move token and add note",
+      summary: "Move a token and add a journal entry",
+      status: "approved" as const,
+      approvalRequired: true,
+      changesJson: [
+        {
+          entity: "token" as const,
+          action: "update" as const,
+          id: "tok_valen",
+          data: { x: originalToken.x + 50 }
+        },
+        {
+          entity: "journal" as const,
+          action: "create" as const,
+          data: {
+            id: "jnl_copy_scope",
+            campaignId: "camp_demo",
+            title: "Copy scope",
+            body: "Text",
+            visibility: "gm_only",
+            visibleToUserIds: [],
+            visibleToActorIds: [],
+            tags: [],
+            createdBy: "usr_demo_gm",
+            updatedBy: "usr_demo_gm",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z"
+          }
+        }
+      ],
+      diffJson: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    state.proposals = [proposal];
+
+    const next = applyProposal(state, proposal, "usr_demo_gm");
+
+    expect(state.tokens[0]).toBe(originalToken);
+    expect(state.tokens[0]!.x).toBe(originalToken.x);
+    expect(state.journals).toHaveLength(1);
+    expect(state.proposals[0]!.status).toBe("approved");
+
+    expect(next.tokens).not.toBe(state.tokens);
+    expect(next.tokens[0]).not.toBe(originalToken);
+    expect(next.tokens[0]!.x).toBe(originalToken.x + 50);
+    expect(next.journals).not.toBe(state.journals);
+    expect(next.journals).toHaveLength(2);
+    expect(next.proposals).not.toBe(state.proposals);
+    expect(next.proposals[0]!.status).toBe("applied");
+
+    expect(next.users).toBe(state.users);
+    expect(next.campaigns).toBe(state.campaigns);
+    expect(next.scenes).toBe(state.scenes);
+    expect(next.actors).toBe(state.actors);
+  });
 });
 
 describe("vision polygons", () => {
@@ -147,6 +211,55 @@ describe("vision polygons", () => {
     expect(isPointInsideVisionPolygon({ x: 360, y: 375 }, polygons[1]!)).toBe(true);
     expect(isPointInsideVisionPolygon({ x: 500, y: 375 }, polygons[0]!)).toBe(true);
     expect(isPointInsideVisionPolygon({ x: 500, y: 375 }, polygons[1]!)).toBe(false);
+  });
+
+  it("uses the largest configured token vision zone as the outer radius", () => {
+    const state = seedState();
+    const scene = state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    const baseToken = state.tokens.find((item) => item.id === "tok_valen")!;
+    scene.walls = [];
+    const cases = [
+      {
+        name: "bright exceeds base",
+        token: { ...baseToken, visionRadius: 30, brightVisionRadius: 60, dimVisionRadius: undefined },
+        expectedRadii: [60]
+      },
+      {
+        name: "bright exceeds dim",
+        token: { ...baseToken, visionRadius: 30, brightVisionRadius: 60, dimVisionRadius: 30 },
+        expectedRadii: [60]
+      },
+      {
+        name: "dim exceeds bright",
+        token: { ...baseToken, visionRadius: 30, brightVisionRadius: 30, dimVisionRadius: 90 },
+        expectedRadii: [90, 30]
+      },
+      {
+        name: "bright equals dim",
+        token: { ...baseToken, visionRadius: 30, brightVisionRadius: 60, dimVisionRadius: 60 },
+        expectedRadii: [60]
+      },
+      {
+        name: "zero bright falls back to dim",
+        token: { ...baseToken, visionRadius: 30, brightVisionRadius: 0, dimVisionRadius: 50 },
+        expectedRadii: [50]
+      },
+      {
+        name: "bright works without dim or base",
+        token: { ...baseToken, visionRadius: 0, brightVisionRadius: 40, dimVisionRadius: 0 },
+        expectedRadii: [40]
+      }
+    ];
+
+    for (const testCase of cases) {
+      const polygons = computeTokenVisionPolygons(scene, testCase.token);
+      const expectedOuterRadius = testCase.expectedRadii[0]!;
+      const center = tokenCenter(testCase.token);
+
+      expect(polygons.map((polygon) => polygon.radius), testCase.name).toEqual(testCase.expectedRadii);
+      expect(isPointInsideVisionPolygon({ x: center.x + expectedOuterRadius - 5, y: center.y }, polygons[0]!), testCase.name).toBe(true);
+      expect(isPointInsideVisionPolygon({ x: center.x + expectedOuterRadius + 5, y: center.y }, polygons[0]!), testCase.name).toBe(false);
+    }
   });
 
   it("clips colored light polygons with the same wall geometry", () => {

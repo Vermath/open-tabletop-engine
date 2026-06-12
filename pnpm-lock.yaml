@@ -124,6 +124,9 @@ importers:
       '@open-tabletop/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@open-tabletop/dice-engine':
+        specifier: workspace:*
+        version: link:../../packages/dice-engine
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13

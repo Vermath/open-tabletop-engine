@@ -15224,6 +15224,7 @@ function dnd5eSrdEquippedItemNumericBonus(actor: Actor, items: Item[], bonusKey:
 export function dnd5eSrdArmorClass(actor: Actor, items: Item[] = []): Dnd5eSrdArmorClassDetails {
   const dexModifier = genericFantasyAttributeModifier(actor, "dexterity");
   const wisdomModifier = genericFantasyAttributeModifier(actor, "wisdom");
+  const constitutionModifier = genericFantasyAttributeModifier(actor, "constitution");
   const strengthScore = numericValue(recordValue(actor.data.attributes).strength, 10);
   const actorItems = items.filter((item) => itemBelongsToActor(actor, item)).filter((item) => itemQuantity(recordValue(item.data)) > 0);
   const hasEquippedArmor = actorItems.some((item) => {
@@ -15249,6 +15250,18 @@ export function dnd5eSrdArmorClass(actor: Actor, items: Item[] = []): Dnd5eSrdAr
   if (stringValue(actor.data.class) === "Monk" && !hasEquippedArmor && !hasEquippedShield) {
     armorCandidates.push({
       value: 10 + dexModifier + wisdomModifier,
+      base: 10,
+      dexModifier,
+      armorName: "Unarmored Defense",
+      shieldBonus: 0,
+      shieldItemIds: [],
+      stealthDisadvantage: false,
+      speedPenalty: 0
+    });
+  }
+  if (stringValue(actor.data.class) === "Barbarian" && !hasEquippedArmor) {
+    armorCandidates.push({
+      value: 10 + dexModifier + constitutionModifier,
       base: 10,
       dexModifier,
       armorName: "Unarmored Defense",

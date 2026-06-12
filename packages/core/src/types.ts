@@ -533,6 +533,8 @@ export interface ChatMessage extends Timestamps {
   moderationStatus?: ChatModerationStatus;
   moderatedByUserId?: ID;
   moderatedAt?: string;
+  editedByUserId?: ID;
+  editedAt?: string;
 }
 
 export interface DiceRoll extends Timestamps {
@@ -557,11 +559,18 @@ export interface DiceMacro extends Timestamps {
 
 export interface DiceRollTerm {
   type: "die" | "modifier" | "binding";
+  sign?: -1;
   sides?: number;
   count?: number;
   results?: number[];
   kept?: number[];
   exploded?: number[];
+  keep?: "highest" | "lowest";
+  keepCount?: number;
+  drop?: "highest" | "lowest";
+  dropCount?: number;
+  reroll?: number;
+  rerolled?: number[];
   value?: number;
   path?: string;
 }
@@ -582,6 +591,7 @@ export interface Combat extends Timestamps {
   active: boolean;
   round: number;
   turnIndex: number;
+  manualTurnOrder?: boolean;
   combatants: Combatant[];
   actions?: CombatAction[];
 }

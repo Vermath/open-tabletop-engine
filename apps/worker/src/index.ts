@@ -42,6 +42,7 @@ export interface WorkerResult {
 export type WorkerLeaseResult =
   | WorkerResult
   | { status: "idle" }
+  | { status: "failed"; error: string }
   | { id: string; type: WorkerJob["type"]; status: "cancelled"; error: string }
   | { id: string; type: WorkerJob["type"]; status: "failed"; error: string };
 
@@ -132,7 +133,12 @@ export async function runLeasedWorkerLoop(options: WorkerLoopOptions): Promise<W
   let idlePolls = 0;
 
   while (jobsRun < maxJobs && idlePolls < maxIdlePolls) {
-    const result = await runLeasedWorkerJob(options);
+    let result: WorkerLeaseResult;
+    try {
+      result = await runLeasedWorkerJob(options);
+    } catch (error) {
+      result = { status: "failed", error: error instanceof Error ? error.message : String(error) };
+    }
     if (maxRetainedResults > 0) {
       results.push(result);
       if (results.length > maxRetainedResults) results.splice(0, results.length - maxRetainedResults);
@@ -141,7 +147,7 @@ export async function runLeasedWorkerLoop(options: WorkerLoopOptions): Promise<W
     if (result.status === "idle") {
       idlePolls += 1;
     } else {
-      jobsRun += 1;
+      if ("id" in result) jobsRun += 1;
       idlePolls = 0;
       if (result.status === "failed") failures += 1;
     }

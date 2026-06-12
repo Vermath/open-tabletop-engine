@@ -208,6 +208,7 @@ export const apiContractPolicy = {
   pagination: {
     cursorParameter: "cursor",
     limitParameter: "limit",
+    offsetParameter: "offset",
     defaultLimit: 50,
     maxLimit: 200,
     sortingParameter: "sort",
@@ -217,6 +218,9 @@ export const apiContractPolicy = {
     statusCode: 429,
     headers: ["Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
     enforcement: "The API runtime enforces a fixed-window per-route caller limit when OTTE_RATE_LIMIT_ENABLED=true and enables it by default in production. OTTE_RATE_LIMIT_WINDOW_SECONDS and OTTE_RATE_LIMIT_MAX_REQUESTS tune the window and ceiling."
+  },
+  chat: {
+    messageBodyMaxLength: 4096
   }
 } as const;
 
@@ -262,6 +266,7 @@ const endpointSpecs = [
   ["POST", "/api/v1/admin/password-resets/prune"],
   ["DELETE", "/api/v1/admin/users/{userId}/sessions"],
   ["GET", routes.adminSessions],
+  ["POST", "/api/v1/admin/sessions/prune"],
   ["GET", "/api/v1/admin/sessions/risk"],
   ["POST", "/api/v1/admin/sessions/risk/revoke"],
   ["DELETE", "/api/v1/admin/sessions/{sessionId}"],
@@ -385,6 +390,7 @@ const endpointSpecs = [
   ["POST", routes.dice],
   ["POST", routes.chat],
   ["GET", routes.chat],
+  ["PATCH", "/api/v1/chat/messages/{messageId}"],
   ["PATCH", "/api/v1/chat/messages/{messageId}/moderation"],
   ["DELETE", "/api/v1/chat/messages/{messageId}"],
   ["GET", "/api/v1/campaigns/{campaignId}/rolls"],
@@ -400,6 +406,7 @@ const endpointSpecs = [
   ["GET", "/api/v1/combats/{combatId}/audit"],
   ["POST", "/api/v1/combats/{combatId}/actions/{actionId}/confirm"],
   ["POST", "/api/v1/combats/{combatId}/actions/{actionId}/reject"],
+  ["POST", "/api/v1/combats/{combatId}/initiative/roll-npcs"],
   ["PATCH", "/api/v1/combats/{combatId}"],
   ["PATCH", "/api/v1/combats/{combatId}/combatants/{combatantId}"],
   ["DELETE", "/api/v1/combats/{combatId}"],
@@ -537,6 +544,16 @@ const paginationParameters: OpenApiParameter[] = [
     }
   },
   {
+    name: apiContractPolicy.pagination.offsetParameter,
+    in: "query",
+    required: false,
+    description: "Zero-based result offset for list routes that support offset pagination. Do not combine with cursor.",
+    schema: {
+      type: "integer",
+      minimum: 0
+    }
+  },
+  {
     name: apiContractPolicy.pagination.filteringParameter,
     in: "query",
     required: false,
@@ -570,6 +587,16 @@ const schemaRef = (name: string) => ({
 const arrayOf = (items: Record<string, unknown>) => ({
   type: "array",
   items
+});
+
+const paginatedObjectOf = (items: Record<string, unknown>) => ({
+  type: "object",
+  additionalProperties: false,
+  required: ["items", "pagination"],
+  properties: {
+    items: arrayOf(items),
+    pagination: schemaRef("PaginationMeta")
+  }
 });
 
 function jsonContent(schema: Record<string, unknown>): Record<string, unknown> {
@@ -608,6 +635,13 @@ function jsonRequestBody(schema: Record<string, unknown>, description?: string):
 
 const stringSchema = {
   type: "string"
+};
+
+const chatMessageBodySchema = {
+  type: "string",
+  minLength: 1,
+  maxLength: apiContractPolicy.chat.messageBodyMaxLength,
+  pattern: "\\S"
 };
 
 const idSchema = {
@@ -673,6 +707,7 @@ const componentSchemas = {
   PaginationMeta: {
     type: "object",
     additionalProperties: false,
+    required: ["limit", "offset", "totalCount"],
     properties: {
       nextCursor: {
         type: "string"
@@ -681,6 +716,10 @@ const componentSchemas = {
         type: "integer",
         minimum: 1,
         maximum: apiContractPolicy.pagination.maxLimit
+      },
+      offset: {
+        type: "integer",
+        minimum: 0
       },
       totalCount: {
         type: "integer",
@@ -1433,6 +1472,27 @@ const componentSchemas = {
     required: ["revoked"],
     properties: {
       revoked: { type: "integer", minimum: 0 }
+    }
+  },
+  AdminSessionPruneRequest: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      dryRun: { type: "boolean" }
+    }
+  },
+  AdminSessionPruneResult: {
+    type: "object",
+    additionalProperties: false,
+    required: ["generatedAt", "dryRun", "matched", "pruned", "activeRemaining", "expiredRemaining", "sessions"],
+    properties: {
+      generatedAt: { type: "string", format: "date-time" },
+      dryRun: { type: "boolean" },
+      matched: { type: "integer", minimum: 0 },
+      pruned: { type: "integer", minimum: 0 },
+      activeRemaining: { type: "integer", minimum: 0 },
+      expiredRemaining: { type: "integer", minimum: 0 },
+      sessions: arrayOf(schemaRef("UserSession"))
     }
   },
   AdminSessionRiskReason: {
@@ -3174,9 +3234,12 @@ const componentSchemas = {
       replyToMessageId: idSchema,
       moderationStatus: { type: "string", enum: ["open", "follow_up", "reviewed"] },
       moderatedByUserId: idSchema,
-      moderatedAt: { type: "string", format: "date-time" }
+      moderatedAt: { type: "string", format: "date-time" },
+      editedByUserId: idSchema,
+      editedAt: { type: "string", format: "date-time" }
     }
   },
+  ChatMessagePage: paginatedObjectOf(schemaRef("ChatMessage")),
   ChatMessageCreateRequest: {
     type: "object",
     additionalProperties: false,
@@ -3185,7 +3248,7 @@ const componentSchemas = {
       campaignId: idSchema,
       sceneId: idSchema,
       type: { type: "string", enum: ["plain", "emote", "whisper", "roll", "system", "gm", "ooc", "ai", "plugin"] },
-      body: stringSchema,
+      body: chatMessageBodySchema,
       visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
       recipientUserIds: arrayOf(idSchema),
       rollId: idSchema,
@@ -3198,6 +3261,14 @@ const componentSchemas = {
     required: ["moderationStatus"],
     properties: {
       moderationStatus: { type: "string", enum: ["open", "follow_up", "reviewed"] }
+    }
+  },
+  ChatMessageEditRequest: {
+    type: "object",
+    additionalProperties: false,
+    required: ["body"],
+    properties: {
+      body: chatMessageBodySchema
     }
   },
   DiceRoll: {
@@ -3215,17 +3286,25 @@ const componentSchemas = {
       total: { type: "number" }
     }
   },
+  DiceRollPage: paginatedObjectOf(schemaRef("DiceRoll")),
   DiceRollTerm: {
     type: "object",
     additionalProperties: true,
     required: ["type"],
     properties: {
       type: { type: "string", enum: ["die", "modifier", "binding"] },
+      sign: { type: "integer", enum: [-1] },
       sides: { type: "integer", minimum: 1 },
       count: { type: "integer", minimum: 1 },
       results: arrayOf({ type: "integer" }),
       kept: arrayOf({ type: "integer" }),
       exploded: arrayOf({ type: "integer" }),
+      keep: { type: "string", enum: ["highest", "lowest"] },
+      keepCount: { type: "integer", minimum: 0 },
+      drop: { type: "string", enum: ["highest", "lowest"] },
+      dropCount: { type: "integer", minimum: 0 },
+      reroll: { type: "integer", minimum: 1 },
+      rerolled: arrayOf({ type: "integer" }),
       value: { type: "number" },
       path: stringSchema
     }
@@ -3504,6 +3583,7 @@ const componentSchemas = {
       active: { type: "boolean" },
       round: { type: "integer", minimum: 1 },
       turnIndex: { type: "integer", minimum: 0 },
+      manualTurnOrder: { type: "boolean" },
       combatants: arrayOf(schemaRef("Combatant")),
       actions: arrayOf(schemaRef("CombatAction"))
     }
@@ -3616,6 +3696,16 @@ const componentSchemas = {
       chatMessages: arrayOf(schemaRef("ChatMessage"))
     }
   },
+  CombatInitiativeRollNpcsResponse: {
+    type: "object",
+    additionalProperties: false,
+    required: ["combat", "rolls", "chatMessages"],
+    properties: {
+      combat: schemaRef("Combat"),
+      rolls: arrayOf(schemaRef("DiceRoll")),
+      chatMessages: arrayOf(schemaRef("ChatMessage"))
+    }
+  },
   CombatActionRejectRequest: {
     type: "object",
     additionalProperties: false,
@@ -3628,6 +3718,7 @@ const componentSchemas = {
     additionalProperties: false,
     properties: {
       encounterId: idSchema,
+      manualTurnOrder: { type: "boolean" },
       combatants: arrayOf(schemaRef("Combatant"))
     }
   },
@@ -3638,6 +3729,7 @@ const componentSchemas = {
       active: { type: "boolean" },
       round: { type: "integer", minimum: 1 },
       turnIndex: { type: "integer", minimum: 0 },
+      manualTurnOrder: { type: "boolean" },
       combatants: arrayOf(schemaRef("Combatant"))
     }
   },
@@ -3669,6 +3761,7 @@ const componentSchemas = {
       after: {}
     }
   },
+  AuditLogPage: paginatedObjectOf(schemaRef("AuditLog")),
   Proposal: {
     type: "object",
     additionalProperties: true,
@@ -4444,7 +4537,8 @@ const componentSchemas = {
           archive: schemaRef("CampaignArchive"),
           mode: { type: "string", enum: ["upsert", "reject_conflicts", "skip_conflicts", "dry_run"] },
           scope: { type: "string", enum: ["all", "assets_only", "selected_collections"] },
-          collections: { type: "array", items: { type: "string" } }
+          collections: { type: "array", items: { type: "string" } },
+          regenerateIds: { type: "boolean" }
         }
       }
     ]
@@ -4746,6 +4840,12 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   "GET /api/v1/admin/sessions": {
     responses: {
       "200": jsonResponse("Server-admin session roster with redacted user details", arrayOf(schemaRef("AdminSession")))
+    }
+  },
+  "POST /api/v1/admin/sessions/prune": {
+    requestBody: jsonRequestBody(schemaRef("AdminSessionPruneRequest")),
+    responses: {
+      "200": jsonResponse("Session pruning dry-run or mutation result", schemaRef("AdminSessionPruneResult"))
     }
   },
   "GET /api/v1/admin/sessions/risk": {
@@ -5423,13 +5523,19 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       }
     ],
     responses: {
-      "200": jsonResponse("Chat messages visible to the caller", arrayOf(schemaRef("ChatMessage")))
+      "200": jsonResponse("Chat messages visible to the caller", { oneOf: [arrayOf(schemaRef("ChatMessage")), schemaRef("ChatMessagePage")] })
     }
   },
   "POST /api/v1/chat/messages": {
     requestBody: jsonRequestBody(schemaRef("ChatMessageCreateRequest")),
     responses: {
       "200": jsonResponse("Created chat message", schemaRef("ChatMessage"))
+    }
+  },
+  "PATCH /api/v1/chat/messages/{messageId}": {
+    requestBody: jsonRequestBody(schemaRef("ChatMessageEditRequest")),
+    responses: {
+      "200": jsonResponse("Edited chat message", schemaRef("ChatMessage"))
     }
   },
   "PATCH /api/v1/chat/messages/{messageId}/moderation": {
@@ -5451,7 +5557,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   },
   "GET /api/v1/campaigns/{campaignId}/rolls": {
     responses: {
-      "200": jsonResponse("Dice rolls visible to the caller", arrayOf(schemaRef("DiceRoll")))
+      "200": jsonResponse("Dice rolls visible to the caller", { oneOf: [arrayOf(schemaRef("DiceRoll")), schemaRef("DiceRollPage")] })
     }
   },
   "GET /api/v1/campaigns/{campaignId}/assets": {
@@ -5585,7 +5691,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   },
   "GET /api/v1/combats/{combatId}/audit": {
     responses: {
-      "200": jsonResponse("Redacted combat audit entries", arrayOf(schemaRef("AuditLog")))
+      "200": jsonResponse("Redacted combat audit entries", { oneOf: [arrayOf(schemaRef("AuditLog")), schemaRef("AuditLogPage")] })
     }
   },
   "POST /api/v1/combats/{combatId}/actions/{actionId}/confirm": {
@@ -5598,6 +5704,12 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     requestBody: jsonRequestBody(schemaRef("CombatActionRejectRequest")),
     responses: {
       "200": jsonResponse("Rejected combat action", schemaRef("CombatActionMutationResponse"))
+    }
+  },
+  "POST /api/v1/combats/{combatId}/initiative/roll-npcs": {
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false }),
+    responses: {
+      "200": jsonResponse("Rolled initiative for linked NPC combatants", schemaRef("CombatInitiativeRollNpcsResponse"))
     }
   },
   "POST /api/v1/campaigns/{campaignId}/combats": {

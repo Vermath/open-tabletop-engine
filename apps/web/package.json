@@ -16,6 +16,7 @@
     "@3d-dice/dice-box-threejs": "^0.0.12",
     "@open-tabletop/api-client": "workspace:*",
     "@open-tabletop/core": "workspace:*",
+    "@open-tabletop/dice-engine": "workspace:*",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",

@@ -29,14 +29,16 @@ export function tokenCenter(token: Pick<Token, "x" | "y" | "width" | "height">):
 }
 
 export function computeTokenVisionPolygon(scene: Pick<Scene, "width" | "height" | "walls">, token: Pick<Token, "id" | "x" | "y" | "width" | "height" | "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">): VisionPolygon | undefined {
-  const radius = normalizedLightRadius(token.dimVisionRadius) ?? normalizedLightRadius(token.visionRadius) ?? 0;
+  const dimRadius = normalizedLightRadius(token.dimVisionRadius) ?? normalizedLightRadius(token.visionRadius) ?? 0;
+  const brightRadius = normalizedLightRadius(token.brightVisionRadius);
+  const radius = Math.max(dimRadius, brightRadius ?? 0);
   if (!token.visionEnabled || radius <= 0) return undefined;
   return {
     id: `vision_${token.id}`,
     source: "token",
     sourceId: token.id,
     radius,
-    lightLevel: token.brightVisionRadius !== undefined || token.dimVisionRadius !== undefined ? "dim" : undefined,
+    lightLevel: brightRadius && brightRadius > dimRadius ? "bright" : token.brightVisionRadius !== undefined || token.dimVisionRadius !== undefined ? "dim" : undefined,
     points: computeVisibilityPolygon(scene, tokenCenter(token), radius)
   };
 }
@@ -44,8 +46,9 @@ export function computeTokenVisionPolygon(scene: Pick<Scene, "width" | "height" 
 export function computeTokenVisionPolygons(scene: Pick<Scene, "width" | "height" | "walls">, token: Pick<Token, "id" | "x" | "y" | "width" | "height" | "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">): VisionPolygon[] {
   const dimRadius = normalizedLightRadius(token.dimVisionRadius) ?? normalizedLightRadius(token.visionRadius) ?? 0;
   const brightRadius = normalizedLightRadius(token.brightVisionRadius);
-  if (!token.visionEnabled || dimRadius <= 0) return [];
-  if (!brightRadius || brightRadius >= dimRadius) return [computeTokenVisionPolygon(scene, { ...token, visionRadius: dimRadius })].filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+  const outerRadius = Math.max(dimRadius, brightRadius ?? 0);
+  if (!token.visionEnabled || outerRadius <= 0) return [];
+  if (!brightRadius || brightRadius >= dimRadius) return [computeTokenVisionPolygon(scene, token)].filter((polygon): polygon is VisionPolygon => Boolean(polygon));
   const origin = tokenCenter(token);
   return [
     {

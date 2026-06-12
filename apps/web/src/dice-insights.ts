@@ -1,5 +1,6 @@
 export interface RollTermLike {
   type: "die" | "modifier" | "binding";
+  sign?: -1;
   sides?: number;
   count?: number;
   results?: number[];
@@ -20,7 +21,7 @@ function keptValues(term: RollTermLike): number[] {
 export function rollHighlight(terms: readonly RollTermLike[]): RollHighlight {
   let sawFumble = false;
   for (const term of terms) {
-    if (term.type !== "die" || term.sides !== 20) continue;
+    if (term.type !== "die" || term.sign === -1 || term.sides !== 20) continue;
     const values = keptValues(term);
     if (values.includes(20)) return "crit";
     if (values.includes(1)) sawFumble = true;
@@ -30,7 +31,7 @@ export function rollHighlight(terms: readonly RollTermLike[]): RollHighlight {
 
 /** Per-term flourish for single-die terms of any size: max face is a crit, 1 is a fumble. */
 export function rollTermHighlight(term: RollTermLike): RollHighlight {
-  if (term.type !== "die" || typeof term.sides !== "number" || term.sides < 2) return null;
+  if (term.type !== "die" || term.sign === -1 || typeof term.sides !== "number" || term.sides < 2) return null;
   const values = keptValues(term);
   const face = values.length === 1 ? values[0] : undefined;
   if (face === undefined) return null;

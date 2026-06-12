@@ -3423,6 +3423,29 @@ describe("dnd 5.5e srd rules", () => {
     expect(() => dnd5eSrdEquipmentPurchase(srdActor, dnd5eSrdCompendiumEntry("magic-initiate")!, 1)).toThrow("not purchasable");
   });
 
+  it("calculates Barbarian Unarmored Defense from Dexterity and Constitution", () => {
+    const template = dnd5eSrdCharacterTemplate("barbarian")!;
+    const barbarianActor: Actor = { ...srdActor, data: { ...template.data } };
+    const shield: Item = {
+      id: "itm_barbarian_shield",
+      campaignId: "camp_demo",
+      systemId: "dnd-5e-srd",
+      actorId: barbarianActor.id,
+      type: "item",
+      name: "Shield",
+      data: { ...dnd5eSrdCompendiumEntry("shield-armor")!.data, compendiumId: "shield-armor" },
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z"
+    };
+
+    expect(dnd5eSrdSheet(barbarianActor, [shield]).data).toEqual(
+      expect.objectContaining({
+        armorClass: 15,
+        armorClassDetails: expect.objectContaining({ armorName: "Unarmored Defense", value: 15, base: 10, dexModifier: 1, shieldBonus: 2 })
+      })
+    );
+  });
+
   it("automates SRD Warlock Pact Magic, Magical Cunning, and invocation metadata", () => {
     const template = dnd5eSrdCharacterTemplate("warlock")!;
     const warlockActor: Actor = { ...srdActor, data: { ...template.data } };

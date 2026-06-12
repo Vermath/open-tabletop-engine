@@ -1,4 +1,5 @@
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AuditLog, Campaign, CampaignArchive, ChatMessage, Combat, CombatAction, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, FogHistoryEntry, FogMode, FogPreset, Item, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon, VisionSnapshot } from "@open-tabletop/core";
+import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
 import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronLeft, ChevronRight, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Paintbrush, PencilLine, Pentagon, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
@@ -17,6 +18,8 @@ import { dice3dStorageKey, diceCastPlan, dieShapeName, dieShapePoints, initialDi
 import { castPhysicsDiceWhenReady, clearPhysicsDice, diceBoxContainerId, diceBoxStatus, physicsDiceLabelDelayMs, primePhysicsDiceStage } from "./dice-box-stage.js";
 import { initialUiTheme, nextUiTheme, uiThemeLabel, uiThemeStorageKey, type UiTheme } from "./ui-theme.js";
 import { applyProposalChangesToSnapshot, proposalReviewActionLabel, proposalReviewSteps, visibleAiAgentProposals } from "./proposal-review.js";
+import { realtimeConnectionIdentity, startRealtimeConnection } from "./realtime-connection.js";
+import { createRealtimeHandlers } from "./realtime-refresh.js";
 import { templateConePoints } from "./scene-annotations.js";
 import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
 import { sceneTabWrapClass } from "./scene-tabs.js";
@@ -326,52 +329,6 @@ function persistStoredId(key: string, value: string): void {
   } catch {
     // Selection persistence is a convenience; private-mode storage failures should not block the table.
   }
-}
-
-function rollLocalDiceFormula(formula: string): Pick<DiceRoll, "terms" | "total"> {
-  const normalized = formula.replace(/^\/(?:roll|r|gmroll)\s+/i, "").replace(/\s+/g, "");
-  const rawTerms = normalized.match(/[+-]?[^+-]+/g) ?? [];
-  if (rawTerms.length === 0) throw new Error("Dice formula is empty");
-  const terms: DiceRoll["terms"] = [];
-  let total = 0;
-
-  for (const rawTerm of rawTerms) {
-    const sign = rawTerm.startsWith("-") ? -1 : 1;
-    const term = rawTerm.replace(/^[+-]/, "");
-    const dieMatch = term.match(/^(\d*)d(\d+)(?:(kh|kl)(\d+))?(!)?$/i);
-    if (dieMatch) {
-      if (sign < 0) throw new Error("Negative dice groups are not supported");
-      const count = Number(dieMatch[1] || "1");
-      const sides = Number(dieMatch[2]);
-      const keepMode = dieMatch[3];
-      const keepCount = dieMatch[4] ? Number(dieMatch[4]) : undefined;
-      if (!Number.isInteger(count) || count < 1 || count > 1000) throw new Error(`Dice count must be between 1 and 1000: ${count}`);
-      if (!Number.isInteger(sides) || sides < 2) throw new Error(`Invalid die sides: ${sides}`);
-      const results: number[] = [];
-      const exploded: number[] = [];
-      for (let index = 0; index < count; index += 1) {
-        let value = Math.floor(Math.random() * sides) + 1;
-        results.push(value);
-        while (dieMatch[5] && value === sides) {
-          value = Math.floor(Math.random() * sides) + 1;
-          exploded.push(value);
-          results.push(value);
-          if (exploded.length > 100) throw new Error("Explosion limit exceeded");
-        }
-      }
-      const kept = keepMode && keepCount ? [...results].sort((left, right) => (keepMode === "kh" ? right - left : left - right)).slice(0, keepCount) : results;
-      terms.push({ type: "die", count, sides, results, kept, exploded });
-      total += kept.reduce((sum, value) => sum + value, 0);
-      continue;
-    }
-
-    const numeric = Number(term);
-    if (!Number.isFinite(numeric)) throw new Error(`Unsupported dice token: ${rawTerm}`);
-    terms.push({ type: "modifier", value: sign * numeric });
-    total += sign * numeric;
-  }
-
-  return { terms, total };
 }
 
 function aiAgentHistoryStorageKey(campaignId: string, userId: string | null): string {
@@ -1129,6 +1086,11 @@ export function App() {
   const [canvasAssetDragging, setCanvasAssetDragging] = useState(false);
   const tokenDropHandledRef = useRef(false);
   const blankCanvasDemoIdRef = useRef(0);
+  const realtimeSelectionRef = useRef({ campaignId, sceneId });
+  const realtimeRefreshRef = useRef<() => Promise<unknown>>(() => Promise.resolve());
+  const realtimeBoardCaptureHandlerRef = useRef<(data: unknown) => boolean>(() => false);
+  realtimeSelectionRef.current = { campaignId, sceneId };
+  const realtimeConnectionKey = realtimeConnectionIdentity({ blankCanvasDemoOpen, campaignId, sessionToken });
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
   const activeOrganizationId = snapshot.session?.organization?.id ?? snapshot.session?.session?.activeOrganizationId ?? snapshot.organizations[0]?.id ?? "";
@@ -1436,6 +1398,12 @@ export function App() {
     setAdminStatus(`Organization member ${member.user.displayName} removed; ${result.removedCampaignMemberships} campaign memberships removed`);
   }
 
+  realtimeRefreshRef.current = () => {
+    const selection = realtimeSelectionRef.current;
+    return refresh(selection.campaignId, selection.sceneId, { syncStatus: false });
+  };
+  realtimeBoardCaptureHandlerRef.current = handleBoardCaptureRealtimeEvent;
+
   useEffect(() => {
     const defaults = snapshot.workspaceDefaults;
     if (!defaults) return;
@@ -1531,17 +1499,27 @@ export function App() {
   }, [authMode, publicRegistration]);
 
   useEffect(() => {
-    if (blankCanvasDemoOpen || !campaignId || !sessionToken) return;
-    const wsUrl = `${apiBase || window.location.origin}`.replace(/^http/, "ws") + `/api/v1/realtime?campaignId=${encodeURIComponent(campaignId)}`;
-    const socket = new WebSocket(wsUrl, ["otte.v1", `otte.auth.${sessionToken}`]);
-    socket.onopen = () => setStatus((current) => (current === "Loading campaign" || current.toLowerCase().includes("realtime") || current.startsWith("API offline") ? "Realtime connected" : current));
-    socket.onmessage = (event) => {
-      if (handleBoardCaptureRealtimeEvent(event.data)) return;
-      refresh(campaignId, sceneId, { syncStatus: false }).catch(() => setStatus("Realtime refresh failed"));
+    if (!realtimeConnectionKey) return;
+    const realtimeHandlers = createRealtimeHandlers({
+      refresh: () => realtimeRefreshRef.current(),
+      handleBoardCaptureEvent: (data) => realtimeBoardCaptureHandlerRef.current(data),
+      setStatus,
+      onRefreshError: () => setStatus("Realtime refresh failed")
+    });
+    const stopRealtime = startRealtimeConnection({
+      apiBase,
+      origin: window.location.origin,
+      campaignId,
+      sessionToken,
+      onOpen: realtimeHandlers.onOpen,
+      onMessage: realtimeHandlers.onMessage,
+      onUnavailable: () => setStatus("Realtime unavailable - reconnecting")
+    });
+    return () => {
+      realtimeHandlers.dispose();
+      stopRealtime();
     };
-    socket.onerror = () => setStatus("Realtime unavailable");
-    return () => socket.close();
-  }, [blankCanvasDemoOpen, campaignId, sceneId, selectedScene?.id, sessionToken]);
+  }, [realtimeConnectionKey]);
 
   useEffect(() => {
     if (blankCanvasDemoOpen || workspaceMode !== "manage" || manageCategory !== "serverAdmin" || !snapshot.session?.serverAdmin) return;
@@ -3384,7 +3362,7 @@ export function App() {
 
   function createBlankCanvasDemoRoll(formula: string, visibility: DiceRoll["visibility"], label: string): DiceRoll {
     const timestamp = new Date().toISOString();
-    const result = rollLocalDiceFormula(formula);
+    const result = rollFormula(formula);
     return {
       id: nextBlankCanvasDemoId("roll_demo"),
       campaignId,
@@ -3636,6 +3614,10 @@ export function App() {
   async function submitChatCommand() {
     const parsed = parseChatCommand(chatBody);
     if (!parsed) return;
+    if (parsed.kind === "error") {
+      setStatus(parsed.message);
+      return;
+    }
     if (parsed.kind === "roll") {
       if (blankCanvasDemoOpen) {
         const roll = createBlankCanvasDemoRoll(parsed.formula, parsed.visibility, "Table roll");
@@ -11303,7 +11285,9 @@ function jobStatusClass(status: AdminJob["status"]): string {
 function formatRollTermName(term: DiceRoll["terms"][number], index: number): string {
   if (term.type === "die") {
     const count = term.count ?? Math.max(1, term.results?.length ?? 1);
-    return `${count}d${term.sides ?? "?"}`;
+    const suffix = term.sides === 100 ? "%" : (term.sides ?? "?");
+    const sign = term.sign === -1 ? "-" : "";
+    return `${sign}${count}d${suffix}`;
   }
   if (term.type === "modifier") {
     return `Modifier ${formatSignedActionNumber(term.value ?? 0)}`;
@@ -11314,7 +11298,8 @@ function formatRollTermName(term: DiceRoll["terms"][number], index: number): str
 function rollTermTotal(term: DiceRoll["terms"][number]): number | undefined {
   if (term.type === "die") {
     const values = term.kept && term.kept.length > 0 ? term.kept : term.results;
-    return values?.reduce((total, value) => total + value, 0);
+    const total = values?.reduce((sum, value) => sum + value, 0);
+    return total === undefined ? undefined : term.sign === -1 ? -total : total;
   }
   return typeof term.value === "number" ? term.value : undefined;
 }
@@ -11324,6 +11309,8 @@ function formatRollTermDetail(term: DiceRoll["terms"][number]): string {
     const parts = [
       term.results && term.results.length > 0 ? `rolled ${term.results.join(", ")}` : "no results",
       term.kept && term.kept.length > 0 ? `kept ${term.kept.join(", ")}` : undefined,
+      term.drop && term.dropCount !== undefined ? `dropped ${term.dropCount} ${term.drop}` : undefined,
+      term.rerolled && term.rerolled.length > 0 ? `rerolled ${term.rerolled.join(", ")}` : undefined,
       term.exploded && term.exploded.length > 0 ? `exploded ${term.exploded.join(", ")}` : undefined
     ].filter(Boolean);
     return parts.join(" - ");
@@ -11332,6 +11319,14 @@ function formatRollTermDetail(term: DiceRoll["terms"][number]): string {
     return "static modifier";
   }
   return term.value === undefined ? "resolved binding" : `resolved ${formatSignedActionNumber(term.value)}`;
+}
+
+function safeProbabilityRange(formula: string): { min: number; max: number } | undefined {
+  try {
+    return probabilityRange(formula);
+  } catch {
+    return undefined;
+  }
 }
 
 function errorMessage(error: unknown): string {
@@ -11612,13 +11607,14 @@ function ChatMessageItem(props: { message: ChatMessage; roll?: DiceRoll; rollCon
 function RollMessageCard(props: { message: ChatMessage; roll: DiceRoll; concealed?: boolean }) {
   const label = props.roll.label || props.message.body || "Roll";
   const highlight = props.concealed ? null : rollHighlight(props.roll.terms);
+  const range = props.concealed ? undefined : safeProbabilityRange(props.roll.formula);
   const className = ["chat-roll-card", highlight ? `chat-roll-card-${highlight}` : "", props.concealed ? "chat-roll-card-pending" : ""].filter(Boolean).join(" ");
   return (
     <div className={className} aria-busy={props.concealed ? "true" : undefined}>
       <div className="chat-roll-main">
         <span>{props.roll.visibility === "gm_only" ? "GM Roll" : "Roll"}</span>
         <strong>{label}</strong>
-        <p>{props.roll.formula}</p>
+        <p>{props.roll.formula}{range ? ` (${formatNumber(range.min)}-${formatNumber(range.max)})` : ""}</p>
         {highlight && (
           <em className={`chat-roll-flag chat-roll-flag-${highlight}`} aria-label={highlight === "crit" ? "Natural 20" : "Natural 1"}>
             {highlight === "crit" ? "Natural 20 - Critical!" : "Natural 1 - Fumble"}

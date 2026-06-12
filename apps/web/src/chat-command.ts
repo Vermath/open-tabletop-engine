@@ -2,11 +2,12 @@ import type { ChatMessage, MessageType } from "@open-tabletop/core";
 
 export type ParsedChatCommand =
   | { kind: "roll"; formula: string; visibility: DiceVisibility }
-  | { kind: "chat"; body: string; messageType: MessageType; visibility: ChatMessage["visibility"]; recipientQuery?: string };
+  | { kind: "chat"; body: string; messageType: MessageType; visibility: ChatMessage["visibility"]; recipientQuery?: string }
+  | { kind: "error"; message: string };
 
 type DiceVisibility = "public" | "gm_only" | "whisper";
 
-const diceExpressionPattern = /(?:^|\s)(?:\d*)d\d+/i;
+const diceExpressionPattern = /^(?:\d*)d\d+/i;
 
 export function parseChatCommand(input: string): ParsedChatCommand | undefined {
   const text = input.trim();
@@ -43,7 +44,7 @@ export function parseChatCommand(input: string): ParsedChatCommand | undefined {
     return { kind: "chat", body: whisper.body, messageType: "whisper", visibility: "whisper", recipientQuery: whisper.recipientQuery };
   }
 
-  return { kind: "chat", body: commandLine, messageType: "plain", visibility: "public" };
+  return { kind: "error", message: `Unknown chat command "/${command}". Remove the leading slash to send public chat.` };
 }
 
 function parseWhisper(value: string): { recipientQuery: string; body: string } | undefined {
@@ -54,6 +55,5 @@ function parseWhisper(value: string): { recipientQuery: string; body: string } |
 
   const parts = text.split(/\s+/);
   if (parts.length < 2) return undefined;
-  if (parts.length <= 3) return { recipientQuery: parts[0]!, body: parts.slice(1).join(" ") };
-  return { recipientQuery: parts.slice(0, -2).join(" "), body: parts.slice(-2).join(" ") };
+  return { recipientQuery: parts[0]!, body: parts.slice(1).join(" ") };
 }

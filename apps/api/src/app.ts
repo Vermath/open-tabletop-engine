@@ -1,13 +1,14 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { buildPermissionFilteredContext, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
-import { openApiSpec } from "@open-tabletop/api-contracts";
+import { apiContractPolicy, openApiSpec } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport } from "@open-tabletop/codex-app-server-provider";
 import { applyProposal, approveProposal, buildSmoothFogBrushPolygon, computeFogRevealPolygon, computeLightVisionPolygons, computeTokenVisionPolygons, createEvent, createId, createTimestamped, emptyState, hasPermission, isPointInsideVisionPolygon, isPointInsideVisionPolygons, makeArchive, nowIso, permissionsForRole, proposalHistoryEntry, rejectProposal, tokenCenter as centerOfToken, type Actor, type AiEvaluationCheck, type AiEvaluationRun, type AiMemoryFact, type AiThread, type AiToolCall, type AiUsageMetrics, type AssetSecurityFinding, type AssetSecurityScan, type AuditLog, type AuthIdentity, type Campaign, type CampaignInvite, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type ChatMessage, type Combat, type CombatAction, type ContentImportAppliedRecord, type ContentImportBatch, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type DiceMacro, type DiceRoll, type EmailOutboxMessage, type Encounter, type EngineEvent, type EngineState, type FogHistoryEntry, type FogMode, type FogPreset, type FogPresetRegion, type FogRegion, type FogShape, type Item, type JobLogEntry, type JobProgress, type JobStatus, type JobType, type JournalEntry, type LightSource, type MapAsset, type MessageType, type OAuthLoginState, type OrganizationMember, type OrganizationMemberRole, type OrganizationWorkspace, type PasswordResetToken, type PermissionGrant, type PermissionName, type PluginReview, type PluginReviewStatus, type PluginStorageEntry, type Proposal, type ProposalChange, type Scene, type SceneAnnotation, type SceneAnnotationKind, type SceneAnnotationLayer, type SceneTemplateShape, type ScimAssignableRole, type ScimGroup, type ScimGroupRoleMapping, type Token, type TokenLayer, type User, type UserMfaSettings, type UserRole, type UserSession, type Visibility, type VisionPoint, type VisionPointSample, type VisionPointSamplePolygon, type VisionPolygon, type VisionSnapshot, type Wall, type WallKind, type WorkerJobRecord } from "@open-tabletop/core";
 import { rollFormula } from "@open-tabletop/dice-engine";
-import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type RulesActionResolutionResult, type RulesSaveOutcome, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
+import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdInitiativeRoll, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type RulesActionResolutionResult, type RulesSaveOutcome, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { assetStorageKey, createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginInventoryWarning, type PluginRuntimeRegistry } from "./plugin-runtime.js";
@@ -102,6 +103,45 @@ interface AgentThreadBody {
   messages?: Array<{ role?: string; content?: string }>;
 }
 
+interface ChatMessageCreateBody {
+  campaignId: string;
+  body: string;
+  sceneId?: string;
+  type?: MessageType;
+  visibility?: ChatMessage["visibility"];
+  recipientUserIds?: string[];
+  rollId?: string;
+  replyToMessageId?: unknown;
+}
+
+interface ChatMessageEditBody {
+  body?: unknown;
+}
+
+interface ListPaginationQuery {
+  limit?: string;
+  cursor?: string;
+  offset?: string;
+}
+
+type ListPagination =
+  | { requested: false }
+  | {
+      requested: true;
+      limit: number;
+      offset: number;
+    };
+
+type PaginatedList<T> = {
+  items: T[];
+  pagination: {
+    limit: number;
+    offset: number;
+    totalCount: number;
+    nextCursor?: string;
+  };
+};
+
 interface McpJsonRpcRequest {
   jsonrpc?: string;
   id?: string | number | null;
@@ -193,6 +233,27 @@ interface CampaignCreateBody extends Partial<Campaign> {
   permissionTemplate?: unknown;
 }
 
+type CampaignPatchBody = Partial<Pick<Campaign, "name" | "description" | "defaultSystemId" | "visibility">>;
+type TokenPatchBody = Partial<
+  Pick<Token, "actorId" | "name" | "x" | "y" | "width" | "height" | "rotation" | "layer" | "hidden" | "locked" | "visionEnabled" | "visionRadius" | "disposition" | "imageAssetId" | "ownerUserIds" | "notes" | "conditions" | "auras" | "targetedByUserIds" | "metadata">
+> & {
+  brightVisionRadius?: number | null;
+  dimVisionRadius?: number | null;
+};
+type ActorPatchBody = Partial<Pick<Actor, "systemId" | "ownerUserId" | "type" | "name" | "imageAssetId" | "data" | "permissions">>;
+type JournalEntryPatchBody = Partial<Pick<JournalEntry, "parentId" | "title" | "body" | "visibility" | "visibleToUserIds" | "visibleToActorIds" | "tags">>;
+type CombatPatchBody = Partial<Pick<Combat, "active" | "round" | "turnIndex" | "combatants" | "manualTurnOrder">>;
+
+type CampaignImportPayload =
+  | CampaignArchive
+  | {
+      archive: CampaignArchive;
+      mode?: "upsert" | "reject_conflicts" | "skip_conflicts" | "dry_run";
+      scope?: "all" | "assets_only" | "selected_collections";
+      collections?: Array<keyof EngineState>;
+      regenerateIds?: boolean;
+    };
+
 interface OrganizationWorkspaceDefaultsBody {
   name?: unknown;
   defaultSystemId?: unknown;
@@ -229,6 +290,12 @@ const IDEMPOTENCY_MAX_RECORDS = 1000;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 600;
 const DEFAULT_ASSET_QUOTA_BYTES = 1024 * 1024 * 1024;
+const LIST_DEFAULT_LIMIT = apiContractPolicy.pagination.defaultLimit;
+const LIST_MAX_LIMIT = apiContractPolicy.pagination.maxLimit;
+const CHAT_MESSAGE_BODY_MAX_LENGTH = apiContractPolicy.chat.messageBodyMaxLength;
+const CHAT_MESSAGE_BODY_VALIDATION_MESSAGE = `Chat message body must be a non-empty string up to ${CHAT_MESSAGE_BODY_MAX_LENGTH} characters`;
+const CHAT_MESSAGE_TYPES = ["plain", "emote", "whisper", "roll", "system", "gm", "ooc", "ai", "plugin"] as const satisfies readonly MessageType[];
+const CHAT_MESSAGE_VISIBILITIES = ["public", "gm_only", "whisper"] as const satisfies readonly ChatMessage["visibility"][];
 const ADMIN_JOB_TYPES = [
   "campaign.export",
   "campaign.import",
@@ -254,6 +321,7 @@ const DEFAULT_WORKSPACE_GRID_SIZE = 50;
 
 const idempotencyContextSymbol = Symbol("otte.idempotencyContext");
 const idempotencyReplaySymbol = Symbol("otte.idempotencyReplay");
+const idempotencySaveScopeSymbol = Symbol("otte.idempotencySaveScope");
 
 const campaignPermissionTemplates: Record<CampaignPermissionTemplateId, CampaignPermissionTemplate> = {
   standard: {
@@ -295,6 +363,11 @@ interface IdempotencyContext {
   path: string;
   userId?: string;
   requestHash: string;
+}
+
+interface IdempotencySaveScope {
+  deferSaves: boolean;
+  saveRequested: boolean;
 }
 
 interface RateLimitConfig {
@@ -450,7 +523,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const storageBackupScheduler = createStorageBackupScheduler(store);
   const maxAssetBytes = options.maxAssetBytes ?? 25 * 1024 * 1024;
   const hub = new RealtimeHub();
-  const broadcast = (event: EngineEvent) => hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId));
+  const broadcast = (event: EngineEvent) => {
+    const visibilityCache = createTokenVisibilityCache();
+    hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId, visibilityCache));
+  };
   const aiProvider = options.aiProvider ?? createConfiguredAiProvider();
   const imageAssetGenerator = options.imageAssetGenerator ?? createConfiguredImageAssetGenerator();
   const pendingBoardCaptures = new Map<string, PendingBoardCapture>();
@@ -1064,6 +1140,23 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         reasons: [...reasons],
         matched: result.matched,
         revoked: result.revoked
+      }
+    });
+    store.save();
+    return result;
+  });
+
+  app.post<{ Body: AdminSessionPruneBody }>("/api/v1/admin/sessions/prune", async (request, reply) => {
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
+    const result = pruneSessionsForAdmin(store, request.body ?? {});
+    appendServerAuditLog(store, adminUserId, {
+      action: "admin.sessions.prune",
+      targetType: "session",
+      after: {
+        dryRun: result.dryRun,
+        matched: result.matched,
+        pruned: result.pruned
       }
     });
     store.save();
@@ -2634,12 +2727,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     };
   });
 
-  app.patch<{ Params: { campaignId: string }; Body: Partial<Campaign> }>("/api/v1/campaigns/:campaignId", async (request, reply) => {
+  app.patch<{ Params: { campaignId: string }; Body: CampaignPatchBody }>("/api/v1/campaigns/:campaignId", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
     if (allowed !== true) return allowed;
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
-    Object.assign(campaign, request.body, { updatedAt: nowIso() });
+    Object.assign(campaign, campaignPatchFromBody(request.body), { updatedAt: nowIso() });
     store.save();
     return campaign;
   });
@@ -4213,7 +4306,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return token;
   });
 
-  app.patch<{ Params: { tokenId: string }; Body: Partial<Token> }>("/api/v1/tokens/:tokenId", async (request, reply) => {
+  app.patch<{ Params: { tokenId: string }; Body: TokenPatchBody }>("/api/v1/tokens/:tokenId", async (request, reply) => {
     const campaignId = campaignIdForToken(store, request.params.tokenId);
     if (!campaignId) return notFound(reply, "Token not found");
     const moved = request.body.x !== undefined || request.body.y !== undefined;
@@ -4235,7 +4328,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if ("error" in normalizedLayer) return badRequest(reply, normalizedLayer.error);
     const normalizedMove = normalizeTokenMovePatch(request.body);
     if ("error" in normalizedMove) return badRequest(reply, normalizedMove.error);
-    const patch = moveOnly ? normalizedMove.patch : { ...request.body, ...normalizedVision.patch, ...normalizedLayer.patch, ...normalizedTabletop.patch };
+    const patch = moveOnly ? normalizedMove.patch : { ...tokenPatchFromBody(request.body), ...normalizedMove.patch, ...normalizedVision.patch, ...normalizedLayer.patch, ...normalizedTabletop.patch };
     Object.assign(token, patch, { updatedAt: nowIso() });
     store.save();
     if (scene) {
@@ -4310,7 +4403,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return actor;
   });
 
-  app.patch<{ Params: { actorId: string }; Body: Partial<Actor> }>("/api/v1/actors/:actorId", async (request, reply) => {
+  app.patch<{ Params: { actorId: string }; Body: ActorPatchBody }>("/api/v1/actors/:actorId", async (request, reply) => {
     const actor = store.state.actors.find((item) => item.id === request.params.actorId);
     if (!actor) return notFound(reply, "Actor not found");
     const userId = requireUser(store, reply, request.headers);
@@ -4320,7 +4413,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const canUpdate = canCampaign(store, userId, actor.campaignId, "actor.update");
     const canUpdateOwned = actor.ownerUserId === userId && canCampaign(store, userId, actor.campaignId, "actor.updateOwned");
     if (!canUpdate && !canUpdateOwned) return forbidden(reply, "Missing permission: actor.update");
-    Object.assign(actor, request.body, { updatedAt: nowIso() });
+    Object.assign(actor, actorPatchFromBody(request.body), { updatedAt: nowIso() });
     store.save();
     broadcast(
       createEvent({
@@ -4438,14 +4531,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return entry;
   });
 
-  app.patch<{ Params: { entryId: string }; Body: Partial<JournalEntry> }>("/api/v1/journal/:entryId", async (request, reply) => {
+  app.patch<{ Params: { entryId: string }; Body: JournalEntryPatchBody }>("/api/v1/journal/:entryId", async (request, reply) => {
     const entry = store.state.journals.find((item) => item.id === request.params.entryId);
     if (!entry) return notFound(reply, "Journal entry not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, entry.campaignId, "journal.update");
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    Object.assign(entry, request.body, {
+    Object.assign(entry, journalEntryPatchFromBody(request.body), {
       updatedAt: nowIso(),
       updatedBy: userId
     });
@@ -4520,16 +4613,24 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return roll;
   });
 
-  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/rolls", async (request, reply) => {
+  app.get<{ Params: { campaignId: string }; Querystring: ListPaginationQuery }>("/api/v1/campaigns/:campaignId/rolls", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "chat.read");
     if (allowed !== true) return allowed;
-    return store.state.rolls.filter((roll) => {
+    const pagination = normalizeListPagination(request.query);
+    if ("error" in pagination) return badRequest(reply, pagination.error);
+    const linkedMessagesByRollId = new Map<string, ChatMessage>();
+    for (const message of store.state.chat) {
+      if (message.campaignId !== request.params.campaignId || !message.rollId || linkedMessagesByRollId.has(message.rollId)) continue;
+      linkedMessagesByRollId.set(message.rollId, message);
+    }
+    const rolls = store.state.rolls.filter((roll) => {
       if (roll.campaignId !== request.params.campaignId) return false;
-      const linkedMessage = store.state.chat.find((message) => message.rollId === roll.id);
+      const linkedMessage = linkedMessagesByRollId.get(roll.id);
       return canReadDiceRoll(store, userId, roll, linkedMessage);
     });
+    return pagination.requested ? paginateList(rolls, pagination) : rolls;
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/dice-macros", async (request, reply) => {
@@ -4604,17 +4705,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return macro;
   });
 
-  app.get<{ Querystring: { campaignId?: string } }>("/api/v1/chat/messages", async (request, reply) => {
+  app.get<{ Querystring: { campaignId?: string } & ListPaginationQuery }>("/api/v1/chat/messages", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const pagination = normalizeListPagination(request.query);
+    if ("error" in pagination) return badRequest(reply, pagination.error);
     if (!request.query.campaignId) {
       const workspace = organizationWorkspaceRecordForRequest(store, userId, request.headers);
       const activeCampaignIds = new Set(store.state.campaigns.filter((campaign) => campaign.organizationId === workspace.id).map((campaign) => campaign.id));
-      return store.state.chat.filter((item) => activeCampaignIds.has(item.campaignId) && canCampaign(store, userId, item.campaignId, "chat.read") && canReadChatMessage(store, userId, item));
+      const messages = store.state.chat.filter((item) => activeCampaignIds.has(item.campaignId) && canCampaign(store, userId, item.campaignId, "chat.read") && canReadChatMessage(store, userId, item));
+      return pagination.requested ? paginateList(messages, pagination) : messages;
     }
     const allowed = requireCampaignPermission(store, reply, request.headers, request.query.campaignId, "chat.read");
     if (allowed !== true) return allowed;
-    return store.state.chat.filter((item) => item.campaignId === request.query.campaignId && canReadChatMessage(store, userId, item));
+    const messages = store.state.chat.filter((item) => item.campaignId === request.query.campaignId && canReadChatMessage(store, userId, item));
+    return pagination.requested ? paginateList(messages, pagination) : messages;
   });
 
   app.get<{ Params: { campaignId: string }; Querystring: { format?: "json" | "ndjson" } }>("/api/v1/campaigns/:campaignId/chat/export", async (request, reply) => {
@@ -4650,27 +4755,28 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     };
   });
 
-  app.post<{
-    Body: Partial<ChatMessage> & { campaignId: string; body: string };
-  }>("/api/v1/chat/messages", async (request, reply) => {
-    const allowed = requireCampaignPermission(store, reply, request.headers, request.body.campaignId, "chat.write");
+  app.post<{ Body: unknown }>("/api/v1/chat/messages", async (request, reply) => {
+    const parsedBody = parseChatMessageCreateBody(request.body, reply);
+    if (!parsedBody.ok) return parsedBody.reply;
+    const body = parsedBody.body;
+    const allowed = requireCampaignPermission(store, reply, request.headers, body.campaignId, "chat.write");
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const visibility = request.body.type === "whisper" ? "whisper" : request.body.visibility ?? "public";
-    const recipientUserIds = normalizeChatRecipients(store, request.body.campaignId, userId, visibility, request.body.recipientUserIds, reply);
+    const visibility = body.type === "whisper" ? "whisper" : body.visibility ?? "public";
+    const recipientUserIds = normalizeChatRecipients(store, body.campaignId, userId, visibility, body.recipientUserIds, reply);
     if (!Array.isArray(recipientUserIds)) return recipientUserIds;
-    const replyToMessageId = normalizeChatReplyToMessageId(store, request.body.campaignId, userId, request.body.replyToMessageId, reply);
+    const replyToMessageId = normalizeChatReplyToMessageId(store, body.campaignId, userId, body.replyToMessageId, reply);
     if (replyToMessageId && typeof replyToMessageId !== "string") return replyToMessageId;
     const message = createTimestamped("msg", {
-      campaignId: request.body.campaignId,
-      sceneId: request.body.sceneId,
+      campaignId: body.campaignId,
+      sceneId: body.sceneId,
       userId,
-      type: request.body.type ?? (visibility === "whisper" ? "whisper" : "plain"),
-      body: request.body.body,
+      type: body.type ?? (visibility === "whisper" ? "whisper" : "plain"),
+      body: body.body,
       visibility,
       recipientUserIds,
-      rollId: request.body.rollId,
+      rollId: body.rollId,
       replyToMessageId
     }) satisfies ChatMessage;
     store.state.chat.push(message);
@@ -4680,6 +4786,42 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         campaignId: message.campaignId,
         type: "chat.message.created",
         actorUserId: message.userId,
+        targetId: message.id,
+        payload: message
+      })
+    );
+    return message;
+  });
+
+  app.patch<{ Params: { messageId: string }; Body: ChatMessageEditBody }>("/api/v1/chat/messages/:messageId", async (request, reply) => {
+    const message = store.state.chat.find((item) => item.id === request.params.messageId);
+    if (!message) return notFound(reply, "Chat message not found");
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const canModerate = canCampaign(store, userId, message.campaignId, "chat.moderate");
+    const canEditOwn = message.userId === userId && canCampaign(store, userId, message.campaignId, "chat.write");
+    if (!canModerate && !canEditOwn) return forbidden(reply, "Missing permission: chat.write or chat.moderate");
+    const parsedBody = parseChatMessageEditBody(request.body, reply);
+    if (!parsedBody.ok) return parsedBody.reply;
+    const previousBody = message.body;
+    message.body = parsedBody.body;
+    message.editedByUserId = userId;
+    message.editedAt = nowIso();
+    message.updatedAt = message.editedAt;
+    appendServerAuditLog(store, userId, {
+      campaignId: message.campaignId,
+      action: "chat.message.edit",
+      targetType: "chat",
+      targetId: message.id,
+      before: { bodyLength: previousBody.length, visibility: message.visibility, type: message.type },
+      after: { bodyLength: message.body.length, visibility: message.visibility, type: message.type }
+    });
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: message.campaignId,
+        type: "chat.message.updated",
+        actorUserId: userId,
         targetId: message.id,
         payload: message
       })
@@ -4806,12 +4948,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return store.state.combats.filter((item) => item.campaignId === request.params.campaignId);
   });
 
-  app.get<{ Params: { combatId: string } }>("/api/v1/combats/:combatId/audit", async (request, reply) => {
+  app.get<{ Params: { combatId: string }; Querystring: ListPaginationQuery }>("/api/v1/combats/:combatId/audit", async (request, reply) => {
     const combat = store.state.combats.find((item) => item.id === request.params.combatId);
     if (!combat) return notFound(reply, "Combat not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, combat.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return store.state.auditLogs.filter((log) => log.campaignId === combat.campaignId && log.targetType === "combat" && log.targetId === combat.id).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const pagination = normalizeListPagination(request.query);
+    if ("error" in pagination) return badRequest(reply, pagination.error);
+    const auditLogs = store.state.auditLogs.filter((log) => log.campaignId === combat.campaignId && log.targetType === "combat" && log.targetId === combat.id).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return pagination.requested ? paginateList(auditLogs, pagination) : auditLogs;
   });
 
   app.post<{ Params: { combatId: string; actionId: string } }>("/api/v1/combats/:combatId/actions/:actionId/confirm", async (request, reply) => {
@@ -4862,10 +5007,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
+    const deactivatedCombats: Combat[] = [];
+    const deactivatedAt = nowIso();
     for (const existingCombat of store.state.combats) {
       if (existingCombat.campaignId === request.params.campaignId && existingCombat.active) {
         existingCombat.active = false;
-        existingCombat.updatedAt = nowIso();
+        existingCombat.updatedAt = deactivatedAt;
+        deactivatedCombats.push(existingCombat);
       }
     }
     const combat = createTimestamped("cmb", {
@@ -4874,7 +5022,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       active: true,
       round: 1,
       turnIndex: 0,
-      combatants: request.body.combatants ?? []
+      manualTurnOrder: request.body.manualTurnOrder === true,
+      combatants: orderedCombatants((request.body.combatants ?? []).map(applyCombatantRulesAutomation), request.body.manualTurnOrder === true)
     }) satisfies Combat;
     store.state.combats.push(combat);
     appendServerAuditLog(store, userId, {
@@ -4885,6 +5034,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       after: combatAuditSummary(combat)
     });
     store.save();
+    for (const deactivatedCombat of deactivatedCombats) {
+      broadcast(
+        createEvent({
+          campaignId: deactivatedCombat.campaignId,
+          type: "combat.ended",
+          targetId: deactivatedCombat.id,
+          payload: deactivatedCombat
+        })
+      );
+    }
     broadcast(
       createEvent({
         campaignId: combat.campaignId,
@@ -4896,7 +5055,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return combat;
   });
 
-  app.patch<{ Params: { combatId: string }; Body: Partial<Combat> }>("/api/v1/combats/:combatId", async (request, reply) => {
+  app.patch<{ Params: { combatId: string }; Body: CombatPatchBody }>("/api/v1/combats/:combatId", async (request, reply) => {
     const combat = store.state.combats.find((item) => item.id === request.params.combatId);
     if (!combat) return notFound(reply, "Combat not found");
     const allowed = requireCampaignPermission(store, reply, request.headers, combat.campaignId, "combat.manage");
@@ -4905,11 +5064,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof userId !== "string") return userId;
     const before = combatAuditSummary(combat);
     const previousRound = combat.round;
-    const requestedRound = Math.max(1, request.body.round ?? combat.round);
+    const mutablePatch = combatPatchFromBody(request.body);
+    const requestedRound = Math.max(1, mutablePatch.round ?? combat.round);
     const roundDelta = Math.max(0, requestedRound - previousRound);
-    const nextCombatants = advanceTimedCombatantConditions((request.body.combatants ?? combat.combatants).map(applyCombatantRulesAutomation), roundDelta);
-    const nextTurnIndex = Math.max(0, Math.min(request.body.turnIndex ?? combat.turnIndex, Math.max(0, nextCombatants.length - 1)));
-    Object.assign(combat, request.body, {
+    const manualTurnOrder = mutablePatch.manualTurnOrder ?? combat.manualTurnOrder ?? false;
+    const combatantsChanged = mutablePatch.combatants !== undefined || mutablePatch.manualTurnOrder !== undefined;
+    const nextCombatants = orderedCombatants(advanceTimedCombatantConditions((mutablePatch.combatants ?? combat.combatants).map(applyCombatantRulesAutomation), roundDelta), manualTurnOrder);
+    const requestedTurnIndex = mutablePatch.turnIndex ?? (combatantsChanged ? 0 : combat.turnIndex);
+    const nextTurnIndex = Math.max(0, Math.min(requestedTurnIndex, Math.max(0, nextCombatants.length - 1)));
+    Object.assign(combat, mutablePatch, {
+      manualTurnOrder,
       combatants: nextCombatants,
       turnIndex: nextTurnIndex,
       round: requestedRound,
@@ -4933,6 +5097,71 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       })
     );
     return combat;
+  });
+
+  app.post<{ Params: { combatId: string } }>("/api/v1/combats/:combatId/initiative/roll-npcs", async (request, reply) => {
+    const combat = store.state.combats.find((item) => item.id === request.params.combatId);
+    if (!combat) return notFound(reply, "Combat not found");
+    const allowed = requireCampaignPermission(store, reply, request.headers, combat.campaignId, "combat.manage");
+    if (allowed !== true) return allowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const before = combatAuditSummary(combat);
+    const rolls: DiceRoll[] = [];
+    const chatMessages: ChatMessage[] = [];
+    for (const combatant of combat.combatants) {
+      const actor = combatant.actorId ? store.state.actors.find((item) => item.id === combatant.actorId && item.campaignId === combat.campaignId) : undefined;
+      if (!actor || !isNpcInitiativeActor(actor)) continue;
+      const quickRoll = initiativeRollForActor(actor);
+      const rolled = rollFormula(quickRoll.formula);
+      combatant.initiative = rolled.total;
+      const label = `${combatant.name} ${quickRoll.label}`;
+      const roll = createTimestamped("roll", {
+        campaignId: combat.campaignId,
+        userId,
+        formula: quickRoll.formula,
+        label,
+        visibility: "public" as const,
+        terms: rolled.terms,
+        total: rolled.total
+      }) satisfies DiceRoll;
+      const message = createTimestamped("msg", {
+        campaignId: combat.campaignId,
+        userId,
+        type: "roll" as const,
+        body: `${label}: ${quickRoll.formula} = ${rolled.total}`,
+        visibility: "public" as const,
+        recipientUserIds: [],
+        rollId: roll.id
+      }) satisfies ChatMessage;
+      rolls.push(roll);
+      chatMessages.push(message);
+    }
+    if (rolls.length === 0) return badRequest(reply, "No NPC combatants with linked actors were found");
+    if (!combat.manualTurnOrder) {
+      combat.combatants = orderedCombatants(combat.combatants, false);
+      combat.turnIndex = 0;
+    }
+    combat.updatedAt = nowIso();
+    store.state.rolls.push(...rolls);
+    store.state.chat.push(...chatMessages);
+    appendServerAuditLog(store, userId, {
+      campaignId: combat.campaignId,
+      action: "combat.initiativeRolled",
+      targetType: "combat",
+      targetId: combat.id,
+      before,
+      after: { ...combatAuditSummary(combat), rolledCombatantCount: rolls.length }
+    });
+    store.save();
+    broadcast(createEvent({ campaignId: combat.campaignId, type: "combat.turnChanged", actorUserId: userId, targetId: combat.id, payload: combat }));
+    for (const roll of rolls) {
+      broadcast(createEvent({ campaignId: roll.campaignId, type: "dice.roll.created", actorUserId: userId, targetId: roll.id, payload: roll }));
+    }
+    for (const message of chatMessages) {
+      broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
+    }
+    return { combat, rolls, chatMessages };
   });
 
   app.patch<{ Params: { combatId: string; combatantId: string }; Body: Partial<Combat["combatants"][number]> & { syncActorSheet?: boolean } }>("/api/v1/combats/:combatId/combatants/:combatantId", async (request, reply) => {
@@ -4965,6 +5194,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     combat.combatants[combatantIndex] = {
       ...nextCombatant
     };
+    if (!combat.manualTurnOrder) {
+      combat.combatants = orderedCombatants(combat.combatants, false);
+      combat.turnIndex = Math.max(0, Math.min(combat.turnIndex, Math.max(0, combat.combatants.length - 1)));
+    }
     combat.updatedAt = updatedAt;
     appendServerAuditLog(store, userId, {
       campaignId: combat.campaignId,
@@ -5022,7 +5255,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/proposals", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return store.state.proposals.filter((item) => item.campaignId === request.params.campaignId);
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    return visibleProposalsForUser(store.state, userId, request.params.campaignId, permissionsForUser(store, userId, request.params.campaignId));
   });
 
   app.post<{ Params: { campaignId: string }; Body: Partial<Proposal> }>("/api/v1/campaigns/:campaignId/proposals", async (request, reply) => {
@@ -5505,7 +5740,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     let providerEventsSeen = 0;
     let toolCallCount = 0;
     let retryAttempts = 0;
+    const pendingToolCalls: AiToolCall[] = [];
     const maxRetryAttempts = aiProviderRetryAttempts();
+    const aiThreadRealtimeVisibility: ChatMessage["visibility"] = permissions.includes("ai.readGmMemory") ? "gm_only" : "public";
     const providerInput: AiProviderRequest = {
       threadId: thread.id,
       messages: agentMessagesForRequest(prompt, request.body),
@@ -5528,18 +5765,49 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           if (event.type === "usage.reported") {
             mergeAiUsage(thread, event.usage);
           }
-          if (event.type === "message.delta") content += event.delta;
-          if (event.type === "message.completed" && !content) content = event.content;
+          if (event.type === "message.delta") {
+            content += event.delta;
+            broadcast(
+              createEvent({
+                campaignId: thread.campaignId,
+                type: "ai.message.delta",
+                actorUserId: userId,
+                targetId: thread.id,
+                payload: { threadId: thread.id, delta: event.delta, content, visibility: aiThreadRealtimeVisibility }
+              })
+            );
+          }
+          if (event.type === "message.completed") {
+            if (!content) content = event.content;
+            broadcast(
+              createEvent({
+                campaignId: thread.campaignId,
+                type: "ai.message.completed",
+                actorUserId: userId,
+                targetId: thread.id,
+                payload: { threadId: thread.id, content, visibility: aiThreadRealtimeVisibility }
+              })
+            );
+          }
           if (event.type === "tool.started") {
             toolCallCount += 1;
             const toolStartedAtMs = Date.now();
-            store.state.aiToolCalls.push(
-              createTimestamped("tool", {
-                threadId: thread.id,
-                toolName: event.toolName,
-                input: event.input,
-                output: undefined,
-                status: "started" as const
+            const startedToolCall = createTimestamped("tool", {
+              threadId: thread.id,
+              toolName: event.toolName,
+              input: event.input,
+              output: undefined,
+              status: "started" as const
+            });
+            store.state.aiToolCalls.push(startedToolCall);
+            pendingToolCalls.push(startedToolCall);
+            broadcast(
+              createEvent({
+                campaignId: thread.campaignId,
+                type: "ai.tool.started",
+                actorUserId: userId,
+                targetId: thread.id,
+                payload: { threadId: thread.id, toolCallId: startedToolCall.id, toolName: event.toolName, visibility: aiThreadRealtimeVisibility }
               })
             );
             if (aiProvider.executesToolsInTurn) {
@@ -5549,29 +5817,52 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
             const output = result.output;
             const completedEvent: AiProviderEvent = { type: "tool.completed", toolName: event.toolName, output };
             events.push(completedEvent);
-            store.state.aiToolCalls.push(
-              createTimestamped("tool", {
-                threadId: thread.id,
-                toolName: event.toolName,
-                input: undefined,
-                output,
-                status: result.failed ? ("failed" as const) : ("completed" as const),
-                durationMs: elapsedMs(toolStartedAtMs)
+            resolveAiToolCall(startedToolCall, {
+              output,
+              status: result.failed ? "failed" : "completed",
+              startedAtMs: toolStartedAtMs
+            });
+            broadcast(
+              createEvent({
+                campaignId: thread.campaignId,
+                type: "ai.tool.completed",
+                actorUserId: userId,
+                targetId: thread.id,
+                payload: { threadId: thread.id, toolCallId: startedToolCall.id, toolName: event.toolName, status: result.failed ? "failed" : "completed", visibility: aiThreadRealtimeVisibility }
               })
             );
+            removePendingAiToolCall(pendingToolCalls, startedToolCall);
             if (isProposalToolOutput(output)) {
               events.push({ type: "proposal.created", proposalId: output.proposalId });
             }
           } else if (event.type === "tool.completed") {
-            store.state.aiToolCalls.push(
-              createTimestamped("tool", {
-                threadId: thread.id,
-                toolName: event.toolName,
-                input: undefined,
+            const status = isToolErrorOutput(event.output) ? ("failed" as const) : ("completed" as const);
+            const startedToolCall = takePendingAiToolCall(pendingToolCalls, event.toolName);
+            if (startedToolCall) {
+              resolveAiToolCall(startedToolCall, {
                 output: event.output,
-                status: isToolErrorOutput(event.output) ? ("failed" as const) : ("completed" as const)
-              })
-            );
+                status
+              });
+              broadcast(
+                createEvent({
+                  campaignId: thread.campaignId,
+                  type: "ai.tool.completed",
+                  actorUserId: userId,
+                  targetId: thread.id,
+                  payload: { threadId: thread.id, toolCallId: startedToolCall.id, toolName: event.toolName, status, visibility: aiThreadRealtimeVisibility }
+                })
+              );
+            } else {
+              store.state.aiToolCalls.push(
+                createTimestamped("tool", {
+                  threadId: thread.id,
+                  toolName: event.toolName,
+                  input: undefined,
+                  output: event.output,
+                  status
+                })
+              );
+            }
             if (isProposalToolOutput(event.output)) {
               events.push({ type: "proposal.created", proposalId: event.output.proposalId });
             }
@@ -6184,7 +6475,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const tokens: PluginCommandTokenContext[] = canReadTokens ? store.state.tokens.filter((token) => sceneIds.includes(token.sceneId)).map((token) => ({ id: token.id, name: token.name, sceneId: token.sceneId })) : [];
     let commandResult: PluginChatCommandResult;
     try {
-      commandResult = pluginRegistry.executeChatCommand(plugin.id, {
+      commandResult = await pluginRegistry.executeChatCommandAsync(plugin.id, {
         campaignId: request.params.campaignId,
         pluginId: plugin.id,
         userId,
@@ -7218,25 +7509,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return makeDogfoodReportBundle(store.state, request.params.campaignId);
   });
 
-  app.post<{
-    Body: CampaignArchive | { archive: CampaignArchive; mode?: "upsert" | "reject_conflicts" | "skip_conflicts" | "dry_run"; scope?: "all" | "assets_only" | "selected_collections"; collections?: Array<keyof EngineState> };
-  }>("/api/v1/import/campaign", async (request, reply) => {
+  app.post<{ Body: CampaignImportPayload }>("/api/v1/import/campaign", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
-    const payload = request.body as CampaignArchive | { archive: CampaignArchive; mode?: string; scope?: string; collections?: string[] };
+    const payload = request.body as CampaignImportPayload;
+    const wrappedPayload = "archive" in payload;
     const workspace = organizationWorkspaceRecordForRequest(store, userId, request.headers);
-    const archive = normalizeArchiveForImport("archive" in payload ? payload.archive : payload, workspace.id);
-    const mode = "archive" in payload ? (payload.mode ?? "upsert") : "upsert";
-    const scope = "archive" in payload ? (payload.scope ?? "all") : "all";
+    const archive = normalizeArchiveForImport(wrappedPayload ? payload.archive : payload, workspace.id);
+    const mode = wrappedPayload ? (payload.mode ?? "upsert") : "upsert";
+    const scope = wrappedPayload ? (payload.scope ?? "all") : "all";
+    const regenerateIds = wrappedPayload && payload.regenerateIds === true;
     if (!isArchiveImportMode(mode)) return reply.code(400).send({ error: "unsupported_import_mode", mode });
     if (!isArchiveImportScope(scope)) return reply.code(400).send({ error: "unsupported_import_scope", scope });
-    const selectedCollections = normalizeArchiveImportCollections(scope, "archive" in payload ? payload.collections : undefined);
+    const selectedCollections = normalizeArchiveImportCollections(scope, wrappedPayload ? payload.collections : undefined);
     if (!selectedCollections.ok) return badRequest(reply, selectedCollections.error);
     if (archive.format !== "ottx") return reply.code(400).send({ error: "unsupported_archive_format" });
     if (!isSupportedArchiveVersion(archive.version)) return reply.code(400).send({ error: "unsupported_archive_version", version: archive.version });
 
     const importWarnings = archiveImportDependencyWarnings(scope, selectedCollections.value, archive);
-    const scopedArchive = archiveForImportScope(archive, scope, selectedCollections.value);
+    const scopedArchive = regenerateIds ? archiveWithRegeneratedIds(archiveForImportScope(archive, scope, selectedCollections.value), { userId, organizationId: workspace.id }) : archiveForImportScope(archive, scope, selectedCollections.value);
     for (const campaignId of existingArchiveCampaignIds(store.state, scopedArchive)) {
       const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
       if (allowed !== true) return allowed;
@@ -8922,6 +9213,28 @@ function aiToolCallAgeMs(call: AiToolCall): number {
   return Math.max(0, Date.now() - timestamp);
 }
 
+function resolveAiToolCall(
+  call: AiToolCall,
+  result: { output: unknown; status: Exclude<AiToolCall["status"], "started">; startedAtMs?: number }
+): AiToolCall {
+  call.output = result.output;
+  call.status = result.status;
+  call.durationMs = result.startedAtMs !== undefined ? elapsedMs(result.startedAtMs) : aiToolCallAgeMs(call);
+  call.updatedAt = nowIso();
+  return call;
+}
+
+function takePendingAiToolCall(pendingToolCalls: AiToolCall[], toolName: string): AiToolCall | undefined {
+  const index = pendingToolCalls.findIndex((call) => call.toolName === toolName);
+  if (index === -1) return undefined;
+  return pendingToolCalls.splice(index, 1)[0];
+}
+
+function removePendingAiToolCall(pendingToolCalls: AiToolCall[], toolCall: AiToolCall): void {
+  const index = pendingToolCalls.findIndex((call) => call.id === toolCall.id);
+  if (index !== -1) pendingToolCalls.splice(index, 1);
+}
+
 function failStaleAiThreads(store: StateStore, options: { dryRun?: boolean; campaignId?: string; limit?: number | string; reason?: string }) {
   const dryRun = options.dryRun === true;
   const campaignId = typeof options.campaignId === "string" && options.campaignId.trim() ? options.campaignId.trim() : undefined;
@@ -9074,15 +9387,12 @@ async function retryFailedAiToolCalls(store: StateStore, runtime: AiToolRuntime,
     });
     store.state.aiToolCalls.push(started);
     const result = await executeAiTool(tools, call.toolName, originalInputCall.input, createAiToolContext(store, thread.campaignId, thread.userId, permissions, runtime));
-    const completedCall = createTimestamped("tool", {
-      threadId: thread.id,
-      toolName: call.toolName,
-      input: undefined,
+    const resultStatus = result.failed ? ("failed" as const) : ("completed" as const);
+    resolveAiToolCall(started, {
       output: result.output,
-      status: result.failed ? ("failed" as const) : ("completed" as const),
-      durationMs: elapsedMs(startedAtMs)
+      status: resultStatus,
+      startedAtMs
     });
-    store.state.aiToolCalls.push(completedCall);
     retried += 1;
     if (result.failed) {
       failed += 1;
@@ -9092,10 +9402,10 @@ async function retryFailedAiToolCalls(store: StateStore, runtime: AiToolRuntime,
     call.retry = {
       retriedAt: nowIso(),
       startedCallId: started.id,
-      resultCallId: completedCall.id,
-      resultStatus: completedCall.status
+      resultCallId: started.id,
+      resultStatus
     };
-    results.push(aiToolRetrySummary(call, thread, { retryReason: policy.reason, status: completedCall.status, inputCallId: originalInputCall.id, startedCallId: started.id, resultCallId: completedCall.id, error: aiToolErrorCode(result.output) }));
+    results.push(aiToolRetrySummary(call, thread, { retryReason: policy.reason, status: resultStatus, inputCallId: originalInputCall.id, startedCallId: started.id, resultCallId: started.id, error: aiToolErrorCode(result.output) }));
   }
 
   return {
@@ -9114,6 +9424,7 @@ async function retryFailedAiToolCalls(store: StateStore, runtime: AiToolRuntime,
 }
 
 function aiToolCallRetryInputCall(store: StateStore, failedCall: AiToolCall): AiToolCall | undefined {
+  if (failedCall.input !== undefined) return failedCall;
   return store.state.aiToolCalls
     .filter((call) => call.threadId === failedCall.threadId && call.toolName === failedCall.toolName && call.status === "started" && call.input !== undefined && call.createdAt <= failedCall.createdAt)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
@@ -11851,7 +12162,7 @@ function readCampaignToolOutput(context: AiToolContext): unknown {
   if (!campaign) return toolError("not_found", { entity: "campaign", id: context.campaignId });
   const scenes = context.state.scenes.filter((scene) => scene.campaignId === campaign.id);
   const sceneIds = new Set(scenes.map((scene) => scene.id));
-  const proposals = context.state.proposals.filter((proposal) => proposal.campaignId === campaign.id);
+  const proposals = visibleProposalsForUser(context.state, context.userId, campaign.id, context.permissions);
   const members = context.state.members.filter((member) => member.campaignId === campaign.id);
   const canManageCampaign = context.permissions.includes("campaign.update");
   return {
@@ -11927,6 +12238,7 @@ function readAiActivityToolOutput(context: AiToolContext, limit: number): unknow
   const threadIds = new Set(context.state.aiThreads.filter((thread) => thread.campaignId === context.campaignId).map((thread) => thread.id));
   const canReadGm = context.permissions.includes("ai.readGmMemory");
   const canReadToolCalls = context.permissions.includes("ai.proposeChanges");
+  const visibleProposals = visibleProposalsForUser(context.state, context.userId, context.campaignId, context.permissions);
   return {
     threads: context.state.aiThreads
       .filter((thread) => thread.campaignId === context.campaignId)
@@ -11944,8 +12256,7 @@ function readAiActivityToolOutput(context: AiToolContext, limit: number): unknow
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt
       })),
-    proposals: context.state.proposals
-      .filter((proposal) => proposal.campaignId === context.campaignId)
+    proposals: visibleProposals
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       .slice(0, limit)
       .map(proposalToolSummary),
@@ -12430,23 +12741,27 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
     state: store.state,
     signal,
     createProposal: createAiProposal,
-    listProposals: async ({ status, limit }) => ({
-      status,
-      count: store.state.proposals.filter((proposal) => proposal.campaignId === campaignId && (!status || proposal.status === status)).length,
-      proposals: store.state.proposals
-        .filter((proposal) => proposal.campaignId === campaignId && (!status || proposal.status === status))
-        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id))
-        .slice(0, Math.max(1, Math.min(20, limit ?? 10)))
-        .map(proposalToolSummary)
-    }),
+    listProposals: async ({ status, limit }) => {
+      const proposals = visibleProposalsForUser(store.state, userId, campaignId, permissions).filter((proposal) => !status || proposal.status === status);
+      return {
+        status,
+        count: proposals.length,
+        proposals: proposals
+          .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id))
+          .slice(0, Math.max(1, Math.min(20, limit ?? 10)))
+          .map(proposalToolSummary)
+      };
+    },
     getProposal: async ({ proposalId }) => {
       const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
       if (!proposal) return toolError("not_found", { entity: "proposal", id: proposalId });
+      if (!proposalVisibleToUser(store.state, userId, campaignId, permissions, proposal)) return toolError("not_found", { entity: "proposal", id: proposalId });
       return { proposal: proposalToolSummary(proposal), changes: proposal.changesJson };
     },
     reviseProposal: async ({ proposalId, title, summary, changes }) => {
       const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
       if (!proposal) return toolError("not_found", { entity: "proposal", id: proposalId });
+      if (!proposalVisibleToUser(store.state, userId, campaignId, permissions, proposal)) return toolError("not_found", { entity: "proposal", id: proposalId });
       if (proposal.status !== "pending") return toolError("proposal_not_pending", { proposalId, status: proposal.status });
       const nextChanges = changes ? normalizeProposalChanges(changes, campaignId, userId, store.state) : proposal.changesJson;
       const preparedChanges = prepareProposalChanges(store, campaignId, userId, nextChanges, { currentProposalId: proposal.id });
@@ -13506,6 +13821,43 @@ function proposalToolSummary(proposal: Proposal): Record<string, unknown> {
   };
 }
 
+function visibleProposalsForUser(state: EngineState, userId: string, campaignId: string, permissions: PermissionName[]): Proposal[] {
+  return state.proposals.filter((proposal) => proposalVisibleToUser(state, userId, campaignId, permissions, proposal));
+}
+
+function proposalVisibleToUser(state: EngineState, userId: string, campaignId: string, permissions: PermissionName[], proposal: Proposal): boolean {
+  if (proposal.campaignId !== campaignId) return false;
+  if (permissions.includes("ai.applyChanges")) return true;
+  if (proposal.createdByType === "ai" && proposal.status === "pending") return false;
+  return proposal.changesJson.every((change) => proposalChangePayloadVisibleToUser(state, userId, campaignId, permissions, change));
+}
+
+function proposalChangePayloadVisibleToUser(state: EngineState, userId: string, campaignId: string, permissions: PermissionName[], change: ProposalChange): boolean {
+  if (change.entity === "journal") return journalProposalChangePayloadVisibleToUser(state, userId, campaignId, permissions, change);
+  return true;
+}
+
+function journalProposalChangePayloadVisibleToUser(state: EngineState, userId: string, campaignId: string, permissions: PermissionName[], change: ProposalChange): boolean {
+  const existing = journalForProposalChange(state, campaignId, change);
+  if (change.action !== "create" && !existing) return false;
+  if (existing && !journalPayloadVisibleToUser(userId, permissions, existing.visibility, existing.visibleToUserIds)) return false;
+
+  const proposedVisibility = visibilityFromRecord(change.data, "visibility", existing?.visibility ?? "gm_only");
+  const proposedVisibleToUserIds = Array.isArray(change.data.visibleToUserIds) ? stringArrayFromRecord(change.data, "visibleToUserIds") : existing?.visibleToUserIds ?? [];
+  return journalPayloadVisibleToUser(userId, permissions, proposedVisibility, proposedVisibleToUserIds);
+}
+
+function journalForProposalChange(state: EngineState, campaignId: string, change: ProposalChange): JournalEntry | undefined {
+  const journalId = change.id ?? (typeof change.data.id === "string" ? change.data.id : undefined);
+  return journalId ? state.journals.find((journal) => journal.id === journalId && journal.campaignId === campaignId) : undefined;
+}
+
+function journalPayloadVisibleToUser(userId: string, permissions: PermissionName[], visibility: Visibility, visibleToUserIds: string[]): boolean {
+  if (visibility === "public") return true;
+  if (permissions.includes("journal.readSecret")) return true;
+  return visibleToUserIds.includes(userId);
+}
+
 function proposalTouchesBoardState(proposal: Proposal): boolean {
   return proposal.changesJson.some((change) => change.entity === "scene" || change.entity === "token" || change.entity === "asset" || change.entity === "combat");
 }
@@ -14423,13 +14775,71 @@ function tokenLayer(token: Partial<Pick<Token, "layer">>): TokenLayer {
   return isTokenLayer(token.layer) ? token.layer : "player";
 }
 
+function campaignPatchFromBody(body: CampaignPatchBody): CampaignPatchBody {
+  const patch: CampaignPatchBody = {};
+  if (body.name !== undefined) patch.name = body.name;
+  if (body.description !== undefined) patch.description = body.description;
+  if (body.defaultSystemId !== undefined) patch.defaultSystemId = body.defaultSystemId;
+  if (body.visibility !== undefined) patch.visibility = body.visibility;
+  return patch;
+}
+
+function tokenPatchFromBody(body: TokenPatchBody): Partial<Token> {
+  const patch: Partial<Token> = {};
+  if (body.actorId !== undefined) patch.actorId = body.actorId;
+  if (body.name !== undefined) patch.name = body.name;
+  if (body.width !== undefined) patch.width = body.width;
+  if (body.height !== undefined) patch.height = body.height;
+  if (body.rotation !== undefined) patch.rotation = body.rotation;
+  if (body.hidden !== undefined) patch.hidden = body.hidden;
+  if (body.locked !== undefined) patch.locked = body.locked;
+  if (body.disposition !== undefined) patch.disposition = body.disposition;
+  if (body.imageAssetId !== undefined) patch.imageAssetId = body.imageAssetId;
+  if (body.metadata !== undefined) patch.metadata = body.metadata;
+  return patch;
+}
+
+function actorPatchFromBody(body: ActorPatchBody): ActorPatchBody {
+  const patch: ActorPatchBody = {};
+  if (body.systemId !== undefined) patch.systemId = body.systemId;
+  if (body.ownerUserId !== undefined) patch.ownerUserId = body.ownerUserId;
+  if (body.type !== undefined) patch.type = body.type;
+  if (body.name !== undefined) patch.name = body.name;
+  if (body.imageAssetId !== undefined) patch.imageAssetId = body.imageAssetId;
+  if (body.data !== undefined) patch.data = body.data;
+  if (body.permissions !== undefined) patch.permissions = body.permissions;
+  return patch;
+}
+
+function journalEntryPatchFromBody(body: JournalEntryPatchBody): JournalEntryPatchBody {
+  const patch: JournalEntryPatchBody = {};
+  if (body.parentId !== undefined) patch.parentId = body.parentId;
+  if (body.title !== undefined) patch.title = body.title;
+  if (body.body !== undefined) patch.body = body.body;
+  if (body.visibility !== undefined) patch.visibility = body.visibility;
+  if (body.visibleToUserIds !== undefined) patch.visibleToUserIds = body.visibleToUserIds;
+  if (body.visibleToActorIds !== undefined) patch.visibleToActorIds = body.visibleToActorIds;
+  if (body.tags !== undefined) patch.tags = body.tags;
+  return patch;
+}
+
+function combatPatchFromBody(body: CombatPatchBody): CombatPatchBody {
+  const patch: CombatPatchBody = {};
+  if (body.active !== undefined) patch.active = body.active;
+  if (body.round !== undefined) patch.round = body.round;
+  if (body.turnIndex !== undefined) patch.turnIndex = body.turnIndex;
+  if (body.manualTurnOrder !== undefined) patch.manualTurnOrder = body.manualTurnOrder;
+  if (body.combatants !== undefined) patch.combatants = body.combatants;
+  return patch;
+}
+
 function normalizeTokenLayerPatch(body: Partial<Pick<Token, "layer">>): { patch: Partial<Pick<Token, "layer">> } | { error: string } {
   if (body.layer === undefined) return { patch: {} };
   if (!isTokenLayer(body.layer)) return { error: "Token layer must be map, player, or gm" };
   return { patch: { layer: body.layer } };
 }
 
-function normalizeTokenVisionPatch(body: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "dimVisionRadius">> & { brightVisionRadius?: number | null; dimVisionRadius?: number | null }, current?: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>): { patch: Partial<Token> } | { error: string } {
+function normalizeTokenVisionPatch(body: Partial<Pick<Token, "visionEnabled" | "visionRadius">> & { brightVisionRadius?: number | null; dimVisionRadius?: number | null }, current?: Partial<Pick<Token, "visionEnabled" | "visionRadius" | "brightVisionRadius" | "dimVisionRadius">>): { patch: Partial<Token> } | { error: string } {
   const patch: Partial<Token> = {};
   if (body.visionRadius !== undefined) {
     if (!Number.isFinite(body.visionRadius) || body.visionRadius < 0) return { error: "Token visionRadius must be a nonnegative number" };
@@ -14461,7 +14871,7 @@ function normalizeTokenVisionPatch(body: Partial<Pick<Token, "visionEnabled" | "
   return { patch };
 }
 
-function tokenMoveOnlyPatch(body: Partial<Token>): boolean {
+function tokenMoveOnlyPatch(body: object): boolean {
   return Object.keys(body).every((key) => key === "x" || key === "y");
 }
 
@@ -14478,7 +14888,7 @@ function normalizeTokenMovePatch(body: Partial<Pick<Token, "x" | "y">>): { patch
   return { patch };
 }
 
-function normalizeTokenTabletopPatch(body: Partial<Token>, campaignUserIds: Set<string>): { patch: Partial<Token> } | { error: string } {
+function normalizeTokenTabletopPatch(body: Partial<Pick<Token, "ownerUserIds" | "notes" | "conditions" | "auras" | "targetedByUserIds">>, campaignUserIds: Set<string>): { patch: Partial<Token> } | { error: string } {
   const patch: Partial<Token> = {};
   if (body.ownerUserIds !== undefined) {
     if (!Array.isArray(body.ownerUserIds)) return { error: "Token owners must be an array" };
@@ -14593,7 +15003,8 @@ function pruneExpiredRateLimitBuckets(buckets: Map<string, RateLimitBucket>, now
 function rateLimitKey(store: StateStore, request: FastifyRequest): string {
   const session = sessionFromRequest(store, undefined, request.headers);
   const identity = session && isActiveUserId(store, session.userId) ? `user:${session.userId}` : `ip:${rateLimitIp(request)}`;
-  return `${request.method.toUpperCase()}:${request.url.split("?")[0] ?? request.url}:${identity}`;
+  const routePattern = request.routeOptions.url ?? request.url.split("?")[0] ?? request.url;
+  return `${request.method.toUpperCase()}:${routePattern}:${identity}`;
 }
 
 function rateLimitIp(request: FastifyRequest): string {
@@ -14601,6 +15012,29 @@ function rateLimitIp(request: FastifyRequest): string {
 }
 
 function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): void {
+  const saveScopes = new AsyncLocalStorage<IdempotencySaveScope>();
+  const persistState = store.save.bind(store);
+  store.save = () => {
+    const saveScope = saveScopes.getStore();
+    if (!saveScope?.deferSaves) {
+      persistState();
+      return;
+    }
+    saveScope.saveRequested = true;
+  };
+
+  const flushSaveScope = (request: FastifyRequest, forceSave: boolean): void => {
+    const saveScope = Reflect.get(request, idempotencySaveScopeSymbol) as IdempotencySaveScope | undefined;
+    if (!saveScope) {
+      if (forceSave) persistState();
+      return;
+    }
+    const shouldSave = forceSave || saveScope.saveRequested;
+    saveScope.deferSaves = false;
+    saveScope.saveRequested = false;
+    if (shouldSave) persistState();
+  };
+
   app.addHook("preHandler", async (request, reply) => {
     if (!isIdempotentReplayCandidate(request.method)) return;
     const key = headerText(request.headers["idempotency-key"]);
@@ -14624,15 +15058,25 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
         .send(existing.responseBody);
       return;
     }
+    const saveScope: IdempotencySaveScope = { deferSaves: true, saveRequested: false };
+    Reflect.set(request, idempotencySaveScopeSymbol, saveScope);
+    saveScopes.enterWith(saveScope);
     Reflect.set(request, idempotencyContextSymbol, context);
   });
 
   app.addHook("onSend", async (request, reply, payload) => {
     if (Reflect.get(request, idempotencyReplaySymbol)) return payload;
     const context = Reflect.get(request, idempotencyContextSymbol) as IdempotencyContext | undefined;
-    if (!context || reply.statusCode < 200 || reply.statusCode >= 300) return payload;
+    if (!context) return payload;
+    if (reply.statusCode < 200 || reply.statusCode >= 300) {
+      flushSaveScope(request, false);
+      return payload;
+    }
     const responseBody = typeof payload === "string" ? payload : Buffer.isBuffer(payload) ? payload.toString("utf8") : JSON.stringify(payload ?? null);
-    if (Buffer.byteLength(responseBody, "utf8") > IDEMPOTENCY_MAX_RESPONSE_BYTES) return payload;
+    if (Buffer.byteLength(responseBody, "utf8") > IDEMPOTENCY_MAX_RESPONSE_BYTES) {
+      flushSaveScope(request, false);
+      return payload;
+    }
     const now = nowIso();
     store.state.idempotencyRecords = [
       ...store.state.idempotencyRecords.filter((record) => !(record.key === context.key && record.method === context.method && record.userId === context.userId)),
@@ -14648,7 +15092,7 @@ function registerIdempotencyReplay(app: FastifyInstance, store: StateStore): voi
     ]
       .sort(sortTimestampsDesc)
       .slice(0, IDEMPOTENCY_MAX_RECORDS);
-    store.save();
+    flushSaveScope(request, true);
     return payload;
   });
 }
@@ -14684,9 +15128,28 @@ function permissionsForUser(store: StateStore, userId: string, campaignId: strin
   return ALL_PERMISSIONS.filter((permission) => canCampaign(store, userId, campaignId, permission));
 }
 
-function visibleTokensForUser(store: StateStore, userId: string, campaignId: string, tokens: Token[]): Token[] {
+interface TokenVisibilityCache {
+  scenes: Map<string, CachedSceneVisibility>;
+}
+
+interface CachedSceneVisibility {
+  key: string;
+  activeFog: FogRegion[];
+  fogPolygons: VisionPolygon[];
+  hidePolygons: VisionPolygon[];
+  revealPolygons: VisionPolygon[];
+  ownedVisionByStoreTokens: Map<string, VisionPolygon[]>;
+  ownedVisionByProvidedTokens: WeakMap<Token[], Map<string, VisionPolygon[]>>;
+}
+
+function createTokenVisibilityCache(): TokenVisibilityCache {
+  return { scenes: new Map() };
+}
+
+function visibleTokensForUser(store: StateStore, userId: string, campaignId: string, tokens: Token[], cache?: TokenVisibilityCache): Token[] {
   if (canReadHiddenTokens(store, userId, campaignId)) return tokens;
-  return tokens.filter((token) => isTokenVisibleToUser(store, userId, campaignId, token, tokens));
+  const visibilityCache = cache ?? createTokenVisibilityCache();
+  return tokens.filter((token) => isTokenVisibleToUser(store, userId, campaignId, token, tokens, visibilityCache));
 }
 
 function canReadHiddenTokens(store: StateStore, userId: string, campaignId: string): boolean {
@@ -14699,22 +15162,19 @@ function canMoveToken(store: StateStore, userId: string, campaignId: string, tok
   return canCampaign(store, userId, campaignId, "token.move") && isTokenOwnedByUser(store, userId, token);
 }
 
-function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: string, token: Token, sceneTokens?: Token[]): boolean {
+function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: string, token: Token, sceneTokens?: Token[], cache?: TokenVisibilityCache): boolean {
   if (canReadHiddenTokens(store, userId, campaignId)) return true;
   if (tokenLayer(token) === "gm") return false;
   if (token.hidden) return false;
   if (isTokenOwnedByUser(store, userId, token)) return true;
   const scene = store.state.scenes.find((item) => item.id === token.sceneId);
   if (!scene) return false;
-  const activeFog = scene.fog.filter((region) => !region.hidden);
-  if (activeFog.length === 0) return true;
+  const visibility = sceneVisibilityForCache(scene, cache);
+  if (visibility.activeFog.length === 0) return true;
   const center = centerOfToken(token);
-  const fogPolygons = activeFog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
-  const hidePolygons = fogPolygons.filter((polygon) => polygon.mode === "hide");
-  if (isPointInsideVisionPolygons(center, hidePolygons)) return false;
-  const revealPolygons = fogPolygons.filter((polygon) => polygon.mode !== "hide");
-  if (isPointInsideVisionPolygons(center, revealPolygons)) return true;
-  return isPointInsideVisionPolygons(center, ownedVisionPolygonsForUser(store, userId, scene, sceneTokens));
+  if (isPointInsideVisionPolygons(center, visibility.hidePolygons)) return false;
+  if (isPointInsideVisionPolygons(center, visibility.revealPolygons)) return true;
+  return isPointInsideVisionPolygons(center, ownedVisionPolygonsForUser(store, userId, scene, sceneTokens, cache));
 }
 
 function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): boolean {
@@ -14725,7 +15185,7 @@ function campaignMemberUserIds(store: StateStore, campaignId: string): Set<strin
   return new Set(store.state.members.filter((member) => member.campaignId === campaignId).map((member) => member.userId));
 }
 
-function visionSnapshotForUser(store: StateStore, userId: string, campaignId: string, scene: Scene): VisionSnapshot {
+function visionSnapshotForUser(store: StateStore, userId: string, campaignId: string, scene: Scene, cache?: TokenVisibilityCache): VisionSnapshot {
   const activeFog = scene.fog.filter((region) => !region.hidden);
   const lightPolygons = scene.lights.flatMap((light) => computeLightVisionPolygons(scene, light));
   if (canReadHiddenTokens(store, userId, campaignId) || activeFog.length === 0) {
@@ -14736,20 +15196,67 @@ function visionSnapshotForUser(store: StateStore, userId: string, campaignId: st
       polygons: lightPolygons
     };
   }
-  const fogPolygons = activeFog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+  const visibility = sceneVisibilityForCache(scene, cache);
   return {
     sceneId: scene.id,
     userId,
     fogActive: true,
-    polygons: [...fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene), ...lightPolygons]
+    polygons: [...visibility.fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene, undefined, cache), ...lightPolygons]
   };
 }
 
-function ownedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[]): VisionPolygon[] {
+function ownedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[], cache?: TokenVisibilityCache): VisionPolygon[] {
+  if (cache) {
+    const visibility = sceneVisibilityForCache(scene, cache);
+    const userCache = sceneTokens ? providedTokenVisionCache(visibility, sceneTokens) : visibility.ownedVisionByStoreTokens;
+    const cached = userCache.get(userId);
+    if (cached) return cached;
+    const polygons = computeOwnedVisionPolygonsForUser(store, userId, scene, sceneTokens);
+    userCache.set(userId, polygons);
+    return polygons;
+  }
+  return computeOwnedVisionPolygonsForUser(store, userId, scene, sceneTokens);
+}
+
+function computeOwnedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[]): VisionPolygon[] {
   const tokens = sceneTokens ?? store.state.tokens.filter((item) => item.sceneId === scene.id);
   return tokens
     .filter((item) => tokenLayer(item) === "player" && item.visionEnabled && tokenVisionOuterRadius(item) > 0 && isTokenOwnedByUser(store, userId, item))
     .flatMap((token) => computeTokenVisionPolygons(scene, token));
+}
+
+function providedTokenVisionCache(visibility: CachedSceneVisibility, sceneTokens: Token[]): Map<string, VisionPolygon[]> {
+  const cached = visibility.ownedVisionByProvidedTokens.get(sceneTokens);
+  if (cached) return cached;
+  const userCache = new Map<string, VisionPolygon[]>();
+  visibility.ownedVisionByProvidedTokens.set(sceneTokens, userCache);
+  return userCache;
+}
+
+function sceneVisibilityForCache(scene: Scene, cache?: TokenVisibilityCache): CachedSceneVisibility {
+  const key = `${scene.id}:${scene.updatedAt}`;
+  if (cache) {
+    const cached = cache.scenes.get(scene.id);
+    if (cached?.key === key) return cached;
+    const visibility = computeSceneVisibility(scene, key);
+    cache.scenes.set(scene.id, visibility);
+    return visibility;
+  }
+  return computeSceneVisibility(scene, key);
+}
+
+function computeSceneVisibility(scene: Scene, key: string): CachedSceneVisibility {
+  const activeFog = scene.fog.filter((region) => !region.hidden);
+  const fogPolygons = activeFog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+  return {
+    key,
+    activeFog,
+    fogPolygons,
+    hidePolygons: fogPolygons.filter((polygon) => polygon.mode === "hide"),
+    revealPolygons: fogPolygons.filter((polygon) => polygon.mode !== "hide"),
+    ownedVisionByStoreTokens: new Map(),
+    ownedVisionByProvidedTokens: new WeakMap()
+  };
 }
 
 function normalizeVisionSamplePoint(scene: Scene, x: string | undefined, y: string | undefined): VisionPoint | undefined {
@@ -14759,8 +15266,8 @@ function normalizeVisionSamplePoint(scene: Scene, x: string | undefined, y: stri
   return point;
 }
 
-function visionPointSampleForUser(store: StateStore, userId: string, campaignId: string, scene: Scene, point: VisionPoint): VisionPointSample {
-  const snapshot = visionSnapshotForUser(store, userId, campaignId, scene);
+function visionPointSampleForUser(store: StateStore, userId: string, campaignId: string, scene: Scene, point: VisionPoint, cache?: TokenVisibilityCache): VisionPointSample {
+  const snapshot = visionSnapshotForUser(store, userId, campaignId, scene, cache);
   const containingPolygons = snapshot.polygons.filter((polygon) => isPointInsideVisionPolygon(point, polygon)).map(visionPointSamplePolygon);
   const hiddenBy = containingPolygons.filter((polygon) => polygon.mode === "hide");
   const illuminatedBy = containingPolygons.filter((polygon) => polygon.source === "light");
@@ -16031,13 +16538,41 @@ function positiveInteger(value: unknown): number | undefined {
   return Math.round(numberValue);
 }
 
-function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined): EngineEvent | undefined {
+function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined, visibilityCache?: TokenVisibilityCache): EngineEvent | undefined {
   if (!userId || !canCampaign(store, userId, event.campaignId, "campaign.read")) return undefined;
   if (event.type === "agent.boardCaptureRequested") {
     const payload = isRecord(event.payload) ? event.payload : {};
     return payload.userId === userId ? event : undefined;
   }
   if (event.type.startsWith("contentImport.") && !canCampaign(store, userId, event.campaignId, "campaign.update")) return undefined;
+  if (event.type.startsWith("journal.")) {
+    const journal = journalEntryFromRealtimeEvent(store, event);
+    if (!journal) return canCampaign(store, userId, event.campaignId, "journal.readSecret") ? event : undefined;
+    return canReadJournalEntry(store, userId, journal) ? event : undefined;
+  }
+  if (event.type === "dice.roll.created") {
+    const roll = diceRollFromRealtimeEvent(store, event);
+    if (!roll || !canCampaign(store, userId, roll.campaignId, "chat.read")) return undefined;
+    const linkedMessage = store.state.chat.find((message) => message.rollId === roll.id && message.campaignId === roll.campaignId);
+    return canReadDiceRoll(store, userId, roll, linkedMessage) ? event : undefined;
+  }
+  if (event.type.startsWith("ai.message.") || event.type.startsWith("ai.tool.")) {
+    const payload = isRecord(event.payload) ? event.payload : {};
+    if (payload.visibility === "gm_only" && event.actorUserId !== userId && !canCampaign(store, userId, event.campaignId, "ai.readGmMemory") && !canCampaign(store, userId, event.campaignId, "chat.moderate")) return undefined;
+    return event;
+  }
+  if (event.type.startsWith("proposal.") || event.type.startsWith("ai.proposal.")) {
+    const proposal = proposalFromRealtimeEvent(store, event);
+    if (proposal) return canReceiveProposalRealtimeEvent(store, userId, proposal) ? event : undefined;
+    return canReceiveProposalRealtimeFeed(store, userId, event.campaignId) ? event : undefined;
+  }
+  if (event.type.startsWith("actor.")) {
+    if (!canCampaign(store, userId, event.campaignId, "actor.read")) return undefined;
+    const actor = actorFromRealtimeEvent(store, event);
+    if (!actor) return canReadActorPrivateData(store, userId, event.campaignId) ? event : redactedRealtimeEvent(event, redactedTargetPayload(event.targetId));
+    if (canReadActorPrivateData(store, userId, actor.campaignId, actor)) return event;
+    return redactedRealtimeEvent(event, redactedActorPayload(actor));
+  }
   if (event.type.startsWith("chat.message.")) {
     const message = event.payload as Partial<ChatMessage> | undefined;
     const campaignId = message?.campaignId ?? event.campaignId;
@@ -16050,12 +16585,144 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
   if (!token?.sceneId) return event;
   const campaignId = campaignIdForScene(store, token.sceneId) ?? event.campaignId;
   if (!canCampaign(store, userId, campaignId, "campaign.read")) return undefined;
-  if (isTokenVisibleToUser(store, userId, campaignId, token as Token)) return event;
+  if (isTokenVisibleToUser(store, userId, campaignId, token as Token, undefined, visibilityCache)) return event;
   return {
     ...event,
     type: "scene.updated",
     targetId: token.sceneId,
     payload: { id: token.sceneId, redacted: true }
+  };
+}
+
+function journalEntryFromRealtimeEvent(store: StateStore, event: EngineEvent): JournalEntry | undefined {
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  const payloadId = typeof payload?.id === "string" ? payload.id : undefined;
+  const id = payloadId ?? event.targetId;
+  return store.state.journals.find((journal) => journal.id === id && journal.campaignId === event.campaignId) ?? (isJournalEntryPayload(payload, event.campaignId) ? (payload as unknown as JournalEntry) : undefined);
+}
+
+function isJournalEntryPayload(payload: Record<string, unknown> | undefined, campaignId: string): boolean {
+  if (!payload) return false;
+  return (
+    typeof payload.id === "string" &&
+    payload.campaignId === campaignId &&
+    typeof payload.title === "string" &&
+    typeof payload.body === "string" &&
+    typeof payload.visibility === "string" &&
+    Array.isArray(payload.visibleToUserIds) &&
+    Array.isArray(payload.visibleToActorIds) &&
+    Array.isArray(payload.tags)
+  );
+}
+
+function canReadJournalEntry(store: StateStore, userId: string, journal: JournalEntry): boolean {
+  if (!canCampaign(store, userId, journal.campaignId, "journal.read")) return false;
+  if (journal.visibility === "public") return true;
+  if (journal.visibleToUserIds.includes(userId)) return true;
+  return canCampaign(store, userId, journal.campaignId, "journal.readSecret");
+}
+
+function diceRollFromRealtimeEvent(store: StateStore, event: EngineEvent): DiceRoll | undefined {
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  const payloadId = typeof payload?.id === "string" ? payload.id : undefined;
+  const id = payloadId ?? event.targetId;
+  return store.state.rolls.find((roll) => roll.id === id && roll.campaignId === event.campaignId) ?? (isDiceRollPayload(payload, event.campaignId) ? (payload as unknown as DiceRoll) : undefined);
+}
+
+function isDiceRollPayload(payload: Record<string, unknown> | undefined, campaignId: string): boolean {
+  if (!payload) return false;
+  return (
+    typeof payload.id === "string" &&
+    payload.campaignId === campaignId &&
+    typeof payload.userId === "string" &&
+    typeof payload.formula === "string" &&
+    (payload.visibility === "public" || payload.visibility === "gm_only" || payload.visibility === "whisper") &&
+    Array.isArray(payload.terms) &&
+    typeof payload.total === "number"
+  );
+}
+
+function proposalFromRealtimeEvent(store: StateStore, event: EngineEvent): Proposal | undefined {
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  const payloadId = typeof payload?.id === "string" ? payload.id : undefined;
+  const id = payloadId ?? event.targetId;
+  return store.state.proposals.find((proposal) => proposal.id === id && proposal.campaignId === event.campaignId) ?? (isProposalPayload(payload, event.campaignId) ? (payload as unknown as Proposal) : undefined);
+}
+
+function isProposalPayload(payload: Record<string, unknown> | undefined, campaignId: string): boolean {
+  if (!payload) return false;
+  return (
+    typeof payload.id === "string" &&
+    payload.campaignId === campaignId &&
+    typeof payload.title === "string" &&
+    typeof payload.summary === "string" &&
+    typeof payload.status === "string" &&
+    Array.isArray(payload.changesJson) &&
+    isRecord(payload.diffJson) &&
+    typeof payload.approvalRequired === "boolean"
+  );
+}
+
+function canReceiveProposalRealtimeEvent(store: StateStore, userId: string, proposal: Proposal): boolean {
+  const permissions = permissionsForUser(store, userId, proposal.campaignId);
+  return proposal.createdByUserId === userId || proposalVisibleToUser(store.state, userId, proposal.campaignId, permissions, proposal);
+}
+
+function canReceiveProposalRealtimeFeed(store: StateStore, userId: string, campaignId: string): boolean {
+  return canCampaign(store, userId, campaignId, "campaign.update") || canCampaign(store, userId, campaignId, "ai.applyChanges");
+}
+
+function actorFromRealtimeEvent(store: StateStore, event: EngineEvent): Actor | undefined {
+  const payload = isRecord(event.payload) ? event.payload : undefined;
+  const payloadId = typeof payload?.id === "string" ? payload.id : undefined;
+  const id = payloadId ?? event.targetId;
+  return store.state.actors.find((actor) => actor.id === id && actor.campaignId === event.campaignId) ?? (isActorPayload(payload, event.campaignId) ? (payload as unknown as Actor) : undefined);
+}
+
+function isActorPayload(payload: Record<string, unknown> | undefined, campaignId: string): boolean {
+  if (!payload) return false;
+  return (
+    typeof payload.id === "string" &&
+    payload.campaignId === campaignId &&
+    typeof payload.systemId === "string" &&
+    typeof payload.type === "string" &&
+    typeof payload.name === "string" &&
+    isRecord(payload.data) &&
+    isRecord(payload.permissions)
+  );
+}
+
+function canReadActorPrivateData(store: StateStore, userId: string, campaignId: string, actor?: Actor): boolean {
+  return Boolean(
+    canCampaign(store, userId, campaignId, "actor.readPrivate") ||
+      actor?.ownerUserId === userId ||
+      actor?.permissions[userId]?.includes("actor.readPrivate")
+  );
+}
+
+function redactedActorPayload(actor: Actor): Record<string, unknown> {
+  return {
+    id: actor.id,
+    campaignId: actor.campaignId,
+    systemId: actor.systemId,
+    ownerUserId: actor.ownerUserId,
+    type: actor.type,
+    name: actor.name,
+    imageAssetId: actor.imageAssetId,
+    createdAt: actor.createdAt,
+    updatedAt: actor.updatedAt,
+    redacted: true
+  };
+}
+
+function redactedTargetPayload(targetId: string | undefined): Record<string, unknown> {
+  return targetId ? { id: targetId, redacted: true } : { redacted: true };
+}
+
+function redactedRealtimeEvent(event: EngineEvent, payload: Record<string, unknown>): EngineEvent {
+  return {
+    ...event,
+    payload
   };
 }
 
@@ -16956,6 +17623,10 @@ interface AdminSessionRiskRevokeBody {
   staleDays?: string | number;
   dryRun?: boolean;
   reasons?: AdminSessionRiskReason[];
+}
+
+interface AdminSessionPruneBody {
+  dryRun?: boolean;
 }
 
 interface AdminPasswordResetPruneBody {
@@ -18797,6 +19468,128 @@ function publicRegistrationEnabled(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
+function normalizeListPagination(query: ListPaginationQuery): ListPagination | { error: string } {
+  const hasLimit = hasQueryValue(query.limit);
+  const hasCursor = hasQueryValue(query.cursor);
+  const hasOffset = hasQueryValue(query.offset);
+  if (!hasLimit && !hasCursor && !hasOffset) return { requested: false };
+  if (hasCursor && hasOffset) return { error: "Use either cursor or offset, not both" };
+
+  const limit = hasLimit ? parseIntegerQueryValue(query.limit, "Pagination limit") : { value: LIST_DEFAULT_LIMIT };
+  if ("error" in limit) return limit;
+  if (limit.value < 1 || limit.value > LIST_MAX_LIMIT) return { error: `Pagination limit must be an integer from 1 to ${LIST_MAX_LIMIT}` };
+
+  if (hasCursor) {
+    const offset = decodeListCursor(query.cursor);
+    if (offset === undefined) return { error: "Pagination cursor is invalid" };
+    return { requested: true, limit: limit.value, offset };
+  }
+
+  const offset = hasOffset ? parseIntegerQueryValue(query.offset, "Pagination offset") : { value: 0 };
+  if ("error" in offset) return offset;
+  if (offset.value < 0) return { error: "Pagination offset must be a nonnegative integer" };
+  return { requested: true, limit: limit.value, offset: offset.value };
+}
+
+function paginateList<T>(items: T[], pagination: Extract<ListPagination, { requested: true }>): PaginatedList<T> {
+  const pageItems = items.slice(pagination.offset, pagination.offset + pagination.limit);
+  const nextOffset = pagination.offset + pageItems.length;
+  return {
+    items: pageItems,
+    pagination: {
+      limit: pagination.limit,
+      offset: pagination.offset,
+      totalCount: items.length,
+      ...(nextOffset < items.length ? { nextCursor: encodeListCursor(nextOffset) } : {})
+    }
+  };
+}
+
+function hasQueryValue(value: string | undefined): boolean {
+  return value !== undefined && value !== "";
+}
+
+function parseIntegerQueryValue(value: string | undefined, label: string): { value: number } | { error: string } {
+  if (value === undefined || value === "") return { error: `${label} is required` };
+  if (!/^\d+$/.test(value)) return { error: `${label} must be an integer` };
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) return { error: `${label} must be a safe integer` };
+  return { value: parsed };
+}
+
+function encodeListCursor(offset: number): string {
+  return Buffer.from(JSON.stringify({ offset }), "utf8").toString("base64url");
+}
+
+function decodeListCursor(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as { offset?: unknown };
+    const offset = parsed.offset;
+    return typeof offset === "number" && Number.isSafeInteger(offset) && offset >= 0 ? offset : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseChatMessageCreateBody(value: unknown, reply: FastifyReply): { ok: true; body: ChatMessageCreateBody } | { ok: false; reply: FastifyReply } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, reply: badRequest(reply, "Chat message payload must be an object") };
+  const input = value as Record<string, unknown>;
+  const campaignId = typeof input.campaignId === "string" ? input.campaignId.trim() : "";
+  if (!campaignId) return { ok: false, reply: badRequest(reply, "Chat campaignId is required") };
+  if (typeof input.body !== "string" || input.body.trim().length === 0 || input.body.length > CHAT_MESSAGE_BODY_MAX_LENGTH) {
+    return { ok: false, reply: badRequest(reply, CHAT_MESSAGE_BODY_VALIDATION_MESSAGE) };
+  }
+
+  const body: ChatMessageCreateBody = {
+    campaignId,
+    body: input.body
+  };
+  if (input.sceneId !== undefined) {
+    if (typeof input.sceneId !== "string") return { ok: false, reply: badRequest(reply, "Chat sceneId must be a string") };
+    const sceneId = input.sceneId.trim();
+    if (sceneId) body.sceneId = sceneId;
+  }
+  if (input.type !== undefined) {
+    if (!isChatMessageType(input.type)) return { ok: false, reply: badRequest(reply, "Chat message type is invalid") };
+    body.type = input.type;
+  }
+  if (input.visibility !== undefined) {
+    if (!isChatVisibility(input.visibility)) return { ok: false, reply: badRequest(reply, "Chat visibility must be public, gm_only, or whisper") };
+    body.visibility = input.visibility;
+  }
+  if (input.recipientUserIds !== undefined) {
+    if (!Array.isArray(input.recipientUserIds) || input.recipientUserIds.some((recipientId) => typeof recipientId !== "string")) {
+      return { ok: false, reply: badRequest(reply, "Whisper recipients must be an array of user ids") };
+    }
+    body.recipientUserIds = input.recipientUserIds;
+  }
+  if (input.rollId !== undefined) {
+    if (typeof input.rollId !== "string") return { ok: false, reply: badRequest(reply, "Chat rollId must be a string") };
+    const rollId = input.rollId.trim();
+    if (rollId) body.rollId = rollId;
+  }
+  body.replyToMessageId = input.replyToMessageId;
+  return { ok: true, body };
+}
+
+function parseChatMessageEditBody(value: unknown, reply: FastifyReply): { ok: true; body: string } | { ok: false; reply: FastifyReply } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, reply: badRequest(reply, "Chat message payload must be an object") };
+  const input = value as Record<string, unknown>;
+  if (typeof input.body !== "string" || input.body.trim().length === 0 || input.body.length > CHAT_MESSAGE_BODY_MAX_LENGTH) {
+    return { ok: false, reply: badRequest(reply, CHAT_MESSAGE_BODY_VALIDATION_MESSAGE) };
+  }
+  return { ok: true, body: input.body };
+}
+
+function isChatMessageType(value: unknown): value is MessageType {
+  return typeof value === "string" && (CHAT_MESSAGE_TYPES as readonly string[]).includes(value);
+}
+
+function isChatVisibility(value: unknown): value is ChatMessage["visibility"] {
+  return typeof value === "string" && (CHAT_MESSAGE_VISIBILITIES as readonly string[]).includes(value);
+}
+
 function normalizeChatRecipients(store: StateStore, campaignId: string, userId: string, visibility: ChatMessage["visibility"], recipientUserIds: string[] | undefined, reply: FastifyReply): string[] | FastifyReply {
   if (visibility !== "whisper") return [];
   if (recipientUserIds !== undefined && !Array.isArray(recipientUserIds)) return badRequest(reply, "Whisper recipients must be an array");
@@ -18988,6 +19781,25 @@ function hashSessionToken(token: string): string {
 function pruneExpiredSessions(store: StateStore): void {
   const now = Date.now();
   store.state.sessions = store.state.sessions.filter((session) => Date.parse(session.expiresAt) > now);
+}
+
+function pruneSessionsForAdmin(store: StateStore, input: AdminSessionPruneBody) {
+  const dryRun = Boolean(input.dryRun);
+  const now = Date.now();
+  const matchedSessions = store.state.sessions.filter((session) => Date.parse(session.expiresAt) <= now);
+  if (!dryRun && matchedSessions.length > 0) {
+    const matchedIds = new Set(matchedSessions.map((session) => session.id));
+    store.state.sessions = store.state.sessions.filter((session) => !matchedIds.has(session.id));
+  }
+  return {
+    generatedAt: nowIso(),
+    dryRun,
+    matched: matchedSessions.length,
+    pruned: dryRun ? 0 : matchedSessions.length,
+    activeRemaining: store.state.sessions.filter((session) => Date.parse(session.expiresAt) > now).length,
+    expiredRemaining: store.state.sessions.filter((session) => Date.parse(session.expiresAt) <= now).length,
+    sessions: matchedSessions.map(publicSession)
+  };
 }
 
 function pruneExpiredPasswordResetTokens(store: StateStore): void {
@@ -19355,6 +20167,7 @@ function combatAuditSummary(combat: Combat) {
     active: combat.active,
     round: combat.round,
     turnIndex: combat.turnIndex,
+    manualTurnOrder: combat.manualTurnOrder ?? false,
     combatantCount: combat.combatants.length,
     activeCombatantId: combat.combatants[combat.turnIndex]?.id,
     defeatedCount: combat.combatants.filter((combatant) => combatant.defeated).length,
@@ -19375,6 +20188,52 @@ function combatAuditSummary(combat: Combat) {
       resourceSpent: combatant.resourceSpent ?? false
     }))
   };
+}
+
+function orderedCombatants(combatants: Combat["combatants"], manualTurnOrder: boolean): Combat["combatants"] {
+  if (manualTurnOrder) return combatants;
+  return combatants
+    .map((combatant, index) => ({ combatant, index }))
+    .sort((left, right) => right.combatant.initiative - left.combatant.initiative || left.index - right.index)
+    .map(({ combatant }) => combatant);
+}
+
+function isNpcInitiativeActor(actor: Actor): boolean {
+  return actor.type === "npc" || actor.type === "monster";
+}
+
+function initiativeRollForActor(actor: Actor): { label: string; formula: string } {
+  if (actor.systemId === DND_5E_SRD_SYSTEM_ID) return dnd5eSrdInitiativeRoll(actor);
+  return {
+    label: "Initiative",
+    formula: `1d20${formatSignedFormulaNumber(genericActorInitiativeModifier(actor))}`
+  };
+}
+
+function genericActorInitiativeModifier(actor: Actor): number {
+  const direct = numericRecordValue(actor.data, "initiative");
+  if (direct !== undefined) return Math.round(direct);
+  const attributes = recordFromRecord(actor.data, "attributes") ?? recordFromRecord(actor.data, "abilities");
+  if (!attributes) return 0;
+  const dexterity = attributes.dexterity;
+  if (typeof dexterity === "number") return Math.floor((dexterity - 10) / 2);
+  if (isRecord(dexterity)) {
+    const modifier = numericRecordValue(dexterity, "modifier") ?? numericRecordValue(dexterity, "mod");
+    if (modifier !== undefined) return Math.round(modifier);
+    const score = numericRecordValue(dexterity, "score") ?? numericRecordValue(dexterity, "value");
+    if (score !== undefined) return Math.floor((score - 10) / 2);
+  }
+  return 0;
+}
+
+function numericRecordValue(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function formatSignedFormulaNumber(value: number): string {
+  if (value === 0) return "";
+  return value > 0 ? `+${value}` : String(value);
 }
 
 function createPendingCombatAction(input: {
@@ -25137,6 +25996,124 @@ function archiveForImportScope(archive: CampaignArchive, scope: "all" | "assets_
     data,
     files: includeAssetFiles ? archive.files?.filter((file) => archive.data.assets.some((asset) => asset.id === file.assetId)) ?? [] : []
   };
+}
+
+const regeneratableArchiveCollections = [
+  "campaigns",
+  "members",
+  "worlds",
+  "scenes",
+  "assets",
+  "tokens",
+  "actors",
+  "items",
+  "journals",
+  "handouts",
+  "chat",
+  "rolls",
+  "diceMacros",
+  "encounters",
+  "combats",
+  "proposals",
+  "aiThreads",
+  "aiEvaluations",
+  "aiMemory",
+  "aiToolCalls",
+  "auditLogs",
+  "permissionGrants",
+  "pluginStorage",
+  "contentImports",
+  "fogPresets"
+] as const satisfies ReadonlyArray<keyof EngineState>;
+
+const archiveIdPrefixes: Record<(typeof regeneratableArchiveCollections)[number], string> = {
+  campaigns: "camp",
+  members: "mem",
+  worlds: "world",
+  scenes: "scn",
+  assets: "asset",
+  tokens: "tok",
+  actors: "act",
+  items: "item",
+  journals: "jnl",
+  handouts: "hnd",
+  chat: "msg",
+  rolls: "roll",
+  diceMacros: "mac",
+  encounters: "enc",
+  combats: "cmb",
+  proposals: "prop",
+  aiThreads: "thr",
+  aiEvaluations: "eval",
+  aiMemory: "memfact",
+  aiToolCalls: "tool",
+  auditLogs: "audit",
+  permissionGrants: "grant",
+  pluginStorage: "plugstore",
+  contentImports: "imp",
+  fogPresets: "fogp"
+};
+
+function archiveWithRegeneratedIds(archive: CampaignArchive, options: { userId: string; organizationId: string }): CampaignArchive {
+  const data = clonePlain(archive.data);
+  const idMap = new Map<string, string>();
+  for (const collection of regeneratableArchiveCollections) {
+    for (const record of data[collection] as Array<{ id?: string }>) {
+      if (typeof record.id === "string" && record.id) idMap.set(record.id, createId(archiveIdPrefixes[collection]));
+    }
+  }
+
+  const remappedData = remapArchiveReferences(data, idMap) as EngineState;
+  const copiedCampaignIds = new Set(remappedData.campaigns.map((campaign) => campaign.id));
+  for (const campaign of remappedData.campaigns) {
+    campaign.organizationId = options.organizationId;
+    campaign.ownerUserId = options.userId;
+  }
+  remappedData.members = remappedData.members.filter((member) => !copiedCampaignIds.has(member.campaignId));
+  for (const campaign of remappedData.campaigns) {
+    remappedData.members.push(
+      createTimestamped("mem", {
+        campaignId: campaign.id,
+        userId: options.userId,
+        role: "owner" as const
+      }) satisfies CampaignMember
+    );
+  }
+  for (const actor of remappedData.actors) {
+    if (copiedCampaignIds.has(actor.campaignId)) actor.ownerUserId = options.userId;
+  }
+  for (const journal of remappedData.journals) {
+    if (!copiedCampaignIds.has(journal.campaignId)) continue;
+    journal.createdBy = options.userId;
+    journal.updatedBy = options.userId;
+  }
+  for (const macro of remappedData.diceMacros) {
+    if (copiedCampaignIds.has(macro.campaignId)) macro.createdBy = options.userId;
+  }
+  remappedData.permissionGrants = remappedData.permissionGrants.filter((grant) => grant.subjectType !== "user" || !copiedCampaignIds.has(grant.campaignId));
+
+  const campaignId = idMap.get(archive.manifest.campaignId) ?? remappedData.campaigns[0]?.id ?? archive.manifest.campaignId;
+  return {
+    ...archive,
+    manifest: {
+      ...archive.manifest,
+      campaignId,
+      name: archive.manifest.name.endsWith(" Copy") ? archive.manifest.name : `${archive.manifest.name} Copy`
+    },
+    data: remappedData,
+    files: archive.files?.map((file) => ({ ...file, assetId: idMap.get(file.assetId) ?? file.assetId })) ?? []
+  };
+}
+
+function remapArchiveReferences(value: unknown, idMap: Map<string, string>): unknown {
+  if (typeof value === "string") return idMap.get(value) ?? value;
+  if (Array.isArray(value)) return value.map((item) => remapArchiveReferences(item, idMap));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, remapArchiveReferences(item, idMap)]));
+}
+
+function clonePlain<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function archiveWithoutConflicts(archive: CampaignArchive, conflicts: Array<{ collection: keyof EngineState; id: string }>): CampaignArchive {

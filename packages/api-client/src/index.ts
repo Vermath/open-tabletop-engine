@@ -47,6 +47,7 @@ export interface CampaignArchiveImportOptions {
   mode?: "upsert" | "reject_conflicts" | "skip_conflicts" | "dry_run";
   scope?: "all" | "assets_only" | "selected_collections";
   collections?: string[];
+  regenerateIds?: boolean;
 }
 
 export interface AssetUploadResponse {
@@ -178,6 +179,12 @@ export interface BootstrapOwnerInfo extends SessionLoginInfo {
 export interface CombatActionMutationResult {
   combat: Combat;
   combatAction: CombatAction;
+}
+
+export interface CombatInitiativeRollNpcsResult {
+  combat: Combat;
+  rolls: DiceRoll[];
+  chatMessages: ChatMessage[];
 }
 
 export type OrganizationMemberInfo = OrganizationMember & { user: Pick<User, "id" | "displayName" | "email"> };
@@ -604,6 +611,10 @@ export class OpenTabletopClient {
     return this.post(routes.chat, input);
   }
 
+  async editChat(messageId: string, body: string): Promise<ChatMessage> {
+    return this.patch(routes.chatMessage(messageId), { body });
+  }
+
   async moderateChat(messageId: string, moderationStatus: NonNullable<ChatMessage["moderationStatus"]>): Promise<ChatMessage> {
     return this.patch(routes.chatMessageModeration(messageId), { moderationStatus });
   }
@@ -659,6 +670,10 @@ export class OpenTabletopClient {
 
   async updateCombat(combatId: string, input: Partial<Combat>): Promise<Combat> {
     return this.patch(routes.combat(combatId), input);
+  }
+
+  async rollNpcInitiative(combatId: string): Promise<CombatInitiativeRollNpcsResult> {
+    return this.post(`/api/v1/combats/${encodeURIComponent(combatId)}/initiative/roll-npcs`, {});
   }
 
   async updateCombatant(combatId: string, combatantId: string, input: Partial<Combat["combatants"][number]> & { syncActorSheet?: boolean }): Promise<Combat> {

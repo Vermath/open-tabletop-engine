@@ -245,6 +245,8 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
   if (!campaign) throw new Error(`Campaign not found: ${campaignId}`);
   const memberUserIds = new Set(state.members.filter((item) => item.campaignId === campaignId).map((item) => item.userId));
   const aiThreadIds = new Set(state.aiThreads.filter((item) => item.campaignId === campaignId).map((item) => item.id));
+  const archivedScenes = state.scenes.filter((item) => item.campaignId === campaignId);
+  const archivedSceneIds = new Set(archivedScenes.map((item) => item.id));
   const campaignData: EngineState = {
     ...emptyState(),
     users: state.users.filter((item) => memberUserIds.has(item.id)).map(({ passwordHash: _passwordHash, mfa: _mfa, scim: _scim, serverAdmin: _serverAdmin, ...user }) => user),
@@ -261,9 +263,9 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
     campaigns: state.campaigns.filter((item) => item.id === campaignId),
     members: state.members.filter((item) => item.campaignId === campaignId).map(({ source: _source, ...member }) => member),
     worlds: state.worlds.filter((item) => item.campaignId === campaignId),
-    scenes: state.scenes.filter((item) => item.campaignId === campaignId),
+    scenes: archivedScenes,
     assets: state.assets.filter((item) => item.campaignId === campaignId),
-    tokens: state.tokens.filter((item) => campaignDataSceneIds(state, campaignId).includes(item.sceneId)),
+    tokens: state.tokens.filter((item) => archivedSceneIds.has(item.sceneId)),
     actors: state.actors.filter((item) => item.campaignId === campaignId),
     items: state.items.filter((item) => item.campaignId === campaignId),
     journals: state.journals.filter((item) => item.campaignId === campaignId),
@@ -305,8 +307,4 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
 export function createTimestamped<T extends object>(prefix: string, data: T): T & { id: string; createdAt: string; updatedAt: string } {
   const now = nowIso();
   return { id: createId(prefix), createdAt: now, updatedAt: now, ...data };
-}
-
-function campaignDataSceneIds(state: EngineState, campaignId: string): string[] {
-  return state.scenes.filter((scene) => scene.campaignId === campaignId).map((scene) => scene.id);
 }

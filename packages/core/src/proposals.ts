@@ -1,5 +1,22 @@
 import { nowIso } from "./ids.js";
-import type { EngineState, Proposal, ProposalHistoryEntry } from "./types.js";
+import type { EngineState, Proposal, ProposalChange, ProposalHistoryEntry } from "./types.js";
+
+type ProposalCollectionKey =
+  | "campaigns"
+  | "scenes"
+  | "tokens"
+  | "actors"
+  | "items"
+  | "journals"
+  | "chat"
+  | "rolls"
+  | "diceMacros"
+  | "encounters"
+  | "combats"
+  | "assets"
+  | "fogPresets";
+
+type CopyOnWriteCollectionKey = ProposalCollectionKey | "proposals";
 
 export function proposalHistoryEntry(input: Omit<ProposalHistoryEntry, "at"> & { at?: string }): ProposalHistoryEntry {
   return {
@@ -63,25 +80,33 @@ export function applyProposal(state: EngineState, proposal: Proposal, userId?: s
   }
 
   const appliedAt = nowIso();
-  const next: EngineState = structuredClone(state) as EngineState;
+  const next: EngineState = { ...state };
+  const copiedCollections = new Set<CopyOnWriteCollectionKey>();
   for (const change of proposal.changesJson) {
-    const bucket = bucketForEntity(next, change.entity);
+    const bucketKey = collectionKeyForEntity(change.entity);
+    const bucket = readCollection(next, bucketKey);
     if (change.action === "create") {
-      bucket.push(change.data as never);
+      writableCollection(next, bucketKey, copiedCollections).push(change.data as never);
     } else if (change.action === "update") {
       const index = bucket.findIndex((item: { id?: string }) => item.id === change.id);
       if (index >= 0) {
-        bucket[index] = { ...bucket[index], ...change.data, updatedAt: appliedAt };
+        const writableBucket = writableCollection(next, bucketKey, copiedCollections);
+        writableBucket[index] = {
+          ...copyExistingEntityForUpdate(state, bucketKey, writableBucket[index]),
+          ...change.data,
+          updatedAt: appliedAt
+        };
       }
     } else if (change.action === "delete") {
       const index = bucket.findIndex((item: { id?: string }) => item.id === change.id);
-      if (index >= 0) bucket.splice(index, 1);
+      if (index >= 0) writableCollection(next, bucketKey, copiedCollections).splice(index, 1);
     }
   }
 
   const proposalIndex = next.proposals.findIndex((item) => item.id === proposal.id);
   if (proposalIndex >= 0) {
-    next.proposals[proposalIndex] = {
+    const proposals = writableCollection(next, "proposals", copiedCollections);
+    proposals[proposalIndex] = {
       ...proposal,
       status: "applied",
       updatedAt: appliedAt,
@@ -102,34 +127,56 @@ export function applyProposal(state: EngineState, proposal: Proposal, userId?: s
   return next;
 }
 
-function bucketForEntity(state: EngineState, entity: string): any[] {
+function readCollection(state: EngineState, key: ProposalCollectionKey): Array<{ id?: string }>;
+function readCollection(state: EngineState, key: "proposals"): Proposal[];
+function readCollection(state: EngineState, key: CopyOnWriteCollectionKey): any[];
+function readCollection(state: EngineState, key: CopyOnWriteCollectionKey): any[] {
+  return state[key] as any[];
+}
+
+function writableCollection(state: EngineState, key: ProposalCollectionKey, copiedCollections: Set<CopyOnWriteCollectionKey>): any[];
+function writableCollection(state: EngineState, key: "proposals", copiedCollections: Set<CopyOnWriteCollectionKey>): Proposal[];
+function writableCollection(state: EngineState, key: CopyOnWriteCollectionKey, copiedCollections: Set<CopyOnWriteCollectionKey>): any[];
+function writableCollection(state: EngineState, key: CopyOnWriteCollectionKey, copiedCollections: Set<CopyOnWriteCollectionKey>): any[] {
+  if (!copiedCollections.has(key)) {
+    state[key] = [...readCollection(state, key)] as never;
+    copiedCollections.add(key);
+  }
+  return readCollection(state, key);
+}
+
+function copyExistingEntityForUpdate(state: EngineState, key: ProposalCollectionKey, entity: unknown): Record<string, unknown> {
+  return readCollection(state, key).includes(entity as never) ? (structuredClone(entity) as Record<string, unknown>) : (entity as Record<string, unknown>);
+}
+
+function collectionKeyForEntity(entity: ProposalChange["entity"]): ProposalCollectionKey {
   switch (entity) {
     case "campaign":
-      return state.campaigns;
+      return "campaigns";
     case "scene":
-      return state.scenes;
+      return "scenes";
     case "token":
-      return state.tokens;
+      return "tokens";
     case "actor":
-      return state.actors;
+      return "actors";
     case "item":
-      return state.items;
+      return "items";
     case "journal":
-      return state.journals;
+      return "journals";
     case "chat":
-      return state.chat;
+      return "chat";
     case "roll":
-      return state.rolls;
+      return "rolls";
     case "diceMacro":
-      return state.diceMacros;
+      return "diceMacros";
     case "encounter":
-      return state.encounters;
+      return "encounters";
     case "combat":
-      return state.combats;
+      return "combats";
     case "asset":
-      return state.assets;
+      return "assets";
     case "fogPreset":
-      return state.fogPresets;
+      return "fogPresets";
     default:
       throw new Error(`Unsupported proposal entity: ${entity}`);
   }

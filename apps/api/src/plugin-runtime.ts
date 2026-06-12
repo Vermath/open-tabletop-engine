@@ -2,8 +2,12 @@ import { createHash, createHmac } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { Script, createContext, type Context } from "node:vm";
+import { Worker } from "node:worker_threads";
 import type { PermissionName } from "@open-tabletop/core";
 import { validatePluginManifest, type PluginManifest } from "@open-tabletop/plugin-sdk";
+
+const PLUGIN_COMMAND_EXECUTION_TIMEOUT_MS = 1000;
+const PLUGIN_COMMAND_WORKER_TIMEOUT_GRACE_MS = 100;
 
 export interface LoadedPlugin extends PluginManifest {
   source: {
@@ -231,9 +235,7 @@ export class PluginRuntimeRegistry {
   }
 
   executeChatCommand(pluginId: string, input: PluginChatCommandInput, version?: string): PluginChatCommandResult {
-    const versions = this.plugins.get(pluginId);
-    const plugin = version ? versions?.find((item) => item.version === version) : versions ? latestPluginVersion(versions) : undefined;
-    if (!plugin) throw new PluginPackageError("Plugin not found", ["Plugin not found"]);
+    const plugin = this.runtimePlugin(pluginId, version);
     if (!plugin.resolvedServerEntrypoint) {
       return {
         body: `${plugin.name} ran ${input.command}.`,
@@ -242,6 +244,25 @@ export class PluginRuntimeRegistry {
     }
     const runtime = this.runtimeFor(plugin);
     return runtime.execute(input.command, input);
+  }
+
+  async executeChatCommandAsync(pluginId: string, input: PluginChatCommandInput, version?: string): Promise<PluginChatCommandResult> {
+    const plugin = this.runtimePlugin(pluginId, version);
+    if (!plugin.resolvedServerEntrypoint) {
+      return {
+        body: `${plugin.name} ran ${input.command}.`,
+        visibility: "public"
+      };
+    }
+    await yieldToEventLoop();
+    return executeChatCommandInWorker(plugin, input.command, input);
+  }
+
+  private runtimePlugin(pluginId: string, version?: string): RuntimePlugin {
+    const versions = this.plugins.get(pluginId);
+    const plugin = version ? versions?.find((item) => item.version === version) : versions ? latestPluginVersion(versions) : undefined;
+    if (!plugin) throw new PluginPackageError("Plugin not found", ["Plugin not found"]);
+    return plugin;
   }
 
   private upsertPlugin(plugin: RuntimePlugin): void {
@@ -396,7 +417,7 @@ function loadPluginPackage(pluginRoot: string, packagePath: string, trustPolicy:
 }
 
 class SandboxedPluginRuntime {
-  private static readonly executionTimeoutMs = 1000;
+  private static readonly executionTimeoutMs = PLUGIN_COMMAND_EXECUTION_TIMEOUT_MS;
   private readonly context: Context;
   private readonly sandbox: SandboxGlobals;
 
@@ -449,6 +470,117 @@ class SandboxedPluginRuntime {
       this.sandbox.__otteResult = undefined;
     }
   }
+}
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolveYield) => setImmediate(resolveYield));
+}
+
+function executeChatCommandInWorker(plugin: RuntimePlugin, command: string, input: PluginChatCommandInput): Promise<PluginChatCommandResult> {
+  return new Promise((resolveCommand, rejectCommand) => {
+    const worker = new Worker(pluginCommandWorkerSource(), {
+      eval: true,
+      workerData: {
+        pluginId: plugin.id,
+        filename: plugin.resolvedServerEntrypoint,
+        declaredCommands: plugin.chatCommands?.map((item) => item.command) ?? [],
+        command,
+        input,
+        timeoutMs: PLUGIN_COMMAND_EXECUTION_TIMEOUT_MS
+      }
+    });
+    let settled = false;
+    let watchdog: ReturnType<typeof setTimeout> | undefined;
+    const finish = (action: () => void): void => {
+      if (settled) return;
+      settled = true;
+      if (watchdog) clearTimeout(watchdog);
+      worker.removeAllListeners();
+      void worker.terminate().catch(() => undefined);
+      action();
+    };
+
+    watchdog = setTimeout(() => {
+      finish(() => rejectCommand(new Error("Plugin command timed out")));
+    }, PLUGIN_COMMAND_EXECUTION_TIMEOUT_MS + PLUGIN_COMMAND_WORKER_TIMEOUT_GRACE_MS);
+
+    worker.once("message", (message: unknown) => {
+      finish(() => {
+        if (!isRecord(message)) {
+          rejectCommand(new Error("Plugin command failed"));
+          return;
+        }
+        if (message.ok === true) {
+          try {
+            resolveCommand(normalizeCommandResult(message.result));
+          } catch (error) {
+            rejectCommand(error);
+          }
+          return;
+        }
+        rejectCommand(new Error(typeof message.message === "string" ? message.message : "Plugin command failed"));
+      });
+    });
+    worker.once("error", (error) => finish(() => rejectCommand(error)));
+    worker.once("exit", (code) => {
+      if (code !== 0) finish(() => rejectCommand(new Error(`Plugin command worker exited with code ${code}`)));
+    });
+  });
+}
+
+function pluginCommandWorkerSource(): string {
+  return `
+const { readFileSync } = require("node:fs");
+const { Script, createContext } = require("node:vm");
+const { parentPort, workerData } = require("node:worker_threads");
+
+function timeoutAwareMessage(error) {
+  const message = error && typeof error.message === "string" ? error.message : "Plugin command failed";
+  return message.includes("Script execution timed out") ? "Plugin command timed out" : message;
+}
+
+try {
+  const sandbox = {};
+  const context = createContext(sandbox, {
+    name: "plugin:" + workerData.pluginId,
+    codeGeneration: { strings: false, wasm: false }
+  });
+  const bootstrap = "(() => {" +
+    "const __otteDeclaredCommands = new Set(JSON.parse(__ottePayloadJson).declaredCommands);" +
+    "const __otteHandlers = Object.create(null);" +
+    "globalThis.registerCommand = (command, handler) => {" +
+    "if (!__otteDeclaredCommands.has(command)) throw new Error('Command is not declared in plugin manifest: ' + command);" +
+    "if (typeof handler !== 'function') throw new Error('Plugin command handler must be a function: ' + command);" +
+    "__otteHandlers[command] = handler;" +
+    "};" +
+    "globalThis.__otteDeclaredCommands = __otteDeclaredCommands;" +
+    "globalThis.__otteHandlers = __otteHandlers;" +
+    "})();";
+  const validate = "(() => {" +
+    "const __otteDeclaredCommandsRef = globalThis.__otteDeclaredCommands;" +
+    "const __otteHandlersRef = globalThis.__otteHandlers;" +
+    "const __otteMissingCommands = [...__otteDeclaredCommandsRef].filter((command) => !__otteHandlersRef[command]);" +
+    "if (__otteMissingCommands.length) throw new Error('Plugin did not register command handlers: ' + __otteMissingCommands.join(', '));" +
+    "globalThis.__otteRunCommand = (command, input) => __otteHandlersRef[command](input);" +
+    "delete globalThis.registerCommand;" +
+    "delete globalThis.__otteDeclaredCommands;" +
+    "delete globalThis.__otteHandlers;" +
+    "})();";
+  sandbox.__ottePayloadJson = JSON.stringify({ declaredCommands: workerData.declaredCommands });
+  new Script(bootstrap, { filename: workerData.filename }).runInContext(context, { timeout: workerData.timeoutMs });
+  new Script(readFileSync(workerData.filename, "utf8"), { filename: workerData.filename }).runInContext(context, { timeout: workerData.timeoutMs });
+  new Script(validate, { filename: workerData.filename }).runInContext(context, { timeout: workerData.timeoutMs });
+  sandbox.__ottePayloadJson = JSON.stringify({ command: workerData.command, input: workerData.input });
+  sandbox.__otteResult = undefined;
+  new Script("(() => { const __ottePayload = JSON.parse(__ottePayloadJson); if (typeof __otteRunCommand !== 'function') throw new Error('Plugin runtime is not initialized'); __otteResult = __otteRunCommand(__ottePayload.command, __ottePayload.input); })();", { filename: workerData.filename }).runInContext(context, { timeout: workerData.timeoutMs });
+  if (sandbox.__otteResult && typeof sandbox.__otteResult === "object" && "then" in sandbox.__otteResult) {
+    throw new Error("Async plugin command handlers are not supported in the VM sandbox");
+  }
+  parentPort.postMessage({ ok: true, result: sandbox.__otteResult });
+} catch (error) {
+  parentPort.postMessage({ ok: false, message: timeoutAwareMessage(error) });
+}
+`;
 }
 
 function normalizeCommandResult(result: unknown): PluginChatCommandResult {
@@ -847,18 +979,55 @@ function comparePluginsByVersion(left: RuntimePlugin, right: RuntimePlugin): num
 }
 
 function compareSemverDescending(left: string, right: string): number {
-  const leftParts = semverParts(left);
-  const rightParts = semverParts(right);
-  for (let index = 0; index < 3; index++) {
-    const diff = rightParts[index]! - leftParts[index]!;
-    if (diff !== 0) return diff;
-  }
-  return right.localeCompare(left);
+  return compareSemverAscending(right, left);
 }
 
-function semverParts(version: string): [number, number, number] {
-  const [major = "0", minor = "0", patch = "0"] = version.split(".", 3);
-  return [Number.parseInt(major, 10) || 0, Number.parseInt(minor, 10) || 0, Number.parseInt(patch, 10) || 0];
+function compareSemverAscending(left: string, right: string): number {
+  const leftParsed = parseSemver(left);
+  const rightParsed = parseSemver(right);
+  for (let index = 0; index < 3; index++) {
+    const diff = leftParsed.release[index]! - rightParsed.release[index]!;
+    if (diff !== 0) return diff;
+  }
+  return comparePrerelease(leftParsed.prerelease, rightParsed.prerelease, left, right);
+}
+
+function comparePrerelease(left: string[], right: string[], leftRaw: string, rightRaw: string): number {
+  // Per semver, a version with a prerelease tag has lower precedence than the same release without one.
+  if (left.length === 0 && right.length === 0) return leftRaw.localeCompare(rightRaw);
+  if (left.length === 0) return 1;
+  if (right.length === 0) return -1;
+  const max = Math.max(left.length, right.length);
+  for (let index = 0; index < max; index++) {
+    const leftId = left[index];
+    const rightId = right[index];
+    if (leftId === undefined) return -1;
+    if (rightId === undefined) return 1;
+    const diff = comparePrereleaseIdentifier(leftId, rightId);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function comparePrereleaseIdentifier(left: string, right: string): number {
+  const leftNumeric = /^\d+$/.test(left);
+  const rightNumeric = /^\d+$/.test(right);
+  if (leftNumeric && rightNumeric) return Number.parseInt(left, 10) - Number.parseInt(right, 10);
+  if (leftNumeric) return -1;
+  if (rightNumeric) return 1;
+  return left.localeCompare(right);
+}
+
+function parseSemver(version: string): { release: [number, number, number]; prerelease: string[] } {
+  const withoutBuild = version.split("+", 1)[0] ?? version;
+  const dashIndex = withoutBuild.indexOf("-");
+  const mainPart = dashIndex === -1 ? withoutBuild : withoutBuild.slice(0, dashIndex);
+  const prereleasePart = dashIndex === -1 ? "" : withoutBuild.slice(dashIndex + 1);
+  const [major = "0", minor = "0", patch = "0"] = mainPart.split(".", 3);
+  return {
+    release: [Number.parseInt(major, 10) || 0, Number.parseInt(minor, 10) || 0, Number.parseInt(patch, 10) || 0],
+    prerelease: prereleasePart ? prereleasePart.split(".") : []
+  };
 }
 
 function runtimeKey(pluginId: string, version: string): string {

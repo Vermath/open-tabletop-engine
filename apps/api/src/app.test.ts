@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
-import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type CampaignArchive, type ChatMessage, type Combat, type DiceMacro, type DiceRoll, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
+import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type AuditLog, type CampaignArchive, type ChatMessage, type Combat, type DiceMacro, type DiceRoll, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp, type ImageAssetGenerationInput, type ImageAssetGenerator } from "./app.js";
@@ -18,6 +18,16 @@ import { MemoryStateStore } from "./store.js";
 const authHeaders = { "x-user-id": "usr_demo_gm" };
 const demoPassword = "demo-password-123";
 const tinyPng = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axpRz8AAAAASUVORK5CYII=", "base64");
+
+type PaginatedTestResponse<T> = {
+  items: T[];
+  pagination: {
+    limit: number;
+    offset: number;
+    totalCount: number;
+    nextCursor?: string;
+  };
+};
 
 function testPasswordHash(password = demoPassword): string {
   const salt = "test-password-salt";
@@ -120,6 +130,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.includes("/campaigns/{campaignId}/combats")) return method === "GET" ? { tools: ["read_combat"] } : { excluded: "direct_combat_start" };
   if (path.includes("/combats/{combatId}/audit")) return { tools: ["read_combat"] };
   if (path.includes("/combats/{combatId}/actions")) return { tools: ["use_actor_action", "read_combat"] };
+  if (path.includes("/combats/{combatId}/initiative")) return { tools: ["read_combat", "roll_dice"] };
   if (path.includes("/combats/{combatId}/combatants") || path === "/api/v1/combats/{combatId}") return method === "DELETE" ? { excluded: "direct_combat_end" } : { tools: ["read_combat", "create_proposal"] };
   if (path.includes("/proposals/{proposalId}/approve")) return { excluded: "proposal_approval" };
   if (path.includes("/proposals/{proposalId}/reject")) return { excluded: "proposal_rejection" };
@@ -1169,7 +1180,7 @@ describe("api", () => {
       "x-otte-version-policy"?: { basePath?: string };
       "x-otte-error-policy"?: { schema?: string };
       "x-otte-idempotency-policy"?: { header?: string };
-      "x-otte-pagination-policy"?: { limitParameter?: string; cursorParameter?: string };
+      "x-otte-pagination-policy"?: { limitParameter?: string; cursorParameter?: string; offsetParameter?: string };
       "x-otte-rate-limit-policy"?: { statusCode?: number };
     };
     const store = new MemoryStateStore();
@@ -1196,6 +1207,9 @@ describe("api", () => {
       expect(spec.components.securitySchemes.BearerAuth).toMatchObject({ type: "http", scheme: "bearer" });
       expect(spec.components.schemas.ErrorResponse).toBeDefined();
       expect(spec.components.schemas.PaginationMeta).toBeDefined();
+      expect(spec.components.schemas.ChatMessagePage).toBeDefined();
+      expect(spec.components.schemas.DiceRollPage).toBeDefined();
+      expect(spec.components.schemas.AuditLogPage).toBeDefined();
       for (const schemaName of [
         "HealthStatus",
         "LoginRequest",
@@ -1318,7 +1332,7 @@ describe("api", () => {
       expect(spec["x-otte-version-policy"]?.basePath).toBe("/api/v1");
       expect(spec["x-otte-error-policy"]?.schema).toBe("ErrorResponse");
       expect(spec["x-otte-idempotency-policy"]?.header).toBe("Idempotency-Key");
-      expect(spec["x-otte-pagination-policy"]).toMatchObject({ limitParameter: "limit", cursorParameter: "cursor" });
+      expect(spec["x-otte-pagination-policy"]).toMatchObject({ limitParameter: "limit", cursorParameter: "cursor", offsetParameter: "offset" });
       expect(spec["x-otte-rate-limit-policy"]?.statusCode).toBe(429);
       expect(spec.paths["/api/v1/openapi.json"]?.get).toBeDefined();
       expect(jsonResponseSchema(spec.paths["/api/v1/openapi.json"]?.get)).toMatchObject({ $ref: "#/components/schemas/OpenApiDocument" });
@@ -1482,12 +1496,23 @@ describe("api", () => {
       expect(jsonRequestSchema(spec.paths["/api/v1/scenes/{sceneId}/annotations/{annotationId}"]?.patch)).toMatchObject({ $ref: "#/components/schemas/SceneAnnotationUpdateRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/scenes/{sceneId}/tokens"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/Token" } });
       expect(jsonRequestSchema(spec.paths["/api/v1/tokens/{tokenId}/target"]?.post)).toMatchObject({ $ref: "#/components/schemas/TokenTargetRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/chat/messages"]?.get)).toMatchObject({
+        oneOf: [{ type: "array", items: { $ref: "#/components/schemas/ChatMessage" } }, { $ref: "#/components/schemas/ChatMessagePage" }]
+      });
       expect(jsonRequestSchema(spec.paths["/api/v1/chat/messages"]?.post)).toMatchObject({ $ref: "#/components/schemas/ChatMessageCreateRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/chat/messages"]?.post)).toMatchObject({ $ref: "#/components/schemas/ChatMessage" });
+      expect(spec.components.schemas.ChatMessageCreateRequest).toMatchObject({
+        properties: {
+          body: { type: "string", minLength: 1, maxLength: 4096 }
+        }
+      });
       expect(jsonRequestSchema(spec.paths["/api/v1/chat/messages/{messageId}/moderation"]?.patch)).toMatchObject({ $ref: "#/components/schemas/ChatModerationRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/chat/messages/{messageId}/moderation"]?.patch)).toMatchObject({ $ref: "#/components/schemas/ChatMessage" });
       expect(jsonRequestSchema(spec.paths["/api/v1/dice/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/DiceRollRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/dice/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/DiceRoll" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/rolls"]?.get)).toMatchObject({
+        oneOf: [{ type: "array", items: { $ref: "#/components/schemas/DiceRoll" } }, { $ref: "#/components/schemas/DiceRollPage" }]
+      });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/assets"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/MapAsset" } });
       expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/assets"]?.post)).toMatchObject({ $ref: "#/components/schemas/MapAssetCreateRequest" });
       expect(spec.paths["/api/v1/assets/{assetId}/blob"]?.get?.responses?.["200"]).toMatchObject({ content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } });
@@ -1496,7 +1521,9 @@ describe("api", () => {
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/items"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/Item" } });
       expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/journal"]?.post)).toMatchObject({ $ref: "#/components/schemas/JournalEntryCreateRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/combats"]?.post)).toMatchObject({ $ref: "#/components/schemas/Combat" });
-      expect(jsonResponseSchema(spec.paths["/api/v1/combats/{combatId}/audit"]?.get)).toMatchObject({ type: "array", items: { $ref: "#/components/schemas/AuditLog" } });
+      expect(jsonResponseSchema(spec.paths["/api/v1/combats/{combatId}/audit"]?.get)).toMatchObject({
+        oneOf: [{ type: "array", items: { $ref: "#/components/schemas/AuditLog" } }, { $ref: "#/components/schemas/AuditLogPage" }]
+      });
       expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/proposals"]?.post)).toMatchObject({ $ref: "#/components/schemas/ProposalCreateRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/proposals/{proposalId}/apply"]?.post)).toMatchObject({ $ref: "#/components/schemas/Proposal" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/chat/export"]?.get)).toMatchObject({ $ref: "#/components/schemas/ChatExport" });
@@ -1903,6 +1930,60 @@ describe("api", () => {
     }
   });
 
+  it("persists idempotency replay records in the mutation save without a duplicate save", async () => {
+    class SnapshotStore extends MemoryStateStore {
+      saves: EngineState[] = [];
+
+      override save(): void {
+        this.saves.push(JSON.parse(JSON.stringify(this.state)) as EngineState);
+      }
+    }
+
+    const store = new SnapshotStore();
+    const app = await buildApp({ store });
+
+    try {
+      store.saves = [];
+      const payload = { name: "Single Save Idempotent Scene", width: 640, height: 480, gridSize: 40 };
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "scene-create-single-save" },
+        payload
+      });
+      expect(first.statusCode).toBe(200);
+      const sceneId = first.json().id;
+
+      expect(store.saves).toHaveLength(1);
+      const persisted = store.saves[0]!;
+      expect(persisted.scenes.find((scene) => scene.id === sceneId)).toEqual(expect.objectContaining({ name: "Single Save Idempotent Scene" }));
+      expect(persisted.idempotencyRecords).toHaveLength(1);
+      expect(persisted.idempotencyRecords[0]).toEqual(
+        expect.objectContaining({
+          key: "scene-create-single-save",
+          method: "POST",
+          path: "/api/v1/campaigns/camp_demo/scenes",
+          statusCode: 200
+        })
+      );
+      expect(JSON.parse(persisted.idempotencyRecords[0]?.responseBody ?? "{}")).toEqual(expect.objectContaining({ id: sceneId }));
+
+      const replay = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/scenes",
+        headers: { ...authHeaders, "Idempotency-Key": "scene-create-single-save" },
+        payload: { gridSize: 40, height: 480, name: "Single Save Idempotent Scene", width: 640 }
+      });
+      expect(replay.statusCode).toBe(200);
+      expect(replay.headers["idempotency-replayed"]).toBe("true");
+      expect(replay.json().id).toBe(sceneId);
+      expect(store.state.scenes.filter((scene) => scene.name === "Single Save Idempotent Scene")).toHaveLength(1);
+      expect(store.saves).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("enforces configured API rate limits with standard headers", async () => {
     const app = await buildApp({
       store: new MemoryStateStore(),
@@ -2181,6 +2262,271 @@ describe("api", () => {
     expect(invalidExport.statusCode).toBe(400);
 
     await app.close();
+  });
+
+  it("does not scan chat once per roll when listing campaign rolls", async () => {
+    const store = new MemoryStateStore();
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+    const publicLinkedRoll = createTimestamped("roll", {
+      id: "roll_public_linked_scan_guard",
+      campaignId: "camp_demo",
+      userId: "usr_demo_gm",
+      formula: "12",
+      label: "Public Linked Scan Guard",
+      visibility: "public" as const,
+      terms: [{ type: "modifier" as const, value: 12 }],
+      total: 12
+    }) satisfies EngineState["rolls"][number];
+    const publicUnlinkedRoll = createTimestamped("roll", {
+      id: "roll_public_unlinked_scan_guard",
+      campaignId: "camp_demo",
+      userId: "usr_demo_gm",
+      formula: "13",
+      label: "Public Unlinked Scan Guard",
+      visibility: "public" as const,
+      terms: [{ type: "modifier" as const, value: 13 }],
+      total: 13
+    }) satisfies EngineState["rolls"][number];
+    const gmLinkedRoll = createTimestamped("roll", {
+      id: "roll_gm_linked_scan_guard",
+      campaignId: "camp_demo",
+      userId: "usr_demo_gm",
+      formula: "14",
+      label: "GM Linked Scan Guard",
+      visibility: "gm_only" as const,
+      terms: [{ type: "modifier" as const, value: 14 }],
+      total: 14
+    }) satisfies EngineState["rolls"][number];
+    const gmUnlinkedRoll = createTimestamped("roll", {
+      id: "roll_gm_unlinked_scan_guard",
+      campaignId: "camp_demo",
+      userId: "usr_demo_gm",
+      formula: "15",
+      label: "GM Unlinked Scan Guard",
+      visibility: "gm_only" as const,
+      terms: [{ type: "modifier" as const, value: 15 }],
+      total: 15
+    }) satisfies EngineState["rolls"][number];
+    const whisperLinkedRoll = createTimestamped("roll", {
+      id: "roll_whisper_linked_scan_guard",
+      campaignId: "camp_demo",
+      userId: "usr_demo_gm",
+      formula: "16",
+      label: "Whisper Linked Scan Guard",
+      visibility: "whisper" as const,
+      terms: [{ type: "modifier" as const, value: 16 }],
+      total: 16
+    }) satisfies EngineState["rolls"][number];
+    store.state.rolls.push(publicLinkedRoll, publicUnlinkedRoll, gmLinkedRoll, gmUnlinkedRoll, whisperLinkedRoll);
+    store.state.chat.push(
+      createTimestamped("msg", {
+        id: "msg_public_linked_scan_guard",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        type: "roll" as const,
+        body: "Public linked scan guard",
+        visibility: "public" as const,
+        recipientUserIds: [],
+        rollId: publicLinkedRoll.id
+      }) satisfies EngineState["chat"][number],
+      createTimestamped("msg", {
+        id: "msg_gm_linked_scan_guard",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        type: "roll" as const,
+        body: "GM linked scan guard",
+        visibility: "gm_only" as const,
+        recipientUserIds: [],
+        rollId: gmLinkedRoll.id
+      }) satisfies EngineState["chat"][number],
+      createTimestamped("msg", {
+        id: "msg_whisper_linked_scan_guard",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        type: "roll" as const,
+        body: "Whisper linked scan guard",
+        visibility: "whisper" as const,
+        recipientUserIds: ["usr_demo_player"],
+        rollId: whisperLinkedRoll.id
+      }) satisfies EngineState["chat"][number]
+    );
+
+    let chatFindCalls = 0;
+    store.state.chat = new Proxy(store.state.chat, {
+      get(target, property, receiver) {
+        if (property === "find") {
+          return (...args: unknown[]) => {
+            chatFindCalls += 1;
+            return Reflect.apply(Array.prototype.find, target, args);
+          };
+        }
+        return Reflect.get(target, property, receiver);
+      }
+    });
+    const app = await buildApp({ store });
+
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/rolls",
+        headers: playerHeaders
+      });
+      expect(response.statusCode).toBe(200);
+      const rollIds = response.json().map((roll: DiceRoll) => roll.id);
+      expect(rollIds).toEqual(expect.arrayContaining([publicLinkedRoll.id, publicUnlinkedRoll.id, whisperLinkedRoll.id]));
+      expect(rollIds).not.toEqual(expect.arrayContaining([gmLinkedRoll.id, gmUnlinkedRoll.id]));
+      expect(chatFindCalls).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keys API rate limits by route pattern instead of raw resource ids", async () => {
+    const app = await buildApp({
+      store: new MemoryStateStore(),
+      rateLimit: { enabled: true, windowMs: 60_000, maxRequests: 1 }
+    });
+
+    try {
+      const first = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo",
+        headers: authHeaders
+      });
+      expect(first.statusCode).toBe(200);
+
+      const second = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_missing",
+        headers: authHeaders
+      });
+      expect(second.statusCode).toBe(429);
+      expect(second.json()).toMatchObject({ error: "rate_limited" });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("paginates campaign rolls after visibility filtering while preserving unpaginated arrays", async () => {
+    const store = new MemoryStateStore();
+    store.state.chat = [];
+    store.state.rolls = [
+      {
+        id: "roll_page_hidden_1",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        formula: "1d20+9",
+        label: "Hidden opener",
+        visibility: "gm_only",
+        terms: [],
+        total: 19,
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      },
+      {
+        id: "roll_page_visible_1",
+        campaignId: "camp_demo",
+        userId: "usr_demo_player",
+        formula: "1d20+1",
+        label: "Visible one",
+        visibility: "public",
+        terms: [],
+        total: 11,
+        createdAt: "2026-05-01T00:01:00.000Z",
+        updatedAt: "2026-05-01T00:01:00.000Z"
+      },
+      {
+        id: "roll_page_visible_2",
+        campaignId: "camp_demo",
+        userId: "usr_demo_player",
+        formula: "1d20+2",
+        label: "Visible two",
+        visibility: "public",
+        terms: [],
+        total: 12,
+        createdAt: "2026-05-01T00:02:00.000Z",
+        updatedAt: "2026-05-01T00:02:00.000Z"
+      },
+      {
+        id: "roll_page_hidden_2",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        formula: "1d20+8",
+        label: "Hidden middle",
+        visibility: "gm_only",
+        terms: [],
+        total: 18,
+        createdAt: "2026-05-01T00:03:00.000Z",
+        updatedAt: "2026-05-01T00:03:00.000Z"
+      },
+      {
+        id: "roll_page_visible_3",
+        campaignId: "camp_demo",
+        userId: "usr_demo_player",
+        formula: "1d20+3",
+        label: "Visible three",
+        visibility: "public",
+        terms: [],
+        total: 13,
+        createdAt: "2026-05-01T00:04:00.000Z",
+        updatedAt: "2026-05-01T00:04:00.000Z"
+      },
+      {
+        id: "roll_page_visible_4",
+        campaignId: "camp_demo",
+        userId: "usr_demo_player",
+        formula: "1d20+4",
+        label: "Visible four",
+        visibility: "public",
+        terms: [],
+        total: 14,
+        createdAt: "2026-05-01T00:05:00.000Z",
+        updatedAt: "2026-05-01T00:05:00.000Z"
+      }
+    ] satisfies DiceRoll[];
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    try {
+      const unpaginated = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/rolls",
+        headers: playerHeaders
+      });
+      expect(unpaginated.statusCode).toBe(200);
+      expect(Array.isArray(unpaginated.json())).toBe(true);
+      expect(unpaginated.json().map((roll: DiceRoll) => roll.id)).toEqual(["roll_page_visible_1", "roll_page_visible_2", "roll_page_visible_3", "roll_page_visible_4"]);
+
+      const firstPage = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/rolls?limit=2",
+        headers: playerHeaders
+      });
+      expect(firstPage.statusCode).toBe(200);
+      const firstBody = firstPage.json() as PaginatedTestResponse<DiceRoll>;
+      expect(firstBody.items.map((roll) => roll.id)).toEqual(["roll_page_visible_1", "roll_page_visible_2"]);
+      expect(firstBody.pagination).toMatchObject({ limit: 2, offset: 0, totalCount: 4 });
+      expect(firstBody.pagination.nextCursor).toEqual(expect.any(String));
+      expect(JSON.stringify(firstBody)).not.toContain("Hidden opener");
+
+      const cursorPage = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/camp_demo/rolls?limit=2&cursor=${encodeURIComponent(firstBody.pagination.nextCursor!)}`,
+        headers: playerHeaders
+      });
+      expect(cursorPage.statusCode).toBe(200);
+      expect((cursorPage.json() as PaginatedTestResponse<DiceRoll>).items.map((roll) => roll.id)).toEqual(["roll_page_visible_3", "roll_page_visible_4"]);
+
+      const offsetPage = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/rolls?limit=2&offset=2",
+        headers: playerHeaders
+      });
+      expect(offsetPage.statusCode).toBe(200);
+      expect((offsetPage.json() as PaginatedTestResponse<DiceRoll>).items.map((roll) => roll.id)).toEqual(["roll_page_visible_3", "roll_page_visible_4"]);
+    } finally {
+      await app.close();
+    }
   });
 
   it("preserves existing password hashes when importing users from archive", async () => {
@@ -2603,6 +2949,573 @@ describe("api", () => {
     });
 
     await app.close();
+  });
+
+  it("paginates combat audit logs after combat scoping while preserving unpaginated arrays", async () => {
+    const store = new MemoryStateStore();
+    store.state.combats = [
+      {
+        id: "cmb_page_target",
+        campaignId: "camp_demo",
+        active: true,
+        round: 3,
+        turnIndex: 0,
+        combatants: [],
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      }
+    ] satisfies Combat[];
+    store.state.auditLogs = [
+      {
+        id: "audit_page_target_1",
+        campaignId: "camp_demo",
+        actorUserId: "usr_demo_gm",
+        actorType: "user",
+        action: "combat.page.one",
+        targetType: "combat",
+        targetId: "cmb_page_target",
+        createdAt: "2026-05-01T00:01:00.000Z",
+        updatedAt: "2026-05-01T00:01:00.000Z"
+      },
+      {
+        id: "audit_page_other_combat",
+        campaignId: "camp_demo",
+        actorUserId: "usr_demo_gm",
+        actorType: "user",
+        action: "combat.page.other",
+        targetType: "combat",
+        targetId: "cmb_other",
+        createdAt: "2026-05-01T00:06:00.000Z",
+        updatedAt: "2026-05-01T00:06:00.000Z"
+      },
+      {
+        id: "audit_page_target_2",
+        campaignId: "camp_demo",
+        actorUserId: "usr_demo_gm",
+        actorType: "user",
+        action: "combat.page.two",
+        targetType: "combat",
+        targetId: "cmb_page_target",
+        createdAt: "2026-05-01T00:02:00.000Z",
+        updatedAt: "2026-05-01T00:02:00.000Z"
+      },
+      {
+        id: "audit_page_target_3",
+        campaignId: "camp_demo",
+        actorUserId: "usr_demo_gm",
+        actorType: "user",
+        action: "combat.page.three",
+        targetType: "combat",
+        targetId: "cmb_page_target",
+        createdAt: "2026-05-01T00:03:00.000Z",
+        updatedAt: "2026-05-01T00:03:00.000Z"
+      },
+      {
+        id: "audit_page_target_4",
+        campaignId: "camp_demo",
+        actorUserId: "usr_demo_gm",
+        actorType: "user",
+        action: "combat.page.four",
+        targetType: "combat",
+        targetId: "cmb_page_target",
+        createdAt: "2026-05-01T00:04:00.000Z",
+        updatedAt: "2026-05-01T00:04:00.000Z"
+      },
+      {
+        id: "audit_page_target_5",
+        campaignId: "camp_demo",
+        actorUserId: "usr_demo_gm",
+        actorType: "user",
+        action: "combat.page.five",
+        targetType: "combat",
+        targetId: "cmb_page_target",
+        createdAt: "2026-05-01T00:05:00.000Z",
+        updatedAt: "2026-05-01T00:05:00.000Z"
+      }
+    ] satisfies AuditLog[];
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    try {
+      const unpaginated = await app.inject({
+        method: "GET",
+        url: "/api/v1/combats/cmb_page_target/audit",
+        headers: playerHeaders
+      });
+      expect(unpaginated.statusCode).toBe(200);
+      expect(Array.isArray(unpaginated.json())).toBe(true);
+      expect(unpaginated.json().map((log: AuditLog) => log.id)).toEqual(["audit_page_target_5", "audit_page_target_4", "audit_page_target_3", "audit_page_target_2", "audit_page_target_1"]);
+
+      const firstPage = await app.inject({
+        method: "GET",
+        url: "/api/v1/combats/cmb_page_target/audit?limit=2",
+        headers: playerHeaders
+      });
+      expect(firstPage.statusCode).toBe(200);
+      const firstBody = firstPage.json() as PaginatedTestResponse<AuditLog>;
+      expect(firstBody.items.map((log) => log.id)).toEqual(["audit_page_target_5", "audit_page_target_4"]);
+      expect(firstBody.pagination).toMatchObject({ limit: 2, offset: 0, totalCount: 5 });
+      expect(firstBody.pagination.nextCursor).toEqual(expect.any(String));
+      expect(firstBody.items.map((log) => log.id)).not.toContain("audit_page_other_combat");
+
+      const cursorPage = await app.inject({
+        method: "GET",
+        url: `/api/v1/combats/cmb_page_target/audit?limit=2&cursor=${encodeURIComponent(firstBody.pagination.nextCursor!)}`,
+        headers: playerHeaders
+      });
+      expect(cursorPage.statusCode).toBe(200);
+      expect((cursorPage.json() as PaginatedTestResponse<AuditLog>).items.map((log) => log.id)).toEqual(["audit_page_target_3", "audit_page_target_2"]);
+
+      const offsetPage = await app.inject({
+        method: "GET",
+        url: "/api/v1/combats/cmb_page_target/audit?limit=2&offset=2",
+        headers: playerHeaders
+      });
+      expect(offsetPage.statusCode).toBe(200);
+      expect((offsetPage.json() as PaginatedTestResponse<AuditLog>).items.map((log) => log.id)).toEqual(["audit_page_target_3", "audit_page_target_2"]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("preserves campaign immutable fields on PATCH while applying mutable fields", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const original = { ...store.state.campaigns.find((campaign) => campaign.id === "camp_demo")! };
+
+    const updated = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/campaigns/camp_demo",
+      headers: authHeaders,
+      payload: {
+        id: "camp_hijacked",
+        campaignId: "camp_other",
+        organizationId: "org_other",
+        ownerUserId: "usr_demo_player",
+        createdAt: "2000-01-01T00:00:00.000Z",
+        createdBy: "usr_attacker",
+        name: "The Guarded Ember Vault"
+      }
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual(
+      expect.objectContaining({
+        id: original.id,
+        organizationId: original.organizationId,
+        ownerUserId: original.ownerUserId,
+        createdAt: original.createdAt,
+        name: "The Guarded Ember Vault"
+      })
+    );
+    expect(updated.json().campaignId).toBeUndefined();
+    expect(updated.json().createdBy).toBeUndefined();
+    expect(store.state.campaigns.map((campaign) => campaign.id)).toContain("camp_demo");
+    expect(store.state.campaigns.map((campaign) => campaign.id)).not.toContain("camp_hijacked");
+
+    await app.close();
+  });
+
+  it("preserves token immutable fields on PATCH while applying mutable fields", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const original = { ...store.state.tokens.find((token) => token.id === "tok_valen")! };
+
+    const updated = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/tokens/tok_valen",
+      headers: authHeaders,
+      payload: {
+        id: "tok_hijacked",
+        campaignId: "camp_other",
+        sceneId: "scn_other",
+        createdAt: "2000-01-01T00:00:00.000Z",
+        createdBy: "usr_attacker",
+        name: "Valen on Watch",
+        x: 330,
+        y: 360
+      }
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual(
+      expect.objectContaining({
+        id: original.id,
+        sceneId: original.sceneId,
+        actorId: original.actorId,
+        createdAt: original.createdAt,
+        name: "Valen on Watch",
+        x: 330,
+        y: 360
+      })
+    );
+    expect(updated.json().campaignId).toBeUndefined();
+    expect(updated.json().createdBy).toBeUndefined();
+    expect(store.state.tokens.map((token) => token.id)).toContain("tok_valen");
+    expect(store.state.tokens.map((token) => token.id)).not.toContain("tok_hijacked");
+
+    await app.close();
+  });
+
+  it("preserves actor immutable fields on PATCH while applying mutable fields", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const original = { ...store.state.actors.find((actor) => actor.id === "act_valen")! };
+
+    const updated = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/actors/act_valen",
+      headers: authHeaders,
+      payload: {
+        id: "act_hijacked",
+        campaignId: "camp_other",
+        createdAt: "2000-01-01T00:00:00.000Z",
+        createdBy: "usr_attacker",
+        name: "Valen, Vault Guard",
+        data: { hp: { current: 16, max: 22 } }
+      }
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual(
+      expect.objectContaining({
+        id: original.id,
+        campaignId: original.campaignId,
+        createdAt: original.createdAt,
+        name: "Valen, Vault Guard",
+        data: { hp: { current: 16, max: 22 } }
+      })
+    );
+    expect(updated.json().createdBy).toBeUndefined();
+    expect(store.state.actors.map((actor) => actor.id)).toContain("act_valen");
+    expect(store.state.actors.map((actor) => actor.id)).not.toContain("act_hijacked");
+
+    await app.close();
+  });
+
+  it("preserves journal immutable fields on PATCH while applying mutable fields", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const original = { ...store.state.journals.find((entry) => entry.id === "jnl_hook")! };
+
+    const updated = await app.inject({
+      method: "PATCH",
+      url: "/api/v1/journal/jnl_hook",
+      headers: authHeaders,
+      payload: {
+        id: "jnl_hijacked",
+        campaignId: "camp_other",
+        createdAt: "2000-01-01T00:00:00.000Z",
+        createdBy: "usr_attacker",
+        title: "Guarded Session Hook",
+        body: "The party confirms the vault watch.",
+        visibility: "public",
+        tags: ["prep", "guarded"]
+      }
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual(
+      expect.objectContaining({
+        id: original.id,
+        campaignId: original.campaignId,
+        createdAt: original.createdAt,
+        createdBy: original.createdBy,
+        updatedBy: "usr_demo_gm",
+        title: "Guarded Session Hook",
+        body: "The party confirms the vault watch.",
+        visibility: "public",
+        tags: ["prep", "guarded"]
+      })
+    );
+    expect(store.state.journals.map((entry) => entry.id)).toContain("jnl_hook");
+    expect(store.state.journals.map((entry) => entry.id)).not.toContain("jnl_hijacked");
+
+    await app.close();
+  });
+
+  it("preserves combat immutable fields on PATCH while applying mutable fields", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const started = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/combats",
+      headers: authHeaders,
+      payload: {
+        combatants: [{ id: "cmbt_guarded", tokenId: "tok_valen", actorId: "act_valen", name: "Valen", initiative: 18, defeated: false }]
+      }
+    });
+    expect(started.statusCode).toBe(200);
+    const original = { ...store.state.combats.find((combat) => combat.id === started.json().id)! };
+
+    const updated = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/combats/${original.id}`,
+      headers: authHeaders,
+      payload: {
+        id: "cmb_hijacked",
+        campaignId: "camp_other",
+        encounterId: "enc_hijacked",
+        createdAt: "2000-01-01T00:00:00.000Z",
+        createdBy: "usr_attacker",
+        active: false,
+        round: 2,
+        turnIndex: 0,
+        combatants: started.json().combatants
+      }
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual(
+      expect.objectContaining({
+        id: original.id,
+        campaignId: original.campaignId,
+        createdAt: original.createdAt,
+        active: false,
+        round: 2,
+        turnIndex: 0
+      })
+    );
+    expect(updated.json().encounterId).toBeUndefined();
+    expect(updated.json().createdBy).toBeUndefined();
+    expect(store.state.combats.map((combat) => combat.id)).toContain(original.id);
+    expect(store.state.combats.map((combat) => combat.id)).not.toContain("cmb_hijacked");
+
+    await app.close();
+  });
+
+  it("broadcasts combat ended events for prior active combats when starting a new combat", async () => {
+    type RealtimeTestSocket = {
+      onopen: (() => void) | null;
+      onmessage: ((event: { data: unknown }) => void) | null;
+      onerror: ((event: unknown) => void) | null;
+      close(): void;
+    };
+    type RealtimeEventMessage = { type?: string; targetId?: string; payload?: Partial<Combat>; error?: string };
+    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string, protocols?: string[]) => RealtimeTestSocket }).WebSocket;
+    if (!maybeWebSocket) throw new Error("WebSocket is not available in this Node runtime");
+    const TestWebSocket = maybeWebSocket;
+
+    const store = new MemoryStateStore();
+    const priorAlpha = createTimestamped("cmb", {
+      id: "cmb_prior_alpha",
+      campaignId: "camp_demo",
+      active: true,
+      round: 2,
+      turnIndex: 0,
+      combatants: [{ id: "cmbt_prior_alpha", tokenId: "tok_valen", actorId: "act_valen", name: "Valen Ash", initiative: 18, defeated: false }]
+    }) satisfies Combat;
+    const priorBeta = createTimestamped("cmb", {
+      id: "cmb_prior_beta",
+      campaignId: "camp_demo",
+      active: true,
+      round: 3,
+      turnIndex: 0,
+      combatants: [{ id: "cmbt_prior_beta", tokenId: "tok_mira", actorId: "act_mira", name: "Mira Thorn", initiative: 12, defeated: false }]
+    }) satisfies Combat;
+    const inactivePrior = createTimestamped("cmb", {
+      id: "cmb_prior_inactive",
+      campaignId: "camp_demo",
+      active: false,
+      round: 1,
+      turnIndex: 0,
+      combatants: []
+    }) satisfies Combat;
+    store.state.combats.push(priorAlpha, priorBeta, inactivePrior);
+
+    const app = await buildApp({ store });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address() as AddressInfo;
+    const credentials = seedDemoPassword(store, "usr_demo_gm");
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: credentials
+    });
+    expect(login.statusCode).toBe(200);
+
+    const socket = new TestWebSocket(`ws://127.0.0.1:${address.port}/api/v1/realtime?campaignId=camp_demo`, ["otte.v1", `otte.auth.${login.json().token as string}`]);
+    const messages: RealtimeEventMessage[] = [];
+    const waiters: Array<{ predicate: (message: RealtimeEventMessage) => boolean; resolve: (message: RealtimeEventMessage) => void; timer: NodeJS.Timeout }> = [];
+    socket.onmessage = (event) => {
+      const message = JSON.parse(String(event.data)) as RealtimeEventMessage;
+      messages.push(message);
+      for (const waiter of [...waiters]) {
+        if (!waiter.predicate(message)) continue;
+        clearTimeout(waiter.timer);
+        waiters.splice(waiters.indexOf(waiter), 1);
+        waiter.resolve(message);
+      }
+    };
+    const waitFor = (type: string, targetId: string) => {
+      const existing = messages.find((message) => message.type === type && message.targetId === targetId);
+      if (existing) return Promise.resolve(existing);
+      return new Promise<RealtimeEventMessage>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          const seen = messages.map((message) => `${message.type ?? "unknown"}:${message.targetId ?? ""}`).join(", ");
+          reject(new Error(`Timed out waiting for ${type}:${targetId}. Seen: ${seen}`));
+        }, 1000);
+        waiters.push({
+          predicate: (message) => message.type === type && message.targetId === targetId,
+          resolve,
+          timer
+        });
+      });
+    };
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Timed out opening realtime socket for combat lifecycle test")), 1000);
+      socket.onopen = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      socket.onerror = (event) => {
+        clearTimeout(timer);
+        reject(new Error(`Realtime socket error for combat lifecycle test: ${String(event)}`));
+      };
+    });
+
+    try {
+      const started = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        headers: authHeaders,
+        payload: {
+          combatants: [{ id: "cmbt_new_combatant", tokenId: "tok_valen", actorId: "act_valen", name: "Valen Ash", initiative: 20, defeated: false }]
+        }
+      });
+      expect(started.statusCode).toBe(200);
+
+      const [endedAlpha, endedBeta, startedEvent] = await Promise.all([waitFor("combat.ended", priorAlpha.id), waitFor("combat.ended", priorBeta.id), waitFor("combat.started", started.json().id)]);
+      expect(endedAlpha.payload).toEqual(expect.objectContaining({ id: priorAlpha.id, active: false }));
+      expect(endedBeta.payload).toEqual(expect.objectContaining({ id: priorBeta.id, active: false }));
+      expect(startedEvent.payload).toEqual(expect.objectContaining({ id: started.json().id, active: true }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(messages.some((message) => message.type === "combat.ended" && message.targetId === inactivePrior.id)).toBe(false);
+      expect(store.state.combats.filter((combat) => combat.campaignId === "camp_demo" && combat.active).map((combat) => combat.id)).toEqual([started.json().id]);
+    } finally {
+      socket.close();
+      for (const waiter of waiters.splice(0)) clearTimeout(waiter.timer);
+      await app.close();
+    }
+  });
+
+  it("sorts initiative on the server unless manual turn order is enabled", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    try {
+      const started = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        headers: authHeaders,
+        payload: {
+          combatants: [
+            { id: "cmbt_low", tokenId: "tok_low", name: "Low", initiative: 4, defeated: false },
+            { id: "cmbt_high", tokenId: "tok_high", name: "High", initiative: 18, defeated: false },
+            { id: "cmbt_mid", tokenId: "tok_mid", name: "Mid", initiative: 10, defeated: false }
+          ]
+        }
+      });
+      expect(started.statusCode).toBe(200);
+      expect(started.json()).toEqual(expect.objectContaining({ manualTurnOrder: false, turnIndex: 0 }));
+      expect(started.json().combatants.map((combatant: { id: string }) => combatant.id)).toEqual(["cmbt_high", "cmbt_mid", "cmbt_low"]);
+
+      const manual = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        headers: authHeaders,
+        payload: {
+          manualTurnOrder: true,
+          combatants: [
+            { id: "cmbt_manual_low", tokenId: "tok_manual_low", name: "Manual Low", initiative: 4, defeated: false },
+            { id: "cmbt_manual_high", tokenId: "tok_manual_high", name: "Manual High", initiative: 18, defeated: false }
+          ]
+        }
+      });
+      expect(manual.statusCode).toBe(200);
+      expect(manual.json()).toEqual(expect.objectContaining({ manualTurnOrder: true }));
+      expect(manual.json().combatants.map((combatant: { id: string }) => combatant.id)).toEqual(["cmbt_manual_low", "cmbt_manual_high"]);
+
+      const patched = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/combats/${manual.json().id}`,
+        headers: authHeaders,
+        payload: {
+          manualTurnOrder: false,
+          combatants: manual.json().combatants
+        }
+      });
+      expect(patched.statusCode).toBe(200);
+      expect(patched.json()).toEqual(expect.objectContaining({ manualTurnOrder: false, turnIndex: 0 }));
+      expect(patched.json().combatants.map((combatant: { id: string }) => combatant.id)).toEqual(["cmbt_manual_high", "cmbt_manual_low"]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rolls initiative for all NPC combatants with rules-system formulas", async () => {
+    const store = new MemoryStateStore();
+    store.state.actors.push(
+      createTimestamped("act", {
+        id: "act_initiative_scout",
+        campaignId: "camp_demo",
+        systemId: "dnd-5e-srd",
+        ownerUserId: "usr_demo_gm",
+        type: "npc",
+        name: "Initiative Scout",
+        data: {
+          attributes: { dexterity: 16 },
+          conditions: []
+        },
+        permissions: {}
+      }) satisfies Actor
+    );
+    const app = await buildApp({ store });
+    const originalRandom = Math.random;
+    Math.random = () => 0;
+
+    try {
+      const started = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/combats",
+        headers: authHeaders,
+        payload: {
+          combatants: [
+            { id: "cmbt_pc", tokenId: "tok_valen", actorId: "act_valen", name: "Valen", initiative: 10, defeated: false },
+            { id: "cmbt_npc", tokenId: "tok_scout", actorId: "act_initiative_scout", name: "Initiative Scout", initiative: 0, defeated: false }
+          ]
+        }
+      });
+      expect(started.statusCode).toBe(200);
+
+      const rolled = await app.inject({
+        method: "POST",
+        url: `/api/v1/combats/${started.json().id}/initiative/roll-npcs`,
+        headers: authHeaders
+      });
+      expect(rolled.statusCode).toBe(200);
+      expect(rolled.json().rolls).toEqual([
+        expect.objectContaining({
+          campaignId: "camp_demo",
+          userId: "usr_demo_gm",
+          label: "Initiative Scout Initiative",
+          formula: "1d20+3",
+          total: 4
+        })
+      ]);
+      expect(rolled.json().combat.combatants).toEqual([
+        expect.objectContaining({ id: "cmbt_pc", initiative: 10 }),
+        expect.objectContaining({ id: "cmbt_npc", initiative: 4 })
+      ]);
+      expect(rolled.json().chatMessages).toEqual([
+        expect.objectContaining({ type: "roll", body: "Initiative Scout Initiative: 1d20+3 = 4" })
+      ]);
+      expect(store.state.rolls).toEqual(expect.arrayContaining([expect.objectContaining({ label: "Initiative Scout Initiative", total: 4 })]));
+    } finally {
+      Math.random = originalRandom;
+      await app.close();
+    }
   });
 
   it("cleans up scene and campaign-owned records when tabletop containers are deleted", async () => {
@@ -3050,6 +3963,230 @@ describe("api", () => {
     expect(secretJournal.json()).toEqual([]);
 
     await app.close();
+  });
+
+  it("rejects invalid chat message bodies before storing them", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const chatCountBefore = store.state.chat.length;
+    const oversizedBody = "x".repeat(4097);
+
+    try {
+      for (const payload of [
+        { campaignId: "camp_demo" },
+        { campaignId: "camp_demo", body: 42 },
+        { campaignId: "camp_demo", body: "   " },
+        { campaignId: "camp_demo", body: oversizedBody }
+      ]) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/v1/chat/messages",
+          headers: authHeaders,
+          payload
+        });
+        expect(response.statusCode, JSON.stringify(payload)).toBe(400);
+        expect(response.json(), JSON.stringify(payload)).toMatchObject({
+          error: "bad_request",
+          message: "Chat message body must be a non-empty string up to 4096 characters"
+        });
+      }
+
+      expect(store.state.chat).toHaveLength(chatCountBefore);
+
+      const valid = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: authHeaders,
+        payload: { campaignId: "camp_demo", body: "Runtime validation allows this message." }
+      });
+      expect(valid.statusCode).toBe(200);
+      expect(valid.json()).toEqual(expect.objectContaining({ campaignId: "camp_demo", body: "Runtime validation allows this message.", visibility: "public" }));
+      expect(store.state.chat).toHaveLength(chatCountBefore + 1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("lets message authors edit chat messages without changing visibility or roll links", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    try {
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/chat/messages",
+        headers: playerHeaders,
+        payload: {
+          campaignId: "camp_demo",
+          body: "Original player note",
+          visibility: "public"
+        }
+      });
+      expect(created.statusCode).toBe(200);
+
+      const edited = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/chat/messages/${created.json().id}`,
+        headers: playerHeaders,
+        payload: { body: "Edited player note" }
+      });
+      expect(edited.statusCode).toBe(200);
+      expect(edited.json()).toEqual(
+        expect.objectContaining({
+          id: created.json().id,
+          userId: "usr_demo_player",
+          body: "Edited player note",
+          visibility: "public",
+          editedByUserId: "usr_demo_player",
+          editedAt: expect.any(String)
+        })
+      );
+      expect(edited.json().updatedAt).toBe(edited.json().editedAt);
+
+      const invalid = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/chat/messages/${created.json().id}`,
+        headers: playerHeaders,
+        payload: { body: "   " }
+      });
+      expect(invalid.statusCode).toBe(400);
+
+      const gmEdited = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/chat/messages/${created.json().id}`,
+        headers: authHeaders,
+        payload: { body: "GM moderation edit" }
+      });
+      expect(gmEdited.statusCode).toBe(200);
+      expect(gmEdited.json()).toEqual(expect.objectContaining({ body: "GM moderation edit", editedByUserId: "usr_demo_gm" }));
+
+      expect(store.state.auditLogs.at(-1)).toMatchObject({
+        action: "chat.message.edit",
+        actorUserId: "usr_demo_gm",
+        targetType: "chat",
+        targetId: created.json().id,
+        before: { bodyLength: "Edited player note".length },
+        after: { bodyLength: "GM moderation edit".length, visibility: "public", type: "plain" }
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("paginates chat messages after visibility filtering while preserving unpaginated arrays", async () => {
+    const store = new MemoryStateStore();
+    store.state.chat = [
+      {
+        id: "msg_page_hidden_1",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        type: "plain",
+        body: "Hidden GM setup",
+        visibility: "gm_only",
+        recipientUserIds: [],
+        createdAt: "2026-05-01T00:00:00.000Z",
+        updatedAt: "2026-05-01T00:00:00.000Z"
+      },
+      {
+        id: "msg_page_visible_1",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        type: "plain",
+        body: "Visible one",
+        visibility: "public",
+        recipientUserIds: [],
+        createdAt: "2026-05-01T00:01:00.000Z",
+        updatedAt: "2026-05-01T00:01:00.000Z"
+      },
+      {
+        id: "msg_page_visible_2",
+        campaignId: "camp_demo",
+        userId: "usr_demo_player",
+        type: "plain",
+        body: "Visible two",
+        visibility: "public",
+        recipientUserIds: [],
+        createdAt: "2026-05-01T00:02:00.000Z",
+        updatedAt: "2026-05-01T00:02:00.000Z"
+      },
+      {
+        id: "msg_page_hidden_2",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        type: "whisper",
+        body: "GM-only whisper",
+        visibility: "whisper",
+        recipientUserIds: ["usr_demo_gm"],
+        createdAt: "2026-05-01T00:03:00.000Z",
+        updatedAt: "2026-05-01T00:03:00.000Z"
+      },
+      {
+        id: "msg_page_visible_3",
+        campaignId: "camp_demo",
+        userId: "usr_demo_gm",
+        type: "whisper",
+        body: "Visible whisper",
+        visibility: "whisper",
+        recipientUserIds: ["usr_demo_player"],
+        createdAt: "2026-05-01T00:04:00.000Z",
+        updatedAt: "2026-05-01T00:04:00.000Z"
+      },
+      {
+        id: "msg_page_visible_4",
+        campaignId: "camp_demo",
+        userId: "usr_demo_player",
+        type: "plain",
+        body: "Visible four",
+        visibility: "public",
+        recipientUserIds: [],
+        createdAt: "2026-05-01T00:05:00.000Z",
+        updatedAt: "2026-05-01T00:05:00.000Z"
+      }
+    ] satisfies ChatMessage[];
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    try {
+      const unpaginated = await app.inject({
+        method: "GET",
+        url: "/api/v1/chat/messages?campaignId=camp_demo",
+        headers: playerHeaders
+      });
+      expect(unpaginated.statusCode).toBe(200);
+      expect(Array.isArray(unpaginated.json())).toBe(true);
+      expect(unpaginated.json().map((message: ChatMessage) => message.id)).toEqual(["msg_page_visible_1", "msg_page_visible_2", "msg_page_visible_3", "msg_page_visible_4"]);
+
+      const firstPage = await app.inject({
+        method: "GET",
+        url: "/api/v1/chat/messages?campaignId=camp_demo&limit=2",
+        headers: playerHeaders
+      });
+      expect(firstPage.statusCode).toBe(200);
+      const firstBody = firstPage.json() as PaginatedTestResponse<ChatMessage>;
+      expect(firstBody.items.map((message) => message.id)).toEqual(["msg_page_visible_1", "msg_page_visible_2"]);
+      expect(firstBody.pagination).toMatchObject({ limit: 2, offset: 0, totalCount: 4 });
+      expect(firstBody.pagination.nextCursor).toEqual(expect.any(String));
+      expect(JSON.stringify(firstBody)).not.toContain("Hidden GM setup");
+
+      const cursorPage = await app.inject({
+        method: "GET",
+        url: `/api/v1/chat/messages?campaignId=camp_demo&limit=2&cursor=${encodeURIComponent(firstBody.pagination.nextCursor!)}`,
+        headers: playerHeaders
+      });
+      expect(cursorPage.statusCode).toBe(200);
+      expect((cursorPage.json() as PaginatedTestResponse<ChatMessage>).items.map((message) => message.id)).toEqual(["msg_page_visible_3", "msg_page_visible_4"]);
+
+      const offsetPage = await app.inject({
+        method: "GET",
+        url: "/api/v1/chat/messages?campaignId=camp_demo&limit=2&offset=2",
+        headers: playerHeaders
+      });
+      expect(offsetPage.statusCode).toBe(200);
+      expect((offsetPage.json() as PaginatedTestResponse<ChatMessage>).items.map((message) => message.id)).toEqual(["msg_page_visible_3", "msg_page_visible_4"]);
+    } finally {
+      await app.close();
+    }
   });
 
   it("validates chat whisper recipients and gates chat moderation", async () => {
@@ -5489,6 +6626,55 @@ describe("api", () => {
         userSessionRevocationRunCount: 1
       });
 
+      const expiredPruneSession = createTimestamped("sess", {
+        userId: "usr_demo_gm",
+        tokenHash: "sha256:expired-prune-test",
+        expiresAt: "2026-04-01T00:00:00.000Z",
+        lastSeenAt: "2026-04-01T00:00:00.000Z"
+      });
+      store.state.sessions.push(expiredPruneSession);
+
+      const nonAdminSessionPrune = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/sessions/prune",
+        headers: { "x-user-id": "usr_demo_player" },
+        payload: { dryRun: true }
+      });
+      expect(nonAdminSessionPrune.statusCode).toBe(403);
+
+      const dryRunSessionPrune = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/sessions/prune",
+        headers: adminHeaders,
+        payload: { dryRun: true }
+      });
+      expect(dryRunSessionPrune.statusCode).toBe(200);
+      expect(dryRunSessionPrune.json()).toMatchObject({
+        dryRun: true,
+        matched: 1,
+        pruned: 0,
+        expiredRemaining: 1,
+        sessions: [expect.objectContaining({ id: expiredPruneSession.id, userId: "usr_demo_gm" })]
+      });
+      expect(JSON.stringify(dryRunSessionPrune.json())).not.toContain("expired-prune-test");
+      expect(store.state.sessions.some((session) => session.id === expiredPruneSession.id)).toBe(true);
+
+      const sessionPrune = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/sessions/prune",
+        headers: adminHeaders,
+        payload: {}
+      });
+      expect(sessionPrune.statusCode).toBe(200);
+      expect(sessionPrune.json()).toMatchObject({ dryRun: false, matched: 1, pruned: 1, expiredRemaining: 0 });
+      expect(JSON.stringify(sessionPrune.json())).not.toContain("expired-prune-test");
+      expect(store.state.sessions.some((session) => session.id === expiredPruneSession.id)).toBe(false);
+      expect(store.state.auditLogs.at(-1)).toMatchObject({
+        action: "admin.sessions.prune",
+        targetType: "session",
+        after: { dryRun: false, matched: 1, pruned: 1 }
+      });
+
       const disabled = await app.inject({
         method: "PATCH",
         url: "/api/v1/admin/users/usr_demo_player",
@@ -7290,6 +8476,7 @@ describe("api", () => {
       { method: "DELETE", url: "/api/v1/dice-macros/mac_demo_attack" },
       { method: "GET", url: "/api/v1/chat/messages?campaignId=camp_demo" },
       { method: "POST", url: "/api/v1/chat/messages", payload: { campaignId: "camp_demo", body: "blocked" } },
+      { method: "PATCH", url: "/api/v1/chat/messages/msg_auth_matrix", payload: { body: "No Auth Edit" } },
       { method: "PATCH", url: "/api/v1/chat/messages/msg_auth_matrix/moderation", payload: { moderationStatus: "hidden" } },
       { method: "DELETE", url: "/api/v1/chat/messages/msg_auth_matrix" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/chat/export" },
@@ -7302,6 +8489,7 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/campaigns/camp_demo/combats", payload: { name: "No Auth Combat" } },
       { method: "PATCH", url: "/api/v1/combats/cmb_auth_matrix", payload: { round: 2 } },
       { method: "PATCH", url: "/api/v1/combats/cmb_auth_matrix/combatants/cmbt_auth_matrix", payload: { defeated: true } },
+      { method: "POST", url: "/api/v1/combats/cmb_auth_matrix/initiative/roll-npcs" },
       { method: "POST", url: "/api/v1/combats/cmb_auth_matrix/actions/cact_auth_matrix_confirm/confirm" },
       { method: "POST", url: "/api/v1/combats/cmb_auth_matrix/actions/cact_auth_matrix_reject/reject", payload: { reason: "missing auth" } },
       { method: "DELETE", url: "/api/v1/combats/cmb_auth_matrix" },
@@ -7372,6 +8560,7 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/admin/sessions" },
       { method: "GET", url: "/api/v1/admin/sessions/risk" },
       { method: "POST", url: "/api/v1/admin/sessions/risk/revoke", payload: { dryRun: true } },
+      { method: "POST", url: "/api/v1/admin/sessions/prune", payload: { dryRun: true } },
       { method: "DELETE", url: "/api/v1/admin/sessions/sess_auth_matrix" },
       { method: "GET", url: "/api/v1/admin/auth/config" },
       { method: "GET", url: "/api/v1/admin/auth/operations" },
@@ -7838,6 +9027,7 @@ describe("api", () => {
       ["POST /api/v1/scenes/{sceneId}/annotations", 400],
       ["POST /api/v1/scenes/{sceneId}/fog/apply-preset", 404],
       ["PATCH /api/v1/chat/messages/{messageId}/moderation", 400],
+      ["POST /api/v1/combats/{combatId}/initiative/roll-npcs", 400],
       ["POST /api/v1/proposals/{proposalId}/apply", 409],
       ["POST /api/v1/campaigns/{campaignId}/content-imports/preview", 400],
       ["POST /api/v1/content-imports/{importId}/apply", 400],
@@ -22970,6 +24160,99 @@ registerCommand("/state", (input) => {
     }
   });
 
+  it("streams ai provider message deltas over realtime during a thread turn", async () => {
+    type RealtimeTestSocket = {
+      onopen: (() => void) | null;
+      onmessage: ((event: { data: unknown }) => void) | null;
+      onerror: ((event: unknown) => void) | null;
+      close(): void;
+    };
+    type AiStreamRealtimeMessage = { type?: string; targetId?: string; payload?: { threadId?: string; delta?: string; content?: string } };
+    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string, protocols?: string[]) => RealtimeTestSocket }).WebSocket;
+    if (!maybeWebSocket) throw new Error("WebSocket is not available in this Node runtime");
+    const TestWebSocket = maybeWebSocket;
+
+    class StreamingProvider implements AiProvider {
+      id = "streaming-ai";
+      label = "Streaming AI";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield { type: "message.delta", delta: "Hel" };
+        yield { type: "message.delta", delta: "lo" };
+        yield { type: "message.completed", content: "Hello" };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new StreamingProvider() });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address() as AddressInfo;
+    const credentials = seedDemoPassword(store, "usr_demo_gm");
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: credentials
+    });
+    expect(login.statusCode).toBe(200);
+
+    const socket = new TestWebSocket(`ws://127.0.0.1:${address.port}/api/v1/realtime?campaignId=camp_demo`, ["otte.v1", `otte.auth.${login.json().token as string}`]);
+    const messages: AiStreamRealtimeMessage[] = [];
+    const waiters: Array<{ predicate: (message: AiStreamRealtimeMessage) => boolean; resolve: (message: AiStreamRealtimeMessage) => void; timer: NodeJS.Timeout }> = [];
+    socket.onmessage = (event) => {
+      const message = JSON.parse(String(event.data)) as AiStreamRealtimeMessage;
+      messages.push(message);
+      for (const waiter of [...waiters]) {
+        if (!waiter.predicate(message)) continue;
+        clearTimeout(waiter.timer);
+        waiters.splice(waiters.indexOf(waiter), 1);
+        waiter.resolve(message);
+      }
+    };
+    const waitFor = (predicate: (message: AiStreamRealtimeMessage) => boolean) => {
+      const existing = messages.find(predicate);
+      if (existing) return Promise.resolve(existing);
+      return new Promise<AiStreamRealtimeMessage>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error(`Timed out waiting for AI stream event. Seen: ${messages.map((message) => message.type ?? "unknown").join(", ")}`));
+        }, 1000);
+        waiters.push({ predicate, resolve, timer });
+      });
+    };
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Timed out opening realtime socket for AI streaming test")), 1000);
+      socket.onopen = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      socket.onerror = (event) => {
+        clearTimeout(timer);
+        reject(new Error(`Realtime socket error for AI streaming test: ${String(event)}`));
+      };
+    });
+
+    try {
+      const responsePromise = app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: { prompt: "Stream a short reply" }
+      });
+
+      const firstDelta = await waitFor((message) => message.type === "ai.message.delta" && message.payload?.delta === "Hel");
+      const completed = await waitFor((message) => message.type === "ai.message.completed" && message.payload?.content === "Hello");
+      const response = await responsePromise;
+
+      expect(response.statusCode).toBe(200);
+      expect(firstDelta.targetId).toBe(response.json().thread.id);
+      expect(completed.targetId).toBe(response.json().thread.id);
+      expect(response.json().assistantMessage).toBe("Hello");
+    } finally {
+      socket.close();
+      for (const waiter of waiters.splice(0)) clearTimeout(waiter.timer);
+      await app.close();
+    }
+  });
+
   it("persists failed ai threads when provider retries are exhausted", async () => {
     const previousEnv = snapshotEnv(["OTTE_AI_PROVIDER_RETRY_ATTEMPTS"]);
     process.env.OTTE_AI_PROVIDER_RETRY_ATTEMPTS = "1";
@@ -24192,8 +25475,8 @@ registerCommand("/state", (input) => {
             durationMs: expect.objectContaining({ count: 3, p95: expect.any(Number), max: expect.any(Number) })
           },
           tools: {
-            toolCallCount: 6,
-            failureRate: 0.333,
+            toolCallCount: 5,
+            failureRate: 0.4,
             durationMs: expect.objectContaining({ count: 3, p95: expect.any(Number), max: expect.any(Number) })
           },
           evaluations: {
@@ -24475,7 +25758,7 @@ registerCommand("/state", (input) => {
           runningThreadCount: 1,
           staleRunningThreadCount: 1,
           staleRunningThresholdMs: 900000,
-          startedToolCallCount: 3,
+          startedToolCallCount: 2,
           staleStartedToolCallCount: 1,
           staleStartedToolCallThresholdMs: 900000,
           failedToolCallCount: 2,
@@ -24579,7 +25862,8 @@ registerCommand("/state", (input) => {
             campaignName: "The Ember Vault",
             provider: "codex-ops-test",
             toolName: "roll_dice",
-            status: "started"
+            input: { formula: "1d20+2", label: "Ops Check" },
+            status: "completed"
           }),
           expect.objectContaining({
             campaignId: "camp_demo",
@@ -25541,8 +26825,14 @@ registerCommand("/state", (input) => {
     expect(proposal?.changesJson[0]?.entity).toBe("journal");
     expect(proposal?.changesJson[0]?.data.id).toMatch(/^jnl_/);
     expect(proposal?.changesJson[0]?.data.createdAt).toEqual(expect.any(String));
-    expect(gmStore.state.aiToolCalls.map((call) => call.status)).toEqual(expect.arrayContaining(["started", "completed"]));
-    expect(gmStore.state.aiToolCalls.find((call) => call.status === "completed")?.durationMs).toEqual(expect.any(Number));
+    expect(gmStore.state.aiToolCalls).toEqual([
+      expect.objectContaining({
+        toolName: "create_proposal",
+        input: expect.objectContaining({ title: "Tool Journal Proposal" }),
+        status: "completed",
+        durationMs: expect.any(Number)
+      })
+    ]);
     await gmApp.close();
 
     const playerProvider = new ToolCallingProvider();
@@ -25562,6 +26852,153 @@ registerCommand("/state", (input) => {
     });
     expect(playerStore.state.proposals.some((item) => item.title === "Tool Journal Proposal")).toBe(false);
     await playerApp.close();
+  });
+
+  it("resolves locally executed ai tool calls in place and keeps retry input", async () => {
+    class LedgerProvider implements AiProvider {
+      id = "tool-ledger-ai";
+      label = "Tool Ledger AI";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield { type: "tool.started", toolName: "roll_dice", input: { formula: "1d20+2", label: "Ledger Check" } };
+        yield { type: "tool.started", toolName: "unknown_tool", input: { reason: "exercise failed ledger resolution" } };
+        yield { type: "message.completed", content: "Ledger calls resolved" };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new LedgerProvider() });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Exercise tool ledger lifecycle." }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const threadId = response.json().thread.id;
+    const toolCalls = store.state.aiToolCalls.filter((call) => call.threadId === threadId);
+    expect(toolCalls).toHaveLength(2);
+    expect(toolCalls.some((call) => call.status === "started")).toBe(false);
+    expect(toolCalls.find((call) => call.toolName === "roll_dice")).toMatchObject({
+      input: { formula: "1d20+2", label: "Ledger Check" },
+      output: expect.objectContaining({ formula: "1d20+2", label: "Ledger Check" }),
+      status: "completed",
+      durationMs: expect.any(Number)
+    });
+    expect(toolCalls.find((call) => call.toolName === "unknown_tool")).toMatchObject({
+      input: { reason: "exercise failed ledger resolution" },
+      output: { error: "unknown_tool", toolName: "unknown_tool" },
+      status: "failed",
+      durationMs: expect.any(Number)
+    });
+    await app.close();
+  });
+
+  it("resolves provider-completed ai tool calls against their started ledger row", async () => {
+    class TurnExecutingProvider implements AiProvider {
+      id = "turn-executing-ledger-ai";
+      label = "Turn Executing Ledger AI";
+      executesToolsInTurn = true;
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield { type: "tool.started", toolName: "read_compendium", input: { systemId: "generic-fantasy" } };
+        yield { type: "tool.completed", toolName: "read_compendium", output: { entries: [{ id: "torch", name: "Torch" }] } };
+        yield { type: "tool.started", toolName: "draft_scene", input: { width: 900 } };
+        yield { type: "tool.completed", toolName: "draft_scene", output: { error: "invalid_tool_input", message: "Missing required field: name" } };
+        yield { type: "message.completed", content: "Provider executed tools" };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new TurnExecutingProvider() });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Exercise provider-completed ledger lifecycle." }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const threadId = response.json().thread.id;
+    const toolCalls = store.state.aiToolCalls.filter((call) => call.threadId === threadId);
+    expect(toolCalls).toHaveLength(2);
+    expect(toolCalls.some((call) => call.status === "started")).toBe(false);
+    expect(toolCalls.find((call) => call.toolName === "read_compendium")).toMatchObject({
+      input: { systemId: "generic-fantasy" },
+      output: { entries: [{ id: "torch", name: "Torch" }] },
+      status: "completed",
+      durationMs: expect.any(Number)
+    });
+    expect(toolCalls.find((call) => call.toolName === "draft_scene")).toMatchObject({
+      input: { width: 900 },
+      output: { error: "invalid_tool_input", message: "Missing required field: name" },
+      status: "failed",
+      durationMs: expect.any(Number)
+    });
+    await app.close();
+  });
+
+  it("does not stale-fail resolved successful ai tool calls", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
+    process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+
+    class SuccessfulToolProvider implements AiProvider {
+      id = "successful-tool-ledger-ai";
+      label = "Successful Tool Ledger AI";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield { type: "tool.started", toolName: "roll_dice", input: { formula: "1d20+3", label: "Stale Sweep Check" } };
+        yield { type: "message.completed", content: "Successful tool resolved" };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new SuccessfulToolProvider() });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: { prompt: "Exercise stale sweep after success." }
+      });
+
+      expect(response.statusCode).toBe(200);
+      const threadId = response.json().thread.id;
+      const toolCalls = store.state.aiToolCalls.filter((call) => call.threadId === threadId);
+      for (const call of toolCalls) {
+        call.createdAt = "2026-05-06T00:00:00.000Z";
+        call.updatedAt = "2026-05-06T00:00:00.000Z";
+      }
+
+      const staleFail = await app.inject({
+        method: "POST",
+        url: "/api/v1/admin/ai/tool-calls/stale/fail",
+        headers: authHeaders,
+        payload: { campaignId: "camp_demo", reason: "stale sweep should ignore resolved calls" }
+      });
+
+      expect(staleFail.statusCode).toBe(200);
+      expect(staleFail.json()).toMatchObject({
+        dryRun: false,
+        campaignId: "camp_demo",
+        matched: 0,
+        updated: 0,
+        toolCalls: []
+      });
+      expect(store.state.aiToolCalls.filter((call) => call.threadId === threadId)).toEqual([
+        expect.objectContaining({
+          toolName: "roll_dice",
+          input: { formula: "1d20+3", label: "Stale Sweep Check" },
+          status: "completed",
+          output: expect.objectContaining({ formula: "1d20+3", label: "Stale Sweep Check" })
+        })
+      ]);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
   });
 
   it("executes expanded ai tools with permission and observability boundaries", async () => {
@@ -26595,6 +28032,139 @@ registerCommand("/state", (input) => {
     expect(directRestrictedProposal.statusCode).toBe(403);
     expect(directRestrictedProposal.json()).toMatchObject({ error: "forbidden", message: "Missing permission: journal.create" });
     expect(store.state.proposals.some((proposal) => proposal.title === "Restricted Direct AI Proposal")).toBe(false);
+    await app.close();
+  });
+
+  it("filters pending AI proposals with secret payloads from non-reviewer proposal lists", async () => {
+    const store = new MemoryStateStore();
+    const secretBody = "The relic is hidden under the basalt altar.";
+    store.state.proposals.push(
+      createTimestamped("prop", {
+        id: "prop_pending_ai_secret_journal",
+        campaignId: "camp_demo",
+        createdByUserId: "usr_demo_gm",
+        createdByType: "ai" as const,
+        title: "Secret AI journal draft",
+        summary: "GM-only prep that should not be visible to players.",
+        status: "pending" as const,
+        changesJson: [
+          {
+            entity: "journal" as const,
+            action: "create" as const,
+            data: {
+              id: "jnl_pending_ai_secret",
+              campaignId: "camp_demo",
+              title: "Hidden Reliquary",
+              body: secretBody,
+              visibility: "gm_only",
+              visibleToUserIds: [],
+              visibleToActorIds: [],
+              tags: ["secret"]
+            }
+          }
+        ],
+        diffJson: {},
+        approvalRequired: true
+      })
+    );
+    const app = await buildApp({ store });
+
+    const playerList = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/proposals",
+      headers: { "x-user-id": "usr_demo_player" }
+    });
+    expect(playerList.statusCode).toBe(200);
+    expect(playerList.json()).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "prop_pending_ai_secret_journal" })]));
+    expect(playerList.body).not.toContain(secretBody);
+
+    const gmList = await app.inject({
+      method: "GET",
+      url: "/api/v1/campaigns/camp_demo/proposals",
+      headers: authHeaders
+    });
+    expect(gmList.statusCode).toBe(200);
+    expect(gmList.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "prop_pending_ai_secret_journal",
+          changesJson: expect.arrayContaining([
+            expect.objectContaining({
+              entity: "journal",
+              data: expect.objectContaining({ body: secretBody })
+            })
+          ])
+        })
+      ])
+    );
+
+    await app.close();
+  });
+
+  it("filters hidden pending AI proposals from non-reviewer AI proposal tools", async () => {
+    class ProposalProbeProvider implements AiProvider {
+      id = "proposal-probe-ai";
+      label = "Proposal Probe AI";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield { type: "tool.started", toolName: "list_proposals", input: { status: "pending" } };
+        yield { type: "tool.started", toolName: "get_proposal", input: { proposalId: "prop_pending_ai_secret_journal" } };
+        yield { type: "tool.started", toolName: "read_ai_activity", input: { limit: 10 } };
+        yield { type: "message.completed", content: "Checked proposals." };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const secretBody = "The relic is hidden under the basalt altar.";
+    store.state.proposals.push(
+      createTimestamped("prop", {
+        id: "prop_pending_ai_secret_journal",
+        campaignId: "camp_demo",
+        createdByUserId: "usr_demo_gm",
+        createdByType: "ai" as const,
+        title: "Secret AI journal draft",
+        summary: "GM-only prep that should not be visible to players.",
+        status: "pending" as const,
+        changesJson: [
+          {
+            entity: "journal" as const,
+            action: "create" as const,
+            data: {
+              id: "jnl_pending_ai_secret",
+              campaignId: "camp_demo",
+              title: "Hidden Reliquary",
+              body: secretBody,
+              visibility: "gm_only",
+              visibleToUserIds: [],
+              visibleToActorIds: [],
+              tags: ["secret"]
+            }
+          }
+        ],
+        diffJson: {},
+        approvalRequired: true
+      })
+    );
+    const app = await buildApp({ store, aiProvider: new ProposalProbeProvider() });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { prompt: "Probe hidden proposals." }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const completed = response.json().events.filter((event: { type: string }) => event.type === "tool.completed");
+    expect(completed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ toolName: "list_proposals", output: expect.objectContaining({ proposals: [] }) }),
+        expect.objectContaining({ toolName: "get_proposal", output: expect.objectContaining({ error: "not_found", entity: "proposal" }) }),
+        expect.objectContaining({ toolName: "read_ai_activity", output: expect.objectContaining({ proposals: [] }) })
+      ])
+    );
+    expect(JSON.stringify(completed)).not.toContain(secretBody);
+
     await app.close();
   });
 
@@ -29877,6 +31447,73 @@ registerCommand("/state", (input) => {
     }
   });
 
+  it("imports an existing campaign archive as a regenerated copy owned by the importer", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    try {
+      const exported = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/export",
+        headers: authHeaders
+      });
+      expect(exported.statusCode).toBe(200);
+
+      const imported = await app.inject({
+        method: "POST",
+        url: "/api/v1/import/campaign",
+        headers: playerHeaders,
+        payload: {
+          archive: exported.json(),
+          regenerateIds: true
+        }
+      });
+      expect(imported.statusCode).toBe(200);
+      const copiedCampaignId = imported.json().importedCampaignIds[0] as string;
+      expect(copiedCampaignId).toBeTruthy();
+      expect(copiedCampaignId).not.toBe("camp_demo");
+
+      const copiedCampaign = store.state.campaigns.find((campaign) => campaign.id === copiedCampaignId);
+      expect(copiedCampaign).toEqual(
+        expect.objectContaining({
+          id: copiedCampaignId,
+          ownerUserId: "usr_demo_player",
+          organizationId: "org_demo"
+        })
+      );
+      expect(store.state.members).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            campaignId: copiedCampaignId,
+            userId: "usr_demo_player",
+            role: "owner"
+          })
+        ])
+      );
+      const copiedScene = store.state.scenes.find((scene) => scene.campaignId === copiedCampaignId);
+      expect(copiedScene).toBeDefined();
+      expect(copiedScene?.id).not.toBe("scn_vault_entry");
+      const copiedActor = store.state.actors.find((actor) => actor.campaignId === copiedCampaignId);
+      expect(copiedActor).toEqual(expect.objectContaining({ ownerUserId: "usr_demo_player" }));
+      expect(copiedActor?.id).not.toBe("act_valen");
+      const copiedToken = store.state.tokens.find((token) => token.sceneId === copiedScene?.id);
+      expect(copiedToken).toEqual(expect.objectContaining({ actorId: copiedActor?.id }));
+      expect(copiedToken?.id).not.toBe("tok_valen");
+
+      const visibleToImporter = await app.inject({
+        method: "GET",
+        url: `/api/v1/campaigns/${copiedCampaignId}`,
+        headers: playerHeaders
+      });
+      expect(visibleToImporter.statusCode).toBe(200);
+      expect(visibleToImporter.json()).toEqual(expect.objectContaining({ id: copiedCampaignId }));
+      expect(store.state.campaigns.find((campaign) => campaign.id === "camp_demo")).toEqual(expect.objectContaining({ ownerUserId: "usr_demo_gm" }));
+    } finally {
+      await app.close();
+    }
+  });
+
   it("persists campaign state across sqlite-backed store restarts", async () => {
     const directory = mkdtempSync(join(tmpdir(), "otte-api-"));
     const dbPath = join(directory, "state.sqlite");
@@ -31155,6 +32792,14 @@ registerCommand("/state", (input) => {
       headers: authHeaders,
       payload: archive
     });
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user",
+        subjectId: "usr_demo_player",
+        campaignId: "camp_beta_ember_vault",
+        permissions: ["ai.proposeChanges"]
+      })
+    );
     await app.listen({ port: 0, host: "127.0.0.1" });
     const address = app.server.address() as AddressInfo;
 
@@ -31221,6 +32866,7 @@ registerCommand("/state", (input) => {
       };
     }
 
+    const settleRealtime = () => new Promise<void>((resolve) => setTimeout(resolve, 100));
     const primaryClients = await Promise.all([openClient("usr_demo_gm"), openClient("usr_demo_player"), openClient("usr_beta_player_2"), openClient("usr_beta_player_3")]);
     const duplicatePlayer = await openClient("usr_beta_player_2");
     const clients = [...primaryClients, duplicatePlayer];
@@ -31275,6 +32921,85 @@ registerCommand("/state", (input) => {
       });
       expect(journal.statusCode).toBe(200);
       await Promise.all(primaryClients.map((client) => client.waitFor("journal.created", journal.json().id)));
+
+      const secretJournal = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_beta_ember_vault/journal",
+        headers: authHeaders,
+        payload: { title: "GM+3 Secret Realtime Journal", body: "Realtime secret journal body.", visibility: "gm_only", tags: ["realtime", "secret"] }
+      });
+      expect(secretJournal.statusCode).toBe(200);
+      await primaryClients[0]!.waitFor("journal.created", secretJournal.json().id);
+      await settleRealtime();
+      for (const playerClient of primaryClients.slice(1)) {
+        expect(playerClient.messages.some((message) => message.type === "journal.created" && message.targetId === secretJournal.json().id)).toBe(false);
+        expect(JSON.stringify(playerClient.messages)).not.toContain("Realtime secret journal body.");
+      }
+
+      const secretRoll = await app.inject({
+        method: "POST",
+        url: "/api/v1/dice/roll",
+        headers: authHeaders,
+        payload: { campaignId: "camp_beta_ember_vault", formula: "1d20+9", label: "GM Secret Realtime Dice", visibility: "gm_only" }
+      });
+      expect(secretRoll.statusCode).toBe(200);
+      await primaryClients[0]!.waitFor("dice.roll.created", secretRoll.json().id);
+      await settleRealtime();
+      for (const playerClient of primaryClients.slice(1)) {
+        expect(playerClient.messages.some((message) => message.type === "dice.roll.created" && message.targetId === secretRoll.json().id)).toBe(false);
+        expect(JSON.stringify(playerClient.messages)).not.toContain("GM Secret Realtime Dice");
+      }
+
+      const secretProposal = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_beta_ember_vault/proposals",
+        headers: authHeaders,
+        payload: {
+          title: "GM Secret Realtime Proposal",
+          summary: "Drafts hidden prep.",
+          changesJson: [
+            {
+              entity: "journal",
+              action: "create",
+              data: {
+                id: "jnl_realtime_secret_proposal",
+                campaignId: "camp_beta_ember_vault",
+                title: "Realtime Proposal Secret",
+                body: "Realtime secret proposal body.",
+                visibility: "gm_only",
+                visibleToUserIds: [],
+                visibleToActorIds: [],
+                tags: ["realtime", "secret"]
+              }
+            }
+          ]
+        }
+      });
+      expect(secretProposal.statusCode).toBe(200);
+      await primaryClients[0]!.waitFor("proposal.created", secretProposal.json().id);
+      await settleRealtime();
+      for (const playerClient of primaryClients.slice(1)) {
+        expect(playerClient.messages.some((message) => message.type === "proposal.created" && message.targetId === secretProposal.json().id)).toBe(false);
+        expect(JSON.stringify(playerClient.messages)).not.toContain("Realtime secret proposal body.");
+      }
+
+      const secretActor = await app.inject({
+        method: "PATCH",
+        url: "/api/v1/actors/act_beta_mira",
+        headers: authHeaders,
+        payload: { data: { role: "quest-giver", secret: "Realtime private actor note." } }
+      });
+      expect(secretActor.statusCode).toBe(200);
+      await primaryClients[0]!.waitFor("actor.updated", "act_beta_mira");
+      await settleRealtime();
+      for (const playerClient of primaryClients.slice(1)) {
+        const playerActorEvent = playerClient.messages.find((message) => message.type === "actor.updated" && message.targetId === "act_beta_mira");
+        if (playerActorEvent) {
+          expect(JSON.stringify(playerActorEvent.payload)).not.toContain("Realtime private actor note.");
+          expect(playerActorEvent.payload).toMatchObject({ id: "act_beta_mira", name: "Mira the Archivist", type: "npc" });
+          expect((playerActorEvent.payload as Record<string, unknown>).data).toBeUndefined();
+        }
+      }
 
       const combat = await app.inject({
         method: "POST",

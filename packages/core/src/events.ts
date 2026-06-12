@@ -20,6 +20,7 @@ export type EngineEventType =
   | "journal.updated"
   | "journal.deleted"
   | "chat.message.created"
+  | "chat.message.updated"
   | "chat.message.deleted"
   | "dice.roll.created"
   | "combat.started"
