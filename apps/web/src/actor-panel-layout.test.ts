@@ -10,7 +10,7 @@ describe("actor panel layout", () => {
     expect(appSource).toContain("actor-sidebar-summary");
     expect(appSource).toContain("actor-detail-disclosure");
     expect(appSource).toContain("actor-token-editor");
-    expect(stylesSource).toContain(".actor-sheet-dialog");
+    expect(stylesSource).toContain(".actor-sheet-popout");
     expect(stylesSource).toContain(".actor-sidebar-summary");
   });
 

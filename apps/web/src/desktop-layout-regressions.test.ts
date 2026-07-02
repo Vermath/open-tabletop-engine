@@ -218,7 +218,7 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".toolbar .tool,\n  .toolbar .icon-button {\n    width: 40px;\n    min-width: 40px;\n    height: 40px;");
     expect(stylesSource).toContain(".workspace:has(.modal-backdrop) {\n  position: relative;\n  z-index: 90;");
     expect(stylesSource).toContain(".modal-backdrop {\n    padding: 14px 14px calc(86px + env(safe-area-inset-bottom, 0px));");
-    expect(stylesSource).toContain(".actor-sheet-dialog {\n    max-height: calc(100svh - 114px - env(safe-area-inset-bottom, 0px));");
+    expect(stylesSource).toContain("max-height: calc(100svh - 96px - env(safe-area-inset-bottom, 0px));");
     expect(stylesSource).toContain(".tool-more-panel {\n    top: auto;\n    right: 0;\n    bottom: 46px;\n    left: auto;");
     expect(stylesSource).toContain("max-height: min(190px, calc(100svh - 240px));");
     expect(stylesSource).toContain(".map-layer-dock .map-zoom-control {\n    grid-column: 2;");
@@ -411,7 +411,7 @@ describe("desktop layout regressions", () => {
   it("lets the full character sheet dismiss through expected modal interactions", () => {
     expect(actorPanelSource).toContain('if (event.key === "Escape") setFullSheetOpen(false);');
     expect(actorPanelSource).toContain('document.addEventListener("keydown", closeOnEscape);');
-    expect(actorPanelSource).toContain('if (event.target === event.currentTarget) setFullSheetOpen(false);');
+    expect(actorPanelSource).toContain('className={`actor-sheet-popout movable-panel actor-tone-${sheetTone}`}');
     expect(actorPanelSource).toContain('aria-label="Close full character sheet"');
     expect(actorPanelSource).toContain('<h2 id={`actor-full-sheet-title-${props.actor.id}`}>{props.actor.name}</h2>');
     expect(actorPanelSource).not.toContain("{props.actor.name} full character sheet");

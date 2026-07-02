@@ -666,6 +666,69 @@ function initialSoundboardPanelPosition(): FloatingPanelPosition {
   };
 }
 
+function initialActorSheetPanelSize(): FloatingPanelSize {
+  return {
+    width: Math.min(620, Math.max(380, window.innerWidth - 48)),
+    height: Math.min(660, Math.max(400, window.innerHeight - 96))
+  };
+}
+
+function initialActorSheetPanelPosition(): FloatingPanelPosition {
+  const { width } = initialActorSheetPanelSize();
+  return {
+    x: clampFloatingPanel(window.innerWidth - floatingPanelInspectorAllowance() - width - 24, window.innerWidth - 48),
+    y: clampFloatingPanel(64, window.innerHeight - 48)
+  };
+}
+
+const actorActionFormulaPattern = /\b\d{0,3}d\d{1,4}(?:\s*[+-]\s*(?:\d{0,3}d\d{1,4}|\d{1,5}))*\b/i;
+
+function actorActionDiceFormula(action: ActorActionOption): string | undefined {
+  return action.description.match(actorActionFormulaPattern)?.[0];
+}
+
+const quickActorConditionIds = ["prone", "poisoned", "stunned", "restrained", "frightened", "marked"];
+
+const keyboardShortcutRows: Array<{ keys: string; label: string }> = [
+  { keys: "Ctrl+K", label: "Command palette" },
+  { keys: "V", label: "Select tool" },
+  { keys: "R", label: "Ruler" },
+  { keys: "C", label: "Measure circle" },
+  { keys: "O", label: "Measure cone" },
+  { keys: "P", label: "Ping" },
+  { keys: "D", label: "Draw" },
+  { keys: "A", label: "Area template" },
+  { keys: "Shift+Click", label: "Multi-select tokens" },
+  { keys: "Alt+Drag", label: "Pan the map" },
+  { keys: "Ctrl+Scroll", label: "Zoom the map" },
+  { keys: "Esc", label: "Close panels and dialogs" },
+  { keys: "?", label: "Toggle this overlay" }
+];
+
+function HpBar(props: { current?: number; max?: number; canEdit: boolean; onSetHp(value: number): void }) {
+  const max = Math.max(0, Math.round(props.max ?? 0));
+  const current = Math.max(0, Math.round(props.current ?? 0));
+  const ratio = max > 0 ? Math.min(1, current / max) : 0;
+  const tone = max === 0 ? "unknown" : ratio <= 0.25 ? "danger" : ratio <= 0.5 ? "warning" : "healthy";
+  const adjust = (delta: number) => props.onSetHp(Math.max(0, Math.min(max > 0 ? max : Number.MAX_SAFE_INTEGER, current + delta)));
+  return (
+    <div className="hp-bar" aria-label={`Hit points ${props.current ?? "?"} of ${props.max ?? "?"}`}>
+      <div className="hp-bar-track" role="meter" aria-valuemin={0} aria-valuemax={max} aria-valuenow={current}>
+        <div className={`hp-bar-fill ${tone}`} style={{ width: `${max > 0 ? Math.round(ratio * 100) : 0}%` }} />
+        <span className="hp-bar-value">{props.current ?? "?"} / {props.max ?? "?"}</span>
+      </div>
+      {props.canEdit && (
+        <div className="hp-bar-steppers" role="group" aria-label="Adjust hit points">
+          <button className="hp-step hp-step-damage" type="button" aria-label="Take 5 damage" onClick={() => adjust(-5)}>-5</button>
+          <button className="hp-step hp-step-damage" type="button" aria-label="Take 1 damage" onClick={() => adjust(-1)}>-1</button>
+          <button className="hp-step hp-step-heal" type="button" aria-label="Heal 1" onClick={() => adjust(1)}>+1</button>
+          <button className="hp-step hp-step-heal" type="button" aria-label="Heal 5" onClick={() => adjust(5)}>+5</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const mapDockOpenStorageKey = "otte:mapDockOpen";
 const quickCreateOpenStorageKey = "otte:quickCreateOpen";
 
@@ -983,6 +1046,10 @@ export function App() {
   const [audioSoundboardOpen, setAudioSoundboardOpen] = useState(false);
   const [mapDockOpen, setMapDockOpen] = useState(() => initialStoredPanelFlag(mapDockOpenStorageKey, false));
   const [quickCreateOpen, setQuickCreateOpen] = useState(() => initialStoredPanelFlag(quickCreateOpenStorageKey, false));
+  const [shortcutOverlayOpen, setShortcutOverlayOpen] = useState(false);
+  const [toasts, setToasts] = useState<Array<{ id: number; text: string; tone: "info" | "error" }>>([]);
+  const toastIdRef = useRef(0);
+  const lastToastStatusRef = useRef("");
   const toggleMapDock = () => {
     setMapDockOpen((open) => {
       const next = !open;
@@ -1211,6 +1278,10 @@ export function App() {
   const adversaryActors = adversaryActorsForSceneBoard(snapshot.actors, snapshot.tokens, selectedScene?.id);
   const partyActors = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
   const activeCombat = snapshot.combats.find((combat) => combat.active);
+  const currentTurnCombatant = activeCombat && activeCombat.combatants.length > 0 ? activeCombat.combatants[activeCombat.turnIndex] ?? activeCombat.combatants[0] : undefined;
+  const nextTurnCombatant = activeCombat && activeCombat.combatants.length > 1 ? activeCombat.combatants[nextCombatTurnPosition(activeCombat, 1).turnIndex] : undefined;
+  const currentTurnTokenIds = currentTurnCombatant?.tokenId ? [currentTurnCombatant.tokenId] : [];
+  const nextTurnTokenIds = nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [];
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
   const selectedPermissionTemplate = campaignPermissionTemplates.find((template) => template.id === setupPermissionTemplate) ?? campaignPermissionTemplates[0]!;
   const setupPreviewSceneName = setupSceneName.trim() || "Opening Scene";
@@ -1552,13 +1623,13 @@ export function App() {
         if (!ssoUserId && !getSessionToken()) {
           setAuthRequired(true);
           setStatus("Sign in required");
-          setAuthStatus(bootstrap.publicRegistration ? "Sign in or register to open a campaign" : "Sign in or use an invite link to join the beta");
+          setAuthStatus(bootstrap.publicRegistration ? "" : "Sign in or use an invite link to join the beta");
           return;
         }
         refresh().catch((error) => {
           const message = errorMessage(error);
           if (isSessionAuthError(error)) {
-            requireInteractiveSignIn(bootstrap.publicRegistration ? `Sign in or register to open a campaign. ${message}` : `Sign in or use an invite link to join the beta. ${message}`);
+            requireInteractiveSignIn(bootstrap.publicRegistration ? "Session expired - sign in again to continue." : "Session expired - use an invite link or sign in to continue.");
             return;
           }
           setStatus(apiOfflineStatus(message));
@@ -1643,6 +1714,73 @@ export function App() {
     window.addEventListener("keydown", handlePaletteShortcut);
     return () => window.removeEventListener("keydown", handlePaletteShortcut);
   }, []);
+
+  useEffect(() => {
+    const handleToolHotkeys = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (event.key === "Escape") {
+        if (shortcutOverlayOpen) {
+          setShortcutOverlayOpen(false);
+          return;
+        }
+        if ((workspaceMode === "live" || workspaceMode === "prep") && (annotationTool || fogBrushMode)) {
+          void Promise.resolve(selectCanvasTool()).catch((error) => setStatus(errorMessage(error)));
+        }
+        return;
+      }
+      if (event.key === "?") {
+        event.preventDefault();
+        setShortcutOverlayOpen((open) => !open);
+        return;
+      }
+      if (commandPaletteOpen || (workspaceMode !== "live" && workspaceMode !== "prep")) return;
+      const runTool = (action: () => void | Promise<void>) => {
+        event.preventDefault();
+        void Promise.resolve(action()).catch((error) => setStatus(errorMessage(error)));
+      };
+      switch (event.key.toLowerCase()) {
+        case "v":
+          runTool(() => selectCanvasTool());
+          return;
+        case "r":
+          if (hasPermission("scene.read")) runTool(() => toggleAnnotationTool("ruler"));
+          return;
+        case "c":
+          if (hasPermission("scene.read")) runTool(() => toggleAnnotationTool("measure-circle"));
+          return;
+        case "o":
+          if (hasPermission("scene.read")) runTool(() => toggleAnnotationTool("measure-cone"));
+          return;
+        case "p":
+          if (hasPermission("scene.read")) runTool(() => toggleAnnotationTool("ping"));
+          return;
+        case "d":
+          if (hasPermission("scene.update")) runTool(() => toggleAnnotationTool("drawing"));
+          return;
+        case "a":
+          if (hasPermission("scene.update")) runTool(() => toggleAnnotationTool("template"));
+          return;
+        default:
+      }
+    };
+    window.addEventListener("keydown", handleToolHotkeys);
+    return () => window.removeEventListener("keydown", handleToolHotkeys);
+  });
+
+  useEffect(() => {
+    if (!snapshotReady) return;
+    const text = status.trim();
+    if (!text || text === lastToastStatusRef.current) return;
+    lastToastStatusRef.current = text;
+    if (/^(ready|loading|synced|connected|rolled)\b/i.test(text) || /realtime|reconnect|api offline/i.test(text)) return;
+    const tone: "info" | "error" = /fail|error|denied|required|unable|invalid|missing|cannot|expired|unauthorized/i.test(text) ? "error" : "info";
+    toastIdRef.current += 1;
+    const id = toastIdRef.current;
+    setToasts((current) => [...current.slice(-2), { id, text, tone }]);
+    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), tone === "error" ? 8000 : 4000);
+  }, [snapshotReady, status]);
 
   useEffect(() => {
     try {
@@ -1910,7 +2048,7 @@ export function App() {
     setBoardClipboardTokens([]);
     setAiAgentMessages(initialAiAgentMessages(aiAgentHistoryStorageKey(initialStoredId("otte:selectedCampaignId", "camp_demo"), getSessionUserId())));
     setStatus("Sign in required");
-    setAuthStatus(publicRegistration ? "Sign in or register to open a campaign" : "Sign in or use an invite link to join the beta");
+    setAuthStatus(publicRegistration ? "" : "Sign in or use an invite link to join the beta");
   }
 
   async function startDemoGmSession() {
@@ -5173,7 +5311,7 @@ export function App() {
               <Mail size={16} /> Reset
             </button>
           </div>
-          <div className="status reset-status">{authStatus}</div>
+          {authStatus && <div className="status reset-status">{authStatus}</div>}
         </section>
       </main>
     );
@@ -5235,6 +5373,14 @@ export function App() {
     for (const scene of accessibleScenes) {
       commands.push({ id: `scene:${scene.id}`, label: `Open scene: ${scene.name}`, section: "Scenes", hint: scene.folder || undefined, keywords: "map board jump" });
     }
+    for (const actor of snapshot.actors.slice(0, 24)) {
+      commands.push({ id: `actor:${actor.id}`, label: `Select actor: ${actor.name}`, section: "Actors", keywords: "character npc token sheet select focus" });
+    }
+    if (canUsePrepWorkspace) {
+      for (const journal of snapshot.journals.slice(0, 16)) {
+        commands.push({ id: `journal:${journal.id}`, label: `Open journal: ${journal.title}`, section: "Journal", hint: journal.tags[0], keywords: "note entry log lore" });
+      }
+    }
     for (const campaign of snapshot.campaigns) {
       if (campaign.id !== campaignId) commands.push({ id: `campaign:${campaign.id}`, label: `Switch campaign: ${campaign.name}`, section: "Campaigns", keywords: "game world table" });
     }
@@ -5270,6 +5416,22 @@ export function App() {
       rollDice(formula).catch((error) => setStatus(errorMessage(error)));
       return;
     }
+    if (commandId.startsWith("actor:")) {
+      const actorId = commandId.slice("actor:".length);
+      const token = snapshot.tokens.find((item) => item.actorId === actorId && item.sceneId === selectedScene?.id) ?? snapshot.tokens.find((item) => item.actorId === actorId);
+      if (token) {
+        if (token.sceneId !== sceneId) setSceneId(token.sceneId);
+        selectSingleToken(token.id);
+      }
+      if (workspaceMode === "manage") setWorkspaceMode("live");
+      setTab("actors");
+      return;
+    }
+    if (commandId.startsWith("journal:")) {
+      if (workspaceMode !== "prep") setWorkspaceMode("prep");
+      setTab("journal");
+      return;
+    }
     if (commandId === "action:ai-agent") {
       setAiAgentOpen((open) => !open);
       return;
@@ -5282,7 +5444,7 @@ export function App() {
   };
   const campaignSystemName = snapshot.systems.find((system) => system.id === selectedCampaign?.defaultSystemId)?.name ?? selectedCampaign?.defaultSystemId ?? "No system";
   const workspaceEyebrow = workspaceMode === "ai" ? "AI Studio" : workspaceMode === "prep" ? "Prep" : workspaceMode === "manage" ? manageWorkspaceEyebrow : campaignSystemName;
-  const workspaceHeading = workspaceMode === "ai" ? "Build, review, and apply generated table content" : workspaceMode === "prep" ? "Prep scenes, assets, journals, and imports" : workspaceMode === "manage" ? manageWorkspaceHeading : (selectedCampaign?.name ?? "Create a campaign");
+  const workspaceHeading = workspaceMode === "manage" ? manageWorkspaceHeading : (selectedCampaign?.name ?? "Create a campaign");
   const showSceneTabs = workspaceMode !== "manage" || activeManageCategory === "scenes";
   const showScenePrepControls = workspaceMode === "prep";
   const showSceneSelectionControls = workspaceMode === "prep" || (workspaceMode === "manage" && activeManageCategory === "scenes");
@@ -5345,7 +5507,6 @@ export function App() {
         <div className="brand-block">
           <div>
             <div className="brand">OpenTabletop</div>
-            <div className="subtle">API-first VTT engine</div>
           </div>
           <div className="rail-quick-actions">
             <button className="icon-button" type="button" title="Command palette (Ctrl+K)" aria-label="Open command palette" onClick={() => setCommandPaletteOpen(true)}>
@@ -6433,7 +6594,7 @@ export function App() {
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
-              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={blankCanvasDemoOpen ? async () => undefined : () => refresh().then(() => undefined)} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={blankCanvasDemoOpen ? async () => undefined : () => refresh().then(() => undefined)} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
             </div>
             <div className="map-layer-dock" aria-label="Map controls and layers" data-collapsed={mapDockOpen ? undefined : "true"}>
               <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
@@ -6704,7 +6865,7 @@ export function App() {
             {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
-            {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
+            {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
@@ -6772,6 +6933,40 @@ export function App() {
         />
       )}
       {commandPaletteOpen && <CommandPalette commands={paletteCommands} onRun={runPaletteCommand} onClose={() => setCommandPaletteOpen(false)} />}
+      {shortcutOverlayOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setShortcutOverlayOpen(false);
+        }}>
+          <div className="modal-dialog shortcut-overlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+            <div className="operator-heading">
+              <div className="section-title">Keyboard Shortcuts</div>
+              <button className="icon-button" type="button" aria-label="Close keyboard shortcuts" onClick={() => setShortcutOverlayOpen(false)}>
+                <X size={15} />
+              </button>
+            </div>
+            <div className="shortcut-grid">
+              {keyboardShortcutRows.map((row) => (
+                <div className="shortcut-row" key={row.keys}>
+                  <kbd>{row.keys}</kbd>
+                  <span>{row.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {toasts.length > 0 && (
+        <div className="toast-stack" aria-live="polite">
+          {toasts.map((toast) => (
+            <div className={`toast toast-${toast.tone}`} key={toast.id} role="status">
+              <span>{toast.text}</span>
+              <button className="icon-button" type="button" aria-label="Dismiss notification" onClick={() => setToasts((current) => current.filter((item) => item.id !== toast.id))}>
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       {activeDiceCasts.length > 0 && <DiceCastOverlay casts={activeDiceCasts} />}
     </main>
   );
@@ -7626,7 +7821,7 @@ function hasItemDropData(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(itemDropMime);
 }
 
-function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onZoomBy(delta: number): void }) {
+function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onZoomBy(delta: number): void }) {
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
   const [tokenResize, setTokenResize] = useState<TokenResizeDraft | null>(null);
   const [tokenFrameOverrides, setTokenFrameOverrides] = useState<TokenFrameOverrides>({});
@@ -7664,6 +7859,9 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   const selectedTokenIdSet = useMemo(() => new Set(props.selectedTokenIds), [props.selectedTokenIds]);
   const selectedViewportToken = useMemo(() => tokens.find((token) => token.id === props.selectedTokenId), [tokens, props.selectedTokenId]);
   const tokenImageAssets = useMemo(() => new Map(props.assets.filter(isUsableImageAsset).map((asset) => [asset.id, asset])), [props.assets]);
+  const actorById = useMemo(() => new Map(props.actors.map((actor) => [actor.id, actor])), [props.actors]);
+  const currentTurnTokenIdSet = useMemo(() => new Set(props.currentTurnTokenIds), [props.currentTurnTokenIds]);
+  const nextTurnTokenIdSet = useMemo(() => new Set(props.nextTurnTokenIds), [props.nextTurnTokenIds]);
   const annotationExpiryNow = useAnnotationExpiryClock(props.scene.annotations);
   const visibleAnnotations = useMemo(
     () => activeSceneAnnotations(props.scene.annotations, annotationExpiryNow).filter((annotation) => props.visibleAnnotationLayers[annotation.layer ?? defaultAnnotationLayer(annotation.kind)] !== false),
@@ -8167,10 +8365,18 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     const current = annotationMoveDraftRef.current;
     if (!current || current.pointerId !== pointerId) return;
     annotationMoveDraftRef.current = null;
-    setAnnotationMoveDraft(null);
     const annotation = visibleAnnotations.find((item) => item.id === current.annotationId);
-    if (!annotation) return;
-    props.onAnnotationMove(annotation, current.points).catch(console.error);
+    if (!annotation) {
+      setAnnotationMoveDraft(null);
+      return;
+    }
+    // Keep the draft on screen until the move persists so the shape does not
+    // snap back to its old position for the duration of the round trip.
+    props.onAnnotationMove(annotation, current.points)
+      .catch(console.error)
+      .finally(() => {
+        setAnnotationMoveDraft((draft) => (draft && draft.annotationId === current.annotationId && draft.pointerId === pointerId ? null : draft));
+      });
   }
 
   return (
@@ -8469,10 +8675,18 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         const layer = tokenLayer(token);
         const activeLayerToken = activeLayerTokenIds.has(token.id);
         const canResize = props.canResizeToken && selected && activeLayerToken && !props.fogBrushMode && !props.annotationTool;
+        const linkedActor = token.actorId ? actorById.get(token.actorId) : undefined;
+        const tokenHp = linkedActor?.data.hp as { current?: number; max?: number } | undefined;
+        const tokenHpRatio = tokenHp && typeof tokenHp.current === "number" && typeof tokenHp.max === "number" && tokenHp.max > 0 ? Math.max(0, Math.min(1, tokenHp.current / tokenHp.max)) : undefined;
+        const showTokenVitals = tokenHpRatio !== undefined && (props.canSeeAllVitals || token.ownerUserIds?.includes(props.boardCurrentUserId));
+        const tokenHpTone = tokenHpRatio === undefined ? "" : tokenHpRatio <= 0.25 ? "danger" : tokenHpRatio <= 0.5 ? "warning" : "healthy";
+        const tokenConditionEntries = [...(token.conditions ?? []), ...(linkedActor ? actorConditionLabels(linkedActor) : [])];
+        const isCurrentTurn = currentTurnTokenIdSet.has(token.id);
+        const isNextTurn = !isCurrentTurn && nextTurnTokenIdSet.has(token.id);
         return (
           <button
             key={token.id}
-            className={`token layer-${layer} ${activeLayerToken ? "active-layer" : "inactive-layer"} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""}`}
+            className={`token layer-${layer} ${activeLayerToken ? "active-layer" : "inactive-layer"} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""} ${isCurrentTurn ? "turn-current" : ""} ${isNextTurn ? "turn-next" : ""}`}
             style={{
               left: `${(visualX / props.scene.width) * 100}%`,
               top: `${(visualY / props.scene.height) * 100}%`,
@@ -8526,7 +8740,14 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
           >
             {tokenImageAsset && <img className="token-image" src={assetBlobUrl(tokenImageAsset)} alt="" draggable={false} />}
             <span className="token-label">{token.name.slice(0, 2).toUpperCase()}</span>
-            {token.conditions?.length ? <small className="token-condition-count">{token.conditions.length}</small> : null}
+            <span className="token-nameplate" aria-hidden="true">{token.name}</span>
+            {showTokenVitals && (
+              <span className={`token-hp ${tokenHpTone}`} aria-hidden="true">
+                <span style={{ width: `${Math.round((tokenHpRatio ?? 0) * 100)}%` }} />
+              </span>
+            )}
+            {(isCurrentTurn || isNextTurn) && <span className={`token-turn-ring ${isCurrentTurn ? "current" : "next"}`} aria-hidden="true" />}
+            {tokenConditionEntries.length > 0 ? <small className="token-condition-count" title={tokenConditionEntries.join(", ")}>{tokenConditionEntries.length}</small> : null}
             {token.auras?.length ? <small className="token-aura-count">{token.auras.length}</small> : null}
             {canResize && tokenResizeHandles.map((handle) => (
               <span
@@ -8629,8 +8850,14 @@ function SceneAnnotationShape(props: { annotation: SceneAnnotation; scene: Scene
   );
 }
 
+function isCircleTemplateAnnotation(annotation: SceneAnnotation): boolean {
+  return annotation.kind === "template" && (annotation.templateShape ?? "circle") === "circle";
+}
+
 function annotationHandlePoint(annotation: SceneAnnotation): VisionPoint | undefined {
   if (annotation.points.length === 0) return undefined;
+  // Circle templates are grabbed where users expect: at the circle's center.
+  if (isCircleTemplateAnnotation(annotation) && annotation.points[0]) return annotation.points[0];
   const total = annotation.points.reduce(
     (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }),
     { x: 0, y: 0 }
@@ -8645,10 +8872,12 @@ function annotationEditHandles(annotation: SceneAnnotation): Array<{ id: string;
   const movePoint = annotationHandlePoint(annotation);
   const handles: Array<{ id: string; label: string; mode: AnnotationMoveDraft["mode"]; point: VisionPoint; pointIndex?: number }> = movePoint ? [{ id: "move", label: "Move", mode: "move", point: movePoint }] : [];
   if ((annotation.kind === "ruler" || annotation.kind === "template") && annotation.points.length >= 2) {
-    handles.push(
-      { id: "start", label: "Edit start", mode: "point", pointIndex: 0, point: annotation.points[0]! },
-      { id: "end", label: "Edit end", mode: "point", pointIndex: 1, point: annotation.points[1]! }
-    );
+    // For circle templates the start point IS the center, which the move
+    // handle already occupies; only the rim handle (radius edit) remains.
+    if (!isCircleTemplateAnnotation(annotation)) {
+      handles.push({ id: "start", label: "Edit start", mode: "point", pointIndex: 0, point: annotation.points[0]! });
+    }
+    handles.push({ id: "end", label: "Edit end", mode: "point", pointIndex: 1, point: annotation.points[1]! });
   }
   if (annotation.kind === "drawing" && annotation.points.length >= 2) {
     const endIndex = annotation.points.length - 1;
@@ -8832,7 +9061,7 @@ function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; o
 
   return (
     <div className="toolbar">
-      <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select" aria-label="Select" onClick={() => runToolAction(props.onSelectTool)}>
+      <button className={`tool ${props.activeFogBrushMode || props.activeAnnotationTool ? "" : "active"}`} title="Select (V)" aria-label="Select" onClick={() => runToolAction(props.onSelectTool)}>
         <Hand size={17} />
       </button>
       {props.canCreateToken && (
@@ -8841,31 +9070,31 @@ function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; o
         </button>
       )}
       <span className="tool-divider" aria-hidden="true" />
-      <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler - measure distance" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
+      <button className={`tool ${props.activeAnnotationTool === "ruler" ? "active" : ""}`} title="Ruler - measure distance (R)" aria-label="Ruler" onClick={() => props.onToggleAnnotationTool("ruler")} disabled={!props.canAnnotate}>
         <Ruler size={17} />
       </button>
-      <button className={`tool ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle" aria-label="Measure circle" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
+      <button className={`tool ${props.activeAnnotationTool === "measure-circle" ? "active" : ""}`} title="Measure circle (C)" aria-label="Measure circle" onClick={() => props.onToggleAnnotationTool("measure-circle")} disabled={!props.canAnnotate}>
         <Circle size={17} />
       </button>
-      <button className={`tool ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone" aria-label="Measure cone" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
+      <button className={`tool ${props.activeAnnotationTool === "measure-cone" ? "active" : ""}`} title="Measure cone (O)" aria-label="Measure cone" onClick={() => props.onToggleAnnotationTool("measure-cone")} disabled={!props.canAnnotate}>
         <Triangle size={17} />
       </button>
-      <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping - point everyone here" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
+      <button className={`tool ${props.activeAnnotationTool === "ping" ? "active" : ""}`} title="Ping - point everyone here (P)" aria-label="Ping" onClick={() => props.onToggleAnnotationTool("ping")} disabled={!props.canAnnotate}>
         <MapPin size={17} />
       </button>
-      <span className="tool-divider" aria-hidden="true" />
+      {(props.canRevealFog || props.canUpdateScene) && <span className="tool-divider" aria-hidden="true" />}
       {props.canRevealFog && (
         <button className="tool" title="Reveal fog" aria-label="Reveal fog" onClick={() => runToolAction(props.onRevealFog)}>
           <Eye size={17} />
         </button>
       )}
       {props.canUpdateScene && (
-        <button className={`tool ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing" aria-label="Drawing" onClick={() => props.onToggleAnnotationTool("drawing")}>
+        <button className={`tool ${props.activeAnnotationTool === "drawing" ? "active" : ""}`} title="Drawing (D)" aria-label="Drawing" onClick={() => props.onToggleAnnotationTool("drawing")}>
           <PencilLine size={17} />
         </button>
       )}
       {props.canUpdateScene && (
-        <button className={`tool ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")}>
+        <button className={`tool ${props.activeAnnotationTool === "template" ? "active" : ""}`} title="Area template (A)" aria-label="Area template" onClick={() => props.onToggleAnnotationTool("template")}>
           <Circle size={17} />
         </button>
       )}
@@ -8879,7 +9108,7 @@ function Toolbar(props: { onSelectTool: ToolAction; onCreateToken: ToolAction; o
           <RotateCcw size={17} />
         </button>
       )}
-      <span className="tool-divider" aria-hidden="true" />
+      {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && <span className="tool-divider" aria-hidden="true" />}
       {(props.canManageCombat || props.canRevealFog || props.canUpdateScene) && (
         <details ref={advancedToolsRef} className="tool-more" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>
           <summary className="tool" title="Advanced tools" aria-label="Advanced tools">
@@ -9226,6 +9455,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
   const deleteConfirmRef = useRef<HTMLButtonElement | null>(null);
   const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
   const tokenImageInputRef = useRef<HTMLInputElement | null>(null);
+  const sheetPanel = useMovablePanel(initialActorSheetPanelPosition, initialActorSheetPanelSize, { minWidth: 380, minHeight: 360 });
   useEffect(() => {
     if (deleteDialogOpen) deleteConfirmRef.current?.focus();
   }, [deleteDialogOpen]);
@@ -9394,66 +9624,100 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
   const filteredCompendiumEntries = props.compendiumEntries
     .filter((entry) => !normalizedCompendiumSearch || [entry.name, entry.type, entry.summary, entry.id].some((value) => value.toLocaleLowerCase().includes(normalizedCompendiumSearch)))
     .slice(0, 8);
+  const adversary = isAdversaryActor(props.actor, props.tokens);
+  const sheetTone = props.token?.disposition ?? (adversary ? "hostile" : "friendly");
+  const rollActions = actionOptions.filter((action) => actorActionDiceFormula(action));
+  const featureActions = actionOptions.filter((action) => !actorActionDiceFormula(action));
+  const activeConditionIds = parseActorConditions(formatActorConditions(props.actor));
+  const conditionChipIds = [...new Set([...quickActorConditionIds, ...activeConditionIds])];
+  const toggleCondition = (conditionId: string) => {
+    const next = activeConditionIds.includes(conditionId) ? activeConditionIds.filter((id) => id !== conditionId) : [...activeConditionIds, conditionId];
+    props.updateActorData(props.actor!, { conditions: next });
+  };
+  const renderSheetAction = (action: ActorActionOption) => {
+    const formula = actorActionDiceFormula(action);
+    return (
+      <div className="actor-action-row" key={`full-sheet-action-${action.rollId}`}>
+        <div className="actor-action-info">
+          <strong>{action.label}</strong>
+          <span>{action.description}</span>
+        </div>
+        <button className="ghost-button small" type="button" disabled={!props.canUseAction} onClick={() => props.useActorAction(action.rollId, commitOptionsForAction(action.rollId))}>
+          {formula ? <Dices size={14} /> : <WandSparkles size={14} />} {formula ? `Roll ${formula}` : "Use"}
+        </button>
+      </div>
+    );
+  };
   return (
     <div className="panel-stack actor-sidebar-summary">
-      <header className="panel-hero actor-hero">
+      <header className={`panel-hero actor-hero actor-tone-${sheetTone}`}>
         <div>
-          <div className="section-title">Selected Actor</div>
+          <div className="section-title">{adversary ? "NPC" : "Character"}</div>
           <h2>{props.actor.name}</h2>
           <div className="admin-meta">
             <span title="Rules system">{props.systemLabel ?? props.actor.systemId}</span>
             <span title={props.token ? "Linked token" : undefined}>{props.token ? props.token.name : "No linked token"}</span>
-            {combatState.length > 0 && <span>{combatState[0]}</span>}
           </div>
         </div>
         <button className="ghost-button" type="button" onClick={() => setFullSheetOpen(true)}>
-          <FileText size={16} /> Open Full Sheet
+          <FileText size={16} /> Sheet
         </button>
       </header>
       <section className="operator-section actor-at-a-glance" aria-label="Actor at a glance">
-        <div className="metric-grid">
-          <MetricTile label="HP" value={`${hp?.current ?? "?"}/${hp?.max ?? "?"}`} />
-          <MetricTile label="AC" value={armorClass ? (armorClass.label ? `${armorClass.value} ${armorClass.label}` : String(armorClass.value)) : "n/a"} />
-          <MetricTile label="Conditions" value={conditions.length > 0 ? conditions.join(", ") : "None"} />
-          <MetricTile label="Resources" value={resources.length > 0 ? resources.join(", ") : "None"} />
+        <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onSetHp={(value) => props.updateActorHp(props.actor!, value)} />
+        <div className="actor-vitals-row">
+          <span className="actor-vital" title={armorClass?.label ? `Armor class - ${armorClass.label}` : "Armor class"}>
+            <Shield size={13} aria-hidden="true" /> AC {armorClass ? armorClass.value : "?"}
+          </span>
+          {resources.map((resource) => (
+            <span className="actor-vital" key={resource}>{resource}</span>
+          ))}
+          {conditions.map((condition) => (
+            <span className="actor-vital actor-vital-condition" key={condition}>{condition}</span>
+          ))}
+          {combatState.map((state) => (
+            <span className="actor-vital actor-vital-muted" key={state}>{state}</span>
+          ))}
         </div>
       </section>
       {fullSheetOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) setFullSheetOpen(false);
-        }}>
-          <div className="modal-dialog actor-sheet-dialog" role="dialog" aria-modal="true" aria-labelledby={`actor-full-sheet-title-${props.actor.id}`}>
-            <div className="operator-heading">
-              <div>
-                <div className="section-title">Character Sheet</div>
-                <h2 id={`actor-full-sheet-title-${props.actor.id}`}>{props.actor.name}</h2>
-              </div>
-              <button className="ghost-button" type="button" aria-label="Close full character sheet" onClick={() => setFullSheetOpen(false)}>
-                <X size={16} /> Close
-              </button>
+        <aside className={`actor-sheet-popout movable-panel actor-tone-${sheetTone}`} role="dialog" aria-labelledby={`actor-full-sheet-title-${props.actor.id}`} style={sheetPanel.style}>
+          <header className="actor-sheet-header floating-panel-header" title="Drag panel" {...sheetPanel.dragHandleProps}>
+            <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
+            <div className="actor-sheet-title">
+              <div className="section-title">{adversary ? "NPC Sheet" : "Character Sheet"}</div>
+              <h2 id={`actor-full-sheet-title-${props.actor.id}`}>{props.actor.name}</h2>
             </div>
-            <section className="operator-section" aria-label="Full sheet stats">
-              <div className="metric-grid">
-                <MetricTile label="HP" value={`${hp?.current ?? "?"}/${hp?.max ?? "?"}`} />
-                <MetricTile label="AC" value={armorClass ? (armorClass.label ? `${armorClass.value} ${armorClass.label}` : String(armorClass.value)) : "n/a"} />
-                <MetricTile label="Conditions" value={conditions.length > 0 ? conditions.join(", ") : "None" } />
-                <MetricTile label="Resources" value={resources.length > 0 ? resources.join(", ") : "None"} />
-              </div>
-              {combatState.length > 0 && (
-                <div className="metric-row">
-                  <span>Combat State</span>
-                  <strong>{combatState.join(" - ")}</strong>
+            <span className="actor-sheet-ac" title={armorClass?.label ? `Armor class - ${armorClass.label}` : "Armor class"}>
+              <Shield size={13} aria-hidden="true" /> {armorClass ? armorClass.value : "?"}
+            </span>
+            <button className="icon-button" type="button" aria-label="Close full character sheet" onClick={() => setFullSheetOpen(false)}>
+              <X size={15} />
+            </button>
+          </header>
+          <div className="actor-sheet-body">
+            <section className="actor-sheet-section" aria-label="Full sheet stats">
+              <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onSetHp={(value) => props.updateActorHp(props.actor!, value)} />
+              {(conditions.length > 0 || resources.length > 0 || combatState.length > 0) && (
+                <div className="actor-vitals-row">
+                  {resources.map((resource) => (
+                    <span className="actor-vital" key={`sheet-resource-${resource}`}>{resource}</span>
+                  ))}
+                  {conditions.map((condition) => (
+                    <span className="actor-vital actor-vital-condition" key={`sheet-condition-${condition}`}>{condition}</span>
+                  ))}
+                  {combatState.map((state) => (
+                    <span className="actor-vital actor-vital-muted" key={`sheet-state-${state}`}>{state}</span>
+                  ))}
                 </div>
               )}
             </section>
-            <section className="operator-section" aria-label="Full sheet loadout">
-              <div className="operator-heading">
-                <div className="section-title">Loadout</div>
-                <strong>{formatNumber(actorItems.length)} items</strong>
-              </div>
-              {actorItems.length === 0 ? (
-                <div className="empty-state compact">No actor items.</div>
-              ) : (
+            {actorItems.length > 0 && (
+              <section className="actor-sheet-section" aria-label="Full sheet loadout">
+                <div className="actor-sheet-subheading">
+                  <span>Loadout</span>
+                  <strong>{formatNumber(actorItems.length)}</strong>
+                </div>
                 <div className="placement-list">
                   {filteredActorItems.slice(0, 16).map((item) => (
                     <span className="placement-chip" key={`full-sheet-item-${item.id}`}>
@@ -9462,41 +9726,43 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
                     </span>
                   ))}
                 </div>
+              </section>
+            )}
+            <section className="actor-sheet-section" aria-label="Full sheet actions">
+              {actionOptions.length === 0 && <div className="empty-state compact">No actions available.</div>}
+              {rollActions.length > 0 && (
+                <>
+                  <div className="actor-sheet-subheading">
+                    <span>Rolls</span>
+                    <strong>{formatNumber(rollActions.length)}</strong>
+                  </div>
+                  {rollActions.slice(0, 10).map(renderSheetAction)}
+                </>
+              )}
+              {featureActions.length > 0 && (
+                <>
+                  <div className="actor-sheet-subheading">
+                    <span>Features</span>
+                    <strong>{formatNumber(featureActions.length)}</strong>
+                  </div>
+                  {featureActions.slice(0, 10).map(renderSheetAction)}
+                </>
               )}
             </section>
-            <section className="operator-section" aria-label="Full sheet actions">
-              <div className="operator-heading">
-                <div className="section-title">Actions</div>
-                <strong>{formatNumber(actionOptions.length)}</strong>
+            <section className="actor-sheet-section" aria-label="Full sheet targeting">
+              <div className="actor-sheet-subheading">
+                <span>Targeting</span>
+                <strong>{formatNumber(targetedSceneTokens.length)} marked</strong>
               </div>
-              {actionOptions.length === 0 ? (
-                <div className="empty-state compact">No actions available.</div>
-              ) : (
-                actionOptions.slice(0, 8).map((action) => (
-                  <article className="operator-item admin-item" key={`full-sheet-action-${action.rollId}`}>
-                    <strong>{action.label}</strong>
-                    <p>{action.description}</p>
-                    <button className="ghost-button" type="button" disabled={!props.canUseAction} onClick={() => props.useActorAction(action.rollId, commitOptionsForAction(action.rollId))}>
-                      <WandSparkles size={14} /> Use action
-                    </button>
-                  </article>
-                ))
-              )}
-            </section>
-            <section className="operator-section" aria-label="Full sheet targeting">
               <div className="metric-row">
                 <span>Action target</span>
                 <strong>{selectedActionTarget.name}</strong>
               </div>
-              <div className="metric-row">
-                <span>Marked tokens</span>
-                <strong>{formatNumber(targetedSceneTokens.length)}</strong>
-              </div>
               {tokenActionTargetOptions.length > 0 && (
                 <div className="button-row">
                   {tokenActionTargetOptions.slice(0, 4).map(({ token, actor }) => (
-                    <button className={actionTargetActorId === actor.id ? "ghost-button active" : "ghost-button"} key={`full-sheet-target-${actor.id}`} type="button" disabled={!props.canUseAction} onClick={() => props.setActionTargetActorId(actor.id)}>
-                      <MapPin size={14} /> Target {actor.name}
+                    <button className={actionTargetActorId === actor.id ? "ghost-button small active" : "ghost-button small"} key={`full-sheet-target-${actor.id}`} type="button" disabled={!props.canUseAction} onClick={() => props.setActionTargetActorId(actor.id)}>
+                      <MapPin size={14} /> {actor.name}
                       {token.targetedByUserIds?.includes(props.currentUserId) ? " (marked)" : ""}
                     </button>
                   ))}
@@ -9504,12 +9770,16 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
               )}
             </section>
           </div>
-        </div>
+          <button className="floating-panel-resize-handle" type="button" aria-label="Resize character sheet" title="Resize panel" {...sheetPanel.resizeHandleProps}>
+            <Grip size={13} aria-hidden="true" />
+          </button>
+        </aside>
       )}
+      {props.canCreateToken && (
       <section className="operator-section placement-tray" aria-label="Actor placement tray">
         <div className="operator-heading">
-          <div className="section-title">Placement</div>
-          <strong>{formatNumber(props.actors.length)} actors</strong>
+          <div className="section-title">Cast</div>
+          <strong>drag to place</strong>
         </div>
         <div className="placement-list">
           {props.actors.slice(0, 8).map((actor) => (
@@ -9532,6 +9802,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           ))}
         </div>
       </section>
+      )}
       <div className="tabs" role="tablist" aria-label="Actor sheet views">
         <button className={sheetView === "stats" ? "tab active" : "tab"} type="button" role="tab" aria-selected={sheetView === "stats"} onClick={() => setSheetView("stats")}>
           Stats
@@ -9548,19 +9819,37 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
       </div>
       {sheetView === "stats" && (
         <section className="operator-section" aria-label="Actor stats sheet">
-          <div className="metric-grid">
-            <MetricTile label="HP" value={`${hp?.current ?? "?"}/${hp?.max ?? "?"}`} />
-            <MetricTile label="AC" value={armorClass ? (armorClass.label ? `${armorClass.value} ${armorClass.label}` : String(armorClass.value)) : "n/a"} />
-            <MetricTile label="Conditions" value={formatNumber(conditions.length)} />
-            <MetricTile label="Resources" value={formatNumber(resourceControls.length)} />
+          <div className="metric-row">
+            <span>Armor class</span>
+            <strong>{armorClass ? (armorClass.label ? `${armorClass.value} - ${armorClass.label}` : String(armorClass.value)) : "n/a"}</strong>
           </div>
+          {resourceControls.map((resource) => (
+            <div className="metric-row" key={`stats-resource-${resource.key}`}>
+              <span>{resource.label}</span>
+              <strong>{formatNumber(resource.current)}</strong>
+            </div>
+          ))}
           <div className="sheet-row">
-            <label htmlFor="actor-hp-tab">Current HP</label>
+            <label htmlFor="actor-hp-tab">Set HP</label>
             <input id="actor-hp-tab" aria-label="Actor sheet current HP" type="number" value={hp?.current ?? 0} disabled={!props.canUpdateActor} onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))} />
           </div>
+          <div className="condition-quick-chips" role="group" aria-label="Toggle common conditions">
+            {conditionChipIds.map((conditionId) => (
+              <button
+                className={activeConditionIds.includes(conditionId) ? "condition-chip active" : "condition-chip"}
+                key={`condition-chip-${conditionId}`}
+                type="button"
+                aria-pressed={activeConditionIds.includes(conditionId)}
+                disabled={!props.canUpdateActor}
+                onClick={() => toggleCondition(conditionId)}
+              >
+                {titleCaseLabel(conditionId)}
+              </button>
+            ))}
+          </div>
           <div className="sheet-row">
-            <label htmlFor="actor-conditions-tab">Actor conditions</label>
-            <input id="actor-conditions-tab" aria-label="Actor sheet conditions" defaultValue={formatActorConditions(props.actor)} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorData(props.actor!, { conditions: parseActorConditions(event.currentTarget.value) })} />
+            <label htmlFor="actor-conditions-tab">Custom conditions</label>
+            <input id="actor-conditions-tab" aria-label="Actor sheet conditions" key={formatActorConditions(props.actor)} defaultValue={formatActorConditions(props.actor)} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorData(props.actor!, { conditions: parseActorConditions(event.currentTarget.value) })} />
           </div>
         </section>
       )}
@@ -12286,40 +12575,36 @@ function chatVisibilityLabel(visibility: ChatMessage["visibility"]): string {
   return "Public";
 }
 
-function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; onConfirmAction(combat: Combat, action: CombatAction): void; onRejectAction(combat: Combat, action: CombatAction): void; canManage: boolean }) {
+function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; onConfirmAction(combat: Combat, action: CombatAction): void; onRejectAction(combat: Combat, action: CombatAction): void; canManage: boolean }) {
+  const [expandedCombatantId, setExpandedCombatantId] = useState("");
   const combatants = props.combat?.combatants ?? [];
   const activeCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
   const readyCount = combatants.filter((combatant) => combatant.readiness === "ready").length;
   const defeatedCount = combatants.filter((combatant) => combatant.defeated).length;
   const pendingActions = props.combat?.actions?.filter((action) => action.status === "pending_gm") ?? [];
+  const actorById = new Map(props.actors.map((actor) => [actor.id, actor]));
+  const tokenById = new Map(props.tokens.map((token) => [token.id, token]));
+  const combatantActor = (combatant: Combat["combatants"][number]): Actor | undefined => {
+    if (combatant.actorId) return actorById.get(combatant.actorId);
+    const linkedActorId = combatant.tokenId ? tokenById.get(combatant.tokenId)?.actorId : undefined;
+    return linkedActorId ? actorById.get(linkedActorId) : undefined;
+  };
   return (
     <div className="panel-stack">
       <header className="panel-hero combat-hero">
         <div>
-          <div className="section-title">Combat Tracker</div>
-          <h2>{props.combat ? `Round ${props.combat.round}` : "No Active Combat"}</h2>
-          <p className="panel-subtitle">{activeCombatant ? `Turn: ${activeCombatant.name}` : "Start from scene tokens when ready"}</p>
+          <div className="section-title">Combat</div>
+          <h2>{props.combat ? `Round ${formatNumber(props.combat.round)}` : "No Active Combat"}</h2>
+          {activeCombatant && <p className="panel-subtitle">{activeCombatant.name} is up</p>}
         </div>
       </header>
       {props.combat ? (
         <>
-          <section className="metric-grid panel-summary-grid" aria-label="Combat summary">
-            <MetricTile label="Round" value={formatNumber(props.combat.round)} />
-            <MetricTile label="Combatants" value={formatNumber(combatants.length)} />
-            <MetricTile label="Ready" value={formatNumber(readyCount)} />
-            <MetricTile label="Defeated" value={formatNumber(defeatedCount)} />
-          </section>
-          <div className="admin-actions">
-            <button className="ghost-button" onClick={() => props.onPrevious(props.combat!)} disabled={!props.canManage || combatants.length === 0}>
-              <RotateCcw size={14} /> Previous
-            </button>
-            <button className="ghost-button" onClick={() => props.onNext(props.combat!)} disabled={!props.canManage || combatants.length === 0}>
-              <ChevronRight size={14} /> Next
-            </button>
-            <button className="ghost-button" onClick={() => props.onEnd(props.combat!)} disabled={!props.canManage}>
-              <X size={14} /> End
-            </button>
-          </div>
+          <p className="panel-status-line" aria-label="Combat summary">
+            <span>{formatNumber(combatants.length)} combatants</span>
+            <span>{formatNumber(defeatedCount)} defeated</span>
+            {readyCount > 0 && <span>{formatNumber(readyCount)} ready</span>}
+          </p>
           {pendingActions.length > 0 && (
             <section className="admin-list" aria-label="Pending combat actions">
               <div className="section-title">Pending GM Confirmation</div>
@@ -12350,78 +12635,118 @@ function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLog
               ))}
             </section>
           )}
-          {combatants.map((combatant, index) => (
-            <div className={index === props.combat?.turnIndex ? "combatant active" : "combatant"} key={combatant.id}>
-              <div className="combatant-header">
-                <div>
-                  <span>{combatant.defeated ? "defeated" : combatant.readiness === "ready" ? "ready" : combatant.readiness === "delayed" ? "delayed" : index === props.combat?.turnIndex ? "active" : "waiting"}</span>
-                  <strong>{combatant.name}</strong>
+          <div className="combatant-list" role="list" aria-label="Initiative order">
+            {combatants.map((combatant, index) => {
+              const isTurn = index === props.combat?.turnIndex;
+              const expanded = expandedCombatantId === combatant.id;
+              const actor = combatantActor(combatant);
+              const hp = actor?.data.hp as { current?: number; max?: number } | undefined;
+              const hpRatio = hp && typeof hp.current === "number" && typeof hp.max === "number" && hp.max > 0 ? Math.max(0, Math.min(1, hp.current / hp.max)) : undefined;
+              const hpTone = hpRatio === undefined ? "" : hpRatio <= 0.25 ? "danger" : hpRatio <= 0.5 ? "warning" : "healthy";
+              const stateLabel = combatant.defeated ? "Defeated" : isTurn ? "Taking turn" : combatant.readiness === "ready" ? "Ready action" : combatant.readiness === "delayed" ? "Delayed" : hp && typeof hp.current === "number" && typeof hp.max === "number" ? `${formatNumber(hp.current)}/${formatNumber(hp.max)} HP` : "Waiting";
+              return (
+                <div className={`combatant-row ${isTurn ? "current" : ""} ${combatant.defeated ? "defeated" : ""}`} role="listitem" key={combatant.id}>
+                  <div className="combatant-row-main">
+                    <span className="combatant-order" aria-hidden="true">{isTurn ? <ChevronRight size={14} /> : formatNumber(index + 1)}</span>
+                    <button className="combatant-focus" type="button" title="Select this token on the board" onClick={() => props.onFocusCombatant(combatant)}>
+                      <span className="party-avatar">{combatant.name.slice(0, 2).toUpperCase()}</span>
+                      <span className="combatant-name">
+                        <strong>{combatant.name}</strong>
+                        <small>
+                          {stateLabel}
+                          {combatant.conditions?.length ? ` - ${combatant.conditions.join(", ")}` : ""}
+                        </small>
+                        {hpRatio !== undefined && (
+                          <span className={`combatant-hp ${hpTone}`} aria-hidden="true">
+                            <span style={{ width: `${Math.round(hpRatio * 100)}%` }} />
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                    {props.canManage ? (
+                      <input className="combatant-initiative" aria-label={`${combatant.name} initiative`} title="Initiative" type="number" value={combatant.initiative} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { initiative: Number(event.target.value) })} />
+                    ) : (
+                      <span className="combatant-initiative combatant-initiative-static" title="Initiative">{formatNumber(combatant.initiative)}</span>
+                    )}
+                    <button className="icon-button combatant-expand" type="button" aria-expanded={expanded} aria-label={`${combatant.name} details`} onClick={() => setExpandedCombatantId(expanded ? "" : combatant.id)}>
+                      <ChevronDown className={expanded ? "open" : ""} size={14} />
+                    </button>
+                  </div>
+                  {expanded && (
+                    <div className="combatant-detail">
+                      <div className="combatant-controls">
+                        <label>
+                          <span>Readiness</span>
+                          <select aria-label={`${combatant.name} readiness`} value={combatant.readiness ?? "normal"} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { readiness: event.target.value as NonNullable<typeof combatant.readiness> })}>
+                            <option value="normal">Normal turn</option>
+                            <option value="ready">Ready action</option>
+                            <option value="delayed">Delayed turn</option>
+                          </select>
+                        </label>
+                        <label>
+                          <span>Conditions</span>
+                          <input aria-label={`${combatant.name} combat conditions`} value={formatCombatantConditions(combatant)} disabled={!props.canManage} placeholder="prone, stunned" onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { conditions: parseCombatantConditions(event.target.value) })} />
+                        </label>
+                        <label>
+                          <span>Successes</span>
+                          <input aria-label={`${combatant.name} death save successes`} type="number" min={0} max={3} value={combatant.deathSaveSuccesses ?? 0} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveSuccesses: boundedCombatCounter(event.target.value) })} />
+                        </label>
+                        <label>
+                          <span>Failures</span>
+                          <input aria-label={`${combatant.name} death save failures`} type="number" min={0} max={3} value={combatant.deathSaveFailures ?? 0} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveFailures: boundedCombatCounter(event.target.value) })} />
+                        </label>
+                      </div>
+                      <div className="combatant-flags">
+                        <label className="inline-check">
+                          <input type="checkbox" checked={combatant.defeated} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { defeated: event.target.checked })} />
+                          <span>Defeated</span>
+                        </label>
+                        <label className="inline-check">
+                          <input type="checkbox" checked={combatant.resourceUsed ?? false} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { resourceUsed: event.target.checked })} />
+                          <span>{combatant.resourceLabel ? `${combatant.resourceLabel} used` : "Resource used"}</span>
+                        </label>
+                      </div>
+                      <p className="panel-status-line" aria-label={`${combatant.name} combat state`}>
+                        <span>Death saves {combatant.deathSaveSuccesses ?? 0}/3 - {combatant.deathSaveFailures ?? 0}/3</span>
+                        {combatant.deathSaveOutcome && <span>{titleCaseLabel(combatant.deathSaveOutcome)}</span>}
+                        {combatant.resourceSpent && <span>{combatant.resourceLabel ?? "Resource"} depleted</span>}
+                        {combatantConditionTimingLabels(combatant).map((label) => (
+                          <span key={`${combatant.id}-${label}`}>{label}</span>
+                        ))}
+                      </p>
+                    </div>
+                  )}
                 </div>
-                <span className="status-pill">{index === props.combat?.turnIndex ? "turn" : `#${index + 1}`}</span>
-              </div>
-              <div className="combatant-controls">
-                <label>
-                  <span>Initiative</span>
-                  <input aria-label={`${combatant.name} initiative`} type="number" value={combatant.initiative} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { initiative: Number(event.target.value) })} />
-                </label>
-                <label>
-                  <span>Readiness</span>
-                  <select aria-label={`${combatant.name} readiness`} value={combatant.readiness ?? "normal"} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { readiness: event.target.value as NonNullable<typeof combatant.readiness> })}>
-                    <option value="normal">Normal turn</option>
-                    <option value="ready">Ready action</option>
-                    <option value="delayed">Delayed turn</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Conditions</span>
-                  <input aria-label={`${combatant.name} combat conditions`} value={formatCombatantConditions(combatant)} disabled={!props.canManage} placeholder="prone, stunned" onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { conditions: parseCombatantConditions(event.target.value) })} />
-                </label>
-                <label>
-                  <span>Successes</span>
-                  <input aria-label={`${combatant.name} death save successes`} type="number" min={0} max={3} value={combatant.deathSaveSuccesses ?? 0} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveSuccesses: boundedCombatCounter(event.target.value) })} />
-                </label>
-                <label>
-                  <span>Failures</span>
-                  <input aria-label={`${combatant.name} death save failures`} type="number" min={0} max={3} value={combatant.deathSaveFailures ?? 0} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { deathSaveFailures: boundedCombatCounter(event.target.value) })} />
-                </label>
-              </div>
-              <div className="combatant-flags">
-                <label className="inline-check">
-                  <input type="checkbox" checked={combatant.defeated} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { defeated: event.target.checked })} />
-                  <span>Defeated</span>
-                </label>
-                <label className="inline-check">
-                  <input type="checkbox" checked={combatant.resourceUsed ?? false} disabled={!props.canManage} onChange={(event) => props.onUpdateCombatant(props.combat!, combatant.id, { resourceUsed: event.target.checked })} />
-                  <span>{combatant.resourceLabel ? `${combatant.resourceLabel} used` : "Resource used"}</span>
-                </label>
-              </div>
-              <div className="account-summary">
-                Death saves {combatant.deathSaveSuccesses ?? 0}/3 successes, {combatant.deathSaveFailures ?? 0}/3 failures
-                {combatant.deathSaveOutcome ? ` - Outcome: ${combatant.deathSaveOutcome}` : ""}
-                {combatant.conditions?.length ? ` - Conditions: ${combatant.conditions.join(", ")}` : ""}
-                {combatant.resourceSpent ? ` - ${combatant.resourceLabel ?? "Resource"} depleted` : ""}
-              </div>
-              <div className="admin-meta" aria-label={`${combatant.name} condition timing`}>
-                {combatantConditionTimingLabels(combatant).length === 0 ? (
-                  <span>No timed conditions</span>
-                ) : (
-                  combatantConditionTimingLabels(combatant).map((label) => <span key={`${combatant.id}-${label}`}>{label}</span>)
-                )}
-              </div>
+              );
+            })}
+          </div>
+          {props.canManage && (
+            <div className="combat-turn-controls" role="group" aria-label="Turn controls">
+              <button className="ghost-button" onClick={() => props.onPrevious(props.combat!)} disabled={combatants.length === 0}>
+                <ChevronLeft size={14} /> Prev
+              </button>
+              <button className="primary-button" onClick={() => props.onNext(props.combat!)} disabled={combatants.length === 0}>
+                Next turn <ChevronRight size={14} />
+              </button>
+              <button className="ghost-button" onClick={() => props.onEnd(props.combat!)}>
+                <X size={14} /> End
+              </button>
             </div>
-          ))}
-          <div className="section-title">Combat Audit</div>
-          {props.auditLogs.length === 0 ? (
-            <div className="empty-state compact">No combat audit entries loaded.</div>
-          ) : (
-            props.auditLogs.slice(-5).reverse().map((entry) => (
-              <article className="operator-item admin-item" key={entry.id}>
-                <strong>{entry.action}</strong>
-                <span>{formatDateTime(entry.createdAt)}</span>
-                <p>{combatAuditLabel(entry)}</p>
-              </article>
-            ))
           )}
+          <details className="create-drawer diagnostics-drawer" aria-label="Combat audit">
+            <summary><ScrollText size={15} /> Combat audit <strong>{formatNumber(props.auditLogs.length)}</strong></summary>
+            {props.auditLogs.length === 0 ? (
+              <div className="empty-state compact">No combat audit entries loaded.</div>
+            ) : (
+              props.auditLogs.slice(-5).reverse().map((entry) => (
+                <article className="operator-item admin-item" key={entry.id}>
+                  <strong>{entry.action}</strong>
+                  <span>{formatDateTime(entry.createdAt)}</span>
+                  <p>{combatAuditLabel(entry)}</p>
+                </article>
+              ))
+            )}
+          </details>
         </>
       ) : (
         <>
@@ -12433,13 +12758,15 @@ function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLog
                 <p>Build the first round from every token in the active scene.</p>
               </div>
             </div>
-            <button className="primary-button" onClick={props.onStart} disabled={!props.canManage}>
-              <Swords size={15} /> Start combat
-            </button>
+            {props.canManage && (
+              <button className="primary-button" onClick={props.onStart}>
+                <Swords size={15} /> Start combat
+              </button>
+            )}
           </section>
           {props.recentCombats.length > 0 && (
-            <section className="admin-list" aria-label="Ended combat recap">
-              <div className="section-title">Ended Combat Recap</div>
+            <details className="create-drawer diagnostics-drawer" aria-label="Ended combat recap">
+              <summary><ScrollText size={15} /> Recent combats <strong>{formatNumber(props.recentCombats.length)}</strong></summary>
               {props.recentCombats.map((combat) => (
                 <article className="operator-item admin-item" key={combat.id}>
                   <strong>Round {combat.round}</strong>
@@ -12447,7 +12774,7 @@ function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLog
                   <p>{combat.combatants.length} combatants, {combat.combatants.filter((combatant) => combatant.defeated).length} defeated, {combat.actions?.filter((action) => action.status === "confirmed").length ?? 0} confirmed actions</p>
                 </article>
               ))}
-            </section>
+            </details>
           )}
         </>
       )}
@@ -12670,7 +12997,6 @@ function ContentImportPanel(props: {
           <div>
             <div className="section-title">Assets</div>
             <h2>Asset manager</h2>
-            <p>Find, upload, place, and retire campaign art without the storage ledger getting in the way.</p>
           </div>
           <div className="asset-primary-actions">
             <button className="primary-button" type="button" aria-label="Upload Asset" disabled={!props.canCreateAsset} title={props.canCreateAsset ? "Upload an asset" : "Requires scene.create"} onClick={() => document.getElementById(uploadInputId)?.click()}>
