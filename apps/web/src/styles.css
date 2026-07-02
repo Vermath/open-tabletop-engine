@@ -11338,3 +11338,100 @@ a:focus-visible {
 .annotation-drag-handle:hover {
   transform: translate(-50%, -50%) scale(1.18);
 }
+
+/* Selected tokens get a real selection box: square frame plus corner
+   handles. The token body always moves; only the corners resize. Annotation
+   drag handles sit under tokens so they never steal token clicks. */
+
+.annotation-handles {
+  z-index: 4;
+}
+
+.token-selection-frame {
+  position: absolute;
+  inset: -5px;
+  z-index: 6;
+  border: 1.5px solid var(--accent-strong);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.token-resize-corner {
+  position: absolute;
+  z-index: 7;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--accent-strong);
+  border-radius: 2px;
+  background: var(--surface-0, #08070d);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.token-resize-corner.handle-nw {
+  top: -10px;
+  left: -10px;
+  cursor: nwse-resize;
+}
+
+.token-resize-corner.handle-ne {
+  top: -10px;
+  right: -10px;
+  cursor: nesw-resize;
+}
+
+.token-resize-corner.handle-sw {
+  bottom: -10px;
+  left: -10px;
+  cursor: nesw-resize;
+}
+
+.token-resize-corner.handle-se {
+  bottom: -10px;
+  right: -10px;
+  cursor: nwse-resize;
+}
+
+.token-resize-corner:hover {
+  background: var(--accent-strong);
+}
+
+/* Token chrome (selection frame, corner handles, nameplates, turn rings)
+   hangs outside the token bounds, so the token itself must not clip; the
+   art is cropped to the circle on the image instead. */
+
+.token {
+  overflow: visible;
+}
+
+.token .token-image {
+  border-radius: 50%;
+}
+
+/* Frosted glass for every floating surface. */
+
+.actor-sheet-popout,
+.ai-agent-popout,
+.audio-soundboard,
+.table-tool-panel.movable-panel,
+.tool-more-panel,
+.modal-dialog,
+.command-palette,
+.toast {
+  border-color: var(--glass-border);
+  background: var(--glass);
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+}
+
+.actor-sheet-header {
+  background: rgba(148, 160, 173, 0.07);
+}
+
+.combat-turn-controls {
+  background: var(--glass);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}

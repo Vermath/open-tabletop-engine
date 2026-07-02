@@ -7726,27 +7726,6 @@ function tokenResizeFrameFromPoint(scene: Pick<Scene, "width" | "height" | "grid
   };
 }
 
-function tokenResizeHandleAtPoint(element: HTMLElement, clientX: number, clientY: number): TokenResizeHandle | undefined {
-  const rect = element.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return undefined;
-  const edgeSize = Math.min(12, Math.max(5, Math.min(rect.width, rect.height) * 0.24));
-  const x = clientX - rect.left;
-  const y = clientY - rect.top;
-  const west = x <= edgeSize;
-  const east = x >= rect.width - edgeSize;
-  const north = y <= edgeSize;
-  const south = y >= rect.height - edgeSize;
-  if (north && east) return "ne";
-  if (north && west) return "nw";
-  if (south && east) return "se";
-  if (south && west) return "sw";
-  if (north) return "n";
-  if (east) return "e";
-  if (south) return "s";
-  if (west) return "w";
-  return undefined;
-}
-
 const tokenResizeHandles: Array<{ id: TokenResizeHandle; label: string }> = [
   { id: "n", label: "Resize north edge" },
   { id: "e", label: "Resize east edge" },
@@ -7757,6 +7736,8 @@ const tokenResizeHandles: Array<{ id: TokenResizeHandle; label: string }> = [
   { id: "se", label: "Resize southeast corner" },
   { id: "sw", label: "Resize southwest corner" }
 ];
+
+const tokenCornerResizeHandles = tokenResizeHandles.filter((handle) => handle.id.length === 2);
 
 function writeTokenDropData(dataTransfer: DataTransfer, payload: TokenDropPayload): void {
   dataTransfer.effectAllowed = "copy";
@@ -8706,14 +8687,6 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
             onPointerDown={(event) => {
               if (!activeLayerToken) return;
               if (props.fogBrushMode || props.annotationTool) return;
-              const resizeHandle =
-                canResize && !event.shiftKey && !event.ctrlKey && !event.metaKey
-                  ? tokenResizeHandleAtPoint(event.currentTarget, event.clientX, event.clientY)
-                  : undefined;
-              if (resizeHandle) {
-                startTokenResize(token, resizeHandle, event);
-                return;
-              }
               startTokenDrag(token, event);
             }}
             onPointerMove={(event) => {
@@ -8749,14 +8722,22 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
             {(isCurrentTurn || isNextTurn) && <span className={`token-turn-ring ${isCurrentTurn ? "current" : "next"}`} aria-hidden="true" />}
             {tokenConditionEntries.length > 0 ? <small className="token-condition-count" title={tokenConditionEntries.join(", ")}>{tokenConditionEntries.length}</small> : null}
             {token.auras?.length ? <small className="token-aura-count">{token.auras.length}</small> : null}
-            {canResize && tokenResizeHandles.map((handle) => (
-              <span
-                className={`token-resize-handle handle-${handle.id}`}
-                key={`${token.id}-${handle.id}`}
-                aria-hidden="true"
-                title={handle.label}
-              />
-            ))}
+            {canResize && (
+              <>
+                <span className="token-selection-frame" aria-hidden="true" />
+                {tokenCornerResizeHandles.map((handle) => (
+                  <span
+                    className={`token-resize-corner handle-${handle.id}`}
+                    key={`${token.id}-${handle.id}`}
+                    title={handle.label}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      startTokenResize(token, handle.id, event);
+                    }}
+                  />
+                ))}
+              </>
+            )}
           </button>
         );
       })}

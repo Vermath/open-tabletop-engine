@@ -39,7 +39,8 @@ describe("actor panel layout", () => {
     expect(appSource).toContain("tokenResizeHandles");
     expect(appSource).toContain("onTokenResizeCommit");
     expect(appSource).toContain("scene-map-hitbox");
-    expect(appSource).toContain("tokenResizeHandleAtPoint");
+    expect(appSource).toContain("token-resize-corner");
+    expect(appSource).toContain("token-selection-frame");
     expect(stylesSource).toContain(".token-resize-handle");
     expect(stylesSource).toContain("pointer-events: none");
     expect(stylesSource).toContain(".scene-map-hitbox.selected");
