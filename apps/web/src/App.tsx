@@ -1476,24 +1476,34 @@ export function App() {
     return () => window.removeEventListener("keydown", handleBoardKeyboard);
   }, [blankCanvasDemoOpen, boardClipboardTokens, boardRedoStack.length, boardUndoStack.length, canDeleteSelectedBoardTokens, selectedScene?.id, selectedScene?.gridSize, selectedTokens]);
 
+  const refreshSeqRef = useRef(0);
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean } = {}) {
     if (blankCanvasDemoOpen) {
       setSnapshotReady(true);
       if (options.syncStatus !== false) setStatus(blankCanvasDemoNotice);
       return snapshot;
     }
+    // Snapshot loads overlap constantly (every realtime event triggers one).
+    // Only the most recently started refresh may apply; anything older would
+    // overwrite the UI with pre-action state and make actions "revert".
+    const seq = ++refreshSeqRef.current;
     const next = await loadSnapshot(nextCampaignId, nextSceneId);
+    if (seq !== refreshSeqRef.current) return next;
     setSnapshot(next);
     setSessionToken(getSessionToken());
     const campaign = next.campaigns.find((item) => item.id === nextCampaignId) ?? next.campaigns[0];
     const scene = next.scenes.find((item) => item.id === nextSceneId) ?? next.scenes.find((item) => item.active) ?? next.scenes[0];
-    setCampaignId(campaign?.id ?? "");
-    setSceneId(scene?.id ?? "");
-    const sceneTokens = scene ? next.tokens.filter((item) => item.sceneId === scene.id) : next.tokens;
-    const validSelection = selectedTokenIds.filter((id) => sceneTokens.some((item) => item.id === id));
-    const token = sceneTokens.find((item) => item.id === selectedTokenId) ?? sceneTokens.find((item) => validSelection.includes(item.id)) ?? sceneTokens[0];
-    setSelectedTokenIdState(token?.id ?? "");
-    setSelectedTokenIds(token ? (validSelection.length ? validSelection : [token.id]) : []);
+    setCampaignId((current) => (next.campaigns.some((item) => item.id === current) ? current : campaign?.id ?? ""));
+    setSceneId((current) => (next.scenes.some((item) => item.id === current) ? current : scene?.id ?? ""));
+    // Selection belongs to the user, not the snapshot: keep it as long as the
+    // tokens still exist, auto-select only on the very first load.
+    const firstLoadToken = !snapshotReady && scene ? next.tokens.find((item) => item.sceneId === scene.id) : undefined;
+    setSelectedTokenIds((current) => {
+      const valid = current.filter((id) => next.tokens.some((item) => item.id === id));
+      if (valid.length > 0) return valid.length === current.length ? current : valid;
+      return firstLoadToken ? [firstLoadToken.id] : valid;
+    });
+    setSelectedTokenIdState((current) => (current && next.tokens.some((item) => item.id === current) ? current : firstLoadToken?.id ?? ""));
     setSnapshotReady(true);
     if (options.syncStatus !== false) setStatus("Synced");
     return next;
