@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdAttunementLimit, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCarryingCapacity, dnd5eSrdCharacterTemplate, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdConcentrationDc, dnd5eSrdCoverBonus, dnd5eSrdDeathSavingThrow, dnd5eSrdEncounterPlan, dnd5eSrdFallingDamage, dnd5eSrdJumpDistances, dnd5eSrdLevelForXp, dnd5eSrdXpForNextLevel, dnd5eSrdCanMulticlassInto, dnd5eSrdMeetsMulticlassPrerequisite, dnd5eSrdMulticlassSpellcasting, dnd5eSrdMulticlassSpellSlots, applyDnd5eSrdMulticlassLevel, dnd5eSrdAbilityScoreImprovementLevels, dnd5eSrdGeneralFeats, dnd5eSrdFeatEntry, applyDnd5eSrdFeat, dnd5eSrdImprovisedWeapon, dnd5eSrdMagicItemCraftingPlan, dnd5eSrdSpellScrollCraftingPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
+import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdAttunementLimit, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCarryingCapacity, dnd5eSrdCharacterTemplate, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdConcentrationDc, dnd5eSrdCoverBonus, dnd5eSrdDeathSavingThrow, dnd5eSrdEncounterPlan, dnd5eSrdFallingDamage, dnd5eSrdJumpDistances, dnd5eSrdLevelForXp, dnd5eSrdXpForNextLevel, dnd5eSrdCanMulticlassInto, dnd5eSrdMeetsMulticlassPrerequisite, dnd5eSrdMulticlassCasterLevel, dnd5eSrdMulticlassSpellcasting, dnd5eSrdMulticlassSpellSlots, applyDnd5eSrdMulticlassLevel, dnd5eSrdAbilityScoreImprovementLevels, dnd5eSrdGeneralFeats, dnd5eSrdFeatEntry, applyDnd5eSrdFeat, dnd5eSrdImprovisedWeapon, dnd5eSrdMagicItemCraftingPlan, dnd5eSrdSpellScrollCraftingPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -380,6 +380,9 @@ describe("dnd 5.5e srd rules", () => {
     });
     expect(dnd5eSrdMulticlassSpellSlots([{ className: "Wizard", level: 20 }]).level9).toEqual({ current: 1, max: 1, recovery: "long" });
     expect(dnd5eSrdMulticlassSpellSlots([{ className: "Fighter", level: 11 }])).toEqual({});
+    // Half-caster levels round DOWN: Paladin 3 + Wizard 1 = floor(3/2) + 1 = 2.
+    expect(dnd5eSrdMulticlassCasterLevel([{ className: "Paladin", level: 3 }, { className: "Wizard", level: 1 }])).toBe(2);
+    expect(dnd5eSrdMulticlassCasterLevel([{ className: "Ranger", level: 5 }])).toBe(2);
   });
 
   it("applies a multiclass level with combined level, proficiency, HP, and shared slots", () => {
@@ -392,7 +395,8 @@ describe("dnd 5.5e srd rules", () => {
     expect((advanced.hp as { max: number }).max).toBeGreaterThan(33);
     // Cleric 5 (full) + Rogue 1 (non-caster) = caster level 5 → 4/3/2.
     expect(advanced.spellSlots).toEqual(expect.objectContaining({ level3: { current: 2, max: 2, recovery: "long" } }));
-    expect(advanced.features as string[]).toContain("Rogue Level 1");
+    // Features are the union per class: Rogue 1 grants Sneak Attack, Cleric 5 keeps Channel Divinity.
+    expect(advanced.features as string[]).toEqual(expect.arrayContaining(["Sneak Attack", "Channel Divinity"]));
 
     // Leveling an existing class bumps that class, not a new entry.
     const bumped = applyDnd5eSrdMulticlassLevel({ ...cleric5, data: advanced }, "Rogue");
@@ -401,6 +405,25 @@ describe("dnd 5.5e srd rules", () => {
     // Ineligible new class throws.
     const weakStr = { ...srdActor, data: { ...srdActor.data, class: "Cleric", attributes: { strength: 8, dexterity: 10, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 } } };
     expect(() => applyDnd5eSrdMulticlassLevel(weakStr, "Barbarian")).toThrow();
+  });
+
+  it("keeps multiclass features, resources, and Extra Attack per class instead of single-class", () => {
+    // Fighter 5 (Extra Attack, 2 attacks) with Str 15 → eligible to add Barbarian.
+    const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", level: 5, attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 11, charisma: 10 }, hp: { current: 44, max: 44 }, hitDice: { current: 5, max: 5, size: "d10" }, combat: { attacksPerAction: 2 } } };
+    const barb = applyDnd5eSrdMulticlassLevel(fighter5, "Barbarian");
+    const features = barb.features as string[];
+    // Both classes contribute: Second Wind (Fighter), Rage (Barbarian 1).
+    expect(features).toEqual(expect.arrayContaining(["Second Wind", "Extra Attack", "Rage", "Unarmored Defense"]));
+    // Extra Attack does NOT stack: Fighter 5 (2) + Barbarian 1 (1) stays at 2.
+    expect((barb.combat as { attacksPerAction: number }).attacksPerAction).toBe(2);
+    // Resources come from both classes.
+    expect(barb.resources).toEqual(expect.objectContaining({ secondWind: expect.anything(), rage: expect.anything() }));
+
+    // A plain level-up of a multiclass character advances the primary class and stays combined.
+    const leveled = applyDnd5eSrdAdvancement({ ...fighter5, data: barb }, "level-up");
+    expect(leveled.classes).toEqual([{ className: "Fighter", level: 6 }, { className: "Barbarian", level: 1 }]);
+    expect(leveled.level).toBe(7);
+    expect(leveled.features as string[]).toEqual(expect.arrayContaining(["Rage", "Second Wind"]));
   });
 
   it("offers Ability Score Improvements and feats at the correct levels", () => {
@@ -424,6 +447,13 @@ describe("dnd 5.5e srd rules", () => {
     const chosen = applyDnd5eSrdFeat(wisActor, "ability-score-improvement", { abilities: { strength: 1, dexterity: 1 } });
     expect((chosen.attributes as Record<string, number>).strength).toBe(11);
     expect((chosen.attributes as Record<string, number>).dexterity).toBe(13);
+
+    // A cheating client cannot exceed the feat's ability-point budget (ASI = 2).
+    const cheat = applyDnd5eSrdFeat(wisActor, "ability-score-improvement", { abilities: { strength: 2, dexterity: 2, constitution: 2, intelligence: 2, wisdom: 2, charisma: 2 } });
+    const cheatAttrs = cheat.attributes as Record<string, number>;
+    const baseAttrs: Record<string, number> = { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 };
+    const spent = Object.keys(baseAttrs).reduce((sum, key) => sum + ((cheatAttrs[key] ?? 0) - baseAttrs[key]!), 0);
+    expect(spent).toBe(2);
 
     // Fortitude boon raises the HP maximum by 40 (fixture max is 12) and caps scores.
     const maxedWisdom = { ...wisActor, data: { ...wisActor.data, attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 30, charisma: 10 } } };
@@ -3738,6 +3768,14 @@ describe("dnd 5.5e srd rules", () => {
     const origins = dnd5eSrdCharacterOrigins();
     expect(origins.backgrounds.map((background) => background.id)).toEqual(["acolyte", "criminal", "sage", "soldier"]);
     expect(origins.species.map((species) => species.id)).toEqual(["dragonborn", "dwarf", "elf", "gnome", "goliath", "halfling", "human", "orc", "tiefling"]);
+    // The creator UI drives its choice pickers from these catalogs.
+    expect(origins.elfLineages.map((lineage) => lineage.id)).toEqual(["drow", "high-elf", "wood-elf"]);
+    expect(origins.gnomeLineages.map((lineage) => lineage.id)).toEqual(["forest-gnome", "rock-gnome"]);
+    expect(origins.tieflingLegacies.map((legacy) => legacy.id)).toEqual(["abyssal", "chthonic", "infernal"]);
+    expect(origins.highElfCantrips).toContain("fire-bolt");
+    expect(origins.skills.length).toBe(18);
+    expect(origins.originFeats).toContain("Skilled");
+    expect(origins.spellcastingAbilities).toEqual(["intelligence", "wisdom", "charisma"]);
     expect(dnd5eSrdCompendiumEntry("alert")).toEqual(expect.objectContaining({ name: "Alert" }));
     expect(dnd5eSrdCompendiumEntry("thieves-tools")?.data).toEqual(expect.objectContaining({ toolId: "thieves-tools", costGp: 25 }));
     const materializeItems = (actorForItems: Actor, templateItems: ReturnType<typeof dnd5eSrdApplyCharacterOrigins>["items"]): Item[] =>

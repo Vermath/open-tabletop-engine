@@ -448,6 +448,33 @@ type AdvancementOptionInfo = {
   nextValue: number;
 };
 
+type CharacterOriginsInfo = {
+  backgrounds: Array<{ id: string; name: string; abilityScores: string[]; feat: string; skillProficiencies: string[]; toolProficiencies: string[]; startingGp: number }>;
+  species: Array<{ id: string; name: string; size: string; speed: number; traits: string[]; senses?: string[] }>;
+  elfLineages: Array<{ id: string; name: string; cantrip: string; level3Spell: string; level5Spell: string }>;
+  gnomeLineages: Array<{ id: string; name: string }>;
+  tieflingLegacies: Array<{ id: string; name: string; resistance: string }>;
+  highElfCantrips: string[];
+  skills: Array<{ id: string; label: string; ability: string }>;
+  originFeats: string[];
+  spellcastingAbilities: string[];
+};
+
+type CharacterCreateInput = {
+  name: string;
+  ownerUserId: string;
+  backgroundId?: string;
+  speciesId?: string;
+  abilityScoreIncreases?: Record<string, number>;
+  skillProficiency?: string;
+  originFeat?: string;
+  elfLineage?: string;
+  elfCantrip?: string;
+  gnomeLineage?: string;
+  tieflingLegacy?: string;
+  speciesSpellcastingAbility?: string;
+};
+
 type AssetLifecycleStatus = NonNullable<MapAsset["lifecycle"]>["status"];
 type MeasurementTool = "measure-circle" | "measure-cone";
 type AnnotationTool = SceneAnnotationKind | MeasurementTool | null;
@@ -1221,6 +1248,8 @@ export function App() {
   const [advancementGrantsFeat, setAdvancementGrantsFeat] = useState(false);
   const [advancementFeats, setAdvancementFeats] = useState<Array<{ id: string; name: string; category: string; summary: string }>>([]);
   const [multiclassOptions, setMulticlassOptions] = useState<Array<{ className: string; eligible: boolean; reasons: string[] }>>([]);
+  const [characterCreatorOpen, setCharacterCreatorOpen] = useState(false);
+  const [characterOrigins, setCharacterOrigins] = useState<CharacterOriginsInfo | undefined>(undefined);
   const [fogPresetName, setFogPresetName] = useState("");
   const [fogPresetMode, setFogPresetMode] = useState<"replace" | "append">("replace");
   const [visionSampleX, setVisionSampleX] = useState("");
@@ -2914,7 +2943,7 @@ export function App() {
       return;
     }
     applyTokensToSnapshot([await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, patch)]);
-    void refresh(campaignId, sceneId, { syncStatus: false });
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function updateSelectedToken(patch: Partial<Token>) {
@@ -3561,14 +3590,14 @@ export function App() {
     if (!selectedScene) return;
     applySceneToSnapshot(await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/walls/${wallId}`));
     setStatus("Wall deleted");
-    void refresh(campaignId, sceneId, { syncStatus: false });
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function deleteSceneLight(lightId: string) {
     if (!selectedScene) return;
     applySceneToSnapshot(await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/lights/${lightId}`));
     setStatus("Light deleted");
-    void refresh(campaignId, sceneId, { syncStatus: false });
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function moveSceneAnnotation(annotation: SceneAnnotation, points: VisionPoint[]) {
@@ -3590,21 +3619,21 @@ export function App() {
       points
     }));
     setStatus(`${mode === "hide" ? "Hide" : "Reveal"} fog brush applied`);
-    void refresh(campaignId, sceneId, { syncStatus: false });
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function undoFog() {
     if (!selectedScene) return;
     applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog/undo`, {}));
     setStatus("Fog change undone");
-    void refresh(campaignId, sceneId, { syncStatus: false });
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function undoSceneEdit() {
     if (!selectedScene) return;
     applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/undo`, {}));
     setStatus("Scene edit undone");
-    void refresh(campaignId, sceneId, { syncStatus: false });
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   function closeFogToolPanel() {
@@ -3687,7 +3716,7 @@ export function App() {
       blocksVision: true
     }));
     setStatus("Wall added");
-    void refresh(campaignId, sceneId, { syncStatus: false });
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function addTerrainWall() {
@@ -3702,7 +3731,7 @@ export function App() {
       kind: "terrain"
     }));
     setStatus("Terrain wall added");
-    void refresh(campaignId, sceneId, { syncStatus: false });
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function addLight() {
@@ -3717,7 +3746,7 @@ export function App() {
       intensity: 0.32
     }));
     setStatus("Dual-zone light added");
-    void refresh(campaignId, sceneId, { syncStatus: false });
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   function applyActorToSnapshot(actor: Actor) {
@@ -3741,7 +3770,7 @@ export function App() {
       applyActorToSnapshot(await apiPatch<Actor>(`/api/v1/actors/${actorId}`, { data: { ...actor.data, hp } }));
     } catch (error) {
       setStatus(errorMessage(error));
-      void refresh(campaignId, sceneId, { syncStatus: false });
+      void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
     }
   }
 
@@ -3764,8 +3793,12 @@ export function App() {
   }
 
   async function updateActorHp(actor: Actor, current: number) {
+    // Clearing the number input yields Number("")/Number("-") === NaN; ignore
+    // non-finite values so we never persist a null hit-point total.
+    if (!Number.isFinite(current)) return;
     const hp = actorHitPoints(actor);
-    const next = { current: Math.max(0, current), max: hp?.max ?? Math.max(0, current) };
+    const safeCurrent = Math.max(0, Math.floor(current));
+    const next = { current: safeCurrent, max: hp?.max ?? safeCurrent };
     applyActorHpToSnapshot(actor.id, next);
     await persistActorHp(actor.id, next);
   }
@@ -4917,6 +4950,35 @@ export function App() {
     await refresh();
   }
 
+  async function openCharacterCreator() {
+    // Resolve origins BEFORE opening so the step list never reshuffles under
+    // the user. Origin catalogs exist only for the D&D SRD runtime; other
+    // systems get the simple name-and-template flow.
+    const system = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
+    if (system) {
+      try {
+        setCharacterOrigins(await apiGet<CharacterOriginsInfo>(`/api/v1/campaigns/${campaignId}/systems/${system.id}/character-origins`));
+      } catch {
+        setCharacterOrigins(undefined);
+      }
+    } else {
+      setCharacterOrigins(undefined);
+    }
+    setCharacterCreatorOpen(true);
+  }
+
+  async function createCharacterFromCreator(template: CharacterTemplateInfo, input: CharacterCreateInput) {
+    const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${template.systemId}/characters`, {
+      templateId: template.id,
+      ...input,
+      name: input.name.trim() || template.name
+    });
+    setCharacterCreatorOpen(false);
+    setStatus(`${created.actor.name} joined the party`);
+    setTab("actors");
+    await refresh();
+  }
+
   async function importSystemCharacter() {
     const system = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
     if (!system) return;
@@ -5720,7 +5782,13 @@ export function App() {
         <section className="party-rail" aria-label="Party">
           <div className="operator-heading">
             <div className="section-title">Party</div>
-            <span>{formatNumber(partyActors.length)} actors</span>
+            {hasPermission("actor.create") ? (
+              <button className="icon-button" type="button" aria-label="Open character creator" title="Create a character" onClick={() => void openCharacterCreator()}>
+                <UserPlus size={14} />
+              </button>
+            ) : (
+              <span>{formatNumber(partyActors.length)} actors</span>
+            )}
           </div>
           <div className="party-list">
             {partyActors.map((actor) => (
@@ -7003,7 +7071,7 @@ export function App() {
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
-            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
+            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
         </div>
         ) : workspaceMode === "ai" ? (
@@ -7069,6 +7137,16 @@ export function App() {
         />
       )}
       {commandPaletteOpen && <CommandPalette commands={paletteCommands} onRun={runPaletteCommand} onClose={() => setCommandPaletteOpen(false)} />}
+      {characterCreatorOpen && (
+        <CharacterCreatorDialog
+          templates={snapshot.characterTemplates}
+          origins={characterOrigins}
+          members={snapshot.members}
+          currentUserId={currentUserId}
+          onClose={() => setCharacterCreatorOpen(false)}
+          onCreate={createCharacterFromCreator}
+        />
+      )}
       {shortcutOverlayOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setShortcutOverlayOpen(false);
@@ -17872,7 +17950,265 @@ function formatDateTime(value?: string): string {
   return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; advancementGrantsFeat: boolean; advancementFeats: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions: Array<{ className: string; eligible: boolean; reasons: string[] }>; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version?: string): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onCreateMonster(): void; onAdvanceActor(optionId?: string, choices?: { featId?: string; abilityChoices?: Record<string, number>; multiclassInto?: string }): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
+function prettyOriginId(value: string): string {
+  return value.split("-").map((word) => (word ? word[0]!.toUpperCase() + word.slice(1) : word)).join(" ");
+}
+
+function CharacterCreatorDialog(props: {
+  templates: CharacterTemplateInfo[];
+  origins?: CharacterOriginsInfo;
+  members: Snapshot["members"];
+  currentUserId: string;
+  onClose(): void;
+  onCreate(template: CharacterTemplateInfo, input: CharacterCreateInput): Promise<void>;
+}) {
+  const steps = props.origins ? ["Class", "Origin", "Background", "Finish"] : ["Class", "Finish"];
+  const [stepIndex, setStepIndex] = useState(0);
+  const [templateId, setTemplateId] = useState(props.templates[0]?.id ?? "");
+  const [name, setName] = useState("");
+  const [ownerUserId, setOwnerUserId] = useState(props.currentUserId);
+  const [speciesId, setSpeciesId] = useState("human");
+  const [backgroundId, setBackgroundId] = useState("soldier");
+  const [spreadMode, setSpreadMode] = useState<"2-1" | "1-1-1">("2-1");
+  const [plusTwoChoice, setPlusTwoChoice] = useState("");
+  const [plusOneChoice, setPlusOneChoice] = useState("");
+  const [skillProficiency, setSkillProficiency] = useState("");
+  const [originFeat, setOriginFeat] = useState("Skilled");
+  const [elfLineage, setElfLineage] = useState("high-elf");
+  const [elfCantrip, setElfCantrip] = useState("prestidigitation");
+  const [gnomeLineage, setGnomeLineage] = useState("forest-gnome");
+  const [tieflingLegacy, setTieflingLegacy] = useState("infernal");
+  const [spellAbility, setSpellAbility] = useState("intelligence");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+
+  const template = props.templates.find((item) => item.id === templateId);
+  const origins = props.origins;
+  const species = origins?.species.find((item) => item.id === speciesId);
+  const background = origins?.backgrounds.find((item) => item.id === backgroundId);
+  const spreadAbilities = background?.abilityScores ?? [];
+  const plusTwo = spreadAbilities.includes(plusTwoChoice) ? plusTwoChoice : spreadAbilities[0] ?? "";
+  const plusOneFallback = spreadAbilities.find((ability) => ability !== plusTwo) ?? "";
+  const plusOne = spreadAbilities.includes(plusOneChoice) && plusOneChoice !== plusTwo ? plusOneChoice : plusOneFallback;
+  const humanSkillOptions = origins?.skills.filter((skill) => !background?.skillProficiencies.includes(skill.id)) ?? [];
+  const speciesNeedsSpellAbility = speciesId === "elf" || speciesId === "gnome" || speciesId === "tiefling";
+  const buildSummary = [species?.name, background?.name, template?.name].filter(Boolean).join(" ");
+
+  function creationInput(): CharacterCreateInput {
+    const input: CharacterCreateInput = { name, ownerUserId };
+    if (!origins) return input;
+    input.backgroundId = backgroundId;
+    input.speciesId = speciesId;
+    input.abilityScoreIncreases = spreadMode === "2-1"
+      ? { [plusTwo]: 2, [plusOne]: 1 }
+      : Object.fromEntries(spreadAbilities.map((ability) => [ability, 1]));
+    if (speciesId === "human") {
+      if (skillProficiency) input.skillProficiency = skillProficiency;
+      input.originFeat = originFeat;
+    }
+    if (speciesId === "elf") {
+      input.elfLineage = elfLineage;
+      if (elfLineage === "high-elf") input.elfCantrip = elfCantrip;
+    }
+    if (speciesId === "gnome") input.gnomeLineage = gnomeLineage;
+    if (speciesId === "tiefling") input.tieflingLegacy = tieflingLegacy;
+    if (speciesNeedsSpellAbility) input.speciesSpellcastingAbility = spellAbility;
+    return input;
+  }
+
+  async function submit() {
+    if (!template || creating) return;
+    setCreating(true);
+    setError("");
+    try {
+      await props.onCreate(template, creationInput());
+    } catch (submitError) {
+      setError(errorMessage(submitError));
+      setCreating(false);
+    }
+  }
+
+  const stepName = steps[stepIndex] ?? "Class";
+  const nextDisabled = stepName === "Class" ? !template : stepName === "Background" ? spreadMode === "2-1" && (!plusTwo || !plusOne) : false;
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
+      <div className="modal-dialog character-creator" role="dialog" aria-modal="true" aria-label="Character creator">
+        <header className="creator-header">
+          <div>
+            <h2>Create a character</h2>
+            <p>{buildSummary || template?.name || "Choose a class to begin"}</p>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close character creator" onClick={props.onClose}><X size={16} /></button>
+        </header>
+        <nav className="creator-steps" aria-label="Creator steps">
+          {steps.map((step, index) => (
+            <button key={step} type="button" className={index === stepIndex ? "creator-step active" : index < stepIndex ? "creator-step done" : "creator-step"} onClick={() => setStepIndex(Math.min(index, stepIndex))} disabled={index > stepIndex}>
+              {index < stepIndex ? <Check size={12} /> : <span className="creator-step-number">{index + 1}</span>} {step}
+            </button>
+          ))}
+        </nav>
+        <div className="creator-body">
+          {stepName === "Class" && (
+            <div className="creator-grid" role="radiogroup" aria-label="Class">
+              {props.templates.map((item) => (
+                <button key={item.id} type="button" role="radio" aria-checked={item.id === templateId} className={item.id === templateId ? "creator-card selected" : "creator-card"} onClick={() => setTemplateId(item.id)}>
+                  <strong>{item.name}</strong>
+                  <small>{item.summary}</small>
+                </button>
+              ))}
+            </div>
+          )}
+          {stepName === "Origin" && origins && (
+            <>
+              <div className="creator-grid compact" role="radiogroup" aria-label="Species">
+                {origins.species.map((item) => (
+                  <button key={item.id} type="button" role="radio" aria-checked={item.id === speciesId} className={item.id === speciesId ? "creator-card selected" : "creator-card"} onClick={() => setSpeciesId(item.id)}>
+                    <strong>{item.name}</strong>
+                    <small>{item.size} · {item.speed} ft. · {item.traits.slice(0, 3).join(", ")}</small>
+                  </button>
+                ))}
+              </div>
+              <div className="creator-choices">
+                {speciesId === "human" && (
+                  <>
+                    <label>
+                      <span>Skillful proficiency</span>
+                      <select aria-label="Human skill proficiency" value={skillProficiency} onChange={(event) => setSkillProficiency(event.target.value)}>
+                        <option value="">Choose later</option>
+                        {humanSkillOptions.map((skill) => <option key={skill.id} value={skill.id}>{skill.label}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Versatile origin feat</span>
+                      <select aria-label="Human origin feat" value={originFeat} onChange={(event) => setOriginFeat(event.target.value)}>
+                        {origins.originFeats.map((feat) => <option key={feat} value={feat}>{feat}</option>)}
+                      </select>
+                    </label>
+                  </>
+                )}
+                {speciesId === "elf" && (
+                  <>
+                    <label>
+                      <span>Elven lineage</span>
+                      <select aria-label="Elven lineage" value={elfLineage} onChange={(event) => setElfLineage(event.target.value)}>
+                        {origins.elfLineages.map((lineage) => <option key={lineage.id} value={lineage.id}>{lineage.name}</option>)}
+                      </select>
+                    </label>
+                    {elfLineage === "high-elf" && (
+                      <label>
+                        <span>High Elf cantrip</span>
+                        <select aria-label="High Elf cantrip" value={elfCantrip} onChange={(event) => setElfCantrip(event.target.value)}>
+                          {origins.highElfCantrips.map((cantrip) => <option key={cantrip} value={cantrip}>{prettyOriginId(cantrip)}</option>)}
+                        </select>
+                      </label>
+                    )}
+                  </>
+                )}
+                {speciesId === "gnome" && (
+                  <label>
+                    <span>Gnomish lineage</span>
+                    <select aria-label="Gnomish lineage" value={gnomeLineage} onChange={(event) => setGnomeLineage(event.target.value)}>
+                      {origins.gnomeLineages.map((lineage) => <option key={lineage.id} value={lineage.id}>{lineage.name}</option>)}
+                    </select>
+                  </label>
+                )}
+                {speciesId === "tiefling" && (
+                  <label>
+                    <span>Fiendish legacy</span>
+                    <select aria-label="Fiendish legacy" value={tieflingLegacy} onChange={(event) => setTieflingLegacy(event.target.value)}>
+                      {origins.tieflingLegacies.map((legacy) => <option key={legacy.id} value={legacy.id}>{legacy.name} · resists {legacy.resistance}</option>)}
+                    </select>
+                  </label>
+                )}
+                {speciesNeedsSpellAbility && (
+                  <label>
+                    <span>Spellcasting ability for species spells</span>
+                    <select aria-label="Species spellcasting ability" value={spellAbility} onChange={(event) => setSpellAbility(event.target.value)}>
+                      {origins.spellcastingAbilities.map((ability) => <option key={ability} value={ability}>{prettyOriginId(ability)}</option>)}
+                    </select>
+                  </label>
+                )}
+              </div>
+            </>
+          )}
+          {stepName === "Background" && origins && (
+            <>
+              <div className="creator-grid compact" role="radiogroup" aria-label="Background">
+                {origins.backgrounds.map((item) => (
+                  <button key={item.id} type="button" role="radio" aria-checked={item.id === backgroundId} className={item.id === backgroundId ? "creator-card selected" : "creator-card"} onClick={() => setBackgroundId(item.id)}>
+                    <strong>{item.name}</strong>
+                    <small>{item.feat} · {item.skillProficiencies.map(prettyOriginId).join(", ")}</small>
+                  </button>
+                ))}
+              </div>
+              <div className="creator-choices">
+                <div className="segmented-control" role="group" aria-label="Ability score spread">
+                  <button className={spreadMode === "2-1" ? "active" : ""} type="button" onClick={() => setSpreadMode("2-1")}>+2 / +1</button>
+                  <button className={spreadMode === "1-1-1" ? "active" : ""} type="button" onClick={() => setSpreadMode("1-1-1")}>+1 / +1 / +1</button>
+                </div>
+                {spreadMode === "2-1" ? (
+                  <>
+                    <label>
+                      <span>+2 to</span>
+                      <select aria-label="Plus two ability" value={plusTwo} onChange={(event) => setPlusTwoChoice(event.target.value)}>
+                        {spreadAbilities.map((ability) => <option key={ability} value={ability}>{prettyOriginId(ability)}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span>+1 to</span>
+                      <select aria-label="Plus one ability" value={plusOne} onChange={(event) => setPlusOneChoice(event.target.value)}>
+                        {spreadAbilities.filter((ability) => ability !== plusTwo).map((ability) => <option key={ability} value={ability}>{prettyOriginId(ability)}</option>)}
+                      </select>
+                    </label>
+                  </>
+                ) : (
+                  <p className="creator-note">+1 to {spreadAbilities.map(prettyOriginId).join(", ")}.</p>
+                )}
+              </div>
+            </>
+          )}
+          {stepName === "Finish" && (
+            <div className="creator-choices">
+              <label>
+                <span>Character name</span>
+                <input aria-label="Character name" type="text" placeholder={template?.name ?? "Name"} value={name} onChange={(event) => setName(event.target.value)} />
+              </label>
+              <label>
+                <span>Played by</span>
+                <select aria-label="Character owner" value={ownerUserId} onChange={(event) => setOwnerUserId(event.target.value)}>
+                  {props.members.map((member) => <option key={member.user.id} value={member.user.id}>{member.user.displayName} · {member.role}</option>)}
+                </select>
+              </label>
+              {origins && background && (
+                <p className="creator-note">
+                  {buildSummary}. {spreadMode === "2-1" ? `${prettyOriginId(plusTwo)} +2, ${prettyOriginId(plusOne)} +1` : `${spreadAbilities.map(prettyOriginId).join(" +1, ")} +1`} · {background.feat} · {background.startingGp} gp.
+                </p>
+              )}
+            </div>
+          )}
+          {error && <p className="creator-error" role="alert">{error}</p>}
+        </div>
+        <footer className="creator-footer">
+          <button className="ghost-button" type="button" disabled={stepIndex === 0} onClick={() => setStepIndex((index) => Math.max(0, index - 1))}>
+            <ChevronLeft size={14} /> Back
+          </button>
+          {stepIndex < steps.length - 1 ? (
+            <button className="ghost-button" type="button" disabled={nextDisabled} onClick={() => setStepIndex((index) => Math.min(steps.length - 1, index + 1))}>
+              Next <ChevronRight size={14} />
+            </button>
+          ) : (
+            <button className="ghost-button wide" type="button" disabled={!template || creating} onClick={() => void submit()}>
+              <UserPlus size={15} /> {creating ? "Creating…" : "Create character"}
+            </button>
+          )}
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; advancementGrantsFeat: boolean; advancementFeats: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions: Array<{ className: string; eligible: boolean; reasons: string[] }>; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version?: string): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onOpenCharacterCreator(): void; onImportCharacter(): void; onCreateMonster(): void; onAdvanceActor(optionId?: string, choices?: { featId?: string; abilityChoices?: Record<string, number>; multiclassInto?: string }): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
   const [pluginSearch, setPluginSearch] = useState("");
   const [pluginSourceFilter, setPluginSourceFilter] = useState<"all" | "local" | "registry">("all");
   const [pluginStatusFilter, setPluginStatusFilter] = useState<"all" | "installed" | "available" | "upgrade">("all");
@@ -18172,13 +18508,16 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
           )}
         </article>
       ))}
+      <button className="ghost-button wide" type="button" onClick={() => props.onOpenCharacterCreator()} disabled={!props.canCreateActor}>
+        <UserPlus size={15} /> Open character creator
+      </button>
       {props.characterTemplates.map((template) => (
         <article className="proposal" key={template.id}>
           <span>character template</span>
           <h3>{template.name}</h3>
           <p>{template.summary}</p>
           <button className="ghost-button" onClick={() => props.onCreateCharacter(template)} disabled={!props.canCreateActor}>
-            <Plus size={15} /> Create
+            <Plus size={15} /> Quick create
           </button>
         </article>
       ))}

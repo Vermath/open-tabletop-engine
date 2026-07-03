@@ -94,6 +94,13 @@ export interface Dnd5eSrdCharacterSpecies {
 export interface Dnd5eSrdCharacterOrigins {
   backgrounds: Dnd5eSrdCharacterBackground[];
   species: Dnd5eSrdCharacterSpecies[];
+  elfLineages: Array<{ id: string; name: string; cantrip: string; level3Spell: string; level5Spell: string }>;
+  gnomeLineages: Array<{ id: string; name: string }>;
+  tieflingLegacies: Array<{ id: string; name: string; resistance: string }>;
+  highElfCantrips: string[];
+  skills: Array<{ id: string; label: string; ability: string }>;
+  originFeats: string[];
+  spellcastingAbilities: string[];
 }
 
 export interface Dnd5eSrdCharacterOriginOptions {
@@ -2589,7 +2596,8 @@ export function dnd5eSrdMulticlassCasterLevel(classes: Dnd5eSrdClassLevel[]): nu
   return classes.reduce((total, entry) => {
     const level = Math.max(0, Math.floor(entry.level));
     if (dnd5eSrdFullCasterClasses.includes(entry.className)) return total + level;
-    if (dnd5eSrdHalfCasterClasses.includes(entry.className)) return total + Math.ceil(level / 2);
+    // Multiclass spellcasting adds HALF of Paladin/Ranger levels, rounded down.
+    if (dnd5eSrdHalfCasterClasses.includes(entry.className)) return total + Math.floor(level / 2);
     return total;
   }, 0);
 }
@@ -2694,8 +2702,15 @@ export function applyDnd5eSrdFeat(actor: Actor, featId: string, choices: { abili
     const ability = options.length > 0 && !options.includes(primary) ? options[0]! : primary;
     return { [ability]: increase };
   })();
+  // Enforce the feat's ability-point budget (ASI = 2, most feats = 1) so a
+  // client cannot claim more increases than the feat grants.
+  const abilityBudget = numericValue(feat.data.abilityPoints, numericValue(feat.data.abilityIncrease, 0));
+  let abilityPointsSpent = 0;
   for (const [ability, amount] of Object.entries(abilityChoices)) {
-    attributes[ability] = Math.min(maximumScore, numericValue(attributes[ability], 10) + Math.max(0, Math.floor(amount)));
+    const allowed = Math.max(0, Math.min(Math.max(0, Math.floor(amount)), abilityBudget - abilityPointsSpent));
+    if (allowed <= 0) continue;
+    attributes[ability] = Math.min(maximumScore, numericValue(attributes[ability], 10) + allowed);
+    abilityPointsSpent += allowed;
   }
   const feats = normalizeStringArray(actor.data.feats);
   if (!feats.includes(feat.id)) feats.push(feat.id);
@@ -2710,6 +2725,74 @@ export function applyDnd5eSrdFeat(actor: Actor, featId: string, choices: { abili
   return data;
 }
 
+/** Union of every class's features taken at that class's own level. */
+function dnd5eSrdCombinedClassFeatures(baseFeatures: string[], classes: Dnd5eSrdClassLevel[]): string[] {
+  let features = normalizeStringArray(baseFeatures);
+  for (const entry of classes) features = dnd5eSrdApplyClassFeatures(features, entry.className, entry.level);
+  return [...new Set(features)];
+}
+
+/** Extra Attack and movement riders do not stack across classes; take the best of each. */
+function dnd5eSrdCombinedClassCombat(baseCombat: Record<string, unknown>, classes: Dnd5eSrdClassLevel[], speed: unknown): Record<string, unknown> {
+  const combat: Record<string, unknown> = { ...baseCombat };
+  let attacksPerAction = 1;
+  for (const entry of classes) {
+    const applied = dnd5eSrdApplyClassCombat({}, entry.className, entry.level, speed);
+    attacksPerAction = Math.max(attacksPerAction, numericValue(applied.attacksPerAction, 1));
+    for (const [key, value] of Object.entries(applied)) {
+      if (key !== "attacksPerAction") combat[key] = value;
+    }
+  }
+  combat.attacksPerAction = attacksPerAction;
+  return combat;
+}
+
+/** Class resources are the union across classes (each at its own level) plus species resources. */
+function dnd5eSrdCombinedClassResources(value: unknown, classes: Dnd5eSrdClassLevel[], data: Record<string, unknown>, totalLevel: number, options: { raiseMaxToDefault?: boolean } = {}): Record<string, Record<string, unknown> & { current: number; max: number }> {
+  const defaults: Record<string, Record<string, unknown>> = { ...defaultDnd5eSrdSpeciesResourcesForData(data, totalLevel) };
+  for (const entry of classes) Object.assign(defaults, defaultDnd5eSrdClassResources(entry.className, entry.level, data));
+  const pools = normalizeResourcePools(value, defaults, options);
+  for (const [key, defaultPool] of Object.entries(defaults)) {
+    const recovery = stringValue(defaultPool.recovery);
+    if (recovery && pools[key]) pools[key] = { ...pools[key], recovery };
+  }
+  return pools;
+}
+
+/**
+ * Recomputes an SRD character from an explicit per-class level breakdown so
+ * multiclass sheets get each class's features, the best Extra Attack, combined
+ * resources, and the shared multiclass spell-slot table — instead of treating
+ * the whole character as a single class of the summed level.
+ */
+function dnd5eSrdApplyClassLevels(actor: Actor, classes: Dnd5eSrdClassLevel[], leveledClassName: string): Record<string, unknown> {
+  const totalLevel = classes.reduce((sum, entry) => sum + entry.level, 0);
+  const primary = [...classes].sort((left, right) => right.level - left.level)[0]!.className;
+  const constitutionModifier = genericFantasyAttributeModifier(actor, "constitution");
+  const hpGain = Math.max(1, averageHitDie(dnd5eSrdHitDieSize(leveledClassName)) + constitutionModifier);
+  const hp = normalizePool(actor.data.hp, 1);
+  const hitDice = recordValue(actor.data.hitDice);
+  const nextData = { ...actor.data, classes, level: totalLevel, class: primary };
+  return {
+    ...actor.data,
+    class: primary,
+    classes,
+    level: totalLevel,
+    hp: { current: hp.current + hpGain, max: hp.max + hpGain },
+    hitDice: {
+      current: numericValue(hitDice.current, totalLevel - 1) + 1,
+      max: numericValue(hitDice.max, totalLevel - 1) + 1,
+      size: stringValue(hitDice.size) ?? dnd5eSrdHitDieSize(primary)
+    },
+    proficiencyBonus: Math.max(2, 2 + Math.floor((totalLevel - 1) / 4)),
+    features: dnd5eSrdCombinedClassFeatures(normalizeStringArray(actor.data.features), classes),
+    combat: dnd5eSrdCombinedClassCombat(recordValue(actor.data.combat), classes, actor.data.speed),
+    resources: dnd5eSrdCombinedClassResources(actor.data.resources, classes, nextData, totalLevel, { raiseMaxToDefault: true }),
+    spellSlots: normalizeResourcePools(actor.data.spellSlots, dnd5eSrdMulticlassSpellSlots(classes), { raiseMaxToDefault: true }),
+    ruleset: DND_5E_SRD_VERSION
+  };
+}
+
 export function applyDnd5eSrdMulticlassLevel(actor: Actor, className: string): Record<string, unknown> {
   const eligibility = dnd5eSrdCanMulticlassInto(actor, className);
   const existing = dnd5eSrdActorClassLevels(actor);
@@ -2720,35 +2803,7 @@ export function applyDnd5eSrdMulticlassLevel(actor: Actor, className: string): R
   const classes = alreadyIn
     ? existing.map((entry) => (entry.className === className ? { ...entry, level: entry.level + 1 } : entry))
     : [...existing, { className, level: 1 }];
-  const totalLevel = classes.reduce((sum, entry) => sum + entry.level, 0);
-  const attributes = recordValue(actor.data.attributes);
-  const constitutionModifier = genericFantasyAttributeModifier(actor, "constitution");
-  const hitDieSize = dnd5eSrdHitDieSize(className);
-  const hpGain = Math.max(1, averageHitDie(hitDieSize) + constitutionModifier);
-  const hp = normalizePool(actor.data.hp, 1);
-  const hitDice = recordValue(actor.data.hitDice);
-  const features = normalizeStringArray(actor.data.features);
-  const newClassLevel = classes.find((entry) => entry.className === className)!.level;
-  const featureName = `${className} Level ${newClassLevel}`;
-  if (!features.includes(featureName)) features.push(featureName);
-  const primary = [...classes].sort((left, right) => right.level - left.level)[0]!.className;
-  return {
-    ...actor.data,
-    class: primary,
-    classes,
-    level: totalLevel,
-    attributes: { ...attributes },
-    hp: { current: hp.current + hpGain, max: hp.max + hpGain },
-    hitDice: {
-      current: numericValue(hitDice.current, totalLevel - 1) + 1,
-      max: numericValue(hitDice.max, totalLevel - 1) + 1,
-      size: stringValue(hitDice.size) ?? dnd5eSrdHitDieSize(primary)
-    },
-    proficiencyBonus: Math.max(2, 2 + Math.floor((totalLevel - 1) / 4)),
-    spellSlots: normalizeResourcePools(actor.data.spellSlots, dnd5eSrdMulticlassSpellSlots(classes), { raiseMaxToDefault: true }),
-    features,
-    ruleset: DND_5E_SRD_VERSION
-  };
+  return dnd5eSrdApplyClassLevels(actor, classes, className);
 }
 
 export function dnd5eSrdImprovisedWeapon(actor: Actor): QuickRoll {
@@ -6467,7 +6522,14 @@ const DND_5E_SRD_TIEFLING_LEGACIES: Record<Dnd5eSrdTieflingLegacyId, Dnd5eSrdTie
 export function dnd5eSrdCharacterOrigins(): Dnd5eSrdCharacterOrigins {
   return {
     backgrounds: DND_5E_SRD_BACKGROUNDS.map((background) => ({ ...background, abilityScores: [...background.abilityScores], skillProficiencies: [...background.skillProficiencies], toolProficiencies: [...background.toolProficiencies] })),
-    species: DND_5E_SRD_SPECIES.map((species) => ({ ...species, traits: [...species.traits], senses: species.senses ? [...species.senses] : undefined }))
+    species: DND_5E_SRD_SPECIES.map((species) => ({ ...species, traits: [...species.traits], senses: species.senses ? [...species.senses] : undefined })),
+    elfLineages: Object.values(DND_5E_SRD_ELF_LINEAGES).map((lineage) => ({ id: lineage.id, name: lineage.name, cantrip: lineage.cantrip, level3Spell: lineage.level3Spell, level5Spell: lineage.level5Spell })),
+    gnomeLineages: Object.values(DND_5E_SRD_GNOME_LINEAGES).map((lineage) => ({ id: lineage.id, name: lineage.name })),
+    tieflingLegacies: Object.values(DND_5E_SRD_TIEFLING_LEGACIES).map((legacy) => ({ id: legacy.id, name: legacy.name, resistance: legacy.resistance })),
+    highElfCantrips: [...DND_5E_SRD_HIGH_ELF_WIZARD_CANTRIPS],
+    skills: dnd5eSrdSkills(),
+    originFeats: ["Alert", "Magic Initiate (Cleric)", "Magic Initiate (Wizard)", "Savage Attacker", "Skilled"],
+    spellcastingAbilities: [...DND_5E_SRD_SPECIES_SPELLCASTING_ABILITIES]
   };
 }
 
@@ -15512,6 +15574,14 @@ export function applyGenericFantasyAdvancement(actor: Actor, optionId: string): 
 }
 
 export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
+  // A multiclass character's plain level-up advances its primary class through
+  // the class-array recompute so features/resources stay per-class correct.
+  const existingClasses = dnd5eSrdActorClassLevels(actor);
+  if (existingClasses.length > 1) {
+    const primary = [...existingClasses].sort((left, right) => right.level - left.level)[0]!.className;
+    const leveled = existingClasses.map((entry) => (entry.className === primary ? { ...entry, level: entry.level + 1 } : entry));
+    return dnd5eSrdApplyClassLevels(actor, leveled, primary);
+  }
   const next = applyGenericFantasyAdvancement(actor, optionId);
   const className = typeof actor.data.class === "string" ? actor.data.class : "Fighter";
   const genericPrimary = className === "Mender" ? "wisdom" : "strength";
