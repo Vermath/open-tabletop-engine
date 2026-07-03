@@ -705,12 +705,11 @@ const keyboardShortcutRows: Array<{ keys: string; label: string }> = [
   { keys: "?", label: "Toggle this overlay" }
 ];
 
-function HpBar(props: { current?: number; max?: number; canEdit: boolean; onSetHp(value: number): void }) {
+function HpBar(props: { current?: number; max?: number; canEdit: boolean; onAdjust(delta: number): void }) {
   const max = Math.max(0, Math.round(props.max ?? 0));
   const current = Math.max(0, Math.round(props.current ?? 0));
   const ratio = max > 0 ? Math.min(1, current / max) : 0;
   const tone = max === 0 ? "unknown" : ratio <= 0.25 ? "danger" : ratio <= 0.5 ? "warning" : "healthy";
-  const adjust = (delta: number) => props.onSetHp(Math.max(0, Math.min(max > 0 ? max : Number.MAX_SAFE_INTEGER, current + delta)));
   return (
     <div className="hp-bar" aria-label={`Hit points ${props.current ?? "?"} of ${props.max ?? "?"}`}>
       <div className="hp-bar-track" role="meter" aria-valuemin={0} aria-valuemax={max} aria-valuenow={current}>
@@ -719,10 +718,10 @@ function HpBar(props: { current?: number; max?: number; canEdit: boolean; onSetH
       </div>
       {props.canEdit && (
         <div className="hp-bar-steppers" role="group" aria-label="Adjust hit points">
-          <button className="hp-step hp-step-damage" type="button" aria-label="Take 5 damage" onClick={() => adjust(-5)}>-5</button>
-          <button className="hp-step hp-step-damage" type="button" aria-label="Take 1 damage" onClick={() => adjust(-1)}>-1</button>
-          <button className="hp-step hp-step-heal" type="button" aria-label="Heal 1" onClick={() => adjust(1)}>+1</button>
-          <button className="hp-step hp-step-heal" type="button" aria-label="Heal 5" onClick={() => adjust(5)}>+5</button>
+          <button className="hp-step hp-step-damage" type="button" aria-label="Take 5 damage" onClick={() => props.onAdjust(-5)}>-5</button>
+          <button className="hp-step hp-step-damage" type="button" aria-label="Take 1 damage" onClick={() => props.onAdjust(-1)}>-1</button>
+          <button className="hp-step hp-step-heal" type="button" aria-label="Heal 1" onClick={() => props.onAdjust(1)}>+1</button>
+          <button className="hp-step hp-step-heal" type="button" aria-label="Heal 5" onClick={() => props.onAdjust(5)}>+5</button>
         </div>
       )}
     </div>
@@ -1236,6 +1235,9 @@ export function App() {
   const realtimeSelectionRef = useRef({ campaignId, sceneId });
   const realtimeRefreshRef = useRef<() => Promise<unknown>>(() => Promise.resolve());
   const realtimeBoardCaptureHandlerRef = useRef<(data: unknown) => boolean>(() => false);
+  const hpAdjustRef = useRef<Map<string, { current: number; max: number; timer: number }>>(new Map());
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
   realtimeSelectionRef.current = { campaignId, sceneId };
   const realtimeConnectionKey = realtimeConnectionIdentity({ blankCanvasDemoOpen, campaignId, sessionToken });
 
@@ -3718,12 +3720,54 @@ export function App() {
     void refresh(campaignId, sceneId, { syncStatus: false });
   }
 
+  function applyActorToSnapshot(actor: Actor) {
+    setSnapshot((current) => ({
+      ...current,
+      actors: current.actors.map((item) => (item.id === actor.id ? actor : item))
+    }));
+  }
+
+  function applyActorHpToSnapshot(actorId: string, hp: { current: number; max: number }) {
+    setSnapshot((current) => ({
+      ...current,
+      actors: current.actors.map((item) => (item.id === actorId ? { ...item, data: { ...item.data, hp } } : item))
+    }));
+  }
+
+  async function persistActorHp(actorId: string, hp: { current: number; max: number }) {
+    const actor = snapshotRef.current.actors.find((item) => item.id === actorId);
+    if (!actor) return;
+    try {
+      applyActorToSnapshot(await apiPatch<Actor>(`/api/v1/actors/${actorId}`, { data: { ...actor.data, hp } }));
+    } catch (error) {
+      setStatus(errorMessage(error));
+      void refresh(campaignId, sceneId, { syncStatus: false });
+    }
+  }
+
+  // Steppers accumulate a running total in a ref (so rapid clicks add up even
+  // before React re-renders), apply optimistically for instant feedback, and
+  // debounce a single PATCH instead of one blocking full refresh per click.
+  function adjustActorHp(actor: Actor, delta: number) {
+    const pending = hpAdjustRef.current.get(actor.id);
+    const base = pending ?? actorHitPoints(actor) ?? { current: 0, max: 0 };
+    const max = base.max > 0 ? base.max : Number.MAX_SAFE_INTEGER;
+    const nextCurrent = Math.max(0, Math.min(max, base.current + delta));
+    const next = { current: nextCurrent, max: base.max };
+    applyActorHpToSnapshot(actor.id, next);
+    if (pending?.timer) window.clearTimeout(pending.timer);
+    const timer = window.setTimeout(() => {
+      hpAdjustRef.current.delete(actor.id);
+      void persistActorHp(actor.id, next);
+    }, 220);
+    hpAdjustRef.current.set(actor.id, { ...next, timer });
+  }
+
   async function updateActorHp(actor: Actor, current: number) {
     const hp = actorHitPoints(actor);
-    await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, {
-      data: { ...actor.data, hp: { current, max: hp?.max ?? current } }
-    });
-    await refresh();
+    const next = { current: Math.max(0, current), max: hp?.max ?? Math.max(0, current) };
+    applyActorHpToSnapshot(actor.id, next);
+    await persistActorHp(actor.id, next);
   }
 
   async function updateActorData(actor: Actor, patch: Record<string, unknown>) {
@@ -6954,7 +6998,7 @@ export function App() {
               {inspectorTabs.includes("content") && <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Content" onClick={() => setTab("content")} />}
               {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" onClick={() => setTab("plugins")} />}
             </div>
-            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
@@ -9610,7 +9654,7 @@ function slugId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 }
 
-function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
+function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
   const [sheetView, setSheetView] = useState<"stats" | "loadout" | "actions" | "compendium">("stats");
   const [assignItemId, setAssignItemId] = useState("");
   const [itemDropActive, setItemDropActive] = useState(false);
@@ -9840,7 +9884,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
         </button>
       </header>
       <section className="operator-section actor-at-a-glance" aria-label="Actor at a glance">
-        <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onSetHp={(value) => props.updateActorHp(props.actor!, value)} />
+        <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onAdjust={(delta) => props.adjustActorHp(props.actor!, delta)} />
         <div className="actor-vitals-row">
           <span className="actor-vital" title={armorClass?.label ? `Armor class - ${armorClass.label}` : "Armor class"}>
             <Shield size={13} aria-hidden="true" /> AC {armorClass ? armorClass.value : "?"}
@@ -9873,7 +9917,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           </header>
           <div className="actor-sheet-body">
             <section className="actor-sheet-section" aria-label="Full sheet stats">
-              <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onSetHp={(value) => props.updateActorHp(props.actor!, value)} />
+              <HpBar current={hp?.current} max={hp?.max} canEdit={props.canUpdateActor} onAdjust={(delta) => props.adjustActorHp(props.actor!, delta)} />
               {(conditions.length > 0 || resources.length > 0 || combatState.length > 0) && (
                 <div className="actor-vitals-row">
                   {resources.map((resource) => (
