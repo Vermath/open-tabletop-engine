@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdAttunementLimit, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplate, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
+import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdAttunementLimit, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCarryingCapacity, dnd5eSrdCharacterTemplate, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdConcentrationDc, dnd5eSrdCoverBonus, dnd5eSrdDeathSavingThrow, dnd5eSrdEncounterPlan, dnd5eSrdFallingDamage, dnd5eSrdJumpDistances, dnd5eSrdLevelForXp, dnd5eSrdXpForNextLevel, dnd5eSrdCanMulticlassInto, dnd5eSrdMeetsMulticlassPrerequisite, dnd5eSrdMulticlassSpellcasting, dnd5eSrdMulticlassSpellSlots, applyDnd5eSrdMulticlassLevel, dnd5eSrdAbilityScoreImprovementLevels, dnd5eSrdGeneralFeats, dnd5eSrdFeatEntry, applyDnd5eSrdFeat, dnd5eSrdImprovisedWeapon, dnd5eSrdMagicItemCraftingPlan, dnd5eSrdSpellScrollCraftingPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -298,6 +298,153 @@ describe("dnd 5.5e srd rules", () => {
       spellSlots: { level1: { current: 1, max: 2, recovery: "long" }, level2: { current: 1, max: 1, recovery: "long" } }
     }
   };
+
+  it("rolls death saves, concentration checks, and unarmed strikes as core quick rolls", () => {
+    const rolls = dnd5eSrdQuickRolls(srdActor);
+    const deathSave = rolls.find((roll) => roll.id === "death-save");
+    expect(deathSave).toEqual(expect.objectContaining({ label: "Death Saving Throw", formula: "1d20" }));
+    expect(deathSave?.metadata).toEqual(
+      expect.objectContaining({
+        save: expect.objectContaining({ dc: 10 }),
+        criticalSuccess: "regain 1 hit point",
+        criticalFailure: "two failures",
+        successesToStabilize: 3,
+        failuresToDie: 3
+      })
+    );
+    const exhausted = { ...srdActor, data: { ...srdActor.data, conditions: [{ id: "exhaustion", level: 2 }] } };
+    expect(dnd5eSrdDeathSavingThrow(exhausted).formula).toBe("1d20-4");
+
+    const concentration = rolls.find((roll) => roll.id === "concentration-check");
+    expect(concentration).toEqual(expect.objectContaining({ label: "Concentration Check", formula: "1d20+1" }));
+    expect(concentration?.metadata).toEqual(expect.objectContaining({ concentration: true, save: expect.objectContaining({ ability: "constitution", dc: 10 }) }));
+
+    const unarmed = rolls.find((roll) => roll.id === "unarmed-strike");
+    expect(unarmed).toEqual(expect.objectContaining({ label: "Unarmed Strike Damage", formula: "1" }));
+    expect(unarmed?.metadata).toEqual(
+      expect.objectContaining({
+        damageType: "bludgeoning",
+        grapple: expect.objectContaining({ save: expect.objectContaining({ dc: 10 }) }),
+        shove: expect.objectContaining({ save: expect.objectContaining({ dc: 10 }) })
+      })
+    );
+  });
+
+  it("computes concentration DCs, carrying capacity, jumps, falling damage, cover, and XP progression", () => {
+    expect(dnd5eSrdConcentrationDc()).toBe(10);
+    expect(dnd5eSrdConcentrationDc(7)).toBe(10);
+    expect(dnd5eSrdConcentrationDc(45)).toBe(22);
+    expect(dnd5eSrdConcentrationDc(90)).toBe(30);
+
+    expect(dnd5eSrdCarryingCapacity(srdActor)).toEqual({ carryPounds: 150, dragPounds: 300, sizeMultiplier: 1 });
+    const largeActor = { ...srdActor, data: { ...srdActor.data, size: "Large" } };
+    expect(dnd5eSrdCarryingCapacity(largeActor)).toEqual({ carryPounds: 300, dragPounds: 600, sizeMultiplier: 2 });
+
+    expect(dnd5eSrdJumpDistances(srdActor)).toEqual({ longJumpFt: 10, highJumpFt: 3, standingLongJumpFt: 5, standingHighJumpFt: 1 });
+
+    expect(dnd5eSrdFallingDamage(35).formula).toBe("3d6");
+    expect(dnd5eSrdFallingDamage(500).formula).toBe("20d6");
+    expect(dnd5eSrdFallingDamage(5).formula).toBe("0");
+
+    expect(dnd5eSrdCoverBonus("half")).toEqual({ acBonus: 2, dexteritySaveBonus: 2, targetable: true });
+    expect(dnd5eSrdCoverBonus("three-quarters").acBonus).toBe(5);
+    expect(dnd5eSrdCoverBonus("total").targetable).toBe(false);
+
+    expect(dnd5eSrdLevelForXp(0)).toBe(1);
+    expect(dnd5eSrdLevelForXp(899)).toBe(2);
+    expect(dnd5eSrdLevelForXp(6500)).toBe(5);
+    expect(dnd5eSrdLevelForXp(355000)).toBe(20);
+    expect(dnd5eSrdXpForNextLevel(0)).toBe(300);
+    expect(dnd5eSrdXpForNextLevel(355000)).toBeUndefined();
+  });
+
+  it("gates multiclassing on ability prerequisites and combines caster levels into shared slots", () => {
+    const fighterDex15 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", attributes: { strength: 10, dexterity: 15, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 } } };
+    expect(dnd5eSrdMeetsMulticlassPrerequisite(fighterDex15, "Fighter").eligible).toBe(true);
+    expect(dnd5eSrdMeetsMulticlassPrerequisite(fighterDex15, "Wizard")).toEqual({ eligible: false, requirement: "Intelligence 13", missing: ["Intelligence"] });
+    expect(dnd5eSrdMeetsMulticlassPrerequisite(fighterDex15, "Paladin").missing).toEqual(["Strength", "Charisma"]);
+
+    const wizard13 = { ...srdActor, data: { ...srdActor.data, class: "Cleric", attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 13, wisdom: 16, charisma: 10 } } };
+    expect(dnd5eSrdCanMulticlassInto(wizard13, "Wizard").eligible).toBe(true);
+    expect(dnd5eSrdCanMulticlassInto(fighterDex15, "Wizard").eligible).toBe(false);
+
+    // Cleric 6 (full) + Ranger 4 (half → 2) = caster level 8 → 4/3/3/2.
+    const multiclass = { ...srdActor, data: { ...srdActor.data, classes: [{ className: "Cleric", level: 6 }, { className: "Ranger", level: 4 }] } };
+    const casting = dnd5eSrdMulticlassSpellcasting(multiclass);
+    expect(casting.casterLevel).toBe(8);
+    expect(casting.slots).toEqual({
+      level1: { current: 4, max: 4, recovery: "long" },
+      level2: { current: 3, max: 3, recovery: "long" },
+      level3: { current: 3, max: 3, recovery: "long" },
+      level4: { current: 2, max: 2, recovery: "long" }
+    });
+    expect(dnd5eSrdMulticlassSpellSlots([{ className: "Wizard", level: 20 }]).level9).toEqual({ current: 1, max: 1, recovery: "long" });
+    expect(dnd5eSrdMulticlassSpellSlots([{ className: "Fighter", level: 11 }])).toEqual({});
+  });
+
+  it("applies a multiclass level with combined level, proficiency, HP, and shared slots", () => {
+    // Cleric 5 with Dex 14, Con 13 → eligible to add Rogue (Dex 13).
+    const cleric5 = { ...srdActor, data: { ...srdActor.data, class: "Cleric", level: 5, attributes: { strength: 10, dexterity: 14, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 }, hp: { current: 33, max: 33 }, hitDice: { current: 5, max: 5, size: "d8" } } };
+    const advanced = applyDnd5eSrdMulticlassLevel(cleric5, "Rogue");
+    expect(advanced.level).toBe(6);
+    expect(advanced.classes).toEqual([{ className: "Cleric", level: 5 }, { className: "Rogue", level: 1 }]);
+    expect(advanced.proficiencyBonus).toBe(3);
+    expect((advanced.hp as { max: number }).max).toBeGreaterThan(33);
+    // Cleric 5 (full) + Rogue 1 (non-caster) = caster level 5 → 4/3/2.
+    expect(advanced.spellSlots).toEqual(expect.objectContaining({ level3: { current: 2, max: 2, recovery: "long" } }));
+    expect(advanced.features as string[]).toContain("Rogue Level 1");
+
+    // Leveling an existing class bumps that class, not a new entry.
+    const bumped = applyDnd5eSrdMulticlassLevel({ ...cleric5, data: advanced }, "Rogue");
+    expect(bumped.classes).toEqual([{ className: "Cleric", level: 5 }, { className: "Rogue", level: 2 }]);
+
+    // Ineligible new class throws.
+    const weakStr = { ...srdActor, data: { ...srdActor.data, class: "Cleric", attributes: { strength: 8, dexterity: 10, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 } } };
+    expect(() => applyDnd5eSrdMulticlassLevel(weakStr, "Barbarian")).toThrow();
+  });
+
+  it("offers Ability Score Improvements and feats at the correct levels", () => {
+    expect(dnd5eSrdAbilityScoreImprovementLevels).toEqual([4, 8, 12, 16, 19]);
+    const level3 = { ...srdActor, data: { ...srdActor.data, level: 3 } };
+    expect(dnd5eSrdAdvancementOptions(level3)[0]?.summary).toContain("Ability Score Improvement or a feat");
+    const level4 = { ...srdActor, data: { ...srdActor.data, level: 4 } };
+    expect(dnd5eSrdAdvancementOptions(level4)[0]?.summary).not.toContain("Ability Score Improvement or a feat");
+
+    const feats = dnd5eSrdGeneralFeats();
+    expect(feats.some((feat) => feat.id === "ability-score-improvement")).toBe(true);
+    expect(feats.filter((feat) => feat.category === "fighting-style").length).toBeGreaterThanOrEqual(9);
+    expect(feats.filter((feat) => feat.category === "epic-boon").length).toBeGreaterThanOrEqual(10);
+    expect(dnd5eSrdFeatEntry("grappler")?.data.attacksAgainstGrappled).toBe("advantage");
+
+    const wisActor = { ...srdActor, data: { ...srdActor.data, class: "Cleric", attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 16, charisma: 10 } } };
+    const asi = applyDnd5eSrdFeat(wisActor, "ability-score-improvement");
+    expect((asi.attributes as Record<string, number>).wisdom).toBe(18);
+    expect(asi.feats).toContain("ability-score-improvement");
+
+    const chosen = applyDnd5eSrdFeat(wisActor, "ability-score-improvement", { abilities: { strength: 1, dexterity: 1 } });
+    expect((chosen.attributes as Record<string, number>).strength).toBe(11);
+    expect((chosen.attributes as Record<string, number>).dexterity).toBe(13);
+
+    // Fortitude boon raises the HP maximum by 40 (fixture max is 12) and caps scores.
+    const maxedWisdom = { ...wisActor, data: { ...wisActor.data, attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 30, charisma: 10 } } };
+    const boon = applyDnd5eSrdFeat(maxedWisdom, "boon-of-fortitude");
+    expect((boon.hp as { max: number }).max).toBe(52);
+    expect((boon.attributes as Record<string, number>).wisdom).toBe(30);
+  });
+
+  it("models improvised weapons and downtime crafting costs", () => {
+    expect(dnd5eSrdImprovisedWeapon(srdActor).formula).toBe("1d4");
+    const strongActor = { ...srdActor, data: { ...srdActor.data, attributes: { ...(srdActor.data.attributes as Record<string, number>), strength: 16 } } };
+    expect(dnd5eSrdImprovisedWeapon(strongActor).formula).toBe("1d4+3");
+
+    expect(dnd5eSrdMagicItemCraftingPlan("rare")).toEqual(expect.objectContaining({ rarity: "rare", costGp: 2000, days: 50 }));
+    expect(dnd5eSrdMagicItemCraftingPlan("rare", { crafters: 2 })?.days).toBe(25);
+    expect(dnd5eSrdMagicItemCraftingPlan("mythic")).toBeUndefined();
+
+    expect(dnd5eSrdSpellScrollCraftingPlan(3)).toEqual(expect.objectContaining({ spellLevel: 3, costGp: 150, days: 5 }));
+    expect(dnd5eSrdSpellScrollCraftingPlan(0)?.costGp).toBe(15);
+    expect(dnd5eSrdSpellScrollCraftingPlan(12)).toBeUndefined();
+  });
 
   it("keeps magic item spell references backed by compendium spell entries", () => {
     const spells = new Set(dnd5eSrdCompendium().filter((entry) => entry.type === "spell").map((entry) => entry.id));

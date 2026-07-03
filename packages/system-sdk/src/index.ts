@@ -361,6 +361,9 @@ export interface Dnd5eSrdEquipmentPurchaseResult {
   itemData: Record<string, unknown>;
 }
 
+export const DND_5E_SRD_DEATH_SAVE_ROLL_ID = "death-save";
+export const DND_5E_SRD_CONCENTRATION_ROLL_ID = "concentration-check";
+export const DND_5E_SRD_UNARMED_STRIKE_ROLL_ID = "unarmed-strike";
 export const DND_5E_SRD_SECOND_WIND_ROLL_ID = "feature-second-wind-healing";
 export const DND_5E_SRD_ACTION_SURGE_ROLL_ID = "feature-action-surge";
 export const DND_5E_SRD_TACTICAL_MIND_ROLL_ID = "feature-tactical-mind-bonus";
@@ -836,6 +839,7 @@ export function dnd5eSrdQuickRolls(actor: Actor, items: Item[] = []): QuickRoll[
     ...abilities.map((ability) => dnd5eSrdAbilityCheck(actor, ability)),
     ...abilities.map((ability) => dnd5eSrdSavingThrow(actor, ability, items)),
     dnd5eSrdInitiativeRoll(actor),
+    ...dnd5eSrdCoreCombatRolls(actor, items),
     ...dnd5eSrdSkills().map((skill) => dnd5eSrdSkillCheck(actor, skill.id)),
     ...dnd5eSrdToolProficiencies(actor, "toolProficiencies").map((toolId) => dnd5eSrdToolCheck(actor, toolId)),
     ...dnd5eSrdClassFeatureRolls(actor),
@@ -2394,6 +2398,440 @@ export function dnd5eSrdToolCheck(actor: Actor, toolId: string): QuickRoll {
     label: `${tool.label} Check`,
     formula: `${conditionRoll.d20}${formatSignedNumber(modifier + proficiencyMultiplier * dnd5eSrdProficiencyBonus(actor) + conditionRoll.modifier)}`,
     ...(conditionRoll.metadata ? { metadata: conditionRoll.metadata } : {})
+  };
+}
+
+export function dnd5eSrdDeathSavingThrow(actor: Actor): QuickRoll {
+  const conditionRoll = dnd5eSrdD20Automation(actor, "saving-throw");
+  const blessed = dnd5eSrdActorConditions(actor).some((condition) => condition.id === "blessed") ? "+1d4" : "";
+  return {
+    id: DND_5E_SRD_DEATH_SAVE_ROLL_ID,
+    label: "Death Saving Throw",
+    formula: `${conditionRoll.d20}${conditionRoll.modifier !== 0 ? formatSignedNumber(conditionRoll.modifier) : ""}${blessed}`,
+    metadata: {
+      ...conditionRoll.metadata,
+      save: { dc: 10, success: "one success", failure: "one failure" },
+      criticalSuccess: "regain 1 hit point",
+      criticalFailure: "two failures",
+      successesToStabilize: 3,
+      failuresToDie: 3
+    }
+  };
+}
+
+export function dnd5eSrdConcentrationDc(damageTaken?: number): number {
+  if (damageTaken === undefined || !Number.isFinite(damageTaken)) return 10;
+  return Math.min(30, Math.max(10, Math.floor(Math.max(0, damageTaken) / 2)));
+}
+
+export function dnd5eSrdConcentrationCheck(actor: Actor, damageTaken?: number, items: Item[] = []): QuickRoll {
+  const save = dnd5eSrdSavingThrow(actor, "constitution", items);
+  const dc = dnd5eSrdConcentrationDc(damageTaken);
+  return {
+    ...save,
+    id: DND_5E_SRD_CONCENTRATION_ROLL_ID,
+    label: "Concentration Check",
+    metadata: {
+      ...save.metadata,
+      concentration: true,
+      save: { ability: "constitution", dc, rule: "DC 10 or half the damage taken, whichever is higher (max 30)" },
+      ...(damageTaken !== undefined ? { triggerDamage: damageTaken } : {})
+    }
+  };
+}
+
+export function dnd5eSrdUnarmedStrike(actor: Actor): QuickRoll {
+  const strengthModifier = genericFantasyAttributeModifier(actor, "strength");
+  const dc = 8 + strengthModifier + dnd5eSrdProficiencyBonus(actor);
+  return {
+    id: DND_5E_SRD_UNARMED_STRIKE_ROLL_ID,
+    label: "Unarmed Strike Damage",
+    formula: String(Math.max(0, 1 + strengthModifier)),
+    metadata: {
+      damageType: "bludgeoning",
+      grapple: { save: { ability: "strength or dexterity", dc }, targetSizeLimit: "no more than one size larger", escape: "repeat the save at the end of each of its turns" },
+      shove: { save: { ability: "strength or dexterity", dc }, effect: "push 5 feet away or knock Prone", targetSizeLimit: "no more than one size larger" }
+    }
+  };
+}
+
+export function dnd5eSrdCoreCombatRolls(actor: Actor, items: Item[] = []): QuickRoll[] {
+  return [dnd5eSrdDeathSavingThrow(actor), dnd5eSrdConcentrationCheck(actor, undefined, items), dnd5eSrdUnarmedStrike(actor)];
+}
+
+const dnd5eSrdSizeCarryMultipliers: Record<string, number> = { tiny: 0.5, small: 1, medium: 1, large: 2, huge: 4, gargantuan: 8 };
+
+export function dnd5eSrdCarryingCapacity(actor: Actor): { carryPounds: number; dragPounds: number; sizeMultiplier: number } {
+  const strengthScore = numericValue(recordValue(actor.data.attributes).strength, 10);
+  const size = (stringValue(actor.data.size) ?? "medium").toLowerCase();
+  const sizeMultiplier = dnd5eSrdSizeCarryMultipliers[size] ?? 1;
+  return {
+    carryPounds: Math.floor(strengthScore * 15 * sizeMultiplier),
+    dragPounds: Math.floor(strengthScore * 30 * sizeMultiplier),
+    sizeMultiplier
+  };
+}
+
+export function dnd5eSrdFallingDamage(fallenFeet: number): QuickRoll {
+  const dice = Math.min(20, Math.max(0, Math.floor(Math.max(0, fallenFeet) / 10)));
+  return {
+    id: "falling-damage",
+    label: "Falling Damage",
+    formula: dice > 0 ? `${dice}d6` : "0",
+    metadata: { damageType: "bludgeoning", landsProne: dice > 0, rule: "1d6 per 10 feet fallen (max 20d6)" }
+  };
+}
+
+export function dnd5eSrdJumpDistances(actor: Actor): { longJumpFt: number; highJumpFt: number; standingLongJumpFt: number; standingHighJumpFt: number } {
+  const strengthScore = numericValue(recordValue(actor.data.attributes).strength, 10);
+  const longJumpFt = Math.max(0, strengthScore);
+  const highJumpFt = Math.max(0, 3 + genericFantasyAttributeModifier(actor, "strength"));
+  return {
+    longJumpFt,
+    highJumpFt,
+    standingLongJumpFt: Math.floor(longJumpFt / 2),
+    standingHighJumpFt: Math.floor(highJumpFt / 2)
+  };
+}
+
+export function dnd5eSrdCoverBonus(cover: "half" | "three-quarters" | "total"): { acBonus: number; dexteritySaveBonus: number; targetable: boolean } {
+  if (cover === "half") return { acBonus: 2, dexteritySaveBonus: 2, targetable: true };
+  if (cover === "three-quarters") return { acBonus: 5, dexteritySaveBonus: 5, targetable: true };
+  return { acBonus: 0, dexteritySaveBonus: 0, targetable: false };
+}
+
+export const dnd5eSrdXpThresholds: readonly number[] = [0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000, 85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000];
+
+export function dnd5eSrdLevelForXp(xp: number): number {
+  const safeXp = Number.isFinite(xp) ? Math.max(0, xp) : 0;
+  let level = 1;
+  for (let index = 0; index < dnd5eSrdXpThresholds.length; index += 1) {
+    if (safeXp >= dnd5eSrdXpThresholds[index]!) level = index + 1;
+  }
+  return level;
+}
+
+export function dnd5eSrdXpForNextLevel(xp: number): number | undefined {
+  const level = dnd5eSrdLevelForXp(xp);
+  return level >= 20 ? undefined : dnd5eSrdXpThresholds[level];
+}
+
+export interface Dnd5eSrdClassLevel {
+  className: string;
+  level: number;
+}
+
+const dnd5eSrdFullCasterClasses = ["Bard", "Cleric", "Druid", "Sorcerer", "Wizard"];
+const dnd5eSrdHalfCasterClasses = ["Paladin", "Ranger"];
+
+export const dnd5eSrdMulticlassPrerequisites: Record<string, { all?: Array<{ ability: string; minimum: number }>; any?: Array<{ ability: string; minimum: number }> }> = {
+  Barbarian: { all: [{ ability: "strength", minimum: 13 }] },
+  Bard: { all: [{ ability: "charisma", minimum: 13 }] },
+  Cleric: { all: [{ ability: "wisdom", minimum: 13 }] },
+  Druid: { all: [{ ability: "wisdom", minimum: 13 }] },
+  Fighter: { any: [{ ability: "strength", minimum: 13 }, { ability: "dexterity", minimum: 13 }] },
+  Monk: { all: [{ ability: "dexterity", minimum: 13 }, { ability: "wisdom", minimum: 13 }] },
+  Paladin: { all: [{ ability: "strength", minimum: 13 }, { ability: "charisma", minimum: 13 }] },
+  Ranger: { all: [{ ability: "dexterity", minimum: 13 }, { ability: "wisdom", minimum: 13 }] },
+  Rogue: { all: [{ ability: "dexterity", minimum: 13 }] },
+  Sorcerer: { all: [{ ability: "charisma", minimum: 13 }] },
+  Warlock: { all: [{ ability: "charisma", minimum: 13 }] },
+  Wizard: { all: [{ ability: "intelligence", minimum: 13 }] }
+};
+
+export function dnd5eSrdActorClassLevels(actor: Actor): Dnd5eSrdClassLevel[] {
+  const classesValue = actor.data.classes;
+  if (Array.isArray(classesValue)) {
+    const parsed = classesValue.flatMap((entry) => {
+      const record = recordValue(entry);
+      const className = stringValue(record.className) ?? stringValue(record.class);
+      const level = numericValue(record.level, 0);
+      return className && level > 0 ? [{ className, level }] : [];
+    });
+    if (parsed.length > 0) return parsed;
+  }
+  const className = stringValue(actor.data.class);
+  return className ? [{ className, level: Math.max(1, numericValue(actor.data.level, 1)) }] : [];
+}
+
+export function dnd5eSrdMeetsMulticlassPrerequisite(actor: Actor, className: string): { eligible: boolean; requirement: string; missing: string[] } {
+  const prerequisite = dnd5eSrdMulticlassPrerequisites[className];
+  if (!prerequisite) return { eligible: false, requirement: "Unknown class", missing: [className] };
+  const attributes = recordValue(actor.data.attributes);
+  const scoreOf = (ability: string) => numericValue(attributes[ability], 10);
+  const describe = (checks: Array<{ ability: string; minimum: number }>, joiner: string) => checks.map((check) => `${titleCaseWords(check.ability)} ${check.minimum}`).join(joiner);
+  if (prerequisite.any) {
+    const eligible = prerequisite.any.some((check) => scoreOf(check.ability) >= check.minimum);
+    return {
+      eligible,
+      requirement: describe(prerequisite.any, " or "),
+      missing: eligible ? [] : prerequisite.any.map((check) => titleCaseWords(check.ability))
+    };
+  }
+  const checks = prerequisite.all ?? [];
+  const missing = checks.filter((check) => scoreOf(check.ability) < check.minimum).map((check) => titleCaseWords(check.ability));
+  return { eligible: missing.length === 0, requirement: describe(checks, " and "), missing };
+}
+
+export function dnd5eSrdCanMulticlassInto(actor: Actor, targetClassName: string): { eligible: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  for (const entry of dnd5eSrdActorClassLevels(actor)) {
+    const current = dnd5eSrdMeetsMulticlassPrerequisite(actor, entry.className);
+    if (!current.eligible) reasons.push(`Current class ${entry.className} requires ${current.requirement}`);
+    if (entry.className === targetClassName) reasons.push(`Already leveled in ${targetClassName}`);
+  }
+  const target = dnd5eSrdMeetsMulticlassPrerequisite(actor, targetClassName);
+  if (!target.eligible) reasons.push(`${targetClassName} requires ${target.requirement}`);
+  return { eligible: reasons.length === 0, reasons };
+}
+
+export function dnd5eSrdMulticlassCasterLevel(classes: Dnd5eSrdClassLevel[]): number {
+  return classes.reduce((total, entry) => {
+    const level = Math.max(0, Math.floor(entry.level));
+    if (dnd5eSrdFullCasterClasses.includes(entry.className)) return total + level;
+    if (dnd5eSrdHalfCasterClasses.includes(entry.className)) return total + Math.ceil(level / 2);
+    return total;
+  }, 0);
+}
+
+const dnd5eSrdMulticlassSlotTable: readonly number[][] = [
+  [2],
+  [3],
+  [4, 2],
+  [4, 3],
+  [4, 3, 2],
+  [4, 3, 3],
+  [4, 3, 3, 1],
+  [4, 3, 3, 2],
+  [4, 3, 3, 3, 1],
+  [4, 3, 3, 3, 2],
+  [4, 3, 3, 3, 2, 1],
+  [4, 3, 3, 3, 2, 1],
+  [4, 3, 3, 3, 2, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 2, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 1, 1, 1, 1],
+  [4, 3, 3, 3, 3, 2, 1, 1, 1],
+  [4, 3, 3, 3, 3, 2, 2, 1, 1]
+];
+
+export function dnd5eSrdMulticlassSpellSlots(classes: Dnd5eSrdClassLevel[]): Record<string, { current: number; max: number; recovery: "long" }> {
+  const casterLevel = Math.min(20, dnd5eSrdMulticlassCasterLevel(classes));
+  if (casterLevel < 1) return {};
+  const row = dnd5eSrdMulticlassSlotTable[casterLevel - 1] ?? [];
+  return Object.fromEntries(row.map((max, index) => [`level${index + 1}`, { current: max, max, recovery: "long" as const }]));
+}
+
+export function dnd5eSrdMulticlassSpellcasting(actor: Actor): { classes: Dnd5eSrdClassLevel[]; casterLevel: number; slots: Record<string, { current: number; max: number; recovery: "long" }>; warlockLevels: number } {
+  const classes = dnd5eSrdActorClassLevels(actor);
+  return {
+    classes,
+    casterLevel: dnd5eSrdMulticlassCasterLevel(classes),
+    slots: dnd5eSrdMulticlassSpellSlots(classes),
+    warlockLevels: classes.filter((entry) => entry.className === "Warlock").reduce((total, entry) => total + entry.level, 0)
+  };
+}
+
+export const dnd5eSrdAbilityScoreImprovementLevels: readonly number[] = [4, 8, 12, 16, 19];
+
+export interface Dnd5eSrdFeat {
+  id: string;
+  name: string;
+  category: "general" | "fighting-style" | "epic-boon";
+  summary: string;
+  data: Record<string, unknown>;
+}
+
+export function dnd5eSrdGeneralFeats(): Dnd5eSrdFeat[] {
+  return [
+    { id: "ability-score-improvement", name: "Ability Score Improvement", category: "general", summary: "Increase one ability score by 2, or two ability scores by 1 each (maximum 20).", data: { abilityPoints: 2, maximumScore: 20, repeatable: true } },
+    { id: "grappler", name: "Grappler", category: "general", summary: "+1 Strength or Dexterity; advantage on attacks against creatures you grapple; move grappled creatures at full speed.", data: { abilityChoices: ["strength", "dexterity"], abilityIncrease: 1, attacksAgainstGrappled: "advantage", fullSpeedGrappleDrag: true } },
+    { id: "fighting-style-archery", name: "Fighting Style: Archery", category: "fighting-style", summary: "+2 bonus to attack rolls with ranged weapons.", data: { rangedAttackBonus: 2 } },
+    { id: "fighting-style-blind-fighting", name: "Fighting Style: Blind Fighting", category: "fighting-style", summary: "Blindsight with a range of 10 feet.", data: { blindsightFt: 10 } },
+    { id: "fighting-style-defense", name: "Fighting Style: Defense", category: "fighting-style", summary: "+1 bonus to AC while wearing armor.", data: { armoredAcBonus: 1 } },
+    { id: "fighting-style-dueling", name: "Fighting Style: Dueling", category: "fighting-style", summary: "+2 damage with a melee weapon held in one hand and no other weapons.", data: { oneHandedMeleeDamageBonus: 2 } },
+    { id: "fighting-style-great-weapon-fighting", name: "Fighting Style: Great Weapon Fighting", category: "fighting-style", summary: "Treat 1s and 2s on damage dice as 3s with two-handed melee weapons.", data: { minimumDamageDieResult: 3, requires: "two-handed or versatile melee weapon" } },
+    { id: "fighting-style-interception", name: "Fighting Style: Interception", category: "fighting-style", summary: "Reaction to reduce damage to a nearby creature by 1d10 + proficiency bonus.", data: { reaction: true, reductionFormula: "1d10+@proficiencyBonus", rangeFt: 5 } },
+    { id: "fighting-style-protection", name: "Fighting Style: Protection", category: "fighting-style", summary: "Reaction with a shield to impose disadvantage on an attack against a nearby creature.", data: { reaction: true, requiresShield: true, rangeFt: 5, imposes: "disadvantage" } },
+    { id: "fighting-style-thrown-weapon-fighting", name: "Fighting Style: Thrown Weapon Fighting", category: "fighting-style", summary: "+2 damage with thrown weapon attacks.", data: { thrownDamageBonus: 2 } },
+    { id: "fighting-style-two-weapon-fighting", name: "Fighting Style: Two-Weapon Fighting", category: "fighting-style", summary: "Add your ability modifier to the damage of the extra attack of two-weapon fighting.", data: { offhandDamageAddsAbilityModifier: true } },
+    { id: "fighting-style-unarmed-fighting", name: "Fighting Style: Unarmed Fighting", category: "fighting-style", summary: "Unarmed strikes deal 1d6 (1d8 with both hands free); 1d4 damage to grappled creatures at the start of your turn.", data: { unarmedDamageFormula: "1d6", bothHandsFreeFormula: "1d8", grappleDamageFormula: "1d4" } },
+    { id: "boon-of-combat-prowess", name: "Boon of Combat Prowess", category: "epic-boon", summary: "+1 to an ability score (max 30); once per turn, turn a missed melee attack into a hit.", data: { abilityIncrease: 1, maximumScore: 30, missToHitPerTurn: 1 } },
+    { id: "boon-of-dimensional-travel", name: "Boon of Dimensional Travel", category: "epic-boon", summary: "+1 to an ability score (max 30); teleport 30 feet after the Attack or Magic action.", data: { abilityIncrease: 1, maximumScore: 30, teleportFt: 30 } },
+    { id: "boon-of-energy-resistance", name: "Boon of Energy Resistance", category: "epic-boon", summary: "+1 to an ability score (max 30); resistance to two damage types of your choice.", data: { abilityIncrease: 1, maximumScore: 30, resistanceChoices: 2 } },
+    { id: "boon-of-fate", name: "Boon of Fate", category: "epic-boon", summary: "+1 to an ability score (max 30); add or subtract 2d4 from a nearby d20 test after seeing the roll.", data: { abilityIncrease: 1, maximumScore: 30, fateFormula: "2d4", rangeFt: 60, recovery: "short" } },
+    { id: "boon-of-fortitude", name: "Boon of Fortitude", category: "epic-boon", summary: "+1 to an ability score (max 30); hit point maximum increases by 40; regain extra hit points when healed.", data: { abilityIncrease: 1, maximumScore: 30, hpMaximumBonus: 40 } },
+    { id: "boon-of-irresistible-offense", name: "Boon of Irresistible Offense", category: "epic-boon", summary: "+1 to Strength or Dexterity (max 30); your weapon damage bypasses resistance.", data: { abilityChoices: ["strength", "dexterity"], abilityIncrease: 1, maximumScore: 30, bypassesResistance: true } },
+    { id: "boon-of-recovery", name: "Boon of Recovery", category: "epic-boon", summary: "+1 to an ability score (max 30); drop to 1 HP instead of 0 once per long rest; regain hit dice.", data: { abilityIncrease: 1, maximumScore: 30, deathWard: true, recovery: "long" } },
+    { id: "boon-of-skill", name: "Boon of Skill", category: "epic-boon", summary: "+1 to an ability score (max 30); gain proficiency in all skills.", data: { abilityIncrease: 1, maximumScore: 30, allSkillProficiency: true } },
+    { id: "boon-of-speed", name: "Boon of Speed", category: "epic-boon", summary: "+1 to an ability score (max 30); speed increases by 30 feet; Disengage as a bonus action.", data: { abilityIncrease: 1, maximumScore: 30, speedBonusFt: 30 } },
+    { id: "boon-of-spell-recall", name: "Boon of Spell Recall", category: "epic-boon", summary: "+1 to an ability score (max 30); casting a level 1-4 spell can avoid expending the slot.", data: { abilityIncrease: 1, maximumScore: 30, freeSlotChance: "d4 matching slot level", slotLevels: [1, 2, 3, 4] } },
+    { id: "boon-of-the-night-spirit", name: "Boon of the Night Spirit", category: "epic-boon", summary: "+1 to an ability score (max 30); merge with shadows for resistance to all but psychic and radiant damage.", data: { abilityIncrease: 1, maximumScore: 30, requiresDimLightOrDarkness: true } },
+    { id: "boon-of-truesight", name: "Boon of Truesight", category: "epic-boon", summary: "+1 to an ability score (max 30); truesight with a range of 60 feet.", data: { abilityIncrease: 1, maximumScore: 30, truesightFt: 60 } }
+  ];
+}
+
+export function dnd5eSrdFeatEntry(featId: string): Dnd5eSrdFeat | undefined {
+  return dnd5eSrdGeneralFeats().find((feat) => feat.id === featId);
+}
+
+export function applyDnd5eSrdFeat(actor: Actor, featId: string, choices: { abilities?: Record<string, number> } = {}): Record<string, unknown> {
+  const feat = dnd5eSrdFeatEntry(featId);
+  if (!feat) throw new Error(`Unknown feat: ${featId}`);
+  const attributes = { ...((actor.data.attributes as Record<string, number> | undefined) ?? {}) };
+  const maximumScore = numericValue(feat.data.maximumScore, 20);
+  const abilityChoices = choices.abilities ?? (() => {
+    if (featId === "ability-score-improvement") {
+      const primary = dnd5eSrdPrimaryAbility(stringValue(actor.data.class) ?? "Fighter");
+      return { [primary]: 2 };
+    }
+    const increase = numericValue(feat.data.abilityIncrease, 0);
+    if (increase <= 0) return {};
+    const options = normalizeStringArray(feat.data.abilityChoices);
+    const primary = dnd5eSrdPrimaryAbility(stringValue(actor.data.class) ?? "Fighter");
+    const ability = options.length > 0 && !options.includes(primary) ? options[0]! : primary;
+    return { [ability]: increase };
+  })();
+  for (const [ability, amount] of Object.entries(abilityChoices)) {
+    attributes[ability] = Math.min(maximumScore, numericValue(attributes[ability], 10) + Math.max(0, Math.floor(amount)));
+  }
+  const feats = normalizeStringArray(actor.data.feats);
+  if (!feats.includes(feat.id)) feats.push(feat.id);
+  const features = normalizeStringArray(actor.data.features);
+  if (!features.includes(feat.name)) features.push(feat.name);
+  const data: Record<string, unknown> = { ...actor.data, attributes, feats, features };
+  const hpMaximumBonus = numericValue(feat.data.hpMaximumBonus, 0);
+  if (hpMaximumBonus > 0) {
+    const hp = normalizePool(actor.data.hp, 1);
+    data.hp = { ...recordValue(actor.data.hp), current: hp.current + hpMaximumBonus, max: hp.max + hpMaximumBonus };
+  }
+  return data;
+}
+
+export function applyDnd5eSrdMulticlassLevel(actor: Actor, className: string): Record<string, unknown> {
+  const eligibility = dnd5eSrdCanMulticlassInto(actor, className);
+  const existing = dnd5eSrdActorClassLevels(actor);
+  const alreadyIn = existing.some((entry) => entry.className === className);
+  if (!alreadyIn && !eligibility.eligible) {
+    throw new Error(eligibility.reasons[0] ?? `Cannot multiclass into ${className}`);
+  }
+  const classes = alreadyIn
+    ? existing.map((entry) => (entry.className === className ? { ...entry, level: entry.level + 1 } : entry))
+    : [...existing, { className, level: 1 }];
+  const totalLevel = classes.reduce((sum, entry) => sum + entry.level, 0);
+  const attributes = recordValue(actor.data.attributes);
+  const constitutionModifier = genericFantasyAttributeModifier(actor, "constitution");
+  const hitDieSize = dnd5eSrdHitDieSize(className);
+  const hpGain = Math.max(1, averageHitDie(hitDieSize) + constitutionModifier);
+  const hp = normalizePool(actor.data.hp, 1);
+  const hitDice = recordValue(actor.data.hitDice);
+  const features = normalizeStringArray(actor.data.features);
+  const newClassLevel = classes.find((entry) => entry.className === className)!.level;
+  const featureName = `${className} Level ${newClassLevel}`;
+  if (!features.includes(featureName)) features.push(featureName);
+  const primary = [...classes].sort((left, right) => right.level - left.level)[0]!.className;
+  return {
+    ...actor.data,
+    class: primary,
+    classes,
+    level: totalLevel,
+    attributes: { ...attributes },
+    hp: { current: hp.current + hpGain, max: hp.max + hpGain },
+    hitDice: {
+      current: numericValue(hitDice.current, totalLevel - 1) + 1,
+      max: numericValue(hitDice.max, totalLevel - 1) + 1,
+      size: stringValue(hitDice.size) ?? dnd5eSrdHitDieSize(primary)
+    },
+    proficiencyBonus: Math.max(2, 2 + Math.floor((totalLevel - 1) / 4)),
+    spellSlots: normalizeResourcePools(actor.data.spellSlots, dnd5eSrdMulticlassSpellSlots(classes), { raiseMaxToDefault: true }),
+    features,
+    ruleset: DND_5E_SRD_VERSION
+  };
+}
+
+export function dnd5eSrdImprovisedWeapon(actor: Actor): QuickRoll {
+  const strengthModifier = genericFantasyAttributeModifier(actor, "strength");
+  return {
+    id: "improvised-weapon",
+    label: "Improvised Weapon Damage",
+    formula: strengthModifier !== 0 ? appendFormulaBonus("1d4", strengthModifier) : "1d4",
+    metadata: {
+      damageType: "bludgeoning",
+      thrownRange: "20/60 ft",
+      rule: "An improvised weapon deals 1d4 damage; treat objects that resemble a weapon as that weapon."
+    }
+  };
+}
+
+export function dnd5eSrdUnderwaterCombatRules(): Record<string, unknown> {
+  return {
+    meleeAttacks: "disadvantage unless the weapon is a dagger, javelin, shortsword, spear, or trident",
+    rangedAttacks: "automatically miss beyond normal range; disadvantage within normal range unless the weapon is a crossbow, net, or thrown like a javelin",
+    swimSpeedExemption: "creatures with a swim speed ignore the melee penalty",
+    fireDamage: "fully submerged creatures have resistance to fire damage"
+  };
+}
+
+export function dnd5eSrdMountedCombatRules(): Record<string, unknown> {
+  return {
+    mounting: "costs an amount of movement equal to half your speed",
+    controlledMount: "acts on your initiative and can only Dash, Disengage, or Dodge",
+    independentMount: "retains its own initiative and actions",
+    dismountedByForce: "if an effect moves your mount against its will, succeed on a DC 10 Dexterity saving throw or land Prone within 5 feet",
+    proneMount: "if your mount is knocked Prone, dismount as it falls or fall Prone within 5 feet",
+    targeting: "attackers can target you or your mount"
+  };
+}
+
+export const dnd5eSrdMagicItemCraftingTable: Record<string, { costGp: number; days: number }> = {
+  common: { costGp: 50, days: 5 },
+  uncommon: { costGp: 200, days: 10 },
+  rare: { costGp: 2000, days: 50 },
+  "very rare": { costGp: 20000, days: 125 },
+  legendary: { costGp: 100000, days: 250 }
+};
+
+export function dnd5eSrdMagicItemCraftingPlan(rarity: string, options: { crafters?: number } = {}): { rarity: string; costGp: number; days: number; requirements: string[] } | undefined {
+  const entry = dnd5eSrdMagicItemCraftingTable[rarity.toLowerCase()];
+  if (!entry) return undefined;
+  const crafters = Math.max(1, Math.floor(options.crafters ?? 1));
+  return {
+    rarity: rarity.toLowerCase(),
+    costGp: entry.costGp,
+    days: Math.ceil(entry.days / crafters),
+    requirements: [
+      "Proficiency with the Arcana skill or with tools appropriate to the item",
+      "Access to any spells the item can produce for every day of crafting",
+      "Raw materials worth the listed cost"
+    ]
+  };
+}
+
+export const dnd5eSrdSpellScrollCraftingTable: ReadonlyArray<{ spellLevel: number; costGp: number; days: number }> = [
+  { spellLevel: 0, costGp: 15, days: 1 },
+  { spellLevel: 1, costGp: 25, days: 1 },
+  { spellLevel: 2, costGp: 100, days: 3 },
+  { spellLevel: 3, costGp: 150, days: 5 },
+  { spellLevel: 4, costGp: 1000, days: 10 },
+  { spellLevel: 5, costGp: 1500, days: 25 },
+  { spellLevel: 6, costGp: 10000, days: 40 },
+  { spellLevel: 7, costGp: 12500, days: 50 },
+  { spellLevel: 8, costGp: 15000, days: 60 },
+  { spellLevel: 9, costGp: 50000, days: 120 }
+];
+
+export function dnd5eSrdSpellScrollCraftingPlan(spellLevel: number): { spellLevel: number; costGp: number; days: number; requirements: string[] } | undefined {
+  const entry = dnd5eSrdSpellScrollCraftingTable.find((row) => row.spellLevel === Math.max(0, Math.floor(spellLevel)));
+  if (!entry) return undefined;
+  return {
+    ...entry,
+    requirements: [
+      "Proficiency with the Arcana skill or with Calligrapher's Supplies",
+      "The spell prepared on each day of scribing",
+      "Any material components the spell consumes"
+    ]
   };
 }
 
@@ -15033,7 +15471,9 @@ export function dnd5eSrdAdvancementOptions(actor: Actor): AdvancementOption[] {
   return genericFantasyAdvancementOptions(actor).map((option) => ({
     ...option,
     systemId: DND_5E_SRD_SYSTEM_ID,
-    summary: "Increase level, hit point maximum, proficiency bonus, and a class ability for SRD 5.2.1 play."
+    summary: dnd5eSrdAbilityScoreImprovementLevels.includes(option.nextValue)
+      ? `Reach level ${option.nextValue}: increase hit points and proficiency, and choose an Ability Score Improvement or a feat.`
+      : "Increase level, hit point maximum, proficiency bonus, and a class ability for SRD 5.2.1 play."
   }));
 }
 
@@ -15664,7 +16104,7 @@ export function resolveDnd5eSrdConcentrationDamage(
   const concentration = recordValue(rules.concentration);
   const rollId = stringValue(concentration.rollId) ?? "concentration";
   if (!Object.keys(concentration).length) return { data };
-  const dc = Math.max(10, Math.floor(damageTaken / 2));
+  const dc = dnd5eSrdConcentrationDc(damageTaken);
   if (!saveOutcome) {
     return {
       data,

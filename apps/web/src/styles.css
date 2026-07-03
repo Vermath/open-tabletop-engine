@@ -11435,3 +11435,102 @@ a:focus-visible {
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
+
+/* Per-annotation delete handles, wall/light delete handles, and a ping pulse
+   that makes the ping tool unmistakable. */
+
+.structure-handle {
+  position: absolute;
+  z-index: 3;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--paper);
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(23, 21, 18, 0.78);
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  opacity: 0.85;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.structure-handle:hover {
+  opacity: 1;
+}
+
+.structure-handle.terrain-handle {
+  background: var(--green);
+}
+
+.structure-handle.light-handle {
+  background: #facc15;
+  box-shadow: 0 0 0 2px rgba(23, 21, 18, 0.78), 0 0 14px 3px rgba(250, 204, 21, 0.4);
+}
+
+.structure-handle.selected,
+.annotation-drag-handle.selected {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+.scene-annotation.ping {
+  animation: ping-pulse 0.9s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.scene-annotation.ping circle,
+.scene-annotation.ping line {
+  stroke-width: 4;
+}
+
+@keyframes ping-pulse {
+  0% {
+    opacity: 1;
+    transform: scale(0.55);
+  }
+
+  70% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+
+  100% {
+    opacity: 0.65;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-annotation.ping {
+    animation: none;
+  }
+}
+
+/* Segmented control for advancement mode (level up vs multiclass). */
+.segmented-control {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-0);
+}
+
+.segmented-control button {
+  min-height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.segmented-control button.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}

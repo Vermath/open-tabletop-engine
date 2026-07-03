@@ -1047,6 +1047,7 @@ export function App() {
   const [mapDockOpen, setMapDockOpen] = useState(() => initialStoredPanelFlag(mapDockOpenStorageKey, false));
   const [quickCreateOpen, setQuickCreateOpen] = useState(() => initialStoredPanelFlag(quickCreateOpenStorageKey, false));
   const [shortcutOverlayOpen, setShortcutOverlayOpen] = useState(false);
+  const [selectedOverlay, setSelectedOverlay] = useState<{ type: "annotation" | "wall" | "light"; id: string } | null>(null);
   const [toasts, setToasts] = useState<Array<{ id: number; text: string; tone: "info" | "error" }>>([]);
   const toastIdRef = useRef(0);
   const lastToastStatusRef = useRef("");
@@ -1218,6 +1219,9 @@ export function App() {
   const [compendiumSearch, setCompendiumSearch] = useState("");
   const [compendiumStatus, setCompendiumStatus] = useState("No compendium entry imported this session");
   const [advancementOptions, setAdvancementOptions] = useState<AdvancementOptionInfo[]>([]);
+  const [advancementGrantsFeat, setAdvancementGrantsFeat] = useState(false);
+  const [advancementFeats, setAdvancementFeats] = useState<Array<{ id: string; name: string; category: string; summary: string }>>([]);
+  const [multiclassOptions, setMulticlassOptions] = useState<Array<{ className: string; eligible: boolean; reasons: string[] }>>([]);
   const [fogPresetName, setFogPresetName] = useState("");
   const [fogPresetMode, setFogPresetMode] = useState<"replace" | "append">("replace");
   const [visionSampleX, setVisionSampleX] = useState("");
@@ -1453,7 +1457,25 @@ export function App() {
   }, [activeTokenLayer, campaignId, selectedBoardAssetId, selectedScene?.backgroundAssetId, snapshot.assets]);
 
   useEffect(() => {
+    setSelectedOverlay(null);
+  }, [selectedScene?.id]);
+
+  useEffect(() => {
     const handleBoardKeyboard = (event: KeyboardEvent) => {
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedOverlay && selectedTokens.length === 0 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        const target = event.target as HTMLElement | null;
+        if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+        event.preventDefault();
+        const overlayTask =
+          selectedOverlay.type === "wall" ? deleteSceneWall(selectedOverlay.id) :
+          selectedOverlay.type === "light" ? deleteSceneLight(selectedOverlay.id) :
+          (() => {
+            const annotation = selectedCurrentAnnotations.find((item) => item.id === selectedOverlay.id);
+            return annotation ? deleteSceneAnnotation(annotation) : Promise.resolve();
+          })();
+        overlayTask.then(() => setSelectedOverlay(null)).catch((error) => setStatus(errorMessage(error)));
+        return;
+      }
       const action = boardKeyboardAction(event, {
         selectedCount: selectedTokens.length,
         canDelete: canDeleteSelectedBoardTokens,
@@ -1474,7 +1496,7 @@ export function App() {
     };
     window.addEventListener("keydown", handleBoardKeyboard);
     return () => window.removeEventListener("keydown", handleBoardKeyboard);
-  }, [blankCanvasDemoOpen, boardClipboardTokens, boardRedoStack.length, boardUndoStack.length, canDeleteSelectedBoardTokens, selectedScene?.id, selectedScene?.gridSize, selectedTokens]);
+  }, [blankCanvasDemoOpen, boardClipboardTokens, boardRedoStack.length, boardUndoStack.length, canDeleteSelectedBoardTokens, selectedCurrentAnnotations, selectedOverlay, selectedScene?.id, selectedScene?.gridSize, selectedTokens]);
 
   const refreshSeqRef = useRef(0);
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean } = {}) {
@@ -1507,6 +1529,31 @@ export function App() {
     setSnapshotReady(true);
     if (options.syncStatus !== false) setStatus("Synced");
     return next;
+  }
+
+  // Apply a mutation's authoritative response to the snapshot immediately so
+  // board actions feel instant. The realtime socket still fires a debounced
+  // background refresh for full reconciliation (vision polygons, etc.), so we
+  // never block the interaction on the ~28-request snapshot refetch.
+  function applySceneToSnapshot(scene: Scene) {
+    setSnapshot((current) => ({
+      ...current,
+      scenes: current.scenes.some((item) => item.id === scene.id)
+        ? current.scenes.map((item) => (item.id === scene.id ? scene : item))
+        : [...current.scenes, scene]
+    }));
+  }
+
+  function applyTokensToSnapshot(nextTokens: Token[]) {
+    if (nextTokens.length === 0) return;
+    const byId = new Map(nextTokens.map((token) => [token.id, token]));
+    setSnapshot((current) => ({
+      ...current,
+      tokens: [
+        ...current.tokens.map((token) => byId.get(token.id) ?? token),
+        ...nextTokens.filter((token) => !current.tokens.some((item) => item.id === token.id))
+      ]
+    }));
   }
 
   function requireInteractiveSignIn(message: string) {
@@ -1899,21 +1946,27 @@ export function App() {
   }, [blankCanvasDemoOpen, campaignId, selectedActor?.id, selectedActor?.systemId, tab]);
 
   useEffect(() => {
-    if (blankCanvasDemoOpen) {
+    const resetAdvancement = () => {
       setAdvancementOptions([]);
-      return;
-    }
-    if (!selectedActor) {
-      setAdvancementOptions([]);
+      setAdvancementGrantsFeat(false);
+      setAdvancementFeats([]);
+      setMulticlassOptions([]);
+    };
+    if (blankCanvasDemoOpen || !selectedActor) {
+      resetAdvancement();
       return;
     }
     let cancelled = false;
-    apiGet<{ actorId: string; options: AdvancementOptionInfo[] }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advancement`)
+    apiGet<{ actorId: string; options: AdvancementOptionInfo[]; grantsFeat?: boolean; feats?: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions?: Array<{ className: string; eligible: boolean; reasons: string[] }> }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advancement`)
       .then((result) => {
-        if (!cancelled) setAdvancementOptions(result.options);
+        if (cancelled) return;
+        setAdvancementOptions(result.options);
+        setAdvancementGrantsFeat(result.grantsFeat ?? false);
+        setAdvancementFeats(result.feats ?? []);
+        setMulticlassOptions(result.multiclassOptions ?? []);
       })
       .catch(() => {
-        if (!cancelled) setAdvancementOptions([]);
+        if (!cancelled) resetAdvancement();
       });
     return () => {
       cancelled = true;
@@ -2658,13 +2711,13 @@ export function App() {
       layer,
       disposition
     });
+    applyTokensToSnapshot([token]);
     pushBoardHistoryAction({ kind: "tokens.create", tokens: [token] });
     setActiveTokenLayer(layer);
     selectSingleToken(token.id);
     setNewTokenName("");
     setNewTokenActorId("");
     setStatus(`${token.name} ${options.x !== undefined || options.y !== undefined ? "placed on scene" : "created"}`);
-    await refresh();
   }
 
   async function createTokenFromDrop(payload: TokenDropPayload, point: VisionPoint) {
@@ -2858,8 +2911,8 @@ export function App() {
       setStatus("Token vision updated for this demo tab");
       return;
     }
-    await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, patch);
-    await refresh();
+    applyTokensToSnapshot([await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, patch)]);
+    void refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function updateSelectedToken(patch: Partial<Token>) {
@@ -2873,9 +2926,7 @@ export function App() {
       setStatus(`${statusLabel} for this demo tab`);
       return;
     }
-    setStatus(statusLabel);
-    await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, patch);
-    await refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
+    applyTokensToSnapshot([await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, patch)]);
     setStatus(statusLabel);
   }
 
@@ -2927,7 +2978,8 @@ export function App() {
       return;
     }
 
-    await Promise.all(changes.map(({ token, position }) => apiPatch<Token>(`/api/v1/tokens/${token.id}`, position)));
+    const updated = await Promise.all(changes.map(({ token, position }) => apiPatch<Token>(`/api/v1/tokens/${token.id}`, position)));
+    applyTokensToSnapshot(updated);
   }
 
   async function persistSceneCanvasTokenResize(token: Token, frame: TokenFrame) {
@@ -2940,7 +2992,7 @@ export function App() {
       return;
     }
 
-    await apiPatch<Token>(`/api/v1/tokens/${token.id}`, frame);
+    applyTokensToSnapshot([await apiPatch<Token>(`/api/v1/tokens/${token.id}`, frame)]);
   }
 
   async function createTokensOnServer(tokens: Token[]) {
@@ -3383,6 +3435,7 @@ export function App() {
     setSelectedTokenIdState("");
     setSelectedTokenIds([]);
     setSelectedBoardAssetId("");
+    setSelectedOverlay(null);
   }
 
   function selectBoardBackgroundAsset(assetId: string) {
@@ -3411,7 +3464,7 @@ export function App() {
 
   async function createSceneAnnotation(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number) {
     if (!selectedScene || points.length === 0) return;
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations`, {
+    const scene = await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations`, {
       kind,
       points,
       radius,
@@ -3427,7 +3480,12 @@ export function App() {
       snapToGrid: kind === "ruler" ? false : annotationSnapToGrid,
       expiresInSeconds: kind === "ping" ? pingAnnotationTtlSeconds : undefined
     });
-    await refresh();
+    // Pings render locally the instant they are placed; skip the reconcile.
+    if (kind === "ping") {
+      setStatus("Ping sent");
+      return;
+    }
+    applySceneToSnapshot(scene);
     setStatus(`${annotationToolLabel(kind)} added`);
   }
 
@@ -3439,8 +3497,7 @@ export function App() {
       setStatus("No annotation to delete");
       return;
     }
-    await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`);
-    await refresh();
+    applySceneToSnapshot(await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`));
     setStatus(`${annotationToolLabel(annotation.kind)} deleted`);
   }
 
@@ -3451,10 +3508,11 @@ export function App() {
       setStatus(`No annotations in ${group}`);
       return;
     }
+    let scene: Scene | undefined;
     for (const annotation of annotations) {
-      await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`);
+      scene = await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`);
     }
-    await refresh();
+    if (scene) applySceneToSnapshot(scene);
     setStatus(`Deleted ${annotations.length} annotations in ${group}`);
   }
 
@@ -3466,12 +3524,13 @@ export function App() {
       return;
     }
     const delta = Math.max(1, selectedScene.gridSize || 25);
+    let scene: Scene | undefined;
     for (const annotation of annotations) {
-      await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, {
+      scene = await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, {
         points: annotation.points.map((point) => ({ x: point.x + delta, y: point.y }))
       });
     }
-    await refresh();
+    if (scene) applySceneToSnapshot(scene);
     setStatus(`Moved ${annotations.length} annotations in ${group}`);
   }
 
@@ -3482,11 +3541,32 @@ export function App() {
       setStatus(`No annotations in ${group}`);
       return;
     }
+    let scene: Scene | undefined;
     for (const annotation of annotations) {
-      await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, { color: annotationGroupColor });
+      scene = await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, { color: annotationGroupColor });
     }
-    await refresh();
+    if (scene) applySceneToSnapshot(scene);
     setStatus(`Recolored ${annotations.length} annotations in ${group}`);
+  }
+
+  async function deleteSceneAnnotation(annotation: SceneAnnotation) {
+    if (!selectedScene) return;
+    applySceneToSnapshot(await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`));
+    setStatus(`${annotationToolLabel(annotation.kind)} deleted`);
+  }
+
+  async function deleteSceneWall(wallId: string) {
+    if (!selectedScene) return;
+    applySceneToSnapshot(await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/walls/${wallId}`));
+    setStatus("Wall deleted");
+    void refresh(campaignId, sceneId, { syncStatus: false });
+  }
+
+  async function deleteSceneLight(lightId: string) {
+    if (!selectedScene) return;
+    applySceneToSnapshot(await apiDelete<Scene>(`/api/v1/scenes/${selectedScene.id}/lights/${lightId}`));
+    setStatus("Light deleted");
+    void refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function moveSceneAnnotation(annotation: SceneAnnotation, points: VisionPoint[]) {
@@ -3495,35 +3575,34 @@ export function App() {
     if (annotation.kind === "template" && points.length >= 2) {
       patch.radius = Math.round(distanceBetween(points[0]!, points[1]!));
     }
-    await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, patch);
-    await refresh();
+    applySceneToSnapshot(await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}/annotations/${annotation.id}`, patch));
     setStatus(`Moved ${annotationToolLabel(annotation.kind)} annotation`);
   }
 
   async function paintFogStroke(mode: FogMode, points: VisionPoint[]) {
     if (!selectedScene || points.length === 0) return;
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
+    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog`, {
       shape: "brush",
       mode,
       brushRadius: Math.max(28, Math.min(110, selectedScene.gridSize * 1.35)),
       points
-    });
+    }));
     setStatus(`${mode === "hide" ? "Hide" : "Reveal"} fog brush applied`);
-    await refresh();
+    void refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function undoFog() {
     if (!selectedScene) return;
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog/undo`, {});
+    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/fog/undo`, {}));
     setStatus("Fog change undone");
-    await refresh();
+    void refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function undoSceneEdit() {
     if (!selectedScene) return;
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/undo`, {});
+    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/undo`, {}));
     setStatus("Scene edit undone");
-    await refresh(campaignId, selectedScene.id);
+    void refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   function closeFogToolPanel() {
@@ -3598,20 +3677,20 @@ export function App() {
 
   async function addWall() {
     if (!selectedScene) return;
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/walls`, {
+    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/walls`, {
       x1: Math.round(selectedScene.width * 0.25),
       y1: Math.round(selectedScene.height * 0.28),
       x2: Math.round(selectedScene.width * 0.75),
       y2: Math.round(selectedScene.height * 0.28),
       blocksVision: true
-    });
+    }));
     setStatus("Wall added");
-    await refresh();
+    void refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function addTerrainWall() {
     if (!selectedScene) return;
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/walls`, {
+    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/walls`, {
       x1: Math.round(selectedScene.width * 0.28),
       y1: Math.round(selectedScene.height * 0.42),
       x2: Math.round(selectedScene.width * 0.72),
@@ -3619,14 +3698,14 @@ export function App() {
       blocksVision: true,
       blocksMovement: false,
       kind: "terrain"
-    });
+    }));
     setStatus("Terrain wall added");
-    await refresh();
+    void refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function addLight() {
     if (!selectedScene) return;
-    await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/lights`, {
+    applySceneToSnapshot(await apiPost<Scene>(`/api/v1/scenes/${selectedScene.id}/lights`, {
       x: selectedToken ? selectedToken.x + selectedToken.width / 2 : selectedScene.width / 2,
       y: selectedToken ? selectedToken.y + selectedToken.height / 2 : selectedScene.height / 2,
       radius: 210,
@@ -3634,9 +3713,9 @@ export function App() {
       dimRadius: 210,
       color: "#38bdf8",
       intensity: 0.32
-    });
+    }));
     setStatus("Dual-zone light added");
-    await refresh();
+    void refresh(campaignId, sceneId, { syncStatus: false });
   }
 
   async function updateActorHp(actor: Actor, current: number) {
@@ -4815,13 +4894,16 @@ export function App() {
     await refresh();
   }
 
-  async function advanceSelectedActor(optionId?: string) {
+  async function advanceSelectedActor(optionId?: string, choices: { featId?: string; abilityChoices?: Record<string, number>; multiclassInto?: string } = {}) {
     if (!selectedActor) return;
     const selectedOptionId = optionId || advancementOptions[0]?.id || systemAdvancementOptionId(selectedActor.systemId);
     const advanced = await apiPost<{ advancement: { name: string } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advance`, {
-      optionId: selectedOptionId
+      optionId: selectedOptionId,
+      ...(choices.featId ? { featId: choices.featId } : {}),
+      ...(choices.abilityChoices ? { abilityChoices: choices.abilityChoices } : {}),
+      ...(choices.multiclassInto ? { multiclassInto: choices.multiclassInto } : {})
     });
-    setStatus(`${selectedActor.name} advanced to ${advanced.advancement.name}`);
+    setStatus(choices.multiclassInto ? `${selectedActor.name} gained a level of ${choices.multiclassInto}` : `${selectedActor.name} advanced to ${advanced.advancement.name}`);
     await refresh();
   }
 
@@ -6604,7 +6686,7 @@ export function App() {
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
-              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={blankCanvasDemoOpen ? async () => undefined : () => refresh().then(() => undefined)} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
             </div>
             <div className="map-layer-dock" aria-label="Map controls and layers" data-collapsed={mapDockOpen ? undefined : "true"}>
               <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />
@@ -6877,7 +6959,7 @@ export function App() {
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
-            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
+            {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
         </div>
         ) : workspaceMode === "ai" ? (
@@ -7812,7 +7894,7 @@ function hasItemDropData(dataTransfer: DataTransfer): boolean {
   return Array.from(dataTransfer.types).includes(itemDropMime);
 }
 
-function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onZoomBy(delta: number): void }) {
+function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void }) {
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
   const [tokenResize, setTokenResize] = useState<TokenResizeDraft | null>(null);
   const [tokenFrameOverrides, setTokenFrameOverrides] = useState<TokenFrameOverrides>({});
@@ -7854,13 +7936,44 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
   const currentTurnTokenIdSet = useMemo(() => new Set(props.currentTurnTokenIds), [props.currentTurnTokenIds]);
   const nextTurnTokenIdSet = useMemo(() => new Set(props.nextTurnTokenIds), [props.nextTurnTokenIds]);
   const annotationExpiryNow = useAnnotationExpiryClock(props.scene.annotations);
+  const [annotationOverrides, setAnnotationOverrides] = useState<Record<string, VisionPoint[]>>({});
+  const [localPings, setLocalPings] = useState<Array<{ id: number; x: number; y: number }>>([]);
+  const localPingSeqRef = useRef(0);
+  useEffect(() => {
+    // Drop an optimistic override once the server confirms the moved points
+    // (or the annotation disappears); until then the annotation stays where
+    // the user dropped it instead of rubber-banding to stale server state.
+    setAnnotationOverrides((current) => {
+      const entries = Object.entries(current);
+      if (entries.length === 0) return current;
+      const next: Record<string, VisionPoint[]> = {};
+      let changed = false;
+      for (const [id, points] of entries) {
+        const server = props.scene.annotations?.find((annotation) => annotation.id === id);
+        const confirmed = !server || (server.points.length === points.length && server.points.every((point, index) => point.x === points[index]!.x && point.y === points[index]!.y));
+        if (confirmed) changed = true;
+        else next[id] = points;
+      }
+      return changed ? next : current;
+    });
+  }, [props.scene.annotations]);
   const visibleAnnotations = useMemo(
     () => activeSceneAnnotations(props.scene.annotations, annotationExpiryNow).filter((annotation) => props.visibleAnnotationLayers[annotation.layer ?? defaultAnnotationLayer(annotation.kind)] !== false),
     [annotationExpiryNow, props.scene.annotations, props.visibleAnnotationLayers]
   );
   const displayAnnotations = useMemo(
-    () => visibleAnnotations.map((annotation) => (annotationMoveDraft?.annotationId === annotation.id ? { ...annotation, points: annotationMoveDraft.points } : annotation)),
-    [visibleAnnotations, annotationMoveDraft]
+    () =>
+      visibleAnnotations.map((annotation) => {
+        const points = annotationMoveDraft?.annotationId === annotation.id ? annotationMoveDraft.points : annotationOverrides[annotation.id];
+        if (!points) return annotation;
+        const radius = annotation.kind === "template" && points.length >= 2 ? Math.round(distanceBetween(points[0]!, points[1]!)) : annotation.radius;
+        return { ...annotation, points, radius };
+      }),
+    [visibleAnnotations, annotationMoveDraft, annotationOverrides]
+  );
+  const renderedAnnotations = useMemo(
+    () => displayAnnotations.filter((annotation) => !(annotation.kind === "ping" && annotation.points[0] && localPings.some((ping) => Math.hypot(ping.x - annotation.points[0]!.x, ping.y - annotation.points[0]!.y) < 12))),
+    [displayAnnotations, localPings]
   );
   const vision = props.vision?.sceneId === props.scene.id ? props.vision : undefined;
   const lightPolygons = useMemo(() => vision?.polygons.filter((polygon) => polygon.source === "light" && polygon.points.length > 2) ?? [], [vision]);
@@ -8356,18 +8469,28 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
     const current = annotationMoveDraftRef.current;
     if (!current || current.pointerId !== pointerId) return;
     annotationMoveDraftRef.current = null;
+    setAnnotationMoveDraft(null);
     const annotation = visibleAnnotations.find((item) => item.id === current.annotationId);
-    if (!annotation) {
-      setAnnotationMoveDraft(null);
+    if (!annotation) return;
+    const unmoved = current.points.length === current.originalPoints.length && current.points.every((point, index) => point.x === current.originalPoints[index]!.x && point.y === current.originalPoints[index]!.y);
+    if (unmoved) {
+      // A click without movement selects the annotation (Delete removes it).
+      // Token selection is released so Delete targets the annotation.
+      props.onClearSelection();
+      props.onSelectOverlay({ type: "annotation", id: annotation.id });
       return;
     }
-    // Keep the draft on screen until the move persists so the shape does not
-    // snap back to its old position for the duration of the round trip.
-    props.onAnnotationMove(annotation, current.points)
-      .catch(console.error)
-      .finally(() => {
-        setAnnotationMoveDraft((draft) => (draft && draft.annotationId === current.annotationId && draft.pointerId === pointerId ? null : draft));
+    // Optimistic override holds the dropped position until the server
+    // confirms it, so no snapshot in flight can rubber-band the shape.
+    setAnnotationOverrides((overrides) => ({ ...overrides, [annotation.id]: current.points }));
+    props.onAnnotationMove(annotation, current.points).catch((error) => {
+      console.error(error);
+      setAnnotationOverrides((overrides) => {
+        const next = { ...overrides };
+        delete next[annotation.id];
+        return next;
       });
+    });
   }
 
   return (
@@ -8424,6 +8547,10 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
           tokenDragRef.current = null;
           setTokenDrag(null);
           if (props.annotationTool === "ping") {
+            localPingSeqRef.current += 1;
+            const localPing = { id: localPingSeqRef.current, x: point.x, y: point.y };
+            setLocalPings((current) => [...current.slice(-7), localPing]);
+            window.setTimeout(() => setLocalPings((current) => current.filter((ping) => ping.id !== localPing.id)), pingAnnotationTtlSeconds * 1000);
             props.onAnnotationCreate("ping", [point]).catch(console.error);
             return;
           }
@@ -8556,24 +8683,40 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
           <line x1={wall.x1} y1={wall.y1} x2={wall.x2} y2={wall.y2} />
         </svg>
       ))}
-      {displayAnnotations.length > 0 && (
+      {(renderedAnnotations.length > 0 || localPings.length > 0) && (
         <svg className="annotation-layer" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} aria-label="Scene annotations">
-          {displayAnnotations.map((annotation) => (
+          {renderedAnnotations.map((annotation) => (
             <SceneAnnotationShape key={annotation.id} annotation={annotation} scene={props.scene} />
+          ))}
+          {localPings.map((ping) => (
+            <SceneAnnotationShape
+              key={`local-ping-${ping.id}`}
+              annotation={{
+                id: `local-ping-${ping.id}`,
+                sceneId: props.scene.id,
+                kind: "ping",
+                createdByUserId: props.boardCurrentUserId,
+                points: [{ x: ping.x, y: ping.y }],
+                color: annotationColor("ping"),
+                createdAt: "",
+                updatedAt: ""
+              }}
+              scene={props.scene}
+            />
           ))}
         </svg>
       )}
-      {props.canUpdateAnnotations && !props.fogBrushMode && !props.annotationTool && displayAnnotations.length > 0 && (
+      {props.canUpdateAnnotations && !props.fogBrushMode && !props.annotationTool && renderedAnnotations.length > 0 && (
         <div className="annotation-handles" aria-label="Annotation drag handles">
-          {displayAnnotations.flatMap((annotation) =>
+          {renderedAnnotations.flatMap((annotation) =>
             annotationEditHandles(annotation).map((handle) => (
               <button
                 key={`${annotation.id}-${handle.id}`}
-                className={`annotation-drag-handle ${handle.mode === "point" ? "annotation-point-handle" : "annotation-move-handle"}`}
+                className={`annotation-drag-handle ${handle.mode === "point" ? "annotation-point-handle" : "annotation-move-handle"} ${props.selectedOverlay?.type === "annotation" && props.selectedOverlay.id === annotation.id ? "selected" : ""}`}
                 type="button"
                 style={{ left: `${(handle.point.x / props.scene.width) * 100}%`, top: `${(handle.point.y / props.scene.height) * 100}%` }}
                 aria-label={`${handle.label} ${annotationToolLabel(annotation.kind)} annotation in ${annotationGroupKey(annotation)}`}
-                title={`${handle.label} ${annotationToolLabel(annotation.kind)} annotation`}
+                title={`${handle.label} ${annotationToolLabel(annotation.kind)} annotation - click to select, Delete to remove`}
                 onPointerDown={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -8601,6 +8744,48 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
               />
             ))
           )}
+        </div>
+      )}
+      {props.canUpdateAnnotations && !props.fogBrushMode && !props.annotationTool && (props.scene.walls.length > 0 || props.scene.lights.length > 0) && (
+        <div className="annotation-handles structure-handles" aria-label="Wall and light handles">
+          {props.scene.walls.map((wall) => (
+            <button
+              key={`wall-${wall.id}`}
+              className={`structure-handle ${wall.kind === "terrain" ? "terrain-handle" : "wall-handle"} ${props.selectedOverlay?.type === "wall" && props.selectedOverlay.id === wall.id ? "selected" : ""}`}
+              type="button"
+              style={{ left: `${((wall.x1 + wall.x2) / 2 / props.scene.width) * 100}%`, top: `${((wall.y1 + wall.y2) / 2 / props.scene.height) * 100}%` }}
+              aria-label={`Select ${wall.kind === "terrain" ? "terrain wall" : "wall"}`}
+              title={`${wall.kind === "terrain" ? "Terrain wall" : "Wall"} - click to select, Delete to remove`}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onClearSelection();
+                props.onSelectOverlay({ type: "wall", id: wall.id });
+              }}
+            />
+          ))}
+          {props.scene.lights.map((light) => (
+            <button
+              key={`light-${light.id}`}
+              className={`structure-handle light-handle ${props.selectedOverlay?.type === "light" && props.selectedOverlay.id === light.id ? "selected" : ""}`}
+              type="button"
+              style={{ left: `${(light.x / props.scene.width) * 100}%`, top: `${(light.y / props.scene.height) * 100}%` }}
+              aria-label="Select light"
+              title="Light - click to select, Delete to remove"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onClearSelection();
+                props.onSelectOverlay({ type: "light", id: light.id });
+              }}
+            />
+          ))}
         </div>
       )}
       {vision?.fogActive && (
@@ -17643,7 +17828,7 @@ function formatDateTime(value?: string): string {
   return time.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version?: string): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onCreateMonster(): void; onAdvanceActor(optionId?: string): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
+function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; advancementGrantsFeat: boolean; advancementFeats: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions: Array<{ className: string; eligible: boolean; reasons: string[] }>; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version?: string): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onImportCharacter(): void; onCreateMonster(): void; onAdvanceActor(optionId?: string, choices?: { featId?: string; abilityChoices?: Record<string, number>; multiclassInto?: string }): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
   const [pluginSearch, setPluginSearch] = useState("");
   const [pluginSourceFilter, setPluginSourceFilter] = useState<"all" | "local" | "registry">("all");
   const [pluginStatusFilter, setPluginStatusFilter] = useState<"all" | "installed" | "available" | "upgrade">("all");
@@ -17651,6 +17836,9 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
   const [advancementOptionId, setAdvancementOptionId] = useState("");
   const [advancementStep, setAdvancementStep] = useState<"choose" | "review">("choose");
   const [advancementConfirmed, setAdvancementConfirmed] = useState(false);
+  const [advancementMode, setAdvancementMode] = useState<"level" | "multiclass">("level");
+  const [selectedFeatId, setSelectedFeatId] = useState("");
+  const [selectedMulticlass, setSelectedMulticlass] = useState("");
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   const rollLabel = systemRollLabel(props.actor?.systemId);
   const advancementLabel = systemAdvancementLabel(props.actor?.systemId);
@@ -17977,8 +18165,43 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
               <span>{selectedAdvancementOption?.summary ?? "No advancement selected"}</span>
               {selectedAdvancementOption && <span>next {formatNumber(selectedAdvancementOption.nextValue)}</span>}
             </div>
+            {props.multiclassOptions.length > 0 && (
+              <div className="segmented-control" role="group" aria-label="Advancement type">
+                <button className={advancementMode === "level" ? "active" : ""} type="button" onClick={() => setAdvancementMode("level")}>Level up class</button>
+                <button className={advancementMode === "multiclass" ? "active" : ""} type="button" onClick={() => setAdvancementMode("multiclass")}>Multiclass</button>
+              </div>
+            )}
+            {advancementMode === "level" && props.advancementGrantsFeat && props.advancementFeats.length > 0 && (
+              <label>
+                <span>Feat or Ability Score Improvement</span>
+                <select aria-label="Advancement feat" value={selectedFeatId} disabled={!props.canAdvanceActor} onChange={(event) => setSelectedFeatId(event.target.value)}>
+                  <option value="">Choose later</option>
+                  {props.advancementFeats.map((feat) => (
+                    <option key={feat.id} value={feat.id}>{feat.name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {advancementMode === "multiclass" && (
+              <label>
+                <span>Add a level in</span>
+                <select aria-label="Multiclass into" value={selectedMulticlass} disabled={!props.canAdvanceActor} onChange={(event) => setSelectedMulticlass(event.target.value)}>
+                  <option value="">Select a class</option>
+                  {props.multiclassOptions.map((option) => (
+                    <option key={option.className} value={option.className} disabled={!option.eligible}>
+                      {option.className}{option.eligible ? "" : " (ineligible)"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {advancementMode === "multiclass" && selectedMulticlass && (
+              <div className="admin-meta">
+                <span>{props.multiclassOptions.find((option) => option.className === selectedMulticlass)?.eligible ? `Adds a level of ${selectedMulticlass} using the shared multiclass spell-slot table.` : props.multiclassOptions.find((option) => option.className === selectedMulticlass)?.reasons[0] ?? "Ineligible"}</span>
+              </div>
+            )}
             <div className="button-row">
-              <button className="ghost-button" type="button" disabled={!props.actor || !props.canAdvanceActor || !selectedAdvancementOption} onClick={() => setAdvancementStep("review")}>
+              <button className="ghost-button" type="button" disabled={!props.actor || !props.canAdvanceActor || !selectedAdvancementOption || (advancementMode === "multiclass" && !selectedMulticlass)} onClick={() => setAdvancementStep("review")}>
                 <Eye size={14} /> Review advancement
               </button>
               {advancementStep === "review" && (
@@ -18033,11 +18256,15 @@ function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeI
         </div>
       )}
       <button className="ghost-button wide" onClick={() => {
-        props.onAdvanceActor(selectedAdvancementOption?.id);
+        props.onAdvanceActor(selectedAdvancementOption?.id, advancementMode === "multiclass"
+          ? { multiclassInto: selectedMulticlass }
+          : selectedFeatId ? { featId: selectedFeatId } : {});
         setAdvancementStep("choose");
         setAdvancementConfirmed(false);
-      }} disabled={!props.actor || !props.canAdvanceActor || props.advancementOptions.length === 0 || advancementStep !== "review" || !advancementConfirmed}>
-        <RefreshCw size={16} /> {advancementLabel}
+        setSelectedFeatId("");
+        setSelectedMulticlass("");
+      }} disabled={!props.actor || !props.canAdvanceActor || props.advancementOptions.length === 0 || advancementStep !== "review" || !advancementConfirmed || (advancementMode === "multiclass" && !selectedMulticlass)}>
+        <RefreshCw size={16} /> {advancementMode === "multiclass" ? "Multiclass" : advancementLabel}
       </button>
       <button className="ghost-button wide" onClick={() => props.onRestActor("short")} disabled={!props.actor || !props.canRestActor}>
         <RefreshCw size={16} /> Short Rest
