@@ -6,7 +6,7 @@ import {
   type Campaign,
   type EngineState,
 } from "@open-tabletop/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SqliteStateStore } from "./sqlite-store.js";
 
 interface WriteAuditRow {
@@ -39,16 +39,19 @@ describe("SqliteStateStore", () => {
     betaCampaign = campaign("camp_beta", "Beta");
     store.state = stateWithCampaigns([alphaCampaign, betaCampaign]);
     store.save();
+    store.flush();
     installWriteAudit(store);
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     store.close();
     rmSync(directory, { recursive: true, force: true });
   });
 
   it("does not rewrite engine records when save is unchanged", () => {
     store.save();
+    store.flush();
 
     expect(writeAudit(store)).toEqual([]);
     expect(engineRecords(store)).toEqual([
@@ -74,6 +77,7 @@ describe("SqliteStateStore", () => {
     store.state.campaigns = [updatedAlpha, betaCampaign];
 
     store.save();
+    store.flush();
 
     expect(writeAudit(store)).toEqual([
       {
@@ -103,6 +107,7 @@ describe("SqliteStateStore", () => {
     store.state.campaigns = [alphaCampaign];
 
     store.save();
+    store.flush();
 
     expect(writeAudit(store)).toEqual([
       {
@@ -121,6 +126,63 @@ describe("SqliteStateStore", () => {
         data: JSON.stringify(alphaCampaign),
       },
     ]);
+  });
+
+  it("coalesces writes and flushes after the debounce window", () => {
+    vi.useFakeTimers();
+    const updatedAlpha = {
+      ...alphaCampaign,
+      name: "Alpha Debounced",
+      updatedAt: "2026-06-11T00:02:00.000Z",
+    };
+    store.state.campaigns = [updatedAlpha, betaCampaign];
+
+    store.save();
+
+    expect(writeAudit(store)).toEqual([]);
+    vi.advanceTimersByTime(35);
+    expect(writeAudit(store)).toEqual([
+      {
+        sequence: 1,
+        event: "update",
+        collection: "campaigns",
+        id: "camp_alpha",
+        data: JSON.stringify(updatedAlpha),
+        oldData: JSON.stringify(alphaCampaign),
+      },
+    ]);
+  });
+
+  it("flush forces durability synchronously and survives reopen", () => {
+    const updatedAlpha = {
+      ...alphaCampaign,
+      name: "Alpha Flushed",
+      updatedAt: "2026-06-11T00:03:00.000Z",
+    };
+    store.state.campaigns = [updatedAlpha, betaCampaign];
+
+    store.save();
+    store.flush();
+
+    const reopened = new SqliteStateStore(join(directory, "state.sqlite"), { seedDemo: false });
+    expect(reopened.state.campaigns).toEqual([updatedAlpha, betaCampaign]);
+    reopened.close();
+  });
+
+  it("close flushes a pending write before reopen", () => {
+    const updatedAlpha = {
+      ...alphaCampaign,
+      name: "Alpha Closed",
+      updatedAt: "2026-06-11T00:04:00.000Z",
+    };
+    store.state.campaigns = [updatedAlpha, betaCampaign];
+
+    store.save();
+    store.close();
+
+    const reopened = new SqliteStateStore(join(directory, "state.sqlite"), { seedDemo: false });
+    expect(reopened.state.campaigns).toEqual([updatedAlpha, betaCampaign]);
+    reopened.close();
   });
 });
 

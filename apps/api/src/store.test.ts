@@ -34,6 +34,7 @@ describe("FileStateStore", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     rmSync(directory, { recursive: true, force: true });
   });
 
@@ -43,11 +44,52 @@ describe("FileStateStore", () => {
     store.state = stateWithCampaign("camp_saved", "Saved Campaign");
 
     store.save();
+    store.flush();
 
     const persisted = new FileStateStore(filePath, { seedDemo: false });
     expect(persisted.state.campaigns).toEqual([expect.objectContaining({ id: "camp_saved", name: "Saved Campaign" })]);
     expect(readdirSync(directory).filter((fileName) => fileName.includes(".tmp"))).toEqual([]);
     expect(existsSync(filePath)).toBe(true);
+  });
+
+
+  it("coalesces writes and flushes after the debounce window", () => {
+    vi.useFakeTimers();
+    const filePath = join(directory, "state.json");
+    const store = new FileStateStore(filePath, { seedDemo: false });
+    store.state = stateWithCampaign("camp_debounced", "Debounced Campaign");
+
+    store.save();
+
+    let persisted = JSON.parse(readFileSync(filePath, "utf8")) as EngineState;
+    expect(persisted.campaigns).toEqual([]);
+    vi.advanceTimersByTime(35);
+    persisted = JSON.parse(readFileSync(filePath, "utf8")) as EngineState;
+    expect(persisted.campaigns).toEqual([expect.objectContaining({ id: "camp_debounced" })]);
+  });
+
+  it("flush forces a pending write to disk synchronously", () => {
+    const filePath = join(directory, "state.json");
+    const store = new FileStateStore(filePath, { seedDemo: false });
+    store.state = stateWithCampaign("camp_flushed", "Flushed Campaign");
+
+    store.save();
+    store.flush();
+
+    const persisted = new FileStateStore(filePath, { seedDemo: false });
+    expect(persisted.state.campaigns).toEqual([expect.objectContaining({ id: "camp_flushed" })]);
+  });
+
+  it("close flushes a pending write", () => {
+    const filePath = join(directory, "state.json");
+    const store = new FileStateStore(filePath, { seedDemo: false });
+    store.state = stateWithCampaign("camp_closed", "Closed Campaign");
+
+    store.save();
+    store.close();
+
+    const persisted = new FileStateStore(filePath, { seedDemo: false });
+    expect(persisted.state.campaigns).toEqual([expect.objectContaining({ id: "camp_closed" })]);
   });
 
   it("preserves existing state and cleans up the temp file when replacement fails", () => {
@@ -58,7 +100,10 @@ describe("FileStateStore", () => {
     const renameError = new Error("rename failed");
     fsMock.failNextRename = renameError;
 
-    expect(() => store.save()).toThrow(renameError);
+    expect(() => {
+      store.save();
+      store.flush();
+    }).toThrow(renameError);
 
     const persisted = JSON.parse(readFileSync(filePath, "utf8")) as EngineState;
     expect(persisted.campaigns).toEqual([expect.objectContaining({ id: "camp_existing" })]);

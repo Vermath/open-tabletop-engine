@@ -6,6 +6,7 @@ import { emptyState, seedState, type EngineState } from "@open-tabletop/core";
 export interface StateStore {
   state: EngineState;
   save(): void;
+  flush?(): void;
   replace(state: EngineState): void;
 }
 
@@ -21,20 +22,74 @@ export function demoSeedEnabled(options: StoreSeedOptions = {}): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
-export class FileStateStore implements StateStore {
-  state: EngineState;
+export class CoalescedStateWriter {
+  private dirty = false;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private readonly unregisterShutdownFlush: () => void;
 
-  constructor(private readonly filePath = resolve(process.cwd(), "storage", "state.json"), private readonly options: StoreSeedOptions = {}) {
-    this.state = this.load();
+  constructor(private readonly writeNow: () => void, private readonly delayMs = 35) {
+    this.unregisterShutdownFlush = registerShutdownFlush(this);
   }
 
   save(): void {
-    writeStateFile(this.filePath, this.state);
+    this.dirty = true;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      // A throw here would be an uncaught exception in timer context and
+      // crash the process; stay dirty so the next save or flush retries,
+      // and let explicit flush() callers see the error instead.
+      try {
+        this.flush();
+      } catch (error) {
+        this.dirty = true;
+        console.error("Deferred state flush failed; will retry on next save or flush", error);
+      }
+    }, this.delayMs);
+    this.timer.unref?.();
+  }
+
+  flush(): void {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    if (!this.dirty) return;
+    this.dirty = false;
+    this.writeNow();
+  }
+
+  close(): void {
+    this.flush();
+    this.unregisterShutdownFlush();
+  }
+}
+
+export class FileStateStore implements StateStore {
+  state: EngineState;
+  private readonly writer: CoalescedStateWriter;
+
+  constructor(private readonly filePath = resolve(process.cwd(), "storage", "state.json"), private readonly options: StoreSeedOptions = {}) {
+    this.state = this.load();
+    this.writer = new CoalescedStateWriter(() => writeStateFile(this.filePath, this.state));
+  }
+
+  save(): void {
+    this.writer.save();
+  }
+
+  flush(): void {
+    this.writer.flush();
   }
 
   replace(state: EngineState): void {
     this.state = state;
     this.save();
+    this.flush();
+  }
+
+  close(): void {
+    this.writer.close();
   }
 
   private load(): EngineState {
@@ -52,6 +107,8 @@ export class MemoryStateStore implements StateStore {
   constructor(public state: EngineState = seedState()) {}
 
   save(): void {}
+
+  flush(): void {}
 
   replace(state: EngineState): void {
     this.state = state;
@@ -101,5 +158,26 @@ function fsyncDirectoryBestEffort(directory: string): void {
         // Directory fsync is best-effort only.
       }
     }
+  }
+}
+
+const shutdownFlushStores = new Set<{ flush(): void }>();
+let shutdownFlushInstalled = false;
+
+function registerShutdownFlush(store: { flush(): void }): () => void {
+  shutdownFlushStores.add(store);
+  if (!shutdownFlushInstalled) {
+    shutdownFlushInstalled = true;
+    process.on("beforeExit", flushRegisteredStores);
+    process.on("exit", flushRegisteredStores);
+  }
+  return () => {
+    shutdownFlushStores.delete(store);
+  };
+}
+
+function flushRegisteredStores(): void {
+  for (const store of shutdownFlushStores) {
+    store.flush();
   }
 }

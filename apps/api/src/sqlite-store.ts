@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { emptyState, seedState, type EngineState } from "@open-tabletop/core";
-import { demoSeedEnabled, type StateStore, type StoreSeedOptions } from "./store.js";
+import { CoalescedStateWriter, demoSeedEnabled, type StateStore, type StoreSeedOptions } from "./store.js";
 
 interface SqliteDatabase {
   exec(sql: string): void;
@@ -186,19 +186,31 @@ interface IdentifiedRecord {
 export class SqliteStateStore implements StateStore {
   db: SqliteDatabase;
   state: EngineState;
+  private readonly writer: CoalescedStateWriter;
+  private closed = false;
 
   constructor(private readonly filePath = resolve(process.cwd(), "storage", "opentabletop.sqlite"), private readonly options: StoreSeedOptions = {}) {
     mkdirSync(dirname(filePath), { recursive: true });
     this.db = new DatabaseSync(filePath);
     this.migrate();
+    this.writer = new CoalescedStateWriter(() => this.flushNow());
     this.state = this.load();
     if (this.state.campaigns.length === 0 && demoSeedEnabled(this.options)) {
       this.state = seedState();
       this.save();
+      this.flush();
     }
   }
 
   save(): void {
+    this.writer.save();
+  }
+
+  flush(): void {
+    this.writer.flush();
+  }
+
+  private flushNow(): void {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const desiredRecords = this.recordsForState();
@@ -285,9 +297,11 @@ export class SqliteStateStore implements StateStore {
   replace(state: EngineState): void {
     this.state = state;
     this.save();
+    this.flush();
   }
 
   storageOperations(): SqliteStorageOperations {
+    this.flush();
     const checkedAt = new Date().toISOString();
     const databaseStats = statSync(this.filePath);
     const appliedRows = this.db.prepare("select version, name, applied_at from schema_migrations order by version").all() as MigrationRow[];
@@ -345,7 +359,7 @@ export class SqliteStateStore implements StateStore {
   }
 
   createBackup(options: { reason?: string } = {}): SqliteBackupResult {
-    this.save();
+    this.flush();
     const backupDir = this.backupDir();
     mkdirSync(backupDir, { recursive: true });
     const createdAt = new Date().toISOString();
@@ -363,6 +377,7 @@ export class SqliteStateStore implements StateStore {
   }
 
   runRestoreDrill(options: { backupFileName?: string } = {}): SqliteRestoreDrillResult {
+    this.flush();
     const checkedAt = new Date().toISOString();
     const backup = options.backupFileName ? this.backupByFileName(options.backupFileName) : this.latestBackup();
     if (!backup) {
@@ -404,6 +419,7 @@ export class SqliteStateStore implements StateStore {
   }
 
   restoreBackup(options: { backupFileName: string; reason?: string }): SqliteRestoreBackupResult {
+    this.flush();
     const drill = this.runRestoreDrill({ backupFileName: options.backupFileName });
     if (drill.status === "failed" || !drill.backup) return drill;
 
@@ -429,6 +445,9 @@ export class SqliteStateStore implements StateStore {
   }
 
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.writer.close();
     this.db.close();
   }
 

@@ -7688,6 +7688,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const exportOptions = normalizeCampaignArchiveExportOptions(request.query);
     if (!exportOptions.ok) return badRequest(reply, exportOptions.error);
+    flushStore(store);
     const archive = makeArchive(store.state, request.params.campaignId);
     archive.manifest.exportScope = exportOptions.value.scope;
     archive.manifest.redactionMode = exportOptions.value.redaction;
@@ -7698,6 +7699,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/dogfood-report-bundle", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
+    flushStore(store);
     return makeDogfoodReportBundle(store.state, request.params.campaignId);
   });
 
@@ -7815,6 +7817,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.addHook("onClose", async () => {
     assetCleanupScheduler.stop();
     storageBackupScheduler.stop();
+    flushStore(store);
   });
 
   return app;
@@ -26691,6 +26694,10 @@ function asAdminStorageCapableStore(store: StateStore): AdminStorageCapableStore
   const candidate = store as Partial<AdminStorageCapableStore>;
   if (typeof candidate.storageOperations !== "function" || typeof candidate.createBackup !== "function" || typeof candidate.runRestoreDrill !== "function") return undefined;
   return candidate as AdminStorageCapableStore;
+}
+
+function flushStore(store: StateStore): void {
+  store.flush?.();
 }
 
 function storageOperationsForStore(store: StateStore, scheduledBackups?: StorageBackupSchedulerStatus): AdminStorageOperations {

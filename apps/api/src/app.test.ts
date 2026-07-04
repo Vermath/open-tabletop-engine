@@ -6026,6 +6026,7 @@ describe("api", () => {
       expect(patchedGroup.statusCode).toBe(200);
       expect(patchedGroup.json().members).toEqual([]);
 
+      store.flush();
       const restoredStore = new SqliteStateStore(dbPath);
       expect(restoredStore.state.scimGroups.find((group) => group.id === groupId)).toMatchObject({
         displayName: "Playtesters",
