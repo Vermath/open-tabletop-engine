@@ -2546,6 +2546,100 @@ export interface Dnd5eSrdClassLevel {
   level: number;
 }
 
+export interface Dnd5eSrdHitDicePool {
+  className: string;
+  size: string;
+  current: number;
+  max: number;
+}
+
+function dnd5eSrdHitDieFaces(size: string): number {
+  const match = /^d(\d+)$/i.exec(size.trim());
+  return match ? Number(match[1]) : 0;
+}
+
+function dnd5eSrdPrimaryClassForHitDice(actor: Actor, classes: Dnd5eSrdClassLevel[]): string {
+  const actorClass = stringValue(actor.data.class);
+  if (actorClass && classes.some((entry) => entry.className === actorClass)) return actorClass;
+  return [...classes].sort((left, right) => right.level - left.level)[0]?.className ?? "Fighter";
+}
+
+function dnd5eSrdAggregateHitDiceFromPools(pools: Dnd5eSrdHitDicePool[], primaryClassName: string): { current: number; max: number; size: string } {
+  return {
+    current: pools.reduce((sum, pool) => sum + pool.current, 0),
+    max: pools.reduce((sum, pool) => sum + pool.max, 0),
+    size: dnd5eSrdHitDieSize(primaryClassName)
+  };
+}
+
+function dnd5eSrdApplyHitDicePoolDelta(pools: Dnd5eSrdHitDicePool[], delta: number): Dnd5eSrdHitDicePool[] {
+  if (delta === 0) return pools.map((pool) => ({ ...pool }));
+  const next = pools.map((pool) => ({ ...pool }));
+  const indexes = next
+    .map((pool, index) => ({ index, faces: dnd5eSrdHitDieFaces(pool.size) }))
+    .sort((left, right) => right.faces - left.faces || left.index - right.index)
+    .map((entry) => entry.index);
+  let remaining = Math.abs(delta);
+  for (const index of indexes) {
+    if (remaining <= 0) break;
+    const pool = next[index]!;
+    const room = delta > 0 ? pool.max - pool.current : pool.current;
+    const amount = Math.min(room, remaining);
+    if (amount <= 0) continue;
+    pool.current += delta > 0 ? amount : -amount;
+    remaining -= amount;
+  }
+  return next;
+}
+
+function dnd5eSrdLegacyHitDicePools(actor: Actor, classes: Dnd5eSrdClassLevel[]): Dnd5eSrdHitDicePool[] {
+  const totalMax = classes.reduce((sum, entry) => sum + entry.level, 0);
+  const hitDice = recordValue(actor.data.hitDice);
+  const aggregateCurrent = Math.max(0, Math.min(totalMax, numericValue(hitDice.current, totalMax)));
+  const primaryClassName = dnd5eSrdPrimaryClassForHitDice(actor, classes);
+  const pools = classes.map((entry) => ({ className: entry.className, size: dnd5eSrdHitDieSize(entry.className), current: entry.level, max: entry.level }));
+  let deficit = Math.max(0, totalMax - aggregateCurrent);
+  const ordered = [primaryClassName, ...classes.map((entry) => entry.className).filter((className) => className !== primaryClassName)];
+  for (const className of ordered) {
+    if (deficit <= 0) break;
+    const pool = pools.find((entry) => entry.className === className);
+    if (!pool) continue;
+    const spent = Math.min(pool.current, deficit);
+    pool.current -= spent;
+    deficit -= spent;
+  }
+  return pools;
+}
+
+function dnd5eSrdStoredHitDicePools(actor: Actor, classes: Dnd5eSrdClassLevel[]): Dnd5eSrdHitDicePool[] | undefined {
+  if (!Array.isArray(actor.data.hitDicePools)) return undefined;
+  const stored = actor.data.hitDicePools.flatMap((entry) => {
+    const record = recordValue(entry);
+    const className = stringValue(record.className);
+    if (!className) return [];
+    return [{ className, current: numericValue(record.current, 0) }];
+  });
+  if (stored.length === 0) return undefined;
+  const pools = classes.map((entry) => {
+    const current = Math.max(0, Math.min(entry.level, numericValue(stored.find((pool) => pool.className === entry.className)?.current, entry.level)));
+    return { className: entry.className, size: dnd5eSrdHitDieSize(entry.className), current, max: entry.level };
+  });
+  const aggregate = recordValue(actor.data.hitDice);
+  const max = pools.reduce((sum, pool) => sum + pool.max, 0);
+  const desiredCurrent = Math.max(0, Math.min(max, numericValue(aggregate.current, pools.reduce((sum, pool) => sum + pool.current, 0))));
+  const current = pools.reduce((sum, pool) => sum + pool.current, 0);
+  return dnd5eSrdApplyHitDicePoolDelta(pools, desiredCurrent - current);
+}
+
+function dnd5eSrdHitDicePoolsForClasses(actor: Actor, classes: Dnd5eSrdClassLevel[]): Dnd5eSrdHitDicePool[] {
+  if (classes.length <= 1) return [];
+  return dnd5eSrdStoredHitDicePools(actor, classes) ?? dnd5eSrdLegacyHitDicePools(actor, classes);
+}
+
+export function dnd5eSrdHitDicePools(actor: Actor): Dnd5eSrdHitDicePool[] {
+  return dnd5eSrdHitDicePoolsForClasses(actor, dnd5eSrdActorClassLevels(actor));
+}
+
 const dnd5eSrdFullCasterClasses = ["Bard", "Cleric", "Druid", "Sorcerer", "Wizard"];
 const dnd5eSrdHalfCasterClasses = ["Paladin", "Ranger"];
 
@@ -2789,7 +2883,19 @@ function dnd5eSrdApplyClassLevels(actor: Actor, classes: Dnd5eSrdClassLevel[], l
   const constitutionModifier = genericFantasyAttributeModifier(actor, "constitution");
   const hpGain = Math.max(1, averageHitDie(dnd5eSrdHitDieSize(leveledClassName)) + constitutionModifier);
   const hp = normalizePool(actor.data.hp, 1);
-  const hitDice = recordValue(actor.data.hitDice);
+  const previousClasses = dnd5eSrdActorClassLevels(actor);
+  const previousPools = previousClasses.length === 1 ? dnd5eSrdLegacyHitDicePools(actor, previousClasses) : dnd5eSrdHitDicePoolsForClasses(actor, previousClasses);
+  const previousLevels = new Map(previousClasses.map((entry) => [entry.className, entry.level]));
+  const previousPoolByClass = new Map(previousPools.map((pool) => [pool.className, pool]));
+  const hitDicePools = classes.length > 1
+    ? classes.map((entry) => {
+        const previousLevel = previousLevels.get(entry.className) ?? 0;
+        const gainedLevels = Math.max(0, entry.level - previousLevel);
+        const previousPool = previousPoolByClass.get(entry.className);
+        const current = Math.min(entry.level, numericValue(previousPool?.current, 0) + gainedLevels);
+        return { className: entry.className, size: dnd5eSrdHitDieSize(entry.className), current, max: entry.level };
+      })
+    : [];
   const nextData = { ...actor.data, classes, level: totalLevel, class: primary };
   return {
     ...actor.data,
@@ -2797,11 +2903,14 @@ function dnd5eSrdApplyClassLevels(actor: Actor, classes: Dnd5eSrdClassLevel[], l
     classes,
     level: totalLevel,
     hp: { current: hp.current + hpGain, max: hp.max + hpGain },
-    hitDice: {
-      current: numericValue(hitDice.current, totalLevel - 1) + 1,
-      max: numericValue(hitDice.max, totalLevel - 1) + 1,
-      size: stringValue(hitDice.size) ?? dnd5eSrdHitDieSize(primary)
-    },
+    hitDice: hitDicePools.length > 0
+      ? dnd5eSrdAggregateHitDiceFromPools(hitDicePools, primary)
+      : {
+          current: numericValue(recordValue(actor.data.hitDice).current, totalLevel - 1) + 1,
+          max: numericValue(recordValue(actor.data.hitDice).max, totalLevel - 1) + 1,
+          size: stringValue(recordValue(actor.data.hitDice).size) ?? dnd5eSrdHitDieSize(primary)
+        },
+    ...(hitDicePools.length > 0 ? { hitDicePools } : {}),
     proficiencyBonus: Math.max(2, 2 + Math.floor((totalLevel - 1) / 4)),
     features: dnd5eSrdCombinedClassFeatures(normalizeStringArray(actor.data.features), classes),
     combat: dnd5eSrdCombinedClassCombat(recordValue(actor.data.combat), classes, actor.data.speed),
@@ -15671,6 +15780,23 @@ export function applyGenericFantasyRest(actor: Actor, restType: SystemRestType):
   };
 }
 
+function dnd5eSrdApplyRestHitDicePools(actor: Actor, data: Record<string, unknown>): Record<string, unknown> {
+  const classes = dnd5eSrdActorClassLevels(actor);
+  if (classes.length <= 1) return data;
+  const beforePools = dnd5eSrdHitDicePoolsForClasses(actor, classes);
+  if (beforePools.length === 0) return data;
+  const primaryClassName = dnd5eSrdPrimaryClassForHitDice(actor, classes);
+  const beforeAggregate = dnd5eSrdAggregateHitDiceFromPools(beforePools, primaryClassName);
+  const nextHitDice = recordValue(data.hitDice);
+  const desiredCurrent = Math.max(0, Math.min(beforeAggregate.max, numericValue(nextHitDice.current, beforeAggregate.current)));
+  const nextPools = dnd5eSrdApplyHitDicePoolDelta(beforePools, desiredCurrent - beforeAggregate.current);
+  return {
+    ...data,
+    hitDice: dnd5eSrdAggregateHitDiceFromPools(nextPools, primaryClassName),
+    hitDicePools: nextPools
+  };
+}
+
 export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType, options: SystemRestOptions = {}): SystemRestResult {
   const rest = applyGenericFantasyRest(actor, restType);
   const className = stringValue(actor.data.class) || "";
@@ -15685,9 +15811,10 @@ export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType, option
   const arcaneRecovery = dnd5eSrdApplyArcaneRecovery(actor, pactMagic.data, restType, options);
   const sorcerousRestoration = dnd5eSrdApplySorcerousRestoration(actor, arcaneRecovery.data, restType);
   const humanResourceful = dnd5eSrdApplyHumanResourceful(actor, sorcerousRestoration.data, restType);
+  const finalData = dnd5eSrdApplyRestHitDicePools(actor, humanResourceful.data);
   const recovered = dnd5eSrdRestRecovered(
     actor,
-    humanResourceful.data,
+    finalData,
     {
       ...rest.recovered,
       ...(pactMagic.recovered ?? {}),
@@ -15701,7 +15828,7 @@ export function applyDnd5eSrdRest(actor: Actor, restType: SystemRestType, option
     systemId: DND_5E_SRD_SYSTEM_ID,
     summary: `${actor.name} completed a ${restType} rest using ${DND_5E_SRD_VERSION}`,
     recovered,
-    data: humanResourceful.data
+    data: finalData
   };
 }
 
@@ -15722,10 +15849,12 @@ export function dnd5eSrdSheet(actor: Actor, items: Item[] = []): GenericFantasyS
   const existingArmorClass = numericValue(actor.data.armorClass, Number.NaN);
   const armorClassDetails = dnd5eSrdArmorClass(actor, items);
   const speedDetails = dnd5eSrdSpeed(actor, items);
+  const hitDicePools = dnd5eSrdHitDicePools(actor);
+  const hitDicePoolSummary = hitDicePools.length > 0 ? hitDicePools.map((pool) => `${pool.max}${pool.size}`).join(" + ") : undefined;
   const data = Number.isFinite(existingArmorClass) ? sheet.data : { ...sheet.data, armorClass: armorClassDetails.value, armorClassDetails };
   return {
     ...sheet,
-    data: { ...data, effectiveSpeed: speedDetails.value, speedDetails },
+    data: { ...data, effectiveSpeed: speedDetails.value, speedDetails, ...(hitDicePoolSummary ? { hitDicePoolSummary } : {}) },
     quickRolls: dnd5eSrdQuickRolls(actor, items),
     conditions: dnd5eSrdActorConditions(actor)
   };

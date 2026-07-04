@@ -1,6 +1,6 @@
 import type { Actor, Item } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
-import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdAttunementLimit, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCarryingCapacity, dnd5eSrdCharacterTemplate, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdConcentrationDc, dnd5eSrdCoverBonus, dnd5eSrdDeathSavingThrow, dnd5eSrdEncounterPlan, dnd5eSrdFallingDamage, dnd5eSrdJumpDistances, dnd5eSrdLevelForXp, dnd5eSrdXpForNextLevel, dnd5eSrdXpProgress, dnd5eSrdCanMulticlassInto, dnd5eSrdMeetsMulticlassPrerequisite, dnd5eSrdMulticlassCasterLevel, dnd5eSrdMulticlassSpellcasting, dnd5eSrdMulticlassSpellSlots, applyDnd5eSrdMulticlassLevel, dnd5eSrdAbilityScoreImprovementLevels, dnd5eSrdGeneralFeats, dnd5eSrdFeatEntry, applyDnd5eSrdFeat, dnd5eSrdImprovisedWeapon, dnd5eSrdMagicItemCraftingPlan, dnd5eSrdSpellScrollCraftingPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
+import { applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdAttunementLimit, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCarryingCapacity, dnd5eSrdCharacterTemplate, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdConcentrationDc, dnd5eSrdCoverBonus, dnd5eSrdDeathSavingThrow, dnd5eSrdEncounterPlan, dnd5eSrdFallingDamage, dnd5eSrdJumpDistances, dnd5eSrdLevelForXp, dnd5eSrdXpForNextLevel, dnd5eSrdXpProgress, dnd5eSrdCanMulticlassInto, dnd5eSrdMeetsMulticlassPrerequisite, dnd5eSrdMulticlassCasterLevel, dnd5eSrdMulticlassSpellcasting, dnd5eSrdMulticlassSpellSlots, dnd5eSrdHitDicePools, applyDnd5eSrdMulticlassLevel, dnd5eSrdAbilityScoreImprovementLevels, dnd5eSrdGeneralFeats, dnd5eSrdFeatEntry, applyDnd5eSrdFeat, dnd5eSrdImprovisedWeapon, dnd5eSrdMagicItemCraftingPlan, dnd5eSrdSpellScrollCraftingPlan, dnd5eSrdEncounterThreats, dnd5eSrdEncounterXpBudgets, dnd5eSrdEquipmentPurchase, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActorConditions, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplate, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirActorConditions, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplate, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersActorConditions, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplate, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction } from "./index.js";
 
 const actor: Actor = {
   id: "act_test",
@@ -419,6 +419,91 @@ describe("dnd 5.5e srd rules", () => {
     expect(() => applyDnd5eSrdMulticlassLevel(weakStr, "Barbarian")).toThrow();
   });
 
+
+  it("tracks per-class hit-dice pools for multiclass SRD characters", () => {
+    const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", level: 5, attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 13, wisdom: 11, charisma: 10 }, hp: { current: 44, max: 44 }, hitDice: { current: 5, max: 5, size: "d10" } } };
+    const fighterWizard = applyDnd5eSrdMulticlassLevel(fighter5, "Wizard");
+    expect(fighterWizard.hitDicePools).toEqual([
+      { className: "Fighter", size: "d10", current: 5, max: 5 },
+      { className: "Wizard", size: "d6", current: 1, max: 1 }
+    ]);
+    expect(fighterWizard.hitDice).toEqual({ current: 6, max: 6, size: "d10" });
+    expect(dnd5eSrdHitDicePools({ ...fighter5, data: fighterWizard })).toEqual(fighterWizard.hitDicePools);
+
+    const leveledPrimary = applyDnd5eSrdAdvancement({ ...fighter5, data: fighterWizard }, "level-up");
+    expect(leveledPrimary.hitDicePools).toEqual([
+      { className: "Fighter", size: "d10", current: 6, max: 6 },
+      { className: "Wizard", size: "d6", current: 1, max: 1 }
+    ]);
+    expect(leveledPrimary.hitDice).toEqual({ current: 7, max: 7, size: "d10" });
+
+    const sheet = dnd5eSrdSheet({ ...fighter5, data: leveledPrimary });
+    expect(sheet.data.hitDicePoolSummary).toBe("6d10 + 1d6");
+  });
+
+  it("keeps single-class hit dice unchanged and initializes legacy multiclass pools from aggregate dice", () => {
+    const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", level: 5, attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 11, charisma: 10 }, hp: { current: 44, max: 44 }, hitDice: { current: 3, max: 5, size: "d10" } } };
+    const singleClassLevel = applyDnd5eSrdAdvancement(fighter5, "level-up");
+    expect(singleClassLevel.hitDice).toEqual({ current: 4, max: 6, size: "d10" });
+    expect(singleClassLevel).not.toHaveProperty("hitDicePools");
+    expect(dnd5eSrdHitDicePools({ ...fighter5, data: singleClassLevel })).toEqual([]);
+
+    const legacyMulticlass = {
+      ...fighter5,
+      data: {
+        ...fighter5.data,
+        level: 7,
+        classes: [{ className: "Fighter", level: 5 }, { className: "Wizard", level: 2 }],
+        hitDice: { current: 4, max: 7, size: "d10" }
+      }
+    };
+    expect(dnd5eSrdHitDicePools(legacyMulticlass)).toEqual([
+      { className: "Fighter", size: "d10", current: 2, max: 5 },
+      { className: "Wizard", size: "d6", current: 2, max: 2 }
+    ]);
+
+    const leveledLegacy = applyDnd5eSrdAdvancement(legacyMulticlass, "level-up");
+    expect(leveledLegacy.hitDicePools).toEqual([
+      { className: "Fighter", size: "d10", current: 3, max: 6 },
+      { className: "Wizard", size: "d6", current: 2, max: 2 }
+    ]);
+    expect(leveledLegacy.hitDice).toEqual({ current: 5, max: 8, size: "d10" });
+  });
+
+  it("distributes multiclass hit-dice rest changes while preserving aggregate rest math", () => {
+    const multiclassActor: Actor = {
+      ...srdActor,
+      data: {
+        ...srdActor.data,
+        class: "Fighter",
+        level: 7,
+        classes: [{ className: "Fighter", level: 5 }, { className: "Wizard", level: 2 }],
+        attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 13, wisdom: 11, charisma: 10 },
+        hp: { current: 20, max: 50 },
+        hitDice: { current: 4, max: 7, size: "d10" },
+        hitDicePools: [
+          { className: "Fighter", size: "d10", current: 2, max: 5 },
+          { className: "Wizard", size: "d6", current: 2, max: 2 }
+        ]
+      }
+    };
+
+    const longRest = applyDnd5eSrdRest(multiclassActor, "long");
+    expect(longRest.data.hitDice).toEqual({ current: 7, max: 7, size: "d10" });
+    expect(longRest.data.hitDicePools).toEqual([
+      { className: "Fighter", size: "d10", current: 5, max: 5 },
+      { className: "Wizard", size: "d6", current: 2, max: 2 }
+    ]);
+    expect(longRest.recovered).toEqual(expect.objectContaining({ hitDiceRecovered: 3 }));
+
+    const shortRest = applyDnd5eSrdRest({ ...multiclassActor, data: { ...multiclassActor.data, hitDice: { current: 6, max: 7, size: "d10" }, hitDicePools: [{ className: "Fighter", size: "d10", current: 4, max: 5 }, { className: "Wizard", size: "d6", current: 2, max: 2 }] } }, "short");
+    expect(shortRest.data.hitDice).toEqual({ current: 5, max: 7, size: "d10" });
+    expect(shortRest.data.hitDicePools).toEqual([
+      { className: "Fighter", size: "d10", current: 3, max: 5 },
+      { className: "Wizard", size: "d6", current: 2, max: 2 }
+    ]);
+    expect(shortRest.recovered).toEqual(expect.objectContaining({ hitDiceSpent: 1 }));
+  });
   it("keeps multiclass features, resources, and Extra Attack per class instead of single-class", () => {
     // Fighter 5 (Extra Attack, 2 attacks) with Str 15 → eligible to add Barbarian.
     const fighter5 = { ...srdActor, data: { ...srdActor.data, class: "Fighter", level: 5, attributes: { strength: 15, dexterity: 12, constitution: 14, intelligence: 10, wisdom: 11, charisma: 10 }, hp: { current: 44, max: 44 }, hitDice: { current: 5, max: 5, size: "d10" }, combat: { attacksPerAction: 2 } } };
