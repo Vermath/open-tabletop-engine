@@ -1384,7 +1384,6 @@ a[href]:focus-visible,
   line-height: 1.15;
 }
 
-.token-condition-count,
 .token-aura-count {
   position: absolute;
   z-index: 2;
@@ -1400,10 +1399,6 @@ a[href]:focus-visible,
   background: #171512;
 }
 
-.token-condition-count {
-  top: -8px;
-  right: -8px;
-}
 
 .token-aura-count {
   bottom: -8px;
@@ -11705,4 +11700,37 @@ a:focus-visible {
 
 .creator-card.selected strong {
   color: var(--accent-strong);
+}
+
+/* Named condition chips under the token (replaces the bare count badge). */
+.token-conditions {
+  position: absolute;
+  top: calc(100% + 13px);
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  gap: 2px;
+  max-width: 230%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.token-condition-chip {
+  overflow: hidden;
+  max-width: 74px;
+  padding: 1px 6px;
+  border: 1px solid rgba(240, 198, 116, 0.45);
+  border-radius: 999px;
+  background: rgba(8, 7, 13, 0.9);
+  color: var(--paper);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.token-condition-chip.overflow {
+  border-color: var(--line);
+  color: var(--muted);
 }

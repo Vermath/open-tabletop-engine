@@ -1265,6 +1265,7 @@ export function App() {
   const realtimeRefreshRef = useRef<() => Promise<unknown>>(() => Promise.resolve());
   const realtimeBoardCaptureHandlerRef = useRef<(data: unknown) => boolean>(() => false);
   const hpAdjustRef = useRef<Map<string, { current: number; max: number; timer: number }>>(new Map());
+  const actorConditionQueueRef = useRef<Map<string, Promise<Actor | undefined>>>(new Map());
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   realtimeSelectionRef.current = { campaignId, sceneId };
@@ -3817,11 +3818,32 @@ export function App() {
   }
 
   async function updateActorData(actor: Actor, patch: Record<string, unknown>) {
-    await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, {
+    // Apply the authoritative response immediately so sheet edits (conditions,
+    // attributes) reflect on the board without waiting on a snapshot reload.
+    applyActorToSnapshot(await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, {
       data: { ...actor.data, ...patch }
-    });
+    }));
     setStatus(`${actor.name} sheet updated`);
-    await refresh();
+  }
+
+  // Condition toggles queue per actor and recompute from the latest known
+  // data at execution time, so rapid clicks on different chips cannot
+  // overwrite each other with stale render-time condition arrays.
+  function toggleActorCondition(actor: Actor, conditionId: string) {
+    const previous = actorConditionQueueRef.current.get(actor.id) ?? Promise.resolve(undefined);
+    const run = previous.then(async (previousActor) => {
+      const latest = previousActor ?? snapshotRef.current.actors.find((item) => item.id === actor.id) ?? actor;
+      const active = parseActorConditions(formatActorConditions(latest));
+      const next = active.includes(conditionId) ? active.filter((id) => id !== conditionId) : [...active, conditionId];
+      const updated = await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, { data: { ...latest.data, conditions: next } });
+      applyActorToSnapshot(updated);
+      setStatus(`${updated.name} conditions updated`);
+      return updated;
+    });
+    actorConditionQueueRef.current.set(actor.id, run.catch((error) => {
+      setStatus(errorMessage(error));
+      return undefined;
+    }));
   }
 
   async function updateItemData(item: Item, patch: Record<string, unknown>) {
@@ -4019,13 +4041,14 @@ export function App() {
         }
       });
       actorOverrides.set(actor.id, nextActor);
+      applyActorToSnapshot(nextActor);
       return true;
     }
     if (!hasPermission("token.update")) return false;
     const noteLabel = adjusted.notes.length > 0 ? ` (${adjusted.notes.join("; ")})` : "";
     const damageLabel = `${outcomeLabel ? `${outcomeLabel} - ` : ""}Damaged ${adjusted.amount}${damageType ? ` ${damageType}` : ""}${noteLabel}`;
     const nextConditions = [...(token.conditions ?? []).filter((condition) => condition.id !== slugId(damageLabel)), { id: slugId(damageLabel), name: damageLabel }];
-    await apiPatch<Token>(`/api/v1/tokens/${token.id}`, { conditions: nextConditions });
+    applyTokensToSnapshot([await apiPatch<Token>(`/api/v1/tokens/${token.id}`, { conditions: nextConditions })]);
     return true;
   }
 
@@ -4052,8 +4075,8 @@ export function App() {
     for (const token of affectedTokens) {
       if (await applyDamageToAffectedToken(token, roll.total, annotation.templateDamageType, undefined, actorOverrides)) appliedCount += 1;
     }
-    await refresh();
     setStatus(`Applied template damage to ${appliedCount} tokens`);
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function resolveTemplateSaves(annotation: SceneAnnotation) {
@@ -4097,8 +4120,8 @@ export function App() {
       const outcomeLabel = `${success ? "Saved" : "Failed"} ${titleCaseLabel(saveAbility)} ${saveRoll.total} vs DC ${saveDc}`;
       if (await applyDamageToAffectedToken(token, damage, annotation.templateDamageType, outcomeLabel, actorOverrides)) appliedCount += 1;
     }
-    await refresh();
     setStatus(`Resolved saves for ${appliedCount} tokens`);
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function saveCurrentDiceFormula() {
@@ -5016,24 +5039,25 @@ export function App() {
   async function advanceSelectedActor(optionId?: string, choices: { featId?: string; abilityChoices?: Record<string, number>; multiclassInto?: string } = {}) {
     if (!selectedActor) return;
     const selectedOptionId = optionId || advancementOptions[0]?.id || systemAdvancementOptionId(selectedActor.systemId);
-    const advanced = await apiPost<{ advancement: { name: string } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advance`, {
+    const advanced = await apiPost<{ advancement: { name: string }; actor?: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advance`, {
       optionId: selectedOptionId,
       ...(choices.featId ? { featId: choices.featId } : {}),
       ...(choices.abilityChoices ? { abilityChoices: choices.abilityChoices } : {}),
       ...(choices.multiclassInto ? { multiclassInto: choices.multiclassInto } : {})
     });
+    if (advanced.actor) applyActorToSnapshot(advanced.actor);
     setStatus(choices.multiclassInto ? `${selectedActor.name} gained a level of ${choices.multiclassInto}` : `${selectedActor.name} advanced to ${advanced.advancement.name}`);
-    await refresh();
+    void refresh(campaignId, selectedScene?.id ?? sceneId, { syncStatus: false });
   }
 
   async function restSelectedActor(restType: "short" | "long", options: { arcaneRecovery?: Record<string, number> } = {}) {
     if (!selectedActor) return;
-    const rested = await apiPost<{ rest: { summary: string } }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/rest`, {
+    const rested = await apiPost<{ rest: { summary: string }; actor?: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/rest`, {
       restType,
       ...options
     });
+    if (rested.actor) applyActorToSnapshot(rested.actor);
     setStatus(rested.rest.summary);
-    await refresh();
   }
 
   async function planSystemEncounter() {
@@ -7079,7 +7103,7 @@ export function App() {
               {inspectorTabs.includes("content") && <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Content" onClick={() => setTab("content")} />}
               {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" onClick={() => setTab("plugins")} />}
             </div>
-            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} updateActorData={updateActorData} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
@@ -8991,7 +9015,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         const tokenHpRatio = tokenHp && typeof tokenHp.current === "number" && typeof tokenHp.max === "number" && tokenHp.max > 0 ? Math.max(0, Math.min(1, tokenHp.current / tokenHp.max)) : undefined;
         const showTokenVitals = tokenHpRatio !== undefined && (props.canSeeAllVitals || token.ownerUserIds?.includes(props.boardCurrentUserId));
         const tokenHpTone = tokenHpRatio === undefined ? "" : tokenHpRatio <= 0.25 ? "danger" : tokenHpRatio <= 0.5 ? "warning" : "healthy";
-        const tokenConditionEntries = [...(token.conditions ?? []), ...(linkedActor ? actorConditionLabels(linkedActor) : [])];
+        const tokenConditionEntries = [...(token.conditions ?? []).map((condition) => condition.name), ...(linkedActor ? actorConditionLabels(linkedActor) : [])];
         const isCurrentTurn = currentTurnTokenIdSet.has(token.id);
         const isNextTurn = !isCurrentTurn && nextTurnTokenIdSet.has(token.id);
         return (
@@ -9050,7 +9074,14 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
               </span>
             )}
             {(isCurrentTurn || isNextTurn) && <span className={`token-turn-ring ${isCurrentTurn ? "current" : "next"}`} aria-hidden="true" />}
-            {tokenConditionEntries.length > 0 ? <small className="token-condition-count" title={tokenConditionEntries.join(", ")}>{tokenConditionEntries.length}</small> : null}
+            {tokenConditionEntries.length > 0 ? (
+              <span className="token-conditions" aria-hidden="true" title={tokenConditionEntries.join(", ")}>
+                {tokenConditionEntries.slice(0, 3).map((condition, index) => (
+                  <small className="token-condition-chip" key={`${token.id}-condition-${index}`}>{condition}</small>
+                ))}
+                {tokenConditionEntries.length > 3 && <small className="token-condition-chip overflow">+{tokenConditionEntries.length - 3}</small>}
+              </span>
+            ) : null}
             {token.auras?.length ? <small className="token-aura-count">{token.auras.length}</small> : null}
             {canResize && (
               <>
@@ -9745,7 +9776,7 @@ function slugId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 }
 
-function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
+function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; toggleActorCondition(actor: Actor, conditionId: string): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
   const [sheetView, setSheetView] = useState<"stats" | "loadout" | "actions" | "compendium">("stats");
   const [assignItemId, setAssignItemId] = useState("");
   const [itemDropActive, setItemDropActive] = useState(false);
@@ -9942,8 +9973,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
   const activeConditionIds = parseActorConditions(formatActorConditions(props.actor));
   const conditionChipIds = [...new Set([...quickActorConditionIds, ...activeConditionIds])];
   const toggleCondition = (conditionId: string) => {
-    const next = activeConditionIds.includes(conditionId) ? activeConditionIds.filter((id) => id !== conditionId) : [...activeConditionIds, conditionId];
-    props.updateActorData(props.actor!, { conditions: next });
+    props.toggleActorCondition(props.actor!, conditionId);
   };
   const renderSheetAction = (action: ActorActionOption) => {
     const formula = actorActionDiceFormula(action);
@@ -10973,8 +11003,8 @@ function actorConditionLabels(actor: Actor): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((condition) => {
-      if (typeof condition === "string") return names[condition] ?? condition;
-      if (condition && typeof condition === "object" && "id" in condition && typeof condition.id === "string") return names[condition.id] ?? condition.id;
+      if (typeof condition === "string") return names[condition] ?? titleCaseLabel(condition);
+      if (condition && typeof condition === "object" && "id" in condition && typeof condition.id === "string") return names[condition.id] ?? titleCaseLabel(condition.id);
       return undefined;
     })
     .filter((condition): condition is string => Boolean(condition));
