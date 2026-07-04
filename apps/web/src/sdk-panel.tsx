@@ -1,10 +1,11 @@
 import type { Actor } from "@open-tabletop/core";
-import { ChevronLeft, ChevronRight, Eye, Plus, RefreshCw, RotateCcw, Shield, Swords, Upload, UserPlus, WandSparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronRight, Plus, RefreshCw, RotateCcw, Shield, Swords, Upload, UserPlus, WandSparkles } from "lucide-react";
+import { useState } from "react";
 import { dnd5eSrdArcaneRecoverySelection } from "./actor-sheet-data.js";
 import type { CharacterTemplateInfo, PluginRuntimeInfo, SystemRuntimeInfo } from "./api.js";
 import { formatDateTime, formatNumber, registryHostLabel } from "./sheet-format.js";
-import { systemAdvancementLabel, systemRollLabel, type AdvancementOptionInfo } from "./system-actions.js";
+import { systemRollLabel, type AdvancementOptionInfo } from "./system-actions.js";
+import { AdvancementFlow } from "./advancement-flow.js";
 
 
 export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; advancementGrantsFeat: boolean; advancementFeats: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions: Array<{ className: string; eligible: boolean; reasons: string[] }>; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version?: string): void; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onOpenCharacterCreator(): void; onImportCharacter(): void; onCreateMonster(): void; onAdvanceActor(optionId?: string, choices?: { featId?: string; abilityChoices?: Record<string, number>; multiclassInto?: string }): void; onRestActor(restType: "short" | "long", options?: { arcaneRecovery?: Record<string, number> }): void; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
@@ -12,16 +13,8 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
   const [pluginSourceFilter, setPluginSourceFilter] = useState<"all" | "local" | "registry">("all");
   const [pluginStatusFilter, setPluginStatusFilter] = useState<"all" | "installed" | "available" | "upgrade">("all");
   const [pluginCoreFilter, setPluginCoreFilter] = useState<"all" | "compatible" | "incompatible">("all");
-  const [advancementOptionId, setAdvancementOptionId] = useState("");
-  const [advancementStep, setAdvancementStep] = useState<"choose" | "review">("choose");
-  const [advancementConfirmed, setAdvancementConfirmed] = useState(false);
-  const [advancementMode, setAdvancementMode] = useState<"level" | "multiclass">("level");
-  const [selectedFeatId, setSelectedFeatId] = useState("");
-  const [selectedMulticlass, setSelectedMulticlass] = useState("");
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   const rollLabel = systemRollLabel(props.actor?.systemId);
-  const advancementLabel = systemAdvancementLabel(props.actor?.systemId);
-  const selectedAdvancementOption = props.advancementOptions.find((option) => option.id === advancementOptionId) ?? props.advancementOptions[0];
   const arcaneRecovery = props.actor ? dnd5eSrdArcaneRecoverySelection(props.actor) : undefined;
   const systemEntrypointLabel = (system: SystemRuntimeInfo) => {
     const entrypoints = [system.entrypoints?.client ? "client" : undefined, system.entrypoints?.server ? "server" : undefined].filter(Boolean);
@@ -78,19 +71,6 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
       ...plugin.permissions
     ].some((value) => value.toLocaleLowerCase().includes(normalizedPluginSearch));
   });
-  useEffect(() => {
-    if (props.advancementOptions.length === 0) {
-      if (advancementOptionId) setAdvancementOptionId("");
-      setAdvancementStep("choose");
-      setAdvancementConfirmed(false);
-      return;
-    }
-    if (!props.advancementOptions.some((option) => option.id === advancementOptionId)) setAdvancementOptionId(props.advancementOptions[0]!.id);
-  }, [props.advancementOptions, advancementOptionId]);
-  useEffect(() => {
-    setAdvancementStep("choose");
-    setAdvancementConfirmed(false);
-  }, [selectedAdvancementOption?.id, props.actor?.id]);
   return (
     <div className="panel-stack">
       <div className="section-title">Runtime SDK</div>
@@ -324,101 +304,7 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
         <span>Sheet Actor</span>
         <strong>{props.actor?.name ?? "No actor"}</strong>
       </div>
-      <section className="operator-section content-import-form" aria-label="Actor advancement choices">
-        <div className="operator-heading">
-          <div className="section-title">Advancement</div>
-          <strong>{formatNumber(props.advancementOptions.length)} choices</strong>
-        </div>
-        {props.advancementOptions.length === 0 ? (
-          <div className="empty-state compact">No advancement choices are available for this actor.</div>
-        ) : (
-          <>
-            <label>
-              <span>Choice</span>
-              <select aria-label="Advancement option" value={selectedAdvancementOption?.id ?? ""} disabled={!props.canAdvanceActor} onChange={(event) => setAdvancementOptionId(event.target.value)}>
-                {props.advancementOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="admin-meta">
-              <span>{selectedAdvancementOption?.summary ?? "No advancement selected"}</span>
-              {selectedAdvancementOption && <span>next {formatNumber(selectedAdvancementOption.nextValue)}</span>}
-            </div>
-            {props.multiclassOptions.length > 0 && (
-              <div className="segmented-control" role="group" aria-label="Advancement type">
-                <button className={advancementMode === "level" ? "active" : ""} type="button" onClick={() => setAdvancementMode("level")}>Level up class</button>
-                <button className={advancementMode === "multiclass" ? "active" : ""} type="button" onClick={() => setAdvancementMode("multiclass")}>Multiclass</button>
-              </div>
-            )}
-            {advancementMode === "level" && props.advancementGrantsFeat && props.advancementFeats.length > 0 && (
-              <label>
-                <span>Feat or Ability Score Improvement</span>
-                <select aria-label="Advancement feat" value={selectedFeatId} disabled={!props.canAdvanceActor} onChange={(event) => setSelectedFeatId(event.target.value)}>
-                  <option value="">Choose later</option>
-                  {props.advancementFeats.map((feat) => (
-                    <option key={feat.id} value={feat.id}>{feat.name}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {advancementMode === "multiclass" && (
-              <label>
-                <span>Add a level in</span>
-                <select aria-label="Multiclass into" value={selectedMulticlass} disabled={!props.canAdvanceActor} onChange={(event) => setSelectedMulticlass(event.target.value)}>
-                  <option value="">Select a class</option>
-                  {props.multiclassOptions.map((option) => (
-                    <option key={option.className} value={option.className} disabled={!option.eligible}>
-                      {option.className}{option.eligible ? "" : " (ineligible)"}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {advancementMode === "multiclass" && selectedMulticlass && (
-              <div className="admin-meta">
-                <span>{props.multiclassOptions.find((option) => option.className === selectedMulticlass)?.eligible ? `Adds a level of ${selectedMulticlass} using the shared multiclass spell-slot table.` : props.multiclassOptions.find((option) => option.className === selectedMulticlass)?.reasons[0] ?? "Ineligible"}</span>
-              </div>
-            )}
-            <div className="button-row">
-              <button className="ghost-button" type="button" disabled={!props.actor || !props.canAdvanceActor || !selectedAdvancementOption || (advancementMode === "multiclass" && !selectedMulticlass)} onClick={() => setAdvancementStep("review")}>
-                <Eye size={14} /> Review advancement
-              </button>
-              {advancementStep === "review" && (
-                <button className="ghost-button" type="button" onClick={() => setAdvancementStep("choose")}>
-                  <ChevronLeft size={14} /> Back to choice
-                </button>
-              )}
-            </div>
-            {advancementStep === "review" && selectedAdvancementOption && (
-              <div className="asset-pressure-list" role="region" aria-label="Advancement review step">
-                <div className="operator-row tool-call-row">
-                  <span>Actor</span>
-                  <strong>{props.actor?.name ?? "No actor"}</strong>
-                </div>
-                <div className="operator-row tool-call-row">
-                  <span>Advancement</span>
-                  <strong>{selectedAdvancementOption.name}</strong>
-                </div>
-                <div className="operator-row tool-call-row">
-                  <span>Next value</span>
-                  <strong>{formatNumber(selectedAdvancementOption.nextValue)}</strong>
-                </div>
-                <div className="operator-row tool-call-row">
-                  <span>Review</span>
-                  <strong>{selectedAdvancementOption.summary}</strong>
-                </div>
-                <label className="inline-check">
-                  <input aria-label="Confirm advancement review" type="checkbox" checked={advancementConfirmed} onChange={(event) => setAdvancementConfirmed(event.target.checked)} />
-                  <span>Reviewed advancement changes</span>
-                </label>
-              </div>
-            )}
-          </>
-        )}
-      </section>
+      <AdvancementFlow actor={props.actor} advancementOptions={props.advancementOptions} advancementGrantsFeat={props.advancementGrantsFeat} advancementFeats={props.advancementFeats} multiclassOptions={props.multiclassOptions} onAdvanceActor={props.onAdvanceActor} canAdvanceActor={props.canAdvanceActor} />
       <button className="ghost-button wide" onClick={props.onImportCharacter} disabled={!activeSystem || !props.canImportActor}>
         <Upload size={16} /> Import Character
       </button>
@@ -437,17 +323,6 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
           <strong>{props.createdMonster.name}</strong>
         </div>
       )}
-      <button className="ghost-button wide" onClick={() => {
-        props.onAdvanceActor(selectedAdvancementOption?.id, advancementMode === "multiclass"
-          ? { multiclassInto: selectedMulticlass }
-          : selectedFeatId ? { featId: selectedFeatId } : {});
-        setAdvancementStep("choose");
-        setAdvancementConfirmed(false);
-        setSelectedFeatId("");
-        setSelectedMulticlass("");
-      }} disabled={!props.actor || !props.canAdvanceActor || props.advancementOptions.length === 0 || advancementStep !== "review" || !advancementConfirmed || (advancementMode === "multiclass" && !selectedMulticlass)}>
-        <RefreshCw size={16} /> {advancementMode === "multiclass" ? "Multiclass" : advancementLabel}
-      </button>
       <button className="ghost-button wide" onClick={() => props.onRestActor("short")} disabled={!props.actor || !props.canRestActor}>
         <RefreshCw size={16} /> Short Rest
       </button>

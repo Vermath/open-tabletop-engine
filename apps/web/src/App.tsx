@@ -30,6 +30,7 @@ import { JournalPanel } from "./journal-panel.js";
 import { ChatRail } from "./chat-rail.js";
 import { CombatPanel, nextCombatTurnPosition } from "./combat-panel.js";
 import { SdkPanel } from "./sdk-panel.js";
+import { AdvancementFlow } from "./advancement-flow.js";
 import { ContentImportPanel } from "./content-import-panel.js";
 import { AdminPanel, aiToolCallErrorCode, scimMappingLabel } from "./admin-panel.js";
 import { AiPanel } from "./ai-panel.js";
@@ -949,6 +950,7 @@ export function App() {
   const [advancementFeats, setAdvancementFeats] = useState<Array<{ id: string; name: string; category: string; summary: string }>>([]);
   const [multiclassOptions, setMulticlassOptions] = useState<Array<{ className: string; eligible: boolean; reasons: string[] }>>([]);
   const [xpProgress, setXpProgress] = useState<XpProgressInfo | undefined>(undefined);
+  const [advancementModalOpen, setAdvancementModalOpen] = useState(false);
   const [characterCreatorOpen, setCharacterCreatorOpen] = useState(false);
   const [characterOrigins, setCharacterOrigins] = useState<CharacterOriginsInfo | undefined>(undefined);
   const [fogPresetName, setFogPresetName] = useState("");
@@ -1531,6 +1533,15 @@ export function App() {
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [aiAgentOpen]);
+
+  useEffect(() => {
+    if (workspaceMode !== "manage") return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setWorkspaceMode("live");
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [workspaceMode]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = uiTheme;
@@ -3644,8 +3655,16 @@ export function App() {
     setStatus(`Gave ${item.name} to ${actor.name}`);
   }
 
+  function canAssignItemFromSheet(item: Item) {
+    return hasPermission("actor.update") || (item.actorId === selectedActor?.id && canUpdateSelectedActor);
+  }
+
   function handleRailItemDragOver(event: ReactDragEvent<HTMLButtonElement>, actor: Actor) {
-    if (!hasPermission("actor.update") || !hasItemDropData(event.dataTransfer)) return;
+    if (!hasItemDropData(event.dataTransfer)) return;
+    const itemId = readItemDropData(event.dataTransfer);
+    const item = snapshot.items.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    if (!canAssignItemFromSheet(item)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
     setPartyDropTargetActorId(actor.id);
@@ -3659,10 +3678,9 @@ export function App() {
 
   function giveDroppedItemToActor(event: ReactDragEvent<HTMLButtonElement>, actor: Actor) {
     setPartyDropTargetActorId("");
-    if (!hasPermission("actor.update")) return;
     const itemId = readItemDropData(event.dataTransfer);
     const item = snapshot.items.find((candidate) => candidate.id === itemId);
-    if (!item) return;
+    if (!item || !canAssignItemFromSheet(item)) return;
     event.preventDefault();
     void assignItemToActor(item, actor).catch((error) => setStatus(errorMessage(error)));
   }
@@ -7000,7 +7018,7 @@ export function App() {
               {inspectorTabs.includes("content") && <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Content" onClick={() => setTab("content")} />}
               {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" onClick={() => setTab("plugins")} />}
             </div>
-            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(xpProgress?.readyToLevel && advancementOptions.length > 0)} onLevelUp={() => { if (!canUsePrepWorkspace) { setStatus("Ask the GM to run your advancement from the Prep workspace"); return; } setWorkspaceMode("prep"); setTab("plugins"); setStatus("Choose an advancement option to level up"); }} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(xpProgress?.readyToLevel && advancementOptions.length > 0 && canUpdateSelectedActor)} onLevelUp={() => setAdvancementModalOpen(true)} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} onGenerateRecap={generateSessionRecap} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} canAwardXp={hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
@@ -7071,6 +7089,35 @@ export function App() {
         />
       )}
       {commandPaletteOpen && <CommandPalette commands={paletteCommands} onRun={runPaletteCommand} onClose={() => setCommandPaletteOpen(false)} />}
+      {advancementModalOpen && selectedActor && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setAdvancementModalOpen(false);
+        }}>
+          <div className="modal-dialog advancement-modal" role="dialog" aria-modal="true" aria-label="Level up actor">
+            <div className="operator-heading">
+              <div>
+                <div className="section-title">Advancement</div>
+                <h2>{selectedActor.name}</h2>
+              </div>
+              <button className="icon-button" type="button" aria-label="Close level up" onClick={() => setAdvancementModalOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <AdvancementFlow
+              actor={selectedActor}
+              advancementOptions={advancementOptions}
+              advancementGrantsFeat={advancementGrantsFeat}
+              advancementFeats={advancementFeats}
+              multiclassOptions={multiclassOptions}
+              onAdvanceActor={async (optionId, choices) => {
+                await advanceSelectedActor(optionId, choices);
+                setAdvancementModalOpen(false);
+              }}
+              canAdvanceActor={canUpdateSelectedActor}
+            />
+          </div>
+        </div>
+      )}
       {characterCreatorOpen && (
         <CharacterCreatorDialog
           templates={snapshot.characterTemplates}

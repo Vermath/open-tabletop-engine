@@ -11828,3 +11828,19 @@ a:focus-visible {
 .party-row.drop-target strong {
   color: var(--paper);
 }
+
+/* -------------------------------------------------------------------------
+   Sheet advancement modal
+   ------------------------------------------------------------------------- */
+.advancement-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, calc(100vw - 40px));
+  max-height: min(86svh, 720px);
+  overflow: hidden;
+}
+
+.advancement-modal > .operator-section {
+  min-height: 0;
+  overflow-y: auto;
+}
