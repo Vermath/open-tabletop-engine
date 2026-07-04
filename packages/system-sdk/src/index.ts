@@ -2523,6 +2523,24 @@ export function dnd5eSrdXpForNextLevel(xp: number): number | undefined {
   return level >= 20 ? undefined : dnd5eSrdXpThresholds[level];
 }
 
+export interface Dnd5eSrdXpProgress {
+  xp: number;
+  level: number;
+  levelForXp: number;
+  nextLevelXp?: number;
+  previousLevelXp: number;
+  readyToLevel: boolean;
+}
+
+export function dnd5eSrdXpProgress(actor: Actor): Dnd5eSrdXpProgress {
+  const xp = Math.max(0, Math.floor(numericValue(actor.data.xp, 0)));
+  const level = Math.max(1, Math.min(20, Math.floor(numericValue(actor.data.level, 1))));
+  const levelForXp = dnd5eSrdLevelForXp(xp);
+  const nextLevelXp = level >= 20 ? undefined : dnd5eSrdXpThresholds[level];
+  const previousLevelXp = dnd5eSrdXpThresholds[level - 1] ?? 0;
+  return { xp, level, levelForXp, nextLevelXp, previousLevelXp, readyToLevel: levelForXp > level };
+}
+
 export interface Dnd5eSrdClassLevel {
   className: string;
   level: number;

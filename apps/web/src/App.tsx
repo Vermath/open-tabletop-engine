@@ -448,6 +448,15 @@ type AdvancementOptionInfo = {
   nextValue: number;
 };
 
+type XpProgressInfo = {
+  xp: number;
+  level: number;
+  levelForXp: number;
+  nextLevelXp?: number;
+  previousLevelXp: number;
+  readyToLevel: boolean;
+};
+
 type CharacterOriginsInfo = {
   backgrounds: Array<{ id: string; name: string; abilityScores: string[]; feat: string; skillProficiencies: string[]; toolProficiencies: string[]; startingGp: number }>;
   species: Array<{ id: string; name: string; size: string; speed: number; traits: string[]; senses?: string[] }>;
@@ -1248,6 +1257,7 @@ export function App() {
   const [advancementGrantsFeat, setAdvancementGrantsFeat] = useState(false);
   const [advancementFeats, setAdvancementFeats] = useState<Array<{ id: string; name: string; category: string; summary: string }>>([]);
   const [multiclassOptions, setMulticlassOptions] = useState<Array<{ className: string; eligible: boolean; reasons: string[] }>>([]);
+  const [xpProgress, setXpProgress] = useState<XpProgressInfo | undefined>(undefined);
   const [characterCreatorOpen, setCharacterCreatorOpen] = useState(false);
   const [characterOrigins, setCharacterOrigins] = useState<CharacterOriginsInfo | undefined>(undefined);
   const [fogPresetName, setFogPresetName] = useState("");
@@ -1993,19 +2003,21 @@ export function App() {
       setAdvancementGrantsFeat(false);
       setAdvancementFeats([]);
       setMulticlassOptions([]);
+      setXpProgress(undefined);
     };
     if (blankCanvasDemoOpen || !selectedActor) {
       resetAdvancement();
       return;
     }
     let cancelled = false;
-    apiGet<{ actorId: string; options: AdvancementOptionInfo[]; grantsFeat?: boolean; feats?: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions?: Array<{ className: string; eligible: boolean; reasons: string[] }> }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advancement`)
+    apiGet<{ actorId: string; options: AdvancementOptionInfo[]; grantsFeat?: boolean; feats?: Array<{ id: string; name: string; category: string; summary: string }>; multiclassOptions?: Array<{ className: string; eligible: boolean; reasons: string[] }>; xp?: XpProgressInfo }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/advancement`)
       .then((result) => {
         if (cancelled) return;
         setAdvancementOptions(result.options);
         setAdvancementGrantsFeat(result.grantsFeat ?? false);
         setAdvancementFeats(result.feats ?? []);
         setMulticlassOptions(result.multiclassOptions ?? []);
+        setXpProgress(result.xp);
       })
       .catch(() => {
         if (!cancelled) resetAdvancement();
@@ -2013,7 +2025,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [blankCanvasDemoOpen, campaignId, selectedActor?.id, selectedActor?.systemId]);
+  }, [blankCanvasDemoOpen, campaignId, selectedActor?.id, selectedActor?.systemId, selectedActor?.updatedAt]);
 
   useEffect(() => {
     if (!selectedCampaign) return;
@@ -3824,6 +3836,32 @@ export function App() {
       data: { ...actor.data, ...patch }
     }));
     setStatus(`${actor.name} sheet updated`);
+  }
+
+  async function awardActorXp(actor: Actor, amount: number) {
+    if (!Number.isFinite(amount) || amount === 0) return;
+    const currentXp = Math.max(0, Math.floor(numericValue(actor.data.xp, 0)));
+    const nextXp = Math.max(0, currentXp + Math.floor(amount));
+    const updated = await apiPatch<Actor>(`/api/v1/actors/${actor.id}`, { data: { ...actor.data, xp: nextXp } });
+    applyActorToSnapshot(updated);
+    if (actor.id === selectedActor?.id && xpProgress?.nextLevelXp !== undefined && nextXp >= xpProgress.nextLevelXp) {
+      setStatus(`${actor.name} has enough XP to level up!`);
+    } else {
+      setStatus(`${actor.name} ${amount > 0 ? "gained" : "lost"} ${formatNumber(Math.abs(Math.floor(amount)))} XP`);
+    }
+  }
+
+  function awardPartyXp(total: number) {
+    const party = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
+    if (party.length === 0 || !Number.isFinite(total) || total <= 0) {
+      setStatus("No party actors to award XP");
+      return;
+    }
+    const share = Math.floor(total / party.length);
+    if (share <= 0) return;
+    void Promise.all(party.map((actor) => awardActorXp(actor, share)))
+      .then(() => setStatus(`Awarded ${formatNumber(share)} XP to each of ${party.length} party members`))
+      .catch((error) => setStatus(errorMessage(error)));
   }
 
   // Condition toggles queue per actor and recompute from the latest known
@@ -7103,10 +7141,10 @@ export function App() {
               {inspectorTabs.includes("content") && <TabButton active={tab === "content"} icon={<Upload size={15} />} label="Content" onClick={() => setTab("content")} />}
               {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" onClick={() => setTab("plugins")} />}
             </div>
-            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
+            {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(xpProgress?.readyToLevel && advancementOptions.length > 0)} onLevelUp={() => { if (!canUsePrepWorkspace) { setStatus("Ask the GM to run your advancement from the Prep workspace"); return; } setWorkspaceMode("prep"); setTab("plugins"); setStatus("Choose an advancement option to level up"); }} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
-            {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
+            {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} canAwardXp={hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
@@ -9021,7 +9059,7 @@ function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapA
         return (
           <button
             key={token.id}
-            className={`token layer-${layer} ${activeLayerToken ? "active-layer" : "inactive-layer"} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""} ${isCurrentTurn ? "turn-current" : ""} ${isNextTurn ? "turn-next" : ""}`}
+            className={`token layer-${layer} ${activeLayerToken ? "active-layer" : "inactive-layer"} ${token.disposition} ${tokenImageAsset ? "has-image" : ""} ${selected ? "selected" : ""} ${props.selectedTokenId === token.id ? "primary-selected" : ""} ${token.targetedByUserIds?.length ? "targeted" : ""} ${token.auras?.length ? "has-aura" : ""} ${dragPosition ? "dragging" : ""} ${isCurrentTurn ? "turn-current" : ""} ${isNextTurn ? "turn-next" : ""} ${tokenHpRatio !== undefined && tokenHpRatio <= 0 ? "down" : tokenHpRatio !== undefined && tokenHpRatio <= 0.5 ? "bloodied" : ""}`}
             style={{
               left: `${(visualX / props.scene.width) * 100}%`,
               top: `${(visualY / props.scene.height) * 100}%`,
@@ -9776,7 +9814,7 @@ function slugId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
 }
 
-function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; toggleActorCondition(actor: Actor, conditionId: string): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
+function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; systemLabel?: string; scene?: Scene; currentUserId: string; actors: Actor[]; tokens: Token[]; combat?: Combat; members: Snapshot["members"]; assets: MapAsset[]; items: Item[]; compendiumEntries: RulesCompendiumEntry[]; compendiumSearch: string; setCompendiumSearch(value: string): void; compendiumStatus: string; actionTargetActorId: string; setActionTargetActorId(value: string): void; actionApplyEffect: boolean; setActionApplyEffect(value: boolean): void; actionConsumeResources: boolean; setActionConsumeResources(value: boolean): void; updateActorHp(actor: Actor, current: number): void; adjustActorHp(actor: Actor, delta: number): void; awardActorXp(actor: Actor, amount: number): void; xpProgress?: XpProgressInfo; advancementReady: boolean; onLevelUp(): void; updateActorData(actor: Actor, patch: Record<string, unknown>): void; toggleActorCondition(actor: Actor, conditionId: string): void; updateItemData(item: Item, patch: Record<string, unknown>): Promise<void>; assignItemToActor(item: Item, actor: Actor): Promise<void>; updateToken(patch: Partial<Token>): void; onUploadTokenImage(file: File, input?: HTMLInputElement): Promise<void>; targetToken(tokenId: string, targeted: boolean): void; targetTokens(tokenIds: string[], targeted: boolean): void; deleteToken(): void; updateTokenVision(patch: TokenVisionPatch): void; useActorAction(rollId: string, options?: ActorActionCommitOptions): void; onImportCompendiumEntry(entry: RulesCompendiumEntry): Promise<void>; onPurchaseCompendiumEntry(entry: RulesCompendiumEntry, quantity: number): Promise<void>; canCreateToken: boolean; canUpdateActor: boolean; canUpdateToken: boolean; canDeleteToken: boolean; canUseAction: boolean }) {
   const [sheetView, setSheetView] = useState<"stats" | "loadout" | "actions" | "compendium">("stats");
   const [assignItemId, setAssignItemId] = useState("");
   const [itemDropActive, setItemDropActive] = useState(false);
@@ -10174,6 +10212,25 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
             <label htmlFor="actor-hp-tab">Set HP</label>
             <input id="actor-hp-tab" aria-label="Actor sheet current HP" type="number" value={hp?.current ?? 0} disabled={!props.canUpdateActor} onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))} />
           </div>
+          {props.xpProgress && (
+            <div className="xp-row">
+              <div className="xp-bar" role="meter" aria-label={`Experience ${props.xpProgress.xp}${props.xpProgress.nextLevelXp ? ` of ${props.xpProgress.nextLevelXp}` : ""}`} aria-valuemin={props.xpProgress.previousLevelXp} aria-valuemax={props.xpProgress.nextLevelXp ?? props.xpProgress.xp} aria-valuenow={props.xpProgress.xp}>
+                <div className="xp-bar-fill" style={{ width: `${props.xpProgress.nextLevelXp ? Math.max(0, Math.min(100, Math.round(((props.xpProgress.xp - props.xpProgress.previousLevelXp) / Math.max(1, props.xpProgress.nextLevelXp - props.xpProgress.previousLevelXp)) * 100))) : 100}%` }} />
+                <span className="xp-bar-value">XP {formatNumber(props.xpProgress.xp)}{props.xpProgress.nextLevelXp !== undefined ? ` / ${formatNumber(props.xpProgress.nextLevelXp)}` : ""}</span>
+              </div>
+              {props.advancementReady && (
+                <button className="ghost-button level-up-button" type="button" onClick={() => props.onLevelUp()}>
+                  <ChevronUp size={14} /> Level Up
+                </button>
+              )}
+              {props.canUpdateActor && (
+                <form className="xp-award" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem("xp-award-amount") as HTMLInputElement; const amount = Number(input.value); if (Number.isFinite(amount) && amount !== 0) { props.awardActorXp(props.actor!, amount); input.value = ""; } }}>
+                  <input name="xp-award-amount" aria-label="Award XP amount" type="number" placeholder="XP" />
+                  <button className="ghost-button small" type="submit">Award</button>
+                </form>
+              )}
+            </div>
+          )}
           <div className="condition-quick-chips" role="group" aria-label="Toggle common conditions">
             {conditionChipIds.map((conditionId) => (
               <button
@@ -12916,7 +12973,7 @@ function chatVisibilityLabel(visibility: ChatMessage["visibility"]): string {
   return "Public";
 }
 
-function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; onConfirmAction(combat: Combat, action: CombatAction): void; onRejectAction(combat: Combat, action: CombatAction): void; canManage: boolean }) {
+function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onAwardPartyXp(total: number): void; canAwardXp: boolean; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; onConfirmAction(combat: Combat, action: CombatAction): void; onRejectAction(combat: Combat, action: CombatAction): void; canManage: boolean }) {
   const [expandedCombatantId, setExpandedCombatantId] = useState("");
   const combatants = props.combat?.combatants ?? [];
   const activeCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
@@ -13061,17 +13118,27 @@ function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLog
               );
             })}
           </div>
-          {props.canManage && (
+          {(props.canManage || props.canAwardXp) && (
             <div className="combat-turn-controls" role="group" aria-label="Turn controls">
-              <button className="ghost-button" onClick={() => props.onPrevious(props.combat!)} disabled={combatants.length === 0}>
-                <ChevronLeft size={14} /> Prev
-              </button>
-              <button className="primary-button" onClick={() => props.onNext(props.combat!)} disabled={combatants.length === 0}>
-                Next turn <ChevronRight size={14} />
-              </button>
-              <button className="ghost-button" onClick={() => props.onEnd(props.combat!)}>
-                <X size={14} /> End
-              </button>
+              {props.canManage && (
+                <>
+                  <button className="ghost-button" onClick={() => props.onPrevious(props.combat!)} disabled={combatants.length === 0}>
+                    <ChevronLeft size={14} /> Prev
+                  </button>
+                  <button className="primary-button" onClick={() => props.onNext(props.combat!)} disabled={combatants.length === 0}>
+                    Next turn <ChevronRight size={14} />
+                  </button>
+                  <button className="ghost-button" onClick={() => props.onEnd(props.combat!)}>
+                    <X size={14} /> End
+                  </button>
+                </>
+              )}
+              {props.canAwardXp && (
+                <form className="xp-award" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem("party-xp-award") as HTMLInputElement; const amount = Number(input.value); if (Number.isFinite(amount) && amount > 0) { props.onAwardPartyXp(amount); input.value = ""; } }}>
+                  <input name="party-xp-award" aria-label="Party XP award" type="number" placeholder="XP" />
+                  <button className="ghost-button small" type="submit">Split XP</button>
+                </form>
+              )}
             </div>
           )}
           <details className="create-drawer diagnostics-drawer" aria-label="Combat audit">
