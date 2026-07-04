@@ -1562,11 +1562,20 @@ export function App() {
     return next;
   }
 
+  // A snapshot load that started BEFORE a mutation resolved would deliver
+  // pre-mutation state after we applied the authoritative response locally,
+  // making the action appear to revert. Bumping the sequence discards any
+  // in-flight load; the mutation's own realtime event schedules a fresh one.
+  function invalidateInFlightRefreshes() {
+    refreshSeqRef.current += 1;
+  }
+
   // Apply a mutation's authoritative response to the snapshot immediately so
   // board actions feel instant. The realtime socket still fires a debounced
   // background refresh for full reconciliation (vision polygons, etc.), so we
   // never block the interaction on the ~28-request snapshot refetch.
   function applySceneToSnapshot(scene: Scene) {
+    invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
       scenes: current.scenes.some((item) => item.id === scene.id)
@@ -1577,6 +1586,7 @@ export function App() {
 
   function applyTokensToSnapshot(nextTokens: Token[]) {
     if (nextTokens.length === 0) return;
+    invalidateInFlightRefreshes();
     const byId = new Map(nextTokens.map((token) => [token.id, token]));
     setSnapshot((current) => ({
       ...current,
@@ -3081,6 +3091,7 @@ export function App() {
       return;
     }
     const ids = new Set(tokensToDelete.map((token) => token.id));
+    invalidateInFlightRefreshes();
     setSnapshot((current) => ({ ...current, tokens: current.tokens.filter((token) => !ids.has(token.id)) }));
     if (options.recordHistory) pushBoardHistoryAction({ kind: "tokens.delete", tokens: tokensToDelete });
     clearTokenSelection();
@@ -3750,6 +3761,7 @@ export function App() {
   }
 
   function applyActorToSnapshot(actor: Actor) {
+    invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
       actors: current.actors.map((item) => (item.id === actor.id ? actor : item))
@@ -3757,6 +3769,7 @@ export function App() {
   }
 
   function applyActorHpToSnapshot(actorId: string, hp: { current: number; max: number }) {
+    invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
       actors: current.actors.map((item) => (item.id === actorId ? { ...item, data: { ...item.data, hp } } : item))
