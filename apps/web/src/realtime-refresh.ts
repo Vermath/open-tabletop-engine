@@ -5,6 +5,7 @@ type StatusUpdater = string | ((current: string) => string);
 interface RealtimeHandlersInput {
   refresh: () => Promise<unknown>;
   handleBoardCaptureEvent: (data: unknown) => boolean;
+  applyRealtimeEvent?: (data: unknown) => void;
   setStatus: (next: StatusUpdater) => void;
   onRefreshError: () => void;
 }
@@ -31,6 +32,7 @@ export function createRealtimeHandlers(input: RealtimeHandlersInput): RealtimeHa
     },
     onMessage: (data) => {
       if (input.handleBoardCaptureEvent(data)) return;
+      input.applyRealtimeEvent?.(data);
       clearRefreshTimer();
       refreshTimer = setTimeout(() => {
         refreshTimer = undefined;

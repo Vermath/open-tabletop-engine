@@ -2,7 +2,7 @@ import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, C
 import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
 import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
@@ -1269,11 +1269,13 @@ export function App() {
   const fogToolPanel = useMovablePanel({ x: 88, y: 24 }, { width: 320, height: 240 }, { minWidth: 280, minHeight: 160 });
   const annotationToolPanel = useMovablePanel({ x: 88, y: 24 }, { width: 312, height: 480 }, { minWidth: 280, minHeight: 280 });
   const [canvasAssetDragging, setCanvasAssetDragging] = useState(false);
+  const [partyDropTargetActorId, setPartyDropTargetActorId] = useState("");
   const tokenDropHandledRef = useRef(false);
   const blankCanvasDemoIdRef = useRef(0);
   const realtimeSelectionRef = useRef({ campaignId, sceneId });
   const realtimeRefreshRef = useRef<() => Promise<unknown>>(() => Promise.resolve());
   const realtimeBoardCaptureHandlerRef = useRef<(data: unknown) => boolean>(() => false);
+  const realtimeApplyRef = useRef<(data: unknown) => void>(() => {});
   const hpAdjustRef = useRef<Map<string, { current: number; max: number; timer: number }>>(new Map());
   const actorConditionQueueRef = useRef<Map<string, Promise<Actor | undefined>>>(new Map());
   const snapshotRef = useRef(snapshot);
@@ -1608,6 +1610,16 @@ export function App() {
     }));
   }
 
+  function applyItemToSnapshot(item: Item) {
+    invalidateInFlightRefreshes();
+    setSnapshot((current) => ({
+      ...current,
+      items: current.items.some((candidate) => candidate.id === item.id)
+        ? current.items.map((candidate) => (candidate.id === item.id ? item : candidate))
+        : [...current.items, item]
+    }));
+  }
+
   function requireInteractiveSignIn(message: string) {
     clearSession();
     setSessionToken("");
@@ -1661,6 +1673,30 @@ export function App() {
     return refresh(selection.campaignId, selection.sceneId, { syncStatus: false });
   };
   realtimeBoardCaptureHandlerRef.current = handleBoardCaptureRealtimeEvent;
+  realtimeApplyRef.current = (data: unknown) => {
+    let event: { type?: string; campaignId?: string; targetId?: string; payload?: Record<string, unknown> };
+    try {
+      event = typeof data === "string" ? JSON.parse(data) : (data as typeof event);
+    } catch {
+      return;
+    }
+    if (!event || typeof event.type !== "string" || event.campaignId !== campaignId) return;
+    const payload = event.payload;
+    if (event.type === "actor.updated" && payload && payload.redacted !== true && typeof payload.id === "string" && payload.data && typeof payload.data === "object") {
+      applyActorToSnapshot(payload as unknown as Actor);
+      return;
+    }
+    if ((event.type === "token.created" || event.type === "token.updated") && payload && payload.redacted !== true && typeof payload.id === "string" && typeof payload.sceneId === "string") {
+      applyTokensToSnapshot([payload as unknown as Token]);
+      return;
+    }
+    if (event.type === "token.deleted") {
+      const tokenId = typeof payload?.id === "string" ? (payload.id as string) : event.targetId;
+      if (!tokenId) return;
+      invalidateInFlightRefreshes();
+      setSnapshot((current) => ({ ...current, tokens: current.tokens.filter((token) => token.id !== tokenId) }));
+    }
+  };
 
   useEffect(() => {
     const defaults = snapshot.workspaceDefaults;
@@ -1761,6 +1797,7 @@ export function App() {
     const realtimeHandlers = createRealtimeHandlers({
       refresh: () => realtimeRefreshRef.current(),
       handleBoardCaptureEvent: (data) => realtimeBoardCaptureHandlerRef.current(data),
+      applyRealtimeEvent: (data) => realtimeApplyRef.current(data),
       setStatus,
       onRefreshError: () => setStatus("Realtime refresh failed")
     });
@@ -3864,6 +3901,26 @@ export function App() {
       .catch((error) => setStatus(errorMessage(error)));
   }
 
+  function awardPartyGold(totalGp: number) {
+    const party = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
+    if (party.length === 0 || !Number.isFinite(totalGp) || totalGp <= 0) {
+      setStatus("No party actors to award gold");
+      return;
+    }
+    const share = Math.floor(totalGp / party.length);
+    if (share <= 0) return;
+    void Promise.all(party.map(async (actor) => {
+      const currency = recordValue(actor.data.currency);
+      const gp = numericValue(currency.gp, 0);
+      return apiPatch<Actor>(`/api/v1/actors/${actor.id}`, { data: { ...actor.data, currency: { ...currency, gp: gp + share } } });
+    }))
+      .then((actors) => {
+        actors.forEach(applyActorToSnapshot);
+        setStatus(`Split ${formatNumber(Math.floor(totalGp))} gp - ${formatNumber(share)} gp to each of ${party.length} party members`);
+      })
+      .catch((error) => setStatus(errorMessage(error)));
+  }
+
   // Condition toggles queue per actor and recompute from the latest known
   // data at execution time, so rapid clicks on different chips cannot
   // overwrite each other with stale render-time condition arrays.
@@ -3885,17 +3942,38 @@ export function App() {
   }
 
   async function updateItemData(item: Item, patch: Record<string, unknown>) {
-    await apiPatch<Item>(`/api/v1/items/${item.id}`, {
+    applyItemToSnapshot(await apiPatch<Item>(`/api/v1/items/${item.id}`, {
       data: { ...item.data, ...patch }
-    });
-    await refresh();
+    }));
     setStatus(`${item.name} updated`);
   }
 
   async function assignItemToActor(item: Item, actor: Actor) {
-    await apiPatch<Item>(`/api/v1/items/${item.id}`, { actorId: actor.id });
-    setStatus(`${item.name} assigned to ${actor.name}`);
-    await refresh();
+    applyItemToSnapshot(await apiPatch<Item>(`/api/v1/items/${item.id}`, { actorId: actor.id }));
+    setStatus(`Gave ${item.name} to ${actor.name}`);
+  }
+
+  function handleRailItemDragOver(event: ReactDragEvent<HTMLButtonElement>, actor: Actor) {
+    if (!hasPermission("actor.update") || !hasItemDropData(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setPartyDropTargetActorId(actor.id);
+  }
+
+  function handleRailItemDragLeave(event: ReactDragEvent<HTMLButtonElement>, actor: Actor) {
+    if (partyDropTargetActorId !== actor.id) return;
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setPartyDropTargetActorId("");
+  }
+
+  function giveDroppedItemToActor(event: ReactDragEvent<HTMLButtonElement>, actor: Actor) {
+    setPartyDropTargetActorId("");
+    if (!hasPermission("actor.update")) return;
+    const itemId = readItemDropData(event.dataTransfer);
+    const item = snapshot.items.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    event.preventDefault();
+    void assignItemToActor(item, actor).catch((error) => setStatus(errorMessage(error)));
   }
 
   async function createAudioTrack(input: { name: string; url: string; kind: AudioTrack["kind"]; loop: boolean }) {
@@ -4293,18 +4371,100 @@ export function App() {
     setStatus(`Exported chat history as ${format}`);
   }
 
+  function applyJournalToSnapshot(journal: JournalEntry) {
+    invalidateInFlightRefreshes();
+    setSnapshot((current) => ({
+      ...current,
+      journals: current.journals.some((candidate) => candidate.id === journal.id)
+        ? current.journals.map((candidate) => (candidate.id === journal.id ? journal : candidate))
+        : [journal, ...current.journals]
+    }));
+  }
+
   async function createJournal() {
     const title = newJournalTitle.trim();
-    await apiPost<JournalEntry>(`/api/v1/campaigns/${campaignId}/journal`, {
+    const journal = await apiPost<JournalEntry>(`/api/v1/campaigns/${campaignId}/journal`, {
       title: title || "New Journal Entry",
       body: newJournalBody.trim(),
       visibility: newJournalVisibility,
       tags: newJournalTags.split(",").map((tag) => tag.trim()).filter(Boolean)
     });
+    applyJournalToSnapshot(journal);
     setNewJournalTitle("");
     setNewJournalBody("");
     setStatus("Journal entry created");
-    await refresh();
+  }
+
+  function recapWindowStart(): Date {
+    const latestRecap = snapshot.journals
+      .filter((journal) => journal.tags.includes("recap"))
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+    return latestRecap ? new Date(latestRecap.createdAt) : new Date(Date.now() - 12 * 60 * 60 * 1000);
+  }
+
+  function recapChatSnippet(body: string): string {
+    const compact = body.replace(/\s+/g, " ").trim();
+    return compact.length > 80 ? `${compact.slice(0, 77)}...` : compact;
+  }
+
+  function d20Nat20Count(rolls: DiceRoll[]): number {
+    return rolls.filter((roll) => roll.formula.toLocaleLowerCase().includes("d20") && roll.terms.some((term) => term.sides === 20 && (term.results ?? []).includes(20))).length;
+  }
+
+  function generateSessionRecapBody(windowStart: Date): string {
+    const since = windowStart.toISOString();
+    const sections: string[] = [];
+    const rolls = snapshot.rolls.filter((roll) => roll.createdAt >= since);
+    if (rolls.length > 0) {
+      const highest = rolls.reduce((best, roll) => (roll.total > best.total ? roll : best), rolls[0]!);
+      const highestLabel = highest.label ? `${highest.label} ${highest.formula} = ${formatNumber(highest.total)}` : `${highest.formula} = ${formatNumber(highest.total)}`;
+      sections.push(["## Rolls", `- ${formatNumber(rolls.length)} rolls`, `- Highest: ${highestLabel}`, `- Natural 20s: ${formatNumber(d20Nat20Count(rolls))}`].join("\n"));
+    }
+
+    const combats = snapshot.combats.filter((combat) => combat.updatedAt >= since);
+    if (combats.length > 0) {
+      const combatLines = combats.map((combat) => {
+        const names = combat.combatants.map((combatant) => combatant.name).join(", ") || "No combatants";
+        const defeated = combat.combatants.filter((combatant) => combatant.defeated).map((combatant) => combatant.name).join(", ") || "None";
+        const combatAudit = snapshot.combatAudit.filter((entry) => entry.createdAt >= since && (entry.targetId === combat.id || entry.action.includes("combat")));
+        const pending = combatAudit.filter((entry) => entry.action.includes("pending")).length;
+        const confirmed = combatAudit.filter((entry) => entry.action.includes("confirm")).length;
+        return `- ${combat.active ? "Active" : "Ended"} combat: ${formatNumber(combat.round)} rounds; combatants ${names}; defeated ${defeated}; actions ${formatNumber(pending)} pending / ${formatNumber(confirmed)} confirmed`;
+      });
+      sections.push(["## Combat", ...combatLines].join("\n"));
+    }
+
+    const partyActors = snapshot.actors.filter((actor) => !isAdversaryActor(actor, snapshot.tokens));
+    if (partyActors.length > 0) {
+      const partyLines = partyActors.map((actor) => {
+        const hp = recordValue(actor.data.hp);
+        const hpLabel = hp.current !== undefined || hp.max !== undefined ? `${formatNumber(numericValue(hp.current, 0))}/${formatNumber(numericValue(hp.max, 0))}` : "unknown";
+        const xpLabel = actor.data.xp !== undefined ? `, XP ${formatNumber(numericValue(actor.data.xp, 0))}` : "";
+        return `- ${actor.name} - Level ${formatNumber(numericValue(actor.data.level, 1))}, HP ${hpLabel}${xpLabel}`;
+      });
+      sections.push(["## Party status", ...partyLines].join("\n"));
+    }
+
+    const chatHighlights = snapshot.chat
+      .filter((message) => message.createdAt >= since && message.visibility === "public" && !message.body.trim().startsWith("/"))
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    if (chatHighlights.length > 0) {
+      sections.push(["## Chat highlights", `- ${formatNumber(chatHighlights.length)} public messages`, ...chatHighlights.slice(-3).map((message) => `- ${recapChatSnippet(message.body)}`)].join("\n"));
+    }
+
+    return sections.length > 0 ? sections.join("\n\n") : `No table activity recorded since ${formatDateTime(since)}.`;
+  }
+
+  async function generateSessionRecap() {
+    const windowStart = recapWindowStart();
+    const journal = await apiPost<JournalEntry>(`/api/v1/campaigns/${campaignId}/journal`, {
+      title: `Session Recap - ${formatDateTime(new Date().toISOString())}`,
+      body: generateSessionRecapBody(windowStart),
+      visibility: newJournalVisibility,
+      tags: ["recap"]
+    });
+    applyJournalToSnapshot(journal);
+    setStatus("Session recap added to the journal");
   }
 
   async function startCombat() {
@@ -5868,9 +6028,13 @@ export function App() {
           <div className="party-list">
             {partyActors.map((actor) => (
               <button
-                className={actor.id === selectedActor?.id ? "party-row selected" : "party-row"}
+                className={`${actor.id === selectedActor?.id ? "party-row selected" : "party-row"}${partyDropTargetActorId === actor.id ? " drop-target" : ""}`}
                 key={actor.id}
                 type="button"
+                onDragEnter={(event) => handleRailItemDragOver(event, actor)}
+                onDragOver={(event) => handleRailItemDragOver(event, actor)}
+                onDragLeave={(event) => handleRailItemDragLeave(event, actor)}
+                onDrop={(event) => giveDroppedItemToActor(event, actor)}
                 onClick={() => {
                   const token = snapshot.tokens.find((item) => item.actorId === actor.id && item.sceneId === selectedScene?.id);
                   if (token) selectSingleToken(token.id);
@@ -5895,9 +6059,13 @@ export function App() {
           <div className="party-list">
             {adversaryActors.map((actor) => (
               <button
-                className={actor.id === selectedActor?.id ? "party-row selected adversary" : "party-row adversary"}
+                className={`${actor.id === selectedActor?.id ? "party-row selected adversary" : "party-row adversary"}${partyDropTargetActorId === actor.id ? " drop-target" : ""}`}
                 key={actor.id}
                 type="button"
+                onDragEnter={(event) => handleRailItemDragOver(event, actor)}
+                onDragOver={(event) => handleRailItemDragOver(event, actor)}
+                onDragLeave={(event) => handleRailItemDragLeave(event, actor)}
+                onDrop={(event) => giveDroppedItemToActor(event, actor)}
                 onClick={() => {
                   const token = snapshot.tokens.find((item) => item.actorId === actor.id && item.sceneId === sceneId);
                   if (token) selectSingleToken(token.id);
@@ -7142,9 +7310,9 @@ export function App() {
               {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" onClick={() => setTab("plugins")} />}
             </div>
             {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(xpProgress?.readyToLevel && advancementOptions.length > 0)} onLevelUp={() => { if (!canUsePrepWorkspace) { setStatus("Ask the GM to run your advancement from the Prep workspace"); return; } setWorkspaceMode("prep"); setTab("plugins"); setStatus("Choose an advancement option to level up"); }} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
-            {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} canCreate={hasPermission("journal.create")} />}
+            {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} onGenerateRecap={generateSessionRecap} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
-            {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} canAwardXp={hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
+            {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} canAwardXp={hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
@@ -10273,7 +10441,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
             setItemDropActive(false);
             if (!props.canUpdateActor) return;
             const itemId = readItemDropData(event.dataTransfer);
-            const item = unassignedItems.find((candidate) => candidate.id === itemId);
+            const item = props.items.find((candidate) => candidate.id === itemId);
             if (!item) return;
             event.preventDefault();
             props.assignItemToActor(item, props.actor!).catch(console.error);
@@ -10359,7 +10527,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
               const isSpellLike = item.type === "spell" || item.type === "ritual" || item.type === "talent";
               const isGearLike = !isSpellLike && item.type !== "clue";
               return (
-                <article className="operator-item admin-item" key={item.id}>
+                <article className="operator-item admin-item" key={item.id} draggable={props.canUpdateActor} onDragStart={(event) => writeItemDropData(event.dataTransfer, item)}>
                   <div className="operator-row">
                     <span>{titleCaseLabel(item.type)}</span>
                     <strong>{itemDisplayLabel(item)}</strong>
@@ -10399,6 +10567,17 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
                           <Plus size={14} /> Add one
                         </button>
                       </>
+                    )}
+                    {props.canUpdateActor && props.actors.some((candidate) => candidate.id !== props.actor?.id) && (
+                      <label>
+                        <span>Give to</span>
+                        <select aria-label={`Give ${item.name} to actor`} defaultValue="" onChange={(event) => { const nextActor = props.actors.find((candidate) => candidate.id === event.currentTarget.value); if (nextActor) { props.assignItemToActor(item, nextActor).catch(console.error); event.currentTarget.value = ""; } }}>
+                          <option value="">Actor</option>
+                          {props.actors.filter((candidate) => candidate.id !== props.actor?.id).map((candidate) => (
+                            <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+                          ))}
+                        </select>
+                      </label>
                     )}
                   </div>
                 </article>
@@ -12655,7 +12834,7 @@ function createdSceneIdFromProposal(proposal: Proposal): string | undefined {
   return undefined;
 }
 
-function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle(value: string): void; body: string; setBody(value: string): void; visibility: Visibility; setVisibility(value: Visibility): void; tags: string; setTags(value: string): void; onCreate(): void; canCreate: boolean }) {
+function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle(value: string): void; body: string; setBody(value: string): void; visibility: Visibility; setVisibility(value: Visibility): void; tags: string; setTags(value: string): void; onCreate(): void; onGenerateRecap(): void; canCreate: boolean }) {
   const publicCount = props.journals.filter((journal) => journal.visibility === "public").length;
   const gmOnlyCount = props.journals.filter((journal) => journal.visibility === "gm_only").length;
   const taggedCount = props.journals.filter((journal) => journal.tags.length > 0).length;
@@ -12667,6 +12846,11 @@ function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle
           <h2>Campaign Notes</h2>
         </div>
       </header>
+      {props.canCreate && (
+        <button className="ghost-button" type="button" aria-label="Generate session recap" onClick={() => props.onGenerateRecap()}>
+          <ScrollText size={15} /> Generate session recap
+        </button>
+      )}
       <p className="panel-status-line" aria-label="Journal summary">
         <span>{formatNumber(props.journals.length)} entries</span>
         <span>{formatNumber(publicCount)} public</span>
@@ -12973,7 +13157,7 @@ function chatVisibilityLabel(visibility: ChatMessage["visibility"]): string {
   return "Public";
 }
 
-function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onAwardPartyXp(total: number): void; canAwardXp: boolean; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; onConfirmAction(combat: Combat, action: CombatAction): void; onRejectAction(combat: Combat, action: CombatAction): void; canManage: boolean }) {
+function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onAwardPartyXp(total: number): void; onAwardPartyGold(totalGp: number): void; canAwardXp: boolean; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; onConfirmAction(combat: Combat, action: CombatAction): void; onRejectAction(combat: Combat, action: CombatAction): void; canManage: boolean }) {
   const [expandedCombatantId, setExpandedCombatantId] = useState("");
   const combatants = props.combat?.combatants ?? [];
   const activeCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
@@ -13134,10 +13318,16 @@ function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLog
                 </>
               )}
               {props.canAwardXp && (
-                <form className="xp-award" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem("party-xp-award") as HTMLInputElement; const amount = Number(input.value); if (Number.isFinite(amount) && amount > 0) { props.onAwardPartyXp(amount); input.value = ""; } }}>
-                  <input name="party-xp-award" aria-label="Party XP award" type="number" placeholder="XP" />
-                  <button className="ghost-button small" type="submit">Split XP</button>
-                </form>
+                <>
+                  <form className="xp-award" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem("party-xp-award") as HTMLInputElement; const amount = Number(input.value); if (Number.isFinite(amount) && amount > 0) { props.onAwardPartyXp(amount); input.value = ""; } }}>
+                    <input name="party-xp-award" aria-label="Party XP award" type="number" placeholder="XP" />
+                    <button className="ghost-button small" type="submit">Split XP</button>
+                  </form>
+                  <form className="xp-award" aria-label="Party gold award" onSubmit={(event) => { event.preventDefault(); const input = event.currentTarget.elements.namedItem("party-gp-award") as HTMLInputElement; const amount = Number(input.value); if (Number.isFinite(amount) && amount > 0) { props.onAwardPartyGold(amount); input.value = ""; } }}>
+                    <input name="party-gp-award" aria-label="Party gold award" type="number" placeholder="GP" />
+                    <button className="ghost-button small" type="submit">Split GP</button>
+                  </form>
+                </>
               )}
             </div>
           )}

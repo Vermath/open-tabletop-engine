@@ -40,9 +40,11 @@ describe("createRealtimeHandlers", () => {
   it("does not schedule a refresh when board capture handles the realtime event", async () => {
     const refresh = vi.fn(async () => undefined);
     const handleBoardCaptureEvent = vi.fn(() => true);
+    const applyRealtimeEvent = vi.fn();
     const handlers = createRealtimeHandlers({
       refresh,
       handleBoardCaptureEvent,
+      applyRealtimeEvent,
       setStatus: vi.fn(),
       onRefreshError: vi.fn()
     });
@@ -51,7 +53,49 @@ describe("createRealtimeHandlers", () => {
 
     await vi.advanceTimersByTimeAsync(realtimeRefreshDebounceMs);
     expect(handleBoardCaptureEvent).toHaveBeenCalledTimes(1);
+    expect(applyRealtimeEvent).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
+
+    handlers.dispose();
+  });
+
+  it("applies realtime events immediately and still schedules the reconciler refresh", async () => {
+    const refresh = vi.fn(async () => undefined);
+    const handleBoardCaptureEvent = vi.fn(() => false);
+    const applyRealtimeEvent = vi.fn();
+    const handlers = createRealtimeHandlers({
+      refresh,
+      handleBoardCaptureEvent,
+      applyRealtimeEvent,
+      setStatus: vi.fn(),
+      onRefreshError: vi.fn()
+    });
+
+    handlers.onMessage("raw-event");
+
+    expect(handleBoardCaptureEvent).toHaveBeenCalledWith("raw-event");
+    expect(applyRealtimeEvent).toHaveBeenCalledWith("raw-event");
+    expect(refresh).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(realtimeRefreshDebounceMs);
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    handlers.dispose();
+  });
+
+  it("keeps the existing debounced refresh behavior when no realtime fast path is provided", async () => {
+    const refresh = vi.fn(async () => undefined);
+    const handlers = createRealtimeHandlers({
+      refresh,
+      handleBoardCaptureEvent: vi.fn(() => false),
+      setStatus: vi.fn(),
+      onRefreshError: vi.fn()
+    });
+
+    handlers.onMessage({ type: "actor.updated" });
+
+    await vi.advanceTimersByTimeAsync(realtimeRefreshDebounceMs);
+    expect(refresh).toHaveBeenCalledTimes(1);
 
     handlers.dispose();
   });
