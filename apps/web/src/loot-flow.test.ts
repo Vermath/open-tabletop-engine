@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
+const tokenDragSource = readFileSync(resolve(__dirname, "token-drag.ts"), "utf8");
+const combatPanelSource = readFileSync(resolve(__dirname, "combat-panel.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 
 describe("loot flow", () => {
@@ -12,7 +14,7 @@ describe("loot flow", () => {
   });
 
   it("lets party and adversary rail rows accept item drops", () => {
-    expect(appSource).toContain("itemDropMime");
+    expect(tokenDragSource).toContain("itemDropMime");
     expect(appSource).toContain("onDrop={(event) => giveDroppedItemToActor(event, actor)}");
     expect(appSource).toContain("partyDropTargetActorId");
   });
@@ -23,8 +25,8 @@ describe("loot flow", () => {
 
   it("splits party gold from combat", () => {
     expect(appSource).toContain("function awardPartyGold");
-    expect(appSource).toContain('aria-label="Party gold award"');
-    expect(appSource).toContain("Split GP");
+    expect(combatPanelSource).toContain('aria-label="Party gold award"');
+    expect(combatPanelSource).toContain("Split GP");
   });
 
   it("styles party rail item drop targets", () => {

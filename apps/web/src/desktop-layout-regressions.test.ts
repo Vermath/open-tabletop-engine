@@ -5,10 +5,12 @@ import { describe, expect, it } from "vitest";
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\r\n/g, "\n");
 const apiSource = readFileSync(resolve(__dirname, "api.ts"), "utf8").replace(/\r\n/g, "\n");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8").replace(/\r\n/g, "\n");
-const toolbarSource = appSource.slice(appSource.indexOf("function Toolbar("), appSource.indexOf("function TabButton("));
+const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8").replace(/\r\n/g, "\n");
+const toolbarSource = sceneCanvasSource.slice(sceneCanvasSource.indexOf("function Toolbar("), sceneCanvasSource.indexOf("function TabButton("));
 const actorPanelSource = appSource.slice(appSource.indexOf("function ActorPanel("), appSource.indexOf("function actorConditionLabels("));
-const combatPanelSource = appSource.slice(appSource.indexOf("function CombatPanel("), appSource.indexOf("function nextCombatTurnPosition("));
-const chatRailSource = appSource.slice(appSource.indexOf("function ChatRail("), appSource.indexOf("function ChatMessageItem("));
+const combatPanelSource = readFileSync(resolve(__dirname, "combat-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
+const chatRailSource = readFileSync(resolve(__dirname, "chat-rail.tsx"), "utf8").replace(/\r\n/g, "\n");
+const aiPanelSource = readFileSync(resolve(__dirname, "ai-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
 const countOccurrences = (source: string, needle: string) => source.split(needle).length - 1;
 
 describe("desktop layout regressions", () => {
@@ -178,10 +180,10 @@ describe("desktop layout regressions", () => {
   });
 
   it("prioritizes AI asset generation controls when an asset intent is selected", () => {
-    expect(appSource).toContain('const activeIntentClass = activeIntent === "tokenBatch" ? "token-batch" : activeIntent === "selectedToken" ? "selected-token" : activeIntent;');
-    expect(appSource).toContain("ai-create-workflow ai-create-intent-${activeIntentClass}");
-    expect(appSource).toContain('className="ai-asset-task ai-map-asset-task"');
-    expect(appSource).toContain('className="ai-asset-task ai-token-asset-task"');
+    expect(aiPanelSource).toContain('const activeIntentClass = activeIntent === "tokenBatch" ? "token-batch" : activeIntent === "selectedToken" ? "selected-token" : activeIntent;');
+    expect(aiPanelSource).toContain("ai-create-workflow ai-create-intent-${activeIntentClass}");
+    expect(aiPanelSource).toContain('className="ai-asset-task ai-map-asset-task"');
+    expect(aiPanelSource).toContain('className="ai-asset-task ai-token-asset-task"');
     expect(stylesSource).toContain(".ai-field select {\n  width: 100%;\n  min-height: 36px;");
     expect(stylesSource).toContain(".admin-form-grid input,\n.admin-form-grid select {\n  width: 100%;\n  min-height: 36px;\n  padding: 0 9px;\n  border: 1px solid #463b2a;\n  border-radius: 6px;");
     expect(stylesSource).toContain("@media (min-width: 1181px) {\n  .ai-create-workflow.ai-create-intent-map > .ai-assets-panel,");
@@ -203,9 +205,9 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".manage-category-button em {\n    display: none;");
     expect(stylesSource).not.toContain("calc(160px * var(--scene-aspect, 1.5) * var(--map-zoom, 1))");
     expect(stylesSource).not.toContain("calc(480px * var(--scene-aspect, 1.5) * var(--map-zoom, 1))");
-    expect(appSource).toContain("function battleMapBoardDimensions(");
-    expect(appSource).toContain('width: `${boardDimensions.width}px`,');
-    expect(appSource).toContain('height: `${boardDimensions.height}px`,');
+    expect(sceneCanvasSource).toContain("function battleMapBoardDimensions(");
+    expect(sceneCanvasSource).toContain('width: `${boardDimensions.width}px`,');
+    expect(sceneCanvasSource).toContain('height: `${boardDimensions.height}px`,');
     expect(stylesSource).toContain(".rail-prep + .workspace .scene-filter-panel .button-row {\n    display: none;");
     expect(stylesSource).toContain(".rail-prep + .workspace .scene-filter-panel .inline-check {\n    display: none;");
     expect(stylesSource).toContain(".rail-prep + .workspace .scene-tab-select {\n    display: none;");
@@ -223,9 +225,9 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain("max-height: min(190px, calc(100svh - 240px));");
     expect(stylesSource).toContain(".map-layer-dock .map-zoom-control {\n    grid-column: 2;");
     expect(stylesSource).toContain(".map-selection-status {\n    right: auto;\n    bottom: 76px;\n    left: 12px;");
-    expect(appSource).toContain("const selectedViewportToken = useMemo(() => tokens.find((token) => token.id === props.selectedTokenId), [tokens, props.selectedTokenId]);");
-    expect(appSource).toContain("const compactViewport = viewport.clientWidth < 360 || viewport.clientHeight < 220;");
-    expect(appSource).toContain("viewport.scrollTo({\n        left: Math.min(maxScrollLeft, Math.max(0, tokenCenterX - targetViewportX)),\n        top: Math.min(maxScrollTop, Math.max(0, tokenCenterY - targetViewportY)),");
+    expect(sceneCanvasSource).toContain("const selectedViewportToken = useMemo(() => tokens.find((token) => token.id === props.selectedTokenId), [tokens, props.selectedTokenId]);");
+    expect(sceneCanvasSource).toContain("const compactViewport = viewport.clientWidth < 360 || viewport.clientHeight < 220;");
+    expect(sceneCanvasSource).toContain("viewport.scrollTo({\n        left: Math.min(maxScrollLeft, Math.max(0, tokenCenterX - targetViewportX)),\n        top: Math.min(maxScrollTop, Math.max(0, tokenCenterY - targetViewportY)),");
   });
 
   it("keeps mobile table panels usable by compacting the rail instead of starving the inspector", () => {
@@ -284,8 +286,8 @@ describe("desktop layout regressions", () => {
   });
 
   it("makes the layer stack readable and targetable after moving it away from lower controls", () => {
-    expect(appSource).toContain("compactLabel: \"Players\"");
-    expect(appSource).toContain("compactLabel: \"Props\"");
+    expect(sceneCanvasSource).toContain("compactLabel: \"Players\"");
+    expect(sceneCanvasSource).toContain("compactLabel: \"Props\"");
     expect(stylesSource).toContain(".map-layer-dock {\n  grid-area: layers;");
     expect(stylesSource).toContain(".map-layer-dock .map-layer-stack {\n  grid-row: 3;\n  position: static;");
     expect(stylesSource).toContain(".map-layer-button {\n  width: 100%;\n  min-height: 34px;");
@@ -334,14 +336,14 @@ describe("desktop layout regressions", () => {
   it("keeps ping annotations transient instead of leaving them on the board", () => {
     expect(appSource).toContain("const pingAnnotationTtlSeconds = 5;");
     expect(appSource).toContain('expiresInSeconds: kind === "ping" ? pingAnnotationTtlSeconds : undefined');
-    expect(appSource).toContain("function useAnnotationExpiryClock(");
-    expect(appSource).toContain("window.setTimeout(() => setNowMs(Date.now()), delayMs)");
-    expect(appSource).toContain("activeSceneAnnotations(props.scene.annotations, annotationExpiryNow)");
-    expect(appSource).toContain("activeSceneAnnotations(props.scene?.annotations, annotationExpiryNow).length");
+    expect(sceneCanvasSource).toContain("function useAnnotationExpiryClock(");
+    expect(sceneCanvasSource).toContain("window.setTimeout(() => setNowMs(Date.now()), delayMs)");
+    expect(sceneCanvasSource).toContain("activeSceneAnnotations(props.scene.annotations, annotationExpiryNow)");
+    expect(sceneCanvasSource).toContain("activeSceneAnnotations(props.scene?.annotations, annotationExpiryNow).length");
     expect(appSource).toContain("const annotations = selectedCurrentAnnotations;");
     expect(appSource).toContain("annotationToolShowsSettings(next)");
-    expect(appSource).toContain("function annotationToolShowsSettings(kind: ActiveAnnotationTool): boolean");
-    expect(appSource).toContain('return kind === "drawing" || kind === "template";');
+    expect(sceneCanvasSource).toContain("function annotationToolShowsSettings(kind: ActiveAnnotationTool): boolean");
+    expect(sceneCanvasSource).toContain('return kind === "drawing" || kind === "template";');
   });
 
   it("keeps the mobile layer stack shallow so it does not swallow the board", () => {
@@ -418,8 +420,8 @@ describe("desktop layout regressions", () => {
   });
 
   it("keeps the chat composer reachable by the visible message affordance", () => {
-    expect(appSource).toContain('aria-label="Chat message"');
-    expect(appSource).not.toContain('aria-label="Chat command line"');
+    expect(chatRailSource).toContain('aria-label="Chat message"');
+    expect(chatRailSource).not.toContain('aria-label="Chat command line"');
   });
 
   it("keeps the empty combat state compact instead of stretching a huge primary CTA", () => {

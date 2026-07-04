@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
+const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 
 describe("actor panel layout", () => {
@@ -30,17 +31,17 @@ describe("actor panel layout", () => {
   });
 
   it("keeps board tokens readable inside a full grid square", () => {
-    expect(appSource).toContain("const tokenVisualScale = 0.92;");
-    expect(appSource).toContain("const largeTokenVisualScale = 0.96;");
-    expect(appSource).toContain("tokenCoordinatesFromCenter");
+    expect(sceneCanvasSource).toContain("const tokenVisualScale = 0.92;");
+    expect(sceneCanvasSource).toContain("const largeTokenVisualScale = 0.96;");
+    expect(sceneCanvasSource).toContain("tokenCoordinatesFromCenter");
   });
 
   it("exposes token resize handles and selectable map backgrounds on the board", () => {
-    expect(appSource).toContain("tokenResizeHandles");
-    expect(appSource).toContain("onTokenResizeCommit");
-    expect(appSource).toContain("scene-map-hitbox");
-    expect(appSource).toContain("token-resize-corner");
-    expect(appSource).toContain("token-selection-frame");
+    expect(sceneCanvasSource).toContain("tokenResizeHandles");
+    expect(sceneCanvasSource).toContain("onTokenResizeCommit");
+    expect(sceneCanvasSource).toContain("scene-map-hitbox");
+    expect(sceneCanvasSource).toContain("token-resize-corner");
+    expect(sceneCanvasSource).toContain("token-selection-frame");
     expect(stylesSource).toContain(".token-resize-handle");
     expect(stylesSource).toContain("pointer-events: none");
     expect(stylesSource).toContain(".scene-map-hitbox.selected");

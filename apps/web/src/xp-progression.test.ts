@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
+const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 
 describe("xp progression", () => {
@@ -26,7 +27,7 @@ describe("xp progression", () => {
   });
 
   it("marks bloodied and down token states", () => {
-    expect(appSource).toContain("bloodied");
+    expect(sceneCanvasSource).toContain("bloodied");
     expect(stylesSource).toContain(".token.down::after");
     expect(stylesSource).toContain(".token.bloodied");
   });

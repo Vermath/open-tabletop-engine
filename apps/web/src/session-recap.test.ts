@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
+const journalPanelSource = readFileSync(resolve(__dirname, "journal-panel.tsx"), "utf8");
 
 describe("session recap", () => {
   it("generates deterministic recap journal entries from the current snapshot", () => {
@@ -16,7 +17,7 @@ describe("session recap", () => {
   });
 
   it("wires the journal panel button to the generator", () => {
-    expect(appSource).toContain("Generate session recap");
+    expect(journalPanelSource).toContain("Generate session recap");
     expect(appSource).toContain("onGenerateRecap");
   });
 });
