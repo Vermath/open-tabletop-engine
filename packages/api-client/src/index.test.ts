@@ -82,13 +82,15 @@ describe("OpenTabletopClient", () => {
     await client.updateCampaign(campaignId, { name: "Renamed Campaign" });
     await client.deleteCampaign(campaignId);
     await client.uploadAsset(campaignId, "raw-svg-body", { contentType: "image/svg+xml", fileName: "map.svg", folder: "Maps", tags: ["alpha", "beta"] });
+    await client.analyzePdfContentImport(campaignId, "raw-pdf-body", { sourceName: "module.pdf" });
 
     expect(requests.map((request) => `${request.method} ${request.url.pathname}`)).toEqual([
       "GET /api/v1/campaigns",
       "POST /api/v1/campaigns",
       "PATCH /api/v1/campaigns/camp_client",
       "DELETE /api/v1/campaigns/camp_client",
-      "POST /api/v1/campaigns/camp_client/assets/upload"
+      "POST /api/v1/campaigns/camp_client/assets/upload",
+      "POST /api/v1/campaigns/camp_client/content-imports/pdf/ai"
     ]);
     for (const request of requests) {
       expect(request.headers.authorization).toBe("Bearer ots_test");
@@ -108,6 +110,9 @@ describe("OpenTabletopClient", () => {
     expect(requests[4]!.headers["x-asset-tags"]).toBe("alpha,beta");
     expect(requests[4]!.body).toBe("raw-svg-body");
     expect(requests[4]!.url.search).toBe("");
+    expect(requests[5]!.headers["content-type"]).toBe("application/pdf");
+    expect(requests[5]!.headers["x-source-name"]).toBe("module.pdf");
+    expect(requests[5]!.body).toBe("raw-pdf-body");
   });
 
   it("throws server error response bodies", async () => {
@@ -347,6 +352,7 @@ describe("OpenTabletopClient", () => {
       client.rollSystemActor(campaignId, systemId, actorId, { actionId: "attack" }),
       client.contentImports(campaignId),
       client.previewContentImport(campaignId, { source: "manual" }),
+      client.analyzePdfContentImport(campaignId, new Blob(["pdf"]), { sourceName: "module.pdf" }),
       client.contentImport(importId),
       client.applyContentImport(importId, { selectedEntityIds: [] }),
       client.rollbackContentImport(importId),

@@ -1000,6 +1000,12 @@ export class OpenTabletopClient {
     return this.post(routes.contentImportPreview(campaignId), input);
   }
 
+  async analyzePdfContentImport(campaignId: string, body: BodyInit, options: { sourceName?: string } = {}): Promise<ContentImportBatch> {
+    const headers: Record<string, string> = { "content-type": "application/pdf" };
+    if (options.sourceName) headers["x-source-name"] = options.sourceName;
+    return this.requestRaw("POST", routes.contentImportPdfAi(campaignId), body, headers);
+  }
+
   async contentImport(importId: string): Promise<ContentImportBatch> {
     return this.get(routes.contentImport(importId));
   }
