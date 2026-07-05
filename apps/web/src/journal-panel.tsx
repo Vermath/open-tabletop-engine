@@ -63,7 +63,10 @@ export function JournalPanel(props: { journals: JournalEntry[]; title: string; s
       </details>
       <section className="journal-list" aria-label="Journal entries">
         {props.journals.length === 0 ? (
-          <div className="empty-state compact">No journal entries yet.</div>
+          <div className="empty-state compact">
+            <span>No journal entries yet.</span>
+            <span className="journal-empty-hint">Recap is ready after play.</span>
+          </div>
         ) : (
           props.journals.map((journal) => (
             <article className="journal-entry" key={journal.id}>

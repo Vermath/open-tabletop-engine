@@ -1127,15 +1127,11 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await openManageCategory(page, "Campaign");
   await openCreateDrawer(page, "New campaign");
   await expect(page.getByText("Campaign Setup", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Include starter content" })).toBeChecked();
 
   await page.getByRole("textbox", { name: "Campaign name", exact: true }).fill("E2E Setup Campaign");
   await page.getByRole("textbox", { name: "Campaign description", exact: true }).fill("Created through the campaign setup wizard");
   await page.getByRole("combobox", { name: "Campaign visibility", exact: true }).selectOption("invite_only");
-  await page.getByRole("textbox", { name: "Setup initial scene name" }).fill("First Session");
-  await page.getByRole("textbox", { name: "Setup initial scene folder" }).fill("session-1");
-  await page.getByRole("spinbutton", { name: "Setup scene width" }).fill("1400");
-  await page.getByRole("spinbutton", { name: "Setup scene height" }).fill("900");
-  await page.getByRole("spinbutton", { name: "Setup scene grid size" }).fill("70");
   await page.getByRole("checkbox", { name: "Create starter invite" }).check();
   await page.getByRole("textbox", { name: "Setup invite email" }).fill("setup-player@example.com");
   await page.getByRole("combobox", { name: "Setup default player permission preset" }).selectOption("player");
@@ -1143,11 +1139,9 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await expect(page.getByText("Players can create actors, journal entries, and tokens for collaborative prep.")).toBeVisible();
   const setupImpact = page.locator('[aria-label="Campaign setup impact"]');
   await expect(setupImpact).toContainText("Invite only - Player invite for setup-player@example.com");
-  await expect(setupImpact).toContainText("First Session - 1400x900 - grid 70 - session-1");
+  await expect(setupImpact).toContainText("First Session - 1200x800 - grid 50 - starter content");
   await expect(setupImpact).toContainText("Player authoring");
-  await page.getByRole("textbox", { name: "Setup onboarding title" }).fill("Welcome Heroes");
-  await page.getByRole("textbox", { name: "Setup onboarding copy" }).fill("Session zero: agree on tone, safety tools, and the opening scene.");
-  await expect(setupImpact).toContainText("Public handout: Welcome Heroes");
+  await expect(setupImpact).toContainText("Starter content: First Session and welcome notes");
 
   await page.getByRole("button", { name: "Create Campaign Setup" }).click();
 
@@ -1161,8 +1155,30 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
 
   await page.getByRole("button", { name: "Prep", exact: true }).click();
   await page.getByRole("button", { name: "Journal" }).click();
-  await expect(page.getByText("Welcome Heroes")).toBeVisible();
-  await expect(page.getByText("Session zero: agree on tone, safety tools, and the opening scene.")).toBeVisible();
+  await expect(page.getByText("Running your first session")).toBeVisible();
+  await expect(page.getByText("Create characters from the party rail character creator.")).toBeVisible();
+  await expect(page.getByText("Generate a session recap from the Journal tab.")).toBeVisible();
+  await expect(page.getByText("GM notes")).toBeVisible();
+
+  await openManageCategory(page, "Campaign");
+  await openCreateDrawer(page, "New campaign");
+  await page.getByRole("checkbox", { name: "Include starter content" }).uncheck();
+  await page.getByRole("textbox", { name: "Campaign name", exact: true }).fill("E2E Bare Campaign");
+  await page.getByRole("textbox", { name: "Setup initial scene name" }).fill("Bare Opening");
+  await page.getByRole("textbox", { name: "Setup onboarding title" }).fill("Bare Welcome");
+  await page.getByRole("textbox", { name: "Setup onboarding copy" }).fill("A handout for the bare setup path.");
+  await expect(setupImpact).toContainText("Bare Opening - 1200x800 - grid 50 - session-0");
+  await expect(setupImpact).toContainText("Public handout: Bare Welcome");
+  await page.getByRole("button", { name: "Create Campaign Setup" }).click();
+
+  await expect(page.locator("h1").filter({ hasText: "E2E Bare Campaign" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "E2E Bare Campaign created with Bare Opening" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Prep", exact: true }).click();
+  await expect(page.getByRole("button", { name: /Bare Opening/ })).toBeVisible();
+  await page.getByRole("button", { name: "Journal" }).click();
+  await expect(page.getByText("Bare Welcome")).toBeVisible();
+  await expect(page.getByText("A handout for the bare setup path.")).toBeVisible();
+  await expect(page.getByText("Running your first session")).not.toBeVisible();
 });
 
 test("GM can export and safely re-import a campaign archive", async ({ page }) => {

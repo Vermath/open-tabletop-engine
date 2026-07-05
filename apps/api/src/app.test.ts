@@ -2074,6 +2074,82 @@ describe("api", () => {
     await app.close();
   });
 
+  it("leaves new campaigns bare unless starter content is requested", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: { name: "Bare First Session" }
+    });
+    expect(created.statusCode).toBe(200);
+    const campaignId = created.json().id as string;
+
+    expect(store.state.scenes.filter((scene) => scene.campaignId === campaignId)).toEqual([]);
+    expect(store.state.journals.filter((journal) => journal.campaignId === campaignId)).toEqual([]);
+
+    await app.close();
+  });
+
+  it("seeds starter scene and welcome journals when campaign creation opts in", async () => {
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns",
+      headers: authHeaders,
+      payload: { name: "Starter First Session", starterContent: true }
+    });
+    expect(created.statusCode).toBe(200);
+    const campaignId = created.json().id as string;
+
+    const scenes = store.state.scenes.filter((scene) => scene.campaignId === campaignId);
+    expect(scenes).toHaveLength(1);
+    expect(scenes[0]).toEqual(
+      expect.objectContaining({
+        name: "First Session",
+        active: true,
+        width: 1200,
+        height: 800,
+        gridType: "square",
+        gridSize: 50,
+        sortOrder: 1
+      })
+    );
+    expect(scenes[0]!.activationHistory).toEqual([
+      expect.objectContaining({
+        sceneId: scenes[0]!.id,
+        activatedByUserId: "usr_demo_gm",
+        deactivatedSceneIds: [],
+        source: "create"
+      })
+    ]);
+
+    const journals = store.state.journals.filter((journal) => journal.campaignId === campaignId);
+    expect(journals).toHaveLength(2);
+    expect(journals).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Running your first session",
+          visibility: "public",
+          tags: ["welcome"],
+          body: expect.stringContaining("- Create characters")
+        }),
+        expect.objectContaining({
+          title: "GM notes",
+          visibility: "gm_only",
+          tags: ["gm-notes"],
+          body: "Keep session prep, secrets, and reminders here."
+        })
+      ])
+    );
+    expect(journals.find((journal) => journal.title === "Running your first session")?.body).toContain("- Generate a session recap from the Journal tab.");
+
+    await app.close();
+  });
   it("records provably-fair seeds on rolls and verifies them", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });

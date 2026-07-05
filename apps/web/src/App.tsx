@@ -893,6 +893,7 @@ export function App() {
   const [setupSceneWidth, setSetupSceneWidth] = useState(1200);
   const [setupSceneHeight, setSetupSceneHeight] = useState(800);
   const [setupSceneGridSize, setSetupSceneGridSize] = useState(50);
+  const [setupStarterContent, setSetupStarterContent] = useState(true);
   const [setupInviteEnabled, setSetupInviteEnabled] = useState(false);
   const [setupInviteEmail, setSetupInviteEmail] = useState("");
   const [setupInviteRole, setSetupInviteRole] = useState<UserRole>("player");
@@ -1027,16 +1028,21 @@ export function App() {
   const nextTurnTokenIds = nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [];
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
   const selectedPermissionTemplate = campaignPermissionTemplates.find((template) => template.id === setupPermissionTemplate) ?? campaignPermissionTemplates[0]!;
-  const setupPreviewSceneName = setupSceneName.trim() || "Opening Scene";
-  const setupPreviewFolder = setupSceneFolder.trim() || "no folder";
+  const setupPreviewSceneName = setupStarterContent ? "First Session" : setupSceneName.trim() || "Opening Scene";
+  const setupPreviewFolder = setupStarterContent ? "starter content" : setupSceneFolder.trim() || "no folder";
+  const setupPreviewSceneWidth = setupStarterContent ? 1200 : setupSceneWidth;
+  const setupPreviewSceneHeight = setupStarterContent ? 800 : setupSceneHeight;
+  const setupPreviewGridSize = setupStarterContent ? 50 : setupSceneGridSize;
   const setupVisibilityLabel =
     newCampaignVisibility === "invite_only" ? "Invite only" : newCampaignVisibility === "public" ? "Public" : "Private";
   const setupInviteSummary = setupInviteEnabled
     ? `${titleCaseLabel(setupInviteRole)} invite${setupInviteEmail.trim() ? ` for ${setupInviteEmail.trim()}` : ""}`
     : "No starter invite";
-  const setupOnboardingSummary = setupOnboardingBody.trim()
-    ? `Public handout: ${setupOnboardingTitle.trim() || "Welcome to the Table"}`
-    : "No onboarding handout";
+  const setupOnboardingSummary = setupStarterContent
+    ? "Starter content: First Session and welcome notes"
+    : setupOnboardingBody.trim()
+      ? `Public handout: ${setupOnboardingTitle.trim() || "Welcome to the Table"}`
+      : "No onboarding handout";
   const archiveExportRecordCount = snapshot.scenes.length + snapshot.assets.length + snapshot.actors.length + snapshot.journals.length + snapshot.chat.length + snapshot.combats.length;
   const archiveCompatibilityNotes = [
     "Exports the selected campaign and related tabletop records.",
@@ -2127,25 +2133,29 @@ export function App() {
       description: newCampaignDescription.trim(),
       defaultSystemId: newCampaignSystemId,
       visibility: newCampaignVisibility,
-      permissionTemplate: setupPermissionTemplate
+      permissionTemplate: setupPermissionTemplate,
+      starterContent: setupStarterContent
     });
-    const scene = await apiPost<Scene>(`/api/v1/campaigns/${campaign.id}/scenes`, {
-      name: sceneName,
-      folder: setupSceneFolder.trim() || undefined,
-      width: Math.max(200, setupSceneWidth),
-      height: Math.max(200, setupSceneHeight),
-      gridSize: Math.max(10, setupSceneGridSize),
-      active: true,
-      sortOrder: 1
-    });
-    const onboardingBody = setupOnboardingBody.trim();
-    if (onboardingBody) {
-      await apiPost<JournalEntry>(`/api/v1/campaigns/${campaign.id}/journal`, {
-        title: setupOnboardingTitle.trim() || "Welcome to the Table",
-        body: onboardingBody,
-        visibility: "public",
-        tags: ["onboarding", "setup"]
+    let scene: Scene | undefined;
+    if (!setupStarterContent) {
+      scene = await apiPost<Scene>(`/api/v1/campaigns/${campaign.id}/scenes`, {
+        name: sceneName,
+        folder: setupSceneFolder.trim() || undefined,
+        width: Math.max(200, setupSceneWidth),
+        height: Math.max(200, setupSceneHeight),
+        gridSize: Math.max(10, setupSceneGridSize),
+        active: true,
+        sortOrder: 1
       });
+      const onboardingBody = setupOnboardingBody.trim();
+      if (onboardingBody) {
+        await apiPost<JournalEntry>(`/api/v1/campaigns/${campaign.id}/journal`, {
+          title: setupOnboardingTitle.trim() || "Welcome to the Table",
+          body: onboardingBody,
+          visibility: "public",
+          tags: ["onboarding", "setup"]
+        });
+      }
     }
     let setupInvite: InviteCreateInfo | undefined;
     if (setupInviteEnabled) {
@@ -2158,7 +2168,7 @@ export function App() {
       setInviteRole(setupInviteRole);
     }
     setCampaignId(campaign.id);
-    setSceneId(scene.id);
+    if (scene) setSceneId(scene.id);
     setNewCampaignName("");
     setNewCampaignDescription("");
     setSetupSceneName("Opening Scene");
@@ -2166,15 +2176,19 @@ export function App() {
     setSetupSceneWidth(1200);
     setSetupSceneHeight(800);
     setSetupSceneGridSize(50);
+    setSetupStarterContent(true);
     setSetupInviteEnabled(false);
     setSetupInviteEmail("");
     setSetupInviteRole("player");
     setSetupPermissionTemplate("standard");
     setSetupOnboardingTitle("Welcome to the Table");
     setSetupOnboardingBody("Use this handout for table rules, safety notes, and first-session goals.");
-    await refresh(campaign.id, scene.id);
+    const refreshed = await refresh(campaign.id, scene?.id ?? "", { syncStatus: false });
+    const starterScene = setupStarterContent ? refreshed.scenes.find((scene) => scene.name === "First Session" && scene.active) ?? refreshed.scenes.find((scene) => scene.active) : scene;
+    if (starterScene) setSceneId(starterScene.id);
     const permissionSummary = setupPermissionTemplate === "standard" ? "" : `; ${selectedPermissionTemplate.label} permissions applied`;
-    setStatus(setupInvite ? `${campaign.name} created with ${scene.name}; ${setupInvite.invite.role} invite ready${permissionSummary}` : `${campaign.name} created with ${scene.name}${permissionSummary}`);
+    const createdWith = starterScene ? ` with ${starterScene.name}` : "";
+    setStatus(setupInvite ? `${campaign.name} created${createdWith}; ${setupInvite.invite.role} invite ready${permissionSummary}` : `${campaign.name} created${createdWith}${permissionSummary}`);
   }
 
   async function saveCampaignSettings() {
@@ -5785,7 +5799,16 @@ export function App() {
                 </span>
               </button>
             ))}
-            {partyActors.length === 0 && <p className="account-summary">No party actors yet.</p>}
+            {partyActors.length === 0 && (
+              <div className="party-empty-state">
+                <p className="account-summary">No party actors yet.</p>
+                {hasPermission("actor.create") && (
+                  <button className="ghost-button small" type="button" aria-label="Open character creator from party rail" onClick={() => void openCharacterCreator()}>
+                    <UserPlus size={14} /> Open character creator
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </section>
         <section className="party-rail adversary-rail" aria-label="Adversaries">
@@ -5964,6 +5987,10 @@ export function App() {
             <option value="public">Public</option>
           </select>
           <div className="section-title">Initial Scene</div>
+          <label className="inline-check">
+            <input aria-label="Include starter content" type="checkbox" checked={setupStarterContent} onChange={(event) => setSetupStarterContent(event.target.checked)} />
+            <span>Include starter content</span>
+          </label>
           <input aria-label="Setup initial scene name" value={setupSceneName} placeholder="Opening Scene" onChange={(event) => setSetupSceneName(event.target.value)} />
           <input aria-label="Setup initial scene folder" value={setupSceneFolder} placeholder="session-0" onChange={(event) => setSetupSceneFolder(event.target.value)} />
           <div className="button-row">
@@ -5998,7 +6025,7 @@ export function App() {
             </div>
             <div className="operator-row tool-call-row">
               <span>Scene</span>
-              <strong>{setupPreviewSceneName} - {setupSceneWidth}x{setupSceneHeight} - grid {setupSceneGridSize} - {setupPreviewFolder}</strong>
+              <strong>{setupPreviewSceneName} - {setupPreviewSceneWidth}x{setupPreviewSceneHeight} - grid {setupPreviewGridSize} - {setupPreviewFolder}</strong>
             </div>
             <div className="operator-row tool-call-row">
               <span>Permissions</span>
@@ -6778,7 +6805,16 @@ export function App() {
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
-              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : <div className="empty-state">Create a scene to open the tabletop.</div>}
+              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : (
+                <div className="empty-state empty-state-action">
+                  <span>Create a scene to open the tabletop.</span>
+                  {hasPermission("scene.create") && (
+                    <button className="ghost-button small" type="button" aria-label="Create scene from empty board" onClick={() => createScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                      <Plus size={14} /> Create scene
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             <div className="map-layer-dock" aria-label="Map controls and layers" data-collapsed={mapDockOpen ? undefined : "true"}>
               <MapZoomControls zoom={battleMapZoom} onZoomOut={() => zoomBattleMap(-battleMapZoomStep)} onZoomIn={() => zoomBattleMap(battleMapZoomStep)} onReset={resetBattleMapZoom} />

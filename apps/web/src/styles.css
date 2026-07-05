@@ -12033,3 +12033,27 @@ a:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+/* -------------------------------------------------------------------------
+   First-session onboarding empty-state CTAs
+   ------------------------------------------------------------------------- */
+.empty-state-action,
+.party-empty-state {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.empty-state-action .ghost-button,
+.party-empty-state .ghost-button {
+  color: var(--paper);
+}
+
+.party-empty-state .account-summary {
+  margin: 0;
+}
+
+.journal-empty-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}

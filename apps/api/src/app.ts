@@ -231,6 +231,7 @@ type CampaignPermissionTemplateId = "standard" | "player_authoring" | "ai_assist
 
 interface CampaignCreateBody extends Partial<Campaign> {
   permissionTemplate?: unknown;
+  starterContent?: unknown;
 }
 
 type CampaignPatchBody = Partial<Pick<Campaign, "name" | "description" | "defaultSystemId" | "visibility">>;
@@ -2593,6 +2594,67 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       userId,
       role: "owner" as const
     });
+    const starterEvents: EngineEvent[] = [];
+    if (body.starterContent === true) {
+      const activatedAt = nowIso();
+      const starterScene = createTimestamped("scn", {
+        campaignId: campaign.id,
+        name: "First Session",
+        width: 1200,
+        height: 800,
+        gridType: "square" as const,
+        gridSize: 50,
+        active: true,
+        sortOrder: 1,
+        fog: [],
+        fogHistory: [],
+        walls: [],
+        lights: [],
+        annotations: [],
+        metadata: {}
+      }) satisfies Scene;
+      appendSceneActivationHistory(starterScene, {
+        activatedAt,
+        activatedByUserId: userId,
+        deactivatedSceneIds: [],
+        source: "create"
+      });
+      const welcomeJournal = createTimestamped("jnl", {
+        campaignId: campaign.id,
+        title: "Running your first session",
+        body: [
+          "- Create characters from the party rail character creator.",
+          "- Drop tokens on the board once the party is ready.",
+          "- Plan an encounter from the Combat tab.",
+          "- Award XP after the fight.",
+          "- Generate a session recap from the Journal tab."
+        ].join("\n"),
+        visibility: "public" as const,
+        visibleToUserIds: [],
+        visibleToActorIds: [],
+        tags: ["welcome"],
+        createdBy: userId,
+        updatedBy: userId
+      }) satisfies JournalEntry;
+      const gmJournal = createTimestamped("jnl", {
+        campaignId: campaign.id,
+        title: "GM notes",
+        body: "Keep session prep, secrets, and reminders here.",
+        visibility: "gm_only" as const,
+        visibleToUserIds: [],
+        visibleToActorIds: [],
+        tags: ["gm-notes"],
+        createdBy: userId,
+        updatedBy: userId
+      }) satisfies JournalEntry;
+      store.state.scenes.push(starterScene);
+      store.state.journals.push(welcomeJournal, gmJournal);
+      starterEvents.push(
+        createEvent({ campaignId: campaign.id, type: "scene.created", targetId: starterScene.id, payload: starterScene }),
+        createEvent({ campaignId: campaign.id, type: "journal.created", targetId: welcomeJournal.id, payload: welcomeJournal }),
+        createEvent({ campaignId: campaign.id, type: "journal.created", targetId: gmJournal.id, payload: gmJournal })
+      );
+    }
     store.state.campaigns.push(campaign);
     store.state.members.push(member);
     store.state.permissionGrants.push(...campaignPermissionTemplateGrants(campaign.id, permissionTemplate.id));
@@ -2606,6 +2668,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         payload: member
       })
     );
+    for (const event of starterEvents) broadcast(event);
     return campaign;
   });
 
