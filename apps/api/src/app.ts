@@ -6303,44 +6303,63 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         });
       }
     }
-    if (approvalMode === "auto" && permissions.includes("ai.applyChanges")) {
-      for (const proposalId of autoApplyAiThreadProposals(store, aiToolRuntime, request.params.campaignId, userId, proposalIdsFromAiEvents(events))) {
-        events.push({ type: "proposal.applied", proposalId });
+    try {
+      if (approvalMode === "auto" && permissions.includes("ai.applyChanges")) {
+        for (const proposalId of autoApplyAiThreadProposals(store, aiToolRuntime, request.params.campaignId, userId, proposalIdsFromAiEvents(events))) {
+          events.push({ type: "proposal.applied", proposalId });
+        }
       }
-    }
-    if (content.trim()) {
-      const message = createTimestamped("msg", {
-        campaignId: request.params.campaignId,
-        userId: aiProvider.id,
-        type: "ai" as const,
-        body: content,
-        visibility: permissions.includes("ai.readGmMemory") ? ("gm_only" as const) : ("public" as const),
-        recipientUserIds: []
-      }) satisfies ChatMessage;
-      store.state.chat.push(message);
+      if (content.trim()) {
+        const message = createTimestamped("msg", {
+          campaignId: request.params.campaignId,
+          userId: aiProvider.id,
+          type: "ai" as const,
+          body: content,
+          visibility: permissions.includes("ai.readGmMemory") ? ("gm_only" as const) : ("public" as const),
+          recipientUserIds: []
+        }) satisfies ChatMessage;
+        store.state.chat.push(message);
+        broadcast(
+          createEvent({
+            campaignId: message.campaignId,
+            type: "chat.message.created",
+            actorUserId: userId,
+            targetId: message.id,
+            payload: message
+          })
+        );
+      }
+      store.save();
       broadcast(
         createEvent({
-          campaignId: message.campaignId,
-          type: "chat.message.created",
+          campaignId: thread.campaignId,
+          type: "ai.thread.started",
           actorUserId: userId,
-          targetId: message.id,
-          payload: message
+          targetId: thread.id,
+          payload: thread
         })
       );
+      responseFinished = true;
+      detachAbortListeners();
+      return { thread, assistantMessage: content, events };
+    } catch (error) {
+      recordAiResponseUsage(thread, content);
+      thread.assistantMessage = content;
+      failAiThread(thread, startedAtMs, retryAttempts, events.length, toolCallCount, error);
+      try {
+        store.save();
+      } catch {
+        // Preserve the original route failure in the response.
+      }
+      responseFinished = true;
+      detachAbortListeners();
+      return reply.code(500).send({
+        error: "ai_turn_failed",
+        message: thread.providerError,
+        thread,
+        events
+      });
     }
-    store.save();
-    broadcast(
-      createEvent({
-        campaignId: thread.campaignId,
-        type: "ai.thread.started",
-        actorUserId: userId,
-        targetId: thread.id,
-        payload: thread
-      })
-    );
-    responseFinished = true;
-    detachAbortListeners();
-    return { thread, assistantMessage: content, events };
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/ai/memory", async (request, reply) => {
@@ -8345,11 +8364,13 @@ function agentMessagesForRequest(prompt: string, body: AgentThreadBody | undefin
         "Place generated assets on the correct surface: maps are scene backgrounds or map-layer art, characters and creatures are token/portrait assets on player or GM token layers, and annotations stay in their matching annotation layer.",
         "Do not leave generated map or token art as asset-only/library-only proposals unless the user explicitly asks for library-only output.",
         "When generating a map for a scene, include the scene/background update in the same proposal so approval applies the map to the active or requested scene.",
+        "When asked to create or set up a scene, ensure the necessary creature and character tokens exist on that scene: create missing actor/token records with draft_actor_token_roster and generateArt enabled, and place existing relevant tokens with draft_token_update instead of making duplicates.",
         "When generating token or portrait art for an existing token or actor, include the token image update and matching actor image update in the same proposal whenever those targets are known.",
         "For creature and character tokens, use a 1x1 grid footprint unless a larger creature size is explicitly needed, and place tokens at grid-cell centers so they sit cleanly inside squares.",
         "When generating token art, reuse existing generated token art for repeated enemies when the same creature or reuse key is appropriate.",
         "When creating fresh player characters, NPCs, or adversaries, generate stored token/portrait art for them and reference the stored asset from the actor and token proposal.",
         "When creating actors with tokens, use draft_actor_token_roster with generateArt enabled so created actors and tokens reference the generated asset ids.",
+        "When an attached reference image or selected source asset is provided, pass it as sourceAssetId to generated map, token, and roster art tools so the source image is used for style, composition, or sketch layout unless the user asks otherwise.",
         "If no scene, token, actor, or selected asset target is known for generated art, ask one short clarification instead of silently making detached assets.",
         "When the user asks to edit, repaint, restyle, clean up, or otherwise modify a selected or pointed image asset, use modify_asset_image so the source asset image is attached as the visual reference and the result is proposed as a new stored asset.",
         "For many high-quality art assets, prefer parallel independent image-generation tool calls with one clear prompt per asset, then assemble the proposal after the assets exist.",
@@ -8424,6 +8445,7 @@ function toolInputWithAgentDefaults(toolName: string, input: unknown, body: Agen
     return {
       ...base,
       sceneId: base.sceneId ?? body.selectedSceneId,
+      ...(base.sourceAssetId === undefined && body.selectedAssetId ? { sourceAssetId: body.selectedAssetId } : {}),
       generateArt: base.generateArt ?? (body.surface === "agent_panel" ? true : undefined),
       artQuality: base.artQuality ?? (body.surface === "agent_panel" ? "high" : undefined),
       artOutputFormat: base.artOutputFormat ?? (body.surface === "agent_panel" ? "png" : undefined)
@@ -8432,14 +8454,16 @@ function toolInputWithAgentDefaults(toolName: string, input: unknown, body: Agen
   if (toolName === "generate_map_asset") {
     return {
       ...base,
-      sceneId: base.sceneId ?? body.selectedSceneId
+      sceneId: base.sceneId ?? body.selectedSceneId,
+      ...(base.sourceAssetId === undefined && body.selectedAssetId ? { sourceAssetId: body.selectedAssetId } : {})
     };
   }
   if (toolName === "generate_token_asset") {
     const selectedTokenId = body.selectedTokenIds?.[0];
     return {
       ...base,
-      ...(base.tokenId === undefined && selectedTokenId ? { tokenId: selectedTokenId } : {})
+      ...(base.tokenId === undefined && selectedTokenId ? { tokenId: selectedTokenId } : {}),
+      ...(base.sourceAssetId === undefined && body.selectedAssetId ? { sourceAssetId: body.selectedAssetId } : {})
     };
   }
   if (toolName === "modify_asset_image") {
@@ -10514,6 +10538,9 @@ async function draftActorTokenRosterChanges(context: AiToolContext, request: Rec
   const generateArt = booleanFromRecord(request, "generateArt") ?? false;
   const artQuality = enumStringFromRecord(request, "artQuality", ["auto", "low", "medium", "high"]);
   const artOutputFormat = enumStringFromRecord(request, "artOutputFormat", ["png", "jpeg", "webp"]);
+  const sourceAssetId = stringFromRecord(request, "sourceAssetId");
+  const sourceAsset = sourceAssetId ? imageAssetForCampaign(context, sourceAssetId) : undefined;
+  if (sourceAssetId && !sourceAsset) return toolError("not_found", { entity: "asset", id: sourceAssetId });
   let tokenCount = 0;
   let itemCount = 0;
 
@@ -10583,7 +10610,9 @@ async function draftActorTokenRosterChanges(context: AiToolContext, request: Rec
         folder: adversary ? "tokens/adversaries" : "tokens/generated",
         tags: tokenArtAssetTags(actor, undefined, artReuseKey),
         quality: artQuality,
-        outputFormat: artOutputFormat
+        outputFormat: artOutputFormat,
+        sourceImageUrl: sourceAsset ? signedAssetUrlForInternalAgent(sourceAsset) : undefined,
+        sourceImageMimeType: sourceAsset?.mimeType
       });
       if (isToolErrorOutput(generated)) return generated;
       if (!isGeneratedImageAssetToolOutput(generated)) return toolError("image_generation_failed", { message: "Generated image asset output was invalid." });
@@ -11253,6 +11282,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           summary: { type: "string", description: "GM-facing summary of the roster draft." },
           sceneId: { type: "string", description: "Target scene id; tokens are drafted directly into this scene." },
           generateArt: { type: "boolean", description: "When true, generate stored token/portrait art for new roster actors unless reusable art is found." },
+          sourceAssetId: { type: "string", description: "Optional reference image asset id used as the visual style, composition, or sketch-layout source for generated roster art." },
           artQuality: { type: "string", description: "Requested roster art render quality.", enum: ["auto", "low", "medium", "high"] },
           artOutputFormat: { type: "string", description: "Requested roster art raster output format.", enum: ["png", "jpeg", "webp"] },
           actors: { type: "array", description: "Actors to create. Each actor may include ref, name, systemId, templateId, threatId, data, type, ownerUserId, and optional token settings. Token x/y or centerX/centerY are interpreted as desired grid-cell centers; token width/height values 1-8 are interpreted as grid-cell footprints.", items: { type: "object", additionalProperties: true } }
@@ -11277,7 +11307,8 @@ function createAiThreadTools(): AiToolDefinition[] {
           sceneId: draft.sceneId,
           actorCount: draft.actorCount,
           tokenCount: draft.tokenCount,
-          itemCount: draft.itemCount
+          itemCount: draft.itemCount,
+          sourceAssetId: stringFromRecord(request, "sourceAssetId")
         };
       }
     },
@@ -11291,6 +11322,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           prompt: { type: "string", description: "Visual prompt for the generated battlemap." },
           name: { type: "string", description: "Asset and proposal display name." },
           sceneId: { type: "string", description: "Scene id that should receive this generated map as its background. In the agent panel this defaults to the selected scene when available." },
+          sourceAssetId: { type: "string", description: "Optional reference image asset id used as the visual style, composition, or sketch-layout source for the generated map." },
           size: { type: "string", description: "Requested output size.", enum: ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152"] },
           quality: { type: "string", description: "Requested render quality.", enum: ["auto", "low", "medium", "high"] },
           outputFormat: { type: "string", description: "Requested raster output format.", enum: ["png", "jpeg", "webp"] }
@@ -11305,6 +11337,9 @@ function createAiThreadTools(): AiToolDefinition[] {
         const sceneId = stringFromRecord(request, "sceneId");
         const scene = sceneId ? context.state.scenes.find((item) => item.id === sceneId && item.campaignId === context.campaignId) : undefined;
         if (sceneId && !scene) return toolError("not_found", { entity: "scene", id: sceneId });
+        const sourceAssetId = stringFromRecord(request, "sourceAssetId");
+        const sourceAsset = sourceAssetId ? imageAssetForCampaign(context, sourceAssetId) : undefined;
+        if (sourceAssetId && !sourceAsset) return toolError("not_found", { entity: "asset", id: sourceAssetId });
         const name = stringFromRecord(request, "name") ?? `${scene?.name ?? "AI"} Generated Map`;
         const generated = await context.generateImageAsset({
           kind: "map",
@@ -11314,7 +11349,9 @@ function createAiThreadTools(): AiToolDefinition[] {
           tags: ["ai", "generated", "map"],
           size: enumStringFromRecord(request, "size", ["auto", "1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152"]),
           quality: enumStringFromRecord(request, "quality", ["auto", "low", "medium", "high"]),
-          outputFormat: enumStringFromRecord(request, "outputFormat", ["png", "jpeg", "webp"])
+          outputFormat: enumStringFromRecord(request, "outputFormat", ["png", "jpeg", "webp"]),
+          sourceImageUrl: sourceAsset ? signedAssetUrlForInternalAgent(sourceAsset) : undefined,
+          sourceImageMimeType: sourceAsset?.mimeType
         });
         if (isToolErrorOutput(generated)) return generated;
         if (!isGeneratedImageAssetToolOutput(generated)) return toolError("image_generation_failed", { message: "Generated image asset output was invalid." });
@@ -11347,6 +11384,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           changeCount: changes.length,
           assetId: generated.asset.id,
           sceneId: scene?.id,
+          sourceAssetId: sourceAsset?.id,
           provider: generated.provider,
           model: generated.model,
           revisedPrompt: generated.revisedPrompt
@@ -11363,6 +11401,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           prompt: { type: "string", description: "Visual prompt for the generated token art." },
           name: { type: "string", description: "Asset and proposal display name." },
           tokenId: { type: "string", description: "Token id that should receive this generated art. In the agent panel this defaults to the selected token when available, and the linked actor is updated too." },
+          sourceAssetId: { type: "string", description: "Optional reference image asset id used as the visual style, composition, or sketch-layout source for the generated token art." },
           reuseKey: { type: "string", description: "Optional stable creature or character art reuse key. Matching generated token art is reused before creating new art." },
           reuseExisting: { type: "boolean", description: "When false, always generate new art even if reusable art exists." },
           size: { type: "string", description: "Requested output size.", enum: ["auto", "1024x1024", "2048x2048"] },
@@ -11380,6 +11419,9 @@ function createAiThreadTools(): AiToolDefinition[] {
         const token = tokenId ? tokenForCampaign(context, tokenId) : undefined;
         if (tokenId && !token) return toolError("not_found", { entity: "token", id: tokenId });
         const actor = token?.actorId ? context.state.actors.find((item) => item.id === token.actorId && item.campaignId === context.campaignId) : undefined;
+        const sourceAssetId = stringFromRecord(request, "sourceAssetId");
+        const sourceAsset = sourceAssetId ? imageAssetForCampaign(context, sourceAssetId) : undefined;
+        if (sourceAssetId && !sourceAsset) return toolError("not_found", { entity: "asset", id: sourceAssetId });
         const name = stringFromRecord(request, "name") ?? `${token?.name ?? "AI"} Generated Token`;
         const reuseKey = tokenArtReuseKeyForRequest(request, token, actor);
         const reuseExisting = booleanFromRecord(request, "reuseExisting") ?? true;
@@ -11413,7 +11455,9 @@ function createAiThreadTools(): AiToolDefinition[] {
           tags: tokenArtAssetTags(actor, token, reuseKey),
           size: enumStringFromRecord(request, "size", ["auto", "1024x1024", "2048x2048"]),
           quality: enumStringFromRecord(request, "quality", ["auto", "low", "medium", "high"]),
-          outputFormat: enumStringFromRecord(request, "outputFormat", ["png", "jpeg", "webp"])
+          outputFormat: enumStringFromRecord(request, "outputFormat", ["png", "jpeg", "webp"]),
+          sourceImageUrl: sourceAsset ? signedAssetUrlForInternalAgent(sourceAsset) : undefined,
+          sourceImageMimeType: sourceAsset?.mimeType
         });
         if (isToolErrorOutput(generated)) return generated;
         if (!isGeneratedImageAssetToolOutput(generated)) return toolError("image_generation_failed", { message: "Generated image asset output was invalid." });
@@ -11447,6 +11491,7 @@ function createAiThreadTools(): AiToolDefinition[] {
           assetId: generated.asset.id,
           tokenId: token?.id,
           actorId: actor?.id,
+          sourceAssetId: sourceAsset?.id,
           provider: generated.provider,
           model: generated.model,
           revisedPrompt: generated.revisedPrompt

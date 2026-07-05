@@ -1091,6 +1091,8 @@ function codexBaseInstructions(context: PermissionFilteredContext): string {
     "Do not fill missing rules, compendium, campaign, or character details from outside knowledge; use visible OpenTabletop tools or ask for clarification.",
     "When changing campaign state or generating map/token assets, call an available open_tabletop dynamic tool instead of claiming a change was already applied.",
     "OpenTabletop campaign edit and asset-generation tools create reviewable proposals. Do not say a scene, actor, journal, token, encounter, memory, map, or token image changed until host-side tool output confirms it.",
+    "When asked to create or set up a scene, ensure the necessary creature and character tokens exist on that scene: create missing actor/token records with the available roster/token creation tool and generated art enabled, and place existing relevant tokens with the available token update tool instead of making duplicates.",
+    "When an attached reference image or selected source asset is provided, pass it as sourceAssetId to generated map, token, and roster art tools so the source image is used for style, composition, or sketch layout unless the user asks otherwise.",
     "After any successful board-state mutation or applying an approved proposal that touches scene, token, asset, fog, wall, light, annotation, or combat state, call capture_board_view and read_board_state before your final success response. Compare the screenshot signal and structured board state. If visual capture is unavailable, use read_board_state and explicitly say visual verification was unavailable.",
     "Do not use shell, filesystem, browser, plugin, or MCP tools for tabletop campaign state.",
     "",

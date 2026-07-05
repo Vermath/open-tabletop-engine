@@ -84,6 +84,7 @@ describe("CodexAppServerWebSocketTransport", () => {
     expect(optOutMethods).not.toContain("item/reasoning/summaryTextDelta");
     expect(optOutMethods).toContain("item/reasoning/textDelta");
     expect(socket?.sent.find((message) => message.method === "thread/start")?.params).toMatchObject({
+      baseInstructions: expect.stringContaining("create missing actor/token records"),
       dynamicTools: [
         expect.objectContaining({
           namespace: "open_tabletop",

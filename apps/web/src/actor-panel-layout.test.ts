@@ -27,6 +27,8 @@ describe("actor panel layout", () => {
     expect(appSource).toContain("stopAiAgentTurn");
     expect(appSource).toContain("ai-agent-stop-button");
     expect(appSource).toContain("Agent turn stopped.");
+    expect(appSource).not.toContain("Proposal-first");
+    expect(stylesSource).toContain("padding: 10px 28px 28px 0;");
     expect(appSource).not.toContain('aria-label="AI edit layer controls"');
   });
 

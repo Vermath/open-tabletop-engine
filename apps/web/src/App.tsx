@@ -2,7 +2,7 @@ import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, C
 import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
 import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
-import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiAnalyzePdfContentImport, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
@@ -181,6 +181,7 @@ interface AiAgentThreadResponse {
 interface AiAgentPendingAuthRequest {
   prompt: string;
   requestMessages: AiAgentMessage[];
+  selectedAssetId?: string;
 }
 
 interface CodexAuthStart {
@@ -448,6 +449,7 @@ const keyboardShortcutRows: Array<{ keys: string; label: string }> = [
 
 const mapDockOpenStorageKey = "otte:mapDockOpen";
 const quickCreateOpenStorageKey = "otte:quickCreateOpen";
+const floatingPanelInteractiveSelector = "button,input,select,textarea,a,label,[role='button']";
 
 function initialStoredPanelFlag(key: string, fallback: boolean): boolean {
   try {
@@ -469,6 +471,7 @@ function persistStoredPanelFlag(key: string, value: boolean): void {
 function useMovablePanel(initialPosition: FloatingPanelPosition | (() => FloatingPanelPosition), initialSize: FloatingPanelSize | (() => FloatingPanelSize) = { width: 320, height: 280 }, resizeOptions: FloatingPanelResizeOptions = {}) {
   const [position, setPosition] = useState<FloatingPanelPosition>(() => (typeof initialPosition === "function" ? initialPosition() : initialPosition));
   const [size, setSize] = useState<FloatingPanelSize>(() => (typeof initialSize === "function" ? initialSize() : initialSize));
+  const [collapsed, setCollapsed] = useState(false);
   const dragRef = useRef<FloatingPanelDrag | null>(null);
   const resizeRef = useRef<FloatingPanelResize | null>(null);
   const minWidth = resizeOptions.minWidth ?? 280;
@@ -595,13 +598,27 @@ function useMovablePanel(initialPosition: FloatingPanelPosition | (() => Floatin
     event.stopPropagation();
   };
 
+  const toggleCollapsed = (event: ReactMouseEvent<HTMLElement>) => {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.closest(floatingPanelInteractiveSelector)) return;
+    if (dragRef.current || resizeRef.current) return;
+    setCollapsed((current) => !current);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   return {
     style,
+    collapsed,
+    panelProps: {
+      "data-floating-panel-collapsed": collapsed ? "true" : undefined
+    },
     dragHandleProps: {
+      onDoubleClick: toggleCollapsed,
       onPointerDown(event: ReactPointerEvent<HTMLElement>) {
         if (event.button !== 0) return;
-        const target = event.target as HTMLElement;
-        if (target.closest("button,input,select,textarea,a")) return;
+        const target = event.target instanceof HTMLElement ? event.target : null;
+        if (target?.closest(floatingPanelInteractiveSelector)) return;
         const panel = event.currentTarget.closest<HTMLElement>(".movable-panel");
         if (!panel) return;
         const container = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : document.documentElement;
@@ -790,6 +807,8 @@ export function App() {
   const [aiAgentMessages, setAiAgentMessages] = useState<AiAgentMessage[]>(() => initialAiAgentMessages(aiAgentHistoryStorageKey(campaignId, currentUserId)));
   const [aiAgentBusy, setAiAgentBusy] = useState(false);
   const [aiAgentStatus, setAiAgentStatus] = useState("Agent ready");
+  const [aiAgentReferenceAssetId, setAiAgentReferenceAssetId] = useState<string | undefined>(undefined);
+  const [aiAgentReferenceUploadStatus, setAiAgentReferenceUploadStatus] = useState("");
   const [aiAgentCodexAuth, setAiAgentCodexAuth] = useState<AiAgentCodexAuthPrompt | null>(null);
   const [aiAgentHiddenProposalIds, setAiAgentHiddenProposalIds] = useState<Set<string>>(() => new Set());
   const aiAgentAbortRef = useRef<AbortController | null>(null);
@@ -1003,6 +1022,7 @@ export function App() {
   const selectedTokens = snapshot.tokens.filter((token) => selectedTokenIdSet.has(token.id) && (!selectedScene || token.sceneId === selectedScene.id));
   const selectedBoardAsset = snapshot.assets.find((asset) => asset.id === selectedBoardAssetId && asset.campaignId === campaignId);
   const aiAgentSelectedAssetId = selectedToken?.imageAssetId ?? selectedBoardAsset?.id ?? selectedCanvasAsset?.id ?? selectedMapAsset?.id;
+  const selectedAiAgentReferenceAsset = aiAgentReferenceAssetId ? snapshot.assets.find((asset) => asset.id === aiAgentReferenceAssetId && isUsableImageAsset(asset)) : undefined;
   const canDeleteSelectedBoardTokens = hasPermission("token.delete");
   const sessionPulseStatus = status.toLowerCase().includes("realtime") || status.toLowerCase().includes("connected")
     ? "Connected"
@@ -3104,6 +3124,37 @@ export function App() {
     }
   }
 
+  async function uploadAiAgentReferenceAsset(file: File, input?: HTMLInputElement) {
+    if (!selectedCampaign) return;
+    if (!file.type.startsWith("image/")) {
+      setAiAgentReferenceUploadStatus("Reference upload failed: choose an image file.");
+      if (input) input.value = "";
+      return;
+    }
+    setAiAgentReferenceUploadStatus(`Uploading ${file.name}...`);
+    try {
+      const result = await apiUploadAsset({
+        campaignId: selectedCampaign.id,
+        sceneId: selectedScene?.id,
+        file,
+        folder: "ai/references",
+        tags: ["ai", "reference"]
+      });
+      setAiAgentReferenceAssetId(result.asset.id);
+      setAiAgentReferenceUploadStatus("");
+      await refresh(selectedCampaign.id, selectedScene?.id ?? sceneId);
+    } catch (error) {
+      setAiAgentReferenceUploadStatus(`Reference upload failed: ${errorMessage(error)}`);
+    } finally {
+      if (input) input.value = "";
+    }
+  }
+
+  function clearAiAgentReferenceAsset() {
+    setAiAgentReferenceAssetId(undefined);
+    setAiAgentReferenceUploadStatus("");
+  }
+
   async function uploadAssetToLibrary(file: File, setAsBackground: boolean, retryInput?: { folder: string; tags: string }) {
     if (!selectedCampaign) return;
     const folder = retryInput?.folder ?? assetFolder;
@@ -4383,13 +4434,19 @@ export function App() {
   async function sendAiAgentMessage() {
     const prompt = aiAgentPrompt.trim();
     if (!prompt || aiAgentBusy) return;
+    const attachedReferenceAssetId = selectedAiAgentReferenceAsset?.id;
+    const selectedAssetId = attachedReferenceAssetId ?? aiAgentSelectedAssetId;
     const userMessage: AiAgentMessage = { id: `agent-user-${Date.now()}`, role: "user", content: prompt, createdAt: new Date().toISOString() };
     const requestMessages = [...aiAgentMessages, userMessage];
     aiAgentPendingAuthRequestRef.current = null;
     clearAiAgentAuthRetry();
     setAiAgentMessages((messages) => [...messages, userMessage]);
     setAiAgentPrompt("");
-    await submitAiAgentTurn({ prompt, requestMessages });
+    try {
+      await submitAiAgentTurn({ prompt, requestMessages, selectedAssetId });
+    } finally {
+      if (attachedReferenceAssetId) clearAiAgentReferenceAsset();
+    }
   }
 
   function createBlankCanvasDemoAiProposal(prompt: string): Proposal {
@@ -4468,9 +4525,9 @@ export function App() {
     }
   }
 
-  async function submitAiAgentTurn({ prompt, requestMessages }: AiAgentPendingAuthRequest, options: { authRetry?: boolean } = {}) {
+  async function submitAiAgentTurn({ prompt, requestMessages, selectedAssetId }: AiAgentPendingAuthRequest, options: { authRetry?: boolean } = {}) {
     if (blankCanvasDemoOpen) {
-      await submitBlankCanvasDemoAiAgentTurn({ prompt, requestMessages }, options);
+      await submitBlankCanvasDemoAiAgentTurn({ prompt, requestMessages, selectedAssetId }, options);
       return;
     }
     if (aiAgentBusy && !options.authRetry) return;
@@ -4479,13 +4536,14 @@ export function App() {
     setAiAgentCodexAuth(null);
     const abortController = new AbortController();
     aiAgentAbortRef.current = abortController;
+    const requestSelectedAssetId = selectedAssetId ?? selectedAiAgentReferenceAsset?.id ?? aiAgentSelectedAssetId;
     try {
       const result = await apiPost<AiAgentThreadResponse>(`/api/v1/campaigns/${campaignId}/ai/threads`, {
         prompt,
         surface: "agent_panel",
         approvalMode: aiAgentApprovalMode,
         selectedSceneId: selectedScene?.id,
-        selectedAssetId: aiAgentSelectedAssetId,
+        selectedAssetId: requestSelectedAssetId,
         selectedTokenIds,
         messages: aiAgentProviderMessages(requestMessages)
       }, { signal: abortController.signal });
@@ -4525,7 +4583,7 @@ export function App() {
       const codexAuth = codexAuthPromptFromError(error);
       if (codexAuth) {
         const opened = openCodexAuthPrompt(codexAuth);
-        aiAgentPendingAuthRequestRef.current = { prompt, requestMessages };
+        aiAgentPendingAuthRequestRef.current = { prompt, requestMessages, selectedAssetId: requestSelectedAssetId };
         const promptMessage = opened
           ? "Codex sign-in opened. Finish the ChatGPT OAuth flow; the original agent request will resume automatically."
           : "Codex sign-in is required. Use the sign-in button below; the original agent request will resume automatically.";
@@ -6937,7 +6995,7 @@ export function App() {
               {mapDockOpen && <MapLayerStack scene={selectedScene} tokens={snapshot.tokens} activeTokenLayer={activeTokenLayer} fogActive={Boolean(snapshot.vision?.sceneId === selectedScene?.id && snapshot.vision?.fogActive)} visibleAnnotationLayers={visibleAnnotationLayers} onSelectTokenLayer={selectTokenLayer} onToggleAnnotationLayer={setAnnotationLayerVisible} />}
             </div>
             {hasPermission("token.reveal") && (fogBrushMode || toolReport) && (
-              <section className="table-tool-panel movable-panel" aria-label="Fog and vision tools" style={fogToolPanel.style}>
+              <section className="table-tool-panel movable-panel" aria-label="Fog and vision tools" style={fogToolPanel.style} {...fogToolPanel.panelProps}>
                 <header className="floating-panel-header table-tool-panel-header" title="Drag panel" {...fogToolPanel.dragHandleProps}>
                   <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
                   <div>
@@ -6962,7 +7020,7 @@ export function App() {
               </section>
             )}
             {annotationPanelOpen && !fogBrushMode && annotationTool && annotationToolShowsSettings(annotationTool) && (
-            <section className="table-tool-panel annotation-panel movable-panel" aria-label="Annotation layers and history" style={annotationToolPanel.style}>
+            <section className="table-tool-panel annotation-panel movable-panel" aria-label="Annotation layers and history" style={annotationToolPanel.style} {...annotationToolPanel.panelProps}>
               <header className="annotation-panel-header floating-panel-header" title="Drag panel" {...annotationToolPanel.dragHandleProps}>
                 <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
                 <div>
@@ -7232,6 +7290,8 @@ export function App() {
           status={aiAgentStatus}
           busy={aiAgentBusy}
           codexAuth={aiAgentCodexAuth}
+          referenceAsset={selectedAiAgentReferenceAsset}
+          referenceUploadStatus={aiAgentReferenceUploadStatus}
           proposals={snapshot.proposals}
           hiddenProposalIds={aiAgentHiddenProposalIds}
           canApply={hasPermission("ai.applyChanges")}
@@ -7240,6 +7300,8 @@ export function App() {
           onPromptChange={setAiAgentPrompt}
           onSend={() => sendAiAgentMessage().catch((error) => setAiAgentStatus(errorMessage(error)))}
           onStop={stopAiAgentTurn}
+          onUploadReference={uploadAiAgentReferenceAsset}
+          onClearReference={clearAiAgentReferenceAsset}
           onStartCodexAuth={startAiAgentCodexAuth}
           onClose={() => setAiAgentOpen(false)}
           onApply={applyAiAgentProposal}
@@ -7444,7 +7506,7 @@ function AudioSoundboard(props: {
   };
 
   return (
-    <aside className="audio-soundboard movable-panel" aria-label="Soundboard" style={soundboardPanel.style}>
+    <aside className="audio-soundboard movable-panel" aria-label="Soundboard" style={soundboardPanel.style} {...soundboardPanel.panelProps}>
       <header className="audio-soundboard-header floating-panel-header" title="Drag panel" {...soundboardPanel.dragHandleProps}>
         <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
         <div className="section-title">
@@ -7669,6 +7731,8 @@ function AiAgentPanel(props: {
   status: string;
   busy: boolean;
   codexAuth: AiAgentCodexAuthPrompt | null;
+  referenceAsset?: MapAsset;
+  referenceUploadStatus: string;
   proposals: Proposal[];
   hiddenProposalIds: ReadonlySet<string>;
   canApply: boolean;
@@ -7677,6 +7741,8 @@ function AiAgentPanel(props: {
   onPromptChange(value: string): void;
   onSend(): void;
   onStop(): void;
+  onUploadReference(file: File, input?: HTMLInputElement): Promise<void>;
+  onClearReference(): void;
   onStartCodexAuth(auth: CodexAuthStart): void;
   onClose(): void;
   onApply(proposal: Proposal): void;
@@ -7685,7 +7751,36 @@ function AiAgentPanel(props: {
   const agentProposals = visibleAiAgentProposals(props.proposals, props.messages, props.hiddenProposalIds);
   const codexAuthUrl = props.codexAuth?.authUrl ?? props.codexAuth?.verificationUrl;
   const agentPanel = useMovablePanel(initialAiAgentPanelPosition, initialAiAgentPanelSize, { minWidth: 340, minHeight: 420 });
+  const [referenceDragActive, setReferenceDragActive] = useState(false);
   const agentStatusLabel = props.busy ? "Working" : agentProposals.length > 0 ? `${formatNumber(agentProposals.length)} ${agentProposals.length === 1 ? "proposal" : "proposals"}` : "Ready";
+  const dragHasFiles = (event: ReactDragEvent<HTMLElement>): boolean => Array.from(event.dataTransfer.types).includes("Files");
+  const draggedImageFile = (event: ReactDragEvent<HTMLElement>): File | undefined => Array.from(event.dataTransfer.files).find((file) => file.type.startsWith("image/"));
+  const handleReferenceDragEnter = (event: ReactDragEvent<HTMLFormElement>) => {
+    if (!dragHasFiles(event)) return;
+    event.preventDefault();
+    if (props.busy) return;
+    setReferenceDragActive(true);
+  };
+  const handleReferenceDragOver = (event: ReactDragEvent<HTMLFormElement>) => {
+    if (!dragHasFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = props.busy ? "none" : "copy";
+    if (props.busy) return;
+    setReferenceDragActive(true);
+  };
+  const handleReferenceDragLeave = (event: ReactDragEvent<HTMLFormElement>) => {
+    const relatedTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+    if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
+    setReferenceDragActive(false);
+  };
+  const handleReferenceDrop = (event: ReactDragEvent<HTMLFormElement>) => {
+    if (!dragHasFiles(event)) return;
+    event.preventDefault();
+    setReferenceDragActive(false);
+    if (props.busy) return;
+    const file = draggedImageFile(event);
+    if (file) void props.onUploadReference(file);
+  };
   const handleAiAgentPromptKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
@@ -7693,7 +7788,7 @@ function AiAgentPanel(props: {
     }
   };
   return (
-    <aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style}>
+    <aside className="ai-agent-popout movable-panel" aria-label="AI Agent" style={agentPanel.style} {...agentPanel.panelProps}>
       <header className="ai-agent-header floating-panel-header" title="Drag panel" {...agentPanel.dragHandleProps}>
         <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
         <div className="ai-agent-title-block">
@@ -7719,7 +7814,6 @@ function AiAgentPanel(props: {
               <option value="auto">Auto approve and apply</option>
             </select>
           </label>
-          <span className="ai-agent-mode-hint">{props.canApply ? "Proposal-first" : "Read only"}</span>
         </div>
         <section className="ai-agent-feed" aria-label="AI Agent messages">
           {props.messages.length === 0 ? (
@@ -7800,22 +7894,54 @@ function AiAgentPanel(props: {
         )}
       </div>
       <form
-        className="ai-agent-composer"
+        className={referenceDragActive ? "ai-agent-composer drag-active" : "ai-agent-composer"}
+        onDragEnter={handleReferenceDragEnter}
+        onDragOver={handleReferenceDragOver}
+        onDragLeave={handleReferenceDragLeave}
+        onDrop={handleReferenceDrop}
         onSubmit={(event) => {
           event.preventDefault();
           props.onSend();
         }}
       >
-        <textarea aria-label="AI Agent prompt" value={props.prompt} placeholder="Ask the agent..." onChange={(event) => props.onPromptChange(event.target.value)} onKeyDown={handleAiAgentPromptKeyDown} disabled={props.busy} />
-        {props.busy ? (
-          <button className="ghost-button ai-agent-stop-button" type="button" onClick={props.onStop}>
-            <X size={16} /> Stop
-          </button>
-        ) : (
-          <button className="primary-button" type="submit" disabled={!props.prompt.trim()}>
-            <Send size={16} /> Send
-          </button>
+        {props.referenceAsset && (
+          <div className="ai-agent-composer-attachment">
+            <span className="ai-agent-reference-thumb">
+              <img src={assetBlobUrl(props.referenceAsset)} alt="" />
+            </span>
+            <span className="ai-agent-reference-name">{props.referenceAsset.name}</span>
+            <button className="icon-button ai-agent-attachment-clear" type="button" aria-label="Clear attached image reference" onClick={props.onClearReference} disabled={props.busy}>
+              <X size={14} />
+            </button>
+          </div>
         )}
+        {props.referenceUploadStatus && <span className="ai-agent-composer-status">{props.referenceUploadStatus}</span>}
+        <textarea aria-label="AI Agent prompt" value={props.prompt} placeholder="Ask the agent..." onChange={(event) => props.onPromptChange(event.target.value)} onKeyDown={handleAiAgentPromptKeyDown} disabled={props.busy} />
+        <div className="ai-agent-composer-actions">
+          <label className="icon-button ai-agent-attach-button" title="Attach image reference">
+            <input
+              className="ai-agent-reference-input"
+              type="file"
+              accept="image/*"
+              aria-label="Attach image reference"
+              disabled={props.busy}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                if (file) void props.onUploadReference(file, event.currentTarget);
+              }}
+            />
+            <ImageIcon size={16} />
+          </label>
+          {props.busy ? (
+            <button className="ghost-button ai-agent-stop-button" type="button" onClick={props.onStop}>
+              <X size={16} /> Stop
+            </button>
+          ) : (
+            <button className="primary-button" type="submit" disabled={!props.prompt.trim()}>
+              <Send size={16} /> Send
+            </button>
+          )}
+        </div>
       </form>
       <button className="floating-panel-resize-handle" type="button" aria-label="Resize AI Agent panel" title="Resize panel" {...agentPanel.resizeHandleProps}>
         <Grip size={13} aria-hidden="true" />
@@ -8098,7 +8224,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
         </div>
       </section>
       {fullSheetOpen && (
-        <aside className={`actor-sheet-popout movable-panel actor-tone-${sheetTone}`} role="dialog" aria-labelledby={`actor-full-sheet-title-${props.actor.id}`} style={sheetPanel.style}>
+        <aside className={`actor-sheet-popout movable-panel actor-tone-${sheetTone}`} role="dialog" aria-labelledby={`actor-full-sheet-title-${props.actor.id}`} style={sheetPanel.style} {...sheetPanel.panelProps}>
           <header className="actor-sheet-header floating-panel-header" title="Drag panel" {...sheetPanel.dragHandleProps}>
             <Hand className="floating-panel-drag-icon" size={14} aria-hidden="true" />
             <div className="actor-sheet-title">
@@ -8600,7 +8726,8 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
       )}
       <details className="operator-section actor-detail-disclosure actor-token-editor">
         <summary>Token settings</summary>
-        <div className="actor-detail-body">
+      </details>
+      <div className="operator-section actor-detail-body actor-token-editor-body">
       <div className="metric-row">
         <span>Token</span>
         <strong>{props.token?.name ?? "Unlinked"}</strong>
@@ -8897,10 +9024,10 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
         </>
       )}
         </div>
-      </details>
       <details className="operator-section actor-detail-disclosure">
         <summary>Actor details</summary>
-        <div className="actor-detail-body">
+      </details>
+      <div className="operator-section actor-detail-body">
       <div className="metric-row">
         <span>HP</span>
         <strong>
@@ -9020,7 +9147,6 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
         </div>
       ))}
         </div>
-      </details>
       {sheetView === "compendium" && (
       <section className="operator-section compendium-browser" aria-label="Actor compendium browser">
         <div className="operator-heading">

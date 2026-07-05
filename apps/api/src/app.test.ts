@@ -23624,9 +23624,99 @@ registerCommand("/state", (input) => {
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("include the scene/background update in the same proposal") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("include the token image update and matching actor image update") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("use draft_actor_token_roster with generateArt enabled") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("create missing actor/token records") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("place existing relevant tokens") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("attached reference image") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("parallel independent image-generation tool calls") });
     expect(provider.requests[0]!.signal).toBeInstanceOf(AbortSignal);
     expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["read_board_state", "capture_board_view", "apply_approved_proposal"]));
+    await app.close();
+  });
+
+  it("passes the selected agent panel reference image into generated map, token, and roster art", async () => {
+    class ReferenceToolProvider implements AiProvider {
+      id = "reference-tool-ai";
+      label = "Reference Tool AI";
+      executesToolsInTurn = true;
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        const executeTool = input.executeTool!;
+        yield { type: "tool.started", toolName: "generate_map_asset", input: { prompt: "Turn the sketch into a moonlit clearing map.", name: "Reference Map", sceneId: "scn_vault_entry", outputFormat: "png" } };
+        yield { type: "tool.completed", toolName: "generate_map_asset", output: await executeTool("generate_map_asset", { prompt: "Turn the sketch into a moonlit clearing map.", name: "Reference Map", sceneId: "scn_vault_entry", outputFormat: "png" }) };
+        yield { type: "tool.started", toolName: "generate_token_asset", input: { prompt: "Create a cohesive fighter token.", name: "Reference Token", tokenId: "tok_valen", outputFormat: "png" } };
+        yield { type: "tool.completed", toolName: "generate_token_asset", output: await executeTool("generate_token_asset", { prompt: "Create a cohesive fighter token.", name: "Reference Token", tokenId: "tok_valen", outputFormat: "png" }) };
+        yield {
+          type: "tool.started",
+          toolName: "draft_actor_token_roster",
+          input: {
+            title: "Reference Cohesive NPC",
+            sceneId: "scn_vault_entry",
+            actors: [{ ref: "npc_reference", name: "Reference Scout", systemId: "dnd-5e-srd", type: "npc", token: { centerX: 150, centerY: 150 } }]
+          }
+        };
+        yield {
+          type: "tool.completed",
+          toolName: "draft_actor_token_roster",
+          output: await executeTool("draft_actor_token_roster", {
+            title: "Reference Cohesive NPC",
+            sceneId: "scn_vault_entry",
+            actors: [{ ref: "npc_reference", name: "Reference Scout", systemId: "dnd-5e-srd", type: "npc", token: { centerX: 150, centerY: 150 } }]
+          })
+        };
+        yield { type: "message.completed", content: "Generated cohesive art from the reference." };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    store.state.assets.push(
+      createTimestamped("asset", {
+        id: "asset_ai_reference_upload",
+        campaignId: "camp_demo",
+        name: "Uploaded Sketch Reference",
+        url: "/api/v1/assets/asset_ai_reference_upload/blob",
+        mimeType: "image/png",
+        sizeBytes: 4096,
+        checksum: "sha256:reference",
+        folder: "ai/references",
+        tags: ["ai", "reference"],
+        storage: { provider: "local", key: "camp_demo/asset_ai_reference_upload.png" },
+        lifecycle: { status: "active", expiresAt: "2099-01-01T00:00:00.000Z" },
+        security: { status: "clean", scanner: "builtin-asset-scanner", scannedAt: "2026-05-07T00:00:00.000Z", findings: [] }
+      })
+    );
+    const generatedImageInputs: ImageAssetGenerationInput[] = [];
+    const imageAssetGenerator: ImageAssetGenerator = {
+      id: "reference-image-generator",
+      label: "Reference Image Generator",
+      async generate(input) {
+        generatedImageInputs.push(input);
+        return {
+          body: tinyPng,
+          mimeType: `image/${input.outputFormat ?? "png"}`,
+          provider: "test-reference",
+          sourcePrompt: input.prompt
+        };
+      }
+    };
+    const app = await buildApp({ store, aiProvider: new ReferenceToolProvider(), assetStorage: new MemoryAssetStorage("reference-assets"), imageAssetGenerator });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: {
+        prompt: "Use my uploaded sketch as the style and layout reference.",
+        surface: "agent_panel",
+        selectedSceneId: "scn_vault_entry",
+        selectedTokenIds: ["tok_valen"],
+        selectedAssetId: "asset_ai_reference_upload"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(generatedImageInputs).toHaveLength(3);
+    expect(generatedImageInputs.map((input) => input.kind)).toEqual(["map", "token", "token"]);
+    expect(generatedImageInputs.every((input) => input.sourceImageUrl?.includes("/api/v1/assets/asset_ai_reference_upload/blob"))).toBe(true);
+    expect(generatedImageInputs.every((input) => input.sourceImageMimeType === "image/png")).toBe(true);
     await app.close();
   });
 
@@ -24691,6 +24781,62 @@ registerCommand("/state", (input) => {
     } finally {
       await app.close();
       restoreEnv(previousEnv);
+    }
+  });
+
+  it("marks agent panel threads failed when finalization throws after provider completion", async () => {
+    class CompletingProvider implements AiProvider {
+      id = "completion-ai";
+      label = "Completion AI";
+
+      constructor(private readonly beforeComplete: () => void) {}
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.beforeComplete();
+        yield { type: "message.completed", content: "Response before finalization failure" };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({
+      store,
+      aiProvider: new CompletingProvider(() => {
+        const chat = store.state.chat;
+        store.state.chat = Object.assign([...chat], {
+          push(): number {
+            throw new Error("chat persistence failed");
+          }
+        });
+      })
+    });
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders,
+        payload: {
+          prompt: "Finalize this agent thread",
+          surface: "agent_panel"
+        }
+      });
+
+      expect(response.statusCode).toBe(500);
+      expect(response.json()).toMatchObject({
+        error: "ai_turn_failed",
+        message: "chat persistence failed",
+        thread: {
+          status: "failed",
+          providerError: "chat persistence failed"
+        }
+      });
+      expect(store.state.aiThreads).toHaveLength(1);
+      expect(store.state.aiThreads[0]).toMatchObject({
+        status: "failed",
+        providerError: "chat persistence failed"
+      });
+    } finally {
+      await app.close();
     }
   });
 
