@@ -11844,3 +11844,17 @@ a:focus-visible {
   min-height: 0;
   overflow-y: auto;
 }
+
+/* -------------------------------------------------------------------------
+   Workspace mode accessibility: the active rail button needs an OPAQUE dark
+   background — translucent accent fills read as solid gold to contrast
+   checkers (and to users on bright map backdrops) — plus light text.
+   ------------------------------------------------------------------------- */
+.rail .workspace-mode-switcher .ghost-button.active,
+.rail .workspace-mode-switcher .ghost-button.active svg {
+  color: var(--paper);
+}
+
+.rail .workspace-mode-switcher .ghost-button.active {
+  background: var(--surface-3);
+}

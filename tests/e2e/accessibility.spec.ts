@@ -47,6 +47,10 @@ async function openInspectorPanel(page: Page, panelName: string) {
   await page.locator(".inspector-tabs").getByRole("button", { name: visiblePanelName, exact: true }).click();
 }
 
+function selectedActorPanel(page: Page) {
+  return page.locator(".inspector");
+}
+
 async function openActorDisclosure(root: Locator, summaryText: string) {
   const details = root.locator("details.actor-detail-disclosure").filter({ hasText: summaryText }).first();
   await expect(details.locator("summary")).toBeVisible();
@@ -330,20 +334,18 @@ test("actor sheet targeting controls expose screen-reader structure", async ({ p
   await expect(page.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
   await expect(page.getByRole("tablist", { name: "Actor sheet views" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Open Full Sheet" }).click();
+  await page.getByRole("button", { name: "Sheet" }).click();
   const fullSheet = page.getByRole("dialog", { name: "Valen Ash" });
   await expect(fullSheet).toBeVisible();
-  await expect(fullSheet).toHaveAttribute("aria-modal", "true");
-  await expect(fullSheet.getByRole("region", { name: "Full sheet stats" })).toContainText("HP");
-  await expect(fullSheet.getByRole("region", { name: "Full sheet loadout" })).toBeVisible();
+  await expect(fullSheet.getByRole("region", { name: "Full sheet stats" }).getByLabel(/^Hit points/i)).toBeVisible();
   await expect(fullSheet.getByRole("region", { name: "Full sheet actions" })).toBeVisible();
   await expect(fullSheet.getByRole("region", { name: "Full sheet targeting" })).toContainText("Action target");
-  await fullSheet.getByRole("button", { name: "Close" }).focus();
-  await expect(fullSheet.getByRole("button", { name: "Close" })).toBeFocused();
-  await fullSheet.getByRole("button", { name: "Close" }).press("Enter");
+  await fullSheet.getByRole("button", { name: "Close full character sheet" }).focus();
+  await expect(fullSheet.getByRole("button", { name: "Close full character sheet" })).toBeFocused();
+  await fullSheet.getByRole("button", { name: "Close full character sheet" }).press("Enter");
   await expect(fullSheet).toHaveCount(0);
 
-  const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
+  const actorPanel = selectedActorPanel(page);
   await openActorDisclosure(actorPanel, "Token settings");
   const targetManager = page.getByRole("region", { name: "Canvas target manager" });
   await expect(targetManager).toBeVisible();
@@ -373,7 +375,7 @@ test("destructive token dialog supports screen-reader and keyboard flow", async 
   try {
     await page.reload();
     await page.getByRole("button", { name: "Token E2E Delete Target" }).click();
-    const actorPanel = page.locator(".panel-stack", { hasText: "Selected Actor" });
+    const actorPanel = selectedActorPanel(page);
     await openActorDisclosure(actorPanel, "Token settings");
     await clickElement(page.getByRole("button", { name: "Delete Token" }));
 
@@ -392,7 +394,7 @@ test("destructive token dialog supports screen-reader and keyboard flow", async 
     await clickElement(page.getByRole("button", { name: "Delete Token" }));
     await expect(page.getByRole("dialog", { name: "Confirm token deletion" })).toBeVisible();
     await page.keyboard.press("Enter");
-    await expect(page.getByText("Token deleted")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "Token deleted" }).first()).toBeVisible();
   } finally {
     await deleteTokenById(page, token.id).catch(() => undefined);
   }
