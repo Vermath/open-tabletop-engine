@@ -599,7 +599,7 @@ function useMovablePanel(initialPosition: FloatingPanelPosition | (() => Floatin
   };
 
   const toggleCollapsed = (event: ReactMouseEvent<HTMLElement>) => {
-    const target = event.target instanceof HTMLElement ? event.target : null;
+    const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(floatingPanelInteractiveSelector)) return;
     if (dragRef.current || resizeRef.current) return;
     setCollapsed((current) => !current);
@@ -617,7 +617,7 @@ function useMovablePanel(initialPosition: FloatingPanelPosition | (() => Floatin
       onDoubleClick: toggleCollapsed,
       onPointerDown(event: ReactPointerEvent<HTMLElement>) {
         if (event.button !== 0) return;
-        const target = event.target instanceof HTMLElement ? event.target : null;
+        const target = event.target instanceof Element ? event.target : null;
         if (target?.closest(floatingPanelInteractiveSelector)) return;
         const panel = event.currentTarget.closest<HTMLElement>(".movable-panel");
         if (!panel) return;

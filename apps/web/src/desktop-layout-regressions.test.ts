@@ -341,6 +341,7 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('"--floating-panel-width": `${size.width}px`,');
     expect(appSource).toContain('"--floating-panel-height": `${size.height}px`');
     expect(appSource).toContain('"data-floating-panel-collapsed": collapsed ? "true" : undefined');
+    expect(appSource.match(/event\.target instanceof Element/g)?.length).toBeGreaterThanOrEqual(2);
     expect(appSource).toContain("onDoubleClick: toggleCollapsed");
     expect(appSource).toContain("resizeHandleProps:");
     expect(appSource).toContain('aria-label="Close fog and vision panel"');
