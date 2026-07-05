@@ -38,6 +38,7 @@ export function ContentImportPanel(props: {
   setBody(value: string): void;
   status: string;
   onPreview(entities?: ContentImportDraftEntity[], source?: ContentImportPreviewSource): Promise<void>;
+  onAnalyzePdf(file: File): Promise<void>;
   onApply(batch: ContentImportBatch, selectedEntityIds?: string[]): Promise<void>;
   onRollback(batch: ContentImportBatch): Promise<void>;
   onDelete(batch: ContentImportBatch): Promise<void>;
@@ -46,7 +47,7 @@ export function ContentImportPanel(props: {
   canUpdateScene: boolean;
   canCreateToken: boolean;
 }) {
-  const kinds: ContentImportEntityKind[] = ["journal", "handout", "actor", "item"];
+  const kinds: ContentImportEntityKind[] = ["journal", "handout", "actor", "item", "encounter"];
   const [assetFolderFilter, setAssetFolderFilter] = useState("all");
   const [assetLifecycleFilter, setAssetLifecycleFilter] = useState<AssetLifecycleStatus | "all">("all");
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
@@ -56,6 +57,7 @@ export function ContentImportPanel(props: {
   const [adapterSourceName, setAdapterSourceName] = useState("");
   const [adapterSourceUrl, setAdapterSourceUrl] = useState("");
   const [adapterConfig, setAdapterConfig] = useState("columns=name,body;delimiter=,;kind=item");
+  const [pdfFile, setPdfFile] = useState<File | undefined>();
   const assetFolderOptions = useMemo(
     () => [...new Set(props.assets.flatMap((asset) => assetFolderPathOptions(asset.folder)))].sort((left, right) => left.localeCompare(right)),
     [props.assets]
@@ -122,6 +124,7 @@ export function ContentImportPanel(props: {
   const isFilteringAssets = Boolean(normalizedSearch) || assetFolderFilter !== "all" || assetLifecycleFilter !== "all";
   const uploadInputId = "asset-library-upload";
   const backgroundInputId = "asset-library-background-upload";
+  const pdfInputId = "content-import-pdf-upload";
   const currentDraftEntity = { kind: props.kind, name: props.name.trim(), body: props.body };
   const selectedAdapterPreset = contentImportAdapterPresets.find((preset) => preset.id === adapterPresetId) ?? contentImportAdapterPresets[0]!;
   const adapterEntities = contentImportAdapterEntities(adapterPresetId, props.body, currentDraftEntity, adapterConfig);
@@ -578,6 +581,35 @@ export function ContentImportPanel(props: {
             <span>License: {selectedAdapterPreset.license.name}</span>
             <span>Usage: {titleCaseLabel(selectedAdapterPreset.license.usage)}</span>
             <span>{formatNumber(previewEntities.length)} generated entities</span>
+          </div>
+          <div className="admin-actions">
+            <input
+              id={pdfInputId}
+              type="file"
+              accept="application/pdf"
+              hidden
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                if (file) setPdfFile(file);
+                event.currentTarget.value = "";
+              }}
+            />
+            <button className="ghost-button" type="button" disabled={!props.canManage} title={props.canManage ? "Choose a PDF for Codex analysis" : "Requires campaign.update"} onClick={() => document.getElementById(pdfInputId)?.click()}>
+              <FileText size={16} /> Codex PDF
+            </button>
+            <button
+              className="ghost-button"
+              type="button"
+              disabled={!props.canManage || !pdfFile}
+              title={pdfFile ? `Analyze ${pdfFile.name}` : "Choose a PDF first"}
+              onClick={() => {
+                if (!pdfFile) return;
+                props.onAnalyzePdf(pdfFile).then(() => setPdfFile(undefined)).catch(console.error);
+              }}
+            >
+              <Upload size={16} /> Analyze PDF
+            </button>
+            {pdfFile && <span className="admin-inline-status">{pdfFile.name}</span>}
           </div>
         </section>
         <div className="admin-form-grid">

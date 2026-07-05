@@ -3922,6 +3922,56 @@ describe("api", () => {
     await app.close();
   });
 
+  it("rejects realtime subscriptions outside the session active organization", async () => {
+    type RealtimeTestSocket = {
+      onmessage: ((event: { data: unknown }) => void) | null;
+      onerror: ((event: unknown) => void) | null;
+      onclose: (() => void) | null;
+      close(): void;
+    };
+    type RealtimeEventMessage = { error?: string };
+    const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string, protocols?: string[]) => RealtimeTestSocket }).WebSocket;
+    if (!maybeWebSocket) throw new Error("WebSocket is not available in this Node runtime");
+    const TestWebSocket = maybeWebSocket;
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store });
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const address = app.server.address() as AddressInfo;
+    const credentials = seedDemoPassword(store, "usr_demo_gm");
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: credentials
+    });
+    expect(login.statusCode).toBe(200);
+    const headers = { authorization: `Bearer ${login.json().token as string}` };
+    const createdWorkspace = await app.inject({
+      method: "POST",
+      url: "/api/v1/organizations",
+      headers,
+      payload: { name: "Realtime Other Workspace" }
+    });
+    expect(createdWorkspace.statusCode).toBe(201);
+
+    const socket = new TestWebSocket(`ws://127.0.0.1:${address.port}/api/v1/realtime?campaignId=camp_demo`, ["otte.v1", `otte.auth.${login.json().token as string}`]);
+    const unauthorized = await new Promise<RealtimeEventMessage>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Timed out waiting for realtime active-organization rejection")), 1000);
+      socket.onmessage = (event) => {
+        clearTimeout(timer);
+        resolve(JSON.parse(String(event.data)) as RealtimeEventMessage);
+      };
+      socket.onerror = (event) => {
+        clearTimeout(timer);
+        reject(new Error(`Realtime socket error for active-organization test: ${String(event)}`));
+      };
+    });
+
+    expect(unauthorized).toEqual({ error: "unauthorized" });
+    socket.close();
+    await app.close();
+  });
+
   it("bootstraps the first owner from an empty deployment", async () => {
     const app = await buildApp({ store: new MemoryStateStore(emptyState()) });
 
@@ -8811,6 +8861,7 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/proposals/prop_auth_matrix/apply" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/content-imports" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/content-imports/preview", payload: { sourceType: "json", records: [] } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/content-imports/pdf/ai", headers: { "content-type": "application/pdf" }, payload: Buffer.alloc(0) },
       { method: "GET", url: "/api/v1/content-imports/imp_auth_matrix" },
       { method: "POST", url: "/api/v1/content-imports/imp_auth_matrix/apply", payload: { selectedEntityIds: [] } },
       { method: "POST", url: "/api/v1/content-imports/imp_auth_matrix/rollback" },
@@ -9342,6 +9393,7 @@ describe("api", () => {
       ["POST /api/v1/combats/{combatId}/initiative/roll-npcs", 400],
       ["POST /api/v1/proposals/{proposalId}/apply", 409],
       ["POST /api/v1/campaigns/{campaignId}/content-imports/preview", 400],
+      ["POST /api/v1/campaigns/{campaignId}/content-imports/pdf/ai", 400],
       ["POST /api/v1/content-imports/{importId}/apply", 400],
       ["POST /api/v1/content-imports/{importId}/rollback", 409],
       ["POST /api/v1/campaigns/{campaignId}/ai/evaluations", 400],
@@ -23312,6 +23364,20 @@ registerCommand("/state", (input) => {
       });
       expect(playerMarketplaceSync.statusCode).toBe(403);
 
+      const previousAdminUserIds = process.env.OTTE_ADMIN_USER_IDS;
+      try {
+        delete process.env.OTTE_ADMIN_USER_IDS;
+        const campaignOnlyMarketplaceSync = await app.inject({
+          method: "POST",
+          url: "/api/v1/plugins/registry/sync",
+          headers: authHeaders,
+          payload: { campaignId: "camp_demo", registryUrl }
+        });
+        expect(campaignOnlyMarketplaceSync.statusCode).toBe(403);
+      } finally {
+        process.env.OTTE_ADMIN_USER_IDS = previousAdminUserIds;
+      }
+
       const marketplaceSync = await app.inject({
         method: "POST",
         url: "/api/v1/plugins/registry/sync",
@@ -23488,7 +23554,7 @@ registerCommand("/state", (input) => {
     expect(playerContext.publicSummary).toContain("Public Rumor");
     expect(playerContext.publicSummary).not.toContain("Session Hook");
     expect(playerContext.gmSecrets).toEqual([]);
-    expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
     expect(store.state.chat.find((message) => message.body === "Captured response 1")?.visibility).toBe("public");
 
     const gmThread = await app.inject({
@@ -24091,7 +24157,8 @@ registerCommand("/state", (input) => {
       const chat = await mcp(30, "send_chat_message", { body: "MCP direct chat control", visibility: "public" });
       expect(chat.output).toMatchObject({ messageId: expect.any(String), visibility: "public" });
       const targeted = await mcp(31, "target_token", { tokenId: token.id, targeted: true });
-      expect(targeted.output).toMatchObject({ tokenId: token.id, targeted: true });
+      expect(targeted.output).toMatchObject({ proposalId: expect.any(String), tokenId: token.id, targeted: true });
+      expect(store.state.tokens.find((item) => item.id === token.id)?.targetedByUserIds).toEqual([]);
 
       const diceMacroDraft = await mcp(32, "draft_dice_macro", { action: "create", name: "MCP Initiative", formula: "1d20+2", visibility: "public" });
       expect(diceMacroDraft.output).toMatchObject({ proposalId: expect.any(String), changeCount: 1 });
@@ -25824,13 +25891,13 @@ registerCommand("/state", (input) => {
         ],
         toolCatalog: expect.objectContaining({
           toolCount: 44,
-          permissionSafeToolCount: 28,
-          proposalGatedToolCount: 16,
+          permissionSafeToolCount: 27,
+          proposalGatedToolCount: 17,
           failClosedToolCount: 0,
           actionRequired: false,
           actionReasons: [],
           remediation: "All provider-visible AI tools are either proposal-gated or explicitly permission-safe.",
-          permissionSafeAllowlist: ["apply_approved_proposal", "capture_board_view", "get_proposal", "list_proposals", "read_account", "read_actor", "read_ai_activity", "read_asset", "read_board_state", "read_campaign", "read_chat", "read_combat", "read_compendium", "read_content_imports", "read_dice_macro", "read_encounter", "read_fog_preset", "read_journal", "read_plugins", "read_roll", "read_scene", "read_systems", "read_token", "read_workspace", "roll_dice", "search_memory", "send_chat_message", "target_token"],
+          permissionSafeAllowlist: ["apply_approved_proposal", "capture_board_view", "get_proposal", "list_proposals", "read_account", "read_actor", "read_ai_activity", "read_asset", "read_board_state", "read_campaign", "read_chat", "read_combat", "read_compendium", "read_content_imports", "read_dice_macro", "read_encounter", "read_fog_preset", "read_journal", "read_plugins", "read_roll", "read_scene", "read_systems", "read_token", "read_workspace", "roll_dice", "search_memory", "send_chat_message"],
           tools: expect.arrayContaining([
             expect.objectContaining({
               name: "draft_scene",
@@ -27166,6 +27233,75 @@ registerCommand("/state", (input) => {
     await playerApp.close();
   });
 
+  it("auto-accepts AI proposal tools through the proposal apply path when requested", async () => {
+    class AutoApplyProvider implements AiProvider {
+      id = "auto-apply-ai";
+      label = "Auto Apply AI";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield {
+          type: "tool.started",
+          toolName: "create_proposal",
+          input: {
+            title: "Auto Apply Journal Proposal",
+            summary: "Create a journal note and apply it automatically.",
+            changes: [
+              {
+                entity: "journal",
+                action: "create",
+                data: {
+                  campaignId: "camp_demo",
+                  title: "Auto Applied Note",
+                  body: "The provider proposed this note and auto mode applied it.",
+                  visibility: "gm_only",
+                  visibleToUserIds: [],
+                  visibleToActorIds: [],
+                  tags: ["ai", "auto"],
+                  createdBy: "usr_demo_gm",
+                  updatedBy: "usr_demo_gm"
+                }
+              }
+            ]
+          }
+        };
+        yield {
+          type: "message.completed",
+          content: "Auto proposal requested"
+        };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new AutoApplyProvider() });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Create and auto apply a journal proposal", approvalMode: "auto" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const proposal = store.state.proposals.find((item) => item.title === "Auto Apply Journal Proposal");
+    expect(proposal).toEqual(expect.objectContaining({ status: "applied", approvedByUserId: "usr_demo_gm", createdByType: "ai" }));
+    expect(proposal?.history).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: "created", actorType: "ai" }),
+        expect.objectContaining({ action: "approved", actorType: "user", actorUserId: "usr_demo_gm" }),
+        expect.objectContaining({ action: "applied", actorType: "user", actorUserId: "usr_demo_gm" })
+      ])
+    );
+    expect(store.state.journals).toEqual(expect.arrayContaining([expect.objectContaining({ title: "Auto Applied Note", body: "The provider proposed this note and auto mode applied it." })]));
+    expect(response.json().events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "proposal.created", proposalId: proposal?.id }),
+        expect.objectContaining({ type: "proposal.applied", proposalId: proposal?.id })
+      ])
+    );
+
+    await app.close();
+  });
+
   it("resolves locally executed ai tool calls in place and keeps retry input", async () => {
     class LedgerProvider implements AiProvider {
       id = "tool-ledger-ai";
@@ -27996,7 +28132,7 @@ registerCommand("/state", (input) => {
       payload: { prompt: "Try expanded tools as a player." }
     });
     expect(playerThread.statusCode).toBe(200);
-    expect(playerProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    expect(playerProvider.requests[0]!.tools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
     const playerCompleted = playerThread.json().events.filter((event: { type: string }) => event.type === "tool.completed");
     expect(playerCompleted).toEqual(
       expect.arrayContaining([
@@ -28155,7 +28291,7 @@ registerCommand("/state", (input) => {
       }
     }
 
-    const permissionSafeTools = new Set(["list_proposals", "get_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "target_token", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+    const permissionSafeTools = new Set(["list_proposals", "get_proposal", "apply_approved_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_fog_preset", "read_systems", "read_plugins", "read_content_imports", "send_chat_message", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_combat", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
     const provider = new ToolPolicyProvider();
     const store = new MemoryStateStore();
     store.state.users.push(
@@ -28240,7 +28376,7 @@ registerCommand("/state", (input) => {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("assistant_gm").includes(permission))).toBe(true);
       }
 
-      expect(playerTools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "target_token", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
+      expect(playerTools.map((tool) => tool.name)).toEqual(["list_proposals", "get_proposal", "read_account", "read_workspace", "read_campaign", "read_ai_activity", "read_dice_macro", "read_systems", "send_chat_message", "search_memory", "read_chat", "read_roll", "read_journal", "read_board_state", "capture_board_view", "read_scene", "read_token", "read_asset", "read_encounter", "read_actor", "roll_dice", "read_compendium"]);
       for (const tool of playerTools) {
         expect(tool.requiredPermissions.every((permission) => permissionsForRole("player").includes(permission))).toBe(true);
         expect(permissionSafeTools.has(tool.name)).toBe(true);

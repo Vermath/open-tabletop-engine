@@ -131,6 +131,13 @@ describe("dice engine", () => {
     expect(probabilityRange("d%")).toEqual({ min: 1, max: 100 });
   });
 
+  it("accounts for rerolled faces and rejects unbounded exploding ranges", () => {
+    expect(probabilityRange("1d6r1")).toEqual({ min: 2, max: 6 });
+    expect(probabilityRange("1d6r6")).toEqual({ min: 1, max: 5 });
+    expect(probabilityRange("2d6r1-1d4r4")).toEqual({ min: 1, max: 11 });
+    expect(() => probabilityRange("1d6!")).toThrow("Probability range is unbounded for exploding dice");
+  });
+
   it("defaults keep-high without a count to one die", () => {
     const result = rollFormula("2d20kh", { rng: sequenceRng([0.05, 0.95]) });
 

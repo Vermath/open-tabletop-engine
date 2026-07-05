@@ -19,6 +19,7 @@ Thumbs.db
 storage/
 uploads/
 *.tsbuildinfo
+apps/desktop/release/
 
 .vercel
 

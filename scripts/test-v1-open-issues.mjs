@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const repoRoot = process.cwd();
@@ -9,6 +11,7 @@ runPassesWithUnlabeledTrackingIssue();
 runFailsWithP0Issue();
 runFailsWithPriorityP1Issue();
 runRejectsInvalidJsonShape();
+runUsesExpandedGitHubIssueLimit();
 
 console.log("v1 open issue audit tests passed.");
 
@@ -69,6 +72,32 @@ function runRejectsInvalidJsonShape() {
   });
   assert(result.status === 1, "non-array issue JSON should fail");
   assert(result.stderr.includes("Open issue audit input must be a JSON array."), "invalid JSON shape should be reported");
+}
+
+function runUsesExpandedGitHubIssueLimit() {
+  const root = mkdtempSync(join(tmpdir(), "otte-gh-issues-"));
+  const argsPath = join(root, "gh-args.json");
+  const fakeGh = join(root, "fake-gh.mjs");
+  writeFileSync(fakeGh, `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));\nconsole.log("[]");\n`);
+  try {
+    const result = spawnSync(process.execPath, [checker], {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        OTTE_OPEN_ISSUES_JSON: undefined,
+        OTTE_OPEN_ISSUES_JSON_FILE: undefined,
+        OTTE_GH_BIN: process.execPath,
+        OTTE_GH_BIN_ARGS_JSON: JSON.stringify([fakeGh])
+      },
+      encoding: "utf8"
+    });
+    assert(result.status === 0, "live gh issue query should pass with no open issues");
+    const args = JSON.parse(readFileSync(argsPath, "utf8"));
+    assert(args.includes("--limit"), "gh issue query should include an explicit limit");
+    assert(args[args.indexOf("--limit") + 1] === "1000", "gh issue query should fetch beyond the first 100 issues");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 function runChecker(issues) {

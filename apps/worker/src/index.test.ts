@@ -26,7 +26,7 @@ describe("worker job runner", () => {
     });
   });
 
-  it("runs AI memory extraction jobs with x-user-id fallback auth", async () => {
+  it("runs AI memory extraction jobs with bearer auth", async () => {
     const calls: Array<{ url: string | URL | Request; init?: RequestInit }> = [];
     const result = await runWorkerJob(
       {
@@ -36,7 +36,7 @@ describe("worker job runner", () => {
       },
       {
         apiBaseUrl: "http://api.test",
-        userId: "usr_demo_gm",
+        sessionToken: "ots_worker",
         fetch: async (url, init) => {
           calls.push({ url, init });
           return new Response(JSON.stringify({ memory: { text: "The sapphire lens opens the vault." } }), { status: 200 });
@@ -46,9 +46,32 @@ describe("worker job runner", () => {
 
     expect(calls[0]!.url).toBe("http://api.test/api/v1/campaigns/camp_demo/ai/memory/extract");
     expect(calls[0]!.init!.method).toBe("POST");
-    expect(new Headers(calls[0]!.init!.headers).get("x-user-id")).toBe("usr_demo_gm");
+    expect(new Headers(calls[0]!.init!.headers).get("authorization")).toBe("Bearer ots_worker");
     expect(JSON.parse(calls[0]!.init!.body as string)).toEqual({ sourceText: "The sapphire lens opens the vault." });
     expect(result.output).toEqual({ memory: { text: "The sapphire lens opens the vault." } });
+  });
+
+  it("rejects x-user-id fallback auth before dispatching API requests", async () => {
+    const calls: Array<{ url: string | URL | Request; init?: RequestInit }> = [];
+
+    await expect(
+      runWorkerJob(
+        {
+          id: "job_memory",
+          type: "ai.memory.extract",
+          payload: { campaignId: "camp_demo", sourceText: "The sapphire lens opens the vault." }
+        },
+        {
+          apiBaseUrl: "http://api.test",
+          userId: "usr_demo_gm",
+          fetch: async (url, init) => {
+            calls.push({ url, init });
+            return new Response(JSON.stringify({ ok: true }), { status: 200 });
+          }
+        }
+      )
+    ).rejects.toThrow("Worker API session token is required");
+    expect(calls).toHaveLength(0);
   });
 
   it("runs asset storage migration and cleanup jobs through admin API routes", async () => {
@@ -146,11 +169,25 @@ describe("worker job runner", () => {
         { id: "job_recap", type: "ai.session.recap", payload: { campaignId: "camp_demo" } },
         {
           apiBaseUrl: "http://api.test",
-          userId: "usr_demo_player",
+          sessionToken: "ots_player",
           fetch: async () => new Response(JSON.stringify({ error: "forbidden" }), { status: 403 })
         }
       )
     ).rejects.toThrow("Worker API request failed with 403 POST /api/v1/campaigns/camp_demo/ai/session-recap");
+  });
+
+  it("times out stalled API requests", async () => {
+    await expect(
+      runWorkerJob(
+        { id: "job_recap", type: "ai.session.recap", payload: { campaignId: "camp_demo" } },
+        {
+          apiBaseUrl: "http://api.test",
+          sessionToken: "ots_worker",
+          requestTimeoutMs: 5,
+          fetch: async () => new Promise<Response>(() => undefined)
+        }
+      )
+    ).rejects.toThrow("Worker API request timed out after 5ms");
   });
 
   it("leases the next queued admin job and records success", async () => {

@@ -1,5 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { Script, createContext, type Context } from "node:vm";
 import { Worker } from "node:worker_threads";
@@ -313,23 +313,31 @@ export class PluginRuntimeRegistry {
     if (entry.checksum && entry.checksum !== packageChecksum) throw new PluginPackageError(`Invalid plugin package checksum: ${packageId}`, [`Expected ${entry.checksum} but received ${packageChecksum}`]);
     const packageDocument = JSON.parse(stripBom(packageText)) as unknown;
     const files = normalizeRegistryPackageFiles(packageDocument);
-    writeRegistryPackage(this.pluginRoot, packageId, files, {
+    const metadata = {
       registryUrl: registryUrl.toString(),
       packageUrl: packageUrl.toString(),
       packageChecksum,
       syncedAt: new Date().toISOString()
-    });
-    this.ensureNoRegistryManifestCollision(packageId);
+    };
+    const stagingPackageId = registryStagingPackageId(packageId);
+    try {
+      writeRegistryPackage(this.pluginRoot, stagingPackageId, files, metadata);
+      this.ensureNoRegistryManifestCollision(stagingPackageId, packageId);
+      commitStagedRegistryPackage(this.pluginRoot, stagingPackageId, packageId, metadata);
+    } catch (error) {
+      rmSync(resolvePackageDirectory(this.pluginRoot, stagingPackageId), { recursive: true, force: true });
+      throw error;
+    }
     return this.registerPackage(packageId);
   }
 
-  private ensureNoRegistryManifestCollision(packageId: string): void {
-    const loaded = loadPluginPackage(this.pluginRoot, resolvePackageDirectory(this.pluginRoot, packageId), this.trustPolicy);
+  private ensureNoRegistryManifestCollision(stagedPackageId: string, packageId: string): void {
+    const loaded = loadPluginPackage(this.pluginRoot, resolvePackageDirectory(this.pluginRoot, stagedPackageId), this.trustPolicy);
     if (loaded.error || !loaded.plugin) throw new PluginPackageError(`Invalid plugin package: ${packageId}`, loaded.error?.errors ?? ["Plugin package is invalid"]);
     const versions = this.plugins.get(loaded.plugin.id) ?? [];
     const existing = versions.find((plugin) => plugin.version === loaded.plugin!.version);
     if (!existing) return;
-    if (existing.source.packageId === loaded.plugin.source.packageId && existing.source.checksum === loaded.plugin.source.checksum) return;
+    if (existing.source.packageId === packageId && existing.source.checksum === loaded.plugin.source.checksum) return;
     throw new PluginPackageError(`Refusing to import colliding plugin version: ${packageId}`, [
       `Plugin ${loaded.plugin.id}@${loaded.plugin.version} is already provided by package ${existing.source.packageId}`
     ]);
@@ -894,6 +902,26 @@ function writeRegistryPackage(pluginRoot: string, packageId: string, files: Reco
     writeFileSync(filePath, content);
   }
   writeFileSync(resolve(packagePath, "plugin.registry.json"), JSON.stringify(metadata, null, 2));
+}
+
+function commitStagedRegistryPackage(pluginRoot: string, stagingPackageId: string, packageId: string, metadata: PluginRegistryPackageMetadata): void {
+  const stagingPath = resolve(pluginRoot, stagingPackageId);
+  const packagePath = resolve(pluginRoot, packageId);
+  if (!isPathInside(pluginRoot, stagingPath) || !isPathInside(pluginRoot, packagePath)) throw new PluginPackageError(`Invalid plugin package path: ${packageId}`, ["Plugin package must stay inside the configured plugin root"]);
+  if (existsSync(packagePath)) {
+    const existingMetadata = readPluginRegistryMetadata(pluginRoot, packagePath);
+    if (existingMetadata?.registryUrl !== metadata.registryUrl) {
+      throw new PluginPackageError(`Refusing to overwrite plugin package: ${packageId}`, [
+        existingMetadata?.registryUrl ? "Plugin package was synced from a different registry" : "Plugin package already exists without registry provenance"
+      ]);
+    }
+  }
+  rmSync(packagePath, { recursive: true, force: true });
+  renameSync(stagingPath, packagePath);
+}
+
+function registryStagingPackageId(packageId: string): string {
+  return validateRegistryPackageId(`registry-stage-${process.pid}-${Date.now().toString(36)}-${packageId}`.slice(0, 80));
 }
 
 function readPluginRegistryMetadata(pluginRoot: string, packagePath: string): PluginRegistryPackageMetadata | undefined {

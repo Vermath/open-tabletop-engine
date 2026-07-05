@@ -19,6 +19,7 @@ export interface WorkerOptions {
   workerId?: string;
   leaseSeconds?: number;
   heartbeatIntervalMs?: number;
+  requestTimeoutMs?: number;
   signal?: AbortSignal;
   fetch?: typeof fetch;
 }
@@ -244,11 +245,19 @@ async function dispatchJob(job: WorkerJob, options: WorkerOptions, fetchImpl: ty
 }
 
 async function fetchJson(fetchImpl: typeof fetch, options: WorkerOptions, method: string, path: string, body?: unknown): Promise<unknown> {
-  const response = await fetchImpl(`${options.apiBaseUrl.replace(/\/+$/, "")}${path}`, {
+  const timeoutMs = Math.max(1, options.requestTimeoutMs ?? 30_000);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<Response>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(new Error(`Worker API request timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+  const requestPromise = fetchImpl(`${options.apiBaseUrl.replace(/\/+$/, "")}${path}`, {
     method,
     headers: workerHeaders(options, body !== undefined),
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: options.signal
+  });
+  const response = await Promise.race([requestPromise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
   });
   const text = await response.text();
   const payload = text ? (JSON.parse(text) as unknown) : undefined;
@@ -286,11 +295,8 @@ function cancellationError(abortController: AbortController): Error {
 function workerHeaders(options: WorkerOptions, hasBody: boolean): Headers {
   const headers = new Headers();
   if (hasBody) headers.set("content-type", "application/json");
-  if (options.sessionToken) {
-    headers.set("authorization", `Bearer ${options.sessionToken}`);
-  } else if (options.userId) {
-    headers.set("x-user-id", options.userId);
-  }
+  if (!options.sessionToken) throw new Error("Worker API session token is required");
+  headers.set("authorization", `Bearer ${options.sessionToken}`);
   return headers;
 }
 

@@ -1,5 +1,9 @@
 export const apiVersion = "v1";
 
+function pathPart(value: string): string {
+  return encodeURIComponent(value);
+}
+
 export const routes = {
   health: "/api/v1/health",
   bootstrap: "/api/v1/auth/bootstrap",
@@ -150,8 +154,8 @@ export const routes = {
   systemCompendium: (campaignId: string, systemId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/compendium`,
   systemActorCompendium: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/compendium`,
   systemActorPurchase: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/purchase`,
-  systemActorConditions: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/conditions`,
-  systemActorCondition: (campaignId: string, systemId: string, actorId: string, conditionId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/conditions/${conditionId}`,
+  systemActorConditions: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/conditions`,
+  systemActorCondition: (campaignId: string, systemId: string, actorId: string, conditionId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/systems/${pathPart(systemId)}/actors/${pathPart(actorId)}/conditions/${pathPart(conditionId)}`,
   systemActorAdvancement: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/advancement`,
   systemActorAdvance: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/advance`,
   systemActorRest: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/rest`,
@@ -159,11 +163,11 @@ export const routes = {
   systemActorRoll: (campaignId: string, systemId: string, actorId: string) => `/api/v1/campaigns/${campaignId}/systems/${systemId}/actors/${actorId}/roll`,
   plugins: "/api/v1/plugins",
   pluginRegistrySync: "/api/v1/plugins/registry/sync",
-  campaignPlugins: (campaignId: string) => `/api/v1/campaigns/${campaignId}/plugins`,
-  campaignPlugin: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${campaignId}/plugins/${pluginId}`,
-  pluginStorage: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${campaignId}/plugins/${pluginId}/storage`,
-  pluginStorageEntry: (campaignId: string, pluginId: string, key: string) => `/api/v1/campaigns/${campaignId}/plugins/${pluginId}/storage/${key}`,
-  pluginChatCommand: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${campaignId}/plugins/${pluginId}/chat-command`,
+  campaignPlugins: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/plugins`,
+  campaignPlugin: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}`,
+  pluginStorage: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}/storage`,
+  pluginStorageEntry: (campaignId: string, pluginId: string, key: string) => `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}/storage/${pathPart(key)}`,
+  pluginChatCommand: (campaignId: string, pluginId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/plugins/${pathPart(pluginId)}/chat-command`,
   exportCampaign: (campaignId: string) => `/api/v1/campaigns/${campaignId}/export`,
   dogfoodReportBundle: (campaignId: string) => `/api/v1/campaigns/${campaignId}/dogfood-report-bundle`,
   importCampaign: "/api/v1/import/campaign",
@@ -172,6 +176,7 @@ export const routes = {
   campaignSnapshot: (campaignId: string) => `/api/v1/campaigns/${campaignId}/snapshot`,
   contentImports: (campaignId: string) => `/api/v1/campaigns/${campaignId}/content-imports`,
   contentImportPreview: (campaignId: string) => `/api/v1/campaigns/${campaignId}/content-imports/preview`,
+  contentImportPdfAi: (campaignId: string) => `/api/v1/campaigns/${campaignId}/content-imports/pdf/ai`,
   contentImport: (importId: string) => `/api/v1/content-imports/${importId}`,
   contentImportApply: (importId: string) => `/api/v1/content-imports/${importId}/apply`,
   contentImportRollback: (importId: string) => `/api/v1/content-imports/${importId}/rollback`,
@@ -481,6 +486,7 @@ const endpointSpecs = [
   ["POST", routes.importCampaign],
   ["GET", "/api/v1/campaigns/{campaignId}/content-imports"],
   ["POST", "/api/v1/campaigns/{campaignId}/content-imports/preview"],
+  ["POST", "/api/v1/campaigns/{campaignId}/content-imports/pdf/ai"],
   ["GET", "/api/v1/content-imports/{importId}"],
   ["POST", "/api/v1/content-imports/{importId}/apply"],
   ["POST", "/api/v1/content-imports/{importId}/rollback"],
@@ -644,6 +650,21 @@ function jsonRequestBody(schema: Record<string, unknown>, description?: string):
     required: true,
     ...(description ? { description } : {}),
     content: jsonContent(schema)
+  };
+}
+
+function binaryRequestBody(contentType: string, description: string): OpenApiRequestBody {
+  return {
+    required: true,
+    description,
+    content: {
+      [contentType]: {
+        schema: {
+          type: "string",
+          format: "binary"
+        }
+      }
+    }
   };
 }
 
@@ -3876,7 +3897,7 @@ const componentSchemas = {
     additionalProperties: false,
     required: ["action", "status", "at", "actorType"],
     properties: {
-      action: { type: "string", enum: ["created", "approved", "rejected", "applied"] },
+      action: { type: "string", enum: ["created", "approved", "rejected", "applied", "revised"] },
       status: { type: "string", enum: ["draft", "pending", "approved", "rejected", "applied", "reverted"] },
       previousStatus: { type: "string", enum: ["draft", "pending", "approved", "rejected", "applied", "reverted"] },
       at: stringSchema,
@@ -4088,6 +4109,7 @@ const componentSchemas = {
     properties: {
       prompt: stringSchema,
       surface: { type: "string", enum: ["agent_panel", "ai_studio"] },
+      approvalMode: { type: "string", enum: ["manual", "auto"] },
       model: stringSchema,
       reasoningEffort: { type: "string", enum: ["none", "minimal", "low", "medium", "high", "xhigh"] },
       selectedSceneId: idSchema,
@@ -6277,6 +6299,13 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
     requestBody: jsonRequestBody(schemaRef("ContentImportPreviewRequest")),
     responses: {
       "200": jsonResponse("Previewed content import batch", schemaRef("ContentImportBatch"))
+    }
+  },
+  "POST /api/v1/campaigns/{campaignId}/content-imports/pdf/ai": {
+    requestBody: binaryRequestBody("application/pdf", "PDF file to analyze with the configured AI provider"),
+    responses: {
+      "200": jsonResponse("AI-generated PDF content import preview batch", schemaRef("ContentImportBatch")),
+      "422": jsonResponse("AI analysis did not return importable content", { type: "object", additionalProperties: true })
     }
   },
   "GET /api/v1/content-imports/{importId}": {

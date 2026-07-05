@@ -1,5 +1,7 @@
 # Self-Hosting
 
+For drag-and-drop local hosting without Docker or cloud game hosting, see [Desktop Hosting](./desktop-hosting.md). The desktop app uses local SQLite/assets and the managed relay instead of the Compose stack below.
+
 Run the full local stack:
 
 ```bash
@@ -63,7 +65,7 @@ The worker app can process a single JSON job from stdin against a running API:
 OTTE_API_URL=http://127.0.0.1:4000 OTTE_SESSION_TOKEN=ots_... pnpm --filter @open-tabletop/worker exec tsx src/index.ts < job.json
 ```
 
-Supported worker job types are `campaign.export`, `campaign.import`, `asset.storage.migrate`, `asset.storage.cleanup`, `storage.backup`, `storage.restoreDrill`, `ai.memory.extract`, and `ai.session.recap`. Use `OTTE_SESSION_TOKEN` for bearer-session auth; `OTTE_USER_ID` is available only for local compatibility when the API has explicitly enabled legacy user-header auth. Asset migration, cleanup, SQLite backup, and restore-drill jobs call server-admin API routes, so the bearer session must belong to a user listed in `OTTE_ADMIN_USER_IDS`.
+Supported worker job types are `campaign.export`, `campaign.import`, `asset.storage.migrate`, `asset.storage.cleanup`, `storage.backup`, `storage.restoreDrill`, `ai.memory.extract`, and `ai.session.recap`. Use `OTTE_SESSION_TOKEN` for bearer-session auth; workers do not use `OTTE_USER_ID` fallback auth. Asset migration, cleanup, SQLite backup, and restore-drill jobs call server-admin API routes, so the bearer session must belong to a user listed in `OTTE_ADMIN_USER_IDS`.
 
 Workers can also lease persisted server-admin jobs from the API. Use `OTTE_WORKER_LEASE_ONCE=true` for one maintenance pass, or `OTTE_WORKER_LEASE_POLL=true` for a continuous polling worker. `OTTE_WORKER_ID` identifies the lease holder, `OTTE_WORKER_LEASE_SECONDS` controls lease expiry, `OTTE_WORKER_POLL_INTERVAL_MS` controls idle polling delay, and `OTTE_WORKER_MAX_JOBS` / `OTTE_WORKER_MAX_IDLE_POLLS` can bound a run for maintenance windows or tests:
 

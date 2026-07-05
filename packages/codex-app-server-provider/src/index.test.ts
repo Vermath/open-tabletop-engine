@@ -101,6 +101,80 @@ describe("CodexAppServerWebSocketTransport", () => {
     });
   });
 
+  it("rejects dynamic tool requests outside the OpenTabletop namespace", async () => {
+    let socket: FakeCodexSocket | undefined;
+    let executed = false;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 1000,
+        webSocketFactory: () => {
+          socket = new FakeCodexSocket({
+            toolCallParams: {
+              namespace: "other_namespace",
+              tool: "generate_map_asset",
+              arguments: { prompt: "ember vault tactical battlemap", name: "Ember Vault Map" }
+            }
+          });
+          return socket;
+        }
+      })
+    });
+
+    const events = [];
+    for await (const event of provider.stream({
+      ...baseRequest,
+      executeTool: async () => {
+        executed = true;
+        return { proposalId: "prop_map" };
+      }
+    })) {
+      events.push(event);
+    }
+
+    expect(executed).toBe(false);
+    expect(events.some((event) => event.type === "tool.started")).toBe(false);
+    expect(socket?.toolResponse).toMatchObject({ id: 1, result: { success: false } });
+  });
+
+  it("rejects dynamic tool requests for tools that were not advertised", async () => {
+    let socket: FakeCodexSocket | undefined;
+    let executed = false;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 1000,
+        webSocketFactory: () => {
+          socket = new FakeCodexSocket({
+            toolCallParams: {
+              namespace: "open_tabletop",
+              tool: "delete_campaign",
+              arguments: { campaignId: "camp_demo" }
+            }
+          });
+          return socket;
+        }
+      })
+    });
+
+    const events = [];
+    for await (const event of provider.stream({
+      ...baseRequest,
+      executeTool: async () => {
+        executed = true;
+        return { ok: true };
+      }
+    })) {
+      events.push(event);
+    }
+
+    expect(executed).toBe(false);
+    expect(events.some((event) => event.type === "tool.started")).toBe(false);
+    expect(socket?.toolResponse).toMatchObject({ id: 1, result: { success: false } });
+  });
+
   it("extends the turn timeout after successful in-turn tool implementation progress", async () => {
     let socket: SlowCompletionCodexSocket | undefined;
     const provider = new CodexAppServerProvider({
@@ -291,7 +365,7 @@ class FakeCodexSocket {
   toolResponse: unknown;
   private readonly listeners = new Map<string, Set<(event: { data?: unknown; reason?: string; message?: string }) => void>>();
 
-  constructor(private readonly options: { account?: unknown } = {}) {
+  constructor(private readonly options: { account?: unknown; toolCallParams?: Record<string, unknown> } = {}) {
     queueMicrotask(() => this.emit("open", {}));
   }
 
@@ -346,7 +420,8 @@ class FakeCodexSocket {
           callId: "call_1",
           namespace: "open_tabletop",
           tool: "generate_map_asset",
-          arguments: { prompt: "ember vault tactical battlemap", name: "Ember Vault Map", sceneId: "scn_vault" }
+          arguments: { prompt: "ember vault tactical battlemap", name: "Ember Vault Map", sceneId: "scn_vault" },
+          ...this.options.toolCallParams
         }
       });
     }

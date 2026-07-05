@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -435,6 +435,10 @@ registerCommand("/probe", () => ({ body: "Probe still works", visibility: "publi
       ]);
       expect(registry.find("shared-plugin", "1.0.0")?.source.packageId).toBe("trusted-package");
       expect(registry.executeChatCommand("shared-plugin", { ...sandboxInput(), pluginId: "shared-plugin" }, "1.0.0").body).toBe("Trusted macro");
+      expect(existsSync(join(pluginRoot, "registry-package"))).toBe(false);
+      const reloaded = loadPluginRegistry({ pluginRoot });
+      expect(reloaded.find("shared-plugin", "1.0.0")?.source.packageId).toBe("trusted-package");
+      expect(reloaded.find("shared-plugin", "1.0.0")?.source.packageId).not.toBe("registry-package");
     } finally {
       await new Promise<void>((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
       rmSync(pluginRoot, { recursive: true, force: true });

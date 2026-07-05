@@ -97,6 +97,13 @@ export function contentImportEntityData(kind: ContentImportEntityKind, body: str
       }
     };
   }
+  if (kind === "encounter") {
+    return {
+      summary: trimmedBody,
+      tokenIds: [],
+      difficulty: ""
+    };
+  }
   return {
     body: trimmedBody,
     visibility: "gm_only",
@@ -165,7 +172,7 @@ export function parseCsvImportConfig(config: string): CsvImportConfig {
   const columnsInput = fields.columns || (trimmed.includes("=") ? "name,body" : trimmed) || "name,body";
   const columns = columnsInput.split(columnsInput.includes("|") ? "|" : ",").map((column) => column.trim().toLowerCase()).filter(Boolean);
   const requestedKind = fields.kind;
-  const kind = requestedKind && ["actor", "item", "journal", "handout"].includes(requestedKind) ? (requestedKind as ContentImportEntityKind) : "item";
+  const kind = requestedKind && ["actor", "item", "journal", "handout", "encounter"].includes(requestedKind) ? (requestedKind as ContentImportEntityKind) : "item";
   return {
     columns: columns.length > 0 ? columns : ["name", "body"],
     delimiter,
@@ -184,7 +191,7 @@ export function srdJsonImportEntities(body: string, fallbackKind: ContentImportE
       const record = recordValue(entry);
       const name = stringValue(record.name);
       if (!name) return [];
-      const kind = ["actor", "item", "journal", "handout"].includes(String(record.kind)) ? (record.kind as ContentImportEntityKind) : fallbackKind;
+      const kind = ["actor", "item", "journal", "handout", "encounter"].includes(String(record.kind)) ? (record.kind as ContentImportEntityKind) : fallbackKind;
       const summary = stringValue(record.summary) ?? stringValue(record.body) ?? stringValue(record.description) ?? "Imported SRD entry";
       return [{ kind, name, body: summary }];
     });

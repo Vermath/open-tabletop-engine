@@ -16,6 +16,7 @@ describe("deployment smoke", () => {
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:worktree:check");
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm deployment:smoke");
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm perf:soak");
+    expect(packageJson.scripts["release:smoke"]).toContain("pnpm docs:site:check");
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:issues:test");
     expect(packageJson.scripts["release:smoke"]).toContain("pnpm v1:issues:check");
 
@@ -53,9 +54,11 @@ describe("deployment smoke", () => {
     expect(compose).toContain("OTTE_ASSET_STORAGE: ${OTTE_ASSET_STORAGE:-s3}");
     expect(compose).toContain("OTTE_ALLOW_LEGACY_USER_HEADER: ${OTTE_ALLOW_LEGACY_USER_HEADER:-false}");
     expect(compose).toContain("OTTE_PLUGIN_TRUST_POLICY: ${OTTE_PLUGIN_TRUST_POLICY:-allow_unsigned}");
+    expect(compose).toContain("OTTE_AI_PROVIDER: ${OTTE_AI_PROVIDER:-codex-app-server}");
     expect(compose).toContain("wget -qO- http://127.0.0.1:4000/api/v1/health");
     expect(compose).toContain("condition: service_healthy");
     expect(compose).toContain("OTTE_WORKER_LEASE_POLL: \"true\"");
+    expect(compose).not.toContain("OTTE_USER_ID:");
     expect(compose).toContain("api-storage:");
     expect(compose).toContain("api-uploads:");
 

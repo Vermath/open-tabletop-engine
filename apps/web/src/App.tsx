@@ -4,7 +4,7 @@ import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { acceptInviteSession, ApiError, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
+import { acceptInviteSession, ApiError, apiAnalyzePdfContentImport, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
 import { activeSceneAnnotations, nextAnnotationExpiryMs } from "./annotation-expiry.js";
 import { applyLocalBoardHistoryAction, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange, type BoardTokenPositionChange } from "./board-history.js";
@@ -15,13 +15,14 @@ import { computeTokenMovements, formatGridDistance } from "./board-animation.js"
 import { activeAudioCount, desiredAudioStates } from "./audio-sync.js";
 import { parseChatCommand } from "./chat-command.js";
 import { filterPaletteCommands, movePaletteIndex, paletteDiceFormula, type PaletteCommand } from "./command-palette.js";
+import type { DesktopStatus } from "./desktop-api.js";
 import { addDieToFormula, diceTraySides, rollHighlight, rollTermHighlight } from "./dice-insights.js";
 import { dice3dStorageKey, diceCastPlan, dieShapeName, dieShapePoints, initialDice3dEnabled, newDiceCastRolls, type DiceCastPlan, type Dice3dPreferenceEnvironment } from "./dice-3d.js";
 import { castPhysicsDiceWhenReady, clearPhysicsDice, diceBoxContainerId, diceBoxStatus, physicsDiceLabelDelayMs, primePhysicsDiceStage } from "./dice-box-stage.js";
 import { initialUiTheme, nextUiTheme, uiThemeLabel, uiThemeStorageKey, type UiTheme } from "./ui-theme.js";
 import { applyProposalChangesToSnapshot, proposalReviewActionLabel, proposalReviewSteps, visibleAiAgentProposals } from "./proposal-review.js";
 import { realtimeConnectionIdentity, startRealtimeConnection } from "./realtime-connection.js";
-import { createRealtimeHandlers } from "./realtime-refresh.js";
+import { boardCaptureRequestDecision, createRealtimeHandlers, type BoardCaptureRequestDecision } from "./realtime-refresh.js";
 import { templateConePoints } from "./scene-annotations.js";
 import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
 import { sceneTabWrapClass } from "./scene-tabs.js";
@@ -59,12 +60,9 @@ function audioTrackNameFromFile(file: File): string {
 }
 
 function authenticatedAudioUrl(url: string): string {
-  if (!url.startsWith("/api/v1/assets/")) return url;
-  const token = getSessionToken();
-  const authenticatedUrl = token ? `${url}${url.includes("?") ? "&" : "?"}sessionToken=${encodeURIComponent(token)}` : url;
-  if (/^(https?:|data:|blob:)/.test(authenticatedUrl)) return authenticatedUrl;
-  if (!apiBase) return authenticatedUrl;
-  return `${apiBase.replace(/\/+$/, "")}${authenticatedUrl.startsWith("/") ? authenticatedUrl : `/${authenticatedUrl}`}`;
+  if (/^(https?:|data:|blob:)/.test(url)) return url;
+  if (!apiBase) return url;
+  return `${apiBase.replace(/\/+$/, "")}${url.startsWith("/") ? url : `/${url}`}`;
 }
 
 function apiOfflineStatus(detail?: unknown): string {
@@ -196,15 +194,6 @@ interface CodexAuthStart {
 interface AiAgentCodexAuthPrompt extends CodexAuthStart {
   message: string;
   opened: boolean;
-}
-
-interface BoardCaptureRequestEvent {
-  type: "agent.boardCaptureRequested";
-  payload?: {
-    requestId?: string;
-    sceneId?: string;
-    expiresAt?: string;
-  };
 }
 
 const annotationLayers: SceneAnnotationLayer[] = ["measurement", "effects", "drawings", "notes"];
@@ -810,6 +799,9 @@ export function App() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole>("player");
   const [inviteToken, setInviteToken] = useState("");
+  const [desktopAvailable] = useState(() => Boolean(window.otteDesktop));
+  const [desktopStatus, setDesktopStatus] = useState<DesktopStatus | null>(null);
+  const [desktopShareBusy, setDesktopShareBusy] = useState(false);
   const [joinToken, setJoinToken] = useState(initialInviteToken);
   const [joinEmail, setJoinEmail] = useState("");
   const [joinName, setJoinName] = useState("");
@@ -1504,6 +1496,27 @@ export function App() {
   }, [authMode, publicRegistration]);
 
   useEffect(() => {
+    if (!desktopAvailable || !window.otteDesktop) return;
+    let cancelled = false;
+    const refreshDesktopStatus = async () => {
+      try {
+        const nextStatus = await window.otteDesktop?.getDesktopStatus();
+        if (!cancelled && nextStatus) setDesktopStatus(nextStatus);
+      } catch (error) {
+        if (!cancelled) setStatus(errorMessage(error));
+      }
+    };
+    refreshDesktopStatus().catch((error) => setStatus(errorMessage(error)));
+    const timer = window.setInterval(() => {
+      refreshDesktopStatus().catch((error) => setStatus(errorMessage(error)));
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [desktopAvailable]);
+
+  useEffect(() => {
     if (!realtimeConnectionKey) return;
     const realtimeHandlers = createRealtimeHandlers({
       refresh: () => realtimeRefreshRef.current(),
@@ -2096,6 +2109,47 @@ export function App() {
     setStatus("Invite created");
   }
 
+  async function startDesktopInternetShare() {
+    if (!window.otteDesktop) return;
+    setDesktopShareBusy(true);
+    try {
+      const nextStatus = await window.otteDesktop.startInternetShare({ inviteToken });
+      setDesktopStatus(nextStatus);
+      setStatus("Internet sharing started");
+    } finally {
+      setDesktopShareBusy(false);
+    }
+  }
+
+  async function stopDesktopInternetShare() {
+    if (!window.otteDesktop) return;
+    setDesktopShareBusy(true);
+    try {
+      const nextStatus = await window.otteDesktop.stopInternetShare();
+      setDesktopStatus(nextStatus);
+      setStatus("Internet sharing stopped");
+    } finally {
+      setDesktopShareBusy(false);
+    }
+  }
+
+  async function copyDesktopInviteLink() {
+    if (!window.otteDesktop) return;
+    const link = await window.otteDesktop.copyInviteLink();
+    setStatus(link ? "Invite link copied" : "Start sharing before copying an invite link");
+  }
+
+  async function openDesktopDataFolder() {
+    if (!window.otteDesktop) return;
+    await window.otteDesktop.openDataFolder();
+  }
+
+  async function exportDesktopLogs() {
+    if (!window.otteDesktop) return;
+    const exportPath = await window.otteDesktop.exportLogs();
+    setStatus(`Logs exported to ${exportPath}`);
+  }
+
   async function revokeOrganizationInvite(inviteId: string) {
     const invite = await revokeInvite(inviteId);
     const invites = await loadOrganizationInvites().catch(() => snapshot.organizationInvites.map((item) => item.id === invite.id ? { ...item, ...invite } : item));
@@ -2572,24 +2626,24 @@ export function App() {
   }
 
   function handleBoardCaptureRealtimeEvent(data: unknown): boolean {
-    if (typeof data !== "string") return false;
-    let event: BoardCaptureRequestEvent | undefined;
-    try {
-      event = JSON.parse(data) as BoardCaptureRequestEvent;
-    } catch {
-      return false;
-    }
-    if (event?.type !== "agent.boardCaptureRequested" || !event.payload?.requestId) return false;
-    captureAgentBoard(event.payload).catch((error) => setAiAgentStatus(`Board capture failed: ${errorMessage(error)}`));
+    const decision = boardCaptureRequestDecision(data, selectedScene?.id);
+    const requestId = decision.requestId;
+    if (!decision.handled || !requestId) return false;
+    captureAgentBoard({ ...decision, requestId }).catch((error) => setAiAgentStatus(`Board capture failed: ${errorMessage(error)}`));
     return true;
   }
 
-  async function captureAgentBoard(payload: NonNullable<BoardCaptureRequestEvent["payload"]>) {
+  async function captureAgentBoard(payload: BoardCaptureRequestDecision & { requestId: string }) {
     const requestId = payload.requestId;
     if (!requestId) return;
+    if (payload.error) {
+      await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: payload.error, sceneId: payload.sceneId ?? selectedScene?.id });
+      setAiAgentStatus("Board capture unavailable");
+      return;
+    }
     const board = document.querySelector<HTMLElement>('[data-agent-board-root="true"]') ?? document.querySelector<HTMLElement>(".scene-board");
     if (!board) {
-      await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: "No board element is mounted in the current web client.", sceneId: selectedScene?.id });
+      await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: "No board element is mounted in the current web client.", sceneId: payload.sceneId ?? selectedScene?.id });
       setAiAgentStatus("Board capture unavailable");
       return;
     }
@@ -2602,13 +2656,13 @@ export function App() {
       });
       await apiPost(`/api/v1/agent/board-captures/${requestId}`, {
         dataUrl,
-        sceneId: selectedScene?.id,
+        sceneId: payload.sceneId ?? selectedScene?.id,
         width: Math.round(board.offsetWidth),
         height: Math.round(board.offsetHeight)
       });
       setAiAgentStatus("Board capture sent");
     } catch (error) {
-      await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: errorMessage(error), sceneId: selectedScene?.id });
+      await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: errorMessage(error), sceneId: payload.sceneId ?? selectedScene?.id });
       setAiAgentStatus("Board capture failed");
     }
   }
@@ -4429,12 +4483,14 @@ export function App() {
       const result = await apiPost<AiAgentThreadResponse>(`/api/v1/campaigns/${campaignId}/ai/threads`, {
         prompt,
         surface: "agent_panel",
+        approvalMode: aiAgentApprovalMode,
         selectedSceneId: selectedScene?.id,
         selectedAssetId: aiAgentSelectedAssetId,
         selectedTokenIds,
         messages: aiAgentProviderMessages(requestMessages)
       }, { signal: abortController.signal });
-      const proposalIds = result.events.map((event) => event.proposalId).filter((proposalId): proposalId is string => Boolean(proposalId));
+      const proposalIds = result.events.filter((event) => event.type === "proposal.created").map((event) => event.proposalId).filter((proposalId): proposalId is string => Boolean(proposalId));
+      const appliedProposalIds = result.events.filter((event) => event.type === "proposal.applied").map((event) => event.proposalId).filter((proposalId): proposalId is string => Boolean(proposalId));
       const assistantMessage: AiAgentMessage = {
         id: result.thread.id,
         role: "assistant",
@@ -4446,9 +4502,17 @@ export function App() {
       aiAgentPendingAuthRequestRef.current = null;
       clearAiAgentAuthRetry();
       setAiAgentMessages((messages) => [...messages, assistantMessage]);
-      setAiAgentStatus(proposalIds.length > 0 ? `Agent drafted ${proposalIds.length} proposal${proposalIds.length === 1 ? "" : "s"}` : "Agent ready");
+      setAiAgentStatus(
+        appliedProposalIds.length > 0
+          ? `Agent auto-applied ${appliedProposalIds.length} proposal${appliedProposalIds.length === 1 ? "" : "s"}`
+          : proposalIds.length > 0
+            ? `Agent drafted ${proposalIds.length} proposal${proposalIds.length === 1 ? "" : "s"}`
+            : "Agent ready"
+      );
       const refreshedSnapshot = await refresh();
-      if (aiAgentApprovalMode === "auto" && proposalIds.length > 0) await autoApplyAiAgentProposals(proposalIds, refreshedSnapshot);
+      const appliedProposalIdSet = new Set(appliedProposalIds);
+      const pendingProposalIds = proposalIds.filter((proposalId) => !appliedProposalIdSet.has(proposalId));
+      if (aiAgentApprovalMode === "auto" && pendingProposalIds.length > 0) await autoApplyAiAgentProposals(pendingProposalIds, refreshedSnapshot);
     } catch (error) {
       if (isAbortError(error) || abortController.signal.aborted) {
         const message = "Agent turn stopped.";
@@ -5247,6 +5311,14 @@ export function App() {
     await refresh(campaignId, sceneId);
   }
 
+  async function analyzePdfContentImport(file: File) {
+    setContentImportStatus(`Analyzing ${file.name || "PDF"} with Codex PDF import`);
+    const batch = await apiAnalyzePdfContentImport({ campaignId, file });
+    setContentImportStatus(`Previewed ${batch.entities.length} PDF ${batch.entities.length === 1 ? "record" : "records"}`);
+    setStatus("PDF content import previewed");
+    await refresh(campaignId, sceneId);
+  }
+
   async function applyContentImport(batch: ContentImportBatch, selectedEntityIds?: string[]) {
     const entityIds = selectedEntityIds ?? (batch.selectedEntityIds.length > 0 ? batch.selectedEntityIds : batch.entities.filter((entity) => entity.selectedByDefault).map((entity) => entity.id));
     const updated = await apiPost<ContentImportBatch>(`/api/v1/content-imports/${batch.id}/apply`, { selectedEntityIds: entityIds });
@@ -5635,6 +5707,9 @@ export function App() {
   const showQuickCreate = (workspaceMode === "live" || workspaceMode === "prep") && hasPermission("token.create");
   const showTableWorkspace = workspaceMode === "live" || workspaceMode === "prep";
   const encounterBuilderSystem = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
+  const desktopRelay = desktopStatus?.relay;
+  const desktopRelayState = desktopRelay?.state ?? "stopped";
+  const desktopInviteUrl = desktopRelay?.inviteUrl ?? desktopRelay?.publicUrl ?? "";
   const inspectorTabs: InspectorTab[] = workspaceMode === "live"
     ? ["actors", "chat", "combat"]
     : ["actors", "journal", "content", "plugins"];
@@ -5749,6 +5824,41 @@ export function App() {
           ))}
         </div>
         <div className="rail-utilities-heading" aria-hidden="true">Utilities</div>
+        {desktopAvailable && (
+          <section className="desktop-host-panel" aria-label="Desktop host">
+            <div className="operator-heading">
+              <div className="section-title">Desktop Host</div>
+              <span>{titleCaseLabel(desktopRelayState)}</span>
+            </div>
+            <p className="desktop-host-url">{desktopInviteUrl || desktopStatus?.webUrl || "Local server starting"}</p>
+            <div className="button-row desktop-host-actions">
+              {desktopRelayState === "connected" || desktopRelayState === "starting" ? (
+                <button className="ghost-button small" type="button" disabled={desktopShareBusy} onClick={() => stopDesktopInternetShare().catch((error) => setStatus(errorMessage(error)))}>
+                  <X size={14} /> Stop
+                </button>
+              ) : (
+                <button className="primary-button small" type="button" disabled={desktopShareBusy} onClick={() => startDesktopInternetShare().catch((error) => setStatus(errorMessage(error)))}>
+                  <Users size={14} /> Share
+                </button>
+              )}
+              <button className="ghost-button small" type="button" disabled={!desktopInviteUrl} onClick={() => copyDesktopInviteLink().catch((error) => setStatus(errorMessage(error)))}>
+                <UserPlus size={14} /> Copy
+              </button>
+            </div>
+            <div className="button-row desktop-host-actions">
+              <button className="icon-button" type="button" title="Open data folder" aria-label="Open data folder" onClick={() => openDesktopDataFolder().catch((error) => setStatus(errorMessage(error)))}>
+                <Boxes size={14} />
+              </button>
+              <button className="icon-button" type="button" title="Export logs" aria-label="Export logs" onClick={() => exportDesktopLogs().catch((error) => setStatus(errorMessage(error)))}>
+                <Download size={14} />
+              </button>
+              <button className="icon-button" type="button" title="Refresh desktop status" aria-label="Refresh desktop status" onClick={() => window.otteDesktop?.getDesktopStatus().then(setDesktopStatus).catch((error) => setStatus(errorMessage(error)))}>
+                <RefreshCw size={14} />
+              </button>
+            </div>
+            {desktopRelay?.lastError && <p className="desktop-host-error">{desktopRelay.lastError}</p>}
+          </section>
+        )}
         <button className={aiAgentOpen ? "ai-agent-toggle active" : "ai-agent-toggle"} type="button" onClick={() => setAiAgentOpen((open) => !open)} aria-label="AI Agent" title="AI Agent" aria-expanded={aiAgentOpen}>
           <Bot size={16} />
           <span className="ai-agent-toggle-label ai-agent-toggle-label-full">AI Agent</span>
@@ -7086,7 +7196,7 @@ export function App() {
             {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} onGenerateRecap={generateSessionRecap} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onPlanEncounter={planSystemEncounter} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} canAwardXp={hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
-            {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
+            {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onAnalyzePdf={analyzePdfContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <SdkPanel plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={importSystemCharacter} onCreateMonster={createSystemMonster} onAdvanceActor={advanceSelectedActor} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}
           </aside>
         </div>

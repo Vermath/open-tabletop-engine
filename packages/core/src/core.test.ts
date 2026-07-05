@@ -162,6 +162,107 @@ describe("proposal application", () => {
     expect(next.scenes).toBe(state.scenes);
     expect(next.actors).toBe(state.actors);
   });
+
+  it("rejects proposal changes that target entities outside the proposal campaign", () => {
+    const state = seedState();
+    state.campaigns.push({
+      id: "camp_other",
+      ownerUserId: "usr_demo_gm",
+      name: "Other Campaign",
+      description: "",
+      defaultSystemId: "dnd-5e-srd",
+      visibility: "private",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    state.scenes.push({
+      id: "scn_other",
+      campaignId: "camp_other",
+      name: "Other Scene",
+      width: 800,
+      height: 600,
+      gridType: "square",
+      gridSize: 50,
+      active: true,
+      sortOrder: 0,
+      fog: [],
+      walls: [],
+      lights: [],
+      annotations: [],
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    state.tokens.push({
+      id: "tok_other",
+      sceneId: "scn_other",
+      name: "Other Token",
+      x: 10,
+      y: 10,
+      width: 50,
+      height: 50,
+      rotation: 0,
+      hidden: false,
+      locked: false,
+      visionEnabled: false,
+      visionRadius: 0,
+      disposition: "neutral",
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    });
+    const proposal = {
+      id: "prop_cross_campaign",
+      campaignId: "camp_demo",
+      createdByType: "ai" as const,
+      title: "Move other token",
+      summary: "Should not cross campaign boundaries",
+      status: "approved" as const,
+      approvalRequired: true,
+      changesJson: [{ entity: "token" as const, action: "update" as const, id: "tok_other", data: { x: 300 } }],
+      diffJson: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    expect(() => applyProposal({ ...state, proposals: [proposal] }, proposal, "usr_demo_gm")).toThrow("outside proposal campaign");
+  });
+
+  it("clones proposal create payloads before inserting them into state", () => {
+    const state = seedState();
+    const data = {
+      id: "jnl_payload_clone",
+      campaignId: "camp_demo",
+      title: "Payload clone",
+      body: "Text",
+      visibility: "gm_only",
+      visibleToUserIds: [],
+      visibleToActorIds: [],
+      tags: ["original"],
+      createdBy: "usr_demo_gm",
+      updatedBy: "usr_demo_gm",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+    const proposal = {
+      id: "prop_payload_clone",
+      campaignId: "camp_demo",
+      createdByType: "ai" as const,
+      title: "Add cloned note",
+      summary: "Inserted state should not alias proposal payload",
+      status: "approved" as const,
+      approvalRequired: true,
+      changesJson: [{ entity: "journal" as const, action: "create" as const, data }],
+      diffJson: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    const next = applyProposal({ ...state, proposals: [proposal] }, proposal, "usr_demo_gm");
+    data.tags.push("mutated-after-apply");
+
+    expect(next.journals.find((journal) => journal.id === "jnl_payload_clone")?.tags).toEqual(["original"]);
+  });
 });
 
 describe("vision polygons", () => {

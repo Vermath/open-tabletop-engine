@@ -288,6 +288,20 @@ export async function apiPost<T>(path: string, body: unknown, options: { signal?
   return response.json() as Promise<T>;
 }
 
+export async function apiAnalyzePdfContentImport(input: { campaignId: string; file: File }): Promise<ContentImportBatch> {
+  const response = await fetch(`${baseUrl}/api/v1/campaigns/${input.campaignId}/content-imports/pdf/ai`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/pdf",
+      "x-source-name": encodeURIComponent(input.file.name || "uploaded.pdf"),
+      ...(await sessionHeaders())
+    },
+    body: input.file
+  });
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return response.json() as Promise<ContentImportBatch>;
+}
+
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "PATCH",
@@ -2683,21 +2697,13 @@ export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
 }
 
 type DisplayMapAsset = MapAsset & { deliveryUrl?: string };
+type DisplayAudioTrack = AudioTrack & { deliveryUrl?: string };
 
 export function assetBlobUrl(asset: MapAsset): string {
   const displayAsset = asset as DisplayMapAsset;
-  const managedUrl = authenticatedManagedAssetUrl(asset.url);
-  const url = managedUrl !== asset.url ? managedUrl : displayAsset.deliveryUrl ?? asset.url;
+  const url = displayAsset.deliveryUrl ?? asset.url;
   if (/^(https?:|data:|blob:)/.test(url)) return url;
   return absoluteApiUrl(url);
-}
-
-function authenticatedManagedAssetUrl(url: string): string {
-  if (!url.startsWith("/api/v1/assets/")) return url;
-  const token = getSessionToken();
-  if (!token) return url;
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}sessionToken=${encodeURIComponent(token)}`;
 }
 
 function absoluteApiUrl(url: string): string {
@@ -2722,6 +2728,27 @@ async function withAssetDeliveryUrls(assets: MapAsset[]): Promise<MapAsset[]> {
       }
     })
   );
+}
+
+async function withAudioDeliveryUrls(audioTracks: AudioTrack[]): Promise<AudioTrack[]> {
+  return Promise.all(
+    audioTracks.map(async (track) => {
+      const assetId = managedAssetIdFromUrl(track.url);
+      if (!assetId) return track;
+      try {
+        const delivery = await assetDeliveryUrl(assetId);
+        return { ...track, deliveryUrl: delivery.url } satisfies DisplayAudioTrack;
+      } catch {
+        return track;
+      }
+    })
+  );
+}
+
+function managedAssetIdFromUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const match = /^\/api\/v1\/assets\/([^/?#]+)\/blob(?:[?#].*)?$/.exec(url);
+  return match?.[1];
 }
 
 export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean; folder?: string; tags?: string[] }): Promise<{ asset: MapAsset; scene?: Scene }> {
@@ -2820,7 +2847,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   ]);
   const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
   const characterTemplates = bundled.characterTemplates !== undefined ? bundled.characterTemplates : activeSystemId ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
-  const displayAssets = await withAssetDeliveryUrls(campaignSnapshot.assets);
+  const [displayAssets, displayAudioTracks] = await Promise.all([withAssetDeliveryUrls(campaignSnapshot.assets), withAudioDeliveryUrls(audioTracks)]);
   return {
     session,
     workspaceDefaults,
@@ -2841,7 +2868,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     chat: campaignSnapshot.chat,
     rolls: campaignSnapshot.rolls,
     diceMacros: campaignSnapshot.diceMacros,
-    audioTracks,
+    audioTracks: displayAudioTracks,
     encounters: campaignSnapshot.encounters,
     combats: campaignSnapshot.combats,
     combatAudit,

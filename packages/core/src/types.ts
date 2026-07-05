@@ -948,7 +948,7 @@ export interface PluginReview extends Timestamps {
 
 export type ContentImportStatus = "previewed" | "applied" | "rolled_back" | "deleted";
 
-export type ContentImportEntityKind = "actor" | "item" | "journal" | "handout";
+export type ContentImportEntityKind = "actor" | "item" | "journal" | "handout" | "encounter";
 
 export interface ContentImportSourceAdapter {
   id: ID;
@@ -988,7 +988,7 @@ export interface ContentImportEntity {
 }
 
 export interface ContentImportAppliedRecord {
-  collection: "actors" | "items" | "journals" | "handouts";
+  collection: "actors" | "items" | "journals" | "handouts" | "encounters";
   id: ID;
   entityId: ID;
 }

@@ -24,6 +24,18 @@ describe("audio sync", () => {
     expect(states).toEqual([{ trackId: "a", url: "https://example.test/a.mp3", playing: true, loop: true, volume: 0.25 }]);
   });
 
+  it("uses signed delivery URLs for managed audio playback", () => {
+    const [state] = desiredAudioStates([
+      {
+        ...track({ id: "managed", url: "/api/v1/assets/asset_audio/blob", playing: true }),
+        deliveryUrl: "https://assets.example.test/api/v1/assets/asset_audio/blob?signature=sig"
+      } as AudioTrack & { deliveryUrl: string }
+    ]);
+
+    expect(state?.url).toBe("https://assets.example.test/api/v1/assets/asset_audio/blob?signature=sig");
+    expect(state?.url).not.toContain("sessionToken=");
+  });
+
   it("forces volume to zero when muted", () => {
     const [state] = desiredAudioStates([track({ id: "a", playing: true, volume: 1 })], { muted: true });
     expect(state?.volume).toBe(0);

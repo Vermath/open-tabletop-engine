@@ -86,20 +86,26 @@ export function applyProposal(state: EngineState, proposal: Proposal, userId?: s
     const bucketKey = collectionKeyForEntity(change.entity);
     const bucket = readCollection(next, bucketKey);
     if (change.action === "create") {
-      writableCollection(next, bucketKey, copiedCollections).push(change.data as never);
+      const created = structuredClone(change.data) as Record<string, unknown>;
+      assertEntityInProposalCampaign(next, bucketKey, created, proposal.campaignId);
+      writableCollection(next, bucketKey, copiedCollections).push(created as never);
     } else if (change.action === "update") {
       const index = bucket.findIndex((item: { id?: string }) => item.id === change.id);
-      if (index >= 0) {
-        const writableBucket = writableCollection(next, bucketKey, copiedCollections);
-        writableBucket[index] = {
-          ...copyExistingEntityForUpdate(state, bucketKey, writableBucket[index]),
-          ...change.data,
-          updatedAt: appliedAt
-        };
-      }
+      if (index < 0) throw new Error(`Proposal target not found: ${change.entity}:${change.id ?? ""}`);
+      assertEntityInProposalCampaign(next, bucketKey, bucket[index] as Record<string, unknown>, proposal.campaignId);
+      const writableBucket = writableCollection(next, bucketKey, copiedCollections);
+      const updated = {
+        ...(structuredClone(writableBucket[index]) as Record<string, unknown>),
+        ...(structuredClone(change.data) as Record<string, unknown>),
+        updatedAt: appliedAt
+      };
+      assertEntityInProposalCampaign(next, bucketKey, updated, proposal.campaignId);
+      writableBucket[index] = updated;
     } else if (change.action === "delete") {
       const index = bucket.findIndex((item: { id?: string }) => item.id === change.id);
-      if (index >= 0) writableCollection(next, bucketKey, copiedCollections).splice(index, 1);
+      if (index < 0) throw new Error(`Proposal target not found: ${change.entity}:${change.id ?? ""}`);
+      assertEntityInProposalCampaign(next, bucketKey, bucket[index] as Record<string, unknown>, proposal.campaignId);
+      writableCollection(next, bucketKey, copiedCollections).splice(index, 1);
     }
   }
 
@@ -145,10 +151,6 @@ function writableCollection(state: EngineState, key: CopyOnWriteCollectionKey, c
   return readCollection(state, key);
 }
 
-function copyExistingEntityForUpdate(state: EngineState, key: ProposalCollectionKey, entity: unknown): Record<string, unknown> {
-  return readCollection(state, key).includes(entity as never) ? (structuredClone(entity) as Record<string, unknown>) : (entity as Record<string, unknown>);
-}
-
 function collectionKeyForEntity(entity: ProposalChange["entity"]): ProposalCollectionKey {
   switch (entity) {
     case "campaign":
@@ -180,4 +182,20 @@ function collectionKeyForEntity(entity: ProposalChange["entity"]): ProposalColle
     default:
       throw new Error(`Unsupported proposal entity: ${entity}`);
   }
+}
+
+function assertEntityInProposalCampaign(state: EngineState, key: ProposalCollectionKey, entity: Record<string, unknown>, campaignId: string): void {
+  const entityCampaignId = campaignIdForEntity(state, key, entity);
+  if (entityCampaignId !== campaignId) {
+    throw new Error(`Proposal change targets entity outside proposal campaign: expected ${campaignId}, received ${entityCampaignId ?? "unknown"}`);
+  }
+}
+
+function campaignIdForEntity(state: EngineState, key: ProposalCollectionKey, entity: Record<string, unknown>): string | undefined {
+  if (key === "campaigns") return typeof entity.id === "string" ? entity.id : undefined;
+  if (key === "tokens") {
+    const sceneId = typeof entity.sceneId === "string" ? entity.sceneId : undefined;
+    return sceneId ? state.scenes.find((scene) => scene.id === sceneId)?.campaignId : undefined;
+  }
+  return typeof entity.campaignId === "string" ? entity.campaignId : undefined;
 }

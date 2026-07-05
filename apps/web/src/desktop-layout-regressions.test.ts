@@ -14,6 +14,16 @@ const aiPanelSource = readFileSync(resolve(__dirname, "ai-panel.tsx"), "utf8").r
 const countOccurrences = (source: string, needle: string) => source.split(needle).length - 1;
 
 describe("desktop layout regressions", () => {
+  it("shows the relay host controls only through the Electron preload contract", () => {
+    expect(appSource).toContain("const [desktopAvailable] = useState(() => Boolean(window.otteDesktop));");
+    expect(appSource).toContain('window.otteDesktop.startInternetShare({ inviteToken })');
+    expect(appSource).toContain('window.otteDesktop.stopInternetShare()');
+    expect(appSource).toContain('window.otteDesktop.copyInviteLink()');
+    expect(appSource).toContain('className="desktop-host-panel" aria-label="Desktop host"');
+    expect(stylesSource).toContain(".desktop-host-panel {\n  display: grid;");
+    expect(stylesSource).toContain(".desktop-host-url,\n.desktop-host-error {");
+  });
+
   it("keeps the token create action readable in desktop play and prep topbars", () => {
     expect(stylesSource).not.toContain("minmax(74px, 0.6fr) 44px");
     expect(stylesSource).not.toContain(".quick-create-form .primary-button {\n  min-width: 44px;");
@@ -82,7 +92,9 @@ describe("desktop layout regressions", () => {
     expect(appSource).toContain('approvalMode={aiAgentApprovalMode}');
     expect(appSource).toContain('onApprovalModeChange={setAiAgentApprovalMode}');
     expect(appSource).toContain('aria-label="AI Agent approval mode"');
-    expect(appSource).toContain('autoApplyAiAgentProposals(proposalIds, refreshedSnapshot)');
+    expect(appSource).toContain("approvalMode: aiAgentApprovalMode,");
+    expect(appSource).toContain('event.type === "proposal.applied"');
+    expect(appSource).toContain("autoApplyAiAgentProposals(pendingProposalIds, refreshedSnapshot)");
     expect(appSource).toContain('if (event.key === "Enter" && (event.ctrlKey || event.metaKey))');
     expect(appSource).toContain('onKeyDown={handleAiAgentPromptKeyDown}');
     expect(appSource).toContain('aiAgentPendingAuthRequestRef.current = { prompt, requestMessages };');

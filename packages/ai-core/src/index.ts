@@ -135,6 +135,7 @@ export type AiProviderEvent =
   | { type: "tool.started"; toolName: string; input: unknown }
   | { type: "tool.completed"; toolName: string; output: unknown }
   | { type: "proposal.created"; proposalId: string }
+  | { type: "proposal.applied"; proposalId: string }
   | { type: "usage.reported"; usage: AiUsageMetrics };
 
 export interface PermissionFilteredContext {
@@ -161,7 +162,7 @@ export function buildPermissionFilteredContext(input: {
 }): PermissionFilteredContext {
   const campaign = input.state.campaigns.find((item) => item.id === input.campaignId);
   const canReadJournalSecrets = input.permissions.includes("journal.readSecret");
-  const canReadMemorySecrets = canReadJournalSecrets || input.permissions.includes("ai.readGmMemory");
+  const canReadMemorySecrets = input.permissions.includes("ai.readGmMemory");
   const canReadActors = input.permissions.includes("actor.read");
   const canReadScenes = input.permissions.includes("scene.read");
   const canReadCampaign = input.permissions.includes("campaign.read");

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRealtimeHandlers, realtimeRefreshDebounceMs } from "./realtime-refresh";
+import { boardCaptureRequestDecision, createRealtimeHandlers, realtimeRefreshDebounceMs } from "./realtime-refresh";
 
 describe("createRealtimeHandlers", () => {
   beforeEach(() => {
@@ -119,5 +119,57 @@ describe("createRealtimeHandlers", () => {
     expect(setStatus).toHaveBeenLastCalledWith("Realtime unavailable");
 
     handlers.dispose();
+  });
+});
+
+describe("boardCaptureRequestDecision", () => {
+  it("ignores non-board-capture realtime messages", () => {
+    expect(boardCaptureRequestDecision(JSON.stringify({ type: "actor.updated", payload: { requestId: "capture_1" } }), "scene_live")).toEqual({ handled: false });
+    expect(boardCaptureRequestDecision("not-json", "scene_live")).toEqual({ handled: false });
+  });
+
+  it("accepts a live request for the mounted scene", () => {
+    const decision = boardCaptureRequestDecision(
+      JSON.stringify({
+        type: "agent.boardCaptureRequested",
+        payload: { requestId: "capture_1", sceneId: "scene_live", expiresAt: "2026-07-05T12:00:00.000Z" }
+      }),
+      "scene_live",
+      Date.parse("2026-07-05T11:59:00.000Z")
+    );
+
+    expect(decision).toEqual({ handled: true, requestId: "capture_1", sceneId: "scene_live" });
+  });
+
+  it("rejects a request for a different scene", () => {
+    const decision = boardCaptureRequestDecision(
+      { type: "agent.boardCaptureRequested", payload: { requestId: "capture_1", sceneId: "scene_requested" } },
+      "scene_live"
+    );
+
+    expect(decision).toEqual({
+      handled: true,
+      requestId: "capture_1",
+      sceneId: "scene_live",
+      error: "Requested board scene is not open in this web client."
+    });
+  });
+
+  it("rejects expired board capture requests", () => {
+    const decision = boardCaptureRequestDecision(
+      JSON.stringify({
+        type: "agent.boardCaptureRequested",
+        payload: { requestId: "capture_1", sceneId: "scene_live", expiresAt: "2026-07-05T12:00:00.000Z" }
+      }),
+      "scene_live",
+      Date.parse("2026-07-05T12:00:00.000Z")
+    );
+
+    expect(decision).toEqual({
+      handled: true,
+      requestId: "capture_1",
+      sceneId: "scene_live",
+      error: "Board capture request expired before this web client could process it."
+    });
   });
 });

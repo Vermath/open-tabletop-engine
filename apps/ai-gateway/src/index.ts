@@ -16,8 +16,10 @@ function aiProviderTimeoutMs(env: Record<string, string | undefined>): number {
   return Math.max(0, Math.min(30 * 60_000, Math.floor(parsed)));
 }
 
-function createCodexTransport(env: Record<string, string | undefined>) {
-  if (env.OTTE_AI_PROVIDER !== "codex-app-server") return new LoopbackCodexTransport();
+export function createCodexTransport(env: Record<string, string | undefined>) {
+  const provider = env.OTTE_AI_PROVIDER?.trim() || "codex-app-server";
+  if (provider === "codex-loopback") return new LoopbackCodexTransport();
+  if (provider !== "codex-app-server") throw new Error(`Unsupported OTTE_AI_PROVIDER "${provider}". Use codex-app-server or codex-loopback.`);
   const timeoutMs = aiProviderTimeoutMs(env);
   return new CodexAppServerWebSocketTransport({
     url: env.OTTE_CODEX_APP_SERVER_URL,

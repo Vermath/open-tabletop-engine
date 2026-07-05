@@ -11,6 +11,7 @@ import { composeFairnessSeed, rollFormula, seededRng } from "@open-tabletop/dice
 import { DND_5E_SRD_SYSTEM_ID, applyDnd5eSrdAdvancement, applyDnd5eSrdCondition, applyDnd5eSrdFeat, applyDnd5eSrdMulticlassLevel, dnd5eSrdAbilityScoreImprovementLevels, dnd5eSrdCanMulticlassInto, dnd5eSrdGeneralFeats, dnd5eSrdMulticlassPrerequisites, dnd5eSrdXpProgress, applyDnd5eSrdRest, applyGenericFantasyAdvancement, applyGenericFantasyCondition, applyGenericFantasyRest, applyMysticNoirAdvancement, applyMysticNoirCondition, applyMysticNoirRest, applyStellarFrontiersAdvancement, applyStellarFrontiersCondition, applyStellarFrontiersRest, dnd5eSrdActionFormula, dnd5eSrdAdvancementOptions, dnd5eSrdApplyCharacterOrigins, dnd5eSrdCharacterImport, dnd5eSrdCharacterOrigins, dnd5eSrdCharacterTemplates, dnd5eSrdCompendium, dnd5eSrdCompendiumEntry, dnd5eSrdEncounterPlan, dnd5eSrdEncounterThreats, dnd5eSrdEquipmentPurchase, dnd5eSrdInitiativeRoll, dnd5eSrdMonsterActorData, dnd5eSrdQuickRolls, dnd5eSrdSheet, genericFantasyActionFormula, genericFantasyAdvancementOptions, genericFantasyCharacterImport, genericFantasyCharacterTemplates, genericFantasyCompendium, genericFantasyCompendiumEntry, genericFantasyEncounterPlan, genericFantasyEncounterThreats, genericFantasyQuickRolls, genericFantasySheet, mysticNoirAdvancementOptions, mysticNoirCharacterImport, mysticNoirCharacterTemplates, mysticNoirCompendium, mysticNoirCompendiumEntry, mysticNoirEncounterPlan, mysticNoirEncounterThreats, mysticNoirQuickRolls, mysticNoirSheet, removeDnd5eSrdCondition, removeGenericFantasyCondition, removeMysticNoirCondition, removeStellarFrontiersCondition, resolveDnd5eSrdAction, resolveDnd5eSrdConcentrationDamage, stellarFrontiersAdvancementOptions, stellarFrontiersCharacterImport, stellarFrontiersCharacterTemplates, stellarFrontiersCompendium, stellarFrontiersCompendiumEntry, stellarFrontiersEncounterPlan, stellarFrontiersEncounterThreats, stellarFrontiersQuickRolls, stellarFrontiersSheet, summarizeActor, useDnd5eSrdAction, useGenericFantasyAction, useMysticNoirAction, useStellarFrontiersAction, type CharacterImportInput, type CharacterImportResult, type CharacterTemplate, type EncounterPlan, type EncounterThreatSelection, type RulesActionResolutionResult, type RulesSaveOutcome, type SystemActionUseResult, type SystemActionUseOptions, type SystemRestOptions, type SystemRestResult, type SystemRestType } from "@open-tabletop/system-sdk";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { assetStorageKey, createAssetStorage, createAssetStorageForProvider, type AssetStorage } from "./asset-storage.js";
+import { extractPdfTextPages, parsePdfContentImportEntities, pdfContentImportPagePrompt, type PdfTextExtractor, type PdfTextPage } from "./pdf-content-import.js";
 import { PluginPackageError, loadPluginRegistry, type LoadedPlugin, type PluginChatCommandResult, type PluginCommandTokenContext, type PluginInventoryWarning, type PluginRuntimeRegistry } from "./plugin-runtime.js";
 import { installedSystems } from "./registries.js";
 import { RealtimeHub } from "./realtime.js";
@@ -22,6 +23,7 @@ export interface BuildAppOptions {
   assetStorage?: AssetStorage;
   maxAssetBytes?: number;
   aiProvider?: AiProvider;
+  pdfTextExtractor?: PdfTextExtractor;
   imageAssetGenerator?: ImageAssetGenerator;
   pluginRegistry?: PluginRuntimeRegistry;
   pluginRoot?: string;
@@ -95,6 +97,7 @@ interface StoredBoardCapture {
 interface AgentThreadBody {
   prompt: string;
   surface?: string;
+  approvalMode?: "manual" | "auto";
   model?: string;
   reasoningEffort?: AiReasoningEffort;
   selectedSceneId?: string;
@@ -529,6 +532,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     hub.broadcast(event, (candidate, client) => filterRealtimeEvent(store, candidate, client.userId, visibilityCache));
   };
   const aiProvider = options.aiProvider ?? createConfiguredAiProvider();
+  const pdfTextExtractor = options.pdfTextExtractor ?? extractPdfTextPages;
   const imageAssetGenerator = options.imageAssetGenerator ?? createConfiguredImageAssetGenerator();
   const pendingBoardCaptures = new Map<string, PendingBoardCapture>();
   const storedBoardCaptures = new Map<string, StoredBoardCapture>();
@@ -543,6 +547,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     done(null, body);
   });
   app.addContentTypeParser("application/octet-stream", { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
+    done(null, body);
+  });
+  app.addContentTypeParser("application/pdf", { parseAs: "buffer", bodyLimit: pdfContentImportMaxBytes() }, (_request, body: Buffer, done) => {
     done(null, body);
   });
   app.addContentTypeParser(/^(text\/html|application\/xhtml\+xml|application\/javascript|text\/javascript|application\/x-javascript|application\/x-msdownload|application\/x-msdos-program|application\/x-sh|application\/x-bat|application\/java-archive)$/i, { parseAs: "buffer", bodyLimit: maxAssetBytes }, (_request, body: Buffer, done) => {
@@ -2553,7 +2560,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const url = new URL(request.url ?? "/api/v1/realtime", "http://localhost");
     const campaignId = url.searchParams.get("campaignId") ?? undefined;
     const userId = userIdFromRequest(store, request.url, request.headers);
-    if (!userId || !campaignId || !canCampaign(store, userId, campaignId, "campaign.read")) {
+    if (!userId || !campaignId || !campaignActiveOrganizationAllowed(store, request.headers, userId, campaignId) || !canCampaign(store, userId, campaignId, "campaign.read")) {
       socket.send(JSON.stringify({ error: "unauthorized" }));
       socket.close();
       return;
@@ -5714,6 +5721,169 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return batch;
   });
 
+  app.post<{ Params: { campaignId: string }; Body: Buffer }>("/api/v1/campaigns/:campaignId/content-imports/pdf/ai", async (request, reply) => {
+    const updateAllowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (updateAllowed !== true) return updateAllowed;
+    const aiAllowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "ai.proposeChanges");
+    if (aiAllowed !== true) return aiAllowed;
+    const userId = requireUser(store, reply, request.headers);
+    if (typeof userId !== "string") return userId;
+    const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
+    if (!campaign) return notFound(reply, "Campaign not found");
+    const body = Buffer.isBuffer(request.body) ? request.body : undefined;
+    if (!body || body.length === 0) return badRequest(reply, "PDF file is required");
+    if (body.length > pdfContentImportMaxBytes()) return reply.code(413).send({ error: "pdf_content_import_too_large", message: "PDF file exceeds the configured import limit" });
+
+    let pages: PdfTextPage[];
+    try {
+      pages = (await pdfTextExtractor(body)).map((page) => ({ pageNumber: page.pageNumber, text: page.text.trim() })).filter((page) => page.text.length > 0);
+    } catch (error) {
+      return badRequest(reply, `PDF text could not be extracted: ${errorMessage(error)}`);
+    }
+    if (pages.length === 0) return badRequest(reply, "PDF did not contain extractable text");
+
+    const pageCount = pages.length;
+    const selectedPages = pages.slice(0, pdfContentImportMaxPages());
+    const sourceName = displayNameFromHeader(request.headers["x-source-name"]) ?? "Uploaded PDF";
+    const startedAtMs = Date.now();
+    const startedAt = new Date(startedAtMs).toISOString();
+    const permissions = permissionsForUser(store, userId, request.params.campaignId);
+    const context = enrichAiContextWithSystemActions(
+      buildPermissionFilteredContext({
+        state: store.state,
+        campaignId: request.params.campaignId,
+        permissions
+      }),
+      store
+    );
+    const prompt = `Analyze ${selectedPages.length} PDF page${selectedPages.length === 1 ? "" : "s"} from ${sourceName} and draft OpenTabletop content import records.`;
+    const thread: AiThread = createTimestamped("thr", {
+      campaignId: request.params.campaignId,
+      userId,
+      provider: aiProvider.id,
+      title: `PDF Import: ${sourceName}`.slice(0, 80),
+      prompt,
+      status: "running" as const,
+      startedAt,
+      retryAttempts: 0,
+      eventCount: 0,
+      toolCallCount: 0,
+      usage: createInitialAiUsage(prompt, context)
+    });
+    store.state.aiThreads.push(thread);
+
+    const events: AiProviderEvent[] = [];
+    const entityInputs: Array<Partial<ContentImportEntity> & { kind: ContentImportEntityKind; name: string }> = [];
+    const pageSummaries: string[] = [];
+    try {
+      for (const page of selectedPages) {
+        const pagePrompt = pdfContentImportPagePrompt({
+          sourceName,
+          pageNumber: page.pageNumber,
+          pageCount,
+          text: page.text.slice(0, pdfContentImportMaxPageChars())
+        });
+        let providerOutput = "";
+        for await (const event of aiProvider.stream({
+          threadId: thread.id,
+          messages: [{ role: "user", content: pagePrompt }],
+          tools: [],
+          context,
+          surface: "pdf_content_import",
+          model: agentModel(),
+          reasoningEffort: agentReasoningEffort(process.env.OTTE_PDF_IMPORT_REASONING_EFFORT ?? "high")
+        })) {
+          events.push(event);
+          if (event.type === "usage.reported") mergeAiUsage(thread, event.usage);
+          if (event.type === "message.delta") providerOutput += event.delta;
+          if (event.type === "message.completed" && !providerOutput) providerOutput = event.content;
+        }
+        const pageEntities = parsePdfContentImportEntities({ providerOutput, page, campaignSystemId: campaign.defaultSystemId });
+        entityInputs.push(...pageEntities);
+        pageSummaries.push(`Page ${page.pageNumber}: ${pageEntities.length} entities`);
+      }
+      const assistantMessage = pageSummaries.join("\n");
+      recordAiResponseUsage(thread, assistantMessage);
+      thread.assistantMessage = assistantMessage;
+      completeAiThread(thread, startedAtMs, 0, events.length, 0);
+    } catch (error) {
+      const codexAuthRequired = codexAuthRequiredPayload(error);
+      thread.assistantMessage = pageSummaries.join("\n");
+      failAiThread(thread, startedAtMs, 0, events.length, 0, error);
+      store.save();
+      return reply.code(codexAuthRequired ? 428 : 502).send({
+        error: codexAuthRequired ? "codex_auth_required" : "ai_provider_failed",
+        message: thread.providerError,
+        codexAuth: codexAuthRequired,
+        thread,
+        events
+      });
+    }
+
+    if (entityInputs.length === 0) {
+      store.save();
+      return reply.code(422).send({ error: "pdf_content_import_no_entities", message: "AI analysis did not return importable records", thread, events });
+    }
+
+    const source = normalizeContentImportSource(
+      {
+        sourceType: "adapter",
+        adapterId: "codex-pdf-content-import-v1",
+        sourceName,
+        license: {
+          name: "User-provided private table content",
+          usage: "private_home_game"
+        },
+        notes: `Codex PDF import analyzed ${selectedPages.length} of ${pageCount} extractable pages with ${aiProvider.label}.`
+      },
+      userId
+    );
+    let entities: ContentImportEntity[];
+    try {
+      entities = entityInputs.map((entity) => normalizeContentImportEntity(entity, source));
+    } catch (error) {
+      return badRequest(reply, errorMessage(error));
+    }
+    const batch = createTimestamped("cimp", {
+      campaignId: request.params.campaignId,
+      status: "previewed" as const,
+      source,
+      entities,
+      selectedEntityIds: entities.filter((entity) => entity.selectedByDefault).map((entity) => entity.id),
+      appliedRecords: []
+    }) satisfies ContentImportBatch;
+    store.state.contentImports.push(batch);
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: batch.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "contentImport.pdfAi.previewed",
+        targetType: "contentImport",
+        targetId: batch.id,
+        after: {
+          sourceName,
+          threadId: thread.id,
+          provider: aiProvider.id,
+          pageCount,
+          analyzedPages: selectedPages.length,
+          entityCount: entities.length,
+          selectedEntityIds: batch.selectedEntityIds
+        }
+      })
+    );
+    store.save();
+    broadcast(
+      createEvent({
+        campaignId: batch.campaignId,
+        type: "contentImport.previewed",
+        targetId: batch.id,
+        payload: batch
+      })
+    );
+    return batch;
+  });
+
   app.get<{ Params: { importId: string } }>("/api/v1/content-imports/:importId", async (request, reply) => {
     const batch = store.state.contentImports.find((item) => item.id === request.params.importId);
     if (!batch || batch.status === "deleted") return notFound(reply, "Content import not found");
@@ -5919,6 +6089,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const prompt = typeof request.body?.prompt === "string" ? request.body.prompt : "";
     if (!prompt.trim()) return badRequest(reply, "Prompt is required");
     const surface = request.body?.surface === "agent_panel" ? "agent_panel" : "ai_studio";
+    const approvalMode = request.body?.approvalMode === "auto" ? "auto" : "manual";
     const turnAbortController = new AbortController();
     let responseFinished = false;
     const abortTurn = () => {
@@ -6130,6 +6301,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
           thread,
           events
         });
+      }
+    }
+    if (approvalMode === "auto" && permissions.includes("ai.applyChanges")) {
+      for (const proposalId of autoApplyAiThreadProposals(store, aiToolRuntime, request.params.campaignId, userId, proposalIdsFromAiEvents(events))) {
+        events.push({ type: "proposal.applied", proposalId });
       }
     }
     if (content.trim()) {
@@ -6844,15 +7020,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!campaignId) return forbidden(reply, "Plugin registry sync requires a campaign context");
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "plugin.install");
     if (allowed !== true) return allowed;
-    const userId = requireUser(store, reply, request.headers);
-    if (typeof userId !== "string") return userId;
+    const adminUserId = requireServerAdmin(store, reply, request.headers);
+    if (typeof adminUserId !== "string") return adminUserId;
     const sync = await syncPluginRegistriesForRequest(pluginRegistry, body.registryUrl, reply);
     if (!sync) return sync;
     if ("statusCode" in sync) return sync;
     store.state.auditLogs.push(
       createTimestamped("audit", {
         campaignId,
-        actorUserId: userId,
+        actorUserId: adminUserId,
         actorType: "user" as const,
         action: "plugin.registrySync",
         targetType: "plugin",
@@ -8113,6 +8289,24 @@ function boardCaptureTtlMs(): number {
   const parsed = envNumber("OTTE_BOARD_CAPTURE_TTL_MS");
   if (parsed === undefined) return 5 * 60_000;
   return Math.max(30_000, Math.min(30 * 60_000, Math.floor(parsed)));
+}
+
+function pdfContentImportMaxBytes(): number {
+  const parsed = envNumber("OTTE_PDF_IMPORT_MAX_BYTES");
+  if (parsed === undefined) return 25 * 1024 * 1024;
+  return Math.max(1024 * 1024, Math.min(100 * 1024 * 1024, Math.floor(parsed)));
+}
+
+function pdfContentImportMaxPages(): number {
+  const parsed = envNumber("OTTE_PDF_IMPORT_MAX_PAGES");
+  if (parsed === undefined) return 50;
+  return Math.max(1, Math.min(500, Math.floor(parsed)));
+}
+
+function pdfContentImportMaxPageChars(): number {
+  const parsed = envNumber("OTTE_PDF_IMPORT_MAX_PAGE_CHARS");
+  if (parsed === undefined) return 16_000;
+  return Math.max(1000, Math.min(100_000, Math.floor(parsed)));
 }
 
 function apiBaseUrlForInternalAgent(): string {
@@ -10811,8 +11005,8 @@ function createAiThreadTools(): AiToolDefinition[] {
     },
     {
       name: "target_token",
-      description: "Target or untarget a visible token for the current user.",
-      requiredPermissions: ["token.read"],
+      description: "Draft a proposal to target or untarget a visible token for the current user.",
+      requiredPermissions: ["ai.proposeChanges", "token.update"],
       parameters: {
         type: "object",
         properties: {
@@ -12996,7 +13190,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
     campaignId,
     userId,
     permissions,
-    state: store.state,
+    state: aiToolStateSnapshot(store.state),
     signal,
     createProposal: createAiProposal,
     listProposals: async ({ status, limit }) => {
@@ -13219,18 +13413,20 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       const targetedByUserIds = new Set(token.targetedByUserIds ?? []);
       if (targeted) targetedByUserIds.add(userId);
       else targetedByUserIds.delete(userId);
-      token.targetedByUserIds = [...targetedByUserIds].sort();
-      token.updatedAt = nowIso();
-      runtime.broadcast?.(
-        createEvent({
-          campaignId,
-          type: "token.updated",
-          actorUserId: userId,
-          targetId: token.id,
-          payload: token
-        })
-      );
-      return { tokenId: token.id, targeted, targetedByUserIds: token.targetedByUserIds };
+      const nextTargets = [...targetedByUserIds].sort();
+      const proposalId = await createAiProposal({
+        title: targeted ? `Target ${token.name}` : `Untarget ${token.name}`,
+        summary: targeted ? `Mark ${token.name} as targeted by the current user.` : `Remove the current user's target marker from ${token.name}.`,
+        changes: [
+          {
+            entity: "token",
+            action: "update",
+            id: token.id,
+            data: { targetedByUserIds: nextTargets }
+          }
+        ]
+      });
+      return { proposalId, tokenId: token.id, targeted, targetedByUserIds: nextTargets };
     },
     captureBoardView: async ({ sceneId }) => {
       if (!runtime.requestBoardCapture) {
@@ -13440,6 +13636,18 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       };
     }
   };
+}
+
+function aiToolStateSnapshot(state: EngineState): EngineState {
+  return deepFreeze(structuredClone(state) as EngineState);
+}
+
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (typeof value !== "object" || value === null) return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value)) deepFreeze(child, seen);
+  return Object.freeze(value);
 }
 
 function enrichAiContextWithSystemActions(context: PermissionFilteredContext, store: StateStore): PermissionFilteredContext {
@@ -14120,6 +14328,75 @@ function proposalTouchesBoardState(proposal: Proposal): boolean {
   return proposal.changesJson.some((change) => change.entity === "scene" || change.entity === "token" || change.entity === "asset" || change.entity === "combat");
 }
 
+function proposalIdsFromAiEvents(events: AiProviderEvent[]): string[] {
+  const proposalIds = new Set<string>();
+  for (const event of events) {
+    if (event.type === "proposal.created") proposalIds.add(event.proposalId);
+  }
+  return [...proposalIds];
+}
+
+function autoApplyAiThreadProposals(store: StateStore, runtime: AiToolRuntime, campaignId: string, userId: string, proposalIds: string[]): string[] {
+  const appliedProposalIds: string[] = [];
+  for (const proposalId of proposalIds) {
+    const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
+    if (!proposal || proposal.status === "applied" || proposal.status === "rejected") continue;
+    try {
+      const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson, { currentProposalId: proposal.id });
+      if ("error" in preparedChanges) throw new Error(preparedChanges.message);
+      proposal.changesJson = preparedChanges.changes;
+      if (proposal.status === "pending") {
+        Object.assign(proposal, approveProposal(proposal, userId));
+        runtime.broadcast?.(
+          createEvent({
+            campaignId: proposal.campaignId,
+            type: "proposal.approved",
+            actorUserId: userId,
+            targetId: proposal.id,
+            payload: proposal
+          })
+        );
+      }
+      if (proposal.status !== "approved") continue;
+      store.replace(applyProposal(store.state, proposal, userId));
+      const applied = store.state.proposals.find((item) => item.id === proposal.id);
+      runtime.broadcast?.(
+        createEvent({
+          campaignId: proposal.campaignId,
+          type: "proposal.applied",
+          actorUserId: userId,
+          targetId: proposal.id,
+          payload: applied
+        })
+      );
+      appliedProposalIds.push(proposal.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Proposal could not be auto-applied";
+      store.state.auditLogs.push(
+        createTimestamped("audit", {
+          campaignId: proposal.campaignId,
+          actorUserId: userId,
+          actorType: "user" as const,
+          action: "ai.proposal.apply.failed",
+          targetType: "proposal",
+          targetId: proposal.id,
+          after: {
+            proposalId: proposal.id,
+            status: proposal.status,
+            createdByType: proposal.createdByType,
+            sourceId: proposal.sourceId,
+            changeCount: proposal.changesJson.length,
+            entities: [...new Set(proposal.changesJson.map((change) => change.entity))],
+            reason: "auto_apply_failed",
+            message
+          }
+        })
+      );
+    }
+  }
+  return appliedProposalIds;
+}
+
 function blockedAgentProposalChange(changes: ProposalChange[]): Record<string, unknown> | undefined {
   for (const change of changes) {
     if (change.entity === "campaign") return { entity: change.entity, action: change.action, reason: "Agents cannot propose campaign lifecycle or campaign-level changes." };
@@ -14277,7 +14554,6 @@ const AI_PERMISSION_SAFE_TOOL_NAMES = new Set([
   "read_plugins",
   "read_content_imports",
   "send_chat_message",
-  "target_token",
   "roll_dice",
   "read_compendium"
 ]);
@@ -20592,11 +20868,15 @@ function requireCampaignPermissionForUser(store: StateStore, reply: FastifyReply
 }
 
 function requireCampaignActiveOrganization(store: StateStore, reply: FastifyReply, headers: Record<string, string | string[] | undefined>, userId: string, campaignId: string): true | FastifyReply {
+  if (!campaignActiveOrganizationAllowed(store, headers, userId, campaignId)) return forbidden(reply, "Campaign belongs to a different active organization");
+  return true;
+}
+
+function campaignActiveOrganizationAllowed(store: StateStore, headers: Record<string, string | string[] | undefined>, userId: string, campaignId: string): boolean {
   const campaign = store.state.campaigns.find((item) => item.id === campaignId);
   if (!campaign?.organizationId) return true;
   const workspace = organizationWorkspaceRecordForRequest(store, userId, headers);
-  if (workspace.id !== campaign.organizationId) return forbidden(reply, "Campaign belongs to a different active organization");
-  return true;
+  return workspace.id === campaign.organizationId;
 }
 
 function canCampaign(store: StateStore, userId: string, campaignId: string, permission: PermissionName): boolean {
@@ -26333,7 +26613,7 @@ function normalizeContentImportSource(source: Partial<Omit<ContentImportSource, 
 }
 
 function normalizeContentImportEntity(input: Partial<ContentImportEntity> & { kind: ContentImportEntityKind; name: string }, source: ContentImportSource): ContentImportEntity {
-  if (!["actor", "item", "journal", "handout"].includes(input.kind)) throw new Error(`Unsupported content import entity kind: ${input.kind}`);
+  if (!["actor", "item", "journal", "handout", "encounter"].includes(input.kind)) throw new Error(`Unsupported content import entity kind: ${input.kind}`);
   const id = input.id?.trim() || createId("cie");
   const warnings = [...(input.warnings ?? []), ...contentImportEntityWarnings(input, source)];
   return {
@@ -26359,7 +26639,7 @@ function contentImportEntityWarnings(input: Pick<ContentImportEntity, "kind" | "
 
 function applyContentImportEntity(state: EngineState, campaign: Campaign, entity: ContentImportEntity, userId: string): ContentImportAppliedRecord {
   const recordId = contentImportRecordId(campaign.id, entity);
-  if (state.actors.some((item) => item.id === recordId) || state.items.some((item) => item.id === recordId) || state.journals.some((item) => item.id === recordId) || state.handouts.some((item) => item.id === recordId)) {
+  if (state.actors.some((item) => item.id === recordId) || state.items.some((item) => item.id === recordId) || state.journals.some((item) => item.id === recordId) || state.handouts.some((item) => item.id === recordId) || state.encounters.some((item) => item.id === recordId)) {
     throw new Error(`Imported record already exists: ${recordId}`);
   }
 
@@ -26413,6 +26693,19 @@ function applyContentImportEntity(state: EngineState, campaign: Campaign, entity
     return { collection: "journals", id: journal.id, entityId: entity.id };
   }
 
+  if (entity.kind === "encounter") {
+    const encounter = createTimestamped("enc", {
+      id: recordId,
+      campaignId: campaign.id,
+      name: entity.name,
+      summary: stringFromRecord(entity.data, "summary") ?? stringFromRecord(entity.data, "body") ?? "",
+      tokenIds: stringArrayFromRecord(entity.data, "tokenIds"),
+      difficulty: stringFromRecord(entity.data, "difficulty")
+    }) satisfies Encounter;
+    state.encounters.push(encounter);
+    return { collection: "encounters", id: encounter.id, entityId: entity.id };
+  }
+
   const handout = createTimestamped("hnd", {
     id: recordId,
     campaignId: campaign.id,
@@ -26433,7 +26726,9 @@ function removeAppliedContentImportRecord(state: EngineState, record: ContentImp
         ? state.items
         : record.collection === "journals"
           ? state.journals
-          : state.handouts;
+          : record.collection === "handouts"
+            ? state.handouts
+            : state.encounters;
   const index = collection.findIndex((item) => item.id === record.id);
   if (index === -1) return undefined;
   collection.splice(index, 1);
@@ -26445,7 +26740,8 @@ function contentImportRecordId(campaignId: string, entity: ContentImportEntity):
     actor: "act_imp",
     item: "item_imp",
     journal: "jnl_imp",
-    handout: "hnd_imp"
+    handout: "hnd_imp",
+    encounter: "enc_imp"
   };
   return `${prefix[entity.kind]}_${campaignId.replace(/[^a-zA-Z0-9_]/g, "_")}_${entity.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 }
@@ -26507,7 +26803,7 @@ function archiveImportDependencyWarnings(scope: "all" | "assets_only" | "selecte
     chat: ["rolls"],
     encounters: ["actors", "tokens"],
     combats: ["actors", "tokens", "scenes"],
-    contentImports: ["actors", "items", "journals", "handouts"]
+    contentImports: ["actors", "items", "journals", "handouts", "encounters"]
   };
   return collections.flatMap((collection) => {
     if ((archive.data[collection] as Array<{ id: string }>).length === 0) return [];

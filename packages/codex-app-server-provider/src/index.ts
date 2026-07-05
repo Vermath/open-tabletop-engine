@@ -851,6 +851,21 @@ class CodexAppServerRpc {
   private async handleServerRequest(id: unknown, method: string, params: unknown): Promise<void> {
     if (method === "item/tool/call") {
       const toolCall = dynamicToolCallFromParams(params);
+      if (toolCall.namespace !== "open_tabletop" || !this.options.tools.some((tool) => tool.name === toolCall.tool)) {
+        this.respond(id, {
+          success: false,
+          contentItems: [
+            {
+              type: "inputText",
+              text: JSON.stringify({
+                error: "tool_not_available",
+                message: `Tool ${toolCall.namespace ? `${toolCall.namespace}.` : ""}${toolCall.tool} is not available to OpenTabletop.`
+              })
+            }
+          ]
+        });
+        return;
+      }
       this.events.push({ type: "tool.started", toolName: toolCall.tool, input: toolCall.arguments });
       if (this.options.executeTool) {
         try {
@@ -1110,9 +1125,10 @@ function messageText(message: AiMessage): string {
   return [message.content, partText].filter(Boolean).join("\n");
 }
 
-function dynamicToolCallFromParams(params: unknown): { tool: string; arguments: unknown } {
+function dynamicToolCallFromParams(params: unknown): { namespace?: string; tool: string; arguments: unknown } {
   if (!isRecord(params) || typeof params.tool !== "string") return { tool: "unknown_tool", arguments: {} };
   return {
+    namespace: typeof params.namespace === "string" ? params.namespace : undefined,
     tool: params.tool,
     arguments: params.arguments ?? {}
   };

@@ -159,9 +159,12 @@ export function probabilityRange(formula: string): { min: number; max: number } 
     (range, term) => {
       if (term.type === "modifier") return { min: range.min + term.value, max: range.max + term.value };
       if (term.type === "binding") return range;
+      if (term.explode) throw new Error("Probability range is unbounded for exploding dice");
       const keptCount = effectiveKeptCount(term);
-      if (term.sign === -1) return { min: range.min - keptCount * term.sides, max: range.max - keptCount };
-      return { min: range.min + keptCount, max: range.max + keptCount * term.sides };
+      const faceMin = term.reroll === 1 ? 2 : 1;
+      const faceMax = term.reroll === term.sides ? term.sides - 1 : term.sides;
+      if (term.sign === -1) return { min: range.min - keptCount * faceMax, max: range.max - keptCount * faceMin };
+      return { min: range.min + keptCount * faceMin, max: range.max + keptCount * faceMax };
     },
     { min: 0, max: 0 }
   );

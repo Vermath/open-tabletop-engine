@@ -2797,6 +2797,8 @@ export function dnd5eSrdFeatEntry(featId: string): Dnd5eSrdFeat | undefined {
   return dnd5eSrdGeneralFeats().find((feat) => feat.id === featId);
 }
 
+const dnd5eSrdAbilityNames = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
+
 export function applyDnd5eSrdFeat(actor: Actor, featId: string, choices: { abilities?: Record<string, number> } = {}): Record<string, unknown> {
   const feat = dnd5eSrdFeatEntry(featId);
   if (!feat) throw new Error(`Unknown feat: ${featId}`);
@@ -2817,8 +2819,11 @@ export function applyDnd5eSrdFeat(actor: Actor, featId: string, choices: { abili
   // Enforce the feat's ability-point budget (ASI = 2, most feats = 1) so a
   // client cannot claim more increases than the feat grants.
   const abilityBudget = numericValue(feat.data.abilityPoints, numericValue(feat.data.abilityIncrease, 0));
+  const featAbilityOptions = normalizeStringArray(feat.data.abilityChoices);
+  const allowedAbilities = featAbilityOptions.length > 0 ? featAbilityOptions : dnd5eSrdAbilityNames;
   let abilityPointsSpent = 0;
   for (const [ability, amount] of Object.entries(abilityChoices)) {
+    if (!allowedAbilities.includes(ability)) continue;
     const allowed = Math.max(0, Math.min(Math.max(0, Math.floor(amount)), abilityBudget - abilityPointsSpent));
     if (allowed <= 0) continue;
     attributes[ability] = Math.min(maximumScore, numericValue(attributes[ability], 10) + allowed);

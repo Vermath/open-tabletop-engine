@@ -1,5 +1,7 @@
 import type { AudioTrack } from "@open-tabletop/core";
 
+type DisplayAudioTrack = AudioTrack & { deliveryUrl?: string };
+
 export interface DesiredAudioState {
   trackId: string;
   url: string;
@@ -24,7 +26,7 @@ export function desiredAudioStates(tracks: readonly AudioTrack[], options: { mas
     .filter((track) => typeof track.url === "string" && track.url.length > 0)
     .map((track) => ({
       trackId: track.id,
-      url: track.url,
+      url: (track as DisplayAudioTrack).deliveryUrl ?? track.url,
       playing: Boolean(track.playing),
       loop: track.kind === "sfx" ? false : Boolean(track.loop),
       volume: clamp01(track.volume) * master

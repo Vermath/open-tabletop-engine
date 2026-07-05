@@ -10,7 +10,7 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, sce
 4. Plugins are first-class citizens.
 5. Rules systems are data-driven.
 6. The GM owns campaign state.
-7. AI proposes; humans approve.
+7. AI creates reviewable proposals by default; explicit auto-accept is a user choice.
 8. Secrets are permissioned.
 9. Everything important is exportable.
 10. Every destructive action is reversible or auditable.
@@ -20,6 +20,8 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, sce
 - `apps/api`: Fastify REST and WebSocket server.
 - `apps/web`: React VTT client.
 - `apps/ai-gateway`: provider-agnostic AI gateway entrypoint.
+- `apps/desktop`: Electron desktop host that runs the API and web client locally.
+- `apps/relay`: Cloudflare Worker and Durable Object relay for internet sharing from a desktop host.
 - `apps/worker`: HTTP-backed worker runner for exports, imports, and AI jobs.
 
 ## Packages
@@ -31,6 +33,8 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, sce
 - `packages/plugin-sdk`: permissioned plugin SDK.
 - `packages/system-sdk`: data-driven rules-system SDK.
 - `packages/ai-core`: provider interface, tools, redaction, proposal helpers.
+- `packages/codex-app-server-provider`: Codex app-server transport for AI turns, tools, and asset generation.
+- `packages/tunnel-protocol`: validated relay frame protocol shared by desktop and relay.
 - `packages/database`: Drizzle-ready schema definitions and migration notes.
 
 ## Documentation
@@ -39,6 +43,7 @@ OpenTabletop Engine is an API-first virtual tabletop platform for campaigns, sce
 - Versioned changelog: `CHANGELOG.md`
 - v1.0 release notes: `docs/release/v1.0.md`
 - Self-hosting and deployment: `docs/deployment/self-hosting.md`
+- Desktop hosting: `docs/deployment/desktop-hosting.md`
 - Hosted deployment recipes: `docs/deployment/hosted-deployment-recipes.md`
 - Railway persistence: `docs/deployment/railway-persistence.md`
 
@@ -70,6 +75,55 @@ Start the API and web client in separate terminals:
 pnpm --filter @open-tabletop/api dev
 pnpm --filter @open-tabletop/web dev
 ```
+
+Build or test the desktop and relay packages:
+
+```bash
+pnpm --filter @open-tabletop/desktop build
+pnpm --filter @open-tabletop/desktop test
+pnpm --filter @open-tabletop/relay test
+pnpm --filter @open-tabletop/tunnel-protocol test
+```
+
+## Desktop Local Hosting
+
+OpenTabletop can be packaged as an Electron desktop app for Windows and macOS. The desktop app starts the existing API on `127.0.0.1:<ephemeral>`, serves the built web client on `127.0.0.1:<ephemeral>`, and proxies `/api` plus realtime WebSockets to the local API. It uses SQLite and local asset storage under Electron `userData`:
+
+- `data/opentabletop.sqlite`
+- `uploads/`
+- `plugins/`
+- `logs/`
+- `backups/`
+
+Desktop defaults are local-first: `OTTE_ASSET_STORAGE=local`, `OTTE_AI_PROVIDER=disabled`, `OTTE_DEMO_SEED=false`, and `NODE_ENV=production`.
+
+Remote friends can join through the managed relay without opening ports or paying for full campaign hosting. The host keeps an outbound WebSocket tunnel open to the relay, and players use invite links such as `https://share.open-tabletop.org/t/{slug}/join?invite=oti_...`. The relay intentionally stores table metadata only, not campaign state or asset bytes.
+
+Desktop sharing is exposed in the web client only when `window.otteDesktop` exists. The panel can show local server status, start or stop internet sharing, copy the invite link, open the data folder, and export diagnostics.
+
+## Desktop Releases
+
+The `desktop-release` GitHub Actions workflow builds:
+
+- Windows NSIS `.exe` installers.
+- macOS `.dmg` packages for `x64` and `arm64`.
+- SHA256 checksum files.
+
+Signing and notarization are optional for the current desktop pipeline. Set repository variable `REQUIRE_DESKTOP_SIGNING=true` only when CI should fail unsigned builds. Signing secrets can be supplied later through electron-builder-compatible Apple, Authenticode, or Azure Trusted Signing variables.
+
+Run a local unpackaged installer build with:
+
+```bash
+pnpm --filter @open-tabletop/desktop dist -- --dir
+```
+
+Tagged releases using `desktop-v*` upload artifacts to GitHub Releases.
+
+## AI PDF Content Import
+
+The content manager can upload a user-provided PDF for AI-assisted import. The API extracts text page by page, sends each page through the configured AI provider, and creates a preview content-import batch. Supported generated records include actors, items, journals, handouts, and encounters. Rules content such as classes, subclasses, feats, spells, equipment, backgrounds, species, and ancestry is normalized as reusable item records with provenance metadata.
+
+The PDF route requires both `campaign.update` and `ai.proposeChanges`. Imported content is not applied directly; users review the generated batch, choose selected records, and then apply or roll it back through the normal content import workflow. Desktop keeps AI disabled by default unless the user configures Codex app-server.
 
 ## Public Alpha Demo
 

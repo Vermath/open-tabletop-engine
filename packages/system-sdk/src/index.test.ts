@@ -552,6 +552,13 @@ describe("dnd 5.5e srd rules", () => {
     const spent = Object.keys(baseAttrs).reduce((sum, key) => sum + ((cheatAttrs[key] ?? 0) - baseAttrs[key]!), 0);
     expect(spent).toBe(2);
 
+    const grappler = applyDnd5eSrdFeat(wisActor, "grappler", { abilities: { wisdom: 1, strength: 1 } });
+    expect((grappler.attributes as Record<string, number>).wisdom).toBe(16);
+    expect((grappler.attributes as Record<string, number>).strength).toBe(11);
+
+    const bogus = applyDnd5eSrdFeat(wisActor, "ability-score-improvement", { abilities: { luck: 2 } });
+    expect((bogus.attributes as Record<string, number>).luck).toBeUndefined();
+
     // Fortitude boon raises the HP maximum by 40 (fixture max is 12) and caps scores.
     const maxedWisdom = { ...wisActor, data: { ...wisActor.data, attributes: { strength: 10, dexterity: 12, constitution: 13, intelligence: 11, wisdom: 30, charisma: 10 } } };
     const boon = applyDnd5eSrdFeat(maxedWisdom, "boon-of-fortitude");
