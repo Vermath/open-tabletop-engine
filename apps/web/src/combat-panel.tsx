@@ -5,7 +5,7 @@ import { actorCombatResource } from "./actor-sheet-data.js";
 import { formatDateTime, formatNumber, numericValue, titleCaseLabel } from "./sheet-format.js";
 
 
-export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onAwardPartyXp(total: number): void; onAwardPartyGold(totalGp: number): void; canAwardXp: boolean; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; onConfirmAction(combat: Combat, action: CombatAction): void; onRejectAction(combat: Combat, action: CombatAction): void; canManage: boolean }) {
+export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; auditLogs: AuditLog[]; actors: Actor[]; tokens: Token[]; onFocusCombatant(combatant: Combat["combatants"][number]): void; onStart(): void; onPlanEncounter(): void; onNext(combat: Combat): void; onPrevious(combat: Combat): void; onEnd(combat: Combat): void; onAwardPartyXp(total: number): void; onAwardPartyGold(totalGp: number): void; canAwardXp: boolean; onUpdateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>): void; onConfirmAction(combat: Combat, action: CombatAction): void; onRejectAction(combat: Combat, action: CombatAction): void; canManage: boolean }) {
   const [expandedCombatantId, setExpandedCombatantId] = useState("");
   const combatants = props.combat?.combatants ?? [];
   const activeCombatant = props.combat && combatants.length > 0 ? combatants[props.combat.turnIndex] ?? combatants[0] : undefined;
@@ -205,9 +205,14 @@ export function CombatPanel(props: { combat?: Combat; recentCombats: Combat[]; a
               </div>
             </div>
             {props.canManage && (
-              <button className="primary-button" onClick={props.onStart}>
-                <Swords size={15} /> Start combat
-              </button>
+              <div className="button-row">
+                <button className="primary-button" onClick={props.onStart}>
+                  <Swords size={15} /> Start combat
+                </button>
+                <button className="ghost-button" type="button" onClick={props.onPlanEncounter}>
+                  <Swords size={15} /> Plan encounter
+                </button>
+              </div>
             )}
           </section>
           {props.recentCombats.length > 0 && (

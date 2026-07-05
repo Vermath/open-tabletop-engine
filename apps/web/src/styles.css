@@ -11858,3 +11858,178 @@ a:focus-visible {
 .rail .workspace-mode-switcher .ghost-button.active {
   background: var(--surface-3);
 }
+
+/* -------------------------------------------------------------------------
+   Encounter builder: threat catalog, live difficulty, save and placement
+   ------------------------------------------------------------------------- */
+.modal-dialog.encounter-builder {
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, calc(100vw - 40px));
+  max-height: min(88svh, 820px);
+  overflow: hidden;
+}
+
+.encounter-builder-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.1fr) minmax(260px, 0.95fr) minmax(240px, 0.8fr);
+  gap: 14px;
+  min-height: 0;
+}
+
+.encounter-catalog,
+.encounter-compose,
+.encounter-live-plan {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.encounter-search {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.encounter-search span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.encounter-threat-list,
+.encounter-composition-list,
+.encounter-plan-threats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.encounter-threat,
+.encounter-composition-row,
+.encounter-party,
+.encounter-live-plan {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.encounter-threat {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.encounter-threat.selected {
+  border-color: rgba(240, 198, 116, 0.55);
+  background: rgba(240, 198, 116, 0.11);
+}
+
+.encounter-threat strong,
+.encounter-composition-row span {
+  color: var(--paper);
+}
+
+.encounter-threat p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.encounter-threat-stepper,
+.encounter-composition-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.encounter-threat-stepper span {
+  min-width: 22px;
+  text-align: center;
+  color: var(--paper);
+  font-weight: 700;
+}
+
+.encounter-compose > label,
+.encounter-party {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.encounter-compose > label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.encounter-party,
+.encounter-composition-list,
+.encounter-live-plan {
+  padding: 10px;
+}
+
+.encounter-composition-row {
+  justify-content: space-between;
+  padding: 8px 10px;
+}
+
+.encounter-composition-row small {
+  color: var(--muted);
+}
+
+.encounter-difficulty {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.encounter-difficulty.trivial,
+.encounter-difficulty.easy {
+  color: var(--muted);
+}
+
+.encounter-difficulty.standard {
+  border-color: var(--paper);
+}
+
+.encounter-difficulty.hard {
+  border-color: rgba(240, 198, 116, 0.8);
+  color: rgb(240, 198, 116);
+}
+
+.encounter-difficulty.deadly {
+  border-color: rgba(214, 69, 69, 0.8);
+  color: rgb(255, 151, 151);
+}
+
+.encounter-plan-threats span {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.encounter-builder-footer {
+  align-items: center;
+}
+
+@media (max-width: 880px) {
+  .encounter-builder-layout {
+    grid-template-columns: 1fr;
+  }
+}
