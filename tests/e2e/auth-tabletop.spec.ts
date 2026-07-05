@@ -1311,7 +1311,7 @@ test("GM can run the browser combat tracker lifecycle", async ({ page }) => {
   await page.getByRole("combobox", { name: "Token actor" }).selectOption({ label: "Goblin Minion" });
   await page.getByRole("combobox", { name: "Token disposition" }).selectOption("hostile");
   await page.getByRole("button", { name: "Token", exact: true }).click();
-  await expect(page.getByText("Goblin Minion created")).toBeVisible();
+  await expect(statusMessage(page, "Goblin Minion created")).toBeVisible();
   await expect(page.getByRole("button", { name: "Token Goblin Minion" }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
@@ -2222,11 +2222,7 @@ test("GM can apply broader D&D SRD action effects from the browser", async ({ pa
 });
 
 test("SDK marketplace blocks trust-policy failures in the browser", async ({ page }) => {
-  await page.route("**/api/v1/campaigns/*/plugins", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify([
+  const marketplaceFixturePlugins = [
         {
           id: "unsigned-fixture-plugin",
           name: "Unsigned Fixture Plugin",
@@ -2273,8 +2269,19 @@ test("SDK marketplace blocks trust-policy failures in the browser", async ({ pag
           permissionReview: { requestedPermissions: ["chat.send"], grantRequired: false },
           chatCommands: [{ command: "/tampered", description: "Should fail closed" }]
         }
-      ])
+      ];
+  await page.route("**/api/v1/campaigns/*/plugins", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(marketplaceFixturePlugins)
     });
+  });
+  await page.route("**/api/v1/campaigns/*/snapshot*", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { bundled?: Record<string, unknown> };
+    body.bundled = { ...(body.bundled ?? {}), plugins: marketplaceFixturePlugins };
+    await route.fulfill({ response, json: body });
   });
 
   await page.goto("/");

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
-import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type AuditLog, type CampaignArchive, type ChatMessage, type Combat, type DiceMacro, type DiceRoll, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
+import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type AuditLog, type AudioTrack, type CampaignArchive, type ChatMessage, type Combat, type DiceMacro, type DiceRoll, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type PluginReview, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp, type ImageAssetGenerationInput, type ImageAssetGenerator } from "./app.js";
@@ -2112,25 +2112,109 @@ describe("api", () => {
 
   it("composes a permission-filtered campaign snapshot in one request", async () => {
     const store = new MemoryStateStore();
+    const track = createTimestamped("aud", {
+      campaignId: "camp_demo",
+      createdBy: "usr_demo_gm",
+      name: "Snapshot Track",
+      url: "/audio/snapshot.mp3",
+      kind: "ambient" as const,
+      loop: true,
+      playing: false,
+      volume: 0.5
+    }) satisfies AudioTrack;
+    const combat = createTimestamped("cmb", {
+      campaignId: "camp_demo",
+      active: true,
+      round: 2,
+      turnIndex: 0,
+      combatants: []
+    }) satisfies Combat;
+    const combatAuditEntry = createTimestamped("audit", {
+      campaignId: "camp_demo",
+      actorUserId: "usr_demo_gm",
+      actorType: "user" as const,
+      action: "combat.started",
+      targetType: "combat",
+      targetId: combat.id
+    }) satisfies AuditLog;
+    store.state.audioTracks.push(track);
+    store.state.combats.push(combat);
+    store.state.auditLogs.push(combatAuditEntry);
     const app = await buildApp({ store });
+    const expectedPlugins = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/plugins", headers: { "x-user-id": "usr_demo_gm" } });
+    expect(expectedPlugins.statusCode).toBe(200);
+    const expectedPluginList = expectedPlugins.json() as Array<{ marketplaceReview: { review: PluginReview } }>;
+    store.state.pluginReviews.push(...expectedPluginList.map((plugin) => plugin.marketplaceReview.review));
 
-    const gm = (await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot", headers: { "x-user-id": "usr_demo_gm" } })).json();
+    const gmResponse = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot", headers: { "x-user-id": "usr_demo_gm" } });
+    expect(gmResponse.statusCode).toBe(200);
+    const gm = gmResponse.json();
     expect(gm.campaign.id).toBe("camp_demo");
     expect(gm.scenes.length).toBeGreaterThan(0);
     expect(gm.selectedSceneId).toBe("scn_vault_entry");
     expect(gm.vision?.sceneId).toBe("scn_vault_entry");
     expect(gm.journals.some((entry: { visibility: string }) => entry.visibility === "gm_only")).toBe(true);
     expect(gm.tokens.some((token: { id: string }) => token.id === "tok_valen")).toBe(true);
+    expect(gm.bundled).toEqual(
+      expect.objectContaining({
+        assetStorage: expect.objectContaining({ campaignId: "camp_demo" }),
+        audioTracks: expect.arrayContaining([expect.objectContaining({ id: track.id })]),
+        plugins: expect.any(Array),
+        systems: expect.arrayContaining([expect.objectContaining({ id: "dnd-5e-srd", active: true })]),
+        characterTemplates: expect.any(Array),
+        contentImports: expect.any(Array),
+        aiThreads: expect.any(Array),
+        aiUsage: expect.objectContaining({ campaignId: "camp_demo" }),
+        aiToolCalls: expect.any(Array),
+        combatAudit: expect.arrayContaining([expect.objectContaining({ id: combatAuditEntry.id })])
+      })
+    );
+
+    const [assetStorage, audioTracks, systems, characterTemplates, contentImports, aiThreads, aiUsage, aiToolCalls, combatAudit] = await Promise.all([
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/assets/storage", headers: { "x-user-id": "usr_demo_gm" } }),
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/audio", headers: { "x-user-id": "usr_demo_gm" } }),
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/systems", headers: { "x-user-id": "usr_demo_gm" } }),
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/character-templates", headers: { "x-user-id": "usr_demo_gm" } }),
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/content-imports", headers: { "x-user-id": "usr_demo_gm" } }),
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/ai/threads", headers: { "x-user-id": "usr_demo_gm" } }),
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/ai/usage", headers: { "x-user-id": "usr_demo_gm" } }),
+      app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/ai/tool-calls", headers: { "x-user-id": "usr_demo_gm" } }),
+      app.inject({ method: "GET", url: `/api/v1/combats/${combat.id}/audit`, headers: { "x-user-id": "usr_demo_gm" } })
+    ]);
+    for (const response of [assetStorage, audioTracks, systems, characterTemplates, contentImports, aiThreads, aiUsage, aiToolCalls, combatAudit]) expect(response.statusCode).toBe(200);
+    expect(gm.bundled.assetStorage).toEqual(assetStorage.json());
+    expect(gm.bundled.audioTracks).toEqual(audioTracks.json());
+    expect(gm.bundled.plugins).toEqual(expectedPluginList);
+    expect(gm.bundled.systems).toEqual(systems.json());
+    expect(gm.bundled.characterTemplates).toEqual(characterTemplates.json());
+    expect(gm.bundled.contentImports).toEqual(contentImports.json());
+    expect(gm.bundled.aiThreads).toEqual(aiThreads.json());
+    expect(gm.bundled.aiUsage).toEqual(aiUsage.json());
+    expect(gm.bundled.aiToolCalls).toEqual(aiToolCalls.json());
+    expect(gm.bundled.combatAudit).toEqual(combatAudit.json());
 
     const player = (await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot", headers: { "x-user-id": "usr_demo_player" } })).json();
     expect(player.campaign.id).toBe("camp_demo");
     expect(player.journals.some((entry: { visibility: string }) => entry.visibility === "gm_only")).toBe(false);
     expect(player.tokens.some((token: { id: string }) => token.id === "tok_valen")).toBe(true);
     expect(player.diceMacros.every((macro: { visibility: string }) => macro.visibility === "public")).toBe(true);
+    expect(player.bundled).toEqual(
+      expect.objectContaining({
+        assetStorage: expect.objectContaining({ campaignId: "camp_demo" }),
+        audioTracks: expect.arrayContaining([expect.objectContaining({ id: track.id })]),
+        plugins: expect.any(Array),
+        systems: expect.any(Array),
+        characterTemplates: expect.any(Array),
+        combatAudit: expect.arrayContaining([expect.objectContaining({ id: combatAuditEntry.id })])
+      })
+    );
+    expect(player.bundled).not.toHaveProperty("contentImports");
+    expect(player.bundled).not.toHaveProperty("aiThreads");
+    expect(player.bundled).not.toHaveProperty("aiUsage");
+    expect(player.bundled).not.toHaveProperty("aiToolCalls");
 
     await app.close();
   });
-
   it("captures scene edits and undoes the last change", async () => {
     const store = new MemoryStateStore();
     const app = await buildApp({ store });

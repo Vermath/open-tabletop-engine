@@ -2624,7 +2624,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     const campaign = store.state.campaigns.find((item) => item.id === request.params.campaignId);
     if (!campaign) return notFound(reply, "Campaign not found");
-    return buildCampaignSnapshot(store, userId, campaign, { sceneId: request.query.sceneId });
+    return buildCampaignSnapshot(store, userId, campaign, { sceneId: request.query.sceneId, assetStorage, pluginRegistry });
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/members", async (request, reply) => {
@@ -19927,6 +19927,20 @@ interface CampaignSnapshotResult {
   combats: Combat[];
   proposals: Proposal[];
   memory: AiMemoryFact[];
+  bundled: CampaignSnapshotBundled;
+}
+
+interface CampaignSnapshotBundled {
+  assetStorage?: Record<string, unknown>;
+  audioTracks?: AudioTrack[];
+  plugins?: ReturnType<typeof pluginCampaignInfo>[];
+  systems?: Array<(typeof installedSystems)[number] & { active: boolean }>;
+  characterTemplates?: CharacterTemplate[];
+  contentImports?: ContentImportBatch[];
+  aiThreads?: AiThread[];
+  aiUsage?: ReturnType<typeof summarizeAiUsage>;
+  aiToolCalls?: AiToolCall[];
+  combatAudit?: AuditLog[];
 }
 
 /**
@@ -19934,9 +19948,10 @@ interface CampaignSnapshotResult {
  * per-collection fan-out into one payload while reusing the exact filters each list
  * route applies, so a caller never sees state a dedicated endpoint would withhold.
  */
-function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Campaign, options: { sceneId?: string }): CampaignSnapshotResult {
+function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Campaign, options: { sceneId?: string; assetStorage?: AssetStorage; pluginRegistry: PluginRuntimeRegistry }): CampaignSnapshotResult {
   const campaignId = campaign.id;
   const permissions = permissionsForUser(store, userId, campaignId);
+  const canReadCampaign = canCampaign(store, userId, campaignId, "campaign.read");
   const canScene = canCampaign(store, userId, campaignId, "scene.read");
   const canActor = canCampaign(store, userId, campaignId, "actor.read");
   const canJournal = canCampaign(store, userId, campaignId, "journal.read");
@@ -19945,6 +19960,7 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
   const canDice = canCampaign(store, userId, campaignId, "dice.roll");
   const canManage = canCampaign(store, userId, campaignId, "campaign.update");
   const canReveal = canCampaign(store, userId, campaignId, "token.reveal");
+  const canAiOperations = canCampaign(store, userId, campaignId, "ai.proposeChanges");
   const canMemory = canCampaign(store, userId, campaignId, "ai.readPublicMemory") || canCampaign(store, userId, campaignId, "ai.readGmMemory");
   const canMemoryGm = canCampaign(store, userId, campaignId, "ai.readGmMemory");
 
@@ -19963,6 +19979,35 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
       linkedMessagesByRollId.set(message.rollId, message);
     }
   }
+
+  const systems = installedSystems.map((system) => ({
+    ...system,
+    active: campaign.defaultSystemId === system.id
+  }));
+  const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
+  const activeCombat = store.state.combats.find((combat) => combat.campaignId === campaignId && combat.active);
+  const aiThreads = store.state.aiThreads.filter((thread) => thread.campaignId === campaignId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const aiThreadIds = new Set(aiThreads.map((thread) => thread.id));
+  const bundled: CampaignSnapshotBundled = {
+    ...(canScene ? { assetStorage: campaignAssetStorageInfo(store, campaignId, options.assetStorage) } : {}),
+    ...(canReadCampaign
+      ? {
+          audioTracks: store.state.audioTracks.filter((track) => track.campaignId === campaignId),
+          plugins: options.pluginRegistry.list().map((plugin) => pluginCampaignInfo(store, options.pluginRegistry, campaignId, plugin)),
+          systems,
+          combatAudit: activeCombat ? store.state.auditLogs.filter((log) => log.campaignId === campaignId && log.targetType === "combat" && log.targetId === activeCombat.id).sort((left, right) => right.createdAt.localeCompare(left.createdAt)) : []
+        }
+      : {}),
+    ...(canActor && activeSystemId ? { characterTemplates: characterTemplatesForSystem(activeSystemId) } : {}),
+    ...(canManage ? { contentImports: store.state.contentImports.filter((item) => item.campaignId === campaignId && item.status !== "deleted") } : {}),
+    ...(canAiOperations
+      ? {
+          aiThreads,
+          aiUsage: summarizeAiUsage(campaignId, aiThreads),
+          aiToolCalls: store.state.aiToolCalls.filter((call) => aiThreadIds.has(call.threadId))
+        }
+      : {})
+  };
 
   return {
     generatedAt: nowIso(),
@@ -19986,7 +20031,8 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     encounters: store.state.encounters.filter((encounter) => encounter.campaignId === campaignId),
     combats: store.state.combats.filter((combat) => combat.campaignId === campaignId),
     proposals: visibleProposalsForUser(store.state, userId, campaignId, permissions),
-    memory: canMemory ? store.state.aiMemory.filter((item) => item.campaignId === campaignId && (item.visibility === "public" || canMemoryGm)) : []
+    memory: canMemory ? store.state.aiMemory.filter((item) => item.campaignId === campaignId && (item.visibility === "public" || canMemoryGm)) : [],
+    bundled
   };
 }
 

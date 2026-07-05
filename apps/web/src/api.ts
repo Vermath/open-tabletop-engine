@@ -399,6 +399,20 @@ interface CampaignSnapshotPayload {
   combats: Combat[];
   proposals: Proposal[];
   memory: AiMemoryFact[];
+  bundled?: CampaignSnapshotBundled;
+}
+
+interface CampaignSnapshotBundled {
+  assetStorage?: CampaignAssetStorageInfo;
+  audioTracks?: AudioTrack[];
+  plugins?: PluginRuntimeInfo[];
+  systems?: SystemRuntimeInfo[];
+  characterTemplates?: CharacterTemplateInfo[];
+  contentImports?: ContentImportBatch[];
+  aiThreads?: AiThread[];
+  aiUsage?: AiUsageSummary;
+  aiToolCalls?: AiToolCall[];
+  combatAudit?: AuditLog[];
 }
 
 export interface DiceRollVerification {
@@ -2787,24 +2801,25 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
   const snapshotQuery = new URLSearchParams();
   if (sceneId) snapshotQuery.set("sceneId", sceneId);
   const campaignSnapshot = await snapshotGet<CampaignSnapshotPayload>(`/api/v1/campaigns/${selectedCampaignId}/snapshot${snapshotQuery.size > 0 ? `?${snapshotQuery.toString()}` : ""}`);
+  const bundled = campaignSnapshot.bundled ?? {};
   const members = campaignSnapshot.members;
   const currentMember = members.find((member) => member.user.id === session.user.id);
   const canManageCampaign = currentMember?.permissions.includes("campaign.update") ?? false;
   const canViewAiOperations = currentMember?.permissions.includes("ai.proposeChanges") ?? false;
   const activeCombatId = campaignSnapshot.combats.find((combat) => combat.active)?.id;
   const [assetStorage, audioTracks, contentImports, aiThreads, aiUsage, aiToolCalls, plugins, systems, combatAudit] = await Promise.all([
-    snapshotGet<CampaignAssetStorageInfo>(`/api/v1/campaigns/${selectedCampaignId}/assets/storage`),
-    snapshotGet<AudioTrack[]>(`/api/v1/campaigns/${selectedCampaignId}/audio`),
-    canManageCampaign ? snapshotGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`) : Promise.resolve([]),
-    canViewAiOperations ? snapshotGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
-    canViewAiOperations ? snapshotGet<AiUsageSummary>(`/api/v1/campaigns/${selectedCampaignId}/ai/usage`) : Promise.resolve(undefined),
-    canViewAiOperations ? snapshotGet<AiToolCall[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/tool-calls`) : Promise.resolve([]),
-    snapshotGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
-    snapshotGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`),
-    activeCombatId ? snapshotGet<AuditLog[]>(`/api/v1/combats/${activeCombatId}/audit`) : Promise.resolve([])
+    bundled.assetStorage !== undefined ? Promise.resolve(bundled.assetStorage) : snapshotGet<CampaignAssetStorageInfo>(`/api/v1/campaigns/${selectedCampaignId}/assets/storage`),
+    bundled.audioTracks !== undefined ? Promise.resolve(bundled.audioTracks) : snapshotGet<AudioTrack[]>(`/api/v1/campaigns/${selectedCampaignId}/audio`),
+    bundled.contentImports !== undefined ? Promise.resolve(bundled.contentImports) : canManageCampaign ? snapshotGet<ContentImportBatch[]>(`/api/v1/campaigns/${selectedCampaignId}/content-imports`) : Promise.resolve([]),
+    bundled.aiThreads !== undefined ? Promise.resolve(bundled.aiThreads) : canViewAiOperations ? snapshotGet<AiThread[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/threads`) : Promise.resolve([]),
+    bundled.aiUsage !== undefined ? Promise.resolve(bundled.aiUsage) : canViewAiOperations ? snapshotGet<AiUsageSummary>(`/api/v1/campaigns/${selectedCampaignId}/ai/usage`) : Promise.resolve(undefined),
+    bundled.aiToolCalls !== undefined ? Promise.resolve(bundled.aiToolCalls) : canViewAiOperations ? snapshotGet<AiToolCall[]>(`/api/v1/campaigns/${selectedCampaignId}/ai/tool-calls`) : Promise.resolve([]),
+    bundled.plugins !== undefined ? Promise.resolve(bundled.plugins) : snapshotGet<PluginRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/plugins`),
+    bundled.systems !== undefined ? Promise.resolve(bundled.systems) : snapshotGet<SystemRuntimeInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems`),
+    bundled.combatAudit !== undefined ? Promise.resolve(bundled.combatAudit) : activeCombatId ? snapshotGet<AuditLog[]>(`/api/v1/combats/${activeCombatId}/audit`) : Promise.resolve([])
   ]);
   const activeSystemId = systems.find((system) => system.active)?.id ?? systems[0]?.id;
-  const characterTemplates = activeSystemId ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
+  const characterTemplates = bundled.characterTemplates !== undefined ? bundled.characterTemplates : activeSystemId ? await snapshotGet<CharacterTemplateInfo[]>(`/api/v1/campaigns/${selectedCampaignId}/systems/${activeSystemId}/character-templates`) : [];
   const displayAssets = await withAssetDeliveryUrls(campaignSnapshot.assets);
   return {
     session,
