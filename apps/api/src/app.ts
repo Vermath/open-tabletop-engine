@@ -6139,6 +6139,29 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const pendingToolCalls: AiToolCall[] = [];
     const maxRetryAttempts = aiProviderRetryAttempts();
     const aiThreadRealtimeVisibility: ChatMessage["visibility"] = permissions.includes("ai.readGmMemory") ? "gm_only" : "public";
+    const executeAgentTool = async (toolName: string, input: unknown): Promise<AiToolExecutionResult> => {
+      const result = await executeAiTool(tools, toolName, toolInputWithAgentDefaults(toolName, input, { ...request.body, surface }), toolContext);
+      if (result.failed || approvalMode !== "auto" || !permissions.includes("ai.applyChanges") || !isProposalToolOutput(result.output)) {
+        return result;
+      }
+      const autoAppliedProposal = autoApplyAiThreadProposal(store, aiToolRuntime, request.params.campaignId, userId, result.output.proposalId);
+      if (!autoAppliedProposal) return result;
+      refreshAiToolContextState(toolContext, store.state);
+      return {
+        ...result,
+        output: {
+          ...result.output,
+          autoApplied: true,
+          autoAppliedProposal
+        }
+      };
+    };
+    const appendProposalLifecycleEvents = (output: unknown) => {
+      if (!isProposalToolOutput(output)) return;
+      events.push({ type: "proposal.created", proposalId: output.proposalId });
+      const autoAppliedProposalId = autoAppliedProposalIdFromToolOutput(output);
+      if (autoAppliedProposalId) events.push({ type: "proposal.applied", proposalId: autoAppliedProposalId });
+    };
     const providerInput: AiProviderRequest = {
       threadId: thread.id,
       messages: agentMessagesForRequest(prompt, request.body),
@@ -6149,7 +6172,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       reasoningEffort: request.body?.reasoningEffort ? agentReasoningEffort(request.body.reasoningEffort) : surface === "agent_panel" ? agentReasoningEffort() : undefined,
       signal: turnAbortController.signal,
       executeTool: async (toolName, input) => {
-        const result = await executeAiTool(tools, toolName, toolInputWithAgentDefaults(toolName, input, { ...request.body, surface }), toolContext);
+        const result = await executeAgentTool(toolName, input);
         return result.output;
       }
     };
@@ -6209,7 +6232,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
             if (aiProvider.executesToolsInTurn) {
               continue;
             }
-            const result = await executeAiTool(tools, event.toolName, toolInputWithAgentDefaults(event.toolName, event.input, { ...request.body, surface }), toolContext);
+            const result = await executeAgentTool(event.toolName, event.input);
             const output = result.output;
             const completedEvent: AiProviderEvent = { type: "tool.completed", toolName: event.toolName, output };
             events.push(completedEvent);
@@ -6228,9 +6251,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
               })
             );
             removePendingAiToolCall(pendingToolCalls, startedToolCall);
-            if (isProposalToolOutput(output)) {
-              events.push({ type: "proposal.created", proposalId: output.proposalId });
-            }
+            appendProposalLifecycleEvents(output);
           } else if (event.type === "tool.completed") {
             const status = isToolErrorOutput(event.output) ? ("failed" as const) : ("completed" as const);
             const startedToolCall = takePendingAiToolCall(pendingToolCalls, event.toolName);
@@ -6259,9 +6280,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
                 })
               );
             }
-            if (isProposalToolOutput(event.output)) {
-              events.push({ type: "proposal.created", proposalId: event.output.proposalId });
-            }
+            appendProposalLifecycleEvents(event.output);
           }
         }
         recordAiResponseUsage(thread, content);
@@ -8365,6 +8384,7 @@ function agentMessagesForRequest(prompt: string, body: AgentThreadBody | undefin
         "Do not leave generated map or token art as asset-only/library-only proposals unless the user explicitly asks for library-only output.",
         "When generating a map for a scene, include the scene/background update in the same proposal so approval applies the map to the active or requested scene.",
         "When asked to create or set up a scene, ensure the necessary creature and character tokens exist on that scene: create missing actor/token records with draft_actor_token_roster and generateArt enabled, and place existing relevant tokens with draft_token_update instead of making duplicates.",
+        "When draft_scene returns a sceneId, continue in the same turn and use that sceneId for any requested map, token, roster, or art follow-up work.",
         "When generating token or portrait art for an existing token or actor, include the token image update and matching actor image update in the same proposal whenever those targets are known.",
         "For creature and character tokens, use a 1x1 grid footprint unless a larger creature size is explicitly needed, and place tokens at grid-cell centers so they sit cleanly inside squares.",
         "When generating token art, reuse existing generated token art for repeated enemies when the same creature or reuse key is appropriate.",
@@ -11217,7 +11237,8 @@ function createAiThreadTools(): AiToolDefinition[] {
         return {
           proposalId,
           title: `Scene: ${name}`,
-          changeCount: 1
+          changeCount: 1,
+          sceneId: scene.id
         };
       }
     },
@@ -12305,6 +12326,21 @@ interface ProposalToolOutput {
   [key: string]: unknown;
 }
 
+interface AutoAppliedProposalToolOutput {
+  proposalId: string;
+  boardStateChanged: boolean;
+  proposal?: Record<string, unknown>;
+  sceneIds: string[];
+  createdSceneIds: string[];
+  updatedSceneIds: string[];
+  tokenIds: string[];
+  createdTokenIds: string[];
+  assetIds: string[];
+  createdAssetIds: string[];
+  actorIds: string[];
+  createdActorIds: string[];
+}
+
 interface ToolErrorOutput {
   error: string;
   permission?: PermissionName;
@@ -13231,7 +13267,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
     return proposal.id;
   };
 
-  return {
+  const context: AiToolContext = {
     campaignId,
     userId,
     permissions,
@@ -13302,6 +13338,7 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       proposal.changesJson = preparedChanges.changes;
       const boardStateChanged = proposalTouchesBoardState(proposal);
       store.replace(applyProposal(store.state, proposal, userId));
+      refreshAiToolContextState(context, store.state);
       store.save();
       const applied = store.state.proposals.find((item) => item.id === proposalId);
       runtime.broadcast?.(
@@ -13681,10 +13718,15 @@ function createAiToolContext(store: StateStore, campaignId: string, userId: stri
       };
     }
   };
+  return context;
 }
 
 function aiToolStateSnapshot(state: EngineState): EngineState {
   return deepFreeze(structuredClone(state) as EngineState);
+}
+
+function refreshAiToolContextState(context: AiToolContext, state: EngineState): void {
+  context.state = aiToolStateSnapshot(state);
 }
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
@@ -14332,6 +14374,70 @@ function proposalToolSummary(proposal: Proposal): Record<string, unknown> {
   };
 }
 
+function proposalAppliedEntityRefs(proposal: Proposal): Omit<AutoAppliedProposalToolOutput, "proposalId" | "boardStateChanged" | "proposal"> {
+  const sceneIds = new Set<string>();
+  const createdSceneIds = new Set<string>();
+  const updatedSceneIds = new Set<string>();
+  const tokenIds = new Set<string>();
+  const createdTokenIds = new Set<string>();
+  const assetIds = new Set<string>();
+  const createdAssetIds = new Set<string>();
+  const actorIds = new Set<string>();
+  const createdActorIds = new Set<string>();
+
+  for (const change of proposal.changesJson) {
+    const id = proposalChangeEntityId(change);
+    switch (change.entity) {
+      case "scene":
+        if (id) {
+          sceneIds.add(id);
+          if (change.action === "create") createdSceneIds.add(id);
+          if (change.action === "update") updatedSceneIds.add(id);
+        }
+        break;
+      case "token":
+        if (id) {
+          tokenIds.add(id);
+          if (change.action === "create") createdTokenIds.add(id);
+        }
+        if (typeof change.data.sceneId === "string") sceneIds.add(change.data.sceneId);
+        break;
+      case "asset":
+        if (id) {
+          assetIds.add(id);
+          if (change.action === "create") createdAssetIds.add(id);
+        }
+        break;
+      case "actor":
+        if (id) {
+          actorIds.add(id);
+          if (change.action === "create") createdActorIds.add(id);
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  return {
+    sceneIds: [...sceneIds],
+    createdSceneIds: [...createdSceneIds],
+    updatedSceneIds: [...updatedSceneIds],
+    tokenIds: [...tokenIds],
+    createdTokenIds: [...createdTokenIds],
+    assetIds: [...assetIds],
+    createdAssetIds: [...createdAssetIds],
+    actorIds: [...actorIds],
+    createdActorIds: [...createdActorIds]
+  };
+}
+
+function proposalChangeEntityId(change: ProposalChange): string | undefined {
+  if (change.action === "create") return typeof change.data.id === "string" ? change.data.id : undefined;
+  if (typeof change.id === "string") return change.id;
+  return typeof change.data.id === "string" ? change.data.id : undefined;
+}
+
 function visibleProposalsForUser(state: EngineState, userId: string, campaignId: string, permissions: PermissionName[]): Proposal[] {
   return state.proposals.filter((proposal) => proposalVisibleToUser(state, userId, campaignId, permissions, proposal));
 }
@@ -14373,6 +14479,11 @@ function proposalTouchesBoardState(proposal: Proposal): boolean {
   return proposal.changesJson.some((change) => change.entity === "scene" || change.entity === "token" || change.entity === "asset" || change.entity === "combat");
 }
 
+function autoAppliedProposalIdFromToolOutput(output: unknown): string | undefined {
+  if (!isRecord(output) || output.autoApplied !== true || !isRecord(output.autoAppliedProposal)) return undefined;
+  return typeof output.autoAppliedProposal.proposalId === "string" ? output.autoAppliedProposal.proposalId : undefined;
+}
+
 function proposalIdsFromAiEvents(events: AiProviderEvent[]): string[] {
   const proposalIds = new Set<string>();
   for (const event of events) {
@@ -14381,63 +14492,76 @@ function proposalIdsFromAiEvents(events: AiProviderEvent[]): string[] {
   return [...proposalIds];
 }
 
-function autoApplyAiThreadProposals(store: StateStore, runtime: AiToolRuntime, campaignId: string, userId: string, proposalIds: string[]): string[] {
-  const appliedProposalIds: string[] = [];
-  for (const proposalId of proposalIds) {
-    const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
-    if (!proposal || proposal.status === "applied" || proposal.status === "rejected") continue;
-    try {
-      const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson, { currentProposalId: proposal.id });
-      if ("error" in preparedChanges) throw new Error(preparedChanges.message);
-      proposal.changesJson = preparedChanges.changes;
-      if (proposal.status === "pending") {
-        Object.assign(proposal, approveProposal(proposal, userId));
-        runtime.broadcast?.(
-          createEvent({
-            campaignId: proposal.campaignId,
-            type: "proposal.approved",
-            actorUserId: userId,
-            targetId: proposal.id,
-            payload: proposal
-          })
-        );
-      }
-      if (proposal.status !== "approved") continue;
-      store.replace(applyProposal(store.state, proposal, userId));
-      const applied = store.state.proposals.find((item) => item.id === proposal.id);
+function autoApplyAiThreadProposal(store: StateStore, runtime: AiToolRuntime, campaignId: string, userId: string, proposalId: string): AutoAppliedProposalToolOutput | undefined {
+  const proposal = store.state.proposals.find((item) => item.id === proposalId && item.campaignId === campaignId);
+  if (!proposal || proposal.status === "applied" || proposal.status === "rejected") return undefined;
+  try {
+    const preparedChanges = prepareProposalChanges(store, proposal.campaignId, proposal.createdByUserId ?? userId, proposal.changesJson, { currentProposalId: proposal.id });
+    if ("error" in preparedChanges) throw new Error(preparedChanges.message);
+    proposal.changesJson = preparedChanges.changes;
+    const boardStateChanged = proposalTouchesBoardState(proposal);
+    const refs = proposalAppliedEntityRefs(proposal);
+    if (proposal.status === "pending") {
+      Object.assign(proposal, approveProposal(proposal, userId));
       runtime.broadcast?.(
         createEvent({
           campaignId: proposal.campaignId,
-          type: "proposal.applied",
+          type: "proposal.approved",
           actorUserId: userId,
           targetId: proposal.id,
-          payload: applied
-        })
-      );
-      appliedProposalIds.push(proposal.id);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Proposal could not be auto-applied";
-      store.state.auditLogs.push(
-        createTimestamped("audit", {
-          campaignId: proposal.campaignId,
-          actorUserId: userId,
-          actorType: "user" as const,
-          action: "ai.proposal.apply.failed",
-          targetType: "proposal",
-          targetId: proposal.id,
-          after: {
-            proposalId: proposal.id,
-            status: proposal.status,
-            createdByType: proposal.createdByType,
-            sourceId: proposal.sourceId,
-            changeCount: proposal.changesJson.length,
-            entities: [...new Set(proposal.changesJson.map((change) => change.entity))],
-            reason: "auto_apply_failed",
-            message
-          }
+          payload: proposal
         })
       );
     }
+    if (proposal.status !== "approved") return undefined;
+    store.replace(applyProposal(store.state, proposal, userId));
+    const applied = store.state.proposals.find((item) => item.id === proposal.id);
+    runtime.broadcast?.(
+      createEvent({
+        campaignId: proposal.campaignId,
+        type: "proposal.applied",
+        actorUserId: userId,
+        targetId: proposal.id,
+        payload: applied
+      })
+    );
+    return {
+      proposalId: proposal.id,
+      boardStateChanged,
+      proposal: applied ? proposalToolSummary(applied) : undefined,
+      ...refs
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Proposal could not be auto-applied";
+    store.state.auditLogs.push(
+      createTimestamped("audit", {
+        campaignId: proposal.campaignId,
+        actorUserId: userId,
+        actorType: "user" as const,
+        action: "ai.proposal.apply.failed",
+        targetType: "proposal",
+        targetId: proposal.id,
+        after: {
+          proposalId: proposal.id,
+          status: proposal.status,
+          createdByType: proposal.createdByType,
+          sourceId: proposal.sourceId,
+          changeCount: proposal.changesJson.length,
+          entities: [...new Set(proposal.changesJson.map((change) => change.entity))],
+          reason: "auto_apply_failed",
+          message
+        }
+      })
+    );
+    return undefined;
+  }
+}
+
+function autoApplyAiThreadProposals(store: StateStore, runtime: AiToolRuntime, campaignId: string, userId: string, proposalIds: string[]): string[] {
+  const appliedProposalIds: string[] = [];
+  for (const proposalId of proposalIds) {
+    const applied = autoApplyAiThreadProposal(store, runtime, campaignId, userId, proposalId);
+    if (applied) appliedProposalIds.push(applied.proposalId);
   }
   return appliedProposalIds;
 }

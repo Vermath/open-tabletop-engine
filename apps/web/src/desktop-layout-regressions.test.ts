@@ -182,6 +182,24 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain(".rail-prep + .workspace .quick-create-form {\n  grid-area: create;");
   });
 
+  it("keeps scene tab quick actions compact and layer swaps reachable", () => {
+    expect(appSource).toContain("const quickCreateSceneIndex = sceneQuickCreateIndex(visibleScenes.length);");
+    expect(appSource).toContain('className="icon-button scene-tab-add"');
+    expect(appSource).toContain('className="icon-button scene-tab-delete"');
+    expect(appSource).toContain("createScene({ insertBeforeScene: scene })");
+    expect(appSource).toContain("quickDeleteScene(scene)");
+    expect(appSource).toContain("onTokenLayerCycle={cycleTokenLayer}");
+    expect(stylesSource).toContain(".scene-tab-wrap.selectable.deletable {\n  grid-template-columns: 28px minmax(0, auto) 30px;");
+    expect(stylesSource).toContain(".scene-tab-add {\n  width: 38px;");
+    expect(stylesSource).toContain(".scene-tab-delete {\n  justify-self: center;");
+    expect(stylesSource).toContain(".rail-prep + .workspace .scene-tab-wrap.selectable.deletable {\n    grid-template-columns: minmax(0, auto) 30px;");
+    expect(sceneCanvasSource).toContain("export function nextTokenLayer(layer: TokenLayer): TokenLayer");
+    expect(sceneCanvasSource).toContain("if (event.button !== 0) return;");
+    expect(sceneCanvasSource).toContain("onContextMenu={(event) => {");
+    expect(sceneCanvasSource).toContain("props.onTokenLayerCycle(token).catch(console.error);");
+    expect(stylesSource).toContain(".token.inactive-layer {\n  opacity: 0.58;\n  cursor: context-menu;\n  pointer-events: auto;");
+  });
+
   it("keeps tablet prep/content panels from clipping controls and status labels", () => {
     expect(stylesSource).toContain(".admin-form-grid .ghost-button,\n.admin-form-grid .primary-button {\n  min-height: 48px;\n  overflow: visible;\n  line-height: 1.15;\n  text-overflow: clip;\n  white-space: normal;");
     expect(stylesSource).toContain(".asset-library .admin-form-grid {\n  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));");

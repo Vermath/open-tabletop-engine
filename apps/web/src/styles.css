@@ -509,6 +509,14 @@ a[href]:focus-visible,
   background: rgba(127, 106, 69, 0.14);
 }
 
+.scene-tab-wrap.deletable {
+  grid-template-columns: minmax(0, auto) 30px;
+}
+
+.scene-tab-wrap.selectable.deletable {
+  grid-template-columns: 28px minmax(0, auto) 30px;
+}
+
 .scene-tab-select {
   justify-self: center;
   width: 20px;
@@ -548,6 +556,35 @@ a[href]:focus-visible,
   grid-column: 2;
   color: var(--muted);
   font-size: 11px;
+}
+
+.scene-tab-add,
+.scene-tab-delete {
+  flex: 0 0 auto;
+  padding: 0;
+}
+
+.scene-tab-add {
+  width: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  border-style: dashed;
+  color: var(--teal);
+}
+
+.scene-tab-delete {
+  justify-self: center;
+  width: 30px;
+  min-width: 30px;
+  min-height: 30px;
+  color: var(--muted);
+  border-color: rgba(148, 160, 173, 0.18);
+}
+
+.scene-tab-delete:hover {
+  color: #f0b0a7;
+  border-color: rgba(190, 102, 88, 0.72);
+  background: rgba(190, 102, 88, 0.16);
 }
 
 .scene-background-preview {
@@ -1259,7 +1296,8 @@ a[href]:focus-visible,
 
 .token.inactive-layer {
   opacity: 0.58;
-  pointer-events: none;
+  cursor: context-menu;
+  pointer-events: auto;
 }
 
 .token-move-distance {
@@ -7330,6 +7368,10 @@ body {
 
   .rail-prep + .workspace .scene-tab-wrap.selectable {
     grid-template-columns: minmax(0, auto);
+  }
+
+  .rail-prep + .workspace .scene-tab-wrap.selectable.deletable {
+    grid-template-columns: minmax(0, auto) 30px;
   }
 
   .rail-manage + .workspace .scene-filter-panel,

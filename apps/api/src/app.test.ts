@@ -23626,6 +23626,7 @@ registerCommand("/state", (input) => {
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("use draft_actor_token_roster with generateArt enabled") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("create missing actor/token records") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("place existing relevant tokens") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("When draft_scene returns a sceneId, continue in the same turn") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("attached reference image") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("parallel independent image-generation tool calls") });
     expect(provider.requests[0]!.signal).toBeInstanceOf(AbortSignal);
@@ -27442,6 +27443,97 @@ registerCommand("/state", (input) => {
       expect.arrayContaining([
         expect.objectContaining({ type: "proposal.created", proposalId: proposal?.id }),
         expect.objectContaining({ type: "proposal.applied", proposalId: proposal?.id })
+      ])
+    );
+
+    await app.close();
+  });
+
+  it("auto-applies in-turn scene proposals before later tools target them", async () => {
+    class SameTurnSceneProvider implements AiProvider {
+      id = "same-turn-scene-ai";
+      label = "Same Turn Scene AI";
+      executesToolsInTurn = true;
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        const executeTool = input.executeTool;
+        if (!executeTool) throw new Error("executeTool unavailable");
+        const sceneInput = { name: "One-Turn Clearing", width: 900, height: 700, gridSize: 50 };
+        yield { type: "tool.started", toolName: "draft_scene", input: sceneInput };
+        const sceneOutput = (await executeTool("draft_scene", sceneInput)) as { sceneId?: string; autoAppliedProposal?: { createdSceneIds?: string[] } };
+        yield { type: "tool.completed", toolName: "draft_scene", output: sceneOutput };
+        const sceneId = sceneOutput.sceneId ?? sceneOutput.autoAppliedProposal?.createdSceneIds?.[0];
+        if (!sceneId) throw new Error("draft_scene did not return a scene id");
+
+        const mapInput = {
+          prompt: "Gridless moonlit clearing with winding paths and practical cover.",
+          name: "One-Turn Clearing Map",
+          sceneId,
+          outputFormat: "png"
+        };
+        yield { type: "tool.started", toolName: "generate_map_asset", input: mapInput };
+        yield { type: "tool.completed", toolName: "generate_map_asset", output: await executeTool("generate_map_asset", mapInput) };
+        yield { type: "message.completed", content: "Built the scene in one turn." };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const generatedImageInputs: ImageAssetGenerationInput[] = [];
+    const imageAssetGenerator: ImageAssetGenerator = {
+      id: "same-turn-image-generator",
+      label: "Same Turn Image Generator",
+      async generate(input) {
+        generatedImageInputs.push(input);
+        return {
+          body: tinyPng,
+          mimeType: `image/${input.outputFormat ?? "png"}`,
+          provider: "test-same-turn",
+          sourcePrompt: input.prompt
+        };
+      }
+    };
+    const app = await buildApp({ store, aiProvider: new SameTurnSceneProvider(), assetStorage: new MemoryAssetStorage("same-turn-assets"), imageAssetGenerator });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Create a new scene, make a map for it, and apply it now.", approvalMode: "auto" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(generatedImageInputs).toHaveLength(1);
+    const scene = store.state.scenes.find((item) => item.name === "One-Turn Clearing");
+    expect(scene).toEqual(expect.objectContaining({ active: false, width: 900, height: 700, backgroundAssetId: expect.any(String) }));
+    const sceneId = scene?.id ?? "";
+    expect(sceneId).toMatch(/^scn_/);
+    const sceneProposal = store.state.proposals.find((item) => item.title === "Scene: One-Turn Clearing");
+    const mapProposal = store.state.proposals.find((item) => item.title === "Generated map: One-Turn Clearing Map");
+    expect(sceneProposal).toEqual(expect.objectContaining({ status: "applied" }));
+    expect(mapProposal).toEqual(expect.objectContaining({ status: "applied" }));
+    expect(mapProposal?.changesJson[1]).toEqual(expect.objectContaining({ entity: "scene", action: "update", id: sceneId }));
+    expect(scene?.backgroundAssetId).toBe(mapProposal?.changesJson[0]?.data.id);
+    expect(response.json().events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool.completed",
+          toolName: "draft_scene",
+          output: expect.objectContaining({
+            sceneId,
+            autoApplied: true,
+            autoAppliedProposal: expect.objectContaining({ proposalId: sceneProposal?.id, createdSceneIds: [sceneId], boardStateChanged: true })
+          })
+        }),
+        expect.objectContaining({
+          type: "tool.completed",
+          toolName: "generate_map_asset",
+          output: expect.objectContaining({
+            sceneId,
+            autoApplied: true,
+            autoAppliedProposal: expect.objectContaining({ proposalId: mapProposal?.id, sceneIds: [sceneId], updatedSceneIds: [sceneId], boardStateChanged: true })
+          })
+        }),
+        expect.objectContaining({ type: "proposal.applied", proposalId: sceneProposal?.id }),
+        expect.objectContaining({ type: "proposal.applied", proposalId: mapProposal?.id })
       ])
     );
 

@@ -3,7 +3,7 @@ import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
 import { toPng } from "html-to-image";
 import { Activity, Bot, Boxes, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, MessageSquare, Moon, Music, Paintbrush, Pause, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, Volume2, VolumeX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { acceptInviteSession, ApiError, apiAnalyzePdfContentImport, apiDelete, apiGet, apiPatch, apiPost, apiUploadAsset, assetBlobUrl, bootstrapOwnerSession, changePasswordSession, clearSession, confirmPasswordResetSession, confirmTotpMfa, consumeSsoRedirect, createOrganizationWorkspace, disableTotpMfa, enrollTotpMfa, getSessionToken, getSessionUserId, loadAdminSnapshot, loadBootstrapStatus, loadMfaStatus, loadOidcConfig, loadOrganizationInvites, loadOrganizationMembers, loadSnapshot, loginPasswordSession, loginSession, logoutSession, registerSession, removeOrganizationMember, requestPasswordReset, revokeInvite, setSessionUserId, setStatelessDemoApiMode, startOidcLogin, switchOrganization, updateOrganizationMemberRole, updateWorkspaceDefaults, upsertOrganizationMember, verifyDiceRoll, type AdminAssetIntegrityQuarantineResult, type AdminAuthConnectionTestResult, type AdminEmailOutboxRetryAllResult, type AdminJob, type AdminJobAlertResult, type AdminPasswordResetInfo, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminScimGroupRoleMappingResult, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type AiUsageSummary, type CampaignAssetStorageInfo, type CharacterTemplateInfo, type DiceRollVerification, type EncounterPlanInfo, type InviteCreateInfo, type MfaInfo, type OrganizationMemberInfo, type PluginReviewStatus, type PluginRuntimeInfo, type Snapshot, type SystemRuntimeInfo } from "./api.js";
 import { adversaryActorsForSceneBoard, isAdversaryActor } from "./actor-rails.js";
 import { activeSceneAnnotations, nextAnnotationExpiryMs } from "./annotation-expiry.js";
@@ -25,7 +25,7 @@ import { realtimeConnectionIdentity, startRealtimeConnection } from "./realtime-
 import { boardCaptureRequestDecision, createRealtimeHandlers, type BoardCaptureRequestDecision } from "./realtime-refresh.js";
 import { templateConePoints } from "./scene-annotations.js";
 import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
-import { sceneTabWrapClass } from "./scene-tabs.js";
+import { sceneQuickCreateIndex, sceneTabWrapClass } from "./scene-tabs.js";
 import { HpBar } from "./hp-bar.js";
 import { JournalPanel } from "./journal-panel.js";
 import { ChatRail } from "./chat-rail.js";
@@ -35,7 +35,7 @@ import { AdvancementFlow } from "./advancement-flow.js";
 import { ContentImportPanel } from "./content-import-panel.js";
 import { AdminPanel, aiToolCallErrorCode, scimMappingLabel } from "./admin-panel.js";
 import { AiPanel } from "./ai-panel.js";
-import { MapLayerStack, MapSelectionStatus, MapZoomControls, SceneCanvas, TabButton, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
+import { MapLayerStack, MapSelectionStatus, MapZoomControls, SceneCanvas, TabButton, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, nextTokenLayer, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
 import { campaignPermissionTemplates, type CampaignPermissionTemplateId } from "./admin-data.js";
 import { MetricTile } from "./metric-tile.js";
 import { assetMatchesFolderFilter, contentImportEntityData, normalizeAssetFolderPath, summarizeImport, type ArchiveImportCollection, type ArchiveImportScope, type AssetLifecycleStatus, type CampaignImportResult, type ContentImportDraftEntity, type ContentImportPreviewSource, type FailedAssetUpload } from "./content-import-data.js";
@@ -1006,6 +1006,7 @@ export function App() {
   const visibleScenes = accessibleScenes
     .filter((scene) => sceneFolderFilter === "all" || scene.folder === sceneFolderFilter)
     .filter((scene) => !normalizedSceneSearch || [scene.name, scene.folder ?? "", scene.id].some((value) => value.toLocaleLowerCase().includes(normalizedSceneSearch)));
+  const quickCreateSceneIndex = sceneQuickCreateIndex(visibleScenes.length);
   const selectedPrepScenes = visibleScenes.filter((scene) => selectedPrepSceneIds.includes(scene.id));
   const selectedScene = accessibleScenes.find((scene) => scene.id === sceneId) ?? accessibleScenes.find((scene) => scene.active);
   const selectedSceneIndex = orderedScenes.findIndex((scene) => scene.id === selectedScene?.id);
@@ -2333,9 +2334,17 @@ export function App() {
     return fallback;
   }
 
-  async function createScene() {
+  async function createScene(options: { insertBeforeScene?: Scene } = {}) {
     const name = newSceneName.trim();
     const gridSize = Math.max(10, normalizeSceneSizeValue(newSceneGridSize, 50));
+    const insertBeforeScene = options.insertBeforeScene;
+    const insertBeforeIndex = insertBeforeScene ? orderedScenes.findIndex((scene) => scene.id === insertBeforeScene.id) : -1;
+    const previousScene = insertBeforeIndex > 0 ? orderedScenes[insertBeforeIndex - 1] : undefined;
+    const sortOrder = insertBeforeScene && insertBeforeIndex >= 0
+      ? previousScene && previousScene.sortOrder < insertBeforeScene.sortOrder
+        ? previousScene.sortOrder + (insertBeforeScene.sortOrder - previousScene.sortOrder) / 2
+        : insertBeforeScene.sortOrder - 1
+      : (orderedScenes.at(-1)?.sortOrder ?? 0) + 1;
     const scene = await apiPost<Scene>(`/api/v1/campaigns/${campaignId}/scenes`, {
       name: name || `Scene ${snapshot.scenes.length + 1}`,
       folder: newSceneFolder.trim() || undefined,
@@ -2344,7 +2353,7 @@ export function App() {
       gridSize,
       backgroundAssetId: newSceneBackgroundAssetId || undefined,
       active: newSceneActive || snapshot.scenes.length === 0,
-      sortOrder: orderedScenes.length + 1
+      sortOrder
     });
     setSceneId(scene.id);
     setNewSceneName("");
@@ -2518,13 +2527,14 @@ export function App() {
 
   async function deleteScene(targetScene: Scene) {
     const previousSceneId = sceneId;
+    const deletingSelectedScene = targetScene.id === selectedScene?.id || targetScene.id === sceneId;
     const nextScene = accessibleScenes.find((scene) => scene.id !== targetScene.id);
-    const nextSceneId = nextScene?.id ?? "";
+    const nextSceneId = deletingSelectedScene ? nextScene?.id ?? "" : previousSceneId;
     setSceneDeleteConfirm("");
-    setSceneEditDirty(false);
+    if (deletingSelectedScene) setSceneEditDirty(false);
     setSelectedPrepSceneIds((current) => current.filter((id) => id !== targetScene.id));
     setSceneId(nextSceneId);
-    if (nextScene) {
+    if (deletingSelectedScene && nextScene) {
       setSceneEditName(nextScene.name);
       setSceneEditFolder(nextScene.folder ?? "");
       setSceneEditWidth(nextScene.width);
@@ -2544,6 +2554,20 @@ export function App() {
       await refresh(campaignId, previousSceneId, { syncStatus: false }).catch(() => undefined);
       throw error;
     }
+  }
+
+  async function quickDeleteScene(targetScene: Scene) {
+    if (accessibleScenes.length <= 1) {
+      setStatus("Keep at least one scene in the campaign");
+      return;
+    }
+    const currentScene = accessibleScenes.find((scene) => scene.id === sceneId && scene.id !== targetScene.id);
+    const nextScene = currentScene ?? accessibleScenes.find((scene) => scene.id !== targetScene.id);
+    if (!nextScene) return;
+    if (targetScene.active && !nextScene.active && hasPermission("scene.update")) {
+      await apiPatch<Scene>(`/api/v1/scenes/${nextScene.id}`, { active: true });
+    }
+    await deleteScene(targetScene);
   }
 
   async function createToken(options: Partial<TokenDropPayload> & { x?: number; y?: number } = {}) {
@@ -2820,6 +2844,26 @@ export function App() {
       return;
     }
     applyTokensToSnapshot([await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, patch)]);
+    setStatus(statusLabel);
+  }
+
+  async function cycleTokenLayer(token: Token) {
+    const nextLayer = nextTokenLayer(tokenLayer(token));
+    const statusLabel = `${token.name} moved to ${tokenLayerLabel(nextLayer)}`;
+    if (blankCanvasDemoOpen) {
+      setSnapshot((current) => ({
+        ...current,
+        tokens: current.tokens.map((item) => (item.id === token.id ? { ...item, layer: nextLayer, updatedAt: new Date().toISOString() } : item))
+      }));
+      setActiveTokenLayer(nextLayer);
+      selectSingleToken(token.id);
+      setStatus(`${statusLabel} for this demo tab`);
+      return;
+    }
+    const updated = await apiPatch<Token>(`/api/v1/tokens/${token.id}`, { layer: nextLayer });
+    applyTokensToSnapshot([updated]);
+    setActiveTokenLayer(nextLayer);
+    selectSingleToken(updated.id);
     setStatus(statusLabel);
   }
 
@@ -5762,6 +5806,8 @@ export function App() {
   const showScenePrepControls = workspaceMode === "prep";
   const showSceneSelectionControls = workspaceMode === "prep" || (workspaceMode === "manage" && activeManageCategory === "scenes");
   const canSelectPrepScenes = showSceneSelectionControls && hasPermission("scene.update");
+  const canQuickCreateScene = hasPermission("scene.create");
+  const canQuickDeleteScenes = hasPermission("scene.delete") && accessibleScenes.length > 1;
   const showQuickCreate = (workspaceMode === "live" || workspaceMode === "prep") && hasPermission("token.create");
   const showTableWorkspace = workspaceMode === "live" || workspaceMode === "prep";
   const encounterBuilderSystem = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
@@ -6902,28 +6948,45 @@ export function App() {
             )}
           </div>
           {showSceneTabs && <div className="scene-tabs">
-            {visibleScenes.map((scene) => {
+            {visibleScenes.map((scene, index) => {
               const backgroundAsset = snapshot.assets.find((asset) => asset.id === scene.backgroundAssetId && isUsableImageAsset(asset));
               const sceneSelected = canSelectPrepScenes && selectedPrepSceneIds.includes(scene.id);
               return (
-                <div key={scene.id} className={sceneTabWrapClass(canSelectPrepScenes, sceneSelected)}>
-                  {canSelectPrepScenes && (
-                    <input
-                      aria-label={`Select scene ${scene.name}`}
-                      checked={sceneSelected}
-                      className="scene-tab-select"
-                      type="checkbox"
-                      onChange={(event) => togglePrepSceneSelection(scene.id, event.target.checked)}
-                    />
+                <Fragment key={scene.id}>
+                  {canQuickCreateScene && index === quickCreateSceneIndex && (
+                    <button className="icon-button scene-tab-add" type="button" aria-label={`Add scene before ${scene.name}`} title={`Add scene before ${scene.name}`} onClick={() => createScene({ insertBeforeScene: scene }).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                      <Plus size={16} />
+                    </button>
                   )}
-                  <button className={scene.id === sceneId ? "scene-tab active" : "scene-tab"} onClick={() => setSceneId(scene.id)} aria-pressed={scene.id === sceneId}>
-                    <span className="scene-tab-thumb">{backgroundAsset ? <img src={assetBlobUrl(backgroundAsset)} alt="" /> : scene.active ? <Eye size={14} /> : <FileText size={14} />}</span>
-                    <span>{scene.name}</span>
-                    {scene.folder && <small>{scene.folder}</small>}
-                  </button>
-                </div>
+                  <div className={sceneTabWrapClass(canSelectPrepScenes, sceneSelected, canQuickDeleteScenes)}>
+                    {canSelectPrepScenes && (
+                      <input
+                        aria-label={`Select scene ${scene.name}`}
+                        checked={sceneSelected}
+                        className="scene-tab-select"
+                        type="checkbox"
+                        onChange={(event) => togglePrepSceneSelection(scene.id, event.target.checked)}
+                      />
+                    )}
+                    <button className={scene.id === sceneId ? "scene-tab active" : "scene-tab"} onClick={() => setSceneId(scene.id)} aria-pressed={scene.id === sceneId}>
+                      <span className="scene-tab-thumb">{backgroundAsset ? <img src={assetBlobUrl(backgroundAsset)} alt="" /> : scene.active ? <Eye size={14} /> : <FileText size={14} />}</span>
+                      <span>{scene.name}</span>
+                      {scene.folder && <small>{scene.folder}</small>}
+                    </button>
+                    {canQuickDeleteScenes && (
+                      <button className="icon-button scene-tab-delete" type="button" aria-label={`Delete scene ${scene.name}`} title={`Delete scene ${scene.name}`} onClick={() => quickDeleteScene(scene).catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </Fragment>
               );
             })}
+            {visibleScenes.length === 0 && accessibleScenes.length === 0 && canQuickCreateScene && (
+              <button className="icon-button scene-tab-add" type="button" aria-label="Add scene" title="Add scene" onClick={() => createScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                <Plus size={16} />
+              </button>
+            )}
             {visibleScenes.length === 0 && <span className="empty-state compact">No scenes match filters.</span>}
           </div>}
           {showQuickCreate && !quickCreateOpen && (
@@ -6973,7 +7036,7 @@ export function App() {
           <section className={`table-area ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`}>
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={createToken} onStartCombat={startCombat} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddLight={addLight} onActionError={(error) => setStatus(error instanceof Error ? error.message : String(error))} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
-              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : (
+              {selectedScene ? <SceneCanvas scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenMoveCommit={recordTokenMoveAction} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} /> : (
                 <div className="empty-state empty-state-action">
                   <span>Create a scene to open the tabletop.</span>
                   {hasPermission("scene.create") && (

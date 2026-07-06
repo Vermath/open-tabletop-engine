@@ -214,6 +214,13 @@ export function tokenLayerLabel(layer: TokenLayer): string {
 }
 
 
+export function nextTokenLayer(layer: TokenLayer): TokenLayer {
+  const currentIndex = tokenLayers.findIndex((item) => item.id === layer);
+  if (currentIndex < 0) return "player";
+  return tokenLayers[(currentIndex + 1) % tokenLayers.length]?.id ?? "player";
+}
+
+
 export function MapLayerStack(props: { scene?: Scene; tokens: Token[]; activeTokenLayer: TokenLayer; fogActive: boolean; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; onSelectTokenLayer(layer: TokenLayer): void; onToggleAnnotationLayer(layer: SceneAnnotationLayer, visible: boolean): void }) {
   const sceneTokens = props.scene ? props.tokens.filter((token) => token.sceneId === props.scene!.id) : [];
   const layerCounts = tokenLayers.reduce<Record<TokenLayer, number>>((counts, layer) => {
@@ -386,7 +393,7 @@ export const tokenResizeHandles: Array<{ id: TokenResizeHandle; label: string }>
 export const tokenCornerResizeHandles = tokenResizeHandles.filter((handle) => handle.id.length === 2);
 
 
-export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void }) {
+export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenMoveCommit(changes: BoardTokenPositionChange[]): void; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void }) {
   const [tokenDrag, setTokenDrag] = useState<TokenDragDraft | null>(null);
   const [tokenResize, setTokenResize] = useState<TokenResizeDraft | null>(null);
   const [tokenFrameOverrides, setTokenFrameOverrides] = useState<TokenFrameOverrides>({});
@@ -708,6 +715,7 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
   }
 
   function startTokenDrag(token: Token, event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
     if (!activeLayerTokenIds.has(token.id)) return;
     const point = boardPoint(event.clientX, event.clientY);
     if (!point) return;
@@ -1363,6 +1371,18 @@ export function SceneCanvas(props: { scene: Scene; zoom: number; backgroundAsset
             }}
             aria-label={`${tokenLayerLabel(layer)} token ${token.name}`}
             aria-pressed={selected}
+            title={props.canUpdateTokenLayer ? "Right-click to move to next layer" : undefined}
+            onContextMenu={(event) => {
+              if (!props.canUpdateTokenLayer || props.fogBrushMode || props.annotationTool) return;
+              event.preventDefault();
+              event.stopPropagation();
+              tokenDragRef.current = null;
+              setTokenDrag(null);
+              tokenResizeRef.current = null;
+              setTokenResize(null);
+              pointerSelectedTokenRef.current = token.id;
+              props.onTokenLayerCycle(token).catch(console.error);
+            }}
             onClick={(event) => {
               if (!activeLayerToken) return;
               if (pointerSelectedTokenRef.current === token.id) {
