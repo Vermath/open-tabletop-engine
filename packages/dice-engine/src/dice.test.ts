@@ -191,6 +191,20 @@ describe("dice engine", () => {
     expect(() => parseFormula("1001d6")).toThrow("Dice count must be between 1 and 1000: 1001");
   });
 
+  it("rejects invalid die shapes and RNG values instead of producing impossible faces", () => {
+    expect(() => parseFormula("1d1")).toThrow("Die sides must be at least 2");
+    expect(() => probabilityRange("1d0")).toThrow("Die sides must be at least 2");
+    expect(() => rollFormula("1d6", { rng: () => 1 })).toThrow("Dice RNG must return");
+    expect(() => rollFormula("1d6", { rng: () => -0.1 })).toThrow("Dice RNG must return");
+    expect(() => rollFormula("1d6", { rng: () => Number.NaN })).toThrow("Dice RNG must return");
+  });
+
+  it("bounds total formula work across many individually valid terms", () => {
+    expect(() => parseFormula(Array.from({ length: 101 }, () => "1d6").join("+"))).toThrow("cannot exceed 100 terms");
+    expect(() => parseFormula(Array.from({ length: 11 }, () => "1000d6").join("+"))).toThrow("cannot exceed 10000 dice");
+    expect(() => parseFormula(`${"1d6+".repeat(1024)}1d6`)).toThrow("cannot exceed 4096 characters");
+  });
+
   it("produces a deterministic, reproducible stream from a seed", () => {
     const first = Array.from({ length: 5 }, seededRng("seed-alpha"));
     const again = Array.from({ length: 5 }, seededRng("seed-alpha"));

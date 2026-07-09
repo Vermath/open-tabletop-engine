@@ -177,6 +177,7 @@ describe("worker job runner", () => {
   });
 
   it("times out stalled API requests", async () => {
+    let requestSignal: AbortSignal | undefined;
     await expect(
       runWorkerJob(
         { id: "job_recap", type: "ai.session.recap", payload: { campaignId: "camp_demo" } },
@@ -184,10 +185,15 @@ describe("worker job runner", () => {
           apiBaseUrl: "http://api.test",
           sessionToken: "ots_worker",
           requestTimeoutMs: 5,
-          fetch: async () => new Promise<Response>(() => undefined)
+          fetch: async (_url, init) => {
+            requestSignal = init?.signal as AbortSignal | undefined;
+            return new Promise<Response>(() => undefined);
+          }
         }
       )
     ).rejects.toThrow("Worker API request timed out after 5ms");
+    expect(requestSignal?.aborted).toBe(true);
+    expect(requestSignal?.reason).toEqual(expect.objectContaining({ message: "Worker API request timed out after 5ms" }));
   });
 
   it("leases the next queued admin job and records success", async () => {
@@ -368,6 +374,22 @@ describe("worker job runner", () => {
     expect(observed).toEqual(["succeeded", "idle", "idle"]);
     expect(calls.filter((call) => String(call.url).endsWith("/api/v1/admin/jobs/lease"))).toHaveLength(3);
     expect(JSON.parse(calls[0]!.init!.body as string)).toEqual({ workerId: "worker-loop", leaseSeconds: 30 });
+  });
+
+  it("rejects a leased loop with no session token before polling", async () => {
+    let fetchCalls = 0;
+
+    await expect(
+      runLeasedWorkerLoop({
+        apiBaseUrl: "http://api.test",
+        sessionToken: "   ",
+        fetch: async () => {
+          fetchCalls += 1;
+          return new Response(null, { status: 204 });
+        }
+      })
+    ).rejects.toThrow("Worker API session token is required");
+    expect(fetchCalls).toBe(0);
   });
 
   it("backs off and retries when a leased loop poll throws", async () => {

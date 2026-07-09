@@ -1,5 +1,14 @@
 export const realtimeRefreshDebounceMs = 250;
 
+export interface WorkspaceSelectionIdentity {
+  campaignId: string;
+  userId: string;
+}
+
+export function workspaceSelectionMatches(request: WorkspaceSelectionIdentity, current: WorkspaceSelectionIdentity): boolean {
+  return request.campaignId === current.campaignId && request.userId === current.userId;
+}
+
 type StatusUpdater = string | ((current: string) => string);
 
 export interface BoardCaptureRequestDecision {

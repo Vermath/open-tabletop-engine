@@ -55,15 +55,23 @@ export interface RollOptions {
 
 const diePattern = /^(\d*)d(\d+|%)(?:(kh|kl|dh|dl)(\d*))?(?:r(\d+))?(!)?$/i;
 const bindingPattern = /^@([a-zA-Z0-9_.-]+)$/;
+const MAX_FORMULA_LENGTH = 4096;
+const MAX_TERMS = 100;
+const MAX_TOTAL_DICE = 10_000;
 const MAX_DICE_PER_TERM = 1000;
 const MAX_EXPLOSIONS_PER_DIE = 100;
 const MAX_REROLLS_PER_DIE = 100;
 
 export function parseFormula(formula: string): ParsedTerm[] {
+  if (formula.length > MAX_FORMULA_LENGTH) throw new Error(`Dice formula cannot exceed ${MAX_FORMULA_LENGTH} characters`);
   const normalized = formula.replace(/^\/(?:roll|r|gmroll)\s+/i, "").replace(/\s+/g, "");
   if (!normalized) throw new Error("Dice formula is empty");
   const tokens = tokenizeFormula(normalized);
-  return tokens.map(parseToken);
+  if (tokens.length > MAX_TERMS) throw new Error(`Dice formula cannot exceed ${MAX_TERMS} terms`);
+  const terms = tokens.map(parseToken);
+  const totalDice = terms.reduce((total, term) => total + (term.type === "die" ? term.count : 0), 0);
+  if (totalDice > MAX_TOTAL_DICE) throw new Error(`Dice formula cannot exceed ${MAX_TOTAL_DICE} dice`);
+  return terms;
 }
 
 export function rollFormula(formula: string, options: RollOptions = {}): RollResult {
@@ -190,6 +198,7 @@ function parseToken(rawToken: string): ParsedTerm {
     const count = Number(dieMatch[1] || "1");
     if (!Number.isInteger(count) || count < 1 || count > MAX_DICE_PER_TERM) throw new Error(`Dice count must be between 1 and ${MAX_DICE_PER_TERM}: ${count}`);
     const sides = dieMatch[2] === "%" ? 100 : Number(dieMatch[2]);
+    if (!Number.isInteger(sides) || sides < 2) throw new Error(`Die sides must be at least 2: ${sides}`);
     const keepOrDrop = dieMatch[3]?.toLowerCase();
     const keep = keepOrDrop === "kh" ? "highest" : keepOrDrop === "kl" ? "lowest" : undefined;
     const drop = keepOrDrop === "dh" ? "highest" : keepOrDrop === "dl" ? "lowest" : undefined;
@@ -244,7 +253,11 @@ function tokenStartsWithBinding(formula: string, tokenStart: number): boolean {
 
 function rollDie(sides: number, rng: () => number): number {
   if (!Number.isInteger(sides) || sides < 2) throw new Error(`Invalid die sides: ${sides}`);
-  return Math.floor(rng() * sides) + 1;
+  const random = rng();
+  if (!Number.isFinite(random) || random < 0 || random >= 1) {
+    throw new Error("Dice RNG must return a finite number from 0 (inclusive) to 1 (exclusive)");
+  }
+  return Math.floor(random * sides) + 1;
 }
 
 function rollDieWithRerolls(term: ParsedDie, rng: () => number, rerolled: number[]): number {

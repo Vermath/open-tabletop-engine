@@ -37,4 +37,17 @@ describe("campaign archives", () => {
     expect(archive.data.tokens.map((token) => token.id).sort()).toEqual(["tok_side_room", "tok_valen"]);
     expect(sceneFilterCalls).toBe(1);
   });
+
+  it("returns a detached snapshot that cannot mutate live campaign state", () => {
+    const state = seedState();
+    const archive = makeArchive(state, "camp_demo");
+
+    archive.data.campaigns[0]!.name = "Changed in archive";
+    (archive.data.actors[0]!.data.hp as { current: number }).current = 0;
+    archive.data.tokens[0]!.metadata.changed = true;
+
+    expect(state.campaigns[0]!.name).toBe("The Ember Vault");
+    expect((state.actors[0]!.data.hp as { current: number }).current).toBe(18);
+    expect(state.tokens[0]!.metadata).toEqual({});
+  });
 });

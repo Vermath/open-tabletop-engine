@@ -102,6 +102,83 @@ describe("CodexAppServerWebSocketTransport", () => {
     });
   });
 
+  it("yields reasoning summary deltas before Codex turn completion", async () => {
+    let socket: ReasoningBeforeCompletionCodexSocket | undefined;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 1000,
+        webSocketFactory: () => {
+          socket = new ReasoningBeforeCompletionCodexSocket();
+          return socket;
+        }
+      })
+    });
+
+    const iterator = provider.stream(baseRequest)[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    expect(first).toEqual({
+      done: false,
+      value: { type: "reasoning.delta", delta: "Reviewing the requested scene setup.", summaryIndex: 0 }
+    });
+    expect(socket?.completed).toBe(false);
+
+    const rest = [];
+    for (let next = await iterator.next(); !next.done; next = await iterator.next()) rest.push(next.value);
+    expect(socket?.completed).toBe(true);
+    expect(rest).toEqual([{ type: "message.completed", content: "Scene setup finished." }]);
+  });
+
+  it("stops the app-server turn when a streaming consumer returns early", async () => {
+    let socket: ReasoningBeforeCompletionCodexSocket | undefined;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 1000,
+        webSocketFactory: () => {
+          socket = new ReasoningBeforeCompletionCodexSocket();
+          return socket;
+        }
+      })
+    });
+
+    const iterator = provider.stream(baseRequest)[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toMatchObject({ done: false, value: { type: "reasoning.delta" } });
+    await iterator.return?.();
+
+    expect(socket?.closed).toBe(true);
+    expect(socket?.completed).toBe(false);
+  });
+
+  it("yields app-server item lifecycle activity as safe progress events", async () => {
+    let socket: ActivityCodexSocket | undefined;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 1000,
+        webSocketFactory: () => {
+          socket = new ActivityCodexSocket();
+          return socket;
+        }
+      })
+    });
+
+    const events = [];
+    for await (const event of provider.stream(baseRequest)) events.push(event);
+
+    expect(events).toEqual([
+      { type: "activity.reported", message: "Searching the web: forest clearing map references", itemType: "webSearch", itemId: "web_1", status: "started" },
+      { type: "activity.reported", message: "Web search complete", itemType: "webSearch", itemId: "web_1", status: "completed" },
+      { type: "activity.reported", message: "Using tool: generate map asset", itemType: "dynamicToolCall", itemId: "tool_1", status: "started" },
+      { type: "activity.reported", message: "Tool complete", itemType: "dynamicToolCall", itemId: "tool_1", status: "completed" },
+      { type: "message.completed", content: "Activity finished." }
+    ]);
+    expect(socket?.sent.find((message) => message.method === "turn/start")).toBeTruthy();
+  });
+
   it("rejects dynamic tool requests outside the OpenTabletop namespace", async () => {
     let socket: FakeCodexSocket | undefined;
     let executed = false;
@@ -479,6 +556,66 @@ class FailingCodexSocket {
   }
 }
 
+class ReasoningBeforeCompletionCodexSocket {
+  readonly sent: Array<{ id?: string | number; method?: string; params?: unknown; result?: unknown; error?: unknown }> = [];
+  completed = false;
+  closed = false;
+  private readonly listeners = new Map<string, Set<(event: { data?: unknown; reason?: string; message?: string }) => void>>();
+
+  constructor() {
+    queueMicrotask(() => this.emit("open", {}));
+  }
+
+  send(data: string): void {
+    const message = JSON.parse(data) as { id?: string | number; method?: string; params?: unknown; result?: unknown; error?: unknown };
+    this.sent.push(message);
+    if (message.method === "initialize") {
+      this.emitMessage({ id: message.id, result: { userAgent: "fake", codexHome: "C:\\tmp", platformFamily: "windows", platformOs: "windows" } });
+      return;
+    }
+    if (message.method === "account/read") {
+      this.emitMessage({ id: message.id, result: { authMode: "chatgpt" } });
+      return;
+    }
+    if (message.method === "thread/start") {
+      this.emitMessage({ id: message.id, result: { thread: { id: "codex_thread" } } });
+      return;
+    }
+    if (message.method === "turn/start") {
+      this.emitMessage({ id: message.id, result: { turn: { id: "codex_turn" } } });
+      this.emitMessage({ method: "item/reasoning/summaryTextDelta", params: { itemId: "rsn_1", summaryIndex: 0, delta: "Reviewing the requested scene setup." } });
+      setTimeout(() => {
+        this.completed = true;
+        this.emitMessage({ method: "item/completed", params: { item: { id: "msg_1", type: "agentMessage", text: "Scene setup finished." } } });
+        this.emitMessage({ method: "turn/completed", params: { threadId: "codex_thread", turn: { id: "codex_turn", status: "completed" } } });
+      }, 50);
+    }
+  }
+
+  close(): void {
+    this.closed = true;
+    this.emit("close", {});
+  }
+
+  addEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  private emitMessage(message: unknown): void {
+    this.emit("message", { data: JSON.stringify(message) });
+  }
+
+  private emit(type: string, event: { data?: unknown; reason?: string; message?: string }): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
 class SlowCompletionCodexSocket {
   readonly sent: Array<{ id?: string | number; method?: string; params?: unknown; result?: unknown; error?: unknown }> = [];
   toolResponse: unknown;
@@ -533,6 +670,63 @@ class SlowCompletionCodexSocket {
           arguments: { prompt: "ember vault tactical battlemap", name: "Ember Vault Map", sceneId: "scn_vault" }
         }
       });
+    }
+  }
+
+  close(): void {
+    this.emit("close", {});
+  }
+
+  addEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type: "open" | "message" | "error" | "close", listener: (event: { data?: unknown; reason?: string; message?: string }) => void): void {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  private emitMessage(message: unknown): void {
+    this.emit("message", { data: JSON.stringify(message) });
+  }
+
+  private emit(type: string, event: { data?: unknown; reason?: string; message?: string }): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
+class ActivityCodexSocket {
+  readonly sent: Array<{ id?: string | number; method?: string; params?: unknown; result?: unknown; error?: unknown }> = [];
+  private readonly listeners = new Map<string, Set<(event: { data?: unknown; reason?: string; message?: string }) => void>>();
+
+  constructor() {
+    queueMicrotask(() => this.emit("open", {}));
+  }
+
+  send(data: string): void {
+    const message = JSON.parse(data) as { id?: string | number; method?: string; params?: unknown; result?: unknown; error?: unknown };
+    this.sent.push(message);
+    if (message.method === "initialize") {
+      this.emitMessage({ id: message.id, result: { userAgent: "fake", codexHome: "C:\\tmp", platformFamily: "windows", platformOs: "windows" } });
+      return;
+    }
+    if (message.method === "account/read") {
+      this.emitMessage({ id: message.id, result: { authMode: "chatgpt" } });
+      return;
+    }
+    if (message.method === "thread/start") {
+      this.emitMessage({ id: message.id, result: { thread: { id: "codex_thread" } } });
+      return;
+    }
+    if (message.method === "turn/start") {
+      this.emitMessage({ id: message.id, result: { turn: { id: "codex_turn" } } });
+      this.emitMessage({ method: "item/started", params: { item: { id: "web_1", type: "webSearch", action: { type: "search", query: "forest clearing map references" } } } });
+      this.emitMessage({ method: "item/completed", params: { item: { id: "web_1", type: "webSearch", status: "completed" } } });
+      this.emitMessage({ method: "item/started", params: { item: { id: "tool_1", type: "dynamicToolCall", tool: "generate_map_asset" } } });
+      this.emitMessage({ method: "item/completed", params: { item: { id: "tool_1", type: "dynamicToolCall", status: "completed" } } });
+      this.emitMessage({ method: "item/completed", params: { item: { id: "msg_1", type: "agentMessage", text: "Activity finished." } } });
+      this.emitMessage({ method: "turn/completed", params: { threadId: "codex_thread", turn: { id: "codex_turn", status: "completed" } } });
     }
   }
 

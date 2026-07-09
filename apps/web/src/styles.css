@@ -7932,6 +7932,8 @@ body {
 
 .ai-agent-controls {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
   gap: 8px;
 }
 
@@ -7958,6 +7960,12 @@ body {
 .ai-agent-controls select:disabled {
   color: rgba(148, 160, 173, 0.64);
   cursor: not-allowed;
+}
+
+.ai-agent-new-chat-button {
+  min-height: 32px;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .ai-agent-reference-input {
@@ -8040,6 +8048,38 @@ body {
   white-space: pre-wrap;
 }
 
+.ai-agent-progress {
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.ai-agent-activity {
+  display: grid;
+  gap: 5px;
+  margin: 2px 0;
+  padding: 8px 9px;
+  border: 1px solid rgba(148, 160, 173, 0.14);
+  border-radius: 6px;
+  background: rgba(7, 12, 20, 0.38);
+  color: rgba(226, 232, 240, 0.88);
+  font-size: 0.8rem;
+}
+
+.ai-agent-activity p {
+  position: relative;
+  padding-left: 13px;
+}
+
+.ai-agent-activity p::before {
+  position: absolute;
+  top: 0.52em;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.72);
+  content: "";
+}
+
 .party-rail.adversary-rail {
   border-color: rgba(248, 113, 113, 0.28);
   background: rgba(20, 16, 18, 0.72);
@@ -8061,6 +8101,22 @@ body {
   border-top: 1px solid rgba(148, 160, 173, 0.14);
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.ai-agent-reasoning.live {
+  display: grid;
+  gap: 4px;
+  padding: 7px 8px;
+  border: 1px solid rgba(148, 160, 173, 0.16);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.5);
+}
+
+.ai-agent-reasoning.live > span {
+  color: rgba(226, 232, 240, 0.86);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .ai-agent-reasoning summary {

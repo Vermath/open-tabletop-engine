@@ -41,6 +41,16 @@ export function joinDesktopPath(root: string, ...parts: string[]): string {
   return [normalizeDesktopPath(root).replace(/\/+$/, ""), ...parts.map((part) => normalizeDesktopPath(part).replace(/^\/+|\/+$/g, ""))].filter(Boolean).join("/");
 }
 
+export function desktopRendererUrlAllowed(senderUrl: string, webRuntimeUrl: string): boolean {
+  try {
+    const sender = new URL(senderUrl);
+    const runtime = new URL(webRuntimeUrl);
+    return sender.origin === runtime.origin;
+  } catch {
+    return false;
+  }
+}
+
 function normalizeDesktopPath(value: string): string {
   return value.replace(/\\/g, "/").replace(/\/+/g, "/");
 }

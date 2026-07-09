@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { loadPluginRegistry, pluginSignatureForPackage, type PluginChatCommandInput } from "./plugin-runtime.js";
 
 describe("plugin runtime registry", () => {
@@ -118,6 +118,25 @@ registerCommand("/probe", (input) => {
 
       expect(registry.errors).toEqual([]);
       expect(registry.executeChatCommand("host-object-probe", sandboxInput()).body).toBe("host escape blocked");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not retain synchronous plugin globals across campaign executions", () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(pluginRoot, "campaign-isolation-probe", `
+let previousCampaign;
+registerCommand("/probe", (input) => {
+  const previous = previousCampaign ?? "none";
+  previousCampaign = input.campaignId;
+  return { body: previous, visibility: "public" };
+});
+`);
+      const registry = loadPluginRegistry({ pluginRoot });
+      expect(registry.executeChatCommand("campaign-isolation-probe", { ...sandboxInput(), pluginId: "campaign-isolation-probe", campaignId: "camp_alpha" }).body).toBe("none");
+      expect(registry.executeChatCommand("campaign-isolation-probe", { ...sandboxInput(), pluginId: "campaign-isolation-probe", campaignId: "camp_beta" }).body).toBe("none");
     } finally {
       rmSync(pluginRoot, { recursive: true, force: true });
     }
@@ -284,6 +303,21 @@ registerCommand("/probe", () => ({ body: "Probe still works", visibility: "publi
     }
   });
 
+  it("loads versions with SemVer build metadata", () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(pluginRoot, "build-metadata-plugin", `registerCommand("/version", () => ({ body: "Build 7", visibility: "public" }));`, {
+        version: "1.0.0+build.7",
+        command: "/version"
+      });
+      const registry = loadPluginRegistry({ pluginRoot });
+      expect(registry.errors).toEqual([]);
+      expect(registry.find("build-metadata-plugin")?.version).toBe("1.0.0+build.7");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
   it("reports plugin trust status and verifies signed packages under trusted-only policy", () => {
     const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
     try {
@@ -381,6 +415,30 @@ registerCommand("/probe", () => ({ body: "Probe still works", visibility: "publi
     }
   });
 
+  it("isolates malformed nested manifests without aborting registry startup", () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      writePluginPackage(pluginRoot, "healthy-plugin", `registerCommand("/probe", () => ({ body: "healthy", visibility: "public" }));`);
+      const malformedPath = resolve(pluginRoot, "malformed-plugin");
+      mkdirSync(malformedPath);
+      writeFileSync(join(malformedPath, "plugin.manifest.json"), JSON.stringify({
+        id: "malformed-plugin",
+        name: "Malformed Plugin",
+        version: "1.0.0",
+        compatibleCore: ">=0.3.0",
+        entrypoints: { server: "./server.js" },
+        permissions: [],
+        chatCommands: [null]
+      }));
+      const registry = loadPluginRegistry({ pluginRoot });
+      expect(registry.find("healthy-plugin")).toBeDefined();
+      expect(registry.find("malformed-plugin")).toBeUndefined();
+      expect(registry.errors).toEqual([expect.objectContaining({ packagePath: malformedPath, errors: ["Plugin chat command 1 must be an object"] })]);
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
 
 
   it("rejects remote registry packages that collide on manifest id and version", async () => {
@@ -422,7 +480,7 @@ registerCommand("/probe", () => ({ body: "Probe still works", visibility: "publi
     });
     await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
     try {
-      const registry = loadPluginRegistry({ pluginRoot });
+      const registry = loadPluginRegistry({ pluginRoot, network: { allowPrivateNetwork: true } });
       const registryUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/catalog.json`;
       const result = await registry.syncRemoteRegistry(registryUrl);
 
@@ -481,7 +539,7 @@ registerCommand("/probe", () => ({ body: "Probe still works", visibility: "publi
     });
     await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
     try {
-      const registry = loadPluginRegistry({ pluginRoot });
+      const registry = loadPluginRegistry({ pluginRoot, network: { allowPrivateNetwork: true } });
       const registryUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/catalog.json`;
       const result = await registry.syncRemoteRegistry(registryUrl);
 
@@ -494,6 +552,109 @@ registerCommand("/probe", () => ({ body: "Probe still works", visibility: "publi
       ]);
       expect(registry.executeChatCommand("shared-package", sandboxInput()).body).toBe("Local macro");
       expect(readFileSync(resolve(pluginRoot, "shared-package", "server.js"), "utf8")).toContain("Local macro");
+    } finally {
+      await new Promise<void>((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks private DNS results, redirect targets, and package URL pivots", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      const privateDnsFetch = vi.fn(async () => new Response(JSON.stringify({ plugins: [] })));
+      const privateDnsRegistry = loadPluginRegistry({ pluginRoot, network: { fetch: privateDnsFetch as typeof fetch, resolveHostname: async () => ["169.254.169.254"] } });
+      await expect(privateDnsRegistry.syncRemoteRegistry("https://registry.example.com/catalog.json")).rejects.toThrow("public network address");
+      expect(privateDnsFetch).not.toHaveBeenCalled();
+
+      const redirectFetch = vi.fn(async () => new Response(null, { status: 302, headers: { location: "http://127.0.0.1/internal/catalog.json" } }));
+      const redirectRegistry = loadPluginRegistry({ pluginRoot, network: { fetch: redirectFetch as typeof fetch, resolveHostname: async () => ["93.184.216.34"] } });
+      await expect(redirectRegistry.syncRemoteRegistry("https://registry.example.com/catalog.json")).rejects.toThrow("public network address");
+      expect(redirectFetch).toHaveBeenCalledTimes(1);
+
+      const packagePivotFetch = vi.fn(async () => new Response(JSON.stringify({ plugins: [{ packageId: "metadata-probe", packageUrl: "http://169.254.169.254/latest/meta-data/" }] }), { status: 200 }));
+      const packagePivotRegistry = loadPluginRegistry({ pluginRoot, network: { fetch: packagePivotFetch as typeof fetch, resolveHostname: async () => ["93.184.216.34"] } });
+      const packagePivotResult = await packagePivotRegistry.syncRemoteRegistry("https://registry.example.com/catalog.json");
+      expect(packagePivotResult.imported).toEqual([]);
+      expect(packagePivotResult.errors).toEqual([{ packagePath: "metadata-probe", errors: ["Plugin registry URLs must target a public network address"] }]);
+      expect(packagePivotFetch).toHaveBeenCalledTimes(1);
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("pins registry connections to the addresses that passed validation", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    let requestCount = 0;
+    const server = createServer((_request, response) => {
+      requestCount += 1;
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ plugins: [] }));
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    try {
+      const resolveHostname = vi.fn(async () => ["127.0.0.1"]);
+      const registry = loadPluginRegistry({ pluginRoot, network: { allowPrivateNetwork: true, resolveHostname } });
+      const registryUrl = `http://rebind.invalid:${(server.address() as AddressInfo).port}/catalog.json`;
+
+      const result = await registry.syncRemoteRegistry(registryUrl);
+
+      expect(result).toEqual({ registryUrl, imported: [], errors: [] });
+      expect(resolveHostname).toHaveBeenCalledTimes(1);
+      expect(resolveHostname).toHaveBeenCalledWith("rebind.invalid");
+      expect(requestCount).toBe(1);
+    } finally {
+      await new Promise<void>((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks encoded IPv4 and IPv6 forms that can reach private addresses", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ plugins: [] })));
+      const registry = loadPluginRegistry({ pluginRoot, network: { fetch: fetchImpl as typeof fetch } });
+      for (const registryUrl of [
+        "http://0x7f000001/catalog.json",
+        "http://2130706433/catalog.json",
+        "http://[::ffff:127.0.0.1]/catalog.json",
+        "http://[::7f00:1]/catalog.json",
+        "http://[::ffff:0:7f00:1]/catalog.json",
+        "http://[64:ff9b:1::7f00:1]/catalog.json",
+        "http://[2002:7f00:1::]/catalog.json"
+      ]) {
+        await expect(registry.syncRemoteRegistry(registryUrl)).rejects.toThrow("public network address");
+      }
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("bounds registry response bodies even without a content-length header", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    try {
+      const oversizedFetch = vi.fn(async () => new Response("x".repeat(1024 * 1024 + 1), { status: 200 }));
+      const registry = loadPluginRegistry({ pluginRoot, network: { fetch: oversizedFetch as typeof fetch, resolveHostname: async () => ["93.184.216.34"] } });
+      await expect(registry.syncRemoteRegistry("https://registry.example.com/catalog.json")).rejects.toThrow("Plugin registry response exceeds 1048576 bytes");
+    } finally {
+      rmSync(pluginRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("bounds response bodies on the pinned production transport", async () => {
+    const pluginRoot = mkdtempSync(join(tmpdir(), "otte-plugin-runtime-"));
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json", "transfer-encoding": "chunked" });
+      response.end("x".repeat(1024 * 1024 + 1));
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    try {
+      const registry = loadPluginRegistry({
+        pluginRoot,
+        network: { allowPrivateNetwork: true, resolveHostname: async () => ["127.0.0.1"] }
+      });
+      const registryUrl = `http://bounded.invalid:${(server.address() as AddressInfo).port}/catalog.json`;
+      await expect(registry.syncRemoteRegistry(registryUrl)).rejects.toThrow("Plugin registry response exceeds 1048576 bytes");
     } finally {
       await new Promise<void>((resolveClose, reject) => server.close((error) => (error ? reject(error) : resolveClose())));
       rmSync(pluginRoot, { recursive: true, force: true });

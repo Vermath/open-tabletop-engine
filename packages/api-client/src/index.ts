@@ -262,11 +262,13 @@ export const apiClientExcludedRoutePatterns = [
 
 export class OpenTabletopClient {
   private readonly fetchImpl: typeof fetch;
+  private readonly baseUrl: string;
 
   constructor(
-    private readonly baseUrl: string,
+    baseUrl: string,
     private readonly options: OpenTabletopClientOptions = {}
   ) {
+    this.baseUrl = normalizeClientBaseUrl(baseUrl);
     this.fetchImpl = options.fetch ?? fetch;
   }
 
@@ -348,7 +350,7 @@ export class OpenTabletopClient {
   }
 
   realtimeUrl(campaignId: string, options: Pick<OpenTabletopRealtimeOptions, "token"> = {}): string {
-    const url = new URL(openTabletopRealtimePath, this.baseUrl);
+    const url = new URL(`${this.baseUrl}${openTabletopRealtimePath}`);
     if (url.protocol === "http:") url.protocol = "ws:";
     if (url.protocol === "https:") url.protocol = "wss:";
     url.searchParams.set("campaignId", campaignId);
@@ -1098,6 +1100,14 @@ export class OpenTabletopClient {
     if (!response.ok) throw new Error(await response.text());
     return response.json() as Promise<T>;
   }
+}
+
+function normalizeClientBaseUrl(value: string): string {
+  const url = new URL(value);
+  url.search = "";
+  url.hash = "";
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  return url.toString().replace(/\/$/, "");
 }
 
 function realtimeProtocols(protocols: string | string[] | undefined, token: string | undefined): string[] | undefined {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sceneQuickCreateIndex, sceneTabWrapClass } from "./scene-tabs";
+import { sceneQuickCreateIndex, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs";
 
 describe("sceneTabWrapClass", () => {
   it("does not reserve checkbox layout space when scene selection is unavailable", () => {
@@ -19,5 +19,11 @@ describe("sceneTabWrapClass", () => {
     expect(sceneQuickCreateIndex(0)).toBe(0);
     expect(sceneQuickCreateIndex(1)).toBe(0);
     expect(sceneQuickCreateIndex(4)).toBe(3);
+  });
+
+  it("shows a trailing create affordance after the newest visible tab", () => {
+    expect(showTrailingSceneCreate(0)).toBe(false);
+    expect(showTrailingSceneCreate(1)).toBe(true);
+    expect(showTrailingSceneCreate(4)).toBe(true);
   });
 });

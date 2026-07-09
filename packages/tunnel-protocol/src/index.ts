@@ -1,5 +1,7 @@
 export const tunnelFrameSchemaVersion = 1;
 
+const reservedWebSocketCloseCodes = new Set([1004, 1005, 1006, 1015]);
+
 export type TunnelHeaders = Record<string, string>;
 
 export type TunnelFrame =
@@ -129,8 +131,21 @@ function statusField(record: Record<string, unknown>): number {
 function optionalCode(record: Record<string, unknown>): number | undefined {
   const value = record.code;
   if (value === undefined) return undefined;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1000 || value > 4999) throw new Error("code must be a WebSocket close code");
+  if (!isSendableWebSocketCloseCode(value)) throw new Error("code must be a sendable WebSocket close code");
   return value;
+}
+
+export function isSendableWebSocketCloseCode(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    (((value >= 1000 && value <= 1014) && !reservedWebSocketCloseCodes.has(value)) || (value >= 3000 && value <= 4999))
+  );
+}
+
+export function normalizeWebSocketCloseCode(value: unknown, fallback = 1011): number {
+  if (!isSendableWebSocketCloseCode(fallback)) throw new Error("fallback must be a sendable WebSocket close code");
+  return isSendableWebSocketCloseCode(value) ? value : fallback;
 }
 
 function fail(message: string): never {

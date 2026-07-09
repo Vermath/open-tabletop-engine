@@ -670,11 +670,23 @@ export function registerDiceFormula(registry: SystemRegistry, formula: DiceFormu
 }
 
 export function validateSystemManifest(manifest: SystemManifest): void {
-  if (!manifest.id || !manifest.name || !manifest.version) {
+  if (!manifest || typeof manifest !== "object") {
+    throw new Error("System manifest must be an object");
+  }
+  if (typeof manifest.id !== "string" || !manifest.id.trim() || typeof manifest.name !== "string" || !manifest.name.trim() || typeof manifest.version !== "string" || !manifest.version.trim()) {
     throw new Error("System manifest requires id, name, and version");
   }
-  if (!manifest.schemas.actor || !manifest.schemas.item) {
+  if (typeof manifest.compatibleCore !== "string" || !manifest.compatibleCore.trim()) {
+    throw new Error("System manifest requires a compatible core version range");
+  }
+  if (!manifest.entrypoints || typeof manifest.entrypoints !== "object" || Array.isArray(manifest.entrypoints)) {
+    throw new Error("System manifest requires entrypoints");
+  }
+  if (!manifest.schemas || typeof manifest.schemas !== "object" || Array.isArray(manifest.schemas) || typeof manifest.schemas.actor !== "string" || !manifest.schemas.actor.trim() || typeof manifest.schemas.item !== "string" || !manifest.schemas.item.trim()) {
     throw new Error("System manifest requires actor and item schemas");
+  }
+  if (!Array.isArray(manifest.permissions) || manifest.permissions.some((permission) => typeof permission !== "string" || !permission)) {
+    throw new Error("System manifest permissions must be an array of permission names");
   }
 }
 
@@ -2664,13 +2676,13 @@ export function dnd5eSrdActorClassLevels(actor: Actor): Dnd5eSrdClassLevel[] {
     const parsed = classesValue.flatMap((entry) => {
       const record = recordValue(entry);
       const className = stringValue(record.className) ?? stringValue(record.class);
-      const level = numericValue(record.level, 0);
+      const level = Math.floor(numericValue(record.level, 0));
       return className && level > 0 ? [{ className, level }] : [];
     });
     if (parsed.length > 0) return parsed;
   }
   const className = stringValue(actor.data.class);
-  return className ? [{ className, level: Math.max(1, numericValue(actor.data.level, 1)) }] : [];
+  return className ? [{ className, level: Math.max(1, Math.floor(numericValue(actor.data.level, 1))) }] : [];
 }
 
 export function dnd5eSrdMeetsMulticlassPrerequisite(actor: Actor, className: string): { eligible: boolean; requirement: string; missing: string[] } {
@@ -2928,6 +2940,8 @@ function dnd5eSrdApplyClassLevels(actor: Actor, classes: Dnd5eSrdClassLevel[], l
 export function applyDnd5eSrdMulticlassLevel(actor: Actor, className: string): Record<string, unknown> {
   const eligibility = dnd5eSrdCanMulticlassInto(actor, className);
   const existing = dnd5eSrdActorClassLevels(actor);
+  const totalLevel = existing.reduce((total, entry) => total + entry.level, 0);
+  if (totalLevel >= 20) throw new Error("Cannot advance beyond total level 20");
   const alreadyIn = existing.some((entry) => entry.className === className);
   if (!alreadyIn && !eligibility.eligible) {
     throw new Error(eligibility.reasons[0] ?? `Cannot multiclass into ${className}`);
@@ -2983,7 +2997,7 @@ export const dnd5eSrdMagicItemCraftingTable: Record<string, { costGp: number; da
 export function dnd5eSrdMagicItemCraftingPlan(rarity: string, options: { crafters?: number } = {}): { rarity: string; costGp: number; days: number; requirements: string[] } | undefined {
   const entry = dnd5eSrdMagicItemCraftingTable[rarity.toLowerCase()];
   if (!entry) return undefined;
-  const crafters = Math.max(1, Math.floor(options.crafters ?? 1));
+  const crafters = typeof options.crafters === "number" && Number.isFinite(options.crafters) ? Math.max(1, Math.floor(options.crafters)) : 1;
   return {
     rarity: rarity.toLowerCase(),
     costGp: entry.costGp,
@@ -15648,7 +15662,7 @@ function dnd5eSrdEncounterDifficulty(threatBudget: number, budgets: { easy: numb
 }
 
 export function genericFantasyAdvancementOptions(actor: Actor): AdvancementOption[] {
-  const level = numericValue(actor.data.level, 1);
+  const level = Math.max(1, Math.floor(numericValue(actor.data.level, 1)));
   if (level >= 20) return [];
   return [
     {
@@ -15662,7 +15676,11 @@ export function genericFantasyAdvancementOptions(actor: Actor): AdvancementOptio
 }
 
 export function dnd5eSrdAdvancementOptions(actor: Actor): AdvancementOption[] {
-  return genericFantasyAdvancementOptions(actor).map((option) => ({
+  const classes = dnd5eSrdActorClassLevels(actor);
+  const effectiveActor = classes.length > 1
+    ? { ...actor, data: { ...actor.data, level: classes.reduce((total, entry) => total + entry.level, 0) } }
+    : actor;
+  return genericFantasyAdvancementOptions(effectiveActor).map((option) => ({
     ...option,
     systemId: DND_5E_SRD_SYSTEM_ID,
     summary: dnd5eSrdAbilityScoreImprovementLevels.includes(option.nextValue)
@@ -15706,6 +15724,8 @@ export function applyGenericFantasyAdvancement(actor: Actor, optionId: string): 
 }
 
 export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record<string, unknown> {
+  const option = dnd5eSrdAdvancementOptions(actor).find((item) => item.id === optionId);
+  if (!option) throw new Error(`Unknown advancement: ${optionId}`);
   // A multiclass character's plain level-up advances its primary class through
   // the class-array recompute so features/resources stay per-class correct.
   const existingClasses = dnd5eSrdActorClassLevels(actor);
@@ -15714,7 +15734,7 @@ export function applyDnd5eSrdAdvancement(actor: Actor, optionId: string): Record
     const leveled = existingClasses.map((entry) => (entry.className === primary ? { ...entry, level: entry.level + 1 } : entry));
     return dnd5eSrdApplyClassLevels(actor, leveled, primary);
   }
-  const next = applyGenericFantasyAdvancement(actor, optionId);
+  const next = applyGenericFantasyAdvancement(actor, option.id);
   const className = typeof actor.data.class === "string" ? actor.data.class : "Fighter";
   const genericPrimary = className === "Mender" ? "wisdom" : "strength";
   const srdPrimary = dnd5eSrdPrimaryAbility(className);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { desktopDataPaths, desktopRuntimeEnv } from "./desktop-runtime.js";
+import { desktopDataPaths, desktopRendererUrlAllowed, desktopRuntimeEnv } from "./desktop-runtime.js";
 
 describe("desktop runtime configuration", () => {
   it("keeps persistent data under the app userData directory", () => {
@@ -28,5 +28,14 @@ describe("desktop runtime configuration", () => {
     expect(env.OTTE_UPLOAD_DIR).toContain("uploads");
     expect(env.OTTE_PLUGIN_DIR).toContain("plugins");
     expect(env.PORT).toBeUndefined();
+  });
+
+  it("trusts only the exact local renderer origin for privileged desktop IPC", () => {
+    const runtimeUrl = "http://127.0.0.1:43127/";
+
+    expect(desktopRendererUrlAllowed("http://127.0.0.1:43127/campaigns/camp_demo", runtimeUrl)).toBe(true);
+    expect(desktopRendererUrlAllowed("https://login.example.test/authorize", runtimeUrl)).toBe(false);
+    expect(desktopRendererUrlAllowed("http://127.0.0.1:43128/", runtimeUrl)).toBe(false);
+    expect(desktopRendererUrlAllowed("not a url", runtimeUrl)).toBe(false);
   });
 });

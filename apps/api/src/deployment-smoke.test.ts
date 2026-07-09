@@ -31,6 +31,7 @@ describe("deployment smoke", () => {
     expect(identityWorkflow).toContain("smoke_target:");
     expect(identityWorkflow).toContain("deployed-api");
     expect(identityWorkflow).toContain("local-sandbox");
+    expect(identityWorkflow).toContain("OTTE_IDENTITY_SMOKE_TARGET: ${{ inputs.smoke_target }}");
     expect(identityWorkflow).toContain("OTTE_IDENTITY_SMOKE_BASE_URL: ${{ secrets.OTTE_IDENTITY_SMOKE_BASE_URL }}");
     expect(identityWorkflow).toContain("OTTE_IDENTITY_SMOKE_ADMIN_TOKEN: ${{ secrets.OTTE_IDENTITY_SMOKE_ADMIN_TOKEN }}");
     expect(identityWorkflow).toContain("OTTE_SCIM_BEARER_TOKEN: ${{ secrets.OTTE_SCIM_BEARER_TOKEN }}");
@@ -41,10 +42,18 @@ describe("deployment smoke", () => {
     expect(completionAuditWorkflow).toContain("workflow_dispatch:");
     expect(completionAuditWorkflow).toContain("release_commit:");
     expect(completionAuditWorkflow).toContain("OTTE_RELEASE_COMMIT: ${{ inputs.release_commit }}");
+    expect(completionAuditWorkflow).toContain("ref: ${{ inputs.release_commit }}");
     expect(completionAuditWorkflow).toContain("issues: read");
     expect(completionAuditWorkflow).toContain("GH_TOKEN: ${{ github.token }}");
     expect(completionAuditWorkflow).toContain("release_commit must be a full 40-character SHA");
     expect(completionAuditWorkflow).toContain("pnpm v1:completion:audit");
+
+    const desktopReleaseWorkflow = readWorkspaceFile(".github/workflows/desktop-release.yml");
+    expect(desktopReleaseWorkflow).toContain('if [ -f "$artifact" ] && [ "$artifact" != "$checksum_file" ]; then');
+    expect(desktopReleaseWorkflow).not.toContain("shasum -a 256 *");
+
+    const docsSiteWorkflow = readWorkspaceFile(".github/workflows/docs-site.yml");
+    expect(docsSiteWorkflow).toContain("group: docs-site-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}");
 
     const compose = readWorkspaceFile("docker-compose.yml");
     expect(compose).toContain("dockerfile: infra/docker/api.Dockerfile");

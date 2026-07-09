@@ -43,5 +43,12 @@
     "turbo": "^2.9.18",
     "typescript": "^5.9.3",
     "vitest": "^2.1.9"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-uri": "3.1.2",
+      "fast-xml-builder": "1.1.7",
+      "ws": "8.21.0"
+    }
   }
 }

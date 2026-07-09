@@ -1,4 +1,4 @@
-import { parseTunnelFrameText, serializeTunnelFrame, type TunnelFrame, type TunnelHeaders } from "@open-tabletop/tunnel-protocol";
+import { normalizeWebSocketCloseCode, parseTunnelFrameText, serializeTunnelFrame, type TunnelFrame, type TunnelHeaders } from "@open-tabletop/tunnel-protocol";
 import { createRelayTable, hostTokenHash, MemoryRateLimiter, relayLimits, relayTableStatus, requestIp, verifyHostTokenHash, type RelayTableRecord } from "./relay-core.js";
 
 export interface RelayEnv {
@@ -133,6 +133,7 @@ export class TableTunnel {
     if (!this.hostSocket) return json({ error: "host_offline" }, 503);
     if (this.playerSockets.size >= relayLimits.maxClientWebSocketsPerTable) return json({ error: "too_many_websockets" }, 429);
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "websocket_required" }, 426);
+    const selectedProtocol = selectRelayWebSocketProtocol(request.headers.get("sec-websocket-protocol"));
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
@@ -146,13 +147,17 @@ export class TableTunnel {
     });
     server.addEventListener("close", (event) => {
       this.playerSockets.delete(socketId);
-      this.sendHost({ type: "ws.close", socketId, code: event.code, reason: event.reason });
+      this.sendHost({ type: "ws.close", socketId, code: normalizeWebSocketCloseCode(event.code), reason: event.reason });
     });
     server.addEventListener("error", () => {
       this.playerSockets.delete(socketId);
       this.sendHost({ type: "ws.close", socketId, code: 1011, reason: "Relay client socket error" });
     });
-    return new Response(null, { status: 101, webSocket: client });
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+      headers: selectedProtocol ? { "sec-websocket-protocol": selectedProtocol } : undefined
+    });
   }
 
   private async handleHostMessage(text: string): Promise<void> {
@@ -186,7 +191,7 @@ export class TableTunnel {
     }
     if (frame.type === "ws.close") {
       const socket = this.playerSockets.get(frame.socketId);
-      socket?.close(frame.code ?? 1000, frame.reason);
+      socket?.close(normalizeWebSocketCloseCode(frame.code, 1000), frame.reason);
       this.playerSockets.delete(frame.socketId);
     }
   }
@@ -223,7 +228,8 @@ export class TableTunnel {
       pending.reject(new Error(reason));
     }
     this.pendingHttp.clear();
-    for (const socket of this.playerSockets.values()) socket.close(code, reason);
+    const safeCode = normalizeWebSocketCloseCode(code);
+    for (const socket of this.playerSockets.values()) socket.close(safeCode, reason);
     this.playerSockets.clear();
   }
 }
@@ -268,10 +274,23 @@ function requestHeaders(headers: Headers): TunnelHeaders {
   const result: TunnelHeaders = {};
   for (const [key, value] of headers.entries()) {
     const lower = key.toLowerCase();
-    if (["cf-connecting-ip", "cf-ipcountry", "cf-ray", "connection", "content-length", "host", "upgrade"].includes(lower)) continue;
+    if (
+      ["cf-connecting-ip", "cf-ipcountry", "cf-ray", "connection", "content-length", "host", "upgrade"].includes(lower) ||
+      (lower.startsWith("sec-websocket-") && lower !== "sec-websocket-protocol")
+    )
+      continue;
     result[lower] = value;
   }
   return result;
+}
+
+export function selectRelayWebSocketProtocol(value: string | null): string | undefined {
+  if (!value) return undefined;
+  const protocols = value
+    .split(",")
+    .map((protocol) => protocol.trim())
+    .filter((protocol) => /^[!#$%&'*+\-.0-9A-Z^_`a-z|~]+$/.test(protocol));
+  return protocols.find((protocol) => protocol === "otte.v1") ?? protocols[0];
 }
 
 function safeRelayPath(path: string): string {

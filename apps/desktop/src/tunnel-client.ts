@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import WebSocket from "ws";
-import { parseTunnelFrameText, serializeTunnelFrame, tunnelFrameSchemaVersion, type TunnelFrame, type TunnelHeaders } from "@open-tabletop/tunnel-protocol";
+import { normalizeWebSocketCloseCode, parseTunnelFrameText, serializeTunnelFrame, tunnelFrameSchemaVersion, type TunnelFrame, type TunnelHeaders } from "@open-tabletop/tunnel-protocol";
 
 export interface RelayTunnelSessionOptions {
   relayBaseUrl: string;
@@ -187,7 +187,9 @@ export class RelayTunnelSession {
   private openLocalWebSocket(frame: Extract<TunnelFrame, { type: "ws.open" }>): void {
     const target = new URL(frame.path, this.options.localWebBaseUrl);
     target.protocol = target.protocol === "https:" ? "wss:" : "ws:";
-    const localSocket = new WebSocket(target, { headers: localRequestHeaders(frame.headers) });
+    const protocols = localWebSocketProtocols(frame.headers);
+    const headers = localRequestHeaders(frame.headers);
+    const localSocket = protocols.length > 0 ? new WebSocket(target, protocols, { headers }) : new WebSocket(target, { headers });
     const local: LocalWebSocketTunnel = { socket: localSocket, opened: false, queuedMessages: [], queuedBytes: 0 };
     this.localSockets.set(frame.socketId, local);
     localSocket.on("open", () => {
@@ -212,7 +214,7 @@ export class RelayTunnelSession {
     localSocket.on("close", (code, reason) => {
       if (this.localSockets.get(frame.socketId)?.socket !== localSocket) return;
       this.localSockets.delete(frame.socketId);
-      this.sendFrame({ type: "ws.close", socketId: frame.socketId, code, reason: reason.toString("utf8") });
+      this.sendFrame({ type: "ws.close", socketId: frame.socketId, code: normalizeWebSocketCloseCode(code), reason: reason.toString("utf8") });
     });
     localSocket.on("error", (error) => {
       if (this.localSockets.get(frame.socketId)?.socket !== localSocket) return;
@@ -244,8 +246,9 @@ export class RelayTunnelSession {
     const local = this.localSockets.get(socketId);
     if (!local) return;
     this.localSockets.delete(socketId);
-    local.socket.close(code, reason);
-    this.sendFrame({ type: "ws.close", socketId, code, reason });
+    const safeCode = normalizeWebSocketCloseCode(code);
+    local.socket.close(safeCode, reason);
+    this.sendFrame({ type: "ws.close", socketId, code: safeCode, reason });
   }
 
   private sendFrame(frame: TunnelFrame): void {
@@ -271,14 +274,20 @@ function withInviteToken(publicUrl: string, inviteToken?: string): string {
   return url.toString();
 }
 
-function localRequestHeaders(headers: TunnelHeaders): TunnelHeaders {
+export function localRequestHeaders(headers: TunnelHeaders): TunnelHeaders {
   const clean: TunnelHeaders = {};
   for (const [key, value] of Object.entries(headers)) {
     const lower = key.toLowerCase();
-    if (["connection", "content-length", "host", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"].includes(lower)) continue;
+    if (["connection", "content-length", "host", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade"].includes(lower) || lower.startsWith("sec-websocket-")) continue;
     clean[lower] = value;
   }
   return clean;
+}
+
+export function localWebSocketProtocols(headers: TunnelHeaders): string[] {
+  const value = Object.entries(headers).find(([key]) => key.toLowerCase() === "sec-websocket-protocol")?.[1];
+  if (!value) return [];
+  return [...new Set(value.split(",").map((protocol) => protocol.trim()).filter((protocol) => /^[!#$%&'*+\-.0-9A-Z^_`a-z|~]+$/.test(protocol)))].slice(0, 16);
 }
 
 function rawDataToBuffer(data: WebSocket.RawData): Buffer {

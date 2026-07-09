@@ -107,7 +107,19 @@ jobs:
       - name: Checksums
         run: |
           cd apps/desktop/release
-          shasum -a 256 * > SHA256SUMS-${{ matrix.arch }}.txt
+          checksum_file="SHA256SUMS-${{ matrix.arch }}.txt"
+          : > "$checksum_file"
+          artifact_found=0
+          for artifact in *; do
+            if [ -f "$artifact" ] && [ "$artifact" != "$checksum_file" ]; then
+              shasum -a 256 "$artifact" >> "$checksum_file"
+              artifact_found=1
+            fi
+          done
+          if [ "$artifact_found" -ne 1 ]; then
+            echo "No regular macOS release artifacts were produced." >&2
+            exit 1
+          fi
       - uses: actions/upload-artifact@v5
         with:
           name: opentabletop-macos-${{ matrix.arch }}

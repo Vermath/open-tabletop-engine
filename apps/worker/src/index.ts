@@ -122,6 +122,7 @@ export async function runLeasedWorkerJob(options: WorkerOptions): Promise<Worker
 }
 
 export async function runLeasedWorkerLoop(options: WorkerLoopOptions): Promise<WorkerLoopResult> {
+  requireWorkerSessionToken(options);
   const pollIntervalMs = Math.max(0, options.pollIntervalMs ?? 5000);
   const maxIdlePolls = options.maxIdlePolls ?? Number.POSITIVE_INFINITY;
   const maxJobs = options.maxJobs ?? Number.POSITIVE_INFINITY;
@@ -246,18 +247,38 @@ async function dispatchJob(job: WorkerJob, options: WorkerOptions, fetchImpl: ty
 
 async function fetchJson(fetchImpl: typeof fetch, options: WorkerOptions, method: string, path: string, body?: unknown): Promise<unknown> {
   const timeoutMs = Math.max(1, options.requestTimeoutMs ?? 30_000);
+  const headers = workerHeaders(options, body !== undefined);
+  const requestAbortController = new AbortController();
+  const forwardAbort = () => requestAbortController.abort(options.signal?.reason);
+  if (options.signal?.aborted) forwardAbort();
+  else options.signal?.addEventListener("abort", forwardAbort, { once: true });
+  const abortPromise = new Promise<Response>((_resolve, reject) => {
+    const rejectForAbort = () => {
+      const reason = requestAbortController.signal.reason;
+      reject(reason instanceof Error ? reason : new Error("Worker API request aborted"));
+    };
+    if (requestAbortController.signal.aborted) rejectForAbort();
+    else requestAbortController.signal.addEventListener("abort", rejectForAbort, { once: true });
+  });
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<Response>((_resolve, reject) => {
-    timeout = setTimeout(() => reject(new Error(`Worker API request timed out after ${timeoutMs}ms`)), timeoutMs);
+    timeout = setTimeout(() => {
+      const error = new Error(`Worker API request timed out after ${timeoutMs}ms`);
+      requestAbortController.abort(error);
+      reject(error);
+    }, timeoutMs);
   });
-  const requestPromise = fetchImpl(`${options.apiBaseUrl.replace(/\/+$/, "")}${path}`, {
-    method,
-    headers: workerHeaders(options, body !== undefined),
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal: options.signal
-  });
-  const response = await Promise.race([requestPromise, timeoutPromise]).finally(() => {
+  const requestPromise = Promise.resolve().then(() =>
+    fetchImpl(`${options.apiBaseUrl.replace(/\/+$/, "")}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: requestAbortController.signal
+    })
+  );
+  const response = await Promise.race([requestPromise, timeoutPromise, abortPromise]).finally(() => {
     if (timeout) clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", forwardAbort);
   });
   const text = await response.text();
   const payload = text ? (JSON.parse(text) as unknown) : undefined;
@@ -295,9 +316,14 @@ function cancellationError(abortController: AbortController): Error {
 function workerHeaders(options: WorkerOptions, hasBody: boolean): Headers {
   const headers = new Headers();
   if (hasBody) headers.set("content-type", "application/json");
-  if (!options.sessionToken) throw new Error("Worker API session token is required");
-  headers.set("authorization", `Bearer ${options.sessionToken}`);
+  headers.set("authorization", `Bearer ${requireWorkerSessionToken(options)}`);
   return headers;
+}
+
+function requireWorkerSessionToken(options: WorkerOptions): string {
+  const sessionToken = options.sessionToken?.trim();
+  if (!sessionToken) throw new Error("Worker API session token is required");
+  return sessionToken;
 }
 
 function workerId(options: WorkerOptions): string {

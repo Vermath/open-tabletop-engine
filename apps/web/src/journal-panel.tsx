@@ -1,12 +1,42 @@
-import type { JournalEntry, Visibility } from "@open-tabletop/core";
+import type { Actor, JournalEntry, Visibility } from "@open-tabletop/core";
 import { Plus, ScrollText } from "lucide-react";
+import { useRef, useState } from "react";
+import type { Snapshot } from "./api.js";
 import { formatNumber } from "./sheet-format.js";
 
 
-export function JournalPanel(props: { journals: JournalEntry[]; title: string; setTitle(value: string): void; body: string; setBody(value: string): void; visibility: Visibility; setVisibility(value: Visibility): void; tags: string; setTags(value: string): void; onCreate(): void; onGenerateRecap(): void; canCreate: boolean }) {
+export function journalVisibilityHasTargets(visibility: Visibility, visibleToUserIds: readonly string[], visibleToActorIds: readonly string[]): boolean {
+  if (visibility === "specific_players") return visibleToUserIds.length > 0;
+  if (visibility === "specific_characters") return visibleToActorIds.length > 0;
+  return true;
+}
+
+export function JournalPanel(props: { journals: JournalEntry[]; members: Snapshot["members"]; actors: Actor[]; title: string; setTitle(value: string): void; body: string; setBody(value: string): void; visibility: Visibility; setVisibility(value: Visibility): void; tags: string; setTags(value: string): void; onCreate(targets: { visibleToUserIds: string[]; visibleToActorIds: string[] }): Promise<void>; onGenerateRecap(): void; canCreate: boolean }) {
   const publicCount = props.journals.filter((journal) => journal.visibility === "public").length;
   const gmOnlyCount = props.journals.filter((journal) => journal.visibility === "gm_only").length;
   const taggedCount = props.journals.filter((journal) => journal.tags.length > 0).length;
+  const [visibleToUserIds, setVisibleToUserIds] = useState<string[]>([]);
+  const [visibleToActorIds, setVisibleToActorIds] = useState<string[]>([]);
+  const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
+  const targetsValid = journalVisibilityHasTargets(props.visibility, visibleToUserIds, visibleToActorIds);
+  const toggleTarget = (values: string[], value: string, checked: boolean): string[] => checked ? [...new Set([...values, value])] : values.filter((candidate) => candidate !== value);
+  const createEntry = async () => {
+    if (creatingRef.current || !targetsValid) return;
+    creatingRef.current = true;
+    setCreating(true);
+    try {
+      await props.onCreate({
+        visibleToUserIds: props.visibility === "specific_players" ? visibleToUserIds : [],
+        visibleToActorIds: props.visibility === "specific_characters" ? visibleToActorIds : []
+      });
+      setVisibleToUserIds([]);
+      setVisibleToActorIds([]);
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
+    }
+  };
   return (
     <div className="panel-stack">
       <header className="panel-hero">
@@ -32,13 +62,37 @@ export function JournalPanel(props: { journals: JournalEntry[]; title: string; s
         className="operator-section content-import-form create-drawer-form"
         onSubmit={(event) => {
           event.preventDefault();
-          props.onCreate();
+          void createEntry().catch(console.error);
         }}
       >
         <label>
           <span>Title</span>
           <input aria-label="Journal title" value={props.title} placeholder="Session note" onChange={(event) => props.setTitle(event.target.value)} />
         </label>
+        {props.visibility === "specific_players" && (
+          <fieldset className="inline-options" aria-label="Journal visible players">
+            <legend>Visible players</legend>
+            {props.members.map((member) => (
+              <label className="inline-check" key={member.user.id}>
+                <input type="checkbox" checked={visibleToUserIds.includes(member.user.id)} onChange={(event) => setVisibleToUserIds((current) => toggleTarget(current, member.user.id, event.target.checked))} />
+                <span>{member.user.displayName || member.user.email || member.role}</span>
+              </label>
+            ))}
+            {props.members.length === 0 && <span>No campaign members are available.</span>}
+          </fieldset>
+        )}
+        {props.visibility === "specific_characters" && (
+          <fieldset className="inline-options" aria-label="Journal visible characters">
+            <legend>Visible characters</legend>
+            {props.actors.map((actor) => (
+              <label className="inline-check" key={actor.id}>
+                <input type="checkbox" checked={visibleToActorIds.includes(actor.id)} onChange={(event) => setVisibleToActorIds((current) => toggleTarget(current, actor.id, event.target.checked))} />
+                <span>{actor.name}</span>
+              </label>
+            ))}
+            {props.actors.length === 0 && <span>No player characters are available.</span>}
+          </fieldset>
+        )}
         <label>
           <span>Visibility</span>
           <select aria-label="Journal visibility" value={props.visibility} onChange={(event) => props.setVisibility(event.target.value as Visibility)}>
@@ -56,8 +110,8 @@ export function JournalPanel(props: { journals: JournalEntry[]; title: string; s
           <span>Body</span>
           <textarea aria-label="Journal body" value={props.body} onChange={(event) => props.setBody(event.target.value)} />
         </label>
-        <button className="primary-button wide" type="submit" disabled={!props.canCreate || !props.title.trim()}>
-          <Plus size={16} /> Create Entry
+        <button className="primary-button wide" type="submit" disabled={!props.canCreate || !props.title.trim() || !targetsValid || creating}>
+          <Plus size={16} /> {creating ? "Creating..." : "Create Entry"}
         </button>
       </form>
       </details>

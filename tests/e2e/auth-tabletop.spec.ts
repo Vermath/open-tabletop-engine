@@ -124,6 +124,12 @@ function statusMessage(page: Page, text: string | RegExp) {
   return page.getByRole("status").filter({ hasText: text }).first();
 }
 
+function sceneTab(page: Page, sceneName: string) {
+  return page.locator(".scene-tabs button.scene-tab").filter({
+    has: page.getByText(sceneName, { exact: true })
+  });
+}
+
 async function startCombatFromPanel(panel: Locator) {
   const start = panel.getByRole("button", { name: "Start combat" });
   if (!(await start.isVisible().catch(() => false))) {
@@ -606,19 +612,19 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(statusMessage(page, "Vault Entry updated")).toBeVisible();
   await page.getByRole("combobox", { name: "Scene folder filter" }).selectOption("prep/vault");
-  await expect(page.getByRole("button", { name: /Vault Entry/ })).toBeVisible();
+  await expect(sceneTab(page, "Vault Entry")).toBeVisible();
   await page.getByRole("combobox", { name: "Scene folder filter" }).selectOption("all");
   await expect(page.getByRole("status", { name: "Scene filter summary" })).toContainText("scenes");
   await page.getByRole("textbox", { name: "Scene search" }).fill("Vault Entry");
-  await expect(page.getByRole("button", { name: /Vault Entry/ })).toBeVisible();
+  await expect(sceneTab(page, "Vault Entry")).toBeVisible();
   await page.getByRole("textbox", { name: "Scene search" }).fill("Missing Scene");
   await expect(page.getByText("No scenes match filters.")).toBeVisible();
   await page.getByRole("textbox", { name: "Scene search" }).fill("");
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Duplicate Scene" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Delete Scene" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Duplicate Scene", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Delete Scene", exact: true })).toBeDisabled();
   await page.getByRole("textbox", { name: "Duplicate scene name" }).fill("Vault Entry Reorder");
-  await page.getByRole("button", { name: "Duplicate Scene" }).click();
+  await page.getByRole("button", { name: "Duplicate Scene", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Edit scene name" })).toHaveValue("Vault Entry Reorder");
   await expect(sceneStateComparison).toContainText("Vault Entry Reorder");
   await expect(sceneStateComparison).toContainText("Active scene");
@@ -657,7 +663,7 @@ test("demo GM can reach campaign, scene, and tabletop controls", async ({ page }
   await expect(sceneActivationHistory).toContainText("1 activation");
   await expect(sceneActivationHistory).toContainText("previous active scn_vault_entry");
   await page.getByRole("textbox", { name: "Confirm scene delete" }).fill("Vault Entry Reorder");
-  await page.getByRole("button", { name: "Delete Scene" }).click();
+  await page.getByRole("button", { name: "Delete Scene", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Edit scene name" })).toHaveValue("Vault Entry");
   await page.getByRole("button", { name: "Activate", exact: true }).click();
   await expect(page.getByRole("button", { name: "Activate", exact: true })).toBeDisabled();
@@ -1148,7 +1154,7 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await expect(page.locator("h1").filter({ hasText: "E2E Setup Campaign" })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "E2E Setup Campaign created with First Session; player invite ready; Player authoring permissions applied" }).first()).toBeVisible();
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await expect(page.getByRole("button", { name: /First Session/ })).toBeVisible();
+  await expect(sceneTab(page, "First Session")).toBeVisible();
   await openManageCategory(page, "People");
   await expect(page.locator('input[aria-label="Invite token"][readonly]')).toHaveValue(/^oti_/);
   await closeManage(page);
@@ -1174,7 +1180,7 @@ test("GM can create a campaign through the setup wizard", async ({ page }) => {
   await expect(page.locator("h1").filter({ hasText: "E2E Bare Campaign" })).toBeVisible();
   await expect(page.getByRole("status").filter({ hasText: "E2E Bare Campaign created with Bare Opening" }).first()).toBeVisible();
   await page.getByRole("button", { name: "Prep", exact: true }).click();
-  await expect(page.getByRole("button", { name: /Bare Opening/ })).toBeVisible();
+  await expect(sceneTab(page, "Bare Opening")).toBeVisible();
   await page.getByRole("button", { name: "Journal" }).click();
   await expect(page.getByText("Bare Welcome")).toBeVisible();
   await expect(page.getByText("A handout for the bare setup path.")).toBeVisible();
@@ -1664,7 +1670,7 @@ test("GM can draft and apply an AI proposal from the browser", async ({ page }) 
   await expect(encounterProposal).toContainText("pending");
   await encounterProposal.getByRole("button", { name: "Approve and apply" }).click();
   await expect(aiAgent.getByText("Proposal applied").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: /AI Draft Encounter Scene/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(sceneTab(page, "AI Draft Encounter Scene")).toHaveAttribute("aria-pressed", "true");
 
   const extractedMemory = await expectJsonResponse<{ memory: { id: string; text: string; visibility: string; sourceIds: string[] } }>(
     await page.request.post(`${apiBaseUrl}/api/v1/campaigns/camp_demo/ai/memory/extract`, {
@@ -2369,7 +2375,7 @@ test("player can accept an invite from a private browser session", async ({ brow
     if (!response.ok) throw new Error(await response.text());
   }, { apiBaseUrl });
   await page.reload();
-  await expect(page.getByRole("button", { name: /GM Prep Hidden Scene/ })).toBeVisible();
+  await expect(sceneTab(page, "GM Prep Hidden Scene")).toBeVisible();
 
   const origin = new URL(page.url()).origin;
   const privateContext = await browser.newContext();
@@ -2386,8 +2392,8 @@ test("player can accept an invite from a private browser session", async ({ brow
 
     await expect(privatePage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
     await expect(privatePage.getByText("Campaign Settings")).not.toBeVisible();
-    await expect(privatePage.getByRole("button", { name: /Vault Entry/ })).toBeVisible();
-    await expect(privatePage.getByRole("button", { name: /GM Prep Hidden Scene/ })).toHaveCount(0);
+    await expect(sceneTab(privatePage, "Vault Entry")).toBeVisible();
+    await expect(sceneTab(privatePage, "GM Prep Hidden Scene")).toHaveCount(0);
     await expect(privatePage.getByRole("button", { name: "Chat", exact: true })).toBeVisible();
 
     await submitChatCommand(page, "Realtime GM broadcast");
@@ -2446,7 +2452,7 @@ test("player can accept an invite from a private browser session", async ({ brow
 
     await privatePage.reload();
     await expect(privatePage.getByRole("heading", { name: "The Ember Vault" })).toBeVisible();
-    await expect(privatePage.getByRole("button", { name: /Vault Entry/ })).toBeVisible();
+    await expect(sceneTab(privatePage, "Vault Entry")).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${ownedToken.name}` })).toBeVisible();
     await expect(privatePage.getByRole("button", { name: `Token ${unownedToken.name}` })).toBeVisible();
     await privatePage.getByRole("button", { name: `Token ${ownedToken.name}` }).click();
@@ -2496,11 +2502,11 @@ test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
   if (await activeForPlayers.isChecked()) await activeForPlayers.uncheck();
 
   await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(`${prefix} A`);
-  await page.getByRole("button", { name: "Add Scene" }).click();
-  await expect(page.getByRole("button", { name: new RegExp(`${prefix} A`) })).toBeVisible();
+  await page.getByRole("button", { name: "Add Scene", exact: true }).click();
+  await expect(sceneTab(page, `${prefix} A`)).toBeVisible();
   await page.getByRole("textbox", { name: "Scene name", exact: true }).fill(`${prefix} B`);
-  await page.getByRole("button", { name: "Add Scene" }).click();
-  await expect(page.getByRole("button", { name: new RegExp(`${prefix} B`) })).toBeVisible();
+  await page.getByRole("button", { name: "Add Scene", exact: true }).click();
+  await expect(sceneTab(page, `${prefix} B`)).toBeVisible();
 
   await page.getByRole("textbox", { name: "Scene search" }).fill(prefix);
   await expect(page.getByRole("status", { name: "Scene filter summary" })).toContainText("2 of");
@@ -2511,7 +2517,7 @@ test("GM can bulk duplicate selected prep scenes", async ({ page }) => {
   await expect(page.getByRole("status", { name: "Scene selection summary" })).toContainText("2 selected");
 
   await page.getByRole("textbox", { name: "Scene search" }).fill(`${prefix} A Copy`);
-  await expect(page.getByRole("button", { name: new RegExp(`${prefix} A Copy`) })).toBeVisible();
+  await expect(sceneTab(page, `${prefix} A Copy`)).toBeVisible();
   await page.getByRole("textbox", { name: "Scene search" }).fill(`${prefix} B Copy`);
-  await expect(page.getByRole("button", { name: new RegExp(`${prefix} B Copy`) })).toBeVisible();
+  await expect(sceneTab(page, `${prefix} B Copy`)).toBeVisible();
 });

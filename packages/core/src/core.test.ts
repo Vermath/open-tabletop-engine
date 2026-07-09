@@ -46,6 +46,31 @@ describe("core permissions", () => {
     expect(hasPermission({ ...baseInput, permission: "journal.create" })).toBe(true);
     expect(hasPermission({ ...baseInput, permission: "journal.delete" })).toBe(false);
   });
+
+  it("does not honor permission grants at expiration or with malformed expiration timestamps", () => {
+    const state = seedState();
+    const baseInput = {
+      userId: "usr_demo_player",
+      campaignId: "camp_demo",
+      permission: "journal.create" as const,
+      members: state.members,
+      now: new Date("2026-01-02T00:00:00.000Z")
+    };
+    const grant = {
+      id: "grant_expiring",
+      subjectType: "user" as const,
+      subjectId: "usr_demo_player",
+      campaignId: "camp_demo",
+      permissions: ["journal.create" as const],
+      expiresAt: "2026-01-02T00:00:00.000Z",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    expect(hasPermission({ ...baseInput, grants: [grant] })).toBe(false);
+    expect(hasPermission({ ...baseInput, grants: [{ ...grant, expiresAt: "not-a-timestamp" }] })).toBe(false);
+    expect(hasPermission({ ...baseInput, grants: [{ ...grant, expiresAt: "2026-01-02T00:00:00.001Z" }] })).toBe(true);
+  });
 });
 
 describe("proposal application", () => {
@@ -262,6 +287,49 @@ describe("proposal application", () => {
     data.tags.push("mutated-after-apply");
 
     expect(next.journals.find((journal) => journal.id === "jnl_payload_clone")?.tags).toEqual(["original"]);
+  });
+
+  it("rejects duplicate and missing ids in proposal creates", () => {
+    const state = seedState();
+    const proposal = {
+      id: "prop_duplicate_id",
+      campaignId: "camp_demo",
+      createdByType: "ai" as const,
+      title: "Duplicate note",
+      summary: "Must not corrupt entity identity",
+      status: "approved" as const,
+      approvalRequired: true,
+      changesJson: [{ entity: "journal" as const, action: "create" as const, data: { ...state.journals[0] } }],
+      diffJson: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    expect(() => applyProposal({ ...state, proposals: [proposal] }, proposal)).toThrow("already exists");
+    const missingId = { ...proposal, id: "prop_missing_id", changesJson: [{ ...proposal.changesJson[0]!, data: { campaignId: "camp_demo" } }] };
+    expect(() => applyProposal({ ...state, proposals: [missingId] }, missingId)).toThrow("non-empty entity id");
+  });
+
+  it("rejects proposal updates that rewrite entity ids", () => {
+    const state = seedState();
+    const proposal = {
+      id: "prop_rewrite_id",
+      campaignId: "camp_demo",
+      createdByType: "ai" as const,
+      title: "Rewrite token id",
+      summary: "Must preserve entity identity",
+      status: "approved" as const,
+      approvalRequired: true,
+      changesJson: [{ entity: "token" as const, action: "update" as const, id: "tok_valen", data: { id: "tok_rewritten", x: 400 } }],
+      diffJson: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    };
+
+    expect(() => applyProposal({ ...state, proposals: [proposal] }, proposal)).toThrow("cannot change entity id");
+    const erasedId = { ...proposal, id: "prop_erase_id", changesJson: [{ ...proposal.changesJson[0]!, data: { id: undefined, x: 400 } }] };
+    expect(() => applyProposal({ ...state, proposals: [erasedId] }, erasedId)).toThrow("cannot change entity id");
+    expect(state.tokens[0]?.id).toBe("tok_valen");
   });
 });
 

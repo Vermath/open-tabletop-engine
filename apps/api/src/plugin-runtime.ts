@@ -1,13 +1,38 @@
 import { createHash, createHmac } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { request as requestHttp } from "node:http";
+import { request as requestHttps } from "node:https";
+import { isIP, type LookupFunction } from "node:net";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { Script, createContext, type Context } from "node:vm";
 import { Worker } from "node:worker_threads";
 import type { PermissionName } from "@open-tabletop/core";
-import { validatePluginManifest, type PluginManifest } from "@open-tabletop/plugin-sdk";
+import { comparePluginVersions, validatePluginManifest, type PluginManifest } from "@open-tabletop/plugin-sdk";
 
 const PLUGIN_COMMAND_EXECUTION_TIMEOUT_MS = 1000;
 const PLUGIN_COMMAND_WORKER_TIMEOUT_GRACE_MS = 100;
+const PLUGIN_REGISTRY_CATALOG_MAX_BYTES = 1024 * 1024;
+const PLUGIN_REGISTRY_PACKAGE_MAX_BYTES = 12 * 1024 * 1024;
+const PLUGIN_REGISTRY_MAX_REDIRECTS = 3;
+
+export interface PluginRegistryNetworkOptions {
+  fetch?: typeof fetch;
+  resolveHostname?: (hostname: string) => Promise<readonly string[]>;
+  allowPrivateNetwork?: boolean;
+}
+
+interface ResolvedRegistryAddress {
+  address: string;
+  family: 4 | 6;
+}
+
+interface RegistryHttpResponse {
+  status: number;
+  location?: string;
+  cancel(): Promise<void>;
+  readText(): Promise<string>;
+}
 
 export interface LoadedPlugin extends PluginManifest {
   source: {
@@ -165,9 +190,8 @@ export class PluginRuntimeRegistry {
   readonly errors: PluginLoadError[] = [];
   readonly inventoryWarnings: PluginInventoryWarning[] = [];
   private readonly plugins = new Map<string, RuntimePlugin[]>();
-  private readonly runtimes = new Map<string, SandboxedPluginRuntime>();
 
-  constructor(pluginRoot = defaultPluginRoot(), trustPolicy = pluginTrustPolicyFromEnv()) {
+  constructor(pluginRoot = defaultPluginRoot(), trustPolicy = pluginTrustPolicyFromEnv(), private readonly network: PluginRegistryNetworkOptions = {}) {
     this.pluginRoot = resolve(pluginRoot);
     this.trustPolicy = trustPolicy;
   }
@@ -176,10 +200,15 @@ export class PluginRuntimeRegistry {
     if (!existsSync(this.pluginRoot)) return;
     for (const entry of readdirSync(this.pluginRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      if (!existsSync(resolve(this.pluginRoot, entry.name, "plugin.manifest.json"))) continue;
-      const result = loadPluginPackage(this.pluginRoot, resolve(this.pluginRoot, entry.name), this.trustPolicy);
-      if (result.plugin) this.upsertPlugin(result.plugin);
-      if (result.error) this.errors.push(result.error);
+      const packagePath = resolve(this.pluginRoot, entry.name);
+      if (!existsSync(resolve(packagePath, "plugin.manifest.json"))) continue;
+      try {
+        const result = loadPluginPackage(this.pluginRoot, packagePath, this.trustPolicy);
+        if (result.plugin) this.upsertPlugin(result.plugin);
+        if (result.error) this.errors.push(result.error);
+      } catch (error) {
+        this.errors.push({ packagePath, errors: pluginErrorMessages(error) });
+      }
     }
   }
 
@@ -206,13 +235,12 @@ export class PluginRuntimeRegistry {
     }
     const plugin = result.plugin!;
     this.upsertPlugin(plugin);
-    this.runtimes.delete(runtimeKey(plugin.id, plugin.version));
     return publicPlugin(plugin, this.plugins.get(plugin.id) ?? [plugin]);
   }
 
   async syncRemoteRegistry(registryUrl: string): Promise<PluginRegistrySyncResult> {
     const resolvedRegistryUrl = normalizeHttpUrl(registryUrl, "Plugin registry URL");
-    const catalog = normalizePluginRegistryCatalog(await fetchJson(resolvedRegistryUrl), resolvedRegistryUrl);
+    const catalog = normalizePluginRegistryCatalog(await fetchJson(resolvedRegistryUrl, PLUGIN_REGISTRY_CATALOG_MAX_BYTES, this.network), resolvedRegistryUrl);
     const imported: LoadedPlugin[] = [];
     const errors: PluginLoadError[] = [];
 
@@ -242,8 +270,7 @@ export class PluginRuntimeRegistry {
         visibility: "public"
       };
     }
-    const runtime = this.runtimeFor(plugin);
-    return runtime.execute(input.command, input);
+    return new SandboxedPluginRuntime(plugin).execute(input.command, input);
   }
 
   async executeChatCommandAsync(pluginId: string, input: PluginChatCommandInput, version?: string): Promise<PluginChatCommandResult> {
@@ -308,7 +335,7 @@ export class PluginRuntimeRegistry {
   private async importRegistryEntry(registryUrl: URL, entry: PluginRegistryEntry): Promise<LoadedPlugin> {
     const packageId = validateRegistryPackageId(entry.packageId);
     const packageUrl = normalizeHttpUrl(entry.packageUrl, "Plugin package URL", registryUrl);
-    const packageText = await fetchText(packageUrl);
+    const packageText = await fetchText(packageUrl, PLUGIN_REGISTRY_PACKAGE_MAX_BYTES, this.network);
     const packageChecksum = sha256(Buffer.from(packageText, "utf8"));
     if (entry.checksum && entry.checksum !== packageChecksum) throw new PluginPackageError(`Invalid plugin package checksum: ${packageId}`, [`Expected ${entry.checksum} but received ${packageChecksum}`]);
     const packageDocument = JSON.parse(stripBom(packageText)) as unknown;
@@ -343,18 +370,10 @@ export class PluginRuntimeRegistry {
     ]);
   }
 
-  private runtimeFor(plugin: RuntimePlugin): SandboxedPluginRuntime {
-    const key = runtimeKey(plugin.id, plugin.version);
-    const existing = this.runtimes.get(key);
-    if (existing) return existing;
-    const runtime = new SandboxedPluginRuntime(plugin);
-    this.runtimes.set(key, runtime);
-    return runtime;
-  }
 }
 
-export function loadPluginRegistry(options: { pluginRoot?: string; trustPolicy?: PluginTrustPolicyConfig } = {}): PluginRuntimeRegistry {
-  const registry = new PluginRuntimeRegistry(options.pluginRoot, normalizePluginTrustPolicy(options.trustPolicy ?? pluginTrustPolicyFromEnv()));
+export function loadPluginRegistry(options: { pluginRoot?: string; trustPolicy?: PluginTrustPolicyConfig; network?: PluginRegistryNetworkOptions } = {}): PluginRuntimeRegistry {
+  const registry = new PluginRuntimeRegistry(options.pluginRoot, normalizePluginTrustPolicy(options.trustPolicy ?? pluginTrustPolicyFromEnv()), options.network);
   registry.loadAll();
   return registry;
 }
@@ -367,16 +386,18 @@ function loadPluginPackage(pluginRoot: string, packagePath: string, trustPolicy:
   if (!existsSync(manifestPath)) errors.push("plugin.manifest.json is required");
   if (errors.length) return { error: { packagePath: resolvedPackagePath, errors } };
 
-  let manifest: PluginManifest;
+  let manifestValue: unknown;
   let manifestSource: string;
   try {
     manifestSource = readFileSync(manifestPath, "utf8");
-    manifest = JSON.parse(stripBom(manifestSource)) as PluginManifest;
+    manifestValue = JSON.parse(stripBom(manifestSource)) as unknown;
   } catch {
     return { error: { packagePath: resolvedPackagePath, errors: ["plugin.manifest.json must be valid JSON"] } };
   }
 
-  errors.push(...validatePluginManifest(manifest));
+  errors.push(...validatePluginManifest(manifestValue));
+  if (errors.length) return { error: { packagePath: resolvedPackagePath, errors } };
+  const manifest = manifestValue as PluginManifest;
   const clientEntrypoint = validateEntrypoint(pluginRoot, resolvedPackagePath, manifest.entrypoints?.client, "client", errors);
   const serverEntrypoint = validateEntrypoint(pluginRoot, resolvedPackagePath, manifest.entrypoints?.server, "server", errors);
   if (manifest.chatCommands?.length && !serverEntrypoint) errors.push("Plugins with chat commands require a server entrypoint");
@@ -941,23 +962,273 @@ function readPluginRegistryMetadata(pluginRoot: string, packagePath: string): Pl
   }
 }
 
-async function fetchJson(url: URL): Promise<unknown> {
-  return JSON.parse(stripBom(await fetchText(url))) as unknown;
+async function fetchJson(url: URL, maxBytes: number, network: PluginRegistryNetworkOptions): Promise<unknown> {
+  return JSON.parse(stripBom(await fetchText(url, maxBytes, network))) as unknown;
 }
 
-async function fetchText(url: URL): Promise<string> {
+async function fetchText(url: URL, maxBytes: number, network: PluginRegistryNetworkOptions): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), pluginRegistryFetchTimeoutMs());
+  let currentUrl = url;
+  let redirects = 0;
   try {
-    const response = await fetch(url, {
-      headers: { accept: "application/json" },
-      signal: controller.signal
-    });
-    if (!response.ok) throw new Error(`registry_http_${response.status}`);
-    return await response.text();
+    while (true) {
+      const addresses = await resolveSafeRegistryAddresses(currentUrl, network);
+      const response = network.fetch
+        ? await fetchRegistryResponse(currentUrl, network.fetch, maxBytes, controller)
+        : await requestPinnedRegistryResponse(currentUrl, addresses, maxBytes, controller.signal);
+      if (isRedirectStatus(response.status)) {
+        if (redirects >= PLUGIN_REGISTRY_MAX_REDIRECTS) {
+          await response.cancel();
+          throw new Error("Plugin registry redirect limit exceeded");
+        }
+        const location = response.location;
+        if (!location) {
+          await response.cancel();
+          throw new Error("Plugin registry redirect is missing a location");
+        }
+        await response.cancel();
+        currentUrl = normalizeHttpUrl(location, "Plugin registry redirect URL", currentUrl);
+        redirects += 1;
+        continue;
+      }
+      if (response.status < 200 || response.status >= 300) {
+        await response.cancel();
+        throw new Error(`registry_http_${response.status}`);
+      }
+      return await response.readText();
+    }
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function resolveSafeRegistryAddresses(url: URL, network: PluginRegistryNetworkOptions): Promise<ResolvedRegistryAddress[]> {
+  if (url.username || url.password) throw new Error("Plugin registry URLs must not include credentials");
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  const ipVersion = isIP(hostname);
+  if (!network.allowPrivateNetwork && (!hostname || hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local") || (!ipVersion && !hostname.includes(".")))) {
+    throw new Error("Plugin registry URLs must target a public network address");
+  }
+  let resolvedAddresses: readonly string[];
+  if (ipVersion) {
+    resolvedAddresses = [hostname];
+  } else {
+    try {
+      resolvedAddresses = await (network.resolveHostname ?? resolveRegistryHostname)(hostname);
+    } catch {
+      throw new Error("Plugin registry hostname could not be resolved to a public network address");
+    }
+  }
+  const addresses = [...new Set(resolvedAddresses.map(normalizeResolvedAddress))].map((address) => ({ address, family: isIP(address) }));
+  if (addresses.length === 0 || addresses.some((entry) => entry.family !== 4 && entry.family !== 6)) throw new Error("Plugin registry hostname could not be resolved to a public network address");
+  const validated = addresses as ResolvedRegistryAddress[];
+  if (!network.allowPrivateNetwork && validated.some((entry) => !isPublicNetworkAddress(entry.address))) throw new Error("Plugin registry URLs must target a public network address");
+  return validated;
+}
+
+async function resolveRegistryHostname(hostname: string): Promise<readonly string[]> {
+  return (await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address);
+}
+
+function normalizeResolvedAddress(address: string): string {
+  return (address.toLowerCase().trim().replace(/^\[|\]$/g, "").split("%", 1)[0] ?? "");
+}
+
+async function fetchRegistryResponse(url: URL, fetchImpl: typeof fetch, maxBytes: number, controller: AbortController): Promise<RegistryHttpResponse> {
+  const response = await fetchImpl(url, { headers: { accept: "application/json", "accept-encoding": "identity" }, signal: controller.signal, redirect: "manual" });
+  return {
+    status: response.status,
+    location: response.headers.get("location") ?? undefined,
+    cancel: async () => {
+      await response.body?.cancel().catch(() => undefined);
+    },
+    readText: () => readBoundedResponseText(response, maxBytes, controller)
+  };
+}
+
+function requestPinnedRegistryResponse(url: URL, addresses: readonly ResolvedRegistryAddress[], maxBytes: number, signal: AbortSignal): Promise<RegistryHttpResponse> {
+  return new Promise((resolveRequest, rejectRequest) => {
+    let settled = false;
+    const finish = (response: RegistryHttpResponse): void => {
+      if (settled) return;
+      settled = true;
+      resolveRequest(response);
+    };
+    const fail = (error: Error): void => {
+      if (settled) return;
+      settled = true;
+      rejectRequest(error);
+    };
+    // A fresh agent plus a lookup function that only returns the validated set closes
+    // the DNS-rebinding gap without replacing the hostname used for Host/SNI checks.
+    const request = (url.protocol === "https:" ? requestHttps : requestHttp)(url, {
+      agent: false,
+      headers: { accept: "application/json", "accept-encoding": "identity" },
+      lookup: createPinnedLookup(addresses),
+      signal
+    }, (response) => {
+      const status = response.statusCode ?? 0;
+      const location = headerValue(response.headers.location);
+      const cancel = async (): Promise<void> => {
+        response.destroy();
+      };
+      if (isRedirectStatus(status) || status < 200 || status >= 300) {
+        finish({ status, location, cancel, readText: async () => "" });
+        return;
+      }
+      const declaredLength = headerValue(response.headers["content-length"]);
+      if (declaredLength && /^\d+$/.test(declaredLength) && Number(declaredLength) > maxBytes) {
+        response.destroy();
+        fail(registryResponseTooLargeError(maxBytes));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+      response.on("data", (chunk: Buffer | Uint8Array | string) => {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        totalBytes += buffer.byteLength;
+        if (totalBytes > maxBytes) {
+          response.destroy();
+          request.destroy();
+          fail(registryResponseTooLargeError(maxBytes));
+          return;
+        }
+        chunks.push(buffer);
+      });
+      response.on("end", () => {
+        const body = Buffer.concat(chunks, totalBytes).toString("utf8");
+        finish({ status, location, cancel, readText: async () => body });
+      });
+      response.on("error", (error) => fail(error));
+    });
+    request.on("error", (error) => fail(error));
+    request.end();
+  });
+}
+
+function createPinnedLookup(addresses: readonly ResolvedRegistryAddress[]): LookupFunction {
+  return (_hostname, options, callback) => {
+    const requestedFamily = options.family === 4 || options.family === 6 ? options.family : undefined;
+    const candidates = requestedFamily ? addresses.filter((entry) => entry.family === requestedFamily) : addresses;
+    if (candidates.length === 0) {
+      const error = new Error("Plugin registry hostname has no address for the requested family") as NodeJS.ErrnoException;
+      error.code = "ENOTFOUND";
+      callback(error, "", requestedFamily);
+      return;
+    }
+    if (options.all) {
+      callback(null, candidates.map((entry) => ({ address: entry.address, family: entry.family })));
+      return;
+    }
+    const selected = candidates[0]!;
+    callback(null, selected.address, selected.family);
+  };
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isRedirectStatus(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
+async function readBoundedResponseText(response: Response, maxBytes: number, controller: AbortController): Promise<string> {
+  const declaredLength = response.headers.get("content-length");
+  if (declaredLength && /^\d+$/.test(declaredLength) && Number(declaredLength) > maxBytes) {
+    controller.abort();
+    throw registryResponseTooLargeError(maxBytes);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value?.byteLength) continue;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      controller.abort();
+      throw registryResponseTooLargeError(maxBytes);
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks, totalBytes).toString("utf8");
+}
+
+function registryResponseTooLargeError(maxBytes: number): Error {
+  return new Error(`Plugin registry response exceeds ${maxBytes} bytes`);
+}
+
+function isPublicNetworkAddress(address: string): boolean {
+  const normalized = address.toLowerCase().split("%", 1)[0] ?? "";
+  const version = isIP(normalized);
+  if (version === 4) return isPublicIpv4(normalized);
+  if (version !== 6) return false;
+  const words = ipv6Words(normalized);
+  if (!words) return false;
+  const [first = 0, second = 0] = words;
+  if (words.every((word) => word === 0) || (words.slice(0, 7).every((word) => word === 0) && words[7] === 1)) return false;
+  if (words.slice(0, 6).every((word) => word === 0)) {
+    return isPublicIpv4(`${words[6]! >> 8}.${words[6]! & 0xff}.${words[7]! >> 8}.${words[7]! & 0xff}`);
+  }
+  if (words.slice(0, 4).every((word) => word === 0) && words[4] === 0xffff && words[5] === 0) return false;
+  if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80 || (first & 0xffc0) === 0xfec0 || (first & 0xff00) === 0xff00) return false;
+  if (first === 0x0100 && second === 0 && words[2] === 0 && words[3] === 0) return false;
+  if ((first === 0x2001 && (second === 0 || second === 2 || second === 0x0db8)) || first === 0x2002) return false;
+  if (first === 0x3fff && (second & 0xf000) === 0) return false;
+  if (first === 0x0064 && second === 0xff9b) return false;
+  if (words.slice(0, 5).every((word) => word === 0) && words[5] === 0xffff) {
+    return isPublicIpv4(`${words[6]! >> 8}.${words[6]! & 0xff}.${words[7]! >> 8}.${words[7]! & 0xff}`);
+  }
+  return true;
+}
+
+function isPublicIpv4(address: string): boolean {
+  const octets = address.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false;
+  const [first = 0, second = 0, third = 0] = octets;
+  return !(
+    first === 0 || first === 10 || first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 0 && third === 0) ||
+    (first === 192 && second === 0 && third === 2) ||
+    (first === 192 && second === 88 && third === 99) ||
+    (first === 192 && second === 168) ||
+    (first === 198 && (second === 18 || second === 19)) ||
+    (first === 198 && second === 51 && third === 100) ||
+    (first === 203 && second === 0 && third === 113) ||
+    first >= 224
+  );
+}
+
+function ipv6Words(address: string): number[] | undefined {
+  let value = address;
+  if (value.includes(".")) {
+    const lastColon = value.lastIndexOf(":");
+    const ipv4 = value.slice(lastColon + 1);
+    if (!validIpv4(ipv4)) return undefined;
+    const octets = ipv4.split(".").map(Number);
+    value = `${value.slice(0, lastColon)}:${((octets[0]! << 8) | octets[1]!).toString(16)}:${((octets[2]! << 8) | octets[3]!).toString(16)}`;
+  }
+  const halves = value.split("::");
+  if (halves.length > 2) return undefined;
+  const left = halves[0] ? halves[0].split(":").map((part) => Number.parseInt(part, 16)) : [];
+  const right = halves[1] ? halves[1].split(":").map((part) => Number.parseInt(part, 16)) : [];
+  const missing = 8 - left.length - right.length;
+  if ((halves.length === 1 && missing !== 0) || (halves.length === 2 && missing < 1)) return undefined;
+  const words = [...left, ...Array.from({ length: Math.max(0, missing) }, () => 0), ...right];
+  return words.length === 8 && words.every((word) => Number.isInteger(word) && word >= 0 && word <= 0xffff) ? words : undefined;
+}
+
+function validIpv4(address: string): boolean {
+  const octets = address.split(".").map(Number);
+  return octets.length === 4 && octets.every((octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255);
 }
 
 function normalizeHttpUrl(value: string, label: string, base?: URL): URL {
@@ -1007,59 +1278,8 @@ function comparePluginsByVersion(left: RuntimePlugin, right: RuntimePlugin): num
 }
 
 function compareSemverDescending(left: string, right: string): number {
-  return compareSemverAscending(right, left);
-}
-
-function compareSemverAscending(left: string, right: string): number {
-  const leftParsed = parseSemver(left);
-  const rightParsed = parseSemver(right);
-  for (let index = 0; index < 3; index++) {
-    const diff = leftParsed.release[index]! - rightParsed.release[index]!;
-    if (diff !== 0) return diff;
-  }
-  return comparePrerelease(leftParsed.prerelease, rightParsed.prerelease, left, right);
-}
-
-function comparePrerelease(left: string[], right: string[], leftRaw: string, rightRaw: string): number {
-  // Per semver, a version with a prerelease tag has lower precedence than the same release without one.
-  if (left.length === 0 && right.length === 0) return leftRaw.localeCompare(rightRaw);
-  if (left.length === 0) return 1;
-  if (right.length === 0) return -1;
-  const max = Math.max(left.length, right.length);
-  for (let index = 0; index < max; index++) {
-    const leftId = left[index];
-    const rightId = right[index];
-    if (leftId === undefined) return -1;
-    if (rightId === undefined) return 1;
-    const diff = comparePrereleaseIdentifier(leftId, rightId);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-}
-
-function comparePrereleaseIdentifier(left: string, right: string): number {
-  const leftNumeric = /^\d+$/.test(left);
-  const rightNumeric = /^\d+$/.test(right);
-  if (leftNumeric && rightNumeric) return Number.parseInt(left, 10) - Number.parseInt(right, 10);
-  if (leftNumeric) return -1;
-  if (rightNumeric) return 1;
-  return left.localeCompare(right);
-}
-
-function parseSemver(version: string): { release: [number, number, number]; prerelease: string[] } {
-  const withoutBuild = version.split("+", 1)[0] ?? version;
-  const dashIndex = withoutBuild.indexOf("-");
-  const mainPart = dashIndex === -1 ? withoutBuild : withoutBuild.slice(0, dashIndex);
-  const prereleasePart = dashIndex === -1 ? "" : withoutBuild.slice(dashIndex + 1);
-  const [major = "0", minor = "0", patch = "0"] = mainPart.split(".", 3);
-  return {
-    release: [Number.parseInt(major, 10) || 0, Number.parseInt(minor, 10) || 0, Number.parseInt(patch, 10) || 0],
-    prerelease: prereleasePart ? prereleasePart.split(".") : []
-  };
-}
-
-function runtimeKey(pluginId: string, version: string): string {
-  return `${pluginId}@${version}`;
+  const precedence = comparePluginVersions(right, left);
+  return precedence !== 0 ? precedence : right.localeCompare(left);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

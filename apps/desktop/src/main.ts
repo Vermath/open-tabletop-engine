@@ -1,10 +1,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, clipboard, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { startApiRuntime, type ApiRuntime } from "@open-tabletop/api/runtime";
 import { startWebStaticRuntime, type WebStaticRuntime } from "@open-tabletop/web/static-runtime";
-import { desktopDataPaths, desktopRuntimeEnv, type DesktopDataPaths } from "./desktop-runtime.js";
+import { desktopDataPaths, desktopRendererUrlAllowed, desktopRuntimeEnv, type DesktopDataPaths } from "./desktop-runtime.js";
 import { RelayTunnelSession } from "./tunnel-client.js";
 import type { DesktopStatus, StartInternetShareInput } from "./desktop-api.js";
 
@@ -37,7 +37,13 @@ async function main(): Promise<void> {
     apiBaseUrl: apiRuntime.url
   });
   registerIpcHandlers();
-  mainWindow = new BrowserWindow({
+  mainWindow = createMainWindow();
+  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  await mainWindow.loadURL(webRuntime.url);
+}
+
+function createMainWindow(): BrowserWindow {
+  const window = new BrowserWindow({
     width: 1360,
     height: 920,
     minWidth: 1024,
@@ -46,16 +52,32 @@ async function main(): Promise<void> {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       preload: join(desktopDir, "preload.js")
     }
   });
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
-  await mainWindow.loadURL(webRuntime.url);
+  window.on("closed", () => {
+    if (mainWindow === window) mainWindow = undefined;
+  });
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (webRuntime && desktopRendererUrlAllowed(url, webRuntime.url)) return;
+    event.preventDefault();
+    if (/^https?:/i.test(url)) void shell.openExternal(url);
+  });
+  return window;
 }
 
 function registerIpcHandlers(): void {
-  ipcMain.handle("desktop:getStatus", () => desktopStatus());
-  ipcMain.handle("desktop:startInternetShare", async (_event, input?: StartInternetShareInput) => {
+  ipcMain.handle("desktop:getStatus", (event) => {
+    assertTrustedRenderer(event);
+    return desktopStatus();
+  });
+  ipcMain.handle("desktop:startInternetShare", async (event, input?: StartInternetShareInput) => {
+    assertTrustedRenderer(event);
     if (!webRuntime) throw new Error("Desktop web runtime is not ready");
     if (shareSession?.status().state === "connected") return desktopStatus();
     shareSession = new RelayTunnelSession({
@@ -67,26 +89,35 @@ function registerIpcHandlers(): void {
     await shareSession.start();
     return desktopStatus();
   });
-  ipcMain.handle("desktop:stopInternetShare", async () => {
+  ipcMain.handle("desktop:stopInternetShare", async (event) => {
+    assertTrustedRenderer(event);
     await shareSession?.stop();
     shareSession = undefined;
     return desktopStatus();
   });
-  ipcMain.handle("desktop:copyInviteLink", () => {
+  ipcMain.handle("desktop:copyInviteLink", (event) => {
+    assertTrustedRenderer(event);
     const link = shareSession?.status().inviteUrl ?? shareSession?.status().publicUrl ?? "";
     if (link) clipboard.writeText(link);
     return link;
   });
-  ipcMain.handle("desktop:openDataFolder", async () => {
+  ipcMain.handle("desktop:openDataFolder", async (event) => {
+    assertTrustedRenderer(event);
     await shell.openPath(paths.root);
     return paths.root;
   });
-  ipcMain.handle("desktop:exportLogs", async () => {
+  ipcMain.handle("desktop:exportLogs", async (event) => {
+    assertTrustedRenderer(event);
     const exportPath = join(paths.backupsDir, `desktop-diagnostics-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
     await writeFile(exportPath, JSON.stringify({ exportedAt: new Date().toISOString(), status: desktopStatus() }, null, 2));
     shell.showItemInFolder(exportPath);
     return exportPath;
   });
+}
+
+function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
+  const senderUrl = event.senderFrame?.url ?? "";
+  if (!webRuntime || !desktopRendererUrlAllowed(senderUrl, webRuntime.url)) throw new Error("Desktop API is only available to the local OpenTabletop renderer");
 }
 
 function desktopStatus(): DesktopStatus {
@@ -115,11 +146,7 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (!mainWindow && webRuntime) {
-    mainWindow = new BrowserWindow({
-      width: 1360,
-      height: 920,
-      webPreferences: { contextIsolation: true, nodeIntegration: false, preload: join(desktopDir, "preload.js") }
-    });
+    mainWindow = createMainWindow();
     void mainWindow.loadURL(webRuntime.url);
   }
 });

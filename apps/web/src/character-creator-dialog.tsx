@@ -1,6 +1,7 @@
 import { Check, ChevronLeft, ChevronRight, UserPlus, X } from "lucide-react";
 import { useState } from "react";
 import type { CharacterTemplateInfo, Snapshot } from "./api.js";
+import { useModalAccessibility } from "./modal-accessibility.js";
 import { errorMessage, prettyOriginId } from "./sheet-format.js";
 
 
@@ -60,6 +61,7 @@ export function CharacterCreatorDialog(props: {
   const [spellAbility, setSpellAbility] = useState("intelligence");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const dialogRef = useModalAccessibility<HTMLDivElement>(props.onClose);
 
   const template = props.templates.find((item) => item.id === templateId);
   const origins = props.origins;
@@ -112,7 +114,7 @@ export function CharacterCreatorDialog(props: {
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
-      <div className="modal-dialog character-creator" role="dialog" aria-modal="true" aria-label="Character creator">
+      <div ref={dialogRef} className="modal-dialog character-creator" role="dialog" aria-modal="true" aria-label="Character creator" tabIndex={-1}>
         <header className="creator-header">
           <div>
             <h2>Create a character</h2>

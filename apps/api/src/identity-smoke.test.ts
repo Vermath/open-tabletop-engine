@@ -5,6 +5,9 @@ import { MemoryStateStore } from "./store.js";
 const identitySmokeBaseUrl = trimTrailingSlash(process.env.OTTE_IDENTITY_SMOKE_BASE_URL);
 const identitySmokeAdminToken = envText("OTTE_IDENTITY_SMOKE_ADMIN_TOKEN");
 const scimBearerToken = envText("OTTE_SCIM_BEARER_TOKEN");
+const identitySmokeTarget = selectIdentitySmokeTarget(process.env);
+
+type IdentitySmokeTarget = "deployed-api" | "local-sandbox";
 
 type SmokeResponse = {
   status: number;
@@ -16,7 +19,7 @@ type SmokeMethod = "GET" | "POST";
 type SmokeRequest = (path: string, init?: { method?: SmokeMethod; headers?: Record<string, string>; body?: unknown }) => Promise<SmokeResponse>;
 
 describe("identity provider smoke", () => {
-  if (identitySmokeBaseUrl && identitySmokeAdminToken && scimBearerToken) {
+  if (identitySmokeTarget === "deployed-api" && identitySmokeBaseUrl && identitySmokeAdminToken && scimBearerToken) {
     it("checks deployed OIDC and SCIM readiness without exposing provider secrets", async () => {
       const request: SmokeRequest = async (path, init = {}) => {
         const response = await fetch(`${identitySmokeBaseUrl}${path}`, {
@@ -40,7 +43,7 @@ describe("identity provider smoke", () => {
     return;
   }
 
-  if (hasLocalIdentitySmokeEnv()) {
+  if (identitySmokeTarget === "local-sandbox" && hasLocalIdentitySmokeEnv()) {
     it("checks local sandbox OIDC discovery and SCIM readiness without exposing provider secrets", async () => {
       const adminUserId = envText("OTTE_IDENTITY_SMOKE_ADMIN_USER_ID") ?? "usr_demo_gm";
       const previousAdminUserIds = process.env.OTTE_ADMIN_USER_IDS;
@@ -56,12 +59,12 @@ describe("identity provider smoke", () => {
         expect(login.statusCode).toBe(200);
         const adminAuthorization = `Bearer ${login.json().token}`;
         const request: SmokeRequest = async (path, init = {}) => {
-        const response = await app.inject({
-          method: init.method ?? "GET",
-          url: path,
-          headers: init.headers,
-          payload: init.body as string | object | Buffer | undefined
-        });
+          const response = await app.inject({
+            method: init.method ?? "GET",
+            url: path,
+            headers: init.headers,
+            payload: init.body as string | object | Buffer | undefined
+          });
           const text = response.body;
           return { status: response.statusCode, body: text ? JSON.parse(text) : undefined, text };
         };
@@ -82,7 +85,32 @@ describe("identity provider smoke", () => {
     return;
   }
 
-  it.skip("requires OTTE_IDENTITY_SMOKE_BASE_URL/OTTE_IDENTITY_SMOKE_ADMIN_TOKEN/OTTE_SCIM_BEARER_TOKEN or local OIDC plus SCIM env", () => undefined);
+  it.skip(
+    identitySmokeTarget === "local-sandbox"
+      ? "local-sandbox requires local OIDC plus SCIM env"
+      : identitySmokeTarget === "deployed-api"
+        ? "deployed-api requires OTTE_IDENTITY_SMOKE_BASE_URL/OTTE_IDENTITY_SMOKE_ADMIN_TOKEN/OTTE_SCIM_BEARER_TOKEN"
+        : "requires OTTE_IDENTITY_SMOKE_BASE_URL/OTTE_IDENTITY_SMOKE_ADMIN_TOKEN/OTTE_SCIM_BEARER_TOKEN or local OIDC plus SCIM env",
+    () => undefined
+  );
+});
+
+describe("identity smoke target selection", () => {
+  const allTargetsConfigured: NodeJS.ProcessEnv = {
+    OTTE_IDENTITY_SMOKE_BASE_URL: "https://identity.example.test",
+    OTTE_IDENTITY_SMOKE_ADMIN_TOKEN: "deployed-admin-token",
+    OTTE_OIDC_ISSUER: "https://oidc.example.test",
+    OTTE_OIDC_CLIENT_ID: "local-client-id",
+    OTTE_SCIM_BEARER_TOKEN: "scim-bearer-token"
+  };
+
+  it("selects local-sandbox when explicitly requested even if deployed credentials exist", () => {
+    expect(selectIdentitySmokeTarget({ ...allTargetsConfigured, OTTE_IDENTITY_SMOKE_TARGET: "local-sandbox" })).toBe("local-sandbox");
+  });
+
+  it("selects deployed-api when explicitly requested even if local credentials exist", () => {
+    expect(selectIdentitySmokeTarget({ ...allTargetsConfigured, OTTE_IDENTITY_SMOKE_TARGET: "deployed-api" })).toBe("deployed-api");
+  });
 });
 
 async function assertIdentitySmoke(
@@ -141,8 +169,31 @@ async function assertIdentitySmoke(
   }
 }
 
-function hasLocalIdentitySmokeEnv(): boolean {
-  return Boolean(envText("OTTE_OIDC_ISSUER") && envText("OTTE_OIDC_CLIENT_ID") && scimBearerToken);
+function selectIdentitySmokeTarget(environment: NodeJS.ProcessEnv): IdentitySmokeTarget | undefined {
+  const requestedTarget = envText("OTTE_IDENTITY_SMOKE_TARGET", environment);
+  if (requestedTarget) {
+    if (requestedTarget === "deployed-api" || requestedTarget === "local-sandbox") return requestedTarget;
+    throw new Error(`OTTE_IDENTITY_SMOKE_TARGET must be deployed-api or local-sandbox; received ${requestedTarget}.`);
+  }
+  if (hasDeployedIdentitySmokeEnv(environment)) return "deployed-api";
+  if (hasLocalIdentitySmokeEnv(environment)) return "local-sandbox";
+  return undefined;
+}
+
+function hasDeployedIdentitySmokeEnv(environment: NodeJS.ProcessEnv): boolean {
+  return Boolean(
+    trimTrailingSlash(environment.OTTE_IDENTITY_SMOKE_BASE_URL) &&
+      envText("OTTE_IDENTITY_SMOKE_ADMIN_TOKEN", environment) &&
+      envText("OTTE_SCIM_BEARER_TOKEN", environment)
+  );
+}
+
+function hasLocalIdentitySmokeEnv(environment: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(
+    envText("OTTE_OIDC_ISSUER", environment) &&
+      envText("OTTE_OIDC_CLIENT_ID", environment) &&
+      envText("OTTE_SCIM_BEARER_TOKEN", environment)
+  );
 }
 
 function sensitiveEnvValues(options: { adminAuthorization: string; scimAuthorization: string }): string[] {
@@ -164,8 +215,8 @@ function sensitiveEnvValues(options: { adminAuthorization: string; scimAuthoriza
   return sensitive;
 }
 
-function envText(name: string): string | undefined {
-  const value = process.env[name]?.trim();
+function envText(name: string, environment: NodeJS.ProcessEnv = process.env): string | undefined {
+  const value = environment[name]?.trim();
   return value ? value : undefined;
 }
 

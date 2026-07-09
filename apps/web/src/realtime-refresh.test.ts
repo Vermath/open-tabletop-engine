@@ -1,5 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { boardCaptureRequestDecision, createRealtimeHandlers, realtimeRefreshDebounceMs } from "./realtime-refresh";
+import { boardCaptureRequestDecision, createRealtimeHandlers, realtimeRefreshDebounceMs, workspaceSelectionMatches } from "./realtime-refresh";
+
+describe("workspaceSelectionMatches", () => {
+  it("rejects results from a previously selected campaign or user", () => {
+    const current = { campaignId: "campaign_b", userId: "user_b" };
+
+    expect(workspaceSelectionMatches({ campaignId: "campaign_b", userId: "user_b" }, current)).toBe(true);
+    expect(workspaceSelectionMatches({ campaignId: "campaign_a", userId: "user_b" }, current)).toBe(false);
+    expect(workspaceSelectionMatches({ campaignId: "campaign_b", userId: "user_a" }, current)).toBe(false);
+  });
+});
 
 describe("createRealtimeHandlers", () => {
   beforeEach(() => {

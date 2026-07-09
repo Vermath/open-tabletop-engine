@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTunnelFrame, tunnelFrameSchemaVersion, type TunnelFrame } from "./index.js";
+import { normalizeWebSocketCloseCode, parseTunnelFrame, tunnelFrameSchemaVersion, type TunnelFrame } from "./index.js";
 
 describe("tunnel protocol", () => {
   it("accepts the explicit desktop relay frame set", () => {
@@ -23,6 +23,16 @@ describe("tunnel protocol", () => {
   it("rejects unknown frame types and unsafe paths", () => {
     expect(() => parseTunnelFrame({ type: "campaign.dump", requestId: "req_1" })).toThrow("Unsupported tunnel frame type");
     expect(() => parseTunnelFrame({ type: "http.request", requestId: "req_1", method: "GET", path: "https://evil.test/", headers: {} })).toThrow("path must start with /");
+  });
+
+  it("rejects reserved close codes and normalizes abnormal closures before forwarding", () => {
+    for (const code of [1004, 1005, 1006, 1015]) {
+      expect(() => parseTunnelFrame({ type: "ws.close", socketId: "ws_1", code, reason: "abnormal" })).toThrow("sendable WebSocket close code");
+      expect(normalizeWebSocketCloseCode(code)).toBe(1011);
+    }
+    expect(normalizeWebSocketCloseCode(1000)).toBe(1000);
+    expect(normalizeWebSocketCloseCode(4001)).toBe(4001);
+    expect(() => parseTunnelFrame({ type: "ws.close", socketId: "ws_1", code: 2000 })).toThrow("sendable WebSocket close code");
   });
 }
 );

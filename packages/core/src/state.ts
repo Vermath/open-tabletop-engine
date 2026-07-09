@@ -302,7 +302,7 @@ export function makeArchive(state: EngineState, campaignId: string): CampaignArc
       schemaVersion: "0.2.0",
       assetCount: campaignData.assets.length
     },
-    data: campaignData
+    data: structuredClone(campaignData)
   };
 }
 

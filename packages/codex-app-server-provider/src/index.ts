@@ -118,6 +118,10 @@ interface CodexProviderTurnStartParams {
   executeTool?: (toolName: string, input: unknown) => Promise<unknown>;
 }
 
+interface CodexStreamingTurnTransport extends JsonRpcTransport {
+  streamTurn(input: CodexProviderTurnStartParams): AsyncIterable<AiProviderEvent>;
+}
+
 type PendingRpc = {
   resolve(value: unknown): void;
   reject(error: Error): void;
@@ -126,6 +130,48 @@ type PendingRpc = {
 
 interface CodexAccountRpc {
   request<TResponse = unknown>(method: string, params: unknown): Promise<TResponse>;
+}
+
+class AsyncEventQueue<T> implements AsyncIterable<T> {
+  private readonly values: T[] = [];
+  private readonly waiters: Array<{ resolve(result: IteratorResult<T>): void; reject(error: Error): void }> = [];
+  private closed = false;
+  private error: Error | undefined;
+
+  push(value: T): void {
+    if (this.closed) return;
+    const waiter = this.waiters.shift();
+    if (waiter) {
+      waiter.resolve({ done: false, value });
+      return;
+    }
+    this.values.push(value);
+  }
+
+  close(): void {
+    if (this.closed) return;
+    this.closed = true;
+    for (const waiter of this.waiters.splice(0)) waiter.resolve({ done: true, value: undefined });
+  }
+
+  fail(error: Error): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.error = error;
+    for (const waiter of this.waiters.splice(0)) waiter.reject(error);
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    return {
+      next: () => {
+        const value = this.values.shift();
+        if (value !== undefined) return Promise.resolve({ done: false, value });
+        if (this.error) return Promise.reject(this.error);
+        if (this.closed) return Promise.resolve({ done: true, value: undefined });
+        return new Promise<IteratorResult<T>>((resolve, reject) => this.waiters.push({ resolve, reject }));
+      }
+    };
+  }
 }
 
 export class CodexAppServerProvider implements AiProvider {
@@ -140,8 +186,7 @@ export class CodexAppServerProvider implements AiProvider {
       client: "open-tabletop-engine",
       approvalMode: this.options.approvalMode ?? "proposal"
     });
-    const turn = await this.options.transport.request<{ events: AiProviderEvent[] }>("turn/start", {
-      sessionId: initialized.sessionId,
+    const turnInput: CodexProviderTurnStartParams = {
       threadId: input.threadId,
       messages: input.messages,
       tools: input.tools.map((tool) => ({
@@ -156,12 +201,24 @@ export class CodexAppServerProvider implements AiProvider {
       surface: input.surface,
       signal: input.signal,
       executeTool: input.executeTool
+    };
+    if (isCodexStreamingTurnTransport(this.options.transport)) {
+      for await (const event of this.options.transport.streamTurn(turnInput)) yield event;
+      return;
+    }
+    const turn = await this.options.transport.request<{ events: AiProviderEvent[] }>("turn/start", {
+      sessionId: initialized.sessionId,
+      ...turnInput
     });
 
     for (const event of turn.events) {
       yield event;
     }
   }
+}
+
+function isCodexStreamingTurnTransport(transport: JsonRpcTransport): transport is CodexStreamingTurnTransport {
+  return typeof (transport as { streamTurn?: unknown }).streamTurn === "function";
 }
 
 export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
@@ -262,14 +319,33 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
     }
   }
 
-  private async runTurn(input: CodexProviderTurnStartParams): Promise<AiProviderEvent[]> {
+  async *streamTurn(input: CodexProviderTurnStartParams): AsyncIterable<AiProviderEvent> {
+    const queue = new AsyncEventQueue<AiProviderEvent>();
+    const consumerAbortController = new AbortController();
+    const abortFromCaller = () => consumerAbortController.abort();
+    input.signal?.addEventListener("abort", abortFromCaller, { once: true });
+    if (input.signal?.aborted) consumerAbortController.abort();
+    void this.runTurn({ ...input, signal: consumerAbortController.signal }, (event) => queue.push(event)).then(
+      () => queue.close(),
+      (error) => queue.fail(asError(error))
+    );
+    try {
+      for await (const event of queue) yield event;
+    } finally {
+      input.signal?.removeEventListener("abort", abortFromCaller);
+      consumerAbortController.abort();
+    }
+  }
+
+  private async runTurn(input: CodexProviderTurnStartParams, onEvent?: (event: AiProviderEvent) => void): Promise<AiProviderEvent[]> {
     if (input.signal?.aborted) throw codexTurnAbortError();
     const socket = await this.connect();
     const rpc = new CodexAppServerRpc(socket, {
       requestTimeoutMs: this.requestTimeoutMs,
       turnTimeoutMs: this.turnTimeoutMs,
       tools: input.tools,
-      executeTool: input.executeTool
+      executeTool: input.executeTool,
+      onEvent
     });
     const abortTurn = () => socket.close(4000, "OpenTabletop agent turn stopped by user");
     input.signal?.addEventListener("abort", abortTurn, { once: true });
@@ -761,7 +837,7 @@ class CodexAppServerRpc {
 
   constructor(
     private readonly socket: CodexWebSocketLike,
-    private readonly options: { requestTimeoutMs: number; turnTimeoutMs: number; tools: CodexTransportTool[]; executeTool?: (toolName: string, input: unknown) => Promise<unknown> }
+    private readonly options: { requestTimeoutMs: number; turnTimeoutMs: number; tools: CodexTransportTool[]; executeTool?: (toolName: string, input: unknown) => Promise<unknown>; onEvent?: (event: AiProviderEvent) => void }
   ) {
     this.socket.addEventListener("message", this.onMessage);
     this.socket.addEventListener("close", this.onClose);
@@ -866,11 +942,11 @@ class CodexAppServerRpc {
         });
         return;
       }
-      this.events.push({ type: "tool.started", toolName: toolCall.tool, input: toolCall.arguments });
+      this.recordEvent({ type: "tool.started", toolName: toolCall.tool, input: toolCall.arguments });
       if (this.options.executeTool) {
         try {
           const output = await this.options.executeTool(toolCall.tool, toolCall.arguments);
-          this.events.push({ type: "tool.completed", toolName: toolCall.tool, output });
+          this.recordEvent({ type: "tool.completed", toolName: toolCall.tool, output });
           this.refreshTurnTimeoutAfterProgress(output);
           this.respond(id, {
             success: true,
@@ -884,7 +960,7 @@ class CodexAppServerRpc {
         } catch (error) {
           const message = error instanceof Error ? error.message : "Tool execution failed.";
           const output = { error: "tool_execution_failed", message };
-          this.events.push({ type: "tool.completed", toolName: toolCall.tool, output });
+          this.recordEvent({ type: "tool.completed", toolName: toolCall.tool, output });
           this.respond(id, {
             success: false,
             contentItems: [
@@ -943,27 +1019,47 @@ class CodexAppServerRpc {
     }, this.options.turnTimeoutMs);
   }
 
+  private recordEvent(event: AiProviderEvent): void {
+    this.events.push(event);
+    this.options.onEvent?.(event);
+  }
+
   private handleServerNotification(method: string, params: unknown): void {
+    if (method === "item/started" && isRecord(params) && isRecord(params.item)) {
+      const activity = activityFromCodexItem(params.item, "started");
+      if (activity) this.recordEvent(activity);
+      return;
+    }
     if (method === "item/agentMessage/delta" && isRecord(params) && typeof params.delta === "string") {
-      this.events.push({ type: "message.delta", delta: params.delta });
+      this.recordEvent({ type: "message.delta", delta: params.delta });
       return;
     }
     if (method === "item/reasoning/summaryTextDelta" && isRecord(params) && typeof params.delta === "string") {
-      this.events.push({ type: "reasoning.delta", delta: params.delta, summaryIndex: numberFromRecord(params, "summaryIndex") });
+      this.recordEvent({ type: "reasoning.delta", delta: params.delta, summaryIndex: numberFromRecord(params, "summaryIndex") });
       return;
     }
     if (method === "item/completed" && isRecord(params) && isRecord(params.item) && params.item.type === "agentMessage" && typeof params.item.text === "string") {
-      this.events.push({ type: "message.completed", content: params.item.text });
+      this.recordEvent({ type: "message.completed", content: params.item.text });
       return;
     }
     if (method === "item/completed" && isRecord(params) && isRecord(params.item) && params.item.type === "reasoning") {
       const summary = reasoningSummaryFromItem(params.item);
-      if (summary) this.events.push({ type: "reasoning.completed", content: summary });
+      if (summary) this.recordEvent({ type: "reasoning.completed", content: summary });
+      return;
+    }
+    if (method === "item/completed" && isRecord(params) && isRecord(params.item)) {
+      const activity = activityFromCodexItem(params.item, itemFailed(params.item) ? "failed" : "completed");
+      if (activity) this.recordEvent(activity);
+      return;
+    }
+    if (method === "turn/plan/updated" && isRecord(params)) {
+      const activity = activityFromPlanUpdate(params);
+      if (activity) this.recordEvent(activity);
       return;
     }
     if (method === "thread/tokenUsage/updated") {
       const usage = usageFromTokenNotification(params);
-      if (usage) this.events.push({ type: "usage.reported", usage });
+      if (usage) this.recordEvent({ type: "usage.reported", usage });
       return;
     }
     if (method === "turn/completed" && this.turnCompleted) {
@@ -1093,6 +1189,7 @@ function codexBaseInstructions(context: PermissionFilteredContext): string {
     "OpenTabletop campaign edit and asset-generation tools create reviewable proposals. Do not say a scene, actor, journal, token, encounter, memory, map, or token image changed until host-side tool output confirms it.",
     "When asked to create or set up a scene, ensure the necessary creature and character tokens exist on that scene: create missing actor/token records with the available roster/token creation tool and generated art enabled, and place existing relevant tokens with the available token update tool instead of making duplicates.",
     "When an attached reference image or selected source asset is provided, pass it as sourceAssetId to generated map, token, and roster art tools so the source image is used for style, composition, or sketch layout unless the user asks otherwise.",
+    "For multi-step work, stream brief user-facing progress updates as commentary when you inspect context, choose tools, wait on generated assets, recover from errors, or verify results. Keep updates concrete and concise. Do not reveal hidden chain-of-thought or raw private reasoning.",
     "After any successful board-state mutation or applying an approved proposal that touches scene, token, asset, fog, wall, light, annotation, or combat state, call capture_board_view and read_board_state before your final success response. Compare the screenshot signal and structured board state. If visual capture is unavailable, use read_board_state and explicitly say visual verification was unavailable.",
     "Do not use shell, filesystem, browser, plugin, or MCP tools for tabletop campaign state.",
     "",
@@ -1160,6 +1257,89 @@ function usageFromTokenNotification(params: unknown): { inputTokens?: number; ou
 function reasoningSummaryFromItem(item: Record<string, unknown>): string | undefined {
   const summary = textFromReasoningSummary(item.summary).trim();
   return summary || undefined;
+}
+
+function activityFromCodexItem(item: Record<string, unknown>, status: "started" | "completed" | "failed"): AiProviderEvent | undefined {
+  const itemType = stringFromRecord(item, "type");
+  if (!itemType || itemType === "userMessage" || itemType === "agentMessage" || itemType === "reasoning") return undefined;
+  const message = activityMessageForCodexItem(item, itemType, status);
+  if (!message) return undefined;
+  return { type: "activity.reported", message, itemType, itemId: stringFromRecord(item, "id"), status };
+}
+
+function activityMessageForCodexItem(item: Record<string, unknown>, itemType: string, status: "started" | "completed" | "failed"): string | undefined {
+  const suffix = status === "failed" ? " failed" : status === "completed" ? " complete" : "";
+  if (itemType === "commandExecution") {
+    const command = truncateActivityDetail(stringFromRecord(item, "command"));
+    return status === "started" ? `Running command${command ? `: ${command}` : ""}` : `Command${suffix}`;
+  }
+  if (itemType === "fileChange") return status === "started" ? "Preparing file changes" : `File change proposal${suffix}`;
+  if (itemType === "mcpToolCall") {
+    const server = stringFromRecord(item, "server");
+    const tool = stringFromRecord(item, "tool");
+    const label = [server, tool].filter(Boolean).join("/");
+    return status === "started" ? `Calling MCP tool${label ? `: ${label}` : ""}` : `MCP tool${suffix}`;
+  }
+  if (itemType === "dynamicToolCall") {
+    const tool = stringFromRecord(item, "tool");
+    const label = readableActivityLabel(tool);
+    return status === "started" ? `Using tool${label ? `: ${label}` : ""}` : `Tool${suffix}`;
+  }
+  if (itemType === "collabToolCall") return status === "started" ? "Starting sub-agent task" : `Sub-agent task${suffix}`;
+  if (itemType === "webSearch") {
+    const action = isRecord(item.action) ? stringFromRecord(item.action, "type") : undefined;
+    const query = webSearchQueryLabel(item);
+    const actionLabel = action === "openPage" ? "Opening web result" : action === "findInPage" ? "Searching within page" : "Searching the web";
+    return status === "started" ? `${actionLabel}${query ? `: ${query}` : ""}` : `Web search${suffix}`;
+  }
+  if (itemType === "imageView") return status === "started" ? "Inspecting image" : `Image inspection${suffix}`;
+  if (itemType === "contextCompaction") return status === "started" ? "Compacting context" : `Context compaction${suffix}`;
+  if (itemType === "plan") return status === "started" ? "Writing plan" : `Plan${suffix}`;
+  if (itemType === "enteredReviewMode") return "Starting review";
+  if (itemType === "exitedReviewMode") return "Review complete";
+  const readable = readableActivityLabel(itemType) ?? itemType;
+  return status === "started" ? `Started ${readable}` : `${readable}${suffix}`;
+}
+
+function activityFromPlanUpdate(params: Record<string, unknown>): AiProviderEvent | undefined {
+  const plan = params.plan;
+  if (!Array.isArray(plan)) return undefined;
+  const activeStep = plan.filter(isRecord).find((step) => step.status === "inProgress") ?? plan.filter(isRecord).find((step) => step.status === "pending");
+  const stepText = activeStep ? stringFromRecord(activeStep, "step") : undefined;
+  const message = stepText ? `Plan update: ${truncateActivityDetail(stepText)}` : "Plan updated";
+  return { type: "activity.reported", message, itemType: "plan", status: "started" };
+}
+
+function itemFailed(item: Record<string, unknown>): boolean {
+  if (stringFromRecord(item, "status") === "failed") return true;
+  return isRecord(item.error) || stringFromRecord(item, "error") !== undefined;
+}
+
+function webSearchQueryLabel(item: Record<string, unknown>): string | undefined {
+  const action = isRecord(item.action) ? item.action : {};
+  const query = stringFromRecord(action, "query") ?? stringFromRecord(item, "query") ?? stringFromRecord(action, "pattern") ?? stringFromRecord(action, "url");
+  if (query) return truncateActivityDetail(query);
+  const queries = action.queries;
+  if (Array.isArray(queries)) {
+    const joined = queries.filter((value): value is string => typeof value === "string" && value.trim().length > 0).slice(0, 2).join(", ");
+    return truncateActivityDetail(joined);
+  }
+  return undefined;
+}
+
+function readableActivityLabel(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value
+    .replace(/^open_tabletop[./_-]/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateActivityDetail(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 140 ? `${trimmed.slice(0, 137)}...` : trimmed;
 }
 
 function textFromReasoningSummary(value: unknown): string {

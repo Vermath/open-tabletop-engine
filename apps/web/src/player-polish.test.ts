@@ -21,6 +21,14 @@ describe("player seat polish", () => {
     expect(appSource).not.toContain("Ask the GM to run your advancement from the Prep workspace");
   });
 
+  it("requires a fresh review and deduplicates advancement submission", () => {
+    expect(advancementFlowSource).toContain("const advancingRef = useRef(false);");
+    expect(advancementFlowSource).toContain("if (advancingRef.current || !selectedAdvancementOption) return;");
+    expect(advancementFlowSource).toContain("await props.onAdvanceActor(selectedAdvancementOption.id");
+    expect(advancementFlowSource).toContain("}, [advancementMode, selectedFeatId, selectedMulticlass]);");
+    expect(advancementFlowSource).toContain('advancing ? "Advancing..."');
+  });
+
   it("keeps Manage transient and closes it with Escape", () => {
     expect(appSource).toContain('const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("live");');
     expect(appSource).toContain('if (workspaceMode !== "manage") return;');

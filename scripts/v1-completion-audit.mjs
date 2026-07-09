@@ -1,7 +1,18 @@
 import { execSync, spawnSync } from "node:child_process";
 
-const auditCommit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
+const headCommit = git("rev-parse HEAD");
+const auditCommit = process.env.OTTE_RELEASE_COMMIT ?? headCommit;
 const auditCommitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
+
+if (!fullSha(auditCommit)) {
+  console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${auditCommit}.`);
+  process.exit(1);
+}
+
+if (process.env.OTTE_RELEASE_COMMIT && auditCommit.toLowerCase() !== headCommit.toLowerCase()) {
+  console.error(`OTTE_RELEASE_COMMIT must match checked-out HEAD ${headCommit}; received ${auditCommit}.`);
+  process.exit(1);
+}
 
 const checks = [
   {
@@ -64,4 +75,8 @@ function runCheck(check) {
 
 function git(args) {
   return execSync(`git ${args}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+}
+
+function fullSha(value) {
+  return /^[0-9a-f]{40}$/i.test(value.trim());
 }

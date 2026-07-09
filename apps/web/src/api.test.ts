@@ -1,6 +1,50 @@
 import type { MapAsset } from "@open-tabletop/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { assetBlobUrl, loadSnapshot } from "./api.js";
+import { apiDelete, apiGet, apiPatch, assetBlobUrl, loadSnapshot, logoutSession } from "./api.js";
+
+describe("abortable API requests", () => {
+  beforeEach(() => {
+    stubSessionStorage();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("forwards AbortSignal through GET, PATCH, and DELETE requests", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiGet("/api/v1/test", { signal: controller.signal });
+    await apiPatch("/api/v1/test", { value: 1 }, { signal: controller.signal });
+    await apiDelete("/api/v1/test", { signal: controller.signal });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const [, init] of fetchMock.mock.calls) expect(init?.signal).toBe(controller.signal);
+  });
+});
+
+describe("logoutSession", () => {
+  beforeEach(() => {
+    stubSessionStorage();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("clears the local session when the logout request cannot reach the server", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new Error("offline");
+    }));
+
+    await expect(logoutSession()).rejects.toThrow("offline");
+    expect(localStorage.removeItem).toHaveBeenCalledWith("otte:sessionToken");
+    expect(localStorage.removeItem).toHaveBeenCalledWith("otte:sessionTokenUser");
+  });
+});
 
 describe("assetBlobUrl", () => {
   beforeEach(() => {

@@ -436,6 +436,15 @@ describe("dnd 5.5e srd rules", () => {
       { className: "Wizard", size: "d6", current: 1, max: 1 }
     ]);
     expect(leveledPrimary.hitDice).toEqual({ current: 7, max: 7, size: "d10" });
+    expect(() => applyDnd5eSrdAdvancement({ ...fighter5, data: fighterWizard }, "not-an-advancement")).toThrow("Unknown advancement");
+
+    const levelTwenty = {
+      ...fighter5,
+      data: { ...fighterWizard, level: 20, classes: [{ className: "Fighter", level: 19 }, { className: "Wizard", level: 1 }] }
+    };
+    expect(() => applyDnd5eSrdAdvancement(levelTwenty, "level-up")).toThrow("Unknown advancement");
+    expect(() => applyDnd5eSrdMulticlassLevel(levelTwenty, "Wizard")).toThrow("total level 20");
+    expect(dnd5eSrdAdvancementOptions({ ...levelTwenty, data: { ...levelTwenty.data, level: 1 } })).toEqual([]);
 
     const sheet = dnd5eSrdSheet({ ...fighter5, data: leveledPrimary });
     expect(sheet.data.hitDicePoolSummary).toBe("6d10 + 1d6");
@@ -573,6 +582,8 @@ describe("dnd 5.5e srd rules", () => {
 
     expect(dnd5eSrdMagicItemCraftingPlan("rare")).toEqual(expect.objectContaining({ rarity: "rare", costGp: 2000, days: 50 }));
     expect(dnd5eSrdMagicItemCraftingPlan("rare", { crafters: 2 })?.days).toBe(25);
+    expect(dnd5eSrdMagicItemCraftingPlan("rare", { crafters: Number.NaN })?.days).toBe(50);
+    expect(dnd5eSrdMagicItemCraftingPlan("rare", { crafters: Number.POSITIVE_INFINITY })?.days).toBe(50);
     expect(dnd5eSrdMagicItemCraftingPlan("mythic")).toBeUndefined();
 
     expect(dnd5eSrdSpellScrollCraftingPlan(3)).toEqual(expect.objectContaining({ spellLevel: 3, costGp: 150, days: 5 }));

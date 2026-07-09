@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { releaseEvidenceGates, requiredAssistiveTechnologyEnvironments } from "./v1-release-gates.mjs";
 
 const repoRoot = process.cwd();
-const commit = "1234567890abcdef1234567890abcdef12345678";
+const commit = gitOutput(repoRoot, ["rev-parse", "HEAD"]);
 const checker = join(repoRoot, "scripts", "check-v1-release-evidence.mjs");
 const templates = join(repoRoot, "scripts", "v1-evidence-templates.mjs");
 const handoff = join(repoRoot, "scripts", "v1-release-handoff.mjs");
@@ -35,6 +35,7 @@ runFailsWhenOneAssistiveSectionMentionsMultipleEnvironments();
 runFailsWhenAssistiveEvidenceOmitsWorkflowDetails();
 runFailsWhenEvidenceTargetsAnotherCommit();
 runFailsWithShortReleaseTargetCommit();
+runCheckerRejectsReleaseTargetThatIsNotHead();
 runFailsWhenExternalGmEvidenceOmitsScenarioDetails();
 runFailsWhenExternalGmEvidenceOmitsTesterContext();
 runFailsWhenExternalGmEvidenceUsesTemplateChoices();
@@ -69,7 +70,7 @@ runReleaseWorktreeCheckFailsWhenDirty();
 runReleaseWorktreeCheckAllowsExplicitFixtureOverride();
 runCompletionAuditReportsFailedEvidenceAndContinues();
 runCompletionAuditPassesWhenAllGatesPass();
-runCompletionAuditHonorsReleaseTargetCommit();
+runCompletionAuditRejectsReleaseTargetThatIsNotHead();
 runCompletionAuditRejectsShortReleaseTargetCommit();
 
 console.log("v1 release evidence verifier tests passed.");
@@ -216,6 +217,22 @@ function runFailsWithShortReleaseTargetCommit() {
     const result = runChecker(root, { releaseCommit: commit.slice(0, 12) });
     assert(result.status === 1, "short release target commit should fail");
     assert(result.stderr.includes("OTTE_RELEASE_COMMIT must be a full 40-character commit SHA"), "short release target failure should name full-SHA requirement");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function runCheckerRejectsReleaseTargetThatIsNotHead() {
+  const mismatchedCommit = differentCommit();
+  const root = fixtureRoot(completeEvidence(mismatchedCommit));
+
+  try {
+    const result = runChecker(root, { releaseCommit: mismatchedCommit });
+    assert(result.status === 1, "release evidence checker should fail when the supplied release target is not checked out");
+    assert(
+      result.stderr.includes(`OTTE_RELEASE_COMMIT must match checked-out HEAD ${commit}; received ${mismatchedCommit}.`),
+      "release evidence checker should explain the checked-out commit mismatch"
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -895,8 +912,8 @@ function runEvidenceTemplatesIncludeVerifierFields() {
   assert(result.stdout.includes(".github/workflows/v1-completion-audit.yml"), "templates should mention the hosted completion audit workflow path");
   assert(result.stdout.includes("issue #4"), "templates should point AT evidence to issue #4");
   assert(result.stdout.includes("issue #5"), "templates should point GM evidence to issue #5");
-  assert(result.stdout.includes("- App build or commit: 1234567890abcdef1234567890abcdef12345678"), "manual evidence templates should prefill App build or commit");
-  assert(result.stdout.includes("- Commit SHA: 1234567890abcdef1234567890abcdef12345678"), "hosted evidence templates should prefill Commit SHA");
+  assert(result.stdout.includes(`- App build or commit: ${commit}`), "manual evidence templates should prefill App build or commit");
+  assert(result.stdout.includes(`- Commit SHA: ${commit}`), "hosted evidence templates should prefill Commit SHA");
   assert(result.stdout.includes("- Command: pnpm identity:smoke"), "identity template should preserve the verifier command field");
   assert(result.stdout.includes("- Hosted workflow run, if used:"), "identity template should prompt for the optional hosted workflow run URL");
   assert(result.stdout.includes("- Release command or build command: pnpm release:smoke"), "release-smoke template should preserve command parity");
@@ -1108,17 +1125,17 @@ function runCompletionAuditPassesWhenAllGatesPass() {
   }
 }
 
-function runCompletionAuditHonorsReleaseTargetCommit() {
-  const hostedCommit = "abcdefabcdefabcdefabcdefabcdefabcdefabcd";
-  const root = fixtureRoot(completeEvidence(hostedCommit));
+function runCompletionAuditRejectsReleaseTargetThatIsNotHead() {
+  const mismatchedCommit = differentCommit();
+  const root = fixtureRoot(completeEvidence(mismatchedCommit));
 
   try {
-    const result = runCompletionAudit(root, { releaseCommit: hostedCommit });
-    assert(result.status === 0, "completion audit should pass when evidence matches the supplied release target");
-    assert(result.stdout.includes(`v1 completion audit target: ${hostedCommit} (OTTE_RELEASE_COMMIT)`), "completion audit should print supplied release target");
-    assert(result.stdout.includes("PASS: Release worktree cleanliness"), "completion audit should summarize release worktree pass for supplied release target");
-    assert(result.stdout.includes(`Checking v1 release evidence for commit ${hostedCommit} (OTTE_RELEASE_COMMIT).`), "completion audit should pass the release target to the evidence verifier");
-    assert(result.stdout.includes("v1 completion audit passed."), "completion audit should report success for supplied release target");
+    const result = runCompletionAudit(root, { releaseCommit: mismatchedCommit });
+    assert(result.status === 1, "completion audit should fail when the supplied release target is not checked out");
+    assert(
+      result.stderr.includes(`OTTE_RELEASE_COMMIT must match checked-out HEAD ${commit}; received ${mismatchedCommit}.`),
+      "completion audit should explain the checked-out commit mismatch"
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1130,10 +1147,7 @@ function runCompletionAuditRejectsShortReleaseTargetCommit() {
   try {
     const result = runCompletionAudit(root, { releaseCommit: commit.slice(0, 12) });
     assert(result.status === 1, "completion audit should fail when release target commit is abbreviated");
-    assert(result.stderr.includes("OTTE_RELEASE_COMMIT must be a full 40-character commit SHA"), "completion audit should surface full-SHA requirement from evidence verifier");
-    assert(result.stdout.includes("PASS: Release worktree cleanliness"), "completion audit should continue after release worktree gate");
-    assert(result.stdout.includes("PASS: Open P0/P1 issue audit"), "completion audit should still continue through issue gate after verifier target failure");
-    assert(result.stdout.includes("PASS: Public docs site guard"), "completion audit should still continue through docs gate after verifier target failure");
+    assert(result.stderr.includes("OTTE_RELEASE_COMMIT must be a full 40-character commit SHA"), "completion audit should surface the full-SHA requirement");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -1354,6 +1368,19 @@ function runGit(root, args) {
   if (result.status !== 0) {
     throw new Error(`git ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
   }
+}
+
+function gitOutput(root, args) {
+  const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr || result.stdout}`);
+  }
+  return result.stdout.trim();
+}
+
+function differentCommit() {
+  const candidate = "abcdefabcdefabcdefabcdefabcdefabcdefabcd";
+  return candidate === commit.toLowerCase() ? "1234567890abcdef1234567890abcdef12345678" : candidate;
 }
 
 function assert(condition, message) {

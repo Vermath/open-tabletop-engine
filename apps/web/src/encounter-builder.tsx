@@ -2,6 +2,7 @@ import type { Actor, Encounter, Scene } from "@open-tabletop/core";
 import { Minus, Plus, Save, Search, Swords, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { apiGet, apiPost, type EncounterPlanInfo } from "./api.js";
+import { useModalAccessibility } from "./modal-accessibility.js";
 import { errorMessage, formatNumber, titleCaseLabel } from "./sheet-format.js";
 
 export interface EncounterThreatInfo {
@@ -46,6 +47,7 @@ export function EncounterBuilderDialog(props: {
   const [name, setName] = useState("New Encounter");
   const [error, setError] = useState("");
   const [savedEncounter, setSavedEncounter] = useState<Encounter | undefined>();
+  const dialogRef = useModalAccessibility<HTMLDivElement>(props.onClose);
 
   const filterTerm = filter.trim().toLowerCase();
   const partyActorKey = props.partyActors.map((actor) => actor.id).join("|");
@@ -182,7 +184,7 @@ export function EncounterBuilderDialog(props: {
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose(); }}>
-      <div className="modal-dialog encounter-builder" role="dialog" aria-modal="true" aria-label="Encounter builder">
+      <div ref={dialogRef} className="modal-dialog encounter-builder" role="dialog" aria-modal="true" aria-label="Encounter builder" tabIndex={-1}>
         <header className="creator-header">
           <div>
             <h2>Encounter Builder</h2>

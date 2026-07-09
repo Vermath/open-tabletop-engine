@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AiProvider, AiProviderEvent, AiProviderRequest } from "@open-tabletop/ai-core";
 import { openApiSpec } from "@open-tabletop/api-contracts";
-import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type AuditLog, type AudioTrack, type CampaignArchive, type ChatMessage, type Combat, type DiceMacro, type DiceRoll, type EngineState, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type PluginReview, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
+import { createTimestamped, emptyState, isPointInsideVisionPolygon, isPointInsideVisionPolygons, permissionsForRole, type Actor, type AssetStorageRef, type AuditLog, type AudioTrack, type CampaignArchive, type ChatMessage, type Combat, type CombatAction, type DiceMacro, type DiceRoll, type EngineState, type Item, type JournalEntry, type MapAsset, type PasswordResetToken, type PermissionGrant, type PluginReview, type Scene, type Token, type VisionSnapshot } from "@open-tabletop/core";
 import { describe, expect, it } from "vitest";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
 import { buildApp, type ImageAssetGenerationInput, type ImageAssetGenerator } from "./app.js";
@@ -1339,7 +1339,7 @@ describe("api", () => {
       expect(spec["x-otte-rate-limit-policy"]?.statusCode).toBe(429);
       expect(spec.paths["/api/v1/openapi.json"]?.get).toBeDefined();
       expect(jsonResponseSchema(spec.paths["/api/v1/openapi.json"]?.get)).toMatchObject({ $ref: "#/components/schemas/OpenApiDocument" });
-      expect(spec.paths["/api/v1/campaigns"]?.get?.parameters?.some((parameter) => parameter.name === "limit" && parameter.in === "query")).toBe(true);
+      expect(spec.paths["/api/v1/campaigns/{campaignId}/rolls"]?.get?.parameters?.some((parameter) => parameter.name === "limit" && parameter.in === "query")).toBe(true);
       expect(spec.paths["/api/v1/campaigns/{campaignId}/scenes"]?.post?.parameters?.some((parameter) => parameter.name === "Idempotency-Key" && parameter.in === "header")).toBe(true);
       expect(spec.paths["/api/v1/admin/storage/backup"]?.post?.parameters?.some((parameter) => parameter.name === "Idempotency-Key" && parameter.in === "header")).toBe(true);
       expect(spec.paths["/api/v1/content-imports/{importId}/apply"]?.post?.responses?.["409"]).toBeDefined();
@@ -2213,6 +2213,42 @@ describe("api", () => {
       targetType: "combat",
       targetId: combat.id
     }) satisfies AuditLog;
+    const sideScene = createTimestamped("scn", {
+      id: "scn_snapshot_side",
+      campaignId: "camp_demo",
+      name: "Snapshot Side Scene",
+      width: 500,
+      height: 500,
+      gridType: "square" as const,
+      gridSize: 50,
+      active: false,
+      sortOrder: 99,
+      fog: [],
+      fogHistory: [],
+      walls: [],
+      lights: [],
+      annotations: [],
+      metadata: {}
+    }) satisfies Scene;
+    const sideToken = createTimestamped("tok", {
+      id: "tok_snapshot_side",
+      sceneId: sideScene.id,
+      name: "Snapshot Side Token",
+      x: 100,
+      y: 100,
+      width: 50,
+      height: 50,
+      rotation: 0,
+      layer: "player" as const,
+      hidden: false,
+      locked: false,
+      visionEnabled: false,
+      visionRadius: 0,
+      disposition: "neutral" as const,
+      metadata: {}
+    }) satisfies Token;
+    store.state.scenes.push(sideScene);
+    store.state.tokens.push(sideToken);
     store.state.audioTracks.push(track);
     store.state.combats.push(combat);
     store.state.auditLogs.push(combatAuditEntry);
@@ -2231,6 +2267,7 @@ describe("api", () => {
     expect(gm.vision?.sceneId).toBe("scn_vault_entry");
     expect(gm.journals.some((entry: { visibility: string }) => entry.visibility === "gm_only")).toBe(true);
     expect(gm.tokens.some((token: { id: string }) => token.id === "tok_valen")).toBe(true);
+    expect(gm.tokens.some((token: { id: string }) => token.id === sideToken.id)).toBe(true);
     expect(gm.bundled).toEqual(
       expect.objectContaining({
         assetStorage: expect.objectContaining({ campaignId: "camp_demo" }),
@@ -2288,6 +2325,467 @@ describe("api", () => {
     expect(player.bundled).not.toHaveProperty("aiThreads");
     expect(player.bundled).not.toHaveProperty("aiUsage");
     expect(player.bundled).not.toHaveProperty("aiToolCalls");
+
+    await app.close();
+  });
+
+  it("redacts private actor sheets and attached items across actor, snapshot, and system read routes", async () => {
+    const store = new MemoryStateStore();
+    store.state.users.push(
+      createTimestamped("usr", {
+        id: "usr_demo_observer",
+        displayName: "Demo Observer",
+        email: "observer@example.test"
+      })
+    );
+    store.state.organizationMembers.push(
+      createTimestamped("orgmem", {
+        organizationId: "org_demo",
+        userId: "usr_demo_observer",
+        role: "member" as const
+      })
+    );
+    store.state.members.push(
+      createTimestamped("mem", {
+        campaignId: "camp_demo",
+        userId: "usr_demo_observer",
+        role: "observer" as const
+      })
+    );
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_observer",
+        campaignId: "camp_demo",
+        permissions: ["actor.update", "combat.manage"]
+      }) satisfies PermissionGrant
+    );
+    const privateActor = createTimestamped("act", {
+      id: "act_private_rival",
+      campaignId: "camp_demo",
+      systemId: "generic-fantasy",
+      ownerUserId: "usr_demo_gm",
+      type: "npc",
+      name: "Private Rival",
+      data: { hp: { current: 99, max: 99 }, resources: { doom: 3 }, conditions: ["hidden-curse"], secretCode: "RIVAL_SECRET_STATE" },
+      permissions: { usr_demo_gm: ["actor.readPrivate"] } as Actor["permissions"]
+    }) satisfies Actor;
+    const privateItem = createTimestamped("itm", {
+      id: "itm_private_rival",
+      campaignId: "camp_demo",
+      systemId: "generic-fantasy",
+      actorId: privateActor.id,
+      type: "weapon",
+      name: "Secret Blade",
+      data: { formula: "9d9+9", secretCode: "RIVAL_SECRET_ITEM" }
+    }) satisfies Item;
+    const ownedItem = createTimestamped("itm", {
+      id: "itm_owned_valen",
+      campaignId: "camp_demo",
+      systemId: "generic-fantasy",
+      actorId: "act_valen",
+      type: "gear",
+      name: "Valen's Pack",
+      data: { quantity: 1 }
+    }) satisfies Item;
+    const unassignedItem = createTimestamped("itm", {
+      id: "itm_public_unassigned",
+      campaignId: "camp_demo",
+      systemId: "generic-fantasy",
+      type: "gear",
+      name: "Public Supply Crate",
+      data: { quantity: 1 }
+    }) satisfies Item;
+    store.state.actors.push(privateActor);
+    store.state.items.push(privateItem, ownedItem, unassignedItem);
+    const privateCombatAction = createTimestamped("cact", {
+      campaignId: "camp_demo",
+      combatId: "cmb_private_state",
+      actorId: "act_valen",
+      actorName: "Valen",
+      requestedByUserId: "usr_demo_player",
+      status: "pending_gm" as const,
+      rollId: "private-target-damage",
+      actionLabel: "Private Target Damage",
+      targetActorIds: [privateActor.id],
+      applyEffect: true,
+      consumeResources: false,
+      resolution: {
+        systemId: "generic-fantasy",
+        actorId: "act_valen",
+        rollId: "private-target-damage",
+        commitMode: "commit",
+        action: { label: "Private Target Damage", kind: "action", metadata: {} },
+        rolls: [{ rollId: "private-target-damage", label: "Private Target Damage", baseFormula: "RIVAL_SECRET_BASE_FORMULA", formula: "RIVAL_SECRET_FORMULA", targetActorId: privateActor.id, d20Mode: "advantage" as const, advantageSources: ["RIVAL_SECRET_ADVANTAGE"], disadvantageSources: ["RIVAL_SECRET_DISADVANTAGE"], saveOutcome: "success" as const }],
+        resourceConsumption: [],
+        actorUpdates: [{ actorId: privateActor.id, before: privateActor.data, after: { ...privateActor.data, secretCode: "RIVAL_SECRET_AFTER" }, reason: "damage" }],
+        itemUpdates: [{ ...privateItem, data: { ...privateItem.data, secretCode: "RIVAL_SECRET_ITEM_AFTER" } }],
+        effects: [{ type: "damage", targetActorId: privateActor.id, targetActorName: privateActor.name, pool: "hp", amount: 7, before: 99, after: 92, max: 99 }],
+        conditions: [{ actorId: privateActor.id, operation: "apply", conditionId: "hidden-curse", conditionName: "RIVAL_SECRET_CONDITION", reason: "RIVAL_SECRET_CONDITION_REASON" }],
+        pendingSaves: [{ actorId: privateActor.id, ability: "wisdom", reason: "RIVAL_SECRET_SAVE_REASON", success: "RIVAL_SECRET_SAVE_SUCCESS" }],
+        pendingReactions: [{ actorId: privateActor.id, reason: "RIVAL_SECRET_REACTION", actionRollId: "RIVAL_SECRET_REACTION_ROLL" }],
+        warnings: ["RIVAL_SECRET_WARNING"],
+        auditEvents: [{ code: "private_target", actorId: "act_valen", targetActorId: privateActor.id, rollId: "private-target-damage", message: "RIVAL_SECRET_AUDIT_MESSAGE", data: { secretCode: "RIVAL_SECRET_AUDIT" } }],
+        blocked: { code: "RIVAL_SECRET_BLOCK_CODE", reason: "RIVAL_SECRET_BLOCK_REASON" },
+        manualResolutionRequired: { reason: "RIVAL_SECRET_MANUAL_REASON", metadata: { secretCode: "RIVAL_SECRET_MANUAL_METADATA" } }
+      },
+      rolls: [{ label: "Private Target Damage", formula: "1d6", terms: [], total: 6, targetActorId: privateActor.id, visibility: "public" as const }],
+      actorUpdates: [{ actorId: privateActor.id, before: privateActor.data, after: { ...privateActor.data, secretCode: "RIVAL_SECRET_ACTION_AFTER" } }],
+      itemUpdates: [{ itemId: privateItem.id, before: privateItem.data, after: { ...privateItem.data, secretCode: "RIVAL_SECRET_ACTION_ITEM" } }],
+      effects: [{ type: "damage", targetActorId: privateActor.id, amount: 7 }],
+      resultSummary: "roll 6; 7 damage"
+    }) satisfies CombatAction;
+    const privateCombat = createTimestamped("cmb", {
+      id: "cmb_private_state",
+      campaignId: "camp_demo",
+      active: true,
+      round: 1,
+      turnIndex: 0,
+      combatants: [{
+        id: "cmbt_private_rival",
+        tokenId: "tok_private_rival",
+        actorId: privateActor.id,
+        name: privateActor.name,
+        initiative: 12,
+        defeated: false,
+        conditions: ["RIVAL_SECRET_COMBAT_CONDITION"],
+        deathSaveSuccesses: 2,
+        deathSaveFailures: 1,
+        deathSaveOutcome: "stable" as const,
+        resourceKey: "RIVAL_SECRET_RESOURCE_KEY",
+        resourceLabel: "RIVAL_SECRET_RESOURCE_LABEL",
+        resourceUsed: true,
+        resourceSpent: true
+      }],
+      actions: [privateCombatAction]
+    }) satisfies Combat;
+    store.state.combats.push(privateCombat);
+    const privateCombatAudit = createTimestamped("audit", {
+      campaignId: "camp_demo",
+      actorType: "user" as const,
+      action: "combat.updated",
+      targetType: "combat",
+      targetId: privateCombat.id,
+      after: {
+        combatants: [{
+          actorId: privateActor.id,
+          conditions: ["RIVAL_SECRET_AUDIT_CONDITION"],
+          deathSaveOutcome: "RIVAL_SECRET_AUDIT_DEATH_SAVE",
+          resourceLabel: "RIVAL_SECRET_AUDIT_RESOURCE"
+        }]
+      }
+    }) satisfies AuditLog;
+    store.state.auditLogs.push(privateCombatAudit);
+    const app = await buildApp({ store });
+    const observerHeaders = { "x-user-id": "usr_demo_observer" };
+    const playerHeaders = { "x-user-id": "usr_demo_player" };
+
+    const observerActors = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/actors", headers: observerHeaders });
+    expect(observerActors.statusCode).toBe(200);
+    expect(observerActors.json().find((actor: Actor) => actor.id === privateActor.id)).toEqual(
+      expect.objectContaining({ id: privateActor.id, name: "Private Rival", data: {}, permissions: {}, redacted: true })
+    );
+    expect(JSON.stringify(observerActors.json())).not.toContain("hidden-curse");
+
+    const playerActors = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/actors", headers: playerHeaders });
+    expect(playerActors.statusCode).toBe(200);
+    expect(playerActors.json().find((actor: Actor) => actor.id === "act_valen")).toEqual(expect.objectContaining({ data: expect.objectContaining({ hp: { current: 18, max: 22 } }) }));
+    expect(playerActors.json().find((actor: Actor) => actor.id === privateActor.id)).toEqual(expect.objectContaining({ data: {}, permissions: {}, redacted: true }));
+
+    const observerItems = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/items", headers: observerHeaders });
+    expect(observerItems.statusCode).toBe(200);
+    expect(observerItems.json().map((item: Item) => item.id)).toContain(unassignedItem.id);
+    expect(observerItems.json().map((item: Item) => item.id)).not.toContain(privateItem.id);
+    expect(observerItems.json().every((item: Item) => !item.actorId)).toBe(true);
+
+    const playerItems = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/items", headers: playerHeaders });
+    expect(playerItems.statusCode).toBe(200);
+    expect(playerItems.json().some((item: Item) => item.actorId === "act_valen")).toBe(true);
+    expect(playerItems.json().map((item: Item) => item.id)).not.toContain(privateItem.id);
+
+    const observerSnapshot = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot", headers: observerHeaders });
+    expect(observerSnapshot.statusCode).toBe(200);
+    expect(observerSnapshot.json().actors.find((actor: Actor) => actor.id === privateActor.id)).toEqual(expect.objectContaining({ data: {}, permissions: {}, redacted: true }));
+    expect(observerSnapshot.json().items.map((item: Item) => item.id)).toEqual([unassignedItem.id]);
+
+    const playerSnapshot = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot", headers: playerHeaders });
+    expect(playerSnapshot.statusCode).toBe(200);
+    expect(playerSnapshot.json().actors.find((actor: Actor) => actor.id === "act_valen").redacted).toBeUndefined();
+    expect(playerSnapshot.json().actors.find((actor: Actor) => actor.id === privateActor.id).redacted).toBe(true);
+    expect(playerSnapshot.json().items.some((item: Item) => item.actorId === "act_valen")).toBe(true);
+    expect(playerSnapshot.json().items.map((item: Item) => item.id)).not.toContain(privateItem.id);
+    for (const payload of [observerSnapshot.json(), playerSnapshot.json()]) {
+      expect(JSON.stringify(payload)).not.toContain("RIVAL_SECRET_");
+      const redactedCombat = payload.combats.find((combat: Combat) => combat.id === privateCombat.id);
+      const redactedCombatant = redactedCombat.combatants[0];
+      expect(redactedCombatant).not.toHaveProperty("conditions");
+      expect(redactedCombatant).not.toHaveProperty("deathSaveSuccesses");
+      expect(redactedCombatant).not.toHaveProperty("deathSaveFailures");
+      expect(redactedCombatant).not.toHaveProperty("deathSaveOutcome");
+      expect(redactedCombatant).not.toHaveProperty("resourceKey");
+      expect(redactedCombatant).not.toHaveProperty("resourceLabel");
+      expect(redactedCombatant).not.toHaveProperty("resourceUsed");
+      expect(redactedCombatant).not.toHaveProperty("resourceSpent");
+      const action = redactedCombat.actions[0];
+      expect(action.actorUpdates[0]).toEqual(expect.objectContaining({ actorId: privateActor.id, before: {}, after: {} }));
+      expect(action.itemUpdates).toEqual([]);
+      expect(action.resolution.actorUpdates[0]).toEqual(expect.objectContaining({ actorId: privateActor.id, before: {}, after: {} }));
+      expect(action.resolution.itemUpdates).toEqual([]);
+      expect(action.resolution.rolls[0]).toEqual(expect.objectContaining({ baseFormula: "", formula: "", advantageSources: [], disadvantageSources: [] }));
+      expect(action.resolution.rolls[0]).not.toHaveProperty("d20Mode");
+      expect(action.resolution.rolls[0]).not.toHaveProperty("saveOutcome");
+      expect(action.resolution.effects[0]).toEqual(expect.objectContaining({ type: "damage", targetActorId: privateActor.id, amount: 7 }));
+      expect(action.resolution.effects[0]).not.toHaveProperty("before");
+      expect(action.resolution.effects[0]).not.toHaveProperty("after");
+      expect(action.resolution.effects[0]).not.toHaveProperty("max");
+      expect(action.resolution.conditions).toEqual([]);
+      expect(action.resolution.pendingSaves[0]).toEqual(expect.objectContaining({ actorId: privateActor.id, reason: "Save required" }));
+      expect(action.resolution.pendingSaves[0]).not.toHaveProperty("success");
+      expect(action.resolution.pendingReactions).toEqual([]);
+      expect(action.resolution.warnings).toEqual([]);
+      expect(action.resolution.auditEvents[0].message).toBe("Resolution event redacted");
+      expect(action.resolution.auditEvents[0]).not.toHaveProperty("data");
+      expect(action.resolution.blocked).toEqual({ code: "resolution_blocked", reason: "Resolution blocked" });
+      expect(action.resolution.manualResolutionRequired).toEqual({ reason: "Manual resolution required", metadata: {} });
+    }
+
+    const playerCombats = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/combats", headers: playerHeaders });
+    expect(playerCombats.statusCode).toBe(200);
+    expect(JSON.stringify(playerCombats.json())).not.toContain("RIVAL_SECRET_");
+    const playerCombatAudit = await app.inject({ method: "GET", url: `/api/v1/combats/${privateCombat.id}/audit`, headers: playerHeaders });
+    expect(playerCombatAudit.statusCode).toBe(200);
+    expect(JSON.stringify(playerCombatAudit.json())).not.toContain("RIVAL_SECRET_");
+    const gmCombats = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/combats", headers: authHeaders });
+    expect(gmCombats.statusCode).toBe(200);
+    expect(JSON.stringify(gmCombats.json())).toContain("RIVAL_SECRET_ACTION_AFTER");
+
+    type PrivacyRealtimeSocket = {
+      onopen: (() => void) | null;
+      onmessage: ((event: { data: unknown }) => void) | null;
+      onerror: ((event: unknown) => void) | null;
+      close(): void;
+    };
+    const TestWebSocket = (globalThis as unknown as { WebSocket?: new (url: string, protocols?: string[]) => PrivacyRealtimeSocket }).WebSocket;
+    if (!TestWebSocket) throw new Error("WebSocket is not available in this Node runtime");
+    await app.listen({ port: 0, host: "127.0.0.1" });
+    const playerLogin = await loginDemoUser(app, store, "usr_demo_player");
+    expect(playerLogin.statusCode).toBe(200);
+    const address = app.server.address() as AddressInfo;
+    const socket = new TestWebSocket(`ws://127.0.0.1:${address.port}/api/v1/realtime?campaignId=camp_demo`, ["otte.v1", `otte.auth.${playerLogin.json().token as string}`]);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Timed out opening actor privacy realtime socket")), 1000);
+        socket.onopen = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        socket.onerror = (event) => {
+          clearTimeout(timer);
+          reject(new Error(`Actor privacy realtime socket failed: ${String(event)}`));
+        };
+      });
+      const realtimeCombat = new Promise<{ type?: string; payload?: Combat }>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Timed out waiting for redacted combat realtime event")), 1000);
+        socket.onmessage = (event) => {
+          const message = JSON.parse(String(event.data)) as { type?: string; payload?: Combat };
+          if (message.type !== "combat.roundAdvanced") return;
+          clearTimeout(timer);
+          resolve(message);
+        };
+      });
+      const advanced = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/combats/${privateCombat.id}`,
+        headers: observerHeaders,
+        payload: { round: 2, combatants: privateCombat.combatants }
+      });
+      expect(advanced.statusCode).toBe(200);
+      expect(JSON.stringify(advanced.json())).not.toContain("RIVAL_SECRET_");
+      const combatEvent = await realtimeCombat;
+      expect(JSON.stringify(combatEvent)).not.toContain("RIVAL_SECRET_");
+      expect(combatEvent.payload?.actions?.[0]?.actorUpdates[0]).toEqual(expect.objectContaining({ before: {}, after: {} }));
+    } finally {
+      socket.close();
+    }
+
+    const hiddenGeneric = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters",
+      headers: authHeaders,
+      payload: { templateId: "guardian", name: "Hidden Mutation Guardian", ownerUserId: "usr_demo_gm" }
+    });
+    expect(hiddenGeneric.statusCode).toBe(200);
+    const hiddenGenericId = hiddenGeneric.json().actor.id as string;
+
+    const directActorUpdate = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/actors/${hiddenGenericId}`,
+      headers: observerHeaders,
+      payload: { name: "Hidden Mutation Guardian Renamed" }
+    });
+    expect(directActorUpdate.statusCode).toBe(200);
+    expect(directActorUpdate.json()).toEqual(expect.objectContaining({ id: hiddenGenericId, data: {}, permissions: {}, redacted: true }));
+
+    for (const payload of [
+      { ownerUserId: "usr_demo_observer" },
+      { permissions: { usr_demo_observer: ["actor.readPrivate"] } }
+    ]) {
+      const deniedAccessControlUpdate = await app.inject({
+        method: "PATCH",
+        url: `/api/v1/actors/${hiddenGenericId}`,
+        headers: observerHeaders,
+        payload
+      });
+      expect(deniedAccessControlUpdate.statusCode).toBe(403);
+      expect(deniedAccessControlUpdate.json()).toEqual(expect.objectContaining({ error: "forbidden", message: "Missing permission: actor.readPrivate" }));
+    }
+    expect(store.state.actors.find((actor) => actor.id === hiddenGenericId)).toEqual(
+      expect.objectContaining({ ownerUserId: "usr_demo_gm", permissions: expect.not.objectContaining({ usr_demo_observer: expect.anything() }) })
+    );
+    const stillPrivateSheet = await app.inject({
+      method: "GET",
+      url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${hiddenGenericId}/sheet`,
+      headers: observerHeaders
+    });
+    expect(stillPrivateSheet.statusCode).toBe(403);
+
+    const conditionUpdate = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${hiddenGenericId}/conditions`,
+      headers: observerHeaders,
+      payload: { conditionId: "poisoned" }
+    });
+    expect(conditionUpdate.statusCode).toBe(200);
+    expect(conditionUpdate.json().actor).toEqual(expect.objectContaining({ data: {}, permissions: {}, redacted: true }));
+    expect(conditionUpdate.json()).not.toHaveProperty("sheet");
+
+    const compendiumUpdate = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${hiddenGenericId}/compendium`,
+      headers: observerHeaders,
+      payload: { entryId: "longsword" }
+    });
+    expect(compendiumUpdate.statusCode).toBe(200);
+    expect(compendiumUpdate.json().item).toEqual(expect.objectContaining({ data: {}, name: "Redacted item", type: "redacted", redacted: true }));
+    expect(compendiumUpdate.json()).not.toHaveProperty("sheet");
+
+    const observerOwnedGeneric = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/characters",
+      headers: authHeaders,
+      payload: { templateId: "guardian", name: "Observer-Owned Guardian", ownerUserId: "usr_demo_observer" }
+    });
+    expect(observerOwnedGeneric.statusCode).toBe(200);
+    const observerOwnedGenericId = observerOwnedGeneric.json().actor.id as string;
+
+    const deniedHiddenItemMove = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/items/${compendiumUpdate.json().item.id}`,
+      headers: observerHeaders,
+      payload: { actorId: observerOwnedGenericId }
+    });
+    expect(deniedHiddenItemMove.statusCode).toBe(403);
+    expect(deniedHiddenItemMove.json()).toEqual(expect.objectContaining({ error: "forbidden", message: "Missing permission: actor.readPrivate" }));
+    expect(store.state.items.find((item) => item.id === compendiumUpdate.json().item.id)?.actorId).toBe(hiddenGenericId);
+
+    const foreignActor = createTimestamped("act", {
+      id: "act_foreign_item_target",
+      campaignId: "camp_foreign",
+      systemId: "generic-fantasy",
+      ownerUserId: "usr_demo_observer",
+      type: "character",
+      name: "Foreign Item Target",
+      data: {},
+      permissions: {}
+    }) satisfies Actor;
+    store.state.actors.push(foreignActor);
+    const itemCountBeforeInvalidCreates = store.state.items.length;
+    for (const actorId of ["act_missing_item_target", foreignActor.id]) {
+      const invalidItemCreate = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/items",
+        headers: observerHeaders,
+        payload: { actorId, name: "Invalid Attached Item" }
+      });
+      expect(invalidItemCreate.statusCode).toBe(400);
+      expect(invalidItemCreate.json()).toEqual(expect.objectContaining({ error: "bad_request", message: "Item actorId must reference an actor in the same campaign" }));
+    }
+    expect(store.state.items).toHaveLength(itemCountBeforeInvalidCreates);
+
+    const directItemUpdate = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/items/${compendiumUpdate.json().item.id}`,
+      headers: observerHeaders,
+      payload: { name: "Hidden Renamed Longsword" }
+    });
+    expect(directItemUpdate.statusCode).toBe(200);
+    expect(directItemUpdate.json()).toEqual(expect.objectContaining({ data: {}, name: "Redacted item", type: "redacted", redacted: true }));
+
+    const restUpdate = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${hiddenGenericId}/rest`,
+      headers: observerHeaders,
+      payload: { restType: "long" }
+    });
+    expect(restUpdate.statusCode).toBe(200);
+    expect(restUpdate.json().rest).toEqual({ systemId: "generic-fantasy", actorId: hiddenGenericId, restType: "long" });
+    expect(restUpdate.json().actor).toEqual(expect.objectContaining({ data: {}, redacted: true }));
+    expect(restUpdate.json()).not.toHaveProperty("sheet");
+
+    const advancementUpdate = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${hiddenGenericId}/advance`,
+      headers: observerHeaders,
+      payload: { optionId: "level-up" }
+    });
+    expect(advancementUpdate.statusCode).toBe(200);
+    expect(advancementUpdate.json().actor).toEqual(expect.objectContaining({ data: {}, redacted: true }));
+    expect(advancementUpdate.json()).not.toHaveProperty("sheet");
+
+    const hiddenDnd = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/characters",
+      headers: authHeaders,
+      payload: { templateId: "fighter", name: "Hidden Mutation Fighter", ownerUserId: "usr_demo_gm" }
+    });
+    expect(hiddenDnd.statusCode).toBe(200);
+    const purchaseUpdate = await app.inject({
+      method: "POST",
+      url: `/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/actors/${hiddenDnd.json().actor.id}/purchase`,
+      headers: observerHeaders,
+      payload: { entryId: "healers-kit", quantity: 1 }
+    });
+    expect(purchaseUpdate.statusCode).toBe(200);
+    expect(purchaseUpdate.json().purchase).toEqual(expect.objectContaining({ actorId: hiddenDnd.json().actor.id, entryId: "healers-kit", quantity: 1, totalCostGp: 5 }));
+    expect(purchaseUpdate.json().purchase).not.toHaveProperty("currency");
+    expect(purchaseUpdate.json().purchase).not.toHaveProperty("data");
+    expect(purchaseUpdate.json().purchase).not.toHaveProperty("itemData");
+    expect(purchaseUpdate.json().actor).toEqual(expect.objectContaining({ data: {}, redacted: true }));
+    expect(purchaseUpdate.json().item).toEqual(expect.objectContaining({ data: {}, name: "Redacted item", redacted: true }));
+    expect(purchaseUpdate.json()).not.toHaveProperty("sheet");
+
+    expect(store.state.actors.find((actor) => actor.id === hiddenGenericId)).toEqual(
+      expect.objectContaining({ name: "Hidden Mutation Guardian Renamed", data: expect.objectContaining({ level: 2 }) })
+    );
+    expect(store.state.items.find((item) => item.id === compendiumUpdate.json().item.id)).toEqual(
+      expect.objectContaining({ actorId: hiddenGenericId, name: "Hidden Renamed Longsword" })
+    );
+
+    for (const request of [
+      { method: "GET" as const, url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${privateActor.id}/sheet` },
+      { method: "GET" as const, url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${privateActor.id}/advancement` },
+      { method: "POST" as const, url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${privateActor.id}/roll`, payload: { ability: "dexterity" } }
+    ]) {
+      const denied = await app.inject({ ...request, headers: playerHeaders });
+      expect(denied.statusCode).toBe(403);
+      expect(denied.json()).toEqual(expect.objectContaining({ error: "forbidden", message: "Missing permission: actor.readPrivate" }));
+    }
+
+    const ownSheet = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/act_valen/sheet", headers: playerHeaders });
+    expect(ownSheet.statusCode).toBe(200);
+    privateActor.permissions.usr_demo_observer = ["actor.readPrivate"];
+    const grantedSheet = await app.inject({ method: "GET", url: `/api/v1/campaigns/camp_demo/systems/generic-fantasy/actors/${privateActor.id}/sheet`, headers: observerHeaders });
+    expect(grantedSheet.statusCode).toBe(200);
 
     await app.close();
   });
@@ -2387,7 +2885,7 @@ describe("api", () => {
       }
     });
     expect(invalidRoll.statusCode).toBe(400);
-    expect(invalidRoll.json().message).toContain("Invalid die sides");
+    expect(invalidRoll.json().message).toContain("Die sides must be at least 2");
 
     const rolls = await app.inject({
       method: "GET",
@@ -3162,7 +3660,8 @@ describe("api", () => {
       payload: { conditions: ["restrained:2"], syncActorSheet: false }
     });
     expect(combatOnlyPatch.statusCode).toBe(200);
-    expect(combatOnlyPatch.json().combatants[1]).toEqual(expect.objectContaining({ conditions: ["restrained:2"] }));
+    expect(combatOnlyPatch.json().combatants[1]).not.toHaveProperty("conditions");
+    expect(store.state.combats.find((combat) => combat.id === started.json().id)?.combatants[1]?.conditions).toEqual(["restrained:2"]);
     expect(store.state.actors.find((actor) => actor.id === "act_sentinel")?.data.conditions).toEqual([]);
 
     const deadCombatant = await app.inject({
@@ -9087,6 +9586,8 @@ describe("api", () => {
       ["GET /api/v1/campaigns/{campaignId}/ai/tool-calls", "AI tool calls require AI proposal permission"],
       ["GET /api/v1/campaigns/{campaignId}/content-imports", "content import roster requires campaign update"],
       ["GET /api/v1/content-imports/{importId}", "content import details require campaign update"],
+      ["GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/advancement", "actor advancement requires private actor access"],
+      ["GET /api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/sheet", "actor sheet requires private actor access"],
       ["GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage", "plugin storage requires plugin configure"],
       ["GET /api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}", "plugin storage requires plugin configure"]
     ]);
@@ -21772,7 +22273,7 @@ describe("api", () => {
       writeVersionedPluginPackage(pluginRoot, "versioned-plugin-2", "versioned-plugin", "2.0.0", "Version 2 macro");
       const futureManifestPath = join(pluginRoot, "versioned-plugin-2", "plugin.manifest.json");
       const futureManifest = JSON.parse(readFileSync(futureManifestPath, "utf8")) as { compatibleCore: string };
-      futureManifest.compatibleCore = ">=9.0.0";
+      futureManifest.compatibleCore = "^0.1.0";
       writeFileSync(futureManifestPath, JSON.stringify(futureManifest));
       const store = new MemoryStateStore();
       const app = await buildApp({ store, pluginRoot });
@@ -21787,10 +22288,10 @@ describe("api", () => {
         expect.objectContaining({
           id: "versioned-plugin",
           version: "2.0.0",
-          compatibleCore: { range: ">=9.0.0", coreVersion: "0.3.0", satisfied: false },
-          compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0",
+          compatibleCore: { range: "^0.1.0", coreVersion: "0.3.0", satisfied: false },
+          compatibilityBlock: "Plugin requires core ^0.1.0; server core is 0.3.0",
           versionCompatibility: [
-            expect.objectContaining({ version: "2.0.0", compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0" }),
+            expect.objectContaining({ version: "2.0.0", compatibilityBlock: "Plugin requires core ^0.1.0; server core is 0.3.0" }),
             expect.objectContaining({ version: "1.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } })
           ]
         })
@@ -21803,7 +22304,7 @@ describe("api", () => {
         payload: { version: "2.0.0", permissions: ["chat.write"] }
       });
       expect(deniedLatest.statusCode).toBe(403);
-      expect(deniedLatest.json().message).toBe("Plugin requires core >=9.0.0; server core is 0.3.0");
+      expect(deniedLatest.json().message).toBe("Plugin requires core ^0.1.0; server core is 0.3.0");
 
       const installOld = await app.inject({
         method: "POST",
@@ -21820,7 +22321,7 @@ describe("api", () => {
           updateAvailable: true,
           rollbackVersions: ["2.0.0"],
           versionCompatibility: [
-            expect.objectContaining({ version: "2.0.0", compatibilityBlock: "Plugin requires core >=9.0.0; server core is 0.3.0" }),
+            expect.objectContaining({ version: "2.0.0", compatibilityBlock: "Plugin requires core ^0.1.0; server core is 0.3.0" }),
             expect.objectContaining({ version: "1.0.0", compatibleCore: { range: ">=0.1.0", coreVersion: "0.3.0", satisfied: true } })
           ]
         })
@@ -21833,7 +22334,7 @@ describe("api", () => {
         payload: { version: "2.0.0", permissions: ["chat.write"] }
       });
       expect(deniedUpgrade.statusCode).toBe(403);
-      expect(deniedUpgrade.json().message).toBe("Plugin requires core >=9.0.0; server core is 0.3.0");
+      expect(deniedUpgrade.json().message).toBe("Plugin requires core ^0.1.0; server core is 0.3.0");
 
       const oldCommand = await app.inject({
         method: "POST",
@@ -23345,7 +23846,7 @@ registerCommand("/state", (input) => {
     process.env.OTTE_PLUGIN_REGISTRY_URLS = registryUrl;
     process.env.OTTE_PLUGIN_REGISTRY_TIMEOUT_MS = "1000";
     const store = new MemoryStateStore();
-    const pluginRegistry = loadPluginRegistry({ pluginRoot });
+    const pluginRegistry = loadPluginRegistry({ pluginRoot, network: { allowPrivateNetwork: true } });
     const app = await buildApp({ store, pluginRegistry });
     try {
       const nonAdminSync = await app.inject({
@@ -23618,19 +24119,35 @@ registerCommand("/state", (input) => {
     });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("capture_board_view") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("Do not put adversaries in the party") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("reuse existing campaign character actors") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("Do not create duplicate party actors") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("pass actorId or existingActorId to draft_actor_token_roster") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("Apply visual scene edits to the active scene") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("reuse existing generated token art") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("Do not leave generated map or token art as asset-only") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("include the scene/background update in the same proposal") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("Supported scene size targets") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("standard 24 x 16 cells") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("large 48 x 32 cells") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("huge 72 x 48 cells") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("square 60 x 60 cells") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("provide width, height, and gridSize") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("include the token image update and matching actor image update") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("use draft_actor_token_roster with generateArt enabled") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("create missing actor/token records") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("place existing relevant tokens") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("When draft_scene returns a sceneId, continue in the same turn") });
+    expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("Approval mode: ask before applying.") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("attached reference image") });
     expect(provider.requests[0]!.messages[0]).toMatchObject({ role: "system", content: expect.stringContaining("parallel independent image-generation tool calls") });
     expect(provider.requests[0]!.signal).toBeInstanceOf(AbortSignal);
     expect(provider.requests[0]!.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["read_board_state", "capture_board_view", "apply_approved_proposal"]));
+    expect(JSON.stringify(provider.requests[0]!.tools.find((tool) => tool.name === "draft_actor_token_roster")?.parameters)).toEqual(expect.stringContaining("actorId or existingActorId"));
+    expect(JSON.stringify(provider.requests[0]!.tools.find((tool) => tool.name === "draft_actor_token_roster")?.parameters)).toEqual(expect.stringContaining("exact-name matches for existing character actors are reused"));
+    expect(JSON.stringify(provider.requests[0]!.tools.find((tool) => tool.name === "draft_scene")?.parameters)).toEqual(expect.stringContaining("Set width to columns * gridSize"));
+    expect(JSON.stringify(provider.requests[0]!.tools.find((tool) => tool.name === "draft_scene")?.parameters)).toEqual(expect.stringContaining("large 48 x 32 cells"));
+    expect(JSON.stringify(provider.requests[0]!.tools.find((tool) => tool.name === "generate_map_asset")?.parameters)).toEqual(expect.stringContaining("1536x1024"));
+    expect(JSON.stringify(provider.requests[0]!.tools.find((tool) => tool.name === "generate_map_asset")?.parameters)).toEqual(expect.stringContaining("60 x 60 scenes"));
     await app.close();
   });
 
@@ -23669,12 +24186,11 @@ registerCommand("/state", (input) => {
     }
 
     const store = new MemoryStateStore();
-    store.state.assets.push(
-      createTimestamped("asset", {
+    const referenceAsset = createTimestamped("asset", {
         id: "asset_ai_reference_upload",
         campaignId: "camp_demo",
         name: "Uploaded Sketch Reference",
-        url: "/api/v1/assets/asset_ai_reference_upload/blob",
+        url: "https://tabletop.example.test/api/v1/assets/asset_ai_reference_upload/blob?expiresAt=2099-01-01T00%3A00%3A00.000Z&signature=private",
         mimeType: "image/png",
         sizeBytes: 4096,
         checksum: "sha256:reference",
@@ -23683,8 +24199,10 @@ registerCommand("/state", (input) => {
         storage: { provider: "local", key: "camp_demo/asset_ai_reference_upload.png" },
         lifecycle: { status: "active", expiresAt: "2099-01-01T00:00:00.000Z" },
         security: { status: "clean", scanner: "builtin-asset-scanner", scannedAt: "2026-05-07T00:00:00.000Z", findings: [] }
-      })
-    );
+      }) satisfies MapAsset;
+    store.state.assets.push(referenceAsset);
+    const assetStorage = new MemoryAssetStorage("reference-assets");
+    assetStorage.objects.set(assetStorageKey(referenceAsset), tinyPng);
     const generatedImageInputs: ImageAssetGenerationInput[] = [];
     const imageAssetGenerator: ImageAssetGenerator = {
       id: "reference-image-generator",
@@ -23699,7 +24217,7 @@ registerCommand("/state", (input) => {
         };
       }
     };
-    const app = await buildApp({ store, aiProvider: new ReferenceToolProvider(), assetStorage: new MemoryAssetStorage("reference-assets"), imageAssetGenerator });
+    const app = await buildApp({ store, aiProvider: new ReferenceToolProvider(), assetStorage, imageAssetGenerator });
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/ai/threads",
@@ -23716,8 +24234,69 @@ registerCommand("/state", (input) => {
     expect(response.statusCode).toBe(200);
     expect(generatedImageInputs).toHaveLength(3);
     expect(generatedImageInputs.map((input) => input.kind)).toEqual(["map", "token", "token"]);
-    expect(generatedImageInputs.every((input) => input.sourceImageUrl?.includes("/api/v1/assets/asset_ai_reference_upload/blob"))).toBe(true);
+    expect(generatedImageInputs.every((input) => input.sourceImageUrl?.startsWith("data:image/png;base64,"))).toBe(true);
     expect(generatedImageInputs.every((input) => input.sourceImageMimeType === "image/png")).toBe(true);
+    await app.close();
+  });
+
+  it("preserves metadata-only external HTTPS reference images for image generation", async () => {
+    class ExternalReferenceProvider implements AiProvider {
+      id = "external-reference-ai";
+      label = "External Reference AI";
+      executesToolsInTurn = true;
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        const toolInput = {
+          prompt: "Turn the external reference into a moonlit clearing map.",
+          name: "External Reference Map",
+          sceneId: "scn_vault_entry",
+          sourceAssetId: "asset_ai_external_reference",
+          outputFormat: "png"
+        };
+        yield { type: "tool.started", toolName: "generate_map_asset", input: toolInput };
+        yield { type: "tool.completed", toolName: "generate_map_asset", output: await input.executeTool!("generate_map_asset", toolInput) };
+        yield { type: "message.completed", content: "Generated a map from the external reference." };
+      }
+    }
+
+    const externalReferenceUrl = "https://cdn.example.test/reference-sketch.png";
+    const store = new MemoryStateStore();
+    store.state.assets.push(
+      createTimestamped("asset", {
+        id: "asset_ai_external_reference",
+        campaignId: "camp_demo",
+        name: "External Sketch Reference",
+        url: externalReferenceUrl,
+        mimeType: "image/png",
+        sizeBytes: 4096,
+        checksum: "sha256:external-reference",
+        folder: "ai/references",
+        tags: ["ai", "reference"],
+        lifecycle: { status: "active", expiresAt: "2099-01-01T00:00:00.000Z" },
+        security: { status: "clean", scanner: "builtin-asset-scanner", scannedAt: "2026-05-07T00:00:00.000Z", findings: [] }
+      })
+    );
+    const generatedImageInputs: ImageAssetGenerationInput[] = [];
+    const assetStorage = new MemoryAssetStorage("external-reference-assets");
+    const imageAssetGenerator: ImageAssetGenerator = {
+      id: "external-reference-image-generator",
+      label: "External Reference Image Generator",
+      async generate(input) {
+        generatedImageInputs.push(input);
+        return { body: tinyPng, mimeType: "image/png", provider: "test-external-reference", sourcePrompt: input.prompt };
+      }
+    };
+    const app = await buildApp({ store, aiProvider: new ExternalReferenceProvider(), assetStorage, imageAssetGenerator });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Use the external sketch as a map reference.", surface: "agent_panel" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(generatedImageInputs).toHaveLength(1);
+    expect(generatedImageInputs[0]).toEqual(expect.objectContaining({ sourceImageUrl: externalReferenceUrl, sourceImageMimeType: "image/png" }));
     await app.close();
   });
 
@@ -23936,6 +24515,58 @@ registerCommand("/state", (input) => {
     expect(new Set(tokenCreates.slice(4).map((change) => change.data.imageAssetId)).size).toBe(1);
     expect(itemCreates.length).toBeGreaterThan(0);
     expect(response.json().events).toEqual(expect.arrayContaining([expect.objectContaining({ type: "proposal.created", proposalId: rosterProposal.id })]));
+    await app.close();
+  });
+
+  it("reuses existing party actors when drafting roster tokens", async () => {
+    class ExistingPartyRosterProvider implements AiProvider {
+      id = "existing-party-roster-ai";
+      label = "Existing Party Roster AI";
+
+      async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield {
+          type: "tool.started",
+          toolName: "draft_actor_token_roster",
+          input: {
+            title: "Place existing party",
+            summary: "Place the existing party character on the scene.",
+            sceneId: "scn_vault_entry",
+            generateArt: false,
+            actors: [{ ref: "pc_valen", name: "Valen Ash", systemId: "generic-fantasy", templateId: "fighter", token: { centerX: 125, centerY: 125, width: 1, height: 1, disposition: "friendly" } }]
+          }
+        };
+        yield { type: "message.completed", content: "Placed existing party." };
+      }
+    }
+
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new ExistingPartyRosterProvider() });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: authHeaders,
+      payload: { prompt: "Use the existing party and place them on this scene.", surface: "agent_panel", selectedSceneId: "scn_vault_entry" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const rosterProposal = store.state.proposals.find((proposal) => proposal.title === "Roster: Place existing party")!;
+    expect(rosterProposal).toBeDefined();
+    expect(rosterProposal.changesJson.filter((change) => change.entity === "actor" && change.action === "create")).toHaveLength(0);
+    expect(rosterProposal.changesJson.filter((change) => change.entity === "item" && change.action === "create")).toHaveLength(0);
+    const tokenCreate = rosterProposal.changesJson.find((change) => change.entity === "token" && change.action === "create")!;
+    expect(tokenCreate.data).toEqual(
+      expect.objectContaining({
+        actorId: "act_valen",
+        name: "Valen Ash",
+        sceneId: "scn_vault_entry",
+        layer: "player",
+        disposition: "friendly",
+        ownerUserIds: ["usr_demo_player"]
+      })
+    );
+    expect(store.state.actors.filter((actor) => actor.name === "Valen Ash")).toHaveLength(1);
+    const rosterToolCall = store.state.aiToolCalls.find((call) => call.toolName === "draft_actor_token_roster");
+    expect(rosterToolCall?.output).toEqual(expect.objectContaining({ reusedActorCount: 1, tokenCount: 1 }));
     await app.close();
   });
 
@@ -24630,14 +25261,14 @@ registerCommand("/state", (input) => {
     }
   });
 
-  it("streams ai provider message deltas over realtime during a thread turn", async () => {
+  it("streams ai provider message and reasoning summary deltas over realtime during a thread turn", async () => {
     type RealtimeTestSocket = {
       onopen: (() => void) | null;
       onmessage: ((event: { data: unknown }) => void) | null;
       onerror: ((event: unknown) => void) | null;
       close(): void;
     };
-    type AiStreamRealtimeMessage = { type?: string; targetId?: string; payload?: { threadId?: string; delta?: string; content?: string } };
+    type AiStreamRealtimeMessage = { type?: string; targetId?: string; payload?: { threadId?: string; delta?: string; content?: string; message?: string; summaryIndex?: number; status?: string } };
     const maybeWebSocket = (globalThis as unknown as { WebSocket?: new (url: string, protocols?: string[]) => RealtimeTestSocket }).WebSocket;
     if (!maybeWebSocket) throw new Error("WebSocket is not available in this Node runtime");
     const TestWebSocket = maybeWebSocket;
@@ -24647,6 +25278,9 @@ registerCommand("/state", (input) => {
       label = "Streaming AI";
 
       async *stream(_input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        yield { type: "reasoning.delta", delta: "Checking the scene.", summaryIndex: 0 };
+        yield { type: "reasoning.completed", content: "Checked the scene before answering." };
+        yield { type: "activity.reported", message: "Reading scene context", itemType: "dynamicToolCall", status: "started" };
         yield { type: "message.delta", delta: "Hel" };
         yield { type: "message.delta", delta: "lo" };
         yield { type: "message.completed", content: "Hello" };
@@ -24708,11 +25342,19 @@ registerCommand("/state", (input) => {
         payload: { prompt: "Stream a short reply" }
       });
 
+      const reasoningDelta = await waitFor((message) => message.type === "ai.reasoning.delta" && message.payload?.delta === "Checking the scene.");
+      const reasoningCompleted = await waitFor((message) => message.type === "ai.reasoning.completed" && message.payload?.content === "Checked the scene before answering.");
+      const activity = await waitFor((message) => message.type === "ai.activity.reported" && message.payload?.message === "Reading scene context");
       const firstDelta = await waitFor((message) => message.type === "ai.message.delta" && message.payload?.delta === "Hel");
       const completed = await waitFor((message) => message.type === "ai.message.completed" && message.payload?.content === "Hello");
       const response = await responsePromise;
 
       expect(response.statusCode).toBe(200);
+      expect(reasoningDelta.targetId).toBe(response.json().thread.id);
+      expect(reasoningDelta.payload?.summaryIndex).toBe(0);
+      expect(reasoningCompleted.targetId).toBe(response.json().thread.id);
+      expect(activity.targetId).toBe(response.json().thread.id);
+      expect(activity.payload?.status).toBe("started");
       expect(firstDelta.targetId).toBe(response.json().thread.id);
       expect(completed.targetId).toBe(response.json().thread.id);
       expect(response.json().assistantMessage).toBe("Hello");
@@ -24782,6 +25424,48 @@ registerCommand("/state", (input) => {
     } finally {
       await app.close();
       restoreEnv(previousEnv);
+    }
+  });
+
+  it("marks stale running ai threads failed when listing campaign threads", async () => {
+    const store = new MemoryStateStore();
+    const staleRunningThread = createTimestamped("thr", {
+      campaignId: "camp_demo",
+      userId: "usr_demo_gm",
+      provider: "interrupted-ai",
+      title: "Interrupted provider stream",
+      status: "running" as const,
+      startedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString(),
+      retryAttempts: 0,
+      eventCount: 0,
+      toolCallCount: 0
+    }) satisfies EngineState["aiThreads"][number];
+    store.state.aiThreads.push(staleRunningThread);
+    const app = await buildApp({ store, aiProvider: new StaticAiProvider() });
+
+    try {
+      const listed = await app.inject({
+        method: "GET",
+        url: "/api/v1/campaigns/camp_demo/ai/threads",
+        headers: authHeaders
+      });
+
+      expect(listed.statusCode).toBe(200);
+      expect(listed.json()[0]).toMatchObject({
+        id: staleRunningThread.id,
+        status: "failed",
+        providerError: "Marked failed after interrupted AI provider stream",
+        failedAt: expect.any(String),
+        durationMs: expect.any(Number)
+      });
+      expect(store.state.aiThreads.find((thread) => thread.id === staleRunningThread.id)).toMatchObject({
+        status: "failed",
+        providerError: "Marked failed after interrupted AI provider stream",
+        failedAt: expect.any(String),
+        durationMs: expect.any(Number)
+      });
+    } finally {
+      await app.close();
     }
   });
 
@@ -27454,8 +28138,10 @@ registerCommand("/state", (input) => {
       id = "same-turn-scene-ai";
       label = "Same Turn Scene AI";
       executesToolsInTurn = true;
+      requests: AiProviderRequest[] = [];
 
       async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.requests.push(input);
         const executeTool = input.executeTool;
         if (!executeTool) throw new Error("executeTool unavailable");
         const sceneInput = { name: "One-Turn Clearing", width: 900, height: 700, gridSize: 50 };
@@ -27478,6 +28164,7 @@ registerCommand("/state", (input) => {
     }
 
     const store = new MemoryStateStore();
+    const provider = new SameTurnSceneProvider();
     const generatedImageInputs: ImageAssetGenerationInput[] = [];
     const imageAssetGenerator: ImageAssetGenerator = {
       id: "same-turn-image-generator",
@@ -27492,15 +28179,21 @@ registerCommand("/state", (input) => {
         };
       }
     };
-    const app = await buildApp({ store, aiProvider: new SameTurnSceneProvider(), assetStorage: new MemoryAssetStorage("same-turn-assets"), imageAssetGenerator });
+    const app = await buildApp({ store, aiProvider: provider, assetStorage: new MemoryAssetStorage("same-turn-assets"), imageAssetGenerator });
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/ai/threads",
       headers: authHeaders,
-      payload: { prompt: "Create a new scene, make a map for it, and apply it now.", approvalMode: "auto" }
+      payload: { prompt: "Create a new scene, make a map for it, and apply it now.", surface: "agent_panel", approvalMode: "auto" }
     });
 
     expect(response.statusCode).toBe(200);
+    expect(provider.requests[0]?.messages[0]).toEqual(
+      expect.objectContaining({
+        role: "system",
+        content: expect.stringContaining("Approval mode: auto approve and apply.")
+      })
+    );
     expect(generatedImageInputs).toHaveLength(1);
     const scene = store.state.scenes.find((item) => item.name === "One-Turn Clearing");
     expect(scene).toEqual(expect.objectContaining({ active: false, width: 900, height: 700, backgroundAssetId: expect.any(String) }));
@@ -27685,6 +28378,122 @@ registerCommand("/state", (input) => {
       await app.close();
       restoreEnv(previousEnv);
     }
+  });
+
+  it("redacts private actor details from player AI context and read_actor output", async () => {
+    class ActorPrivacyProvider implements AiProvider {
+      id = "actor-privacy-ai";
+      label = "Actor Privacy AI";
+      requests: AiProviderRequest[] = [];
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        this.requests.push(input);
+        yield { type: "tool.started", toolName: "read_actor", input: { actorId: "act_valen" } };
+        yield { type: "tool.started", toolName: "read_actor", input: { actorId: "act_ai_private_rival" } };
+        yield { type: "tool.started", toolName: "read_combat", input: { activeOnly: true } };
+        yield { type: "tool.started", toolName: "use_actor_action", input: { actorId: "act_ai_private_rival", actionName: "Attack" } };
+        yield { type: "message.completed", content: "Actor privacy checked." };
+      }
+    }
+
+    const provider = new ActorPrivacyProvider();
+    const store = new MemoryStateStore();
+    const privateActor = createTimestamped("act", {
+      id: "act_ai_private_rival",
+      campaignId: "camp_demo",
+      systemId: "generic-fantasy",
+      ownerUserId: "usr_demo_gm",
+      type: "npc",
+      name: "AI Private Rival",
+      data: { hp: { current: 99, max: 99 }, focus: { current: 7, max: 7 }, conditions: ["secret-doom"] },
+      permissions: {}
+    }) satisfies Actor;
+    store.state.actors.push(privateActor);
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["actor.update", "combat.manage", "ai.proposeChanges"]
+      }) satisfies PermissionGrant
+    );
+    store.state.combats.push(
+      createTimestamped("cmb", {
+        id: "cmb_ai_private_rival",
+        campaignId: "camp_demo",
+        active: true,
+        round: 1,
+        turnIndex: 0,
+        combatants: [{
+          id: "cmbt_ai_private_rival",
+          tokenId: "tok_ai_private_rival",
+          actorId: privateActor.id,
+          name: privateActor.name,
+          initiative: 11,
+          defeated: false,
+          conditions: ["RIVAL_SECRET_AI_COMBAT_CONDITION"],
+          deathSaveFailures: 2,
+          resourceLabel: "RIVAL_SECRET_AI_COMBAT_RESOURCE",
+          resourceUsed: true
+        }]
+      }) satisfies Combat
+    );
+    store.state.items.push(
+      createTimestamped("itm", {
+        id: "itm_ai_private_rival",
+        campaignId: "camp_demo",
+        systemId: "generic-fantasy",
+        actorId: privateActor.id,
+        type: "weapon",
+        name: "AI Secret Blade",
+        data: { formula: "9d9+9", equipped: true }
+      }) satisfies Item
+    );
+    const app = await buildApp({ store, aiProvider: provider });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { prompt: "Inspect the visible actors." }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const ownedContext = provider.requests[0]!.context.actors?.find((actor) => actor.id === "act_valen");
+    const privateContext = provider.requests[0]!.context.actors?.find((actor) => actor.id === privateActor.id);
+    expect(ownedContext).toEqual(expect.objectContaining({ privateDataVisible: true, summary: expect.stringContaining("18/22 HP"), actions: expect.any(Array) }));
+    expect(privateContext).toEqual(expect.objectContaining({ id: privateActor.id, name: "AI Private Rival", summary: "AI Private Rival", privateDataVisible: false }));
+    expect(privateContext).not.toHaveProperty("actions");
+    expect(JSON.stringify(privateContext)).not.toContain("99");
+
+    const completed = response.json().events.filter((event: { type: string; toolName?: string }) => event.type === "tool.completed" && event.toolName === "read_actor");
+    expect(completed).toHaveLength(2);
+    expect(completed[0].output.actors[0]).toEqual(
+      expect.objectContaining({ id: "act_valen", privateDataVisible: true, pools: expect.objectContaining({ hp: { current: 18, max: 22 } }) })
+    );
+    expect(completed[1].output.actors[0]).toEqual(
+      expect.objectContaining({
+        id: privateActor.id,
+        name: "AI Private Rival",
+        privateDataVisible: false,
+        pools: {},
+        conditions: [],
+        itemCount: 0,
+        items: [],
+        actions: []
+      })
+    );
+    expect(JSON.stringify(completed[1].output)).not.toContain("secret-doom");
+    expect(JSON.stringify(completed[1].output)).not.toContain("AI Secret Blade");
+    expect(JSON.stringify(completed[1].output)).not.toContain("9d9+9");
+    const combatRead = response.json().events.find((event: { type: string; toolName?: string }) => event.type === "tool.completed" && event.toolName === "read_combat");
+    expect(JSON.stringify(combatRead.output)).not.toContain("RIVAL_SECRET_");
+    expect(combatRead.output.combats[0].combatants[0]).not.toHaveProperty("conditions");
+    expect(combatRead.output.combats[0].combatants[0]).not.toHaveProperty("deathSaveFailures");
+    expect(combatRead.output.combats[0].combatants[0]).not.toHaveProperty("resourceLabel");
+    expect(combatRead.output.combats[0].combatants[0]).not.toHaveProperty("resourceUsed");
+    const deniedAction = response.json().events.find((event: { type: string; toolName?: string }) => event.type === "tool.completed" && event.toolName === "use_actor_action");
+    expect(deniedAction.output).toEqual({ error: "missing_permission", permission: "actor.readPrivate" });
+    await app.close();
   });
 
   it("executes expanded ai tools with permission and observability boundaries", async () => {
@@ -27918,6 +28727,8 @@ registerCommand("/state", (input) => {
       })
     );
     const gmAssetStorage = new MemoryAssetStorage("ai-generated-assets");
+    const vaultMapAsset = gmStore.state.assets.find((asset) => asset.id === "asset_ai_vault_map")!;
+    gmAssetStorage.objects.set(assetStorageKey(vaultMapAsset), tinyPng);
     const generatedImageInputs: ImageAssetGenerationInput[] = [];
     const gmImageGenerator = {
       id: "test-image-generator",
@@ -28223,7 +29034,7 @@ registerCommand("/state", (input) => {
     expect(modifiedAssetProposal?.changesJson.map((change) => change.entity)).toEqual(["asset"]);
     expect(modifiedAssetProposal?.changesJson[0]).toEqual(expect.objectContaining({ entity: "asset", action: "create", data: expect.objectContaining({ name: "Icy Vault Map", mimeType: "image/png", folder: "maps/generated" }) }));
     const assetEditInput = generatedImageInputs.find((input) => input.sourceImageUrl);
-    expect(assetEditInput?.sourceImageUrl).toContain("/api/v1/assets/asset_ai_vault_map/blob");
+    expect(assetEditInput?.sourceImageUrl).toMatch(/^data:image\/png;base64,/);
     expect(assetEditInput?.sourceImageMimeType).toBe("image/png");
     const mapAssetRecord = mapAssetProposal?.changesJson[0]?.data as MapAsset | undefined;
     const tokenAssetRecord = tokenAssetProposal?.changesJson[0]?.data as MapAsset | undefined;
@@ -33732,7 +34543,8 @@ registerCommand("/state", (input) => {
         if (playerActorEvent) {
           expect(JSON.stringify(playerActorEvent.payload)).not.toContain("Realtime private actor note.");
           expect(playerActorEvent.payload).toMatchObject({ id: "act_beta_mira", name: "Mira the Archivist", type: "npc" });
-          expect((playerActorEvent.payload as Record<string, unknown>).data).toBeUndefined();
+          expect((playerActorEvent.payload as Record<string, unknown>).data).toEqual({});
+          expect((playerActorEvent.payload as Record<string, unknown>).permissions).toEqual({});
         }
       }
 

@@ -43,15 +43,15 @@ describe("OpenTabletopClient", () => {
     }
 
     const client = new OpenTabletopClient("https://api.test/base", { token: "ots_test" });
-    expect(client.realtimeUrl(campaignId)).toBe("wss://api.test/api/v1/realtime?campaignId=camp_client");
-    expect(client.realtimeUrl(campaignId, { token: "override_token" })).toBe("wss://api.test/api/v1/realtime?campaignId=camp_client");
+    expect(client.realtimeUrl(campaignId)).toBe("wss://api.test/base/api/v1/realtime?campaignId=camp_client");
+    expect(client.realtimeUrl(campaignId, { token: "override_token" })).toBe("wss://api.test/base/api/v1/realtime?campaignId=camp_client");
 
     const localClient = new OpenTabletopClient("http://localhost:4000", {});
     expect(localClient.realtimeUrl(campaignId)).toBe("ws://localhost:4000/api/v1/realtime?campaignId=camp_client");
 
     const socket = client.connectRealtime(campaignId, { WebSocket: MockWebSocket as unknown as typeof WebSocket, protocols: ["otte.v1"] });
     expect(socket).toBeInstanceOf(MockWebSocket);
-    expect(sockets).toEqual([{ url: "wss://api.test/api/v1/realtime?campaignId=camp_client", protocols: ["otte.v1", "otte.auth.ots_test"] }]);
+    expect(sockets).toEqual([{ url: "wss://api.test/base/api/v1/realtime?campaignId=camp_client", protocols: ["otte.v1", "otte.auth.ots_test"] }]);
 
     expect(client.parseRealtimeMessage({ data: "{\"id\":\"evt_client\",\"campaignId\":\"camp_client\",\"type\":\"chat.message.created\",\"timestamp\":\"2026-05-15T00:00:00.000Z\",\"payload\":{\"messageId\":\"msg_client\"}}" } as MessageEvent<string>)).toMatchObject({
       id: "evt_client",
@@ -113,6 +113,24 @@ describe("OpenTabletopClient", () => {
     expect(requests[5]!.headers["content-type"]).toBe("application/pdf");
     expect(requests[5]!.headers["x-source-name"]).toBe("module.pdf");
     expect(requests[5]!.body).toBe("raw-pdf-body");
+  });
+
+  it("normalizes trailing slashes while preserving reverse-proxy path prefixes", async () => {
+    const requests: string[] = [];
+    const client = new OpenTabletopClient("https://api.test/tabletop/", {
+      fetch: (async (input: RequestInfo | URL) => {
+        requests.push(input.toString());
+        return new Response(JSON.stringify({ ok: true, version: "test", service: "api" }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }) as typeof fetch
+    });
+
+    await client.health();
+
+    expect(requests).toEqual(["https://api.test/tabletop/api/v1/health"]);
+    expect(client.realtimeUrl(campaignId)).toBe("wss://api.test/tabletop/api/v1/realtime?campaignId=camp_client");
   });
 
   it("throws server error response bodies", async () => {

@@ -104,13 +104,16 @@ export async function registerSession(input: { email: string; displayName: strin
 }
 
 export async function logoutSession(): Promise<{ ok: boolean }> {
-  const response = await fetch(`${baseUrl}/api/v1/auth/logout`, {
-    method: "POST",
-    headers: await sessionHeaders()
-  });
-  clearSession();
-  if (!response.ok) throw new Error(await response.text());
-  return response.json() as Promise<{ ok: boolean }>;
+  try {
+    const response = await fetch(`${baseUrl}/api/v1/auth/logout`, {
+      method: "POST",
+      headers: await sessionHeaders()
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json() as Promise<{ ok: boolean }>;
+  } finally {
+    clearSession();
+  }
 }
 
 export async function changePasswordSession(input: { currentPassword: string; newPassword: string }): Promise<SessionLoginInfo> {
@@ -269,15 +272,20 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
+interface ApiRequestOptions {
+  signal?: AbortSignal;
+}
+
+export async function apiGet<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
-    headers: await sessionHeaders()
+    headers: await sessionHeaders(),
+    signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
-export async function apiPost<T>(path: string, body: unknown, options: { signal?: AbortSignal } = {}): Promise<T> {
+export async function apiPost<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
@@ -302,47 +310,49 @@ export async function apiAnalyzePdfContentImport(input: { campaignId: string; fi
   return response.json() as Promise<ContentImportBatch>;
 }
 
-export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+export async function apiPatch<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "PATCH",
     headers: { "content-type": "application/json", ...(await sessionHeaders()) },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
-export async function apiDelete<T>(path: string): Promise<T> {
+export async function apiDelete<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "DELETE",
-    headers: await sessionHeaders()
+    headers: await sessionHeaders(),
+    signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
 }
 
-export async function updateWorkspaceDefaults(input: Partial<OrganizationWorkspace>): Promise<OrganizationWorkspace> {
-  return apiPatch<OrganizationWorkspace>("/api/v1/organization/workspace-defaults", input);
+export async function updateWorkspaceDefaults(input: Partial<OrganizationWorkspace>, options: ApiRequestOptions = {}): Promise<OrganizationWorkspace> {
+  return apiPatch<OrganizationWorkspace>("/api/v1/organization/workspace-defaults", input, options);
 }
 
 export async function createOrganizationWorkspace(input: Partial<OrganizationWorkspace> & { name: string }): Promise<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }> {
   return apiPost<{ organization: OrganizationWorkspace; session: UserSession; organizations: OrganizationWorkspaceInfo[] }>("/api/v1/organizations", input);
 }
 
-export async function loadOrganizationMembers(): Promise<OrganizationMemberInfo[]> {
-  return apiGet<OrganizationMemberInfo[]>("/api/v1/organization/members");
+export async function loadOrganizationMembers(options: ApiRequestOptions = {}): Promise<OrganizationMemberInfo[]> {
+  return apiGet<OrganizationMemberInfo[]>("/api/v1/organization/members", options);
 }
 
-export async function upsertOrganizationMember(input: { email?: string; userId?: string; role: Exclude<OrganizationMemberRole, "owner"> }): Promise<OrganizationMemberInfo> {
-  return apiPost<OrganizationMemberInfo>("/api/v1/organization/members", input);
+export async function upsertOrganizationMember(input: { email?: string; userId?: string; role: Exclude<OrganizationMemberRole, "owner"> }, options: ApiRequestOptions = {}): Promise<OrganizationMemberInfo> {
+  return apiPost<OrganizationMemberInfo>("/api/v1/organization/members", input, options);
 }
 
-export async function updateOrganizationMemberRole(memberId: string, role: Exclude<OrganizationMemberRole, "owner">): Promise<OrganizationMemberInfo> {
-  return apiPatch<OrganizationMemberInfo>(`/api/v1/organization/members/${memberId}`, { role });
+export async function updateOrganizationMemberRole(memberId: string, role: Exclude<OrganizationMemberRole, "owner">, options: ApiRequestOptions = {}): Promise<OrganizationMemberInfo> {
+  return apiPatch<OrganizationMemberInfo>(`/api/v1/organization/members/${memberId}`, { role }, options);
 }
 
-export async function removeOrganizationMember(memberId: string): Promise<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }> {
-  return apiDelete<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }>(`/api/v1/organization/members/${memberId}`);
+export async function removeOrganizationMember(memberId: string, options: ApiRequestOptions = {}): Promise<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }> {
+  return apiDelete<{ removed: boolean; memberId: string; userId: string; removedCampaignMemberships: number }>(`/api/v1/organization/members/${memberId}`, options);
 }
 
 export async function loadOrganizationInvites(): Promise<OrganizationInviteInfo[]> {
@@ -2674,24 +2684,24 @@ export interface AdminSnapshot {
   scimGroupRoleMappings: AdminScimGroupRoleMapping[];
 }
 
-export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
+export async function loadAdminSnapshot(options: ApiRequestOptions = {}): Promise<AdminSnapshot> {
   const [users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings] = await Promise.all([
-    apiGet<AdminUserInfo[]>("/api/v1/admin/users"),
-    apiGet<AdminSessionInfo[]>("/api/v1/admin/sessions"),
-    apiGet<EmailOutboxMessage[]>("/api/v1/admin/email-outbox"),
-    apiGet<AdminAuditLogExport>("/api/v1/admin/audit-logs?limit=12"),
-    apiGet<AdminJob[]>("/api/v1/admin/jobs?limit=12"),
-    apiGet<AdminJobOperations>("/api/v1/admin/jobs/operations"),
-    apiGet<AdminAuthOperations>("/api/v1/admin/auth/operations"),
-    apiGet<AdminStorageOperations>("/api/v1/admin/storage/operations"),
-    apiGet<AdminAssetStorageInfo>("/api/v1/admin/assets/storage"),
-    apiGet<AdminAssetIntegrityReport>("/api/v1/admin/assets/integrity"),
-    apiGet<AdminRenderingOperations>("/api/v1/admin/rendering/operations"),
-    apiGet<AdminSystemOperations>("/api/v1/admin/systems/operations"),
-    apiGet<AdminAiOperations>("/api/v1/admin/ai/operations"),
-    apiGet<AdminPluginReviewSnapshot>("/api/v1/admin/plugins/reviews"),
-    apiGet<AdminPluginOperations>("/api/v1/admin/plugins/operations"),
-    apiGet<AdminScimGroupRoleMapping[]>("/api/v1/admin/scim/group-role-mappings")
+    apiGet<AdminUserInfo[]>("/api/v1/admin/users", options),
+    apiGet<AdminSessionInfo[]>("/api/v1/admin/sessions", options),
+    apiGet<EmailOutboxMessage[]>("/api/v1/admin/email-outbox", options),
+    apiGet<AdminAuditLogExport>("/api/v1/admin/audit-logs?limit=12", options),
+    apiGet<AdminJob[]>("/api/v1/admin/jobs?limit=12", options),
+    apiGet<AdminJobOperations>("/api/v1/admin/jobs/operations", options),
+    apiGet<AdminAuthOperations>("/api/v1/admin/auth/operations", options),
+    apiGet<AdminStorageOperations>("/api/v1/admin/storage/operations", options),
+    apiGet<AdminAssetStorageInfo>("/api/v1/admin/assets/storage", options),
+    apiGet<AdminAssetIntegrityReport>("/api/v1/admin/assets/integrity", options),
+    apiGet<AdminRenderingOperations>("/api/v1/admin/rendering/operations", options),
+    apiGet<AdminSystemOperations>("/api/v1/admin/systems/operations", options),
+    apiGet<AdminAiOperations>("/api/v1/admin/ai/operations", options),
+    apiGet<AdminPluginReviewSnapshot>("/api/v1/admin/plugins/reviews", options),
+    apiGet<AdminPluginOperations>("/api/v1/admin/plugins/operations", options),
+    apiGet<AdminScimGroupRoleMapping[]>("/api/v1/admin/scim/group-role-mappings", options)
   ]);
   return { users, sessions, emailOutbox, audit, jobs, jobOperations, authOperations, storageOperations, assetStorage, assetIntegrity, renderingOperations, systemOperations, aiOperations, pluginReviews, pluginOperations, scimGroupRoleMappings };
 }
@@ -2751,7 +2761,7 @@ function managedAssetIdFromUrl(url: string | undefined): string | undefined {
   return match?.[1];
 }
 
-export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean; folder?: string; tags?: string[] }): Promise<{ asset: MapAsset; scene?: Scene }> {
+export async function apiUploadAsset(input: { campaignId: string; sceneId?: string; file: File; setAsBackground?: boolean; folder?: string; tags?: string[] }, options: ApiRequestOptions = {}): Promise<{ asset: MapAsset; scene?: Scene }> {
   const params = new URLSearchParams();
   if (input.sceneId) params.set("sceneId", input.sceneId);
   if (input.setAsBackground) params.set("setAsBackground", "true");
@@ -2764,7 +2774,8 @@ export async function apiUploadAsset(input: { campaignId: string; sceneId?: stri
       ...(input.tags && input.tags.length > 0 ? { "x-asset-tags": encodeURIComponent(input.tags.join(",")) } : {}),
       ...(await sessionHeaders())
     },
-    body: input.file
+    body: input.file,
+    signal: options.signal
   });
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<{ asset: MapAsset; scene?: Scene }>;

@@ -677,7 +677,14 @@ function ProposalAssetPreview(props: { asset: MapAsset }) {
   return (
     <figure className="proposal-asset-preview">
       {deliveryUrl ? (
-        <img src={deliveryUrl} alt={`${props.asset.name} generated asset preview`} onError={() => setPreviewFailed(true)} />
+        <img
+          src={deliveryUrl}
+          alt={`${props.asset.name} generated asset preview`}
+          onError={() => {
+            setPreviewFailed(true);
+            setDeliveryUrl(undefined);
+          }}
+        />
       ) : (
         <div className="proposal-asset-preview-placeholder">{previewFailed ? "Preview unavailable" : "Preparing preview"}</div>
       )}

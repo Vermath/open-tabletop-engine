@@ -22,10 +22,10 @@ import { castPhysicsDiceWhenReady, clearPhysicsDice, diceBoxContainerId, diceBox
 import { initialUiTheme, nextUiTheme, uiThemeLabel, uiThemeStorageKey, type UiTheme } from "./ui-theme.js";
 import { applyProposalChangesToSnapshot, proposalReviewActionLabel, proposalReviewSteps, visibleAiAgentProposals } from "./proposal-review.js";
 import { realtimeConnectionIdentity, startRealtimeConnection } from "./realtime-connection.js";
-import { boardCaptureRequestDecision, createRealtimeHandlers, type BoardCaptureRequestDecision } from "./realtime-refresh.js";
+import { boardCaptureRequestDecision, createRealtimeHandlers, workspaceSelectionMatches, type BoardCaptureRequestDecision } from "./realtime-refresh.js";
 import { templateConePoints } from "./scene-annotations.js";
 import { normalizeSceneSizeValue, sceneDimensionsFromCells, sceneGridCellSummary, sceneSizePresets, type SceneSizePreset } from "./scene-size.js";
-import { sceneQuickCreateIndex, sceneTabWrapClass } from "./scene-tabs.js";
+import { sceneQuickCreateIndex, sceneTabWrapClass, showTrailingSceneCreate } from "./scene-tabs.js";
 import { HpBar } from "./hp-bar.js";
 import { JournalPanel } from "./journal-panel.js";
 import { ChatRail } from "./chat-rail.js";
@@ -42,6 +42,7 @@ import { assetMatchesFolderFilter, contentImportEntityData, normalizeAssetFolder
 import { systemAdvancementOptionId, systemEncounterThreatId, systemImportPayload, systemRollId, type AdvancementOptionInfo } from "./system-actions.js";
 import { CharacterCreatorDialog, type CharacterCreateInput, type CharacterOriginsInfo } from "./character-creator-dialog.js";
 import { EncounterBuilderDialog, type EncounterBuilderThreatSelection } from "./encounter-builder.js";
+import { useModalAccessibility } from "./modal-accessibility.js";
 import { actorActionDiceFormula, actorActionOptions, actorActionSupportsEffect, actorArmorClass, actorCombatResource, actorCombatStateLabels, actorConditionLabels, actorHitPoints, actorResourceControls, actorResourceLabels, actorResourceUpdate, actorSaveFormula, adjustedTemplateDamage, appendActorCondition, formatActorConditions, isPointInsidePoints, isPurchasableCompendiumEntry, itemDisplayLabel, itemEquippedLabel, itemPreparedLabel, parseActorConditions, quickActorConditionIds, targetConditionLabels, tokenBrightVisionPatch, tokenPermissionPresetLabel, tokenPlayerOwnerIds, type ActorActionOption, type RulesCompendiumEntry, type TokenVisionPatch } from "./actor-sheet-data.js";
 import { actorRailSubtitle, clampNumber, contentImportStatusClass, downloadJson, errorMessage, formatAdminList, formatCost, formatCurrency, formatDateTime, formatDuration, formatDurationSeconds, formatFogHistoryEntry, formatGp, formatNumber, formatPercent, formatRollTermDetail, formatRollTermName, formatStorageBytes, formatTime, formatVisionPoint, formatVisionPointSample, jobStatusClass, numericValue, registryHostLabel, prettyOriginId, readinessStatusClass, recordValue, rollTermTotal, safeProbabilityRange, slugId, stringArrayValue, stringValue, titleCaseLabel } from "./sheet-format.js";
 import { hasItemDropData, hasTokenDropData, readItemDropData, readTokenDropData, setTokenDropPreview, writeItemDropData, writeTokenDropData, type TokenDropPayload } from "./token-drag.js";
@@ -155,13 +156,25 @@ interface AiGenerationJob {
   detail?: string;
 }
 
+interface WorkspaceRequestIdentity {
+  campaignId: string;
+  userId: string;
+}
+
+interface WorkspaceBoundRequest extends WorkspaceRequestIdentity {
+  controller: AbortController;
+}
+
 interface AiAgentMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   createdAt: string;
   proposalIds?: string[];
+  progress?: string;
   reasoning?: string[];
+  activity?: string[];
+  streaming?: boolean;
 }
 
 interface AiAgentProviderEvent {
@@ -169,13 +182,23 @@ interface AiAgentProviderEvent {
   proposalId?: string;
   delta?: string;
   content?: string;
+  message?: string;
   summaryIndex?: number;
+  toolName?: string;
 }
 
 interface AiAgentThreadResponse {
   thread: AiThread;
   assistantMessage: string;
   events: AiAgentProviderEvent[];
+}
+
+interface AiAgentRealtimeEvent {
+  type?: string;
+  campaignId?: string;
+  actorUserId?: string;
+  targetId?: string;
+  payload?: Record<string, unknown>;
 }
 
 interface AiAgentPendingAuthRequest {
@@ -264,6 +287,24 @@ function persistStoredId(key: string, value: string): void {
   }
 }
 
+const aiAgentApprovalModeStorageKey = "otte:aiAgentApprovalMode";
+
+function initialAiAgentApprovalMode(): AiAgentApprovalMode {
+  try {
+    return localStorage.getItem(aiAgentApprovalModeStorageKey) === "manual" ? "manual" : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+function persistAiAgentApprovalMode(value: AiAgentApprovalMode): void {
+  try {
+    localStorage.setItem(aiAgentApprovalModeStorageKey, value);
+  } catch {
+    // Approval mode persistence is a convenience; the UI still has an explicit selector.
+  }
+}
+
 function aiAgentHistoryStorageKey(campaignId: string, userId: string | null): string {
   return `otte:aiAgentHistory:${campaignId}:${userId ?? "anonymous"}`;
 }
@@ -281,7 +322,7 @@ function initialAiAgentMessages(key: string): AiAgentMessage[] {
         const id = typeof message.id === "string" && message.id ? message.id : `agent-history-${Date.now()}`;
         const createdAt = typeof message.createdAt === "string" ? message.createdAt : new Date().toISOString();
         if (!role || !content) return [];
-        return [{ id, role, content, createdAt, proposalIds: stringArrayValue(message.proposalIds), reasoning: stringArrayValue(message.reasoning) }];
+        return [{ id, role, content, createdAt, proposalIds: stringArrayValue(message.proposalIds), reasoning: stringArrayValue(message.reasoning), activity: stringArrayValue(message.activity) }];
       })
       .slice(-80);
   } catch {
@@ -302,6 +343,10 @@ function aiAgentProviderMessages(messages: AiAgentMessage[]): Array<{ role: "use
     .filter((message): message is AiAgentMessage & { role: "user" | "assistant" } => (message.role === "user" || message.role === "assistant") && message.content.trim().length > 0)
     .map((message) => ({ role: message.role, content: message.content.trim() }))
     .slice(-40);
+}
+
+function isAiAgentClearCommand(prompt: string): boolean {
+  return /^\/clear(?:\s+.*)?$/i.test(prompt.trim());
 }
 
 const archiveImportCollectionOptions: Array<{ id: ArchiveImportCollection; label: string }> = [
@@ -776,6 +821,9 @@ export function App() {
   const [aiMapPrompt, setAiMapPrompt] = useState("Generate a gridless top-down ember vault battlemap with broken pillars, lava-lit channels, and clear tactical lanes. Do not draw square grids, coordinates, tokens, labels, or UI overlays.");
   const [aiTokenPrompt, setAiTokenPrompt] = useState("Generate token art for this character with a clean silhouette, readable equipment, and no text.");
   const [aiGenerationJobs, setAiGenerationJobs] = useState<AiGenerationJob[]>([]);
+  const aiGenerationLocksRef = useRef<Set<"map" | "token">>(new Set());
+  const aiGenerationControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const workspaceAbortControllersRef = useRef<Set<AbortController>>(new Set());
   const [aiAgentOpen, setAiAgentOpen] = useState(false);
   const [audioSoundboardOpen, setAudioSoundboardOpen] = useState(false);
   const [mapDockOpen, setMapDockOpen] = useState(() => initialStoredPanelFlag(mapDockOpenStorageKey, false));
@@ -802,7 +850,11 @@ export function App() {
   const [audioMasterVolume, setAudioMasterVolume] = useState(0.8);
   const [audioMuted, setAudioMuted] = useState(false);
   const [aiAgentPrompt, setAiAgentPrompt] = useState("");
-  const [aiAgentApprovalMode, setAiAgentApprovalMode] = useState<AiAgentApprovalMode>("manual");
+  const [aiAgentApprovalMode, setAiAgentApprovalModeState] = useState<AiAgentApprovalMode>(initialAiAgentApprovalMode);
+  const setAiAgentApprovalMode = (value: AiAgentApprovalMode) => {
+    setAiAgentApprovalModeState(value);
+    persistAiAgentApprovalMode(value);
+  };
   const [aiAgentHistoryKey, setAiAgentHistoryKey] = useState(() => aiAgentHistoryStorageKey(campaignId, currentUserId));
   const [aiAgentMessages, setAiAgentMessages] = useState<AiAgentMessage[]>(() => initialAiAgentMessages(aiAgentHistoryStorageKey(campaignId, currentUserId)));
   const [aiAgentBusy, setAiAgentBusy] = useState(false);
@@ -812,9 +864,12 @@ export function App() {
   const [aiAgentCodexAuth, setAiAgentCodexAuth] = useState<AiAgentCodexAuthPrompt | null>(null);
   const [aiAgentHiddenProposalIds, setAiAgentHiddenProposalIds] = useState<Set<string>>(() => new Set());
   const aiAgentAbortRef = useRef<AbortController | null>(null);
+  const aiAgentBusyRef = useRef(false);
   const aiAgentAuthRetryTimerRef = useRef<number | null>(null);
   const aiAgentAuthRetryStartedAtRef = useRef(0);
   const aiAgentPendingAuthRequestRef = useRef<AiAgentPendingAuthRequest | null>(null);
+  const aiAgentLiveThreadIdRef = useRef<string | null>(null);
+  const aiAgentPendingAssistantIdRef = useRef<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserRole>("player");
   const [inviteToken, setInviteToken] = useState("");
@@ -973,13 +1028,15 @@ export function App() {
   const [visionSampleY, setVisionSampleY] = useState("");
   const [toolReport, setToolReport] = useState("");
   const [toolReportTitle, setToolReportTitle] = useState("Fog and vision");
+  const advancementModalRef = useModalAccessibility<HTMLDivElement>(() => setAdvancementModalOpen(false), { enabled: advancementModalOpen });
+  const shortcutModalRef = useModalAccessibility<HTMLDivElement>(() => setShortcutOverlayOpen(false), { enabled: shortcutOverlayOpen });
   const fogToolPanel = useMovablePanel({ x: 88, y: 24 }, { width: 320, height: 240 }, { minWidth: 280, minHeight: 160 });
   const annotationToolPanel = useMovablePanel({ x: 88, y: 24 }, { width: 312, height: 480 }, { minWidth: 280, minHeight: 280 });
   const [canvasAssetDragging, setCanvasAssetDragging] = useState(false);
   const [partyDropTargetActorId, setPartyDropTargetActorId] = useState("");
   const tokenDropHandledRef = useRef(false);
   const blankCanvasDemoIdRef = useRef(0);
-  const realtimeSelectionRef = useRef({ campaignId, sceneId });
+  const realtimeSelectionRef = useRef({ campaignId, sceneId, userId: currentUserId });
   const realtimeRefreshRef = useRef<() => Promise<unknown>>(() => Promise.resolve());
   const realtimeBoardCaptureHandlerRef = useRef<(data: unknown) => boolean>(() => false);
   const realtimeApplyRef = useRef<(data: unknown) => void>(() => {});
@@ -987,7 +1044,7 @@ export function App() {
   const actorConditionQueueRef = useRef<Map<string, Promise<Actor | undefined>>>(new Map());
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
-  realtimeSelectionRef.current = { campaignId, sceneId };
+  realtimeSelectionRef.current = { campaignId, sceneId, userId: currentUserId };
   const realtimeConnectionKey = realtimeConnectionIdentity({ blankCanvasDemoOpen, campaignId, sessionToken });
 
   const selectedCampaign = snapshot.campaigns.find((campaign) => campaign.id === campaignId);
@@ -1007,6 +1064,7 @@ export function App() {
     .filter((scene) => sceneFolderFilter === "all" || scene.folder === sceneFolderFilter)
     .filter((scene) => !normalizedSceneSearch || [scene.name, scene.folder ?? "", scene.id].some((value) => value.toLocaleLowerCase().includes(normalizedSceneSearch)));
   const quickCreateSceneIndex = sceneQuickCreateIndex(visibleScenes.length);
+  const showTrailingSceneCreateButton = showTrailingSceneCreate(visibleScenes.length);
   const selectedPrepScenes = visibleScenes.filter((scene) => selectedPrepSceneIds.includes(scene.id));
   const selectedScene = accessibleScenes.find((scene) => scene.id === sceneId) ?? accessibleScenes.find((scene) => scene.active);
   const selectedSceneIndex = orderedScenes.findIndex((scene) => scene.id === selectedScene?.id);
@@ -1257,6 +1315,110 @@ export function App() {
   }, [blankCanvasDemoOpen, boardClipboardTokens, boardRedoStack.length, boardUndoStack.length, canDeleteSelectedBoardTokens, selectedCurrentAnnotations, selectedOverlay, selectedScene?.id, selectedScene?.gridSize, selectedTokens]);
 
   const refreshSeqRef = useRef(0);
+
+  function cancelAiAgentForWorkspaceChange() {
+    aiAgentPendingAuthRequestRef.current = null;
+    if (aiAgentAuthRetryTimerRef.current !== null) window.clearTimeout(aiAgentAuthRetryTimerRef.current);
+    aiAgentAuthRetryTimerRef.current = null;
+    aiAgentAuthRetryStartedAtRef.current = 0;
+    aiAgentLiveThreadIdRef.current = null;
+    aiAgentPendingAssistantIdRef.current = null;
+    const abortController = aiAgentAbortRef.current;
+    aiAgentAbortRef.current = null;
+    aiAgentBusyRef.current = false;
+    abortController?.abort();
+    setAiAgentBusy(false);
+    setAiAgentCodexAuth(null);
+    setAiAgentStatus("Agent ready");
+  }
+
+  function cancelWorkspaceBoundRequestsForChange() {
+    for (const controller of workspaceAbortControllersRef.current) controller.abort();
+    workspaceAbortControllersRef.current.clear();
+    aiGenerationControllersRef.current.clear();
+    aiGenerationLocksRef.current.clear();
+    setAiGenerationJobs([]);
+    setAiAgentReferenceAssetId(undefined);
+    setAiAgentReferenceUploadStatus("");
+    setAdminSnapshot(undefined);
+    setAdminStatus("Admin idle");
+    setFailedAssetUpload(undefined);
+    setAssetStatus("No asset action this session");
+  }
+
+  function closeWorkspaceDialogs() {
+    setCharacterCreatorOpen(false);
+    setAdvancementModalOpen(false);
+    setEncounterBuilderOpen(false);
+    setCommandPaletteOpen(false);
+    setShortcutOverlayOpen(false);
+    setAudioSoundboardOpen(false);
+  }
+
+  function selectWorkspaceContext(nextCampaignId: string, nextSceneId = "", nextUserId = currentUserId) {
+    const current = realtimeSelectionRef.current;
+    const identityChanged = current.campaignId !== nextCampaignId || current.userId !== nextUserId;
+    if (identityChanged) {
+      refreshSeqRef.current += 1;
+      cancelAiAgentForWorkspaceChange();
+      cancelWorkspaceBoundRequestsForChange();
+      closeWorkspaceDialogs();
+    }
+    realtimeSelectionRef.current = { campaignId: nextCampaignId, sceneId: nextSceneId, userId: nextUserId };
+    setCampaignId(nextCampaignId);
+    setSceneId(nextSceneId);
+    if (nextUserId !== currentUserId) setCurrentUserId(nextUserId);
+  }
+
+  function workspaceRequestIsCurrent(requestCampaignId: string, requestUserId: string): boolean {
+    return workspaceSelectionMatches(
+      { campaignId: requestCampaignId, userId: requestUserId },
+      { campaignId: realtimeSelectionRef.current.campaignId, userId: realtimeSelectionRef.current.userId }
+    );
+  }
+
+  function currentWorkspaceRequestIdentity(): WorkspaceRequestIdentity {
+    return {
+      campaignId: realtimeSelectionRef.current.campaignId,
+      userId: realtimeSelectionRef.current.userId
+    };
+  }
+
+  function workspaceIdentityIsCurrent(request: WorkspaceRequestIdentity): boolean {
+    return workspaceRequestIsCurrent(request.campaignId, request.userId);
+  }
+
+  function beginWorkspaceBoundRequest(): WorkspaceBoundRequest {
+    const controller = new AbortController();
+    workspaceAbortControllersRef.current.add(controller);
+    return {
+      campaignId: realtimeSelectionRef.current.campaignId,
+      userId: realtimeSelectionRef.current.userId,
+      controller
+    };
+  }
+
+  function workspaceBoundRequestIsCurrent(request: WorkspaceBoundRequest): boolean {
+    return !request.controller.signal.aborted && workspaceRequestIsCurrent(request.campaignId, request.userId);
+  }
+
+  function finishWorkspaceBoundRequest(request: WorkspaceBoundRequest) {
+    workspaceAbortControllersRef.current.delete(request.controller);
+  }
+
+  async function runWorkspaceBoundAction<T>(task: (request: WorkspaceBoundRequest) => Promise<T>, onCurrentResult: (result: T, request: WorkspaceBoundRequest) => void | Promise<void>) {
+    const request = beginWorkspaceBoundRequest();
+    try {
+      const result = await task(request);
+      if (!workspaceBoundRequestIsCurrent(request)) return;
+      await onCurrentResult(result, request);
+    } catch (error) {
+      if (workspaceBoundRequestIsCurrent(request)) throw error;
+    } finally {
+      finishWorkspaceBoundRequest(request);
+    }
+  }
+
   async function refresh(nextCampaignId = campaignId, nextSceneId = sceneId, options: { syncStatus?: boolean } = {}) {
     if (blankCanvasDemoOpen) {
       setSnapshotReady(true);
@@ -1266,15 +1428,31 @@ export function App() {
     // Snapshot loads overlap constantly (every realtime event triggers one).
     // Only the most recently started refresh may apply; anything older would
     // overwrite the UI with pre-action state and make actions "revert".
+    const requestUserId = getSessionUserId();
+    if (!workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return snapshotRef.current;
     const seq = ++refreshSeqRef.current;
-    const next = await loadSnapshot(nextCampaignId, nextSceneId);
-    if (seq !== refreshSeqRef.current) return next;
+    let next: Snapshot;
+    try {
+      next = await loadSnapshot(nextCampaignId, nextSceneId);
+    } catch (error) {
+      if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return snapshotRef.current;
+      throw error;
+    }
+    if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return next;
     setSnapshot(next);
     setSessionToken(getSessionToken());
     const campaign = next.campaigns.find((item) => item.id === nextCampaignId) ?? next.campaigns[0];
     const scene = next.scenes.find((item) => item.id === nextSceneId) ?? next.scenes.find((item) => item.active) ?? next.scenes[0];
-    setCampaignId((current) => (next.campaigns.some((item) => item.id === current) ? current : campaign?.id ?? ""));
-    setSceneId((current) => (next.scenes.some((item) => item.id === current) ? current : scene?.id ?? ""));
+    const resolvedCampaignId = next.campaigns.some((item) => item.id === realtimeSelectionRef.current.campaignId) ? realtimeSelectionRef.current.campaignId : campaign?.id ?? "";
+    const resolvedSceneId = next.scenes.some((item) => item.id === realtimeSelectionRef.current.sceneId) ? realtimeSelectionRef.current.sceneId : scene?.id ?? "";
+    if (resolvedCampaignId !== realtimeSelectionRef.current.campaignId) {
+      cancelAiAgentForWorkspaceChange();
+      cancelWorkspaceBoundRequestsForChange();
+      closeWorkspaceDialogs();
+    }
+    realtimeSelectionRef.current = { campaignId: resolvedCampaignId, sceneId: resolvedSceneId, userId: requestUserId };
+    setCampaignId(resolvedCampaignId);
+    setSceneId(resolvedSceneId);
     // Selection belongs to the user, not the snapshot: keep it as long as the
     // tokens still exist, auto-select only on the very first load.
     const firstLoadToken = !snapshotReady && scene ? next.tokens.find((item) => item.sceneId === scene.id) : undefined;
@@ -1302,6 +1480,7 @@ export function App() {
   // background refresh for full reconciliation (vision polygons, etc.), so we
   // never block the interaction on the ~28-request snapshot refetch.
   function applySceneToSnapshot(scene: Scene) {
+    if (scene.campaignId !== realtimeSelectionRef.current.campaignId) return;
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
@@ -1312,6 +1491,7 @@ export function App() {
   }
 
   function applyEncounterToSnapshot(encounter: Encounter) {
+    if (encounter.campaignId !== realtimeSelectionRef.current.campaignId) return;
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
@@ -1322,19 +1502,22 @@ export function App() {
   }
 
   function applyTokensToSnapshot(nextTokens: Token[]) {
-    if (nextTokens.length === 0) return;
+    const activeSceneIds = new Set(snapshotRef.current.scenes.filter((scene) => scene.campaignId === realtimeSelectionRef.current.campaignId).map((scene) => scene.id));
+    const scopedTokens = nextTokens.filter((token) => activeSceneIds.has(token.sceneId));
+    if (scopedTokens.length === 0) return;
     invalidateInFlightRefreshes();
-    const byId = new Map(nextTokens.map((token) => [token.id, token]));
+    const byId = new Map(scopedTokens.map((token) => [token.id, token]));
     setSnapshot((current) => ({
       ...current,
       tokens: [
         ...current.tokens.map((token) => byId.get(token.id) ?? token),
-        ...nextTokens.filter((token) => !current.tokens.some((item) => item.id === token.id))
+        ...scopedTokens.filter((token) => !current.tokens.some((item) => item.id === token.id))
       ]
     }));
   }
 
   function applyItemToSnapshot(item: Item) {
+    if (item.campaignId !== realtimeSelectionRef.current.campaignId) return;
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
@@ -1356,40 +1539,84 @@ export function App() {
 
   async function refreshAdmin() {
     setAdminStatus("Loading admin operations");
-    const next = await loadAdminSnapshot();
-    setAdminSnapshot(next);
-    setAdminStatus("Admin operations synced");
+    await runWorkspaceBoundAction(
+      (request) => loadAdminSnapshot({ signal: request.controller.signal }),
+      (next) => {
+        setAdminSnapshot(next);
+        setAdminStatus("Admin operations synced");
+      }
+    );
+  }
+
+  async function runWorkspaceAdminAction<T>(task: (request: WorkspaceBoundRequest) => Promise<T>, successMessage: (result: T) => string, options: { refreshWorkspace?: boolean } = {}) {
+    await runWorkspaceBoundAction(
+      async (request) => {
+        const result = await task(request);
+        const admin = await loadAdminSnapshot({ signal: request.controller.signal });
+        return { result, admin };
+      },
+      async ({ result, admin }, request) => {
+        setAdminSnapshot(admin);
+        setAdminStatus(successMessage(result));
+        if (options.refreshWorkspace) await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+      }
+    );
   }
 
   async function updateOrganizationWorkspaceDefaults(input: Partial<OrganizationWorkspace>) {
     setAdminStatus("Saving workspace defaults");
-    const next = await updateWorkspaceDefaults(input);
-    setSnapshot((current) => ({ ...current, workspaceDefaults: next, session: current.session ? { ...current.session, organization: next } : current.session }));
-    setAdminStatus("Workspace defaults saved");
+    await runWorkspaceBoundAction(
+      (request) => updateWorkspaceDefaults(input, { signal: request.controller.signal }),
+      (next) => {
+        setSnapshot((current) => ({ ...current, workspaceDefaults: next, session: current.session ? { ...current.session, organization: next } : current.session }));
+        setAdminStatus("Workspace defaults saved");
+      }
+    );
   }
 
   async function addOrganizationMember(input: { email: string; role: Exclude<OrganizationMemberRole, "owner"> }) {
     setAdminStatus("Adding organization member");
-    const member = await upsertOrganizationMember(input);
-    const members = await loadOrganizationMembers();
-    setSnapshot((current) => ({ ...current, organizationMembers: members }));
-    setAdminStatus(`Organization member ${member.user.displayName} is ${member.role}`);
+    await runWorkspaceBoundAction(
+      async (request) => {
+        const member = await upsertOrganizationMember(input, { signal: request.controller.signal });
+        const members = await loadOrganizationMembers({ signal: request.controller.signal });
+        return { member, members };
+      },
+      ({ member, members }) => {
+        setSnapshot((current) => ({ ...current, organizationMembers: members }));
+        setAdminStatus(`Organization member ${member.user.displayName} is ${member.role}`);
+      }
+    );
   }
 
   async function updateOrganizationMember(member: OrganizationMemberInfo, role: Exclude<OrganizationMemberRole, "owner">) {
     setAdminStatus("Updating organization member");
-    const updated = await updateOrganizationMemberRole(member.id, role);
-    const members = await loadOrganizationMembers();
-    setSnapshot((current) => ({ ...current, organizationMembers: members }));
-    setAdminStatus(`Organization member ${updated.user.displayName} is ${updated.role}`);
+    await runWorkspaceBoundAction(
+      async (request) => {
+        const updated = await updateOrganizationMemberRole(member.id, role, { signal: request.controller.signal });
+        const members = await loadOrganizationMembers({ signal: request.controller.signal });
+        return { updated, members };
+      },
+      ({ updated, members }) => {
+        setSnapshot((current) => ({ ...current, organizationMembers: members }));
+        setAdminStatus(`Organization member ${updated.user.displayName} is ${updated.role}`);
+      }
+    );
   }
 
   async function deleteOrganizationMember(member: OrganizationMemberInfo) {
     setAdminStatus("Removing organization member");
-    const result = await removeOrganizationMember(member.id);
-    const members = await loadOrganizationMembers();
-    setSnapshot((current) => ({ ...current, organizationMembers: members }));
-    setAdminStatus(`Organization member ${member.user.displayName} removed; ${result.removedCampaignMemberships} campaign memberships removed`);
+    await runWorkspaceBoundAction(
+      async (request) => {
+        const result = await removeOrganizationMember(member.id, { signal: request.controller.signal });
+        const members = await loadOrganizationMembers({ signal: request.controller.signal });
+        return { result, members };
+      },
+      ({ result, members }) => {
+        setSnapshot((current) => ({ ...current, organizationMembers: members }));
+        setAdminStatus(`Organization member ${member.user.displayName} removed; ${result.removedCampaignMemberships} campaign memberships removed`);
+      }
+    );
   }
 
   realtimeRefreshRef.current = () => {
@@ -1397,8 +1624,49 @@ export function App() {
     return refresh(selection.campaignId, selection.sceneId, { syncStatus: false });
   };
   realtimeBoardCaptureHandlerRef.current = handleBoardCaptureRealtimeEvent;
+  const applyAiAgentRealtimeEvent = (event: AiAgentRealtimeEvent) => {
+    if (!aiAgentBusyRef.current || event.actorUserId !== currentUserId) return false;
+    if (event.type !== "ai.message.delta" && event.type !== "ai.message.completed" && event.type !== "ai.reasoning.delta" && event.type !== "ai.reasoning.completed" && event.type !== "ai.activity.reported" && event.type !== "ai.tool.started" && event.type !== "ai.tool.completed") return false;
+    const payload = event.payload;
+    const threadId = typeof payload?.threadId === "string" && payload.threadId.trim() ? payload.threadId : event.targetId;
+    if (!threadId) return false;
+    const activeThreadId = aiAgentLiveThreadIdRef.current;
+    if (activeThreadId && activeThreadId !== threadId) return false;
+    if (!activeThreadId) aiAgentLiveThreadIdRef.current = threadId;
+    const now = new Date().toISOString();
+    setAiAgentMessages((messages) => {
+      const pendingAssistantId = aiAgentPendingAssistantIdRef.current;
+      const existing = messages.find((message) => message.id === threadId) ?? (pendingAssistantId ? messages.find((message) => message.id === pendingAssistantId) : undefined);
+      const base: AiAgentMessage = existing ? { ...existing, id: threadId } : { id: threadId, role: "assistant", content: "", createdAt: now, reasoning: [], streaming: true };
+      let next: AiAgentMessage = { ...base, streaming: event.type !== "ai.message.completed" };
+      if (event.type === "ai.message.delta") {
+        const delta = typeof payload?.delta === "string" ? payload.delta : "";
+        const streamedContent = typeof payload?.content === "string" ? payload.content : `${base.content}${delta}`;
+        next = { ...next, content: streamedContent };
+      }
+      if (event.type === "ai.message.completed" && typeof payload?.content === "string") {
+        next = { ...next, content: payload.content, streaming: false };
+      }
+      if (event.type === "ai.reasoning.delta" && typeof payload?.delta === "string") {
+        const summaryIndex = typeof payload.summaryIndex === "number" && Number.isFinite(payload.summaryIndex) ? payload.summaryIndex : 0;
+        next = { ...next, reasoning: appendReasoningDelta(base.reasoning, summaryIndex, payload.delta), streaming: true };
+      }
+      if (event.type === "ai.reasoning.completed" && typeof payload?.content === "string") {
+        next = { ...next, reasoning: completedReasoningTraces(base.reasoning, payload.content), streaming: true };
+      }
+      if (event.type === "ai.activity.reported" && typeof payload?.message === "string") {
+        next = { ...next, activity: appendAiAgentActivity(base.activity, payload.message), streaming: true };
+      }
+      const progress = aiAgentToolProgressText(event);
+      if (progress) next = { ...next, progress, activity: appendAiAgentActivity(next.activity ?? base.activity, progress), streaming: true };
+      const mergedMessages = pendingAssistantId && pendingAssistantId !== threadId ? messages.filter((message) => message.id !== pendingAssistantId) : messages;
+      aiAgentPendingAssistantIdRef.current = null;
+      return upsertAiAgentMessage(mergedMessages, next);
+    });
+    return true;
+  };
   realtimeApplyRef.current = (data: unknown) => {
-    let event: { type?: string; campaignId?: string; targetId?: string; payload?: Record<string, unknown> };
+    let event: AiAgentRealtimeEvent;
     try {
       event = typeof data === "string" ? JSON.parse(data) : (data as typeof event);
     } catch {
@@ -1406,6 +1674,7 @@ export function App() {
     }
     if (!event || typeof event.type !== "string" || event.campaignId !== campaignId) return;
     const payload = event.payload;
+    if (applyAiAgentRealtimeEvent(event)) return;
     if (event.type === "actor.updated" && payload && payload.redacted !== true && typeof payload.id === "string" && payload.data && typeof payload.data === "object") {
       applyActorToSnapshot(payload as unknown as Actor);
       return;
@@ -1461,6 +1730,9 @@ export function App() {
 
   useEffect(() => () => {
     if (aiAgentAuthRetryTimerRef.current !== null) window.clearTimeout(aiAgentAuthRetryTimerRef.current);
+    aiAgentAbortRef.current?.abort();
+    for (const controller of workspaceAbortControllersRef.current) controller.abort();
+    workspaceAbortControllersRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -1486,7 +1758,7 @@ export function App() {
           .catch(() => setSsoEnabled(false));
         const ssoUserId = consumeSsoRedirect();
         if (ssoUserId) {
-          setCurrentUserId(ssoUserId);
+          selectWorkspaceContext(campaignId, sceneId, ssoUserId);
           setSessionToken(getSessionToken());
         }
         if (!ssoUserId && !getSessionToken()) {
@@ -1564,7 +1836,7 @@ export function App() {
   useEffect(() => {
     if (blankCanvasDemoOpen || workspaceMode !== "manage" || manageCategory !== "serverAdmin" || !snapshot.session?.serverAdmin) return;
     refreshAdmin().catch((error) => setAdminStatus(error instanceof Error ? error.message : String(error)));
-  }, [blankCanvasDemoOpen, manageCategory, workspaceMode, snapshot.session?.serverAdmin]);
+  }, [blankCanvasDemoOpen, campaignId, currentUserId, manageCategory, workspaceMode, snapshot.session?.serverAdmin]);
 
   useEffect(() => {
     if (workspaceMode === "live" && tab !== "actors" && tab !== "chat" && tab !== "combat") setTab("actors");
@@ -1860,10 +2132,10 @@ export function App() {
 
   async function switchSession(userId: string) {
     setSessionUserId(userId);
+    selectWorkspaceContext(campaignId, sceneId, userId);
     const login = await loginSession(userId);
     setAuthRequired(false);
     setSessionToken(login.token);
-    setCurrentUserId(userId);
     setSnapshotReady(false);
     setStatus("Switching session");
     await refresh(campaignId, sceneId);
@@ -1874,6 +2146,7 @@ export function App() {
     setStatus(`Switching to ${organization?.name ?? organizationId}`);
     setAccountStatus(`Switching workspace to ${organization?.name ?? organizationId}`);
     await switchOrganization(organizationId);
+    selectWorkspaceContext("", "");
     await refresh("", "", { syncStatus: false });
     setStatus(`Workspace switched to ${organization?.name ?? organizationId}`);
     setAccountStatus(`Workspace switched to ${organization?.name ?? organizationId}`);
@@ -1891,6 +2164,7 @@ export function App() {
       workspaceDefaults: result.organization
     }));
     setNewWorkspaceName("");
+    selectWorkspaceContext("", "");
     await refresh("", "", { syncStatus: false });
     setStatus(`Workspace created: ${result.organization.name}`);
     setAccountStatus(`Workspace created: ${result.organization.name}`);
@@ -1907,11 +2181,9 @@ export function App() {
     clearSession();
     setStatelessDemoApiMode(true);
     setSnapshot(snapshot);
-    setCurrentUserId(blankCanvasDemoUserId);
     setSessionToken("");
     setSnapshotReady(true);
-    setCampaignId(blankCanvasDemoCampaignId);
-    setSceneId(blankCanvasDemoSceneId);
+    selectWorkspaceContext(blankCanvasDemoCampaignId, blankCanvasDemoSceneId, blankCanvasDemoUserId);
     setSelectedTokenIdState("");
     setSelectedTokenIds([]);
     setSelectedBoardAssetId("");
@@ -1945,16 +2217,17 @@ export function App() {
     setBlankCanvasDemoOpen(false);
     setSnapshotReady(false);
     setAuthRequired(true);
-    setCurrentUserId(getSessionUserId());
+    const restoredUserId = getSessionUserId();
+    const restoredCampaignId = initialStoredId("otte:selectedCampaignId", "camp_demo");
+    const restoredSceneId = initialStoredId("otte:selectedSceneId", "scn_vault_entry");
     setSessionToken(getSessionToken());
-    setCampaignId(initialStoredId("otte:selectedCampaignId", "camp_demo"));
-    setSceneId(initialStoredId("otte:selectedSceneId", "scn_vault_entry"));
+    selectWorkspaceContext(restoredCampaignId, restoredSceneId, restoredUserId);
     setSelectedTokenIdState("tok_valen");
     setSelectedTokenIds(["tok_valen"]);
     setBoardUndoStack([]);
     setBoardRedoStack([]);
     setBoardClipboardTokens([]);
-    setAiAgentMessages(initialAiAgentMessages(aiAgentHistoryStorageKey(initialStoredId("otte:selectedCampaignId", "camp_demo"), getSessionUserId())));
+    setAiAgentMessages(initialAiAgentMessages(aiAgentHistoryStorageKey(restoredCampaignId, restoredUserId)));
     setStatus("Sign in required");
     setAuthStatus(publicRegistration ? "" : "Sign in or use an invite link to join the beta");
   }
@@ -1963,13 +2236,11 @@ export function App() {
     setStatelessDemoApiMode(false);
     setBlankCanvasDemoOpen(false);
     const login = await loginSession("usr_demo_gm");
-    setCurrentUserId(login.user.id);
+    selectWorkspaceContext("camp_demo", "scn_vault_entry", login.user.id);
     setSessionToken(login.token);
     setAuthRequired(false);
     setAuthStatus("Seeded demo signed in");
     setSnapshotReady(false);
-    setCampaignId("camp_demo");
-    setSceneId("scn_vault_entry");
     setSelectedTokenIdState("tok_valen");
     setSelectedTokenIds(["tok_valen"]);
     setStatus("Seeded demo signed in");
@@ -1982,7 +2253,7 @@ export function App() {
       password: loginPassword,
       mfaCode: loginMfaCode.trim() || undefined
     });
-    setCurrentUserId(login.user.id);
+    selectWorkspaceContext(campaignId, sceneId, login.user.id);
     setSessionToken(login.token);
     setAuthRequired(false);
     setLoginPassword("");
@@ -1999,7 +2270,7 @@ export function App() {
       displayName: registerName.trim(),
       password: registerPassword
     });
-    setCurrentUserId(login.user.id);
+    selectWorkspaceContext(campaignId, sceneId, login.user.id);
     setSessionToken(login.token);
     setAuthRequired(false);
     setRegisterPassword("");
@@ -2010,15 +2281,22 @@ export function App() {
   }
 
   async function submitLogout() {
-    await logoutSession();
+    cancelAiAgentForWorkspaceChange();
+    cancelWorkspaceBoundRequestsForChange();
+    let remoteLogoutFailed = false;
+    try {
+      await logoutSession();
+    } catch {
+      remoteLogoutFailed = true;
+    }
     setSessionToken("");
     setAuthRequired(true);
     setSnapshotReady(false);
     setSnapshot((current) => ({ ...current, session: undefined }));
     setAdminSnapshot(undefined);
     setMfaInfo(undefined);
-    setStatus("Signed out");
-    setAuthStatus("Signed out");
+    setStatus(remoteLogoutFailed ? "Signed out locally; the server could not be reached" : "Signed out");
+    setAuthStatus(remoteLogoutFailed ? "Signed out locally" : "Signed out");
   }
 
   async function submitPasswordChange() {
@@ -2026,7 +2304,7 @@ export function App() {
       currentPassword: passwordCurrent,
       newPassword: passwordNext
     });
-    setCurrentUserId(login.user.id);
+    selectWorkspaceContext(campaignId, sceneId, login.user.id);
     setSessionToken(login.token);
     setPasswordCurrent("");
     setPasswordNext("");
@@ -2084,7 +2362,7 @@ export function App() {
       token: resetToken.trim(),
       password: resetPassword
     });
-    setCurrentUserId(login.user.id);
+    selectWorkspaceContext(campaignId, sceneId, login.user.id);
     setSessionToken(login.token);
     setResetToken("");
     setResetPassword("");
@@ -2105,10 +2383,8 @@ export function App() {
       campaignName: bootstrapCampaignName.trim(),
       defaultSystemId: newCampaignSystemId
     });
-    setCurrentUserId(login.user.id);
+    selectWorkspaceContext(login.campaign.id, login.scene.id, login.user.id);
     setSessionToken(login.token);
-    setCampaignId(login.campaign.id);
-    setSceneId(login.scene.id);
     setBootstrapPassword("");
     setBootstrapRequired(false);
     setAuthRequired(false);
@@ -2185,10 +2461,9 @@ export function App() {
       displayName: joinName.trim(),
       password: joinPassword
     });
-    setCurrentUserId(result.user.id);
+    selectWorkspaceContext(result.campaign.id, "", result.user.id);
     setSessionToken(result.token);
     setAuthRequired(false);
-    setCampaignId(result.campaign.id);
     setJoinToken("");
     setJoinEmail("");
     setJoinName("");
@@ -2242,8 +2517,7 @@ export function App() {
       setInviteEmail(setupInviteEmail);
       setInviteRole(setupInviteRole);
     }
-    setCampaignId(campaign.id);
-    if (scene) setSceneId(scene.id);
+    selectWorkspaceContext(campaign.id, scene?.id ?? "");
     setNewCampaignName("");
     setNewCampaignDescription("");
     setSetupSceneName("Opening Scene");
@@ -2260,7 +2534,10 @@ export function App() {
     setSetupOnboardingBody("Use this handout for table rules, safety notes, and first-session goals.");
     const refreshed = await refresh(campaign.id, scene?.id ?? "", { syncStatus: false });
     const starterScene = setupStarterContent ? refreshed.scenes.find((scene) => scene.name === "First Session" && scene.active) ?? refreshed.scenes.find((scene) => scene.active) : scene;
-    if (starterScene) setSceneId(starterScene.id);
+    if (starterScene) {
+      realtimeSelectionRef.current = { ...realtimeSelectionRef.current, sceneId: starterScene.id };
+      setSceneId(starterScene.id);
+    }
     const permissionSummary = setupPermissionTemplate === "standard" ? "" : `; ${selectedPermissionTemplate.label} permissions applied`;
     const createdWith = starterScene ? ` with ${starterScene.name}` : "";
     setStatus(setupInvite ? `${campaign.name} created${createdWith}; ${setupInvite.invite.role} invite ready${permissionSummary}` : `${campaign.name} created${createdWith}${permissionSummary}`);
@@ -2302,8 +2579,7 @@ export function App() {
     await apiDelete<Campaign>(`/api/v1/campaigns/${selectedCampaign.id}`);
     setCampaignDeleteConfirm("");
     setStatus(`${selectedCampaign.name} deleted; audit logged`);
-    setCampaignId(nextCampaign?.id ?? "");
-    setSceneId("");
+    selectWorkspaceContext(nextCampaign?.id ?? "", "");
     await refresh(nextCampaign?.id ?? "", "");
   }
 
@@ -2335,7 +2611,9 @@ export function App() {
   }
 
   async function createScene(options: { insertBeforeScene?: Scene } = {}) {
-    const name = newSceneName.trim();
+    const request = currentWorkspaceRequestIdentity();
+    const submittedName = newSceneName;
+    const name = submittedName.trim();
     const gridSize = Math.max(10, normalizeSceneSizeValue(newSceneGridSize, 50));
     const insertBeforeScene = options.insertBeforeScene;
     const insertBeforeIndex = insertBeforeScene ? orderedScenes.findIndex((scene) => scene.id === insertBeforeScene.id) : -1;
@@ -2345,7 +2623,7 @@ export function App() {
         ? previousScene.sortOrder + (insertBeforeScene.sortOrder - previousScene.sortOrder) / 2
         : insertBeforeScene.sortOrder - 1
       : (orderedScenes.at(-1)?.sortOrder ?? 0) + 1;
-    const scene = await apiPost<Scene>(`/api/v1/campaigns/${campaignId}/scenes`, {
+    const scene = await apiPost<Scene>(`/api/v1/campaigns/${request.campaignId}/scenes`, {
       name: name || `Scene ${snapshot.scenes.length + 1}`,
       folder: newSceneFolder.trim() || undefined,
       width: Math.max(200, normalizeSceneSizeValue(newSceneWidth, 1200)),
@@ -2355,10 +2633,11 @@ export function App() {
       active: newSceneActive || snapshot.scenes.length === 0,
       sortOrder
     });
+    if (!workspaceIdentityIsCurrent(request)) return;
     setSceneId(scene.id);
-    setNewSceneName("");
+    setNewSceneName((current) => current === submittedName ? "" : current);
     setStatus(`${scene.name} created`);
-    await refresh(campaignId, scene.id);
+    await refresh(request.campaignId, scene.id);
   }
 
   async function saveSceneSettings(form?: HTMLFormElement) {
@@ -2680,64 +2959,88 @@ export function App() {
   async function captureAgentBoard(payload: BoardCaptureRequestDecision & { requestId: string }) {
     const requestId = payload.requestId;
     if (!requestId) return;
+    const targetSceneId = payload.sceneId ?? selectedScene?.id;
     if (payload.error) {
-      await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: payload.error, sceneId: payload.sceneId ?? selectedScene?.id });
-      setAiAgentStatus("Board capture unavailable");
+      await runWorkspaceBoundAction(
+        (request) => apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: payload.error, sceneId: targetSceneId }, { signal: request.controller.signal }),
+        () => setAiAgentStatus("Board capture unavailable")
+      );
       return;
     }
     const board = document.querySelector<HTMLElement>('[data-agent-board-root="true"]') ?? document.querySelector<HTMLElement>(".scene-board");
     if (!board) {
-      await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: "No board element is mounted in the current web client.", sceneId: payload.sceneId ?? selectedScene?.id });
-      setAiAgentStatus("Board capture unavailable");
+      await runWorkspaceBoundAction(
+        (request) => apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: "No board element is mounted in the current web client.", sceneId: targetSceneId }, { signal: request.controller.signal }),
+        () => setAiAgentStatus("Board capture unavailable")
+      );
       return;
     }
-    try {
-      setAiAgentStatus("Capturing board view");
-      const dataUrl = await toPng(board, {
-        cacheBust: true,
-        pixelRatio: Math.min(2, window.devicePixelRatio || 1),
-        backgroundColor: "#060a0f"
-      });
-      await apiPost(`/api/v1/agent/board-captures/${requestId}`, {
-        dataUrl,
-        sceneId: payload.sceneId ?? selectedScene?.id,
-        width: Math.round(board.offsetWidth),
-        height: Math.round(board.offsetHeight)
-      });
-      setAiAgentStatus("Board capture sent");
-    } catch (error) {
-      await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: errorMessage(error), sceneId: payload.sceneId ?? selectedScene?.id });
-      setAiAgentStatus("Board capture failed");
-    }
+    await runWorkspaceBoundAction(
+      async (request) => {
+        setAiAgentStatus("Capturing board view");
+        try {
+          const dataUrl = await toPng(board, {
+            cacheBust: true,
+            pixelRatio: Math.min(2, window.devicePixelRatio || 1),
+            backgroundColor: "#060a0f"
+          });
+          if (!workspaceBoundRequestIsCurrent(request)) return "stale" as const;
+          await apiPost(`/api/v1/agent/board-captures/${requestId}`, {
+            dataUrl,
+            sceneId: targetSceneId,
+            width: Math.round(board.offsetWidth),
+            height: Math.round(board.offsetHeight)
+          }, { signal: request.controller.signal });
+          return "sent" as const;
+        } catch (error) {
+          if (!workspaceBoundRequestIsCurrent(request)) return "stale" as const;
+          await apiPost(`/api/v1/agent/board-captures/${requestId}`, { error: errorMessage(error), sceneId: targetSceneId }, { signal: request.controller.signal });
+          return "failed" as const;
+        }
+      },
+      (result) => {
+        if (result === "sent") setAiAgentStatus("Board capture sent");
+        if (result === "failed") setAiAgentStatus("Board capture failed");
+      }
+    );
   }
 
   async function placeCanvasAssetTokens(asset: MapAsset, requestedCount: number) {
     if (!selectedScene) return;
+    const targetScene = selectedScene;
     const count = Math.max(1, Math.min(6, Math.round(requestedCount) || 1));
     const footprintCells = Math.max(1, newTokenFootprintCells || 1);
-    const width = selectedScene.gridSize * footprintCells;
-    const height = selectedScene.gridSize * footprintCells;
+    const width = targetScene.gridSize * footprintCells;
+    const height = targetScene.gridSize * footprintCells;
     const spacing = width + 12;
-    let lastToken: Token | undefined;
-    for (let index = 0; index < count; index += 1) {
-      const offset = (index - (count - 1) / 2) * spacing;
-      const centerX = selectedScene.width / 2 + offset;
-      const centerY = selectedScene.height / 2;
-      const position = tokenCoordinatesFromCenter(selectedScene, width, height, centerX, centerY);
-      lastToken = await apiPost<Token>(`/api/v1/scenes/${selectedScene.id}/tokens`, {
-        imageAssetId: asset.id,
-        name: asset.name,
-        x: position.x,
-        y: position.y,
-        width,
-        height,
-        layer: "map",
-        disposition: "neutral"
-      });
-    }
-    if (lastToken) selectSingleToken(lastToken.id);
-    await refresh();
-    setStatus(count === 1 ? `${asset.name} placed on scene` : `Placed ${count} ${asset.name} tokens`);
+    await runWorkspaceBoundAction(
+      async (request) => {
+        let lastToken: Token | undefined;
+        for (let index = 0; index < count; index += 1) {
+          const offset = (index - (count - 1) / 2) * spacing;
+          const centerX = targetScene.width / 2 + offset;
+          const centerY = targetScene.height / 2;
+          const position = tokenCoordinatesFromCenter(targetScene, width, height, centerX, centerY);
+          lastToken = await apiPost<Token>(`/api/v1/scenes/${targetScene.id}/tokens`, {
+            imageAssetId: asset.id,
+            name: asset.name,
+            x: position.x,
+            y: position.y,
+            width,
+            height,
+            layer: "map",
+            disposition: "neutral"
+          }, { signal: request.controller.signal });
+        }
+        return lastToken;
+      },
+      async (lastToken, request) => {
+        await refresh(request.campaignId, targetScene.id, { syncStatus: false });
+        if (!workspaceBoundRequestIsCurrent(request)) return;
+        if (lastToken) selectSingleToken(lastToken.id);
+        setStatus(count === 1 ? `${asset.name} placed on scene` : `Placed ${count} ${asset.name} tokens`);
+      }
+    );
   }
 
   function updateArchiveImportMode(value: ArchiveImportMode) {
@@ -3137,34 +3440,46 @@ export function App() {
 
   async function uploadMap(file: File) {
     if (!selectedScene) return;
-    await apiUploadAsset({
-      campaignId,
-      sceneId: selectedScene.id,
-      file,
-      setAsBackground: true
-    });
-    setStatus("Map uploaded");
-    await refresh(campaignId, selectedScene.id);
+    const targetSceneId = selectedScene.id;
+    await runWorkspaceBoundAction(
+      (request) => apiUploadAsset({
+        campaignId: request.campaignId,
+        sceneId: targetSceneId,
+        file,
+        setAsBackground: true
+      }, { signal: request.controller.signal }),
+      async (_result, request) => {
+        setStatus("Map uploaded");
+        await refresh(request.campaignId, targetSceneId);
+      }
+    );
   }
 
   async function uploadSelectedTokenImage(file: File, input?: HTMLInputElement) {
     if (!selectedCampaign || !selectedToken) return;
-    setStatus(`Uploading ${file.name} for ${selectedToken.name}...`);
+    const targetSceneId = selectedScene?.id ?? sceneId;
+    const targetToken = selectedToken;
+    if (input) input.value = "";
+    setStatus(`Uploading ${file.name} for ${targetToken.name}...`);
     try {
-      const result = await apiUploadAsset({
-        campaignId: selectedCampaign.id,
-        sceneId: selectedScene?.id,
-        file,
-        folder: "tokens",
-        tags: ["token"]
-      });
-      await apiPatch<Token>(`/api/v1/tokens/${selectedToken.id}`, { imageAssetId: result.asset.id });
-      setStatus(`${selectedToken.name} image updated`);
-      await refresh(selectedCampaign.id, selectedScene?.id ?? sceneId);
+      await runWorkspaceBoundAction(
+        async (request) => {
+          const result = await apiUploadAsset({
+            campaignId: request.campaignId,
+            sceneId: targetSceneId,
+            file,
+            folder: "tokens",
+            tags: ["token"]
+          }, { signal: request.controller.signal });
+          await apiPatch<Token>(`/api/v1/tokens/${targetToken.id}`, { imageAssetId: result.asset.id }, { signal: request.controller.signal });
+        },
+        async (_result, request) => {
+          setStatus(`${targetToken.name} image updated`);
+          await refresh(request.campaignId, targetSceneId);
+        }
+      );
     } catch (error) {
       setStatus(`Token image upload failed: ${errorMessage(error)}`);
-    } finally {
-      if (input) input.value = "";
     }
   }
 
@@ -3175,22 +3490,26 @@ export function App() {
       if (input) input.value = "";
       return;
     }
+    const targetSceneId = selectedScene?.id ?? sceneId;
+    if (input) input.value = "";
     setAiAgentReferenceUploadStatus(`Uploading ${file.name}...`);
     try {
-      const result = await apiUploadAsset({
-        campaignId: selectedCampaign.id,
-        sceneId: selectedScene?.id,
-        file,
-        folder: "ai/references",
-        tags: ["ai", "reference"]
-      });
-      setAiAgentReferenceAssetId(result.asset.id);
-      setAiAgentReferenceUploadStatus("");
-      await refresh(selectedCampaign.id, selectedScene?.id ?? sceneId);
+      await runWorkspaceBoundAction(
+        (request) => apiUploadAsset({
+          campaignId: request.campaignId,
+          sceneId: targetSceneId,
+          file,
+          folder: "ai/references",
+          tags: ["ai", "reference"]
+        }, { signal: request.controller.signal }),
+        async (result, request) => {
+          setAiAgentReferenceAssetId(result.asset.id);
+          setAiAgentReferenceUploadStatus("");
+          await refresh(request.campaignId, targetSceneId);
+        }
+      );
     } catch (error) {
       setAiAgentReferenceUploadStatus(`Reference upload failed: ${errorMessage(error)}`);
-    } finally {
-      if (input) input.value = "";
     }
   }
 
@@ -3201,22 +3520,27 @@ export function App() {
 
   async function uploadAssetToLibrary(file: File, setAsBackground: boolean, retryInput?: { folder: string; tags: string }) {
     if (!selectedCampaign) return;
+    const targetSceneId = selectedScene?.id ?? sceneId;
     const folder = retryInput?.folder ?? assetFolder;
     const tags = retryInput?.tags ?? assetTags;
     setAssetStatus(`Uploading ${file.name}...`);
     try {
-      const result = await apiUploadAsset({
-        campaignId: selectedCampaign.id,
-        sceneId: setAsBackground ? selectedScene?.id : undefined,
-        file,
-        setAsBackground,
-        folder: folder.trim() || undefined,
-        tags: assetTagsFromInput(tags)
-      });
-      setFailedAssetUpload(undefined);
-      setAssetStatus(`${result.asset.name} uploaded${result.scene ? " and set as scene background" : ""}`);
-      setStatus("Asset uploaded");
-      await refresh(selectedCampaign.id, result.scene?.id ?? selectedScene?.id ?? sceneId);
+      await runWorkspaceBoundAction(
+        (request) => apiUploadAsset({
+          campaignId: request.campaignId,
+          sceneId: setAsBackground ? targetSceneId : undefined,
+          file,
+          setAsBackground,
+          folder: folder.trim() || undefined,
+          tags: assetTagsFromInput(tags)
+        }, { signal: request.controller.signal }),
+        async (result, request) => {
+          setFailedAssetUpload(undefined);
+          setAssetStatus(`${result.asset.name} uploaded${result.scene ? " and set as scene background" : ""}`);
+          setStatus("Asset uploaded");
+          await refresh(request.campaignId, result.scene?.id ?? targetSceneId);
+        }
+      );
     } catch (error) {
       const message = errorMessage(error);
       setFailedAssetUpload({ file, setAsBackground, folder, tags, message });
@@ -3239,42 +3563,58 @@ export function App() {
   }
 
   async function updateAssetMetadata(asset: MapAsset, input: { name: string; folder: string; tags: string }) {
-    const updated = await apiPatch<MapAsset>(`/api/v1/assets/${asset.id}`, {
-      name: input.name,
-      folder: input.folder.trim() || null,
-      tags: assetTagsFromInput(input.tags)
-    });
-    setAssetStatus(`${updated.name} metadata updated`);
-    setStatus("Asset metadata updated");
-    await refresh(campaignId, selectedScene?.id ?? sceneId);
+    await runWorkspaceBoundAction(
+      (request) => apiPatch<MapAsset>(`/api/v1/assets/${asset.id}`, {
+        name: input.name,
+        folder: input.folder.trim() || null,
+        tags: assetTagsFromInput(input.tags)
+      }, { signal: request.controller.signal }),
+      async (updated, request) => {
+        setAssetStatus(`${updated.name} metadata updated`);
+        setStatus("Asset metadata updated");
+        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+      }
+    );
   }
 
   async function setSceneBackgroundFromAsset(asset: MapAsset) {
     if (!selectedScene) return;
-    await apiPatch<Scene>(`/api/v1/scenes/${selectedScene.id}`, { backgroundAssetId: asset.id });
-    setAssetStatus(`${asset.name} set as ${selectedScene.name} background`);
-    setStatus("Scene background updated");
-    await refresh(campaignId, selectedScene.id);
+    const targetScene = selectedScene;
+    await runWorkspaceBoundAction(
+      (request) => apiPatch<Scene>(`/api/v1/scenes/${targetScene.id}`, { backgroundAssetId: asset.id }, { signal: request.controller.signal }),
+      async (_updated, request) => {
+        setAssetStatus(`${asset.name} set as ${targetScene.name} background`);
+        setStatus("Scene background updated");
+        await refresh(request.campaignId, targetScene.id);
+      }
+    );
   }
 
   async function updateAssetLifecycle(asset: MapAsset, status: AssetLifecycleStatus) {
-    const updated = await apiPatch<MapAsset>(`/api/v1/assets/${asset.id}/lifecycle`, {
-      status,
-      reason: assetLifecycleReason.trim() || undefined
-    });
-    setAssetStatus(`${updated.name} marked ${updated.lifecycle?.status ?? status}`);
-    setStatus("Asset lifecycle updated");
-    await refresh();
+    const reason = assetLifecycleReason.trim() || undefined;
+    await runWorkspaceBoundAction(
+      (request) => apiPatch<MapAsset>(`/api/v1/assets/${asset.id}/lifecycle`, { status, reason }, { signal: request.controller.signal }),
+      async (updated, request) => {
+        setAssetStatus(`${updated.name} marked ${updated.lifecycle?.status ?? status}`);
+        setStatus("Asset lifecycle updated");
+        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+      }
+    );
   }
 
   async function createAssetDeliveryUrl(asset: MapAsset) {
-    const delivery = await apiPost<{ url: string }>(`/api/v1/assets/${asset.id}/delivery-url`, {
-      expiresInSeconds: 900,
-      disposition: "inline"
-    });
-    if (navigator.clipboard && delivery.url) await navigator.clipboard.writeText(delivery.url).catch(() => undefined);
-    setAssetStatus(`Signed URL ready for ${asset.name}`);
-    setStatus("Asset delivery URL created");
+    await runWorkspaceBoundAction(
+      (request) => apiPost<{ url: string }>(`/api/v1/assets/${asset.id}/delivery-url`, {
+        expiresInSeconds: 900,
+        disposition: "inline"
+      }, { signal: request.controller.signal }),
+      async (delivery, request) => {
+        if (navigator.clipboard && delivery.url) await navigator.clipboard.writeText(delivery.url).catch(() => undefined);
+        if (!workspaceBoundRequestIsCurrent(request)) return;
+        setAssetStatus(`Signed URL ready for ${asset.name}`);
+        setStatus("Asset delivery URL created");
+      }
+    );
   }
 
   async function revealFog() {
@@ -3614,14 +3954,17 @@ export function App() {
 
   async function saveFogPreset() {
     if (!selectedScene) return;
-    const name = fogPresetName.trim() || `${selectedScene.name} fog preset`;
-    await apiPost(`/api/v1/campaigns/${campaignId}/fog-presets`, {
+    const request = currentWorkspaceRequestIdentity();
+    const submittedName = fogPresetName;
+    const name = submittedName.trim() || `${selectedScene.name} fog preset`;
+    await apiPost(`/api/v1/campaigns/${request.campaignId}/fog-presets`, {
       name,
       sceneId: selectedScene.id
     });
-    setFogPresetName("");
+    if (!workspaceIdentityIsCurrent(request)) return;
+    setFogPresetName((current) => current === submittedName ? "" : current);
     setStatus("Fog preset saved");
-    await refresh();
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
   }
 
   async function applyFogPreset() {
@@ -3688,6 +4031,7 @@ export function App() {
   }
 
   function applyActorToSnapshot(actor: Actor) {
+    if (actor.campaignId !== realtimeSelectionRef.current.campaignId) return;
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
@@ -3696,6 +4040,7 @@ export function App() {
   }
 
   function applyActorHpToSnapshot(actorId: string, hp: { current: number; max: number }) {
+    if (!snapshotRef.current.actors.some((actor) => actor.id === actorId && actor.campaignId === realtimeSelectionRef.current.campaignId)) return;
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
@@ -3862,9 +4207,13 @@ export function App() {
 
   async function createAudioTrack(input: { name: string; url: string; kind: AudioTrack["kind"]; loop: boolean }) {
     try {
-      await apiPost<AudioTrack>(`/api/v1/campaigns/${campaignId}/audio`, input);
-      setStatus(`Added ${input.name} to the soundboard`);
-      await refresh();
+      await runWorkspaceBoundAction(
+        (request) => apiPost<AudioTrack>(`/api/v1/campaigns/${request.campaignId}/audio`, input, { signal: request.controller.signal }),
+        async (_track, request) => {
+          setStatus(`Added ${input.name} to the soundboard`);
+          await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+        }
+      );
     } catch (error) {
       setStatus(errorMessage(error));
     }
@@ -3874,20 +4223,26 @@ export function App() {
     const name = input.name?.trim() || audioTrackNameFromFile(file);
     try {
       setStatus(`Uploading ${file.name} to the soundboard...`);
-      const result = await apiUploadAsset({
-        campaignId,
-        file,
-        folder: "audio",
-        tags: ["audio", input.kind]
-      });
-      await apiPost<AudioTrack>(`/api/v1/campaigns/${campaignId}/audio`, {
-        name,
-        url: result.asset.url,
-        kind: input.kind,
-        loop: input.loop
-      });
-      setStatus(`Uploaded ${name} to the soundboard`);
-      await refresh();
+      await runWorkspaceBoundAction(
+        async (request) => {
+          const result = await apiUploadAsset({
+            campaignId: request.campaignId,
+            file,
+            folder: "audio",
+            tags: ["audio", input.kind]
+          }, { signal: request.controller.signal });
+          return apiPost<AudioTrack>(`/api/v1/campaigns/${request.campaignId}/audio`, {
+            name,
+            url: result.asset.url,
+            kind: input.kind,
+            loop: input.loop
+          }, { signal: request.controller.signal });
+        },
+        async (_track, request) => {
+          setStatus(`Uploaded ${name} to the soundboard`);
+          await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+        }
+      );
     } catch (error) {
       setStatus(`Audio upload failed: ${errorMessage(error)}`);
     }
@@ -3895,8 +4250,12 @@ export function App() {
 
   async function toggleAudioTrack(track: AudioTrack) {
     try {
-      await apiPatch<AudioTrack>(`/api/v1/audio/${track.id}`, { playing: !track.playing });
-      await refresh();
+      await runWorkspaceBoundAction(
+        (request) => apiPatch<AudioTrack>(`/api/v1/audio/${track.id}`, { playing: !track.playing }, { signal: request.controller.signal }),
+        async (_updated, request) => {
+          await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+        }
+      );
     } catch (error) {
       setStatus(errorMessage(error));
     }
@@ -3904,9 +4263,13 @@ export function App() {
 
   async function deleteAudioTrack(track: AudioTrack) {
     try {
-      await apiDelete<AudioTrack>(`/api/v1/audio/${track.id}`);
-      setStatus(`Removed ${track.name} from the soundboard`);
-      await refresh();
+      await runWorkspaceBoundAction(
+        (request) => apiDelete<AudioTrack>(`/api/v1/audio/${track.id}`, { signal: request.controller.signal }),
+        async (_deleted, request) => {
+          setStatus(`Removed ${track.name} from the soundboard`);
+          await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+        }
+      );
     } catch (error) {
       setStatus(errorMessage(error));
     }
@@ -4165,7 +4528,10 @@ export function App() {
   }
 
   async function submitChatCommand() {
-    const parsed = parseChatCommand(chatBody);
+    const submittedBody = chatBody;
+    const submittedReplyToMessageId = chatReplyToMessageId;
+    const submittedReplyTargetId = chatReplyTarget?.id;
+    const parsed = parseChatCommand(submittedBody);
     if (!parsed) return;
     if (parsed.kind === "error") {
       setStatus(parsed.message);
@@ -4181,16 +4547,18 @@ export function App() {
         setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total} for this demo tab`);
         return;
       }
+      const request = currentWorkspaceRequestIdentity();
       const roll = await apiPost<DiceRoll>("/api/v1/dice/roll", {
-        campaignId,
+        campaignId: request.campaignId,
         formula: parsed.formula,
         visibility: parsed.visibility,
         label: "Table roll"
       });
-      setChatBody("");
-      setChatReplyToMessageId("");
+      if (!workspaceIdentityIsCurrent(request)) return;
+      setChatBody((current) => current === submittedBody ? "" : current);
+      setChatReplyToMessageId((current) => current === submittedReplyToMessageId ? "" : current);
       setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total}`);
-      await refresh(campaignId, sceneId, { syncStatus: false });
+      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
       return;
     }
 
@@ -4213,29 +4581,35 @@ export function App() {
       setStatus("Message added for this demo tab");
       return;
     }
+    const request = currentWorkspaceRequestIdentity();
     await apiPost<ChatMessage>("/api/v1/chat/messages", {
-      campaignId,
+      campaignId: request.campaignId,
       body: parsed.body,
       type: parsed.messageType,
       visibility: parsed.visibility,
       recipientUserIds: recipientUserId ? [recipientUserId] : [],
-      replyToMessageId: chatReplyTarget?.id
+      replyToMessageId: submittedReplyTargetId
     });
-    setChatBody("");
-    setChatReplyToMessageId("");
-    await refresh();
+    if (!workspaceIdentityIsCurrent(request)) return;
+    setChatBody((current) => current === submittedBody ? "" : current);
+    setChatReplyToMessageId((current) => current === submittedReplyToMessageId ? "" : current);
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
   }
 
   async function deleteChatMessage(message: ChatMessage) {
+    const request = currentWorkspaceRequestIdentity();
     await apiDelete<ChatMessage>(`/api/v1/chat/messages/${message.id}`);
+    if (!workspaceIdentityIsCurrent(request)) return;
     setStatus("Chat message deleted");
-    await refresh();
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
   }
 
   async function moderateChatMessage(message: ChatMessage, moderationStatus: ChatModerationResolution) {
+    const request = currentWorkspaceRequestIdentity();
     await apiPatch<ChatMessage>(`/api/v1/chat/messages/${message.id}/moderation`, { moderationStatus });
+    if (!workspaceIdentityIsCurrent(request)) return;
     setStatus(`Chat message marked ${titleCaseLabel(moderationStatus)}`);
-    await refresh(campaignId, sceneId, { syncStatus: false });
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
   }
 
   async function exportChatHistory(format: ChatExportFormat) {
@@ -4256,6 +4630,7 @@ export function App() {
   }
 
   function applyJournalToSnapshot(journal: JournalEntry) {
+    if (journal.campaignId !== realtimeSelectionRef.current.campaignId) return;
     invalidateInFlightRefreshes();
     setSnapshot((current) => ({
       ...current,
@@ -4265,17 +4640,27 @@ export function App() {
     }));
   }
 
-  async function createJournal() {
-    const title = newJournalTitle.trim();
-    const journal = await apiPost<JournalEntry>(`/api/v1/campaigns/${campaignId}/journal`, {
+  async function createJournal(targets: { visibleToUserIds: string[]; visibleToActorIds: string[] } = { visibleToUserIds: [], visibleToActorIds: [] }) {
+    const request = currentWorkspaceRequestIdentity();
+    const submittedTitle = newJournalTitle;
+    const submittedBody = newJournalBody;
+    const title = submittedTitle.trim();
+    const actorOwnerUserIds = targets.visibleToActorIds
+      .map((actorId) => snapshotRef.current.actors.find((actor) => actor.id === actorId)?.ownerUserId)
+      .filter((userId): userId is string => Boolean(userId));
+    const visibleToUserIds = [...new Set([...targets.visibleToUserIds, ...actorOwnerUserIds])];
+    const journal = await apiPost<JournalEntry>(`/api/v1/campaigns/${request.campaignId}/journal`, {
       title: title || "New Journal Entry",
-      body: newJournalBody.trim(),
+      body: submittedBody.trim(),
       visibility: newJournalVisibility,
+      visibleToUserIds,
+      visibleToActorIds: targets.visibleToActorIds,
       tags: newJournalTags.split(",").map((tag) => tag.trim()).filter(Boolean)
     });
+    if (!workspaceIdentityIsCurrent(request)) return;
     applyJournalToSnapshot(journal);
-    setNewJournalTitle("");
-    setNewJournalBody("");
+    setNewJournalTitle((current) => current === submittedTitle ? "" : current);
+    setNewJournalBody((current) => current === submittedBody ? "" : current);
     setStatus("Journal entry created");
   }
 
@@ -4340,18 +4725,21 @@ export function App() {
   }
 
   async function generateSessionRecap() {
+    const request = currentWorkspaceRequestIdentity();
     const windowStart = recapWindowStart();
-    const journal = await apiPost<JournalEntry>(`/api/v1/campaigns/${campaignId}/journal`, {
+    const journal = await apiPost<JournalEntry>(`/api/v1/campaigns/${request.campaignId}/journal`, {
       title: `Session Recap - ${formatDateTime(new Date().toISOString())}`,
       body: generateSessionRecapBody(windowStart),
       visibility: newJournalVisibility,
       tags: ["recap"]
     });
+    if (!workspaceIdentityIsCurrent(request)) return;
     applyJournalToSnapshot(journal);
     setStatus("Session recap added to the journal");
   }
 
   async function startCombat() {
+    const request = currentWorkspaceRequestIdentity();
     const combatants = selectedSceneTokens.map((token, index) => {
       const actor = snapshot.actors.find((candidate) => candidate.id === token.actorId);
       const resource = actor ? actorCombatResource(actor) : undefined;
@@ -4371,18 +4759,23 @@ export function App() {
         resourceUsed: false
       };
     });
-    const combat = await apiPost<Combat>(`/api/v1/campaigns/${campaignId}/combats`, {
+    const combat = await apiPost<Combat>(`/api/v1/campaigns/${request.campaignId}/combats`, {
       combatants
     });
+    if (!workspaceIdentityIsCurrent(request)) return;
     setTab("combat");
-    await refresh(campaignId, sceneId, { syncStatus: false });
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+    if (!workspaceIdentityIsCurrent(request)) return;
     selectCombatantToken(combat.combatants[combat.turnIndex] ?? combat.combatants[0]);
   }
 
   async function updateCombat(combat: Combat, patch: Partial<Combat>) {
+    const request = currentWorkspaceRequestIdentity();
     const updated = await apiPatch<Combat>(`/api/v1/combats/${combat.id}`, patch);
+    if (!workspaceIdentityIsCurrent(request)) return;
     setStatus("Combat updated");
-    await refresh(campaignId, sceneId, { syncStatus: false });
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+    if (!workspaceIdentityIsCurrent(request)) return;
     selectCombatantToken(updated.combatants[updated.turnIndex] ?? updated.combatants[0]);
   }
 
@@ -4396,6 +4789,7 @@ export function App() {
   }
 
   async function updateCombatant(combat: Combat, combatantId: string, patch: Partial<Combat["combatants"][number]>) {
+    const request = currentWorkspaceRequestIdentity();
     const combatant = combat.combatants.find((candidate) => candidate.id === combatantId);
     const syncActorSheet = Boolean(
       combatant?.actorId &&
@@ -4403,40 +4797,62 @@ export function App() {
         (patch.readiness !== undefined || patch.defeated !== undefined || patch.conditions !== undefined || patch.deathSaveSuccesses !== undefined || patch.deathSaveFailures !== undefined || patch.resourceUsed !== undefined)
     );
     const updated = await apiPatch<Combat>(`/api/v1/combats/${combat.id}/combatants/${combatantId}`, { ...patch, syncActorSheet });
+    if (!workspaceIdentityIsCurrent(request)) return;
     setStatus("Combatant updated");
-    await refresh(campaignId, sceneId, { syncStatus: false });
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+    if (!workspaceIdentityIsCurrent(request)) return;
     selectCombatantToken(updated.combatants.find((candidate) => candidate.id === combatantId));
   }
 
   async function endCombat(combat: Combat) {
+    const request = currentWorkspaceRequestIdentity();
     await apiDelete<Combat>(`/api/v1/combats/${combat.id}`);
+    if (!workspaceIdentityIsCurrent(request)) return;
     setStatus("Combat ended");
-    await refresh(campaignId, sceneId, { syncStatus: false });
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
   }
 
   async function confirmCombatAction(combat: Combat, action: CombatAction) {
+    const request = currentWorkspaceRequestIdentity();
     await apiPost(`/api/v1/combats/${combat.id}/actions/${action.id}/confirm`, {});
+    if (!workspaceIdentityIsCurrent(request)) return;
     setStatus(`${action.actionLabel} confirmed`);
-    await refresh(campaignId, sceneId, { syncStatus: false });
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
   }
 
   async function rejectCombatAction(combat: Combat, action: CombatAction) {
+    const request = currentWorkspaceRequestIdentity();
     await apiPost(`/api/v1/combats/${combat.id}/actions/${action.id}/reject`, {});
+    if (!workspaceIdentityIsCurrent(request)) return;
     setStatus(`${action.actionLabel} rejected`);
-    await refresh(campaignId, sceneId, { syncStatus: false });
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+  }
+
+  async function runWorkspaceBoundAiRequest<T>(label: string, task: (request: WorkspaceBoundRequest) => Promise<T>, successMessage: (result: T) => string) {
+    const request = beginWorkspaceBoundRequest();
+    try {
+      const result = await task(request);
+      if (!workspaceBoundRequestIsCurrent(request)) return;
+      setStatus(successMessage(result));
+      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+    } catch (error) {
+      if (workspaceBoundRequestIsCurrent(request)) setStatus(`${label} failed: ${errorMessage(error)}`);
+    } finally {
+      finishWorkspaceBoundRequest(request);
+    }
   }
 
   async function askAi() {
-    await apiPost(`/api/v1/campaigns/${campaignId}/ai/encounter-design`, {
-      prompt: aiPrompt,
+    const prompt = aiPrompt;
+    const scene = selectedScene;
+    await runWorkspaceBoundAiRequest("Encounter proposal", (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/ai/encounter-design`, {
+      prompt,
       difficulty: "standard",
       sceneName: "AI Draft Encounter Scene",
-      sceneWidth: selectedScene?.width,
-      sceneHeight: selectedScene?.height,
-      gridSize: selectedScene?.gridSize
-    });
-    setStatus("Encounter and scene proposal drafted");
-    await refresh();
+      sceneWidth: scene?.width,
+      sceneHeight: scene?.height,
+      gridSize: scene?.gridSize
+    }, { signal: request.controller.signal }), () => "Encounter and scene proposal drafted");
   }
 
   function clearAiAgentAuthRetry() {
@@ -4475,9 +4891,35 @@ export function App() {
     await submitAiAgentTurn(pending, { authRetry: true });
   }
 
+  function clearPendingAiAgentAssistantMessage() {
+    const pendingAssistantId = aiAgentPendingAssistantIdRef.current;
+    if (!pendingAssistantId) return;
+    aiAgentPendingAssistantIdRef.current = null;
+    setAiAgentMessages((messages) => messages.filter((message) => message.id !== pendingAssistantId));
+  }
+
+  function startNewAiAgentChat() {
+    if (aiAgentBusyRef.current) return;
+    aiAgentPendingAuthRequestRef.current = null;
+    clearAiAgentAuthRetry();
+    aiAgentLiveThreadIdRef.current = null;
+    aiAgentPendingAssistantIdRef.current = null;
+    setAiAgentCodexAuth(null);
+    setAiAgentHiddenProposalIds(new Set());
+    setAiAgentMessages([]);
+    persistAiAgentMessages(aiAgentHistoryKey, []);
+    setAiAgentPrompt("");
+    setAiAgentStatus("New agent chat started");
+  }
+
   async function sendAiAgentMessage() {
     const prompt = aiAgentPrompt.trim();
-    if (!prompt || aiAgentBusy) return;
+    if (!prompt) return;
+    if (isAiAgentClearCommand(prompt)) {
+      startNewAiAgentChat();
+      return;
+    }
+    if (aiAgentBusyRef.current) return;
     const attachedReferenceAssetId = selectedAiAgentReferenceAsset?.id;
     const selectedAssetId = attachedReferenceAssetId ?? aiAgentSelectedAssetId;
     const userMessage: AiAgentMessage = { id: `agent-user-${Date.now()}`, role: "user", content: prompt, createdAt: new Date().toISOString() };
@@ -4545,7 +4987,10 @@ export function App() {
   }
 
   async function submitBlankCanvasDemoAiAgentTurn({ prompt }: AiAgentPendingAuthRequest, options: { authRetry?: boolean } = {}) {
-    if (aiAgentBusy && !options.authRetry) return;
+    if (aiAgentBusyRef.current && !options.authRetry) return;
+    const requestCampaignId = campaignId;
+    const requestUserId = currentUserId;
+    aiAgentBusyRef.current = true;
     setAiAgentBusy(true);
     setAiAgentStatus("Agent working locally");
     setAiAgentCodexAuth(null);
@@ -4563,9 +5008,12 @@ export function App() {
       setSnapshot((current) => ({ ...current, proposals: [...current.proposals, proposal] }));
       setAiAgentMessages((messages) => [...messages, assistantMessage]);
       setAiAgentStatus("Agent drafted 1 local proposal");
-      if (aiAgentApprovalMode === "auto") await autoApplyAiAgentProposals([proposal.id], sourceSnapshot);
+      if (aiAgentApprovalMode === "auto") await autoApplyAiAgentProposals([proposal.id], sourceSnapshot, { campaignId: requestCampaignId, userId: requestUserId });
     } finally {
-      setAiAgentBusy(false);
+      if (workspaceRequestIsCurrent(requestCampaignId, requestUserId)) {
+        aiAgentBusyRef.current = false;
+        setAiAgentBusy(false);
+      }
     }
   }
 
@@ -4574,15 +5022,31 @@ export function App() {
       await submitBlankCanvasDemoAiAgentTurn({ prompt, requestMessages, selectedAssetId }, options);
       return;
     }
-    if (aiAgentBusy && !options.authRetry) return;
+    if (aiAgentBusyRef.current && !options.authRetry) return;
+    const requestCampaignId = campaignId;
+    const requestUserId = currentUserId;
+    aiAgentBusyRef.current = true;
     setAiAgentBusy(true);
     setAiAgentStatus(options.authRetry ? "Retrying agent request after sign-in" : "Agent working");
     setAiAgentCodexAuth(null);
+    aiAgentLiveThreadIdRef.current = null;
+    const pendingAssistantId = `agent-live-${Date.now()}`;
+    aiAgentPendingAssistantIdRef.current = pendingAssistantId;
+    setAiAgentMessages((messages) =>
+      upsertAiAgentMessage(messages, {
+        id: pendingAssistantId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date().toISOString(),
+        progress: options.authRetry ? "Retrying agent turn..." : "Starting agent turn...",
+        streaming: true
+      })
+    );
     const abortController = new AbortController();
     aiAgentAbortRef.current = abortController;
     const requestSelectedAssetId = selectedAssetId ?? selectedAiAgentReferenceAsset?.id ?? aiAgentSelectedAssetId;
     try {
-      const result = await apiPost<AiAgentThreadResponse>(`/api/v1/campaigns/${campaignId}/ai/threads`, {
+      const result = await apiPost<AiAgentThreadResponse>(`/api/v1/campaigns/${requestCampaignId}/ai/threads`, {
         prompt,
         surface: "agent_panel",
         approvalMode: aiAgentApprovalMode,
@@ -4591,19 +5055,29 @@ export function App() {
         selectedTokenIds,
         messages: aiAgentProviderMessages(requestMessages)
       }, { signal: abortController.signal });
+      if (!workspaceRequestIsCurrent(requestCampaignId, requestUserId)) return;
       const proposalIds = result.events.filter((event) => event.type === "proposal.created").map((event) => event.proposalId).filter((proposalId): proposalId is string => Boolean(proposalId));
       const appliedProposalIds = result.events.filter((event) => event.type === "proposal.applied").map((event) => event.proposalId).filter((proposalId): proposalId is string => Boolean(proposalId));
+      const reasoning = reasoningTracesFromEvents(result.events);
+      const activity = activityTracesFromEvents(result.events);
       const assistantMessage: AiAgentMessage = {
         id: result.thread.id,
         role: "assistant",
         content: result.assistantMessage || "Done.",
         createdAt: result.thread.updatedAt,
         proposalIds,
-        reasoning: reasoningTracesFromEvents(result.events)
+        ...(reasoning.length > 0 ? { reasoning } : {}),
+        ...(activity.length > 0 ? { activity } : {}),
+        streaming: false
       };
       aiAgentPendingAuthRequestRef.current = null;
       clearAiAgentAuthRetry();
-      setAiAgentMessages((messages) => [...messages, assistantMessage]);
+      setAiAgentMessages((messages) => {
+        const pendingAssistantId = aiAgentPendingAssistantIdRef.current;
+        aiAgentPendingAssistantIdRef.current = null;
+        const mergedMessages = pendingAssistantId ? messages.filter((message) => message.id !== pendingAssistantId) : messages;
+        return upsertAiAgentMessage(mergedMessages, assistantMessage);
+      });
       setAiAgentStatus(
         appliedProposalIds.length > 0
           ? `Agent auto-applied ${appliedProposalIds.length} proposal${appliedProposalIds.length === 1 ? "" : "s"}`
@@ -4611,15 +5085,20 @@ export function App() {
             ? `Agent drafted ${proposalIds.length} proposal${proposalIds.length === 1 ? "" : "s"}`
             : "Agent ready"
       );
-      const refreshedSnapshot = await refresh();
+      const refreshedSnapshot = await refresh(requestCampaignId, selectedScene?.id ?? "", { syncStatus: false });
+      if (!workspaceRequestIsCurrent(requestCampaignId, requestUserId)) return;
       const appliedProposalIdSet = new Set(appliedProposalIds);
       const pendingProposalIds = proposalIds.filter((proposalId) => !appliedProposalIdSet.has(proposalId));
-      if (aiAgentApprovalMode === "auto" && pendingProposalIds.length > 0) await autoApplyAiAgentProposals(pendingProposalIds, refreshedSnapshot);
+      if (aiAgentApprovalMode === "auto" && pendingProposalIds.length > 0) {
+        await autoApplyAiAgentProposals(pendingProposalIds, refreshedSnapshot, { campaignId: requestCampaignId, userId: requestUserId });
+      }
     } catch (error) {
+      if (!workspaceRequestIsCurrent(requestCampaignId, requestUserId)) return;
       if (isAbortError(error) || abortController.signal.aborted) {
         const message = "Agent turn stopped.";
         aiAgentPendingAuthRequestRef.current = null;
         clearAiAgentAuthRetry();
+        clearPendingAiAgentAssistantMessage();
         setAiAgentMessages((messages) => [...messages, { id: `agent-stop-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
         setAiAgentStatus("Agent stopped");
         return;
@@ -4632,6 +5111,7 @@ export function App() {
           ? "Codex sign-in opened. Finish the ChatGPT OAuth flow; the original agent request will resume automatically."
           : "Codex sign-in is required. Use the sign-in button below; the original agent request will resume automatically.";
         setAiAgentCodexAuth({ ...codexAuth, opened, message: promptMessage });
+        clearPendingAiAgentAssistantMessage();
         if (!options.authRetry) setAiAgentMessages((messages) => [...messages, { id: `agent-auth-${Date.now()}`, role: "system", content: promptMessage, createdAt: new Date().toISOString() }]);
         setAiAgentStatus(opened || options.authRetry ? "Waiting for ChatGPT sign-in" : "Codex sign-in required");
         if (opened || options.authRetry) scheduleAiAgentAuthRetry();
@@ -4642,6 +5122,7 @@ export function App() {
         aiAgentPendingAuthRequestRef.current = null;
         clearAiAgentAuthRetry();
         requireInteractiveSignIn(`Sign in required. ${message}`);
+        clearPendingAiAgentAssistantMessage();
         setAiAgentMessages((messages) => [...messages, { id: `agent-auth-session-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
         setAiAgentStatus("Sign in required");
         return;
@@ -4649,11 +5130,16 @@ export function App() {
       const message = errorMessage(error);
       aiAgentPendingAuthRequestRef.current = null;
       clearAiAgentAuthRetry();
+      clearPendingAiAgentAssistantMessage();
       setAiAgentMessages((messages) => [...messages, { id: `agent-error-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
       setAiAgentStatus(`Agent failed: ${message}`);
     } finally {
-      if (aiAgentAbortRef.current === abortController) aiAgentAbortRef.current = null;
-      setAiAgentBusy(false);
+      if (aiAgentAbortRef.current === abortController) {
+        aiAgentAbortRef.current = null;
+        aiAgentLiveThreadIdRef.current = null;
+        aiAgentBusyRef.current = false;
+        setAiAgentBusy(false);
+      }
     }
   }
 
@@ -4662,6 +5148,9 @@ export function App() {
     aiAgentPendingAuthRequestRef.current = null;
     clearAiAgentAuthRetry();
     setAiAgentStatus("Stopping agent turn");
+    aiAgentLiveThreadIdRef.current = null;
+    aiAgentBusyRef.current = false;
+    clearPendingAiAgentAssistantMessage();
     aiAgentAbortRef.current?.abort();
   }
 
@@ -4672,14 +5161,23 @@ export function App() {
     if (opened) scheduleAiAgentAuthRetry();
   }
 
-  async function trackAiGenerationJob(job: AiGenerationJob, task: () => Promise<void>) {
+  async function trackAiGenerationJob(job: AiGenerationJob, task: (request: WorkspaceBoundRequest) => Promise<void>) {
+    const lock = job.kind === "map" ? "map" : "token";
+    if (aiGenerationLocksRef.current.has(lock)) return;
+    aiGenerationLocksRef.current.add(lock);
+    const request = beginWorkspaceBoundRequest();
+    aiGenerationControllersRef.current.set(job.id, request.controller);
     setAiGenerationJobs((jobs) => [...jobs.filter((item) => item.id !== job.id), job]);
     try {
-      await task();
+      await task(request);
     } catch (error) {
-      setStatus(`${job.label} failed: ${errorMessage(error)}`);
+      if (workspaceBoundRequestIsCurrent(request)) setStatus(`${job.label} failed: ${errorMessage(error)}`);
     } finally {
-      setAiGenerationJobs((jobs) => jobs.filter((item) => item.id !== job.id));
+      finishWorkspaceBoundRequest(request);
+      if (aiGenerationControllersRef.current.get(job.id) !== request.controller) return;
+      aiGenerationControllersRef.current.delete(job.id);
+      aiGenerationLocksRef.current.delete(lock);
+      if (workspaceBoundRequestIsCurrent(request)) setAiGenerationJobs((jobs) => jobs.filter((item) => item.id !== job.id));
     }
   }
 
@@ -4687,18 +5185,20 @@ export function App() {
     if (!selectedScene) return;
     const prompt = aiMapPrompt.trim();
     if (!prompt) return;
-    await trackAiGenerationJob({ id: `map:${selectedScene.id}`, kind: "map", label: "Map image generation", detail: selectedScene.name }, async () => {
-      setStatus(`Generating map art for ${selectedScene.name}...`);
-      await apiPost(`/api/v1/campaigns/${campaignId}/ai/generate-map-asset`, {
+    const scene = selectedScene;
+    await trackAiGenerationJob({ id: `map:${scene.id}`, kind: "map", label: "Map image generation", detail: scene.name }, async (request) => {
+      setStatus(`Generating map art for ${scene.name}...`);
+      await apiPost(`/api/v1/campaigns/${request.campaignId}/ai/generate-map-asset`, {
         prompt,
-        name: `${selectedScene.name} Generated Map`,
-        sceneId: selectedScene.id,
+        name: `${scene.name} Generated Map`,
+        sceneId: scene.id,
         size: "1536x1024",
         quality: "low",
         outputFormat: "png"
-      });
+      }, { signal: request.controller.signal });
+      if (!workspaceBoundRequestIsCurrent(request)) return;
       setStatus("Map image proposal drafted");
-      await refresh();
+      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
     });
   }
 
@@ -4706,18 +5206,20 @@ export function App() {
     if (!selectedToken) return;
     const prompt = aiTokenPrompt.trim();
     if (!prompt) return;
-    await trackAiGenerationJob({ id: `token:${selectedToken.id}`, kind: "token", label: "Token image generation", detail: selectedToken.name }, async () => {
-      setStatus(`Generating token art for ${selectedToken.name}...`);
-      await apiPost(`/api/v1/campaigns/${campaignId}/ai/generate-token-asset`, {
+    const token = selectedToken;
+    await trackAiGenerationJob({ id: `token:${token.id}`, kind: "token", label: "Token image generation", detail: token.name }, async (request) => {
+      setStatus(`Generating token art for ${token.name}...`);
+      await apiPost(`/api/v1/campaigns/${request.campaignId}/ai/generate-token-asset`, {
         prompt,
-        name: `${selectedToken.name} Generated Token`,
-        tokenId: selectedToken.id,
+        name: `${token.name} Generated Token`,
+        tokenId: token.id,
         size: "1024x1024",
         quality: "low",
         outputFormat: "png"
-      });
+      }, { signal: request.controller.signal });
+      if (!workspaceBoundRequestIsCurrent(request)) return;
       setStatus("Token art proposal drafted");
-      await refresh();
+      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
     });
   }
 
@@ -4730,28 +5232,30 @@ export function App() {
       setStatus("All selected scene tokens already have token art or pending art proposals");
       return;
     }
-    await trackAiGenerationJob({ id: `token-batch:${selectedScene.id}`, kind: "tokenBatch", label: "Scene token art generation", detail: `${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}` }, async () => {
+    const scene = selectedScene;
+    await trackAiGenerationJob({ id: `token-batch:${scene.id}`, kind: "tokenBatch", label: "Scene token art generation", detail: `${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}` }, async (request) => {
       setStatus(`Generating token art for ${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}...`);
       await Promise.all(tokens.map(async (token) => {
         const tokenPrompt = [
           prompt,
           "",
           `Create distinct token art for ${token.name}.`,
-          `Scene: ${selectedScene.name}.`,
+          `Scene: ${scene.name}.`,
           `Disposition: ${token.disposition}.`,
           token.notes ? `Token notes: ${token.notes.slice(0, 240)}` : ""
         ].filter(Boolean).join("\n");
-        await apiPost(`/api/v1/campaigns/${campaignId}/ai/generate-token-asset`, {
+        await apiPost(`/api/v1/campaigns/${request.campaignId}/ai/generate-token-asset`, {
           prompt: tokenPrompt,
           name: `${token.name} Generated Token`,
           tokenId: token.id,
           size: "1024x1024",
           quality: "low",
           outputFormat: "png"
-        });
+        }, { signal: request.controller.signal });
       }));
+      if (!workspaceBoundRequestIsCurrent(request)) return;
       setStatus(`Token art proposals drafted for ${tokens.length} ${tokens.length === 1 ? "token" : "tokens"}`);
-      await refresh();
+      await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
     });
   }
 
@@ -4759,38 +5263,37 @@ export function App() {
     const prompt = (thread.prompt ?? thread.title).trim();
     if (!prompt) return;
     setAiPrompt(prompt);
-    await apiPost(`/api/v1/campaigns/${campaignId}/ai/threads`, { prompt });
-    setStatus("AI thread replayed");
-    await refresh();
+    await runWorkspaceBoundAiRequest("AI thread replay", (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/ai/threads`, { prompt }, { signal: request.controller.signal }), () => "AI thread replayed");
   }
 
   async function retryAiToolCall(toolCall: AiToolCall) {
-    const result = await apiPost<{ matched: number; retried: number; skipped: number; completed: number; failed: number }>(`/api/v1/campaigns/${campaignId}/ai/tool-calls/${toolCall.id}/retry`, {});
-    setStatus(`Retried ${result.retried} ${toolCall.toolName} call; ${result.completed} completed, ${result.failed} failed, ${result.skipped} skipped`);
-    await refresh();
+    await runWorkspaceBoundAiRequest("AI tool retry", (request) => apiPost<{ matched: number; retried: number; skipped: number; completed: number; failed: number }>(`/api/v1/campaigns/${request.campaignId}/ai/tool-calls/${toolCall.id}/retry`, {}, { signal: request.controller.signal }), (result) => `Retried ${result.retried} ${toolCall.toolName} call; ${result.completed} completed, ${result.failed} failed, ${result.skipped} skipped`);
   }
 
   async function recapSession() {
-    await apiPost(`/api/v1/campaigns/${campaignId}/ai/session-recap`, {});
-    setStatus("Session recap queued for approval");
-    await refresh();
+    await runWorkspaceBoundAiRequest("Session recap", (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/ai/session-recap`, {}, { signal: request.controller.signal }), () => "Session recap queued for approval");
   }
 
   async function extractMemory() {
-    await apiPost(`/api/v1/campaigns/${campaignId}/ai/memory/extract`, {
-      sourceText: aiPrompt.trim() || undefined
-    });
-    setStatus("Memory extraction queued");
-    await refresh();
+    const sourceText = aiPrompt.trim() || undefined;
+    await runWorkspaceBoundAiRequest("Memory extraction", (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/ai/memory/extract`, {
+      sourceText
+    }, { signal: request.controller.signal }), () => "Memory extraction queued");
   }
 
   async function approveAndApply(proposal: Proposal) {
     if (blankCanvasDemoOpen) return applyBlankCanvasDemoProposal(proposal);
+    const request = { campaignId: proposal.campaignId, userId: currentUserId };
+    if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return undefined;
     const sceneIdToOpen = sceneIdToOpenAfterProposalApply(proposal);
     const steps = proposalReviewSteps(proposal);
     if (!steps.includes("apply")) throw new Error(`Proposal is ${proposal.status} and cannot be applied.`);
-    if (steps.includes("approve")) await apiPost(`/api/v1/proposals/${proposal.id}/approve`, {});
+    if (steps.includes("approve")) {
+      await apiPost(`/api/v1/proposals/${proposal.id}/approve`, {});
+      if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return undefined;
+    }
     const applied = await apiPost<Proposal>(`/api/v1/proposals/${proposal.id}/apply`, {});
+    if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return undefined;
     setSnapshot((current) => applyProposalChangesToSnapshot(current, applied));
     const appliedSceneId = sceneIdToOpenAfterProposalApply(applied) ?? sceneIdToOpen;
     if (appliedSceneId) {
@@ -4841,7 +5344,8 @@ export function App() {
     return openedSceneId ? { applied, openedSceneId } : { applied };
   }
 
-  async function autoApplyAiAgentProposals(proposalIds: string[], sourceSnapshot: Snapshot) {
+  async function autoApplyAiAgentProposals(proposalIds: string[], sourceSnapshot: Snapshot, request: { campaignId: string; userId: string }) {
+    if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return;
     if (!hasPermission("ai.applyChanges")) {
       const message = "Auto approve needs AI apply permission; proposals are waiting for review.";
       setAiAgentStatus("Auto approve unavailable");
@@ -4859,11 +5363,14 @@ export function App() {
     let appliedCount = 0;
     let failedCount = 0;
     for (const proposal of proposalsToApply) {
+      if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return;
       hideAiAgentProposal(proposal.id);
       try {
         await approveAndApply(proposal);
+        if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return;
         appliedCount += 1;
       } catch (error) {
+        if (!workspaceRequestIsCurrent(request.campaignId, request.userId)) return;
         failedCount += 1;
         const message = errorMessage(error);
         if (isProposalNotFoundError(error)) {
@@ -4886,6 +5393,7 @@ export function App() {
     setAiAgentStatus(proposal.status === "pending" ? "Approving and applying proposal" : "Applying proposal");
     try {
       const result = await approveAndApply(proposal);
+      if (!result) return;
       const message = result.openedSceneId ? "Proposal applied; opened scene" : "Proposal applied";
       setAiAgentStatus(message);
       setAiAgentMessages((messages) => [...messages, { id: `agent-apply-${Date.now()}`, role: "system", content: message, createdAt: new Date().toISOString() }]);
@@ -4982,73 +5490,99 @@ export function App() {
   }
 
   async function installPlugin(plugin: PluginRuntimeInfo, version?: string) {
-    await apiPost(`/api/v1/campaigns/${campaignId}/plugins/${plugin.id}/install`, {
-      permissions: plugin.permissionReview?.requestedPermissions ?? plugin.permissions,
-      version
-    });
     const action = plugin.installed && version ? (version === plugin.distribution.latestVersion ? "upgraded" : "rolled back") : "installed";
-    setStatus(`${plugin.name} ${action}`);
-    await refresh();
+    await runWorkspaceBoundAction(
+      (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/install`, {
+        permissions: plugin.permissionReview?.requestedPermissions ?? plugin.permissions,
+        version
+      }, { signal: request.controller.signal }),
+      async (_result, request) => {
+        setStatus(`${plugin.name} ${action}`);
+        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+      }
+    );
   }
 
   async function syncPluginRegistries() {
     try {
-      const result = await apiPost<{ registries: unknown[]; plugins: unknown[] }>("/api/v1/plugins/registry/sync", { campaignId });
-      setStatus(`Plugin registries synced: ${result.registries.length} registries, ${result.plugins.length} packages`);
-      await refresh();
+      await runWorkspaceBoundAction(
+        (request) => apiPost<{ registries: unknown[]; plugins: unknown[] }>("/api/v1/plugins/registry/sync", { campaignId: request.campaignId }, { signal: request.controller.signal }),
+        async (result, request) => {
+          setStatus(`Plugin registries synced: ${result.registries.length} registries, ${result.plugins.length} packages`);
+          await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+        }
+      );
     } catch (error) {
       setStatus(`Plugin registry sync failed: ${errorMessage(error)}`);
     }
   }
 
   async function installSystem(system: SystemRuntimeInfo) {
-    await apiPost(`/api/v1/campaigns/${campaignId}/systems/${system.id}/install`, {});
-    setStatus(`${system.name} activated`);
-    await refresh();
+    await runWorkspaceBoundAction(
+      (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/systems/${system.id}/install`, {}, { signal: request.controller.signal }),
+      async (_result, request) => {
+        setStatus(`${system.name} activated`);
+        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+      }
+    );
   }
 
   async function runPluginCommand(plugin: PluginRuntimeInfo, command: string) {
-    await apiPost(`/api/v1/campaigns/${campaignId}/plugins/${plugin.id}/chat-command`, {
-      command,
-      args: "from the browser tabletop"
-    });
-    setStatus(`${plugin.name} command ran`);
-    await refresh();
+    await runWorkspaceBoundAction(
+      (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/plugins/${plugin.id}/chat-command`, {
+        command,
+        args: "from the browser tabletop"
+      }, { signal: request.controller.signal }),
+      async (_result, request) => {
+        setStatus(`${plugin.name} command ran`);
+        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+      }
+    );
   }
 
   async function rollSystemCheck() {
     if (!selectedActor) return;
-    await apiPost(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
-      rollId: systemRollId(selectedActor.systemId)
-    });
-    setStatus("System roll posted");
-    await refresh();
+    const actor = selectedActor;
+    await runWorkspaceBoundAction(
+      (request) => apiPost(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/roll`, {
+        rollId: systemRollId(actor.systemId)
+      }, { signal: request.controller.signal }),
+      async (_result, request) => {
+        setStatus("System roll posted");
+        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+      }
+    );
   }
 
   async function useActorAction(rollId: string, options: ActorActionCommitOptions = {}) {
     if (!selectedActor) return;
+    const actor = selectedActor;
     try {
-      const used = await apiPost<{ actor?: Actor; updatedActors?: Actor[]; usage?: { consumed?: Array<{ label: string; remaining: number }> }; effect?: { type: string; targetActorId: string; amount?: number }; resolution?: ActorActionResolutionPreview; combatAction?: CombatAction }>(`/api/v1/campaigns/${campaignId}/systems/${selectedActor.systemId}/actors/${selectedActor.id}/roll`, {
-        rollId,
-        consumeResources: options.consumeResources ?? true,
-        applyEffect: options.applyEffect,
-        targetActorId: options.targetActorId,
-        saveOutcomes: options.saveOutcomes,
-        effectChoice: options.effectChoice
-      });
-      if (used.combatAction?.status === "pending_gm") {
-        setStatus(`${selectedActor.name} action pending GM confirmation`);
-        await refresh();
-        return;
-      }
-      const spent = used.usage?.consumed?.map((item) => `${item.label} ${item.remaining}`).join(", ");
-      const applied = used.effect ? `; ${used.effect.type} applied` : "";
-      const updatedActors = used.updatedActors && used.updatedActors.length > 0 ? used.updatedActors : used.actor ? [used.actor] : [];
-      if (updatedActors.length > 0) {
-        const updates = new Map(updatedActors.map((updatedActor) => [updatedActor.id, updatedActor]));
-        setSnapshot((current) => ({ ...current, actors: current.actors.map((actor) => updates.get(actor.id) ?? actor) }));
-      }
-      setStatus(spent ? `${selectedActor.name} used action: ${spent}${applied}` : `${selectedActor.name} action posted${applied}`);
+      await runWorkspaceBoundAction(
+        (request) => apiPost<{ actor?: Actor; updatedActors?: Actor[]; usage?: { consumed?: Array<{ label: string; remaining: number }> }; effect?: { type: string; targetActorId: string; amount?: number }; resolution?: ActorActionResolutionPreview; combatAction?: CombatAction }>(`/api/v1/campaigns/${request.campaignId}/systems/${actor.systemId}/actors/${actor.id}/roll`, {
+          rollId,
+          consumeResources: options.consumeResources ?? true,
+          applyEffect: options.applyEffect,
+          targetActorId: options.targetActorId,
+          saveOutcomes: options.saveOutcomes,
+          effectChoice: options.effectChoice
+        }, { signal: request.controller.signal }),
+        async (used, request) => {
+          if (used.combatAction?.status === "pending_gm") {
+            setStatus(`${actor.name} action pending GM confirmation`);
+            await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
+            return;
+          }
+          const spent = used.usage?.consumed?.map((item) => `${item.label} ${item.remaining}`).join(", ");
+          const applied = used.effect ? `; ${used.effect.type} applied` : "";
+          const updatedActors = used.updatedActors && used.updatedActors.length > 0 ? used.updatedActors : used.actor ? [used.actor] : [];
+          if (updatedActors.length > 0) {
+            const updates = new Map(updatedActors.map((updatedActor) => [updatedActor.id, updatedActor]));
+            setSnapshot((current) => ({ ...current, actors: current.actors.map((currentActor) => updates.get(currentActor.id) ?? currentActor) }));
+          }
+          setStatus(spent ? `${actor.name} used action: ${spent}${applied}` : `${actor.name} action posted${applied}`);
+        }
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     }
@@ -5089,29 +5623,35 @@ export function App() {
     // Resolve origins BEFORE opening so the step list never reshuffles under
     // the user. Origin catalogs exist only for the D&D SRD runtime; other
     // systems get the simple name-and-template flow.
+    const request = currentWorkspaceRequestIdentity();
     const system = snapshot.systems.find((item) => item.active) ?? snapshot.systems[0];
     if (system) {
       try {
-        setCharacterOrigins(await apiGet<CharacterOriginsInfo>(`/api/v1/campaigns/${campaignId}/systems/${system.id}/character-origins`));
+        const origins = await apiGet<CharacterOriginsInfo>(`/api/v1/campaigns/${request.campaignId}/systems/${system.id}/character-origins`);
+        if (!workspaceIdentityIsCurrent(request)) return;
+        setCharacterOrigins(origins);
       } catch {
-        setCharacterOrigins(undefined);
+        if (workspaceIdentityIsCurrent(request)) setCharacterOrigins(undefined);
       }
     } else {
       setCharacterOrigins(undefined);
     }
+    if (!workspaceIdentityIsCurrent(request)) return;
     setCharacterCreatorOpen(true);
   }
 
   async function createCharacterFromCreator(template: CharacterTemplateInfo, input: CharacterCreateInput) {
-    const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${campaignId}/systems/${template.systemId}/characters`, {
+    const request = currentWorkspaceRequestIdentity();
+    const created = await apiPost<{ actor: Actor }>(`/api/v1/campaigns/${request.campaignId}/systems/${template.systemId}/characters`, {
       templateId: template.id,
       ...input,
       name: input.name.trim() || template.name
     });
+    if (!workspaceIdentityIsCurrent(request)) return;
     setCharacterCreatorOpen(false);
     setStatus(`${created.actor.name} joined the party`);
     setTab("actors");
-    await refresh();
+    await refresh(request.campaignId, realtimeSelectionRef.current.sceneId);
   }
 
   async function importSystemCharacter() {
@@ -5188,186 +5728,200 @@ export function App() {
   }
 
   async function disableAdminUser(user: AdminUserInfo) {
-    await apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, {
-      disabled: true,
-      disabledReason: "Disabled from admin console"
-    });
-    setAdminStatus(`${user.displayName} disabled`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, {
+        disabled: true,
+        disabledReason: "Disabled from admin console"
+      }, { signal: request.controller.signal }),
+      () => `${user.displayName} disabled`
+    );
   }
 
   async function enableAdminUser(user: AdminUserInfo) {
-    await apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, {
-      disabled: false
-    });
-    setAdminStatus(`${user.displayName} enabled`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, { disabled: false }, { signal: request.controller.signal }),
+      () => `${user.displayName} enabled`
+    );
   }
 
   async function requireAdminPasswordReset(user: AdminUserInfo) {
-    await apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, {
-      passwordResetRequired: true
-    });
-    setAdminStatus(`${user.displayName} must reset password`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPatch<AdminUserInfo>(`/api/v1/admin/users/${user.id}`, { passwordResetRequired: true }, { signal: request.controller.signal }),
+      () => `${user.displayName} must reset password`
+    );
   }
 
   async function issueAdminPasswordReset(user: AdminUserInfo) {
-    const reset = await apiPost<AdminPasswordResetInfo>(`/api/v1/admin/users/${user.id}/password-reset`, {
-      returnTo: `${window.location.origin}/reset-password`
-    });
-    setAdminStatus(`Queued ${reset.email.status} reset email for ${reset.email.to}`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<AdminPasswordResetInfo>(`/api/v1/admin/users/${user.id}/password-reset`, {
+        returnTo: `${window.location.origin}/reset-password`
+      }, { signal: request.controller.signal }),
+      (reset) => `Queued ${reset.email.status} reset email for ${reset.email.to}`
+    );
   }
 
   async function revokeAdminUserSessions(user: AdminUserInfo) {
-    const result = await apiDelete<{ revoked: number }>(`/api/v1/admin/users/${user.id}/sessions`);
-    setAdminStatus(`Revoked ${result.revoked} sessions for ${user.displayName}`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiDelete<{ revoked: number }>(`/api/v1/admin/users/${user.id}/sessions`, { signal: request.controller.signal }),
+      (result) => `Revoked ${result.revoked} sessions for ${user.displayName}`
+    );
   }
 
   async function revokeAdminSession(session: AdminSessionInfo) {
-    await apiDelete<{ ok: boolean }>(`/api/v1/admin/sessions/${session.id}`);
-    setAdminStatus(`Revoked session for ${session.user.displayName}`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiDelete<{ ok: boolean }>(`/api/v1/admin/sessions/${session.id}`, { signal: request.controller.signal }),
+      () => `Revoked session for ${session.user.displayName}`
+    );
   }
 
   async function revokeAdminRiskSessions() {
     const staleDays = adminSnapshot?.authOperations.sessions.staleDays ?? 30;
-    const result = await apiPost<{ matched: number; revoked: number; remainingRiskSessionCount: number }>("/api/v1/admin/sessions/risk/revoke", {
-      staleDays,
-      reasons: ["expired", "stale", "disabled_user", "unknown_user"],
-      dryRun: false
-    });
-    setAdminStatus(`Revoked ${result.revoked} of ${result.matched} risk sessions; ${result.remainingRiskSessionCount} remain`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<{ matched: number; revoked: number; remainingRiskSessionCount: number }>("/api/v1/admin/sessions/risk/revoke", {
+        staleDays,
+        reasons: ["expired", "stale", "disabled_user", "unknown_user"],
+        dryRun: false
+      }, { signal: request.controller.signal }),
+      (result) => `Revoked ${result.revoked} of ${result.matched} risk sessions; ${result.remainingRiskSessionCount} remain`
+    );
   }
 
   async function pruneExpiredPasswordResets() {
-    const result = await apiPost<{ matched: number; pruned: number; expiredRemaining: number }>("/api/v1/admin/password-resets/prune", {
-      includeExpired: true,
-      includeUsed: false,
-      dryRun: false
-    });
-    setAdminStatus(`Pruned ${result.pruned} of ${result.matched} expired password resets; ${result.expiredRemaining} remain`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<{ matched: number; pruned: number; expiredRemaining: number }>("/api/v1/admin/password-resets/prune", {
+        includeExpired: true,
+        includeUsed: false,
+        dryRun: false
+      }, { signal: request.controller.signal }),
+      (result) => `Pruned ${result.pruned} of ${result.matched} expired password resets; ${result.expiredRemaining} remain`
+    );
   }
 
   async function retryAdminEmail(email: EmailOutboxMessage) {
-    const retried = await apiPost<EmailOutboxMessage>(`/api/v1/admin/email-outbox/${email.id}/retry`, {});
-    setAdminStatus(`Email to ${retried.to} is ${retried.status}`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<EmailOutboxMessage>(`/api/v1/admin/email-outbox/${email.id}/retry`, {}, { signal: request.controller.signal }),
+      (retried) => `Email to ${retried.to} is ${retried.status}`
+    );
   }
 
   async function retryAllAdminEmails() {
-    const result = await apiPost<AdminEmailOutboxRetryAllResult>("/api/v1/admin/email-outbox/retry-all", {
-      status: "retryable",
-      dryRun: false
-    });
-    setAdminStatus(`Retried ${result.retried} emails; ${result.delivered} delivered, ${result.failed} failed, ${result.skipped} skipped`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<AdminEmailOutboxRetryAllResult>("/api/v1/admin/email-outbox/retry-all", {
+        status: "retryable",
+        dryRun: false
+      }, { signal: request.controller.signal }),
+      (result) => `Retried ${result.retried} emails; ${result.delivered} delivered, ${result.failed} failed, ${result.skipped} skipped`
+    );
   }
 
   async function retryAdminAiToolCall(toolCallId: string, toolName: string) {
-    const result = await apiPost<{ matched: number; retried: number; skipped: number; completed: number; failed: number }>("/api/v1/admin/ai/tool-calls/retry", {
-      toolCallId,
-      dryRun: false
-    });
-    setAdminStatus(`Retried ${result.retried} ${toolName} call; ${result.completed} completed, ${result.failed} failed, ${result.skipped} skipped`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<{ matched: number; retried: number; skipped: number; completed: number; failed: number }>("/api/v1/admin/ai/tool-calls/retry", {
+        toolCallId,
+        dryRun: false
+      }, { signal: request.controller.signal }),
+      (result) => `Retried ${result.retried} ${toolName} call; ${result.completed} completed, ${result.failed} failed, ${result.skipped} skipped`
+    );
   }
 
   async function failStaleAiThreads() {
-    const result = await apiPost<{ matched: number; updated: number }>("/api/v1/admin/ai/threads/stale/fail", {
-      dryRun: false
-    });
-    setAdminStatus(`Marked ${result.updated} of ${result.matched} stale AI threads failed`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<{ matched: number; updated: number }>("/api/v1/admin/ai/threads/stale/fail", { dryRun: false }, { signal: request.controller.signal }),
+      (result) => `Marked ${result.updated} of ${result.matched} stale AI threads failed`
+    );
   }
 
   async function failStaleAiToolCalls() {
-    const result = await apiPost<{ matched: number; updated: number }>("/api/v1/admin/ai/tool-calls/stale/fail", {
-      dryRun: false
-    });
-    setAdminStatus(`Marked ${result.updated} of ${result.matched} stale AI tool calls failed`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<{ matched: number; updated: number }>("/api/v1/admin/ai/tool-calls/stale/fail", { dryRun: false }, { signal: request.controller.signal }),
+      (result) => `Marked ${result.updated} of ${result.matched} stale AI tool calls failed`
+    );
   }
 
   async function rejectStaleAiProposals(includeApproved = false) {
-    const result = await apiPost<{ matched: number; updated: number }>("/api/v1/admin/ai/proposals/stale/reject", {
-      dryRun: false,
-      includeApproved
-    });
-    setAdminStatus(`Rejected ${result.updated} of ${result.matched} stale ${includeApproved ? "approved" : "pending"} AI proposals`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<{ matched: number; updated: number }>("/api/v1/admin/ai/proposals/stale/reject", {
+        dryRun: false,
+        includeApproved
+      }, { signal: request.controller.signal }),
+      (result) => `Rejected ${result.updated} of ${result.matched} stale ${includeApproved ? "approved" : "pending"} AI proposals`
+    );
   }
 
   async function cleanupStoredAssetBytes() {
-    const result = await apiPost<{ deleted: number; missingMarked: number; skipped: number; failed: number }>("/api/v1/admin/assets/cleanup", {
-      includeDeleted: true,
-      includeExpired: true,
-      dryRun: false
-    });
-    setAdminStatus(`Cleaned ${result.deleted} asset objects, marked ${result.missingMarked} missing, skipped ${result.skipped}, failed ${result.failed}`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<{ deleted: number; missingMarked: number; skipped: number; failed: number }>("/api/v1/admin/assets/cleanup", {
+        includeDeleted: true,
+        includeExpired: true,
+        dryRun: false
+      }, { signal: request.controller.signal }),
+      (result) => `Cleaned ${result.deleted} asset objects, marked ${result.missingMarked} missing, skipped ${result.skipped}, failed ${result.failed}`
+    );
   }
 
   async function migrateStoredAssetBytes() {
-    const result = await apiPost<{ migrated: number; skipped: number; failed: number; targetProvider: string }>("/api/v1/admin/assets/migrate", {
-      includeDeleted: false,
-      dryRun: false
-    });
-    setAdminStatus(`Migrated ${result.migrated} assets to ${result.targetProvider}, skipped ${result.skipped}, failed ${result.failed}`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<{ migrated: number; skipped: number; failed: number; targetProvider: string }>("/api/v1/admin/assets/migrate", {
+        includeDeleted: false,
+        dryRun: false
+      }, { signal: request.controller.signal }),
+      (result) => `Migrated ${result.migrated} assets to ${result.targetProvider}, skipped ${result.skipped}, failed ${result.failed}`
+    );
   }
 
   async function purgeAssetCdnCache(assetId: string, assetName: string) {
-    const result = await apiPost<{ status: string }>(`/api/v1/admin/assets/${assetId}/purge-cache`, {
-      reason: "Purged from admin console"
-    });
-    setAdminStatus(`${assetName} CDN purge ${result.status}`);
-    await refreshAdmin();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<{ status: string }>(`/api/v1/admin/assets/${assetId}/purge-cache`, {
+        reason: "Purged from admin console"
+      }, { signal: request.controller.signal }),
+      (result) => `${assetName} CDN purge ${result.status}`
+    );
   }
 
   async function quarantineAssetIntegrityFailures() {
-    const result = await apiPost<AdminAssetIntegrityQuarantineResult>("/api/v1/admin/assets/integrity/quarantine", {
-      dryRun: false,
-      reason: "Archived from admin integrity console"
-    });
-    setAdminStatus(`Archived ${result.archived} broken assets, skipped ${result.skipped}, failed ${result.failed}`);
-    await refreshAdmin();
-    await refresh();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<AdminAssetIntegrityQuarantineResult>("/api/v1/admin/assets/integrity/quarantine", {
+        dryRun: false,
+        reason: "Archived from admin integrity console"
+      }, { signal: request.controller.signal }),
+      (result) => `Archived ${result.archived} broken assets, skipped ${result.skipped}, failed ${result.failed}`,
+      { refreshWorkspace: true }
+    );
   }
 
   async function updatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus) {
-    await apiPatch<AdminPluginReviewInfo>(`/api/v1/admin/plugins/reviews/${encodeURIComponent(review.review.reviewKey)}`, {
-      status,
-      notes: status === "approved" ? "Approved from admin console" : status === "rejected" ? "Rejected from admin console" : undefined
-    });
-    setAdminStatus(`${review.plugin.name} ${status}`);
-    await refreshAdmin();
-    await refresh();
+    await runWorkspaceAdminAction(
+      (request) => apiPatch<AdminPluginReviewInfo>(`/api/v1/admin/plugins/reviews/${encodeURIComponent(review.review.reviewKey)}`, {
+        status,
+        notes: status === "approved" ? "Approved from admin console" : status === "rejected" ? "Rejected from admin console" : undefined
+      }, { signal: request.controller.signal }),
+      () => `${review.plugin.name} ${status}`,
+      { refreshWorkspace: true }
+    );
   }
 
   async function syncAdminPluginRegistries() {
-    const result = await apiPost<{ registries: unknown[]; plugins: unknown[] }>("/api/v1/admin/plugins/registry/sync", {});
-    setAdminStatus(`Synced ${result.registries.length} registries and imported ${result.plugins.length} plugin packages`);
-    await refreshAdmin();
-    await refresh();
+    await runWorkspaceAdminAction(
+      (request) => apiPost<{ registries: unknown[]; plugins: unknown[] }>("/api/v1/admin/plugins/registry/sync", {}, { signal: request.controller.signal }),
+      (result) => `Synced ${result.registries.length} registries and imported ${result.plugins.length} plugin packages`,
+      { refreshWorkspace: true }
+    );
   }
 
   async function createScimGroupRoleMapping(input: AdminScimGroupRoleMappingInput) {
-    const result = await apiPost<AdminScimGroupRoleMappingResult>("/api/v1/admin/scim/group-role-mappings", input);
-    setAdminStatus(`Mapped ${scimMappingLabel(result.mapping)} with ${result.sync.createdMemberships} created, ${result.sync.updatedMemberships} updated`);
-    await refreshAdmin();
-    await refresh(input.campaignId);
+    await runWorkspaceAdminAction(
+      (request) => apiPost<AdminScimGroupRoleMappingResult>("/api/v1/admin/scim/group-role-mappings", input, { signal: request.controller.signal }),
+      (result) => `Mapped ${scimMappingLabel(result.mapping)} with ${result.sync.createdMemberships} created, ${result.sync.updatedMemberships} updated`,
+      { refreshWorkspace: true }
+    );
   }
 
   async function deleteScimGroupRoleMapping(mapping: AdminScimGroupRoleMapping) {
-    const result = await apiDelete<{ removedMemberships: number }>(`/api/v1/admin/scim/group-role-mappings/${mapping.id}`);
-    setAdminStatus(`Removed ${scimMappingLabel(mapping)} and ${result.removedMemberships} sourced memberships`);
-    await refreshAdmin();
-    await refresh(mapping.campaignId);
+    await runWorkspaceAdminAction(
+      (request) => apiDelete<{ removedMemberships: number }>(`/api/v1/admin/scim/group-role-mappings/${mapping.id}`, { signal: request.controller.signal }),
+      (result) => `Removed ${scimMappingLabel(mapping)} and ${result.removedMemberships} sourced memberships`,
+      { refreshWorkspace: true }
+    );
   }
 
   async function exportCampaign() {
@@ -5707,7 +6261,7 @@ export function App() {
   ] satisfies Array<{ id: ManageCategoryId; label: string; description: string; icon: React.ReactNode; badge?: string; visible?: boolean }>;
   const visibleManageCategories = manageCategories.filter((category) => category.visible !== false);
   const activeManageCategory = visibleManageCategories.some((category) => category.id === manageCategory) ? manageCategory : (visibleManageCategories[0]?.id ?? "account");
-  const adminPanel = snapshot.session?.serverAdmin ? <AdminPanel admin={adminSnapshot} campaigns={snapshot.campaigns} systems={snapshot.systems} workspaceDefaults={snapshot.workspaceDefaults} organizationMembers={snapshot.organizationMembers} currentUserId={currentUserId} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onRevokeRiskSessions={revokeAdminRiskSessions} onPruneExpiredPasswordResets={pruneExpiredPasswordResets} onRetryEmail={retryAdminEmail} onRetryAllEmails={retryAllAdminEmails} onRetryAiToolCall={retryAdminAiToolCall} onFailStaleAiThreads={failStaleAiThreads} onFailStaleAiToolCalls={failStaleAiToolCalls} onRejectStaleAiProposals={rejectStaleAiProposals} onCleanupStoredAssetBytes={cleanupStoredAssetBytes} onMigrateStoredAssetBytes={migrateStoredAssetBytes} onQuarantineAssetIntegrityFailures={quarantineAssetIntegrityFailures} onPurgeAssetCdnCache={purgeAssetCdnCache} onUpdatePluginReview={updatePluginReview} onSyncPluginRegistries={syncAdminPluginRegistries} onUpdateWorkspaceDefaults={updateOrganizationWorkspaceDefaults} onAddOrganizationMember={addOrganizationMember} onUpdateOrganizationMember={updateOrganizationMember} onRemoveOrganizationMember={deleteOrganizationMember} onCreateScimMapping={createScimGroupRoleMapping} onDeleteScimMapping={deleteScimGroupRoleMapping} /> : null;
+  const adminPanel = snapshot.session?.serverAdmin ? <AdminPanel admin={adminSnapshot} campaigns={snapshot.campaigns} systems={snapshot.systems} workspaceDefaults={snapshot.workspaceDefaults} organizationMembers={snapshot.organizationMembers} currentUserId={currentUserId} workspaceKey={`${campaignId}:${currentUserId}`} status={adminStatus} onRefresh={refreshAdmin} onDisableUser={disableAdminUser} onEnableUser={enableAdminUser} onRequireReset={requireAdminPasswordReset} onIssueReset={issueAdminPasswordReset} onRevokeUserSessions={revokeAdminUserSessions} onRevokeSession={revokeAdminSession} onRevokeRiskSessions={revokeAdminRiskSessions} onPruneExpiredPasswordResets={pruneExpiredPasswordResets} onRetryEmail={retryAdminEmail} onRetryAllEmails={retryAllAdminEmails} onRetryAiToolCall={retryAdminAiToolCall} onFailStaleAiThreads={failStaleAiThreads} onFailStaleAiToolCalls={failStaleAiToolCalls} onRejectStaleAiProposals={rejectStaleAiProposals} onCleanupStoredAssetBytes={cleanupStoredAssetBytes} onMigrateStoredAssetBytes={migrateStoredAssetBytes} onQuarantineAssetIntegrityFailures={quarantineAssetIntegrityFailures} onPurgeAssetCdnCache={purgeAssetCdnCache} onUpdatePluginReview={updatePluginReview} onSyncPluginRegistries={syncAdminPluginRegistries} onUpdateWorkspaceDefaults={updateOrganizationWorkspaceDefaults} onAddOrganizationMember={addOrganizationMember} onUpdateOrganizationMember={updateOrganizationMember} onRemoveOrganizationMember={deleteOrganizationMember} onCreateScimMapping={createScimGroupRoleMapping} onDeleteScimMapping={deleteScimGroupRoleMapping} /> : null;
   const accountOnlyManageMode = visibleManageCategories.length === 1 && visibleManageCategories[0]?.id === "account";
   const manageWorkspaceEyebrow = accountOnlyManageMode ? "Account" : "Manage";
   const manageWorkspaceHeading = accountOnlyManageMode ? (snapshot.session?.user.displayName ?? "Account settings") : (selectedCampaign?.name ?? "Workspace settings");
@@ -5763,8 +6317,8 @@ export function App() {
     }
     if (commandId.startsWith("campaign:")) {
       const nextCampaignId = commandId.slice("campaign:".length);
-      setCampaignId(nextCampaignId);
-      if (!blankCanvasDemoOpen) refresh(nextCampaignId).catch((error) => setStatus(errorMessage(error)));
+      selectWorkspaceContext(nextCampaignId, "");
+      if (!blankCanvasDemoOpen) refresh(nextCampaignId, "").catch((error) => setStatus(errorMessage(error)));
       return;
     }
     if (commandId.startsWith("roll:")) {
@@ -5894,8 +6448,8 @@ export function App() {
               className={campaign.id === campaignId ? "nav-item active" : "nav-item"}
               key={campaign.id}
               onClick={() => {
-                setCampaignId(campaign.id);
-                if (!blankCanvasDemoOpen) refresh(campaign.id).catch(console.error);
+                selectWorkspaceContext(campaign.id, "");
+                if (!blankCanvasDemoOpen) refresh(campaign.id, "").catch(console.error);
               }}
             >
               <Shield size={16} />
@@ -6982,6 +7536,11 @@ export function App() {
                 </Fragment>
               );
             })}
+            {canQuickCreateScene && showTrailingSceneCreateButton && (
+              <button className="icon-button scene-tab-add" type="button" aria-label="Add scene after newest scene" title="Add scene after newest scene" onClick={() => createScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
+                <Plus size={16} />
+              </button>
+            )}
             {visibleScenes.length === 0 && accessibleScenes.length === 0 && canQuickCreateScene && (
               <button className="icon-button scene-tab-add" type="button" aria-label="Add scene" title="Add scene" onClick={() => createScene().catch((error) => setStatus(error instanceof Error ? error.message : String(error)))}>
                 <Plus size={16} />
@@ -7314,7 +7873,7 @@ export function App() {
               {inspectorTabs.includes("plugins") && <TabButton active={tab === "plugins"} icon={<Boxes size={15} />} label="Plugins" onClick={() => setTab("plugins")} />}
             </div>
             {tab === "actors" && <ActorPanel campaignId={campaignId} actor={selectedActor} token={selectedToken} systemLabel={snapshot.systems.find((system) => system.id === selectedActor?.systemId)?.name ?? selectedActor?.systemId} scene={selectedScene} currentUserId={currentUserId} actors={snapshot.actors} tokens={snapshot.tokens} combat={activeCombat} members={snapshot.members} assets={snapshot.assets} items={snapshot.items} compendiumEntries={compendiumEntries} compendiumSearch={compendiumSearch} setCompendiumSearch={setCompendiumSearch} compendiumStatus={compendiumStatus} actionTargetActorId={actorActionTargetId} setActionTargetActorId={setActorActionTargetId} actionApplyEffect={actorActionApplyEffect} setActionApplyEffect={setActorActionApplyEffect} actionConsumeResources={actorActionConsumeResources} setActionConsumeResources={setActorActionConsumeResources} updateActorHp={updateActorHp} adjustActorHp={adjustActorHp} awardActorXp={awardActorXp} xpProgress={xpProgress} advancementReady={Boolean(xpProgress?.readyToLevel && advancementOptions.length > 0 && canUpdateSelectedActor)} onLevelUp={() => setAdvancementModalOpen(true)} updateActorData={updateActorData} toggleActorCondition={toggleActorCondition} updateItemData={updateItemData} assignItemToActor={assignItemToActor} updateToken={updateSelectedToken} onUploadTokenImage={uploadSelectedTokenImage} targetToken={setTokenTarget} targetTokens={setTokenTargets} deleteToken={deleteSelectedToken} updateTokenVision={updateSelectedTokenVision} useActorAction={useActorAction} onImportCompendiumEntry={importCompendiumEntry} onPurchaseCompendiumEntry={purchaseCompendiumEntry} canCreateToken={hasPermission("token.create")} canUpdateActor={canUpdateSelectedActor} canUpdateToken={hasPermission("token.update")} canDeleteToken={hasPermission("token.delete")} canUseAction={canUpdateSelectedActor && hasPermission("dice.roll")} />}
-            {tab === "journal" && <JournalPanel journals={snapshot.journals} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} onGenerateRecap={generateSessionRecap} canCreate={hasPermission("journal.create")} />}
+            {tab === "journal" && <JournalPanel journals={snapshot.journals} members={snapshot.members} actors={partyActors} title={newJournalTitle} setTitle={setNewJournalTitle} body={newJournalBody} setBody={setNewJournalBody} visibility={newJournalVisibility} setVisibility={setNewJournalVisibility} tags={newJournalTags} setTags={setNewJournalTags} onCreate={createJournal} onGenerateRecap={generateSessionRecap} canCreate={hasPermission("journal.create")} />}
             {tab === "chat" && <ChatRail campaignId={campaignId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onClearReply={() => setChatReplyToMessageId("")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => setDice3dEnabled((enabled) => !enabled)} />}
             {tab === "combat" && <CombatPanel combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={snapshot.tokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={startCombat} onPlanEncounter={planSystemEncounter} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} canAwardXp={hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} canManage={hasPermission("combat.manage")} />}
             {tab === "content" && <ContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onAnalyzePdf={analyzePdfContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
@@ -7362,6 +7921,7 @@ export function App() {
           onApprovalModeChange={setAiAgentApprovalMode}
           onPromptChange={setAiAgentPrompt}
           onSend={() => sendAiAgentMessage().catch((error) => setAiAgentStatus(errorMessage(error)))}
+          onNewChat={startNewAiAgentChat}
           onStop={stopAiAgentTurn}
           onUploadReference={uploadAiAgentReferenceAsset}
           onClearReference={clearAiAgentReferenceAsset}
@@ -7408,7 +7968,7 @@ export function App() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setAdvancementModalOpen(false);
         }}>
-          <div className="modal-dialog advancement-modal" role="dialog" aria-modal="true" aria-label="Level up actor">
+          <div ref={advancementModalRef} className="modal-dialog advancement-modal" role="dialog" aria-modal="true" aria-label="Level up actor" tabIndex={-1}>
             <div className="operator-heading">
               <div>
                 <div className="section-title">Advancement</div>
@@ -7447,7 +8007,7 @@ export function App() {
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setShortcutOverlayOpen(false);
         }}>
-          <div className="modal-dialog shortcut-overlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+          <div ref={shortcutModalRef} className="modal-dialog shortcut-overlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" tabIndex={-1}>
             <div className="operator-heading">
               <div className="section-title">Keyboard Shortcuts</div>
               <button className="icon-button" type="button" aria-label="Close keyboard shortcuts" onClick={() => setShortcutOverlayOpen(false)}>
@@ -7651,10 +8211,7 @@ function CommandPalette(props: { commands: PaletteCommand[]; onRun(commandId: st
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  const dialogRef = useModalAccessibility<HTMLDivElement>(props.onClose, { initialFocusRef: inputRef });
 
   const queryFormula = paletteDiceFormula(query);
   const matches = filterPaletteCommands(props.commands, query).slice(0, 12);
@@ -7675,7 +8232,7 @@ function CommandPalette(props: { commands: PaletteCommand[]; onRun(commandId: st
         if (event.target === event.currentTarget) props.onClose();
       }}
     >
-      <div className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette">
+      <div ref={dialogRef} className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette" tabIndex={-1}>
         <div className="command-palette-input-row">
           <Search size={16} aria-hidden="true" />
           <input
@@ -7803,6 +8360,7 @@ function AiAgentPanel(props: {
   onApprovalModeChange(value: AiAgentApprovalMode): void;
   onPromptChange(value: string): void;
   onSend(): void;
+  onNewChat(): void;
   onStop(): void;
   onUploadReference(file: File, input?: HTMLInputElement): Promise<void>;
   onClearReference(): void;
@@ -7814,8 +8372,15 @@ function AiAgentPanel(props: {
   const agentProposals = visibleAiAgentProposals(props.proposals, props.messages, props.hiddenProposalIds);
   const codexAuthUrl = props.codexAuth?.authUrl ?? props.codexAuth?.verificationUrl;
   const agentPanel = useMovablePanel(initialAiAgentPanelPosition, initialAiAgentPanelSize, { minWidth: 340, minHeight: 420 });
+  const feedRef = useRef<HTMLElement | null>(null);
   const [referenceDragActive, setReferenceDragActive] = useState(false);
+  const hasStreamingAssistant = props.messages.some((message) => message.role === "assistant" && message.streaming);
   const agentStatusLabel = props.busy ? "Working" : agentProposals.length > 0 ? `${formatNumber(agentProposals.length)} ${agentProposals.length === 1 ? "proposal" : "proposals"}` : "Ready";
+  useEffect(() => {
+    const feed = feedRef.current;
+    if (!feed) return;
+    feed.scrollTop = feed.scrollHeight;
+  }, [props.busy, props.messages]);
   const dragHasFiles = (event: ReactDragEvent<HTMLElement>): boolean => Array.from(event.dataTransfer.types).includes("Files");
   const draggedImageFile = (event: ReactDragEvent<HTMLElement>): File | undefined => Array.from(event.dataTransfer.files).find((file) => file.type.startsWith("image/"));
   const handleReferenceDragEnter = (event: ReactDragEvent<HTMLFormElement>) => {
@@ -7877,18 +8442,37 @@ function AiAgentPanel(props: {
               <option value="auto">Auto approve and apply</option>
             </select>
           </label>
+          <button className="ghost-button ai-agent-new-chat-button" type="button" onClick={props.onNewChat} disabled={props.busy} aria-label="Start new AI Agent chat" title="Start new chat">
+            <Plus size={14} /> New chat
+          </button>
         </div>
-        <section className="ai-agent-feed" aria-label="AI Agent messages">
+        <section className="ai-agent-feed" aria-label="AI Agent messages" ref={feedRef}>
           {props.messages.length === 0 ? (
             <div className="empty-state compact">Ask for table prep, board edits, proposal review, or rules-supported actions.</div>
           ) : (
             props.messages.map((message) => (
               <article className={`ai-agent-message ${message.role}`} key={message.id}>
                 <span>{message.role === "assistant" ? "Agent" : message.role === "system" ? "System" : "You"}</span>
-                <p>{message.content}</p>
-                {message.reasoning && message.reasoning.length > 0 && (
+                {message.progress && message.streaming && <p className="ai-agent-progress">{message.progress}</p>}
+                {message.activity && message.activity.length > 0 && (
+                  <div className="ai-agent-activity" aria-label="Agent activity">
+                    {message.activity.map((entry, index) => (
+                      <p key={`${message.id}-activity-${index}`}>{entry}</p>
+                    ))}
+                  </div>
+                )}
+                {message.content.trim() && <p>{message.content}</p>}
+                {message.reasoning && message.reasoning.length > 0 && message.streaming && (
+                  <div className="ai-agent-reasoning live" aria-label="Reasoning summary">
+                    <span>Reasoning summary</span>
+                    {message.reasoning.map((trace, index) => (
+                      <p key={`${message.id}-reasoning-${index}`}>{trace}</p>
+                    ))}
+                  </div>
+                )}
+                {message.reasoning && message.reasoning.length > 0 && !message.streaming && (
                   <details className="ai-agent-reasoning">
-                    <summary>Reasoning trace</summary>
+                    <summary>Reasoning summary</summary>
                     {message.reasoning.map((trace, index) => (
                       <p key={`${message.id}-reasoning-${index}`}>{trace}</p>
                     ))}
@@ -7897,7 +8481,7 @@ function AiAgentPanel(props: {
               </article>
             ))
           )}
-          {props.busy && (
+          {props.busy && !hasStreamingAssistant && (
             <article className="ai-agent-working" aria-live="polite">
               <Bot className="ai-agent-working-bot" size={24} />
               <div>
@@ -8060,14 +8644,12 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [fullSheetOpen, setFullSheetOpen] = useState(false);
   const deleteConfirmRef = useRef<HTMLButtonElement | null>(null);
-  const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
   const tokenImageInputRef = useRef<HTMLInputElement | null>(null);
   const sheetPanel = useMovablePanel(initialActorSheetPanelPosition, initialActorSheetPanelSize, { minWidth: 380, minHeight: 360 });
-  useEffect(() => {
-    if (deleteDialogOpen) deleteConfirmRef.current?.focus();
-  }, [deleteDialogOpen]);
+  const deleteDialogRef = useModalAccessibility<HTMLDivElement>(() => setDeleteDialogOpen(false), { enabled: deleteDialogOpen, initialFocusRef: deleteConfirmRef });
   useEffect(() => {
     setFullSheetOpen(false);
+    setDeleteDialogOpen(false);
   }, [props.token?.id]);
   useEffect(() => {
     if (!fullSheetOpen) return;
@@ -8437,7 +9019,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           ))}
           <div className="sheet-row">
             <label htmlFor="actor-hp-tab">Set HP</label>
-            <input id="actor-hp-tab" aria-label="Actor sheet current HP" type="number" value={hp?.current ?? 0} disabled={!props.canUpdateActor} onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))} />
+            <input id="actor-hp-tab" aria-label="Actor sheet current HP" key={`sheet:${props.actor.id}:${hp?.current ?? 0}`} type="number" defaultValue={hp?.current ?? 0} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorHp(props.actor!, Number(event.currentTarget.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
           </div>
           {props.xpProgress && (
             <div className="xp-row">
@@ -9050,24 +9632,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
           </button>
           {deleteDialogOpen && props.token && (
             <div className="modal-backdrop" role="presentation">
-              <div className="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="token-delete-dialog-title" aria-describedby="token-delete-dialog-description" onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.stopPropagation();
-                  setDeleteDialogOpen(false);
-                }
-                if (event.key === "Tab") {
-                  const first = deleteConfirmRef.current;
-                  const last = deleteCancelRef.current;
-                  if (!first || !last) return;
-                  if (event.shiftKey && document.activeElement === first) {
-                    event.preventDefault();
-                    last.focus();
-                  } else if (!event.shiftKey && document.activeElement === last) {
-                    event.preventDefault();
-                    first.focus();
-                  }
-                }
-              }}>
+              <div ref={deleteDialogRef} className="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="token-delete-dialog-title" aria-describedby="token-delete-dialog-description" tabIndex={-1}>
                 <div className="section-title" id="token-delete-dialog-title">Confirm token deletion</div>
                 <p id="token-delete-dialog-description">Delete {props.token.name} from {props.scene?.name ?? "the current scene"}. This removes the token from the scene and keeps the actor sheet.</p>
                 <div className="admin-actions">
@@ -9077,7 +9642,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
                   }}>
                     <X size={16} /> Confirm Delete Token
                   </button>
-                  <button className="ghost-button" type="button" ref={deleteCancelRef} onClick={() => setDeleteDialogOpen(false)}>
+                  <button className="ghost-button" type="button" onClick={() => setDeleteDialogOpen(false)}>
                     Cancel
                   </button>
                 </div>
@@ -9197,7 +9762,7 @@ function ActorPanel(props: { campaignId: string; actor?: Actor; token?: Token; s
       )}
       <div className="sheet-row">
         <label htmlFor="actor-hp">Current HP</label>
-        <input id="actor-hp" type="number" value={hp?.current ?? 0} disabled={!props.canUpdateActor} onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))} />
+        <input id="actor-hp" key={`detail:${props.actor.id}:${hp?.current ?? 0}`} type="number" defaultValue={hp?.current ?? 0} disabled={!props.canUpdateActor} onBlur={(event) => props.updateActorHp(props.actor!, Number(event.currentTarget.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
       </div>
       <div className="sheet-row">
         <label htmlFor="actor-conditions">Actor conditions</label>
@@ -9333,7 +9898,117 @@ function reasoningTracesFromEvents(events: AiAgentProviderEvent[]): string[] {
   for (const trace of completed) {
     if (!completedTraces.includes(trace)) completedTraces.push(trace);
   }
-  return (completedTraces.length > 0 ? completedTraces : traces).slice(0, 4);
+  return (completedTraces.length > 0 ? completedTraces : traces).slice(0, 12);
+}
+
+function appendReasoningDelta(reasoning: string[] | undefined, index: number, delta: string): string[] {
+  const next = [...(reasoning ?? [])];
+  const safeIndex = Math.max(0, Math.floor(index));
+  while (next.length <= safeIndex) next.push("");
+  next[safeIndex] = `${next[safeIndex] ?? ""}${delta}`;
+  return next.slice(0, 12);
+}
+
+function completedReasoningTraces(reasoning: string[] | undefined, content: string): string[] {
+  const summary = content.trim();
+  if (!summary) return reasoning ?? [];
+  return [summary, ...(reasoning ?? []).map((trace) => trace.trim()).filter((trace) => trace && trace !== summary)].slice(0, 12);
+}
+
+function activityTracesFromEvents(events: AiAgentProviderEvent[]): string[] {
+  const entries: string[] = [];
+  for (const event of events) {
+    if (event.type === "activity.reported" && typeof event.message === "string") {
+      const message = event.message.trim();
+      if (message && entries.at(-1) !== message) entries.push(message);
+    }
+    const progress = aiAgentProviderToolProgressText(event);
+    if (progress && entries.at(-1) !== progress) entries.push(progress);
+  }
+  return entries.slice(-24);
+}
+
+function appendAiAgentActivity(activity: string[] | undefined, message: string): string[] {
+  const entry = message.trim();
+  if (!entry) return activity ?? [];
+  const next = [...(activity ?? [])];
+  if (next.at(-1) !== entry) next.push(entry);
+  return next.slice(-24);
+}
+
+function aiAgentToolProgressText(event: AiAgentRealtimeEvent): string | undefined {
+  if (event.type !== "ai.tool.started" && event.type !== "ai.tool.completed") return undefined;
+  const payload = event.payload;
+  const toolName = typeof payload?.toolName === "string" ? payload.toolName.trim() : "";
+  if (!toolName) return undefined;
+  return aiAgentToolProgressTextFor(toolName, event.type === "ai.tool.started" ? "started" : payload?.status === "failed" ? "failed" : "completed");
+}
+
+function aiAgentProviderToolProgressText(event: AiAgentProviderEvent): string | undefined {
+  if (event.type !== "tool.started" && event.type !== "tool.completed") return undefined;
+  const toolName = typeof event.toolName === "string" ? event.toolName.trim() : "";
+  if (!toolName) return undefined;
+  return aiAgentToolProgressTextFor(toolName, event.type === "tool.started" ? "started" : "completed");
+}
+
+function aiAgentToolProgressTextFor(toolName: string, status: "started" | "completed" | "failed"): string {
+  const label = aiAgentToolProgressLabel(toolName);
+  return status === "started" ? `${label}...` : status === "failed" ? `${label} failed; continuing.` : `${label} complete.`;
+}
+
+function aiAgentToolProgressLabel(toolName: string): string {
+  switch (toolName) {
+    case "capture_board_view":
+      return "Checking the board view";
+    case "create_proposal":
+      return "Creating proposal";
+    case "draft_actor_token_roster":
+      return "Creating missing actors and tokens";
+    case "draft_encounter":
+      return "Building encounter";
+    case "draft_scene":
+      return "Creating scene";
+    case "draft_token_update":
+      return "Placing tokens";
+    case "generate_map_asset":
+      return "Generating map art";
+    case "generate_token_asset":
+      return "Generating token art";
+    case "modify_asset_image":
+      return "Editing image asset";
+    case "get_proposal":
+      return "Checking proposal";
+    case "read_board_state":
+      return "Reading board state";
+    case "read_scene":
+      return "Reading scene";
+    case "read_token":
+      return "Reading token";
+    case "read_asset":
+      return "Reading asset";
+    case "draft_actor_update":
+      return "Updating actor";
+    case "use_actor_action":
+      return "Resolving actor action";
+    default:
+      return titleCaseLabel(toolName.replace(/^draft_/, "").replace(/_/g, " "));
+  }
+}
+
+function upsertAiAgentMessage(messages: AiAgentMessage[], next: AiAgentMessage): AiAgentMessage[] {
+  const index = messages.findIndex((message) => message.id === next.id);
+  if (index === -1) return [...messages, next];
+  const previous = messages[index];
+  if (!previous) return [...messages, next];
+  const copy = [...messages];
+  copy[index] = {
+    ...previous,
+    ...next,
+    proposalIds: next.proposalIds ?? previous.proposalIds,
+    reasoning: next.reasoning ?? previous.reasoning,
+    activity: next.activity ?? previous.activity
+  };
+  return copy;
 }
 
 function sceneIdToOpenAfterProposalApply(proposal: Proposal): string | undefined {

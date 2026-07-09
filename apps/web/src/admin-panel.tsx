@@ -1,13 +1,18 @@
 import type { Campaign, EmailOutboxMessage, OrganizationMemberRole, OrganizationWorkspace, ScimAssignableRole, UserRole } from "@open-tabletop/core";
 import { Activity, Check, Download, KeyRound, Mail, RefreshCw, RotateCcw, Send, Shield, Timer, Trash2, Upload, UserCog, UserPlus, UserX, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, apiPost, type AdminAuthConnectionTestResult, type AdminJob, type AdminJobAlertResult, type AdminPluginReviewInfo, type AdminScimGroupRoleMapping, type AdminScimGroupRoleMappingInput, type AdminSessionInfo, type AdminSnapshot, type AdminStorageBackupResult, type AdminStorageRestoreDrillResult, type AdminStorageRestoreResult, type AdminUserInfo, type OrganizationMemberInfo, type PluginReviewStatus, type SystemRuntimeInfo } from "./api.js";
 import { campaignPermissionTemplates, identityProviderSetupGuides, type CampaignPermissionTemplateId } from "./admin-data.js";
 import { MetricTile } from "./metric-tile.js";
 import { downloadJson, errorMessage, formatAdminList, formatCost, formatDateTime, formatDuration, formatDurationSeconds, formatNumber, formatPercent, formatStorageBytes, jobStatusClass, readinessStatusClass, recordValue, registryHostLabel, stringValue, titleCaseLabel } from "./sheet-format.js";
 
+interface AdminWorkspaceRequest {
+  epoch: number;
+  controller: AbortController;
+}
 
-export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]; systems: SystemRuntimeInfo[]; workspaceDefaults?: OrganizationWorkspace; organizationMembers: OrganizationMemberInfo[]; currentUserId: string; status: string; onRefresh(): Promise<void>; onDisableUser(user: AdminUserInfo): Promise<void>; onEnableUser(user: AdminUserInfo): Promise<void>; onRequireReset(user: AdminUserInfo): Promise<void>; onIssueReset(user: AdminUserInfo): Promise<void>; onRevokeUserSessions(user: AdminUserInfo): Promise<void>; onRevokeSession(session: AdminSessionInfo): Promise<void>; onRevokeRiskSessions(): Promise<void>; onPruneExpiredPasswordResets(): Promise<void>; onRetryEmail(email: EmailOutboxMessage): Promise<void>; onRetryAllEmails(): Promise<void>; onRetryAiToolCall(toolCallId: string, toolName: string): Promise<void>; onFailStaleAiThreads(): Promise<void>; onFailStaleAiToolCalls(): Promise<void>; onRejectStaleAiProposals(includeApproved?: boolean): Promise<void>; onCleanupStoredAssetBytes(): Promise<void>; onMigrateStoredAssetBytes(): Promise<void>; onQuarantineAssetIntegrityFailures(): Promise<void>; onPurgeAssetCdnCache(assetId: string, assetName: string): Promise<void>; onUpdatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus): Promise<void>; onSyncPluginRegistries(): Promise<void>; onUpdateWorkspaceDefaults(input: Partial<OrganizationWorkspace>): Promise<void>; onAddOrganizationMember(input: { email: string; role: Exclude<OrganizationMemberRole, "owner"> }): Promise<void>; onUpdateOrganizationMember(member: OrganizationMemberInfo, role: Exclude<OrganizationMemberRole, "owner">): Promise<void>; onRemoveOrganizationMember(member: OrganizationMemberInfo): Promise<void>; onCreateScimMapping(input: AdminScimGroupRoleMappingInput): Promise<void>; onDeleteScimMapping(mapping: AdminScimGroupRoleMapping): Promise<void> }) {
+
+export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]; systems: SystemRuntimeInfo[]; workspaceDefaults?: OrganizationWorkspace; organizationMembers: OrganizationMemberInfo[]; currentUserId: string; workspaceKey: string; status: string; onRefresh(): Promise<void>; onDisableUser(user: AdminUserInfo): Promise<void>; onEnableUser(user: AdminUserInfo): Promise<void>; onRequireReset(user: AdminUserInfo): Promise<void>; onIssueReset(user: AdminUserInfo): Promise<void>; onRevokeUserSessions(user: AdminUserInfo): Promise<void>; onRevokeSession(session: AdminSessionInfo): Promise<void>; onRevokeRiskSessions(): Promise<void>; onPruneExpiredPasswordResets(): Promise<void>; onRetryEmail(email: EmailOutboxMessage): Promise<void>; onRetryAllEmails(): Promise<void>; onRetryAiToolCall(toolCallId: string, toolName: string): Promise<void>; onFailStaleAiThreads(): Promise<void>; onFailStaleAiToolCalls(): Promise<void>; onRejectStaleAiProposals(includeApproved?: boolean): Promise<void>; onCleanupStoredAssetBytes(): Promise<void>; onMigrateStoredAssetBytes(): Promise<void>; onQuarantineAssetIntegrityFailures(): Promise<void>; onPurgeAssetCdnCache(assetId: string, assetName: string): Promise<void>; onUpdatePluginReview(review: AdminPluginReviewInfo, status: PluginReviewStatus): Promise<void>; onSyncPluginRegistries(): Promise<void>; onUpdateWorkspaceDefaults(input: Partial<OrganizationWorkspace>): Promise<void>; onAddOrganizationMember(input: { email: string; role: Exclude<OrganizationMemberRole, "owner"> }): Promise<void>; onUpdateOrganizationMember(member: OrganizationMemberInfo, role: Exclude<OrganizationMemberRole, "owner">): Promise<void>; onRemoveOrganizationMember(member: OrganizationMemberInfo): Promise<void>; onCreateScimMapping(input: AdminScimGroupRoleMappingInput): Promise<void>; onDeleteScimMapping(mapping: AdminScimGroupRoleMapping): Promise<void> }) {
   const users = props.admin?.users ?? [];
   const sessions = props.admin?.sessions ?? [];
   const emails = props.admin?.emailOutbox.slice().reverse() ?? [];
@@ -108,7 +113,60 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   const [auditCampaignFilter, setAuditCampaignFilter] = useState("");
   const [auditExportLimit, setAuditExportLimit] = useState("100");
   const [auditExportStatus, setAuditExportStatus] = useState("No audit export run");
+  const workspaceEpochRef = useRef(0);
+  const workspaceControllersRef = useRef<Set<AbortController>>(new Set());
   const selectedScimCampaignId = scimCampaignId || defaultScimCampaignId;
+
+  useEffect(() => {
+    workspaceEpochRef.current += 1;
+    for (const controller of workspaceControllersRef.current) controller.abort();
+    workspaceControllersRef.current.clear();
+    setScimCampaignId(defaultScimCampaignId);
+    setScimGroupValue("");
+    setWorkspaceDefaultsStatus("No workspace defaults saved this session");
+    setOrganizationMemberEmail("");
+    setOrganizationMemberStatus("No organization member changes this session");
+    setAuthConnectionTest(undefined);
+    setAuthConnectionTestStatus("No auth connection test run");
+    setStorageBackupStatus("No storage backup run");
+    setStorageRestoreDrill(undefined);
+    setStorageRestoreConfirm("");
+    setJobLedgerStatus("No job action run");
+    setAuditActionFilter("");
+    setAuditTargetTypeFilter("");
+    setAuditActorTypeFilter("");
+    setAuditCampaignFilter("");
+    setAuditExportStatus("No audit export run");
+    return () => {
+      workspaceEpochRef.current += 1;
+      for (const controller of workspaceControllersRef.current) controller.abort();
+      workspaceControllersRef.current.clear();
+    };
+  }, [defaultScimCampaignId, props.workspaceKey]);
+
+  function beginAdminWorkspaceRequest(): AdminWorkspaceRequest {
+    const controller = new AbortController();
+    workspaceControllersRef.current.add(controller);
+    return { epoch: workspaceEpochRef.current, controller };
+  }
+
+  function adminWorkspaceRequestIsCurrent(request: AdminWorkspaceRequest): boolean {
+    return !request.controller.signal.aborted && request.epoch === workspaceEpochRef.current;
+  }
+
+  async function runAdminWorkspaceRequest<T>(task: (request: AdminWorkspaceRequest) => Promise<T>, onCurrentResult: (result: T, request: AdminWorkspaceRequest) => void | Promise<void>) {
+    const request = beginAdminWorkspaceRequest();
+    try {
+      const result = await task(request);
+      if (!adminWorkspaceRequestIsCurrent(request)) return;
+      await onCurrentResult(result, request);
+    } catch (error) {
+      if (adminWorkspaceRequestIsCurrent(request)) throw error;
+    } finally {
+      workspaceControllersRef.current.delete(request.controller);
+    }
+  }
+
   useEffect(() => {
     if (!workspaceDefaults) return;
     setWorkspaceName(workspaceDefaults.name);
@@ -125,28 +183,35 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
     setWorkspaceOnboardingBody(workspaceDefaults.onboardingBody);
   }, [workspaceDefaults]);
   async function saveWorkspaceDefaults() {
-    await props.onUpdateWorkspaceDefaults({
-      name: workspaceName,
-      defaultSystemId: workspaceSystemId,
-      defaultCampaignVisibility: workspaceVisibility,
-      defaultPermissionTemplate: workspaceTemplate,
-      defaultInviteRole: workspaceInviteRole,
-      defaultSceneName: workspaceSceneName,
-      defaultSceneFolder: workspaceSceneFolder,
-      defaultSceneWidth: workspaceSceneWidth,
-      defaultSceneHeight: workspaceSceneHeight,
-      defaultSceneGridSize: workspaceSceneGridSize,
-      onboardingTitle: workspaceOnboardingTitle,
-      onboardingBody: workspaceOnboardingBody
-    });
-    setWorkspaceDefaultsStatus("Workspace defaults saved");
+    await runAdminWorkspaceRequest(
+      () => props.onUpdateWorkspaceDefaults({
+        name: workspaceName,
+        defaultSystemId: workspaceSystemId,
+        defaultCampaignVisibility: workspaceVisibility,
+        defaultPermissionTemplate: workspaceTemplate,
+        defaultInviteRole: workspaceInviteRole,
+        defaultSceneName: workspaceSceneName,
+        defaultSceneFolder: workspaceSceneFolder,
+        defaultSceneWidth: workspaceSceneWidth,
+        defaultSceneHeight: workspaceSceneHeight,
+        defaultSceneGridSize: workspaceSceneGridSize,
+        onboardingTitle: workspaceOnboardingTitle,
+        onboardingBody: workspaceOnboardingBody
+      }),
+      () => setWorkspaceDefaultsStatus("Workspace defaults saved")
+    );
   }
   async function submitOrganizationMember() {
     const email = organizationMemberEmail.trim();
     if (!email) return;
-    await props.onAddOrganizationMember({ email, role: organizationMemberRole });
-    setOrganizationMemberEmail("");
-    setOrganizationMemberStatus(`Organization member ${email} saved as ${organizationMemberRole}`);
+    const role = organizationMemberRole;
+    await runAdminWorkspaceRequest(
+      () => props.onAddOrganizationMember({ email, role }),
+      () => {
+        setOrganizationMemberEmail((current) => current.trim() === email ? "" : current);
+        setOrganizationMemberStatus(`Organization member ${email} saved as ${role}`);
+      }
+    );
   }
   const readinessChecks: Array<{ label: string; status: "ready" | "action" | "missing"; detail: string; playbook: string; proof: string }> = [
     {
@@ -232,9 +297,13 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   async function testAuthConnection(provider: AdminAuthConnectionTestResult["provider"]) {
     setAuthConnectionTestStatus(`Testing ${provider.toUpperCase()} connection`);
     try {
-      const result = await apiPost<AdminAuthConnectionTestResult>("/api/v1/admin/auth/test-connection", { provider });
-      setAuthConnectionTest(result);
-      setAuthConnectionTestStatus(`${provider.toUpperCase()} ${result.status}`);
+      await runAdminWorkspaceRequest(
+        (request) => apiPost<AdminAuthConnectionTestResult>("/api/v1/admin/auth/test-connection", { provider }, { signal: request.controller.signal }),
+        (result) => {
+          setAuthConnectionTest(result);
+          setAuthConnectionTestStatus(`${provider.toUpperCase()} ${result.status}`);
+        }
+      );
     } catch (error) {
       setAuthConnectionTest(undefined);
       setAuthConnectionTestStatus(errorMessage(error));
@@ -244,9 +313,13 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   async function createStorageBackup() {
     setStorageBackupStatus("Creating backup");
     try {
-      const result = await apiPost<AdminStorageBackupResult>("/api/v1/admin/storage/backup", { reason: "admin_ui_manual_backup" });
-      setStorageBackupStatus(`Backup created: ${result.fileName} (${formatStorageBytes(result.sizeBytes)})`);
-      await props.onRefresh();
+      await runAdminWorkspaceRequest(
+        (request) => apiPost<AdminStorageBackupResult>("/api/v1/admin/storage/backup", { reason: "admin_ui_manual_backup" }, { signal: request.controller.signal }),
+        async (result) => {
+          setStorageBackupStatus(`Backup created: ${result.fileName} (${formatStorageBytes(result.sizeBytes)})`);
+          await props.onRefresh();
+        }
+      );
     } catch (error) {
       setStorageBackupStatus(errorMessage(error));
     }
@@ -255,10 +328,14 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   async function runStorageRestoreDrill() {
     setStorageBackupStatus("Running restore drill");
     try {
-      const result = await apiPost<AdminStorageRestoreDrillResult>("/api/v1/admin/storage/restore-drill", {});
-      setStorageRestoreDrill(result);
-      setStorageBackupStatus(result.status === "passed" ? `Restore drill passed: ${formatNumber(result.recordCount)} records checked` : `Restore drill failed: ${result.error ?? "unknown error"}`);
-      await props.onRefresh();
+      await runAdminWorkspaceRequest(
+        (request) => apiPost<AdminStorageRestoreDrillResult>("/api/v1/admin/storage/restore-drill", {}, { signal: request.controller.signal }),
+        async (result) => {
+          setStorageRestoreDrill(result);
+          setStorageBackupStatus(result.status === "passed" ? `Restore drill passed: ${formatNumber(result.recordCount)} records checked` : `Restore drill failed: ${result.error ?? "unknown error"}`);
+          await props.onRefresh();
+        }
+      );
     } catch (error) {
       setStorageRestoreDrill(undefined);
       setStorageBackupStatus(errorMessage(error));
@@ -268,14 +345,18 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   async function queueStorageJob(type: "storage.backup" | "storage.restoreDrill") {
     setStorageBackupStatus(`Queueing ${type}`);
     try {
-      const job = await apiPost<AdminJob>("/api/v1/admin/jobs", {
-        type,
-        payload: { reason: `admin_ui_${type.replace(".", "_")}` },
-        maxAttempts: 3
-      });
-      setStorageBackupStatus(`${job.type} queued`);
-      setJobLedgerStatus(`${job.type} queued`);
-      await props.onRefresh();
+      await runAdminWorkspaceRequest(
+        (request) => apiPost<AdminJob>("/api/v1/admin/jobs", {
+          type,
+          payload: { reason: `admin_ui_${type.replace(".", "_")}` },
+          maxAttempts: 3
+        }, { signal: request.controller.signal }),
+        async (job) => {
+          setStorageBackupStatus(`${job.type} queued`);
+          setJobLedgerStatus(`${job.type} queued`);
+          await props.onRefresh();
+        }
+      );
     } catch (error) {
       setStorageBackupStatus(errorMessage(error));
     }
@@ -284,15 +365,20 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   async function restoreStorageBackup(fileName: string) {
     setStorageBackupStatus("Restoring backup");
     try {
-      const result = await apiPost<AdminStorageRestoreResult>("/api/v1/admin/storage/restore", {
-        backupFileName: fileName,
-        confirmFileName: storageRestoreConfirm,
-        reason: "admin_ui_destructive_restore"
-      });
-      setStorageRestoreDrill(result);
-      setStorageRestoreConfirm("");
-      setStorageBackupStatus(result.status === "passed" ? `Backup restored: ${result.backup?.fileName ?? fileName}` : `Restore failed: ${result.error ?? "unknown error"}`);
-      await props.onRefresh();
+      const confirmFileName = storageRestoreConfirm;
+      await runAdminWorkspaceRequest(
+        (request) => apiPost<AdminStorageRestoreResult>("/api/v1/admin/storage/restore", {
+          backupFileName: fileName,
+          confirmFileName,
+          reason: "admin_ui_destructive_restore"
+        }, { signal: request.controller.signal }),
+        async (result) => {
+          setStorageRestoreDrill(result);
+          setStorageRestoreConfirm((current) => current === confirmFileName ? "" : current);
+          setStorageBackupStatus(result.status === "passed" ? `Backup restored: ${result.backup?.fileName ?? fileName}` : `Restore failed: ${result.error ?? "unknown error"}`);
+          await props.onRefresh();
+        }
+      );
     } catch (error) {
       setStorageBackupStatus(errorMessage(error));
     }
@@ -301,9 +387,13 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   async function retryAdminJob(job: AdminJob) {
     setJobLedgerStatus(`Retrying ${job.type}`);
     try {
-      const result = await apiPost<AdminJob>(`/api/v1/admin/jobs/${job.id}/retry`, {});
-      setJobLedgerStatus(`${result.type} requeued with ${formatNumber(result.maxAttempts - result.attempts)} attempts remaining`);
-      await props.onRefresh();
+      await runAdminWorkspaceRequest(
+        (request) => apiPost<AdminJob>(`/api/v1/admin/jobs/${job.id}/retry`, {}, { signal: request.controller.signal }),
+        async (result) => {
+          setJobLedgerStatus(`${result.type} requeued with ${formatNumber(result.maxAttempts - result.attempts)} attempts remaining`);
+          await props.onRefresh();
+        }
+      );
     } catch (error) {
       setJobLedgerStatus(errorMessage(error));
     }
@@ -312,9 +402,13 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   async function cancelAdminJob(job: AdminJob) {
     setJobLedgerStatus(`Cancelling ${job.type}`);
     try {
-      const result = await apiPost<AdminJob>(`/api/v1/admin/jobs/${job.id}/cancel`, { reason: "admin_ui_cancel" });
-      setJobLedgerStatus(`${result.type} ${result.status}`);
-      await props.onRefresh();
+      await runAdminWorkspaceRequest(
+        (request) => apiPost<AdminJob>(`/api/v1/admin/jobs/${job.id}/cancel`, { reason: "admin_ui_cancel" }, { signal: request.controller.signal }),
+        async (result) => {
+          setJobLedgerStatus(`${result.type} ${result.status}`);
+          await props.onRefresh();
+        }
+      );
     } catch (error) {
       setJobLedgerStatus(errorMessage(error));
     }
@@ -323,10 +417,14 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
   async function deliverJobAlert(dryRun: boolean) {
     setJobLedgerStatus(dryRun ? "Dry-running job alert" : "Delivering job alert");
     try {
-      const result = await apiPost<AdminJobAlertResult>("/api/v1/admin/jobs/alerts", { dryRun, force: dryRun, reason: dryRun ? "admin_ui_dry_run" : "admin_ui_delivery" });
-      const target = result.configured ? `webhook ${result.webhookStatus ?? "configured"}` : "webhook not configured";
-      setJobLedgerStatus(`${result.status}: ${formatNumber(result.remediationCount)} remediations - ${target}`);
-      await props.onRefresh();
+      await runAdminWorkspaceRequest(
+        (request) => apiPost<AdminJobAlertResult>("/api/v1/admin/jobs/alerts", { dryRun, force: dryRun, reason: dryRun ? "admin_ui_dry_run" : "admin_ui_delivery" }, { signal: request.controller.signal }),
+        async (result) => {
+          const target = result.configured ? `webhook ${result.webhookStatus ?? "configured"}` : "webhook not configured";
+          setJobLedgerStatus(`${result.status}: ${formatNumber(result.remediationCount)} remediations - ${target}`);
+          await props.onRefresh();
+        }
+      );
     } catch (error) {
       setJobLedgerStatus(errorMessage(error));
     }
@@ -342,10 +440,14 @@ export function AdminPanel(props: { admin?: AdminSnapshot; campaigns: Campaign[]
       if (auditTargetTypeFilter.trim()) params.set("targetType", auditTargetTypeFilter.trim());
       if (auditActorTypeFilter.trim()) params.set("actorType", auditActorTypeFilter.trim());
       if (auditCampaignFilter.trim()) params.set("campaignId", auditCampaignFilter.trim());
-      const exportBundle = await apiGet<AdminSnapshot["audit"]>(`/api/v1/admin/audit-logs?${params.toString()}`);
-      downloadJson(`audit-${new Date(exportBundle.exportedAt).toISOString().slice(0, 10)}.json`, exportBundle);
-      setAuditExportStatus(`Exported ${formatNumber(exportBundle.count)} redacted audit rows`);
-      await props.onRefresh();
+      await runAdminWorkspaceRequest(
+        (request) => apiGet<AdminSnapshot["audit"]>(`/api/v1/admin/audit-logs?${params.toString()}`, { signal: request.controller.signal }),
+        async (exportBundle) => {
+          downloadJson(`audit-${new Date(exportBundle.exportedAt).toISOString().slice(0, 10)}.json`, exportBundle);
+          setAuditExportStatus(`Exported ${formatNumber(exportBundle.count)} redacted audit rows`);
+          await props.onRefresh();
+        }
+      );
     } catch (error) {
       setAuditExportStatus(errorMessage(error));
     }

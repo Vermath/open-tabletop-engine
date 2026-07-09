@@ -87,11 +87,19 @@ export function applyProposal(state: EngineState, proposal: Proposal, userId?: s
     const bucket = readCollection(next, bucketKey);
     if (change.action === "create") {
       const created = structuredClone(change.data) as Record<string, unknown>;
+      const createdId = entityId(created);
+      if (bucket.some((item) => item.id === createdId)) {
+        throw new Error(`Proposal create target already exists: ${change.entity}:${createdId}`);
+      }
       assertEntityInProposalCampaign(next, bucketKey, created, proposal.campaignId);
       writableCollection(next, bucketKey, copiedCollections).push(created as never);
     } else if (change.action === "update") {
       const index = bucket.findIndex((item: { id?: string }) => item.id === change.id);
       if (index < 0) throw new Error(`Proposal target not found: ${change.entity}:${change.id ?? ""}`);
+      const replacementId = change.data.id;
+      if (Object.prototype.hasOwnProperty.call(change.data, "id") && replacementId !== change.id) {
+        throw new Error(`Proposal update cannot change entity id: ${change.entity}:${change.id ?? ""}`);
+      }
       assertEntityInProposalCampaign(next, bucketKey, bucket[index] as Record<string, unknown>, proposal.campaignId);
       const writableBucket = writableCollection(next, bucketKey, copiedCollections);
       const updated = {
@@ -131,6 +139,13 @@ export function applyProposal(state: EngineState, proposal: Proposal, userId?: s
     };
   }
   return next;
+}
+
+function entityId(entity: Record<string, unknown>): string {
+  if (typeof entity.id !== "string" || !entity.id.trim()) {
+    throw new Error("Proposal create requires a non-empty entity id");
+  }
+  return entity.id;
 }
 
 function readCollection(state: EngineState, key: ProposalCollectionKey): Array<{ id?: string }>;

@@ -6,11 +6,17 @@ import { releaseEvidenceGateById, requiredAssistiveTechnologyEnvironments } from
 
 const repoRoot = process.cwd();
 const evidenceRoot = process.env.OTTE_EVIDENCE_ROOT ?? repoRoot;
-const currentCommit = process.env.OTTE_RELEASE_COMMIT ?? git("rev-parse HEAD");
+const headCommit = git("rev-parse HEAD");
+const currentCommit = process.env.OTTE_RELEASE_COMMIT ?? headCommit;
 const commitSource = process.env.OTTE_RELEASE_COMMIT ? "OTTE_RELEASE_COMMIT" : "git rev-parse HEAD";
 
 if (!fullSha(currentCommit)) {
   console.error(`OTTE_RELEASE_COMMIT must be a full 40-character commit SHA; received ${currentCommit}.`);
+  process.exit(1);
+}
+
+if (process.env.OTTE_RELEASE_COMMIT && normalizeSha(currentCommit) !== normalizeSha(headCommit)) {
+  console.error(`OTTE_RELEASE_COMMIT must match checked-out HEAD ${headCommit}; received ${currentCommit}.`);
   process.exit(1);
 }
 

@@ -1,6 +1,6 @@
 import type { Actor } from "@open-tabletop/core";
 import { ChevronLeft, Eye, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatNumber } from "./sheet-format.js";
 import { systemAdvancementLabel, type AdvancementOptionInfo } from "./system-actions.js";
 
@@ -21,6 +21,8 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
   const [advancementMode, setAdvancementMode] = useState<"level" | "multiclass">("level");
   const [selectedFeatId, setSelectedFeatId] = useState("");
   const [selectedMulticlass, setSelectedMulticlass] = useState("");
+  const [advancing, setAdvancing] = useState(false);
+  const advancingRef = useRef(false);
   const advancementLabel = systemAdvancementLabel(props.actor?.systemId);
   const selectedAdvancementOption = props.advancementOptions.find((option) => option.id === advancementOptionId) ?? props.advancementOptions[0];
 
@@ -37,7 +39,40 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
   useEffect(() => {
     setAdvancementStep("choose");
     setAdvancementConfirmed(false);
-  }, [selectedAdvancementOption?.id, props.actor?.id]);
+  }, [selectedAdvancementOption?.id]);
+
+  useEffect(() => {
+    setAdvancementMode("level");
+    setSelectedFeatId("");
+    setSelectedMulticlass("");
+    setAdvancementStep("choose");
+    setAdvancementConfirmed(false);
+  }, [props.actor?.id]);
+
+  useEffect(() => {
+    setAdvancementStep("choose");
+    setAdvancementConfirmed(false);
+  }, [advancementMode, selectedFeatId, selectedMulticlass]);
+
+  const submitAdvancement = async () => {
+    if (advancingRef.current || !selectedAdvancementOption) return;
+    advancingRef.current = true;
+    setAdvancing(true);
+    try {
+      await props.onAdvanceActor(selectedAdvancementOption.id, advancementMode === "multiclass"
+        ? { multiclassInto: selectedMulticlass }
+        : selectedFeatId ? { featId: selectedFeatId } : {});
+      setAdvancementStep("choose");
+      setAdvancementConfirmed(false);
+      setSelectedFeatId("");
+      setSelectedMulticlass("");
+    } catch (error) {
+      console.error(error);
+    } finally {
+      advancingRef.current = false;
+      setAdvancing(false);
+    }
+  };
 
   return (
     <>
@@ -120,6 +155,10 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
                   <strong>{selectedAdvancementOption.name}</strong>
                 </div>
                 <div className="operator-row tool-call-row">
+                  <span>Mode</span>
+                  <strong>{advancementMode === "multiclass" ? `Multiclass into ${selectedMulticlass}` : selectedFeatId ? `Level up with ${selectedFeatId}` : "Level up class"}</strong>
+                </div>
+                <div className="operator-row tool-call-row">
                   <span>Next value</span>
                   <strong>{formatNumber(selectedAdvancementOption.nextValue)}</strong>
                 </div>
@@ -136,16 +175,8 @@ export function AdvancementFlow(props: AdvancementFlowProps) {
           </>
         )}
       </section>
-      <button className="ghost-button wide" onClick={() => {
-        props.onAdvanceActor(selectedAdvancementOption?.id, advancementMode === "multiclass"
-          ? { multiclassInto: selectedMulticlass }
-          : selectedFeatId ? { featId: selectedFeatId } : {});
-        setAdvancementStep("choose");
-        setAdvancementConfirmed(false);
-        setSelectedFeatId("");
-        setSelectedMulticlass("");
-      }} disabled={!props.actor || !props.canAdvanceActor || props.advancementOptions.length === 0 || advancementStep !== "review" || !advancementConfirmed || (advancementMode === "multiclass" && !selectedMulticlass)}>
-        <RefreshCw size={16} /> {advancementMode === "multiclass" ? "Multiclass" : advancementLabel}
+      <button className="ghost-button wide" onClick={() => void submitAdvancement()} disabled={!props.actor || !props.canAdvanceActor || props.advancementOptions.length === 0 || advancementStep !== "review" || !advancementConfirmed || (advancementMode === "multiclass" && !selectedMulticlass) || advancing}>
+        <RefreshCw size={16} /> {advancing ? "Advancing..." : advancementMode === "multiclass" ? "Multiclass" : advancementLabel}
       </button>
     </>
   );

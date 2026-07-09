@@ -18,7 +18,7 @@
     "@open-tabletop/api": "workspace:*",
     "@open-tabletop/web": "workspace:*",
     "@open-tabletop/tunnel-protocol": "workspace:*",
-    "ws": "^8.18.3"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.21",

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRelayTable, hostTokenHash, MemoryRateLimiter, relayLimits, relayTableStatus, verifyHostToken, verifyHostTokenHash } from "./relay-core.js";
+import { selectRelayWebSocketProtocol } from "./index.js";
 
 describe("relay core", () => {
   it("creates high-entropy table credentials with a 12 hour ttl", () => {
@@ -39,5 +40,11 @@ describe("relay core", () => {
     expect(limiter.check("ip:1", 100)).toMatchObject({ allowed: true, remaining: 0 });
     expect(limiter.check("ip:1", 200)).toMatchObject({ allowed: false, remaining: 0, retryAfterMs: 800 });
     expect(limiter.check("ip:1", 1000)).toMatchObject({ allowed: true, remaining: 1 });
+  });
+
+  it("selects the stable realtime protocol from the player's offered protocols", () => {
+    expect(selectRelayWebSocketProtocol("otte.v1, otte.auth.ots_test")).toBe("otte.v1");
+    expect(selectRelayWebSocketProtocol("custom.v2, otte.auth.ots_test")).toBe("custom.v2");
+    expect(selectRelayWebSocketProtocol(null)).toBeUndefined();
   });
 });

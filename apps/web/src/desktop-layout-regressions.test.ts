@@ -106,13 +106,16 @@ describe("desktop layout regressions", () => {
 
   it("lets the AI agent auto-apply turn proposals and submit with Ctrl+Enter", () => {
     expect(appSource).toContain('type AiAgentApprovalMode = "manual" | "auto";');
-    expect(appSource).toContain('const [aiAgentApprovalMode, setAiAgentApprovalMode] = useState<AiAgentApprovalMode>("manual");');
+    expect(appSource).toContain('const aiAgentApprovalModeStorageKey = "otte:aiAgentApprovalMode";');
+    expect(appSource).toContain('function initialAiAgentApprovalMode(): AiAgentApprovalMode');
+    expect(appSource).toContain('return localStorage.getItem(aiAgentApprovalModeStorageKey) === "manual" ? "manual" : "auto";');
+    expect(appSource).toContain("const [aiAgentApprovalMode, setAiAgentApprovalModeState] = useState<AiAgentApprovalMode>(initialAiAgentApprovalMode);");
     expect(appSource).toContain('approvalMode={aiAgentApprovalMode}');
     expect(appSource).toContain('onApprovalModeChange={setAiAgentApprovalMode}');
     expect(appSource).toContain('aria-label="AI Agent approval mode"');
     expect(appSource).toContain("approvalMode: aiAgentApprovalMode,");
     expect(appSource).toContain('event.type === "proposal.applied"');
-    expect(appSource).toContain("autoApplyAiAgentProposals(pendingProposalIds, refreshedSnapshot)");
+    expect(appSource).toContain("autoApplyAiAgentProposals(pendingProposalIds, refreshedSnapshot, { campaignId: requestCampaignId, userId: requestUserId })");
     expect(appSource).toContain('if (event.key === "Enter" && (event.ctrlKey || event.metaKey))');
     expect(appSource).toContain('onKeyDown={handleAiAgentPromptKeyDown}');
     expect(appSource).toContain('aiAgentPendingAuthRequestRef.current = { prompt, requestMessages, selectedAssetId: requestSelectedAssetId };');
@@ -184,7 +187,9 @@ describe("desktop layout regressions", () => {
 
   it("keeps scene tab quick actions compact and layer swaps reachable", () => {
     expect(appSource).toContain("const quickCreateSceneIndex = sceneQuickCreateIndex(visibleScenes.length);");
+    expect(appSource).toContain("const showTrailingSceneCreateButton = showTrailingSceneCreate(visibleScenes.length);");
     expect(appSource).toContain('className="icon-button scene-tab-add"');
+    expect(appSource).toContain('aria-label="Add scene after newest scene"');
     expect(appSource).toContain('className="icon-button scene-tab-delete"');
     expect(appSource).toContain("createScene({ insertBeforeScene: scene })");
     expect(appSource).toContain("quickDeleteScene(scene)");
@@ -387,6 +392,103 @@ describe("desktop layout regressions", () => {
     expect(stylesSource).toContain("cursor: nwse-resize;");
   });
 
+  it("streams AI Agent reasoning summaries into the live feed", () => {
+    expect(appSource).toContain("const aiAgentLiveThreadIdRef = useRef<string | null>(null);");
+    expect(appSource).toContain("const aiAgentPendingAssistantIdRef = useRef<string | null>(null);");
+    expect(appSource).toContain('event.type !== "ai.message.delta" && event.type !== "ai.message.completed" && event.type !== "ai.reasoning.delta" && event.type !== "ai.reasoning.completed" && event.type !== "ai.activity.reported" && event.type !== "ai.tool.started" && event.type !== "ai.tool.completed"');
+    expect(appSource).toContain('if (!aiAgentBusyRef.current || event.actorUserId !== currentUserId) return false;');
+    expect(appSource).toContain('aiAgentBusyRef.current = true;\n    setAiAgentBusy(true);\n    setAiAgentStatus(options.authRetry ? "Retrying agent request after sign-in" : "Agent working");');
+    expect(appSource).toContain('progress: options.authRetry ? "Retrying agent turn..." : "Starting agent turn..."');
+    expect(appSource).toContain("function clearPendingAiAgentAssistantMessage()");
+    expect(appSource).toContain("messages.filter((message) => message.id !== pendingAssistantId)");
+    expect(appSource).toContain("const feedRef = useRef<HTMLElement | null>(null);");
+    expect(appSource).toContain('const hasStreamingAssistant = props.messages.some((message) => message.role === "assistant" && message.streaming);');
+    expect(appSource).toContain('ref={feedRef}');
+    expect(appSource).toContain("props.busy && !hasStreamingAssistant");
+    expect(appSource).toContain("aiAgentToolProgressText(event)");
+    expect(appSource).toContain("function aiAgentToolProgressLabel(toolName: string): string");
+    expect(appSource).toContain('"Creating missing actors and tokens"');
+    expect(appSource).toContain('"Placing tokens"');
+    expect(appSource).toContain("appendReasoningDelta(base.reasoning, summaryIndex, payload.delta)");
+    expect(appSource).toContain("upsertAiAgentMessage(mergedMessages, assistantMessage)");
+    expect(appSource).toContain("Reasoning summary");
+    expect(stylesSource).toContain(".ai-agent-progress {");
+    expect(stylesSource).toContain(".ai-agent-reasoning.live {\n  display: grid;");
+  });
+
+  it("synchronously blocks duplicate AI Agent turns before busy state renders", () => {
+    expect(appSource).toContain("if (aiAgentBusyRef.current) return;");
+    expect(appSource.match(/if \(aiAgentBusyRef\.current && !options\.authRetry\) return;/g)).toHaveLength(2);
+    expect(appSource).not.toContain("if (aiAgentBusy) return;");
+    expect(appSource).not.toContain("if (aiAgentBusy && !options.authRetry) return;");
+  });
+
+  it("discards stale workspace results and aborts agent turns on campaign changes", () => {
+    expect(appSource).toContain("function cancelAiAgentForWorkspaceChange()");
+    expect(appSource).toContain("abortController?.abort();");
+    expect(appSource).toContain("function selectWorkspaceContext(nextCampaignId: string, nextSceneId = \"\", nextUserId = currentUserId)");
+    expect(appSource).toContain("if (!workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return snapshotRef.current;");
+    expect(appSource).toContain("if (seq !== refreshSeqRef.current || !workspaceRequestIsCurrent(nextCampaignId, requestUserId)) return next;");
+    expect(appSource).toContain("if (!workspaceRequestIsCurrent(requestCampaignId, requestUserId)) return;");
+    expect(appSource).toContain("if (scene.campaignId !== realtimeSelectionRef.current.campaignId) return;");
+    expect(appSource).toContain('selectWorkspaceContext(campaign.id, "");');
+    expect(appSource).toContain('refresh(campaign.id, "").catch(console.error)');
+  });
+
+  it("synchronously deduplicates paid AI generation jobs", () => {
+    expect(appSource).toContain('const aiGenerationLocksRef = useRef<Set<"map" | "token">>(new Set());');
+    expect(appSource).toContain('const lock = job.kind === "map" ? "map" : "token";');
+    expect(appSource).toContain("if (aiGenerationLocksRef.current.has(lock)) return;");
+    expect(appSource).toContain("aiGenerationLocksRef.current.add(lock);");
+    expect(appSource).toContain("aiGenerationLocksRef.current.delete(lock);");
+  });
+
+  it("aborts non-agent AI work and suppresses late UI updates after workspace switches", () => {
+    expect(appSource).toContain("const workspaceAbortControllersRef = useRef<Set<AbortController>>(new Set());");
+    expect(appSource).toContain("function cancelWorkspaceBoundRequestsForChange()");
+    expect(appSource).toContain("for (const controller of workspaceAbortControllersRef.current) controller.abort();");
+    expect(appSource).toContain("aiGenerationLocksRef.current.clear();");
+    expect(appSource).toContain("setAiGenerationJobs([]);");
+    expect(appSource).toContain("if (!workspaceBoundRequestIsCurrent(request)) return;");
+    expect(appSource).toContain("{ signal: request.controller.signal }");
+    expect(appSource).toContain('runWorkspaceBoundAiRequest("AI thread replay"');
+  });
+
+  it("does not clear current workspace drafts when older form requests finish", () => {
+    expect(appSource).toContain("function currentWorkspaceRequestIdentity(): WorkspaceRequestIdentity");
+    expect(appSource).toContain("if (!workspaceIdentityIsCurrent(request)) return;");
+    expect(appSource).toContain('setChatBody((current) => current === submittedBody ? "" : current);');
+    expect(appSource).toContain('setChatReplyToMessageId((current) => current === submittedReplyToMessageId ? "" : current);');
+    expect(appSource).toContain('setNewJournalTitle((current) => current === submittedTitle ? "" : current);');
+    expect(appSource).toContain('setNewJournalBody((current) => current === submittedBody ? "" : current);');
+    expect(appSource).toContain('setNewSceneName((current) => current === submittedName ? "" : current);');
+    expect(appSource).toContain('setFogPresetName((current) => current === submittedName ? "" : current);');
+  });
+
+  it("keeps direct actor HP edits local until blur", () => {
+    expect(actorPanelSource).toContain('key={`sheet:${props.actor.id}:${hp?.current ?? 0}`}');
+    expect(actorPanelSource).toContain('key={`detail:${props.actor.id}:${hp?.current ?? 0}`}');
+    expect(countOccurrences(actorPanelSource, "defaultValue={hp?.current ?? 0}")).toBe(2);
+    expect(countOccurrences(actorPanelSource, "onBlur={(event) => props.updateActorHp(props.actor!, Number(event.currentTarget.value))}")).toBe(2);
+    expect(actorPanelSource).not.toContain("onChange={(event) => props.updateActorHp(props.actor!, Number(event.target.value))}");
+  });
+
+  it("replaces failed generated-asset images with the preview fallback", () => {
+    expect(aiPanelSource).toContain("setPreviewFailed(true);\n            setDeliveryUrl(undefined);");
+    expect(aiPanelSource).toContain('previewFailed ? "Preview unavailable" : "Preparing preview"');
+  });
+
+  it("supports clearing AI Agent conversation context", () => {
+    expect(appSource).toContain("function isAiAgentClearCommand(prompt: string): boolean");
+    expect(appSource).toContain("return /^\\/clear(?:\\s+.*)?$/i.test(prompt.trim());");
+    expect(appSource).toContain("function startNewAiAgentChat()");
+    expect(appSource).toContain("persistAiAgentMessages(aiAgentHistoryKey, []);");
+    expect(appSource).toContain("if (isAiAgentClearCommand(prompt)) {");
+    expect(appSource).toContain("onNewChat={startNewAiAgentChat}");
+    expect(appSource).toContain('aria-label="Start new AI Agent chat"');
+    expect(stylesSource).toContain(".ai-agent-new-chat-button {");
+  });
+
   it("keeps ping annotations transient instead of leaving them on the board", () => {
     expect(appSource).toContain("const pingAnnotationTtlSeconds = 5;");
     expect(appSource).toContain('expiresInSeconds: kind === "ping" ? pingAnnotationTtlSeconds : undefined');
@@ -481,7 +583,7 @@ describe("desktop layout regressions", () => {
   it("keeps the empty combat state compact instead of stretching a huge primary CTA", () => {
     expect(combatPanelSource).toContain('className="combat-empty-state" aria-label="Start combat from scene tokens"');
     expect(combatPanelSource).toContain("Ready to roll initiative");
-    expect(combatPanelSource).toContain("<Swords size={15} /> Start combat");
+    expect(combatPanelSource).toContain('<Swords size={15} /> {startPending ? "Starting..." : "Start combat"}');
     expect(countOccurrences(combatPanelSource, "Start combat")).toBe(2);
     expect(combatPanelSource).not.toContain('className="primary-button wide" onClick={props.onStart}');
     expect(combatPanelSource).not.toContain('title="Start combat" aria-label="Start combat"');

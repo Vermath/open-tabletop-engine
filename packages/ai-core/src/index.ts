@@ -132,6 +132,7 @@ export type AiProviderEvent =
   | { type: "message.completed"; content: string }
   | { type: "reasoning.delta"; delta: string; summaryIndex?: number }
   | { type: "reasoning.completed"; content: string }
+  | { type: "activity.reported"; message: string; itemType?: string; itemId?: string; status?: "started" | "completed" | "failed" }
   | { type: "tool.started"; toolName: string; input: unknown }
   | { type: "tool.completed"; toolName: string; output: unknown }
   | { type: "proposal.created"; proposalId: string }
@@ -148,7 +149,8 @@ export interface PermissionFilteredContext {
     name: string;
     type: string;
     summary: string;
-    systemId?: string;
+    systemId: string;
+    privateDataVisible: boolean;
     actions?: Array<{ rollId: string; label: string; formula: string }>;
   }>;
   scenes?: Array<{ id: string; name: string; active: boolean }>;
@@ -158,6 +160,7 @@ export interface PermissionFilteredContext {
 export function buildPermissionFilteredContext(input: {
   state: EngineState;
   campaignId: string;
+  userId: string;
   permissions: PermissionName[];
 }): PermissionFilteredContext {
   const campaign = input.state.campaigns.find((item) => item.id === input.campaignId);
@@ -182,11 +185,17 @@ export function buildPermissionFilteredContext(input: {
       ? input.state.actors
           .filter((item) => item.campaignId === input.campaignId)
           .map((item) => {
-            const hp = item.data.hp as { current?: number; max?: number } | undefined;
+            const privateDataVisible =
+              input.permissions.includes("actor.readPrivate") ||
+              item.ownerUserId === input.userId ||
+              item.permissions[input.userId]?.includes("actor.readPrivate") === true;
+            const hp = privateDataVisible ? (item.data.hp as { current?: number; max?: number } | undefined) : undefined;
             return {
               id: item.id,
               name: item.name,
               type: item.type,
+              systemId: item.systemId,
+              privateDataVisible,
               summary: hp ? `${item.name} (${hp.current ?? "?"}/${hp.max ?? "?"} HP)` : item.name
             };
           })
